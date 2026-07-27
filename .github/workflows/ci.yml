@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # P0-02: CI runs the same commands a developer runs locally. If a step here
+  # has no local equivalent, that is a bug in this file, not a CI-only need.
+  TURBO_TELEMETRY_DISABLED: 1
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format
+        run: pnpm format
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      # P2-06: the SDK is generated, never hand-edited. A drifted checkout fails
+      # here rather than being discovered at runtime.
+      - name: Verify generated SDK matches the contract
+        run: |
+          if [ -f contracts/openapi.yaml ]; then
+            pnpm --filter @ds/sdk generate
+            if ! git diff --quiet -- packages/sdk; then
+              echo "::error::Generated SDK is out of date with contracts/openapi.yaml. Run 'pnpm --filter @ds/sdk generate'."
+              git diff -- packages/sdk
+              exit 1
+            fi
+          fi

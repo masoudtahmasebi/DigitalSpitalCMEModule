@@ -1,0 +1,43 @@
+{
+  "name": "digitalspital-education-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "dev": "turbo run dev",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d --wait",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "infra:logs": "docker compose -f infra/docker-compose.yml logs -f",
+    "infra:reset": "docker compose -f infra/docker-compose.yml down -v && pnpm infra:up",
+    "db:migrate": "tsx db/migrate.ts",
+    "db:seed": "tsx db/seed/adhs.ts"
+  },
+  "devDependencies": {
+    "@ds/config": "workspace:*",
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.2",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -40,16 +40,16 @@ content manually instead.
 
 ## 2. Confirmed decisions
 
-| Topic | Decision |
-|---|---|
+| Topic                     | Decision                                                                                                                                                                                                                |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Video completion rule** | Configurable percentage per course (`required_watch_percent`, 0–100). MEDICE ships at 100 %. The layout currently says 80 % on the Zertifizierung tab — the copy must be aligned to whatever MEDICE sets before launch. |
-| **EFN storage** | We store it. `efn_profiles` in our PostgreSQL is the system of record. No dependency on a MEDICE Keycloak attribute. Salesforce `vDMC_EFN__c` sync stays possible later. |
-| **Certificate assets** | Kept as-is for now; signature/stamp asset supplied by MEDICE before P8. |
-| **Hosting** | Hetzner Cloud (EU/Germany — good for GDPR posture), containerised and portable. |
-| **Email delivery** | SMTP settings come from the existing ADHS platform PHP configuration. We bind SMTP credentials per project in the Education Platform, seeded from that file. |
-| **Hierarchy** | Department added between Customer and Project (see §3). |
-| **Auth** | The WordPress Keycloak plugin session is bridged — a user logged into the ADHS WordPress site is automatically logged into the Education Platform (see §5). |
-| **Documentation model** | Jira tickets are the documentation source of truth. Commits, PRs and generated docs all reference the ticket key (see §6). |
+| **EFN storage**           | We store it. `efn_profiles` in our PostgreSQL is the system of record. No dependency on a MEDICE Keycloak attribute. Salesforce `vDMC_EFN__c` sync stays possible later.                                                |
+| **Certificate assets**    | Kept as-is for now; signature/stamp asset supplied by MEDICE before P8.                                                                                                                                                 |
+| **Hosting**               | Hetzner Cloud (EU/Germany — good for GDPR posture), containerised and portable.                                                                                                                                         |
+| **Email delivery**        | SMTP settings come from the existing ADHS platform PHP configuration. We bind SMTP credentials per project in the Education Platform, seeded from that file.                                                            |
+| **Hierarchy**             | Department added between Customer and Project (see §3).                                                                                                                                                                 |
+| **Auth**                  | The WordPress Keycloak plugin session is bridged — a user logged into the ADHS WordPress site is automatically logged into the Education Platform (see §5).                                                             |
+| **Documentation model**   | Jira tickets are the documentation source of truth. Commits, PRs and generated docs all reference the ticket key (see §6).                                                                                              |
 
 ## 3. Domain hierarchy
 
@@ -84,16 +84,16 @@ the same rollup, so the numbers can never disagree.
 
 ## 4. Scope
 
-| In scope (140 h) | Deferred |
-|---|---|
-| Full hierarchy incl. Department, multi-tenant with row-level isolation | Storyblok integration layer |
-| Learner frontend: course list with filters, detail with 4 tabs, Mediathek with lock states, player with module/chapter nav | Vue wrapper |
-| Per-level status visible to the learner (course → module → chapter → content, with score and watched %) | Analytics dashboards, charts, exports beyond CSV |
-| Configurable video % gate, sequential gating, quiz, Evaluationsbogen | SCORM/xAPI, gamification |
-| EFN capture + EIV-FOBI Punktemeldung with deadline handling | Self-service customer signup and billing |
-| Certificate PDF + email via project-bound SMTP | Salesforce sync |
-| Admin console (React + Tailwind): own auth, customer creation, content authoring, participant status list | Rich WYSIWYG authoring, media transcoding pipeline |
-| WordPress plugin with automatic Keycloak session bridge | Second customer onboarding (Trommsdorf) |
+| In scope (140 h)                                                                                                           | Deferred                                           |
+| -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Full hierarchy incl. Department, multi-tenant with row-level isolation                                                     | Storyblok integration layer                        |
+| Learner frontend: course list with filters, detail with 4 tabs, Mediathek with lock states, player with module/chapter nav | Vue wrapper                                        |
+| Per-level status visible to the learner (course → module → chapter → content, with score and watched %)                    | Analytics dashboards, charts, exports beyond CSV   |
+| Configurable video % gate, sequential gating, quiz, Evaluationsbogen                                                       | SCORM/xAPI, gamification                           |
+| EFN capture + EIV-FOBI Punktemeldung with deadline handling                                                                | Self-service customer signup and billing           |
+| Certificate PDF + email via project-bound SMTP                                                                             | Salesforce sync                                    |
+| Admin console (React + Tailwind): own auth, customer creation, content authoring, participant status list                  | Rich WYSIWYG authoring, media transcoding pipeline |
+| WordPress plugin with automatic Keycloak session bridge                                                                    | Second customer onboarding (Trommsdorf)            |
 
 ## 5. WordPress ↔ Keycloak session bridge
 
@@ -128,15 +128,15 @@ entire integration surface — everything else stays in the plugin as it is toda
 
 See `CLAUDE.md`, which is the enforced version of this section.
 
-| Rule | Detail |
-|---|---|
+| Rule                | Detail                                                                                                                                                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Ticket = work order | Every DEP ticket carries context, scope, acceptance criteria and definition of done, written so it can be handed to Claude Code verbatim. No ticket, no code. |
-| Branch naming | `DEP-123-short-slug` |
-| Commit format | `DEP-123: imperative summary` |
-| PR description | References the ticket, lists acceptance criteria with checkmarks, notes any deviation from the spec. |
-| Docs | `docs/` entries reference the ticket key that introduced them. `CLAUDE.md` holds the standing rules; ADRs record irreversible decisions. |
-| Contract-first | `openapi.yaml` is written before the implementation; SDK, widget types and contract tests derive from it. |
-| Human review gate | Anything touching auth, assessment, eiv or certificates requires human review. |
+| Branch naming       | `DEP-123-short-slug`                                                                                                                                          |
+| Commit format       | `DEP-123: imperative summary`                                                                                                                                 |
+| PR description      | References the ticket, lists acceptance criteria with checkmarks, notes any deviation from the spec.                                                          |
+| Docs                | `docs/` entries reference the ticket key that introduced them. `CLAUDE.md` holds the standing rules; ADRs record irreversible decisions.                      |
+| Contract-first      | `openapi.yaml` is written before the implementation; SDK, widget types and contract tests derive from it.                                                     |
+| Human review gate   | Anything touching auth, assessment, eiv or certificates requires human review.                                                                                |
 
 ## 7. EIV-FOBI: de-risked in week 1
 
@@ -170,20 +170,20 @@ are unaffected.
 
 ## 8. Phase budget — 140 h
 
-| # | Phase | h | Core content |
-|---|---|---|---|
-| P0 | Foundations & AI-first setup | 10 | Monorepo, CI, CLAUDE.md, ADRs, Docker Compose, schema v1 + migrations, seed course, packages/domain skeleton |
-| P1 | Auth & user profile | 10 | Keycloak JWKS validation, WP session bridge, user-key resolution, roles, EFN profile field |
-| P2 | Backend core: hierarchy & catalog | 16 | Customer → Department → Project → Course → Module → Chapter → Content CRUD, compliance fields, tenant isolation + RLS, public read API |
-| P3 | Learning engine | 14 | Enrolment, sequential gating, progress + rollup, resume, configurable video % with anti-skip |
-| P4 | Assessment & evaluation | 10 | Quiz engine (single/multi, exact-set), server-side scoring, threshold, attempts audit, Evaluationsbogen |
-| P5 | Learner frontend widget | 28 | React + Tailwind web component: list, detail (4 tabs), Mediathek, player, status views, completion flow; responsive + a11y |
-| P6 | WordPress integration | 5 | Block/shortcode, token endpoint in the Keycloak plugin, asset loading, logged-out state |
-| P7 | EIV-FOBI & EFN | 12 | Test harness + mock (week 1), VNR credential vault, submission, deadline logic, retry queue, alerting |
-| P8 | Certificates & email | 7 | PDF from template with signature, project-bound SMTP from the ADHS config, delivery + retry, download |
-| P9 | Admin console | 18 | React + Tailwind, own auth, customer/department/project creation, content authoring, participant status list |
-| P10 | Hardening, Hetzner deploy & launch | 10 | Security review, tenant isolation tests, rate limiting, Hetzner provisioning + CI deploy, backups, observability, go-live |
-| | **Total** | **140** | |
+| #   | Phase                              | h       | Core content                                                                                                                           |
+| --- | ---------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| P0  | Foundations & AI-first setup       | 10      | Monorepo, CI, CLAUDE.md, ADRs, Docker Compose, schema v1 + migrations, seed course, packages/domain skeleton                           |
+| P1  | Auth & user profile                | 10      | Keycloak JWKS validation, WP session bridge, user-key resolution, roles, EFN profile field                                             |
+| P2  | Backend core: hierarchy & catalog  | 16      | Customer → Department → Project → Course → Module → Chapter → Content CRUD, compliance fields, tenant isolation + RLS, public read API |
+| P3  | Learning engine                    | 14      | Enrolment, sequential gating, progress + rollup, resume, configurable video % with anti-skip                                           |
+| P4  | Assessment & evaluation            | 10      | Quiz engine (single/multi, exact-set), server-side scoring, threshold, attempts audit, Evaluationsbogen                                |
+| P5  | Learner frontend widget            | 28      | React + Tailwind web component: list, detail (4 tabs), Mediathek, player, status views, completion flow; responsive + a11y             |
+| P6  | WordPress integration              | 5       | Block/shortcode, token endpoint in the Keycloak plugin, asset loading, logged-out state                                                |
+| P7  | EIV-FOBI & EFN                     | 12      | Test harness + mock (week 1), VNR credential vault, submission, deadline logic, retry queue, alerting                                  |
+| P8  | Certificates & email               | 7       | PDF from template with signature, project-bound SMTP from the ADHS config, delivery + retry, download                                  |
+| P9  | Admin console                      | 18      | React + Tailwind, own auth, customer/department/project creation, content authoring, participant status list                           |
+| P10 | Hardening, Hetzner deploy & launch | 10      | Security review, tenant isolation tests, rate limiting, Hetzner provisioning + CI deploy, backups, observability, go-live              |
+|     | **Total**                          | **140** |                                                                                                                                        |
 
 ## 9. Weekly plan — 27.07.2026 → 06.09.2026
 
@@ -264,23 +264,23 @@ learners earning CME points.
 
 ## 10. Milestones
 
-| Milestone | Date | Definition of done |
-|---|---|---|
+| Milestone                 | Date       | Definition of done                                                      |
+| ------------------------- | ---------- | ----------------------------------------------------------------------- |
 | **M1 · Walking skeleton** | 09.08.2026 | Course renders in the real WordPress site with automatic Keycloak login |
-| **M2 · Learner MVP** | 23.08.2026 | Full layout, gating, video rule, quiz and evaluation working |
-| **M3 · CME compliant** | 30.08.2026 | EFN, EIV submission and certificate delivery verified |
-| **M4 · Launch** | 06.09.2026 | Live on Hetzner, admin console handed over, security review signed off |
+| **M2 · Learner MVP**      | 23.08.2026 | Full layout, gating, video rule, quiz and evaluation working            |
+| **M3 · CME compliant**    | 30.08.2026 | EFN, EIV submission and certificate delivery verified                   |
+| **M4 · Launch**           | 06.09.2026 | Live on Hetzner, admin console handed over, security review signed off  |
 
 ## 11. Risks against the fixed date
 
-| Risk | Mitigation |
-|---|---|
-| EIV credentials arrive late or the API differs from its documentation | Harness + mock in week 1; hard checkpoint in week 4; launch-with-queued-submissions fallback |
-| 140 h is tight against 337 h of ideal scope | Contractual deferred list; admin console (18 h) is the declared trade lever; weekly demos surface drift immediately |
-| Widget styling clashes with the MEDICE theme | Shadow DOM isolation proven on the real site in week 2, not on a clone |
-| 80 % vs 100 % video rule contradiction between layout and MEDICE-292 | Rule is configurable; written confirmation needed before week 5; layout copy corrected to match |
-| WordPress token endpoint changes touch a production plugin | Additive change only, nonce-protected, behind a feature flag, reviewed with the MEDICE team |
-| Content not ready for launch | Seed course from week 1; MEDICE content deadline set for week 5 |
+| Risk                                                                  | Mitigation                                                                                                          |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| EIV credentials arrive late or the API differs from its documentation | Harness + mock in week 1; hard checkpoint in week 4; launch-with-queued-submissions fallback                        |
+| 140 h is tight against 337 h of ideal scope                           | Contractual deferred list; admin console (18 h) is the declared trade lever; weekly demos surface drift immediately |
+| Widget styling clashes with the MEDICE theme                          | Shadow DOM isolation proven on the real site in week 2, not on a clone                                              |
+| 80 % vs 100 % video rule contradiction between layout and MEDICE-292  | Rule is configurable; written confirmation needed before week 5; layout copy corrected to match                     |
+| WordPress token endpoint changes touch a production plugin            | Additive change only, nonce-protected, behind a feature flag, reviewed with the MEDICE team                         |
+| Content not ready for launch                                          | Seed course from week 1; MEDICE content deadline set for week 5                                                     |
 
 ## 12. Open items
 
@@ -312,12 +312,12 @@ plan owner.
    28 h. §9 schedules P2 for 14 h (week 2 only) and P5 for 31 h
    (2 + 1 + 10 + 13 + 5). Net +1 h over budget, with P2 — the phase carrying
    tenant isolation and RLS — 2 h short of its own budget.
-   *Recommendation:* restore P2 to 16 h and take 3 h out of P5 polish surface.
+   _Recommendation:_ restore P2 to 16 h and take 3 h out of P5 polish surface.
 
 2. **The EIV escalation date contradicts itself.** §7 of the Confluence page says
    "if they have not arrived by week 4 (17.08)"; §9 and §12 put the hard
-   checkpoint at the *end* of week 4, 23.08. A week of difference on the only
-   externally-dependent risk. *This file uses 23.08* per §9/§12.
+   checkpoint at the _end_ of week 4, 23.08. A week of difference on the only
+   externally-dependent risk. _This file uses 23.08_ per §9/§12.
 
 3. **The WordPress plugin repository is not yet accessible.** P6 depends on an
    additive token endpoint in `keycloakWordPressPlugin` / `class-keycloak.php`.

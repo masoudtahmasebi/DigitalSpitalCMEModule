@@ -3,20 +3,20 @@
 One file per phase. Each file is an **Epic**; each entry inside it is a **Task**
 written so it can be handed to Claude Code verbatim.
 
-| Phase | File | Budget | Weeks |
-|---|---|---|---|
-| P0 · Foundations & AI-first setup | [P0.md](P0.md) | 10 h | 1 |
-| P1 · Auth & user profile | [P1.md](P1.md) | 10 h | 1–2 |
-| P2 · Backend core: hierarchy & catalog | [P2.md](P2.md) | 16 h | 2 |
-| P3 · Learning engine | [P3.md](P3.md) | 14 h | 3 |
-| P4 · Assessment & evaluation | [P4.md](P4.md) | 10 h | 4 |
-| P5 · Learner frontend widget | [P5.md](P5.md) | 28 h | 1–5 |
-| P6 · WordPress integration | [P6.md](P6.md) | 5 h | 2 |
-| P7 · EIV-FOBI & EFN | [P7.md](P7.md) | 12 h | 1, 5 |
-| P8 · Certificates & email | [P8.md](P8.md) | 7 h | 5 |
-| P9 · Admin console | [P9.md](P9.md) | 18 h | 5–6 |
-| P10 · Hardening, Hetzner deploy & launch | [P10.md](P10.md) | 10 h | 6 |
-| **Total** | | **140 h** | |
+| Phase                                    | File             | Budget    | Weeks |
+| ---------------------------------------- | ---------------- | --------- | ----- |
+| P0 · Foundations & AI-first setup        | [P0.md](P0.md)   | 10 h      | 1     |
+| P1 · Auth & user profile                 | [P1.md](P1.md)   | 10 h      | 1–2   |
+| P2 · Backend core: hierarchy & catalog   | [P2.md](P2.md)   | 16 h      | 2     |
+| P3 · Learning engine                     | [P3.md](P3.md)   | 14 h      | 3     |
+| P4 · Assessment & evaluation             | [P4.md](P4.md)   | 10 h      | 4     |
+| P5 · Learner frontend widget             | [P5.md](P5.md)   | 28 h      | 1–5   |
+| P6 · WordPress integration               | [P6.md](P6.md)   | 5 h       | 2     |
+| P7 · EIV-FOBI & EFN                      | [P7.md](P7.md)   | 12 h      | 1, 5  |
+| P8 · Certificates & email                | [P8.md](P8.md)   | 7 h       | 5     |
+| P9 · Admin console                       | [P9.md](P9.md)   | 18 h      | 5–6   |
+| P10 · Hardening, Hetzner deploy & launch | [P10.md](P10.md) | 10 h      | 6     |
+| **Total**                                |                  | **140 h** |       |
 
 ## Global definition of done
 
@@ -45,7 +45,7 @@ bug. These PRs carry the `needs-human-review` label and are never self-merged.
 
 ## Estimating convention
 
-Hours are *elapsed engineering hours including review*, not ideal coding time.
+Hours are _elapsed engineering hours including review_, not ideal coding time.
 They are budget allocations, not predictions: a task that comes in under
 estimate does not release its remainder to another phase, because the 140 h
 total is what was sold.

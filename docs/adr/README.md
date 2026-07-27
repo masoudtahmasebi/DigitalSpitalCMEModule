@@ -12,13 +12,13 @@ advertisement.
 
 ## Index
 
-| ADR | Title | Status |
-|---|---|---|
-| [0001](0001-monorepo-and-stack.md) | Monorepo and technology stack | Accepted |
-| [0002](0002-tenant-isolation-rls.md) | Tenant isolation via PostgreSQL row-level security | Accepted |
-| [0003](0003-keycloak-session-bridge.md) | WordPress ↔ Keycloak session bridge | Accepted |
-| [0004](0004-efn-system-of-record.md) | EFN is stored in our PostgreSQL as system of record | Accepted |
-| [0005](0005-eiv-contract-first.md) | EIV-FOBI integration is built contract-first, behind a harness | Accepted |
+| ADR                                     | Title                                                          | Status   |
+| --------------------------------------- | -------------------------------------------------------------- | -------- |
+| [0001](0001-monorepo-and-stack.md)      | Monorepo and technology stack                                  | Accepted |
+| [0002](0002-tenant-isolation-rls.md)    | Tenant isolation via PostgreSQL row-level security             | Accepted |
+| [0003](0003-keycloak-session-bridge.md) | WordPress ↔ Keycloak session bridge                            | Accepted |
+| [0004](0004-efn-system-of-record.md)    | EFN is stored in our PostgreSQL as system of record            | Accepted |
+| [0005](0005-eiv-contract-first.md)      | EIV-FOBI integration is built contract-first, behind a harness | Accepted |
 
 ## Writing a new one
 

@@ -7,7 +7,7 @@
 
 ## Context
 
-The EFN (*Einheitliche Fortbildungsnummer*) is the 15-digit identifier that ties a
+The EFN (_Einheitliche Fortbildungsnummer_) is the 15-digit identifier that ties a
 physician to their continuing-education account at the Landesärztekammer. Without
 it, a completed course cannot be reported to EIV-FOBI and the learner does not
 receive their CME points. It is the single most important user-supplied datum in

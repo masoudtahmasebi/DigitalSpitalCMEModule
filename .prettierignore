@@ -1,0 +1,7 @@
+pnpm-lock.yaml
+dist/
+build/
+coverage/
+.turbo/
+packages/sdk/src/generated/
+infra/keycloak/realm-export.json

@@ -1,0 +1,113 @@
+/**
+ * Calendar arithmetic in Europe/Berlin.
+ *
+ * EIV deadlines are expressed in **calendar days** ("within 8 days of the event
+ * end"), which is not the same as adding 8 × 24 h to an instant. Across a
+ * German DST transition those two readings differ by an hour, and for an event
+ * ending near midnight that hour moves the deadline onto a different calendar
+ * day — turning a compliant submission into a late one, or the reverse.
+ *
+ * So days are added on the Berlin calendar and only then converted back to an
+ * instant. `Intl` is used for the zone rules; it is deterministic given its
+ * inputs and reads no clock, so the purity guarantee of this package holds.
+ */
+
+const BERLIN = "Europe/Berlin";
+
+const PARTS = new Intl.DateTimeFormat("en-US", {
+  timeZone: BERLIN,
+  hour12: false,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
+export interface BerlinDate {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+}
+
+/** The Berlin calendar date an instant falls on. */
+export function berlinDateOf(instant: Date): BerlinDate {
+  const parts = readParts(instant);
+  return { year: parts.year, month: parts.month, day: parts.day };
+}
+
+/** Add whole calendar days, letting the Date constructor normalise overflow. */
+export function addCalendarDays(date: BerlinDate, days: number): BerlinDate {
+  const shifted = new Date(Date.UTC(date.year, date.month - 1, date.day + days));
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+  };
+}
+
+/**
+ * The last instant of a Berlin calendar day, as UTC.
+ *
+ * Berlin's offset is itself a function of the instant, so this resolves by
+ * applying the offset and re-checking — two passes settle every case including
+ * the transition days themselves.
+ */
+export function endOfBerlinDay(date: BerlinDate): Date {
+  const wallClock = Date.UTC(date.year, date.month - 1, date.day, 23, 59, 59, 999);
+
+  let instant = new Date(wallClock - offsetMsAt(new Date(wallClock)));
+  instant = new Date(wallClock - offsetMsAt(instant));
+
+  return instant;
+}
+
+/** Berlin's UTC offset in milliseconds at a given instant. */
+function offsetMsAt(instant: Date): number {
+  const parts = readParts(instant);
+  // Intl formats to second precision, so the instant's own milliseconds are
+  // carried through — otherwise the offset absorbs them and every result lands
+  // up to 999 ms late.
+  const asIfUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+    instant.getUTCMilliseconds(),
+  );
+  return asIfUtc - instant.getTime();
+}
+
+interface Parts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+}
+
+function readParts(instant: Date): Parts {
+  const parsed: Record<string, number> = {};
+
+  for (const part of PARTS.formatToParts(instant)) {
+    if (part.type !== "literal") {
+      parsed[part.type] = Number(part.value);
+    }
+  }
+
+  return {
+    year: parsed["year"] ?? 0,
+    month: parsed["month"] ?? 1,
+    day: parsed["day"] ?? 1,
+    // Under hour12: false, midnight formats as 24 in some ICU versions. The
+    // normalisation applies to the hour alone — applying it to the date fields
+    // would corrupt them.
+    hour: (parsed["hour"] ?? 0) % 24,
+    minute: parsed["minute"] ?? 0,
+    second: parsed["second"] ?? 0,
+  };
+}

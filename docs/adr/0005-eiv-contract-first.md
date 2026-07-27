@@ -7,7 +7,7 @@
 
 ## Context
 
-EIV-FOBI is the accreditation interface that receives *Punktemeldungen* — the
+EIV-FOBI is the accreditation interface that receives _Punktemeldungen_ — the
 report that a named physician (by EFN) participated in an accredited event (by
 VNR). It is the only external, legally binding interface in the system.
 
@@ -100,7 +100,7 @@ afterthought.
 
 **Negative**
 
-- The mock is built from documentation, so it encodes our *assumptions*. A
+- The mock is built from documentation, so it encodes our _assumptions_. A
   divergence in the real API will still require changes — the harness shortens the
   discovery, it does not eliminate the work. The mock must be corrected to match
   reality once observed, or it becomes actively misleading.
