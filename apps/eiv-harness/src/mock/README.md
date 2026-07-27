@@ -6,6 +6,23 @@ assumption, and it is written out field by field so that the first run against
 the real sandbox or live endpoint produces a **diff** rather than an
 investigation (ADR-0005).
 
+## The real endpoint
+
+The Anerkennungsbescheid (ÄKWL, 18.06.2026) names it:
+
+> Mit der Anerkennung verpflichtet sich der Veranstaltende, die
+> Fortbildungspunkte der Teilnehmenden … unter **https://punktemeldung.eiv-fobi.de/**
+> direkt an den Elektronischen Informationsverteiler (EIV) der Bundesärztekammer
+> zu melden.
+
+So the **host** is settled. The **paths beneath it** (A1, B1) are still
+unverified — the Bescheid names the service, not its API surface.
+
+This is deliberately **not** the default `EIV_BASE_URL`. The harness refuses any
+non-local host without `EIV_ALLOW_LIVE=yes`, because the configured VNR belongs
+to a real accredited event and a submission there creates a genuine
+Punktemeldung for a real physician.
+
 When reality is observed, correct this mock immediately. A mock that disagrees
 with the real interface is worse than no mock, because the test suite then
 actively asserts the wrong behaviour.
@@ -50,11 +67,27 @@ actively asserts the wrong behaviour.
 
 ### Not modelled at all
 
-- **Corrections.** The 7-day correction window is a documented rule, but the
-  mechanism for submitting a correction — a different endpoint, a flag, a
-  re-POST — is unknown. `packages/domain` computes the window; nothing yet
-  performs a correction.
+- **Corrections.** The 7-day correction window is confirmed by the Bescheid
+  ("Nach erstmaliger Meldung an den EIV besteht eine 7-Tage-Frist für etwaige
+  Korrekturen und Ergänzungen"), but the **mechanism** — a different endpoint, a
+  flag, a re-POST — is unknown. `packages/domain` computes the window; nothing
+  yet performs a correction.
 - Rate limits, pagination, bulk submission, event metadata beyond the VNR.
+
+### The open question the mock cannot answer
+
+**What is `Veranstaltungsende` for an on-demand course?** The reporting clock
+runs 8 days from it, and the Bescheid says the Fortbildungsmaßnahme is _am
+13.10.2025_, valid _13.10.2025 – 12.10.2026_. Three readings, with wildly
+different consequences:
+
+- the **participant's completion date** — the only one that works operationally;
+- **13.10.2025** — every submission is then already years late;
+- **12.10.2026** — nothing may be reported until the validity window ends.
+
+`eivDeadlines(eventEndAt, …)` takes this as an argument, so the code is
+indifferent. We still do not know what to pass. `CLAUDE.md` §7: do not guess on
+compliance semantics — this is a question for the Ärztekammer.
 
 ## Forcing failures
 

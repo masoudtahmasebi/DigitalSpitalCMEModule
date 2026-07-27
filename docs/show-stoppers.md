@@ -5,90 +5,120 @@ team's control**: it needs a decision, an asset, or an answer from a third
 party. Ordered by the date it stops being fixable.
 
 Nothing in this list is a reason to pause development — the week-1 work is done
-and week 2 can start. But items S1–S4 each have a date after which the launch
-on **06.09.2026** is at risk.
+and week 2 can start. But **S11, S12, S2, S3 and S4** each have a date after
+which the launch on **06.09.2026** is at risk.
 
-| #   | Item                                                                           | Blocks       | Needed by | Owner              |
-| --- | ------------------------------------------------------------------------------ | ------------ | --------- | ------------------ |
-| S1  | Repository write access for this session                                       | All delivery | **now**   | DigitalSpital      |
-| S2  | Where the WP Keycloak plugin stores the access token, and whether it refreshes | M1 · 09.08   | **31.07** | MEDICE dev         |
-| S3  | WordPress repository access                                                    | M1 · 09.08   | **31.07** | MEDICE             |
-| S4  | Scope decision on 4 layout features not in the 140 h                           | M2 · 23.08   | **06.08** | PM + DigitalSpital |
-| S5  | Certificate-after-EIV vs the launch fallback                                   | M3 · 30.08   | 14.08     | PM + MEDICE        |
-| S6  | Signature/stamp asset + Ärztekammer answer on digital certificates             | M3 · 30.08   | 21.08     | MEDICE             |
-| S7  | `required_watch_percent`: 80 % or 100 %, in writing                            | M2 · 23.08   | 14.08     | MEDICE             |
-| S8  | ADHS SMTP configuration, and which MEDICE account sends                        | M3 · 30.08   | 21.08     | MEDICE             |
-| S9  | Hetzner account ownership and DNS                                              | M4 · 06.09   | 24.08     | DigitalSpital      |
-| S10 | VNR password was shared over chat                                              | —            | now       | DigitalSpital      |
+**Three of these are questions for the Ärztekammer** (S11, S12, and half of S13)
+and they all arise from the Anerkennungsbescheid. They can go in one email to
+`zertifizierung@aekwl.de` — doing that today is the highest-value hour available
+this week, because S11 in particular has no engineering workaround.
 
----
-
-## S1 · This session cannot write to the repository — **blocking now**
-
-Four commits exist locally and **none of them are on GitHub**. Both write paths
-are denied:
-
-- `git push` → `403` from the session's git proxy (reads work; writes do not).
-- GitHub API `push_files` → `403 Resource not accessible by integration`.
-
-The GitHub App backing this session has **read-only** access to
-`masoudtahmasebi/DigitalSpitalCMEModule`. An admin needs to grant write
-(contents: read **and write**) in the Claude GitHub settings —
-<https://claude.ai/admin-settings/claude-in-slack>.
-
-Until then the work exists only in this container, which is ephemeral. This is
-the single most urgent item on the list.
-
-**Commits waiting to be pushed**
-
-| Commit  | Contents                                                                         |
-| ------- | -------------------------------------------------------------------------------- |
-| `P0-01` | CLAUDE.md, roadmap, 5 ADRs, 68 work orders across P0–P10 totalling exactly 140 h |
-| `P0-02` | pnpm/turborepo monorepo, CI, and `packages/domain` with 102 passing tests        |
-| `P7-01` | EIV harness, mock server, and the MEDICE requirements record                     |
-| `P0-03` | docker-compose, Keycloak dev realm, schema v1 with RLS on 18 tables              |
+| #      | Item                                                                   | Blocks           | Needed by | Owner              |
+| ------ | ---------------------------------------------------------------------- | ---------------- | --------- | ------------------ |
+| S11    | **What is `Veranstaltungsende` for an on-demand course?**              | M3 · 30.08       | **07.08** | ÄKWL               |
+| S12    | **"Originalstempel" may invalidate an emailed certificate**            | M3 · 30.08       | **14.08** | ÄKWL               |
+| S2     | Whether the WP plugin persists a refresh token, and the token lifespan | M1 · 09.08       | **31.07** | MEDICE dev         |
+| S3     | WordPress repository access                                            | M1 · 09.08       | **31.07** | MEDICE             |
+| S4     | Scope decision on 4 layout features not in the 140 h                   | M2 · 23.08       | **06.08** | PM + DigitalSpital |
+| S13    | Certificate needs `Anschrift` and two VNR barcodes                     | M3 · 30.08       | 14.08     | PM + ÄKWL          |
+| S5     | Certificate-after-EIV vs the launch fallback                           | M3 · 30.08       | 14.08     | PM + MEDICE        |
+| S7     | `required_watch_percent`: 80 % or 100 %, in writing                    | M2 · 23.08       | 14.08     | MEDICE             |
+| S6     | Signature/stamp asset                                                  | M3 · 30.08       | 21.08     | MEDICE             |
+| S8     | ADHS SMTP configuration, and which MEDICE account sends                | M3 · 30.08       | 21.08     | MEDICE             |
+| S14    | Accreditation expires 12.10.2026; platform change must be notified     | post-launch      | 24.08     | MEDICE             |
+| S9     | Hetzner account ownership and DNS                                      | M4 · 06.09       | 24.08     | DigitalSpital      |
+| S10    | VNR password was shared over chat                                      | —                | now       | DigitalSpital      |
+| ~~S1~~ | ~~Repository write access~~                                            | **CLOSED 27.07** | —         | —                  |
 
 ---
 
-## S2 · The WordPress Keycloak plugin may not hold a refreshable token — **new, and serious**
+## S11 · What is `Veranstaltungsende` for an on-demand course? — **ask the ÄKWL first**
 
-The supplied `Keycloak` class changes the risk picture for the whole session
-bridge (ADR-0003). Three findings from the code itself:
+The single most consequential unknown in the project, and it comes straight out
+of the Anerkennungsbescheid.
 
-**a) No token storage is visible.** `getAccessTokenByUnamePass()` returns the
-full token response to its caller, and `getUserInfoByToken()` takes a token as
-an argument. Nothing in the supplied class **persists** the access token. Our
-token endpoint (P6-02) can only return a token that is actually stored
-somewhere the request can reach.
+The reporting clock runs **8 days from Veranstaltungsende**. The Bescheid says
+the Fortbildungsmaßnahme is _am 13.10.2025_ and valid _13.10.2025 – 12.10.2026_.
+For a course that participants take on demand across a year, three readings are
+possible and they are not close together:
 
-> **Question for MEDICE dev:** where is `access_token` persisted after login —
-> PHP session, cookie, user meta, transient? We need the exact storage location
-> and its lifetime.
+| Reading                               | Consequence                                               |
+| ------------------------------------- | --------------------------------------------------------- |
+| The participant's **completion date** | Works. The only operationally sensible one.               |
+| **13.10.2025**                        | Every submission is already years past deadline.          |
+| **12.10.2026**                        | Nothing may be reported until the validity window closes. |
 
-**b) No refresh handling is visible.** The plugin uses the **password grant**
-(`grant_type=password`) and requests `offline_access` scope, so a refresh token
-is very likely returned — but nothing in the supplied code stores or uses it.
+`eivDeadlines(eventEndAt, …)` takes this as an argument, so the implementation is
+already indifferent to the answer — but **we do not know what value to pass**, and
+the wrong one means either rejected submissions or a missed statutory deadline
+for every learner.
 
-This matters more than it looks. A Keycloak access token typically lives ~5
-minutes. Our learner watches a 25-minute video. ADR-0003 and P5-02 both assume
-the widget can refresh mid-video "so the learner never sees an interruption". If
-the plugin holds only a short-lived access token and no refresh path, then
-**either** the learner's session dies mid-video, **or** we build refresh into the
-production plugin — which is a materially bigger change than the "one small
-additive endpoint" the roadmap costs at 5 h.
+`CLAUDE.md` §7: do not guess on compliance semantics. **This must be settled
+before any live submission**, and it is a one-line question to
+`zertifizierung@aekwl.de` / 0251 929-2244.
 
-> **Question:** is the refresh token stored? Is there existing refresh logic
-> elsewhere in the plugin? What is the realm's access-token lifespan?
+---
+
+## S12 · "Originalstempel" may invalidate an emailed certificate
+
+The Teilnahmebescheinigung Muster carries this clause:
+
+> _Diese Bescheinigung ist nur vollständig ausgefüllt und mit **Originalstempel**
+> des ärztlichen Antragstellenden oder der ärztlichen Leitung der
+> Fortbildungsmaßnahme gültig._
+
+And the Bescheid body repeats it: certificates _"sind mit dem Stempel der
+Wissenschaftlichen Leitung zu versehen und von diesem zu unterzeichnen"_.
+
+An emailed PDF with an embedded stamp image is arguably not an _Originalstempel_.
+If the ÄKWL reads it strictly, **P8 (7 h) produces a document that is not valid**,
+and MEDICE is back to stamping by hand — which removes the automated delivery the
+feature exists for.
+
+This subsumes the client's own open question about digital certificates, and it
+outranks the stamp-asset question (S6): the answer determines whether the asset
+matters at all.
+
+**Do not build P8 until this is answered.**
+
+---
+
+## S2 · Does the WordPress plugin persist a refresh token? — narrowed, not closed
+
+The MEDICE developer confirms the token is **held in the session**, and expects a
+refresh token exists "since this is an OAuth method". That closes finding (a)
+below and narrows the risk from _unknown_ to _unconfirmed_. Two questions still
+decide P6's 5 h estimate.
+
+**a) Token storage — answered.** Held in the PHP session. The supplied `Keycloak`
+class does not show it, but the developer confirms it.
+
+**b) Refresh — still unconfirmed, and this is the one that matters.** The plugin
+uses the **password grant** (`grant_type=password`) and requests `offline_access`,
+so a refresh token is very likely _returned_. Nothing in the supplied code
+**stores or uses** it. "OAuth usually has one" is not the same as "this plugin
+keeps it".
+
+> **Two questions for the MEDICE developer:**
+>
+> 1. Is the **refresh token** written into the session alongside the access
+>    token, and is there existing refresh logic anywhere in the plugin?
+> 2. What is the realm's **access-token lifespan**?
+
+Question 2 is why this still matters. At Keycloak's default of five minutes, a
+25-minute video outlives the token four times over. ADR-0003 and P5-02 both
+promise the learner is never interrupted mid-video. Without a stored refresh
+token, either the session dies mid-video or we build refresh into a production
+plugin — materially more than the "one small additive endpoint" P6 is costed at.
 
 **c) The class shown is not the whole plugin.** `private static $session_init`
 implies session handling in code we have not seen, and there is no `wp_login`
 hook, no cookie-setting and no `class-keycloak.php` body here. We are reasoning
-about roughly a third of the integration surface.
+about roughly a third of the integration surface — another reason S3 matters.
 
 **Impact if unanswered:** P6 is estimated at 5 h on the assumption that the
 integration is one nonce-protected endpoint returning an already-stored token.
-If storage or refresh has to be built, that estimate is wrong, and M1 on
-**09.08** is the milestone that slips.
+If refresh has to be built, that estimate is wrong, and M1 on **09.08** slips.
 
 ---
 
@@ -160,21 +190,19 @@ still be coherent.
 
 ---
 
-## S6 · Certificate assets and the Ärztekammer answer
+## S6 · The stamp and signature asset
 
-- The **stamp and signature of the Scientific Director** must be supplied as a
-  digital asset. Open question in the client's own ticket: how it is represented
-  digitally.
-- **Inquiry to the Ärztekammer is pending** on whether automatically generated,
-  digitally delivered certificates have specific requirements. If the answer is
-  that a qualified electronic signature is required, that is a different feature
-  from embedding an image, and it is not in the 140 h.
-- The Anerkennungsbescheid PDF was supplied but **could not be read in this
-  environment** (no PDF rendering available), so the certificate field list in
-  `docs/requirements/medice-adhs.md` §2 is built from the ticket text alone.
-  It needs checking against the actual Bescheid — in particular the exact CME
-  points, category, event title and location, since the mandatory sentence
-  embeds the point count and category verbatim.
+The **stamp and signature of the Wissenschaftliche Leitung** must be supplied as
+a digital asset before P8 in week 5.
+
+Deliberately ranked **below S12**: if the ÄKWL says an emailed PDF cannot satisfy
+the Originalstempel clause, the format of the asset is moot. Ask S12 first, then
+this.
+
+The Anerkennungsbescheid has now been read, and
+`docs/requirements/medice-adhs.md` §2 is rebuilt from it rather than from ticket
+text — course title, points, category, Veranstalter, Ort and the mandatory
+sentence are all confirmed against the source.
 
 ---
 
@@ -220,9 +248,81 @@ store, never in a ticket or chat thread.
 
 ---
 
+## S13 · The certificate needs an address and two barcodes
+
+Both come from the Teilnahmebescheinigung Muster, and neither is in the plan.
+
+**`Anschrift:`** — the participant's postal address. We hold name and EFN and
+deliberately nothing more (ADR-0004 keeps the personal-data footprint minimal).
+Collecting an address adds a field, a capture step, a lawful-basis and retention
+decision, and more to erase on a subject request. **+2 h** across P1, P5 and P8.
+
+_Ask the ÄKWL whether a blank `Anschrift` is acceptable for an online on-demand
+format before building it_ — the field exists for postal delivery, which does not
+apply here.
+
+**Two barcodes of the VNR** — `VNR (Code 39)` and `VNR (Datamatrix, App*)`, with
+_"Felder bitte nicht überkleben"_. The Datamatrix is what the Ärztekammer's own
+app scans, so it is functional, not decorative. Needs a barcode library in the
+PDF pipeline: **+2 h** in P8. In scope — without them the certificate does not
+match the Muster.
+
+---
+
+## S14 · Accreditation expires 12.10.2026, and changes must be notified
+
+Two obligations from the Bescheid that outlive the project:
+
+**Expiry.** Valid _13.10.2025 – 12.10.2026_ — five weeks after launch.
+_"Für die folgende Zeit ist ggf. ein Antrag auf Verlängerung bei der ÄKWL zu
+stellen. Für eine Verlängerung fallen keine Verwaltungsgebühren an."_ Free, but
+somebody has to file it, and CME points stop being awardable if nobody does.
+
+**Change notification.** _"Sollten sich nach der Anerkennung Änderungen jeglicher
+Art an der Fortbildungsmaßnahme ergeben (z. B. Ausfälle, Umwandlung in ein
+Online-Format, zeitliche oder inhaltliche Änderungen), sind diese in jedem Fall
+zeitnah schriftlich der ÄKWL mitzuteilen, da die Anerkennung einer
+Fortbildungsmaßnahme bei Änderungen nicht automatisch bestehen bleibt."_
+
+Moving this course onto a new platform is plausibly such a change. A proactive
+note to the ÄKWL costs nothing; discovering after launch that the accreditation
+lapsed would be expensive.
+
+---
+
+## Useful: the Bescheid describes a paper fallback
+
+Worth knowing because it is the real destination of P7-07's permanent-failure
+escalation, which currently says only "a human pursues it":
+
+> Ist in **schriftlich zu begründenden Ausnahmefällen** eine elektronische
+> Datenübermittlung durch den Veranstaltenden nicht möglich, bietet die
+> Ärztekammer Westfalen-Lippe den Service an, die Punktemeldung an den EIV
+> vorzunehmen.
+
+Conditions: the Anwesenheitsliste per the supplied Muster must have been used
+with participants registered by EFN, and the **Original** list must reach the
+ÄKWL within **8 days** of Veranstaltungsende — no copy, no fax.
+
+This should be named explicitly in the P10-07 runbook.
+
+---
+
 ## What is not blocked
 
 Week 2 can start on schedule. P1 (auth), P2 (hierarchy, catalog, RLS) and the
-OpenAPI contract need none of the above. The only week-2 item that is blocked is
-**P6, the WordPress bridge** — which is precisely the item M1 is defined by, and
-why S2 and S3 are the two to chase first.
+OpenAPI contract need none of the above.
+
+Two items are blocked, and they are different in kind:
+
+- **P6, the WordPress bridge** — S2 and S3. This is the item M1 is defined by, so
+  chase these first for schedule reasons.
+- **P8, the certificate** — S12, and to a lesser extent S13. Do not start
+  building until the ÄKWL answers whether an emailed PDF can be valid at all;
+  building a barcode pipeline and an address capture flow for a document that may
+  need a wet stamp is the wrong order.
+
+**S11 outranks everything on this list for consequence**, even though it blocks
+no code: `eivDeadlines` already takes the date as an argument, so nothing waits
+on it — but passing the wrong value means every learner's CME points miss their
+statutory deadline. It is one question to `zertifizierung@aekwl.de`.

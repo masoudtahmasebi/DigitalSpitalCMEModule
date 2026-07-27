@@ -90,48 +90,123 @@ learner-supplied EFN there and check it for an existing value to pre-fill.
 
 ## 2. Certificate (Teilnahmebescheinigung)
 
-Sent automatically by email from a MEDICE email account after the learner passes
-**and the data has been transmitted to EIV**.
+**Source: the Anerkennungsbescheid itself** (Ärztekammer Westfalen-Lippe,
+Münster, 18.06.2026, Zeichen `/bur`, addressed to Christian Herder at Medice
+Arzneimittel Pütter GmbH & Co. KG). This section supersedes the earlier version
+built from the ticket text alone.
 
-### Mandatory content — Ärztekammer Westfalen-Lippe
+### The accreditation
 
-1. Event number (VNR)
-2. Event title
-3. Event date and time — the completion timestamp
-4. **Event location**
-5. **Organizer (MEDICE)**
-6. CME points and category — e.g. 4 points, Category D
-7. Participant name
-8. Stamp and signature of the Scientific Director (MEDICE)
-9. This exact sentence:
+| Field                | Value                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------- |
+| Fortbildungsmaßnahme | **"ADHS Akademie adult"**                                                                             |
+| VNR                  | `2760552025919300018`                                                                                 |
+| Veranstalter         | Medice Arzneimittel Pütter GmbH & Co. KG, Iserlohn                                                    |
+| Termin               | 13.10.2025                                                                                            |
+| Form / Ort           | Fortbildungsbeiträge in Printmedien oder als elektronisch verfügbare Version (inkl. LEK) / **online** |
+| Bewertung            | **4 Fortbildungspunkte, Kategorie D**                                                                 |
+| Gültigkeit           | **13.10.2025 – 12.10.2026**                                                                           |
+| Accreditation body   | Ärztekammer Westfalen-Lippe                                                                           |
 
-   > Die Veranstaltung ist im Rahmen der Zertifizierung der ärztlichen
-   > Fortbildung der Ärztekammer Westfalen-Lippe mit 4 Punkten (Kategorie D)
-   > anrechenbar.
+Two obligations attached to the Bescheid that are not certificate content but
+bind the project:
 
-Items 4, 5 and 9 were **not** in the P8-01 field list and are added by this
-record. The accreditation body is **Ärztekammer Westfalen-Lippe**.
+- **The 70 % threshold is an accreditation condition, not a preference.**
+  _"Voraussetzung für die Punktevergaben ist, das der Anteil der richtig
+  beantworteten Fragen im Rahmen der Lernerfolgskontrolle mindestens 70 %
+  beträgt."_ `pass_threshold_percent` stays configurable per course, but for this
+  course lowering it voids the accreditation.
+- **Changes must be reported in writing.** _"Sollten sich nach der Anerkennung
+  Änderungen jeglicher Art an der Fortbildungsmaßnahme ergeben (z. B. Ausfälle,
+  Umwandlung in ein Online-Format, zeitliche oder inhaltliche Änderungen), sind
+  diese in jedem Fall zeitnah schriftlich der ÄKWL mitzuteilen, da die
+  Anerkennung … bei Änderungen nicht automatisch bestehen bleibt."_ Migrating
+  this course onto a new platform is plausibly such a change.
 
-Note that the mandatory sentence embeds the point count and category, so it is a
-template with substitutions rather than a fixed string — a course with different
-accreditation must not emit "4 Punkten (Kategorie D)".
+### Mandatory content
+
+The Bescheid states the minimum set:
+
+> Eine Teilnahmebescheinigung muss mindestens folgende Angaben enthalten:
+> Veranstaltungsnummer (VNR), -titel, -datum, -uhrzeit, -ort, Veranstalter,
+> Punkte und Kategorie sowie den Namen des Teilnehmenden.
+
+1. VNR
+2. Veranstaltungstitel
+3. Veranstaltungsdatum
+4. Veranstaltungsuhrzeit — **date _and_ time**, so the completion timestamp
+   must render both
+5. Veranstaltungsort
+6. Veranstalter
+7. Punkte und Kategorie
+8. Name des Teilnehmenden
+
+Plus, from the same paragraph:
+
+> Die Teilnahmebescheinigungen sind mit dem **Stempel der Wissenschaftlichen
+> Leitung** zu versehen und von diesem zu **unterzeichnen**.
+
+And the mandatory wording, which the Bescheid asks be reproduced verbatim:
+
+> **Die Veranstaltung ist im Rahmen der Zertifizierung der ärztlichen Fortbildung
+> der Ärztekammer Westfalen-Lippe mit 4 Punkten (Kategorie D) anrechenbar.**
+
+The sentence embeds the point count and category, so it is a template with
+substitutions — a course with different accreditation must not emit
+"4 Punkten (Kategorie D)".
+
+### What the Muster (page 4) adds beyond that list
+
+Three things appear on the supplied template that the prose list does not
+mention, and all three are new scope:
+
+- **`Anschrift:`** — the participant's **postal address**. We collect name and
+  EFN and nothing else. See §6.8.
+- **The VNR as two barcodes** — labelled `VNR (Code 39)` and
+  `VNR (Datamatrix, App*)`, with the instruction _"Felder bitte nicht
+  überkleben"_. See §6.9.
+- **`als on-demand-Webinar`** as the participation-form wording, and a free
+  `am ______` date line distinct from the Veranstaltungsdatum.
+
+### The validity clause — the serious one
+
+> **Diese Bescheinigung ist nur vollständig ausgefüllt und mit _Originalstempel_
+> des ärztlichen Antragstellenden oder der ärztlichen Leitung der
+> Fortbildungsmaßnahme gültig.**
+
+An emailed PDF carrying an embedded stamp image is arguably not an
+_Originalstempel_. If the ÄKWL reads this strictly, the automated certificate
+does not produce a valid document at all. See §6.7 — this is the single largest
+open risk to P8.
 
 ### Delivery
 
-- PDF built from the Ärztekammer-provided template (certificate is page 4 of
-  that PDF; page 3 shows the intended structure of completed-participant data).
-- Signature and stamp embedded as a digital asset.
-- Emailed from a MEDICE account; retry with exponential backoff on failure.
+- Emailed from a MEDICE account after completion; retry with exponential backoff.
+- Also downloadable (P8-04) — download is the path that still works when email
+  delivery fails, and it answers the client's own open question.
 
-### Open questions
+### Still open
 
-- Does the Ärztekammer impose specific requirements on automatically generated,
-  digitally delivered certificates? **Inquiry pending.**
+- **Does the ÄKWL accept an automatically generated, digitally delivered
+  certificate at all**, given the Originalstempel clause? Inquiry pending.
 - How are the stamp and signature represented digitally?
-- Which MEDICE email account / SMTP server sends?
-- Should the certificate also be downloadable from the profile or course area?
-  (P8-04 assumes yes and builds it — download is the path that still works when
-  email delivery fails.)
+- Which MEDICE account / SMTP server sends?
+- Is a blank `Anschrift` acceptable for an online on-demand format?
+
+### The paper fallback — worth knowing
+
+The Bescheid describes an escalation path we should name in the runbook rather
+than leaving as "a human pursues it":
+
+> Ist in **schriftlich zu begründenden Ausnahmefällen** eine elektronische
+> Datenübermittlung durch den Veranstaltenden nicht möglich, bietet die
+> Ärztekammer Westfalen-Lippe den Service an, die Punktemeldung an den EIV
+> vorzunehmen.
+
+Conditions: the Anwesenheitsliste per the supplied Muster must have been used
+with participants registered by EFN, and the **Original**-Anwesenheitsliste must
+reach the ÄKWL within **8 days** of Veranstaltungsende — no copy, no fax. This
+is the real destination of `P7-07`'s permanent-failure escalation.
 
 ---
 
@@ -231,13 +306,18 @@ Two findings here:
 
 | Setting                              | Value                                                                          |
 | ------------------------------------ | ------------------------------------------------------------------------------ |
-| `pass_threshold_percent`             | 70                                                                             |
+| Course title                         | **"ADHS Akademie adult"** (per the Bescheid)                                   |
+| Veranstalter                         | Medice Arzneimittel Pütter GmbH & Co. KG, Iserlohn                             |
+| Ort                                  | online                                                                         |
+| `pass_threshold_percent`             | 70 — **an accreditation condition, not a preference**                          |
 | `required_watch_percent`             | **still to be confirmed in writing** — layout says 80 %, MEDICE-292 says 100 % |
 | Question count (MEDICE)              | 11, single choice                                                              |
 | Retry policy (MEDICE)                | Unlimited                                                                      |
 | Accreditation body                   | Ärztekammer Westfalen-Lippe                                                    |
-| CME points / category (first course) | 4 points, Kategorie D                                                          |
-| Reporting window                     | 8 days after event end                                                         |
+| CME points / category (first course) | 4 Punkte, Kategorie D                                                          |
+| Accreditation validity               | 13.10.2025 – 12.10.2026                                                        |
+| EIV service                          | `https://punktemeldung.eiv-fobi.de/`                                           |
+| Reporting window                     | 8 days after Veranstaltungsende — **but see §6.10: its value is undefined**    |
 | Correction window                    | 7 days after first submission, then permanently closed                         |
 | EFN format                           | Exactly 15 digits                                                              |
 | Role                                 | `TEILNEHMER`                                                                   |
@@ -321,7 +401,67 @@ The tab requires people with role, institution, photo and biography attached to
 a course. Not in the schema. Roughly +2 h in P2 and P9. In scope, since the tab
 is part of the approved layout.
 
-### 6.7 Salesforce EFN sync needs an estimate
+### 6.7 "Originalstempel" may defeat the automated certificate entirely
+
+The Muster's validity clause requires an **Originalstempel** of the ärztliche
+Leitung. An embedded stamp image in a generated PDF is arguably not that.
+
+If the ÄKWL reads it strictly, P8 (7 h) produces a document that is not valid,
+and MEDICE is back to stamping by hand — which also removes the automated email
+delivery that the feature exists for.
+
+_Recommendation:_ this is the **first** question to put to the ÄKWL, ahead of the
+stamp-asset question, because the answer determines whether the asset matters at
+all. Do not build P8 until it is answered.
+
+### 6.8 The certificate needs the participant's postal address
+
+The Muster has **`Anschrift:`** as a field. We hold name and EFN and deliberately
+nothing more — ADR-0004 keeps the personal-data footprint minimal on purpose.
+
+Collecting a postal address means a new field, a new capture step in the
+completion flow, a lawful-basis and retention decision, and more to erase on a
+subject request. Roughly **+2 h** across P1, P5 and P8.
+
+_Recommendation:_ ask the ÄKWL whether a blank `Anschrift` is acceptable for an
+online on-demand format before building it. The address serves postal delivery,
+which does not apply here.
+
+### 6.9 The certificate must carry the VNR as two barcodes
+
+`VNR (Code 39)` and `VNR (Datamatrix, App*)`, with _"Felder bitte nicht
+überkleben"_ — the Datamatrix is what the Ärztekammer's own app scans, so it is
+functional rather than decorative.
+
+Barcode rendering is not in the plan and needs a library in the PDF pipeline.
+Roughly **+2 h** in P8. In scope: without them the certificate does not match the
+Muster.
+
+### 6.10 `Veranstaltungsende` is undefined for an on-demand course
+
+The 8-day reporting clock runs from Veranstaltungsende. The Bescheid says the
+Maßnahme is _am 13.10.2025_ and valid _13.10.2025 – 12.10.2026_. Three readings:
+
+| Reading                           | Consequence                                               |
+| --------------------------------- | --------------------------------------------------------- |
+| The participant's completion date | Works. The only operationally sensible one.               |
+| 13.10.2025                        | Every submission is already years past its deadline.      |
+| 12.10.2026                        | Nothing may be reported until the validity window closes. |
+
+`eivDeadlines(eventEndAt, …)` takes this as an argument, so the implementation is
+indifferent — but **we do not know what value to pass**, and the wrong one means
+either rejected submissions or a missed statutory deadline.
+
+`CLAUDE.md` §7 is explicit: do not guess on compliance semantics. **Ask the
+ÄKWL.** This must be settled before any live submission, whatever else happens.
+
+### 6.11 Accreditation expires 12.10.2026
+
+Five weeks after launch. _"Für die folgende Zeit ist ggf. ein Antrag auf
+Verlängerung bei der ÄKWL zu stellen. Für eine Verlängerung fallen keine
+Verwaltungsgebühren an."_ Free, but somebody has to file it.
+
+### 6.12 Salesforce EFN sync needs an estimate
 
 Explicitly deferred by roadmap §4 and explicitly requested as an estimate by the
 client. Not started; not costed. Should be quoted separately.
