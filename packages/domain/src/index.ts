@@ -57,5 +57,16 @@ export type {
   CompletionResult,
 } from "./completion.js";
 
+export {
+  buildCertificateData,
+  creditSentence,
+  missingCertificateFields,
+} from "./certificate.js";
+export type {
+  CertificateData,
+  CertificateField,
+  CertificateInput,
+} from "./certificate.js";
+
 export { addCalendarDays, berlinDateOf, endOfBerlinDay } from "./berlin.js";
 export type { BerlinDate } from "./berlin.js";
