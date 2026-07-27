@@ -4,7 +4,7 @@ import {
   generateKeyPair,
   SignJWT,
   type JWK,
-  type KeyLike,
+  type CryptoKey,
   createLocalJWKSet,
 } from "jose";
 import { TokenInvalidError, verifyToken } from "./token-verifier.js";
@@ -13,10 +13,10 @@ const ISSUER = "http://localhost:8080/realms/ds-dev";
 const AUDIENCE = "ds-education-api";
 const OPTIONS = { issuer: ISSUER, audience: AUDIENCE, clockToleranceSec: 5 };
 
-let privateKey: KeyLike;
-let publicKey: KeyLike;
+let privateKey: CryptoKey;
+let publicKey: CryptoKey;
 let jwks: ReturnType<typeof createLocalJWKSet>;
-let otherPrivateKey: KeyLike;
+let otherPrivateKey: CryptoKey;
 
 beforeAll(async () => {
   const pair = await generateKeyPair("RS256");
@@ -37,7 +37,7 @@ async function mint(
     exp?: string | number;
     nbf?: number;
     sub?: string;
-    signWith?: KeyLike;
+    signWith?: CryptoKey;
     alg?: string;
     claims?: Record<string, unknown>;
   } = {},

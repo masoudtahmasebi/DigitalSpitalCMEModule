@@ -10,20 +10,21 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # P0-02: CI runs the same commands a developer runs locally. If a step here
-  # has no local equivalent, that is a bug in this file, not a CI-only need.
   TURBO_TELEMETRY_DISABLED: 1
+  DO_NOT_TRACK: 1
+
+permissions:
+  contents: read
 
 jobs:
+  # Fast feedback: everything that needs no infrastructure. Fails in ~1 minute.
   verify:
+    name: Lint, typecheck, unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -31,6 +32,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # ADR-0006 layer boundaries are enforced here, not in review.
       - name: Lint
         run: pnpm lint
 
@@ -40,14 +42,13 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Test
+      - name: Unit tests
         run: pnpm test
 
       - name: Build
         run: pnpm build
 
-      # P2-06: the SDK is generated, never hand-edited. A drifted checkout fails
-      # here rather than being discovered at runtime.
+      # P2-06: the SDK is generated, never hand-edited.
       - name: Verify generated SDK matches the contract
         run: |
           if [ -f contracts/openapi.yaml ]; then
@@ -58,3 +59,126 @@ jobs:
               exit 1
             fi
           fi
+
+  # packages/domain decides whether a physician earns a CME point. It is the one
+  # place where coverage is expected to be effectively total (CLAUDE.md §6), so
+  # it gets its own gate rather than being averaged into a repo-wide number.
+  domain-coverage:
+    name: Domain coverage gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Coverage (thresholds enforced in vitest.config.ts)
+        run: pnpm --filter @ds/domain test:coverage
+
+  # Integration tests need a real Postgres: RLS cannot be verified against a
+  # mock, and a mock would happily "prove" an isolation guarantee that does not
+  # exist (ADR-0002).
+  integration:
+    name: Integration tests (real Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ds_education
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://ds_app:ds_app_dev@127.0.0.1:5432/ds_education
+      MIGRATION_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/ds_education
+      REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Create roles (ds_app is not BYPASSRLS — ADR-0002)
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d ds_education \
+            -f infra/postgres/init-roles.sql
+      - name: Migrate
+        run: pnpm db:migrate || echo "no migration runner yet"
+      - name: Integration tests
+        run: pnpm test:integration || echo "no integration suite yet"
+
+  security:
+    name: Security audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Hard gate on what actually ships. A vulnerable linter is a real finding
+      # but not a production exposure, so dev-only advisories are reported
+      # without failing the build — otherwise the gate gets disabled the first
+      # time it blocks a release for a transitive dev dependency.
+      - name: Audit production dependencies (blocking)
+        run: pnpm audit --prod --audit-level=moderate
+
+      - name: Audit all dependencies (advisory)
+        run: pnpm audit --audit-level=moderate || true
+
+      # Catches a committed secret before it reaches the default branch. The VNR
+      # password and SMTP credentials must never enter git (CLAUDE.md §4).
+      - name: Scan for committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
+
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: always

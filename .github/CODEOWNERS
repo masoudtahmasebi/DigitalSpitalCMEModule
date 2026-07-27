@@ -1,0 +1,41 @@
+# Code ownership — enforces the human review gate from CLAUDE.md §2.
+#
+# Anything touching auth, assessment, eiv or certificates requires human review
+# before merge. A wrong result in those four areas is a compliance incident, not
+# a bug, so the gate is mechanical rather than a convention someone remembers.
+#
+# Requires "Require review from Code Owners" on the protected branch.
+
+# Default: everything is reviewed.
+*                                       @masoudtahmasebi
+
+# ---------------------------------------------------------------------------
+# The four compliance-critical areas. Never self-merge these.
+# ---------------------------------------------------------------------------
+
+# The pure core decides whether a physician earns a CME point.
+/packages/domain/                       @masoudtahmasebi
+
+# Auth is the trust anchor for the whole system (ADR-0003).
+/apps/api/src/auth/                     @masoudtahmasebi
+
+# Tenant isolation (ADR-0002) — a leak here is a reportable data incident.
+/apps/api/src/db/                       @masoudtahmasebi
+/db/migrations/                         @masoudtahmasebi
+/infra/postgres/                        @masoudtahmasebi
+
+# Assessment, EIV and certificates.
+/apps/api/src/modules/assessment/       @masoudtahmasebi
+/apps/api/src/modules/eiv/              @masoudtahmasebi
+/apps/api/src/modules/certificate/      @masoudtahmasebi
+/apps/eiv-harness/                      @masoudtahmasebi
+
+# ---------------------------------------------------------------------------
+# Guard rails themselves. Weakening these silently is how the rest decays.
+# ---------------------------------------------------------------------------
+/CLAUDE.md                              @masoudtahmasebi
+/CONTRIBUTING.md                        @masoudtahmasebi
+/docs/adr/                              @masoudtahmasebi
+/packages/config/eslint.config.js       @masoudtahmasebi
+/.github/                               @masoudtahmasebi
+/contracts/                             @masoudtahmasebi

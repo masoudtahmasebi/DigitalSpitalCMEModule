@@ -17,9 +17,15 @@
  * criterion), and the Redis-backed cache (P1-03) is injected at the edge.
  */
 
-import { errors, jwtVerify, type JWTPayload, type KeyLike } from "jose";
+import { errors, jwtVerify, type JWTPayload } from "jose";
 
-/** Resolves the signing key for a token's `kid`. Backed by cached JWKS. */
+/**
+ * Resolves the signing key for a token's `kid`. Backed by cached JWKS.
+ *
+ * Derived from `jwtVerify`'s own parameter type rather than naming a concrete
+ * key type: jose 6 removed the `KeyLike` export, and deriving keeps this
+ * correct across future jose majors without another edit here.
+ */
 export type KeyResolver = Parameters<typeof jwtVerify>[1];
 
 export type TokenRejectionReason =
@@ -67,13 +73,13 @@ const ACCEPTED_ALGORITHMS = ["RS256", "RS384", "RS512", "PS256"] as const;
 
 export async function verifyToken(
   token: string,
-  resolveKey: KeyResolver | KeyLike | Uint8Array,
+  resolveKey: KeyResolver,
   options: VerifierOptions,
 ): Promise<VerifiedIdentity> {
   let payload: JWTPayload;
 
   try {
-    const result = await jwtVerify(token, resolveKey as KeyResolver, {
+    const result = await jwtVerify(token, resolveKey, {
       issuer: options.issuer,
       audience: options.audience,
       algorithms: [...ACCEPTED_ALGORITHMS],

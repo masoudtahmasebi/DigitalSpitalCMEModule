@@ -19,6 +19,7 @@ advertisement.
 | [0003](0003-keycloak-session-bridge.md) | WordPress ↔ Keycloak session bridge                            | Accepted |
 | [0004](0004-efn-system-of-record.md)    | EFN is stored in our PostgreSQL as system of record            | Accepted |
 | [0005](0005-eiv-contract-first.md)      | EIV-FOBI integration is built contract-first, behind a harness | Accepted |
+| [0006](0006-layered-architecture.md)    | Enforced layered architecture                                  | Accepted |
 
 ## Writing a new one
 
