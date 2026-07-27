@@ -1,0 +1,102 @@
+{
+  "realm": "ds-dev",
+  "enabled": true,
+  "displayName": "DS Education Platform (dev)",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 300,
+  "roles": {
+    "realm": [
+      { "name": "super_admin", "description": "DigitalSpital, acts as one customer at a time" },
+      { "name": "customer_admin", "description": "Scoped to one customer" },
+      { "name": "department_admin", "description": "Scoped to one department" },
+      { "name": "learner", "description": "Course participant" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "ds-education-api",
+      "name": "DS Education API",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "bearerOnly": false,
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "secret": "ds-education-api-dev-secret",
+      "attributes": {
+        "access.token.lifespan": "300"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-ds-education-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "ds-education-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "ds-widget",
+      "name": "DS learner widget (mirrors the ADHS WordPress client)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://127.0.0.1:*", "http://localhost:*"],
+      "webOrigins": ["*"],
+      "protocolMappers": [
+        {
+          "name": "audience-ds-education-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "ds-education-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "ds-other-audience",
+      "name": "Wrong-audience client, used to prove audience validation works",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "webOrigins": ["*"]
+    }
+  ],
+  "users": [
+    {
+      "username": "dr.mueller",
+      "email": "dr.mueller@example.org",
+      "firstName": "Anna",
+      "lastName": "Müller",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "learner-dev", "temporary": false }],
+      "realmRoles": ["learner"]
+    },
+    {
+      "username": "medice.admin",
+      "email": "admin@medice.example.org",
+      "firstName": "Medice",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "admin-dev", "temporary": false }],
+      "realmRoles": ["customer_admin"]
+    }
+  ]
+}
