@@ -107,6 +107,18 @@ afterthought.
 - Maintaining a mock server is real, if small, ongoing cost.
 - The audit log grows unboundedly and needs a retention policy before launch.
 
+**Submission timing (added 27.07.2026):** the Punktemeldung fires **immediately on
+completion**, not batched or scheduled, then retries **3 times at 10-minute
+intervals** before slower backoff. This is a compliance decision, not a
+performance one. The 8-day reporting window runs from `Veranstaltungsende`, whose
+value for an on-demand course is still an open question with the Ärztekammer (show
+stoppers S11) — but submitting within seconds of completion means no plausible
+reading of that date, except an already-expired one, can put the submission
+outside its window. Speed is the cheapest hedge against an ambiguity we do not yet
+control. It is a hedge, not a fix: if `Veranstaltungsende` turns out to be the
+event date already past, EIV rejects regardless of speed, and the retry loop must
+still stop when `shouldStopRetrying` is set rather than hammer a closed window.
+
 **Hard checkpoint:** if EIV sandbox credentials have not arrived by **23.08.2026**
 (end of week 4), the fallback applies: launch with submissions queued and held,
 flip to live submission as a follow-up. The learner experience and the certificate

@@ -53,13 +53,64 @@ already indifferent to the answer — but **we do not know what value to pass**,
 the wrong one means either rejected submissions or a missed statutory deadline
 for every learner.
 
-`CLAUDE.md` §7: do not guess on compliance semantics. **This must be settled
-before any live submission**, and it is a one-line question to
-`zertifizierung@aekwl.de` / 0251 929-2244.
+### Mitigation, decided 27.07: submit immediately
+
+**Submit to EIV the moment the learner completes**, rather than batching or
+scheduling. Retry three times at 10-minute intervals, then continue with slower
+backoff, and surface anything still unresolved in the admin console so a human
+can act.
+
+This is the right design regardless of the answer, and it **removes most of the
+exposure**: if we submit within seconds of completion, no plausible reading of
+`Veranstaltungsende` puts us outside an 8-day window that starts at or after the
+completion date. Speed is the cheapest form of compliance here.
+
+**It does not close the question**, for two reasons:
+
+1. If `Veranstaltungsende` is the **event date 13.10.2025**, the window closed on
+   21.10.2025 and **EIV will reject every submission no matter how fast we are**.
+   Submitting quickly cannot rescue a window that is already shut.
+2. The retry loop needs to know **when to stop**. After the correction window
+   closes nothing can be sent electronically, and `shouldStopRetrying` is
+   computed from these dates. Without them the queue either gives up too early or
+   retries into a closed window forever.
+
+`CLAUDE.md` §7: do not guess on compliance semantics. Still a one-line question
+to `zertifizierung@aekwl.de` / 0251 929-2244 — but the launch date no longer
+depends on the answer arriving first.
 
 ---
 
 ## S12 · "Originalstempel" may invalidate an emailed certificate
+
+> **First, a point of fact that came up on 27.07 and is worth settling in
+> writing: the certificate is not produced by the Ärztekammer or by EIV. It is
+> MEDICE's own obligation, and this platform generates it.**
+>
+> > **Bescheinigung der Teilnahme** — _Der **Veranstalter** verpflichtet sich am
+> > Ende der Fortbildungsmaßnahme, allen Teilnehmern eine namentlich
+> > gekennzeichnete Teilnahmebescheinigung **zur Verfügung zu stellen**. Diese
+> > dient der individuellen Fortbildungsdokumentation der Ärztinnen und Ärzte und
+> > ggf. als Nachweis für das Finanzamt._
+>
+> The ÄKWL supplies a **template** — _"Die beiliegende Teilnahmebescheinigung
+> **kann als Muster verwendet werden**"_ — and asks the Veranstalter to fill it
+> in: _"Wir bitten Sie, die Fortbildungspunkte auf der Teilnahmebescheinigung …
+> zu vermerken"_.
+>
+> The EIV `push_teilnahme` call and the certificate are **two separate
+> obligations that share a VNR**. The API transfers points into the physician's
+> Kammer account; the certificate is a document the physician keeps for their own
+> Fortbildungsdokumentation and for the Finanzamt. Sending the API call does not
+> cause anyone to produce a certificate.
+>
+> This matches the client's own ticket, which asks for _"a named participation
+> certificate … automatically sent to the participant via email from a MEDICE
+> email account"_ and requests a technical concept and estimate for it.
+>
+> **Consequence: P8 stays in scope, and so do S13's `Anschrift` and barcodes.**
+> Dropping them would put MEDICE in breach of the Verpflichtung it accepted with
+> the accreditation.
 
 The Teilnahmebescheinigung Muster carries this clause:
 
