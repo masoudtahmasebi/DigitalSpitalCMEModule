@@ -12,14 +12,15 @@ advertisement.
 
 ## Index
 
-| ADR                                     | Title                                                          | Status   |
-| --------------------------------------- | -------------------------------------------------------------- | -------- |
-| [0001](0001-monorepo-and-stack.md)      | Monorepo and technology stack                                  | Accepted |
-| [0002](0002-tenant-isolation-rls.md)    | Tenant isolation via PostgreSQL row-level security             | Accepted |
-| [0003](0003-keycloak-session-bridge.md) | WordPress ↔ Keycloak session bridge                            | Accepted |
-| [0004](0004-efn-system-of-record.md)    | EFN is stored in our PostgreSQL as system of record            | Accepted |
-| [0005](0005-eiv-contract-first.md)      | EIV-FOBI integration is built contract-first, behind a harness | Accepted |
-| [0006](0006-layered-architecture.md)    | Enforced layered architecture                                  | Accepted |
+| ADR                                             | Title                                                          | Status   |
+| ----------------------------------------------- | -------------------------------------------------------------- | -------- |
+| [0001](0001-monorepo-and-stack.md)              | Monorepo and technology stack                                  | Accepted |
+| [0002](0002-tenant-isolation-rls.md)            | Tenant isolation via PostgreSQL row-level security             | Accepted |
+| [0003](0003-keycloak-session-bridge.md)         | WordPress ↔ Keycloak session bridge                            | Accepted |
+| [0004](0004-efn-system-of-record.md)            | EFN is stored in our PostgreSQL as system of record            | Accepted |
+| [0005](0005-eiv-contract-first.md)              | EIV-FOBI integration is built contract-first, behind a harness | Accepted |
+| [0007](0007-headless-core-and-host-adapters.md) | Headless core, host adapters at the edge                       | Accepted |
+| [0006](0006-layered-architecture.md)            | Enforced layered architecture                                  | Accepted |
 
 ## Writing a new one
 
