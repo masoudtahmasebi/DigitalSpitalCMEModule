@@ -55,7 +55,6 @@ export interface CourseTreeRows {
     kind: "video" | "text" | "quiz" | "details" | "material";
     title: string;
     durationSec: number | null;
-    fileUrl: string | null;
     mimeType: string | null;
   }>;
   experts: Array<{
@@ -230,7 +229,6 @@ export class CatalogRepository implements CatalogRepositoryPort {
               kind: contents.kind,
               title: contents.title,
               durationSec: contents.durationSec,
-              fileUrl: contents.fileUrl,
               mimeType: contents.mimeType,
             })
             .from(contents)

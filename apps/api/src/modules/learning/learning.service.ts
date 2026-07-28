@@ -38,14 +38,19 @@ import {
 } from "./learning.repository.js";
 import type {
   ChapterState,
+  ContentKind,
   ContentState,
   EnrolmentState,
+  LessonContent,
   Material,
   MaterialLibrary,
   ModuleState,
   ProgressReport,
   ProgressResult,
 } from "./learning.dto.js";
+
+/** What a learner may open through the player. A quiz has its own endpoint. */
+const OPENABLE_KINDS: readonly ContentKind[] = ["video", "text", "details"];
 
 /** Identity the use case acts for. Never taken from a request body. */
 export interface LearnerContext {
@@ -115,7 +120,7 @@ export class LearningService {
       slug,
       contentId,
       learner,
-      "video",
+      ["video"],
     );
 
     if (content.durationSec === null || content.durationSec <= 0) {
@@ -174,6 +179,45 @@ export class LearningService {
   }
 
   /**
+   * Open a lesson: the video URL or the text body, behind the sequence gate.
+   *
+   * The gate is the whole point of this endpoint existing. `CourseDetail` is a
+   * browse response and deliberately carries no `videoUrl` — if it did, the
+   * padlock on chapter 4 would be decorative, because the URL would already be
+   * in a response the learner can read while chapter 1 is unfinished. Here the
+   * URL is only produced after `requireReachableContent` agrees.
+   *
+   * A quiz is excluded: it has its own endpoint whose response shape has
+   * nowhere to put a correct answer (P4-01), and routing it through here would
+   * mean maintaining that guarantee in two places.
+   */
+  async getLesson(
+    slug: string,
+    contentId: string,
+    learner: LearnerContext,
+  ): Promise<LessonContent> {
+    const { content, stored } = await this.requireReachableContent(
+      slug,
+      contentId,
+      learner,
+      OPENABLE_KINDS,
+    );
+
+    const progress = stored.find((row) => row.contentId === contentId);
+
+    return {
+      id: content.id,
+      kind: content.kind,
+      title: content.title,
+      durationSec: content.durationSec,
+      videoUrl: content.videoUrl,
+      body: content.body,
+      lastPositionSec: progress?.lastPositionSec ?? 0,
+      watchedPercent: progress?.watchedPercent ?? 0,
+    };
+  }
+
+  /**
    * Resolve a piece of content the learner may currently act on, or throw.
    *
    * The single entry point for "is this allowed" — the player, the quiz and
@@ -188,7 +232,7 @@ export class LearningService {
     slug: string,
     contentId: string,
     learner: LearnerContext,
-    expectedKind: "video" | "quiz",
+    expectedKinds: readonly ContentKind[],
   ) {
     const course = await this.requireCourse(slug);
     const enrolment = await this.requireEnrolment(course.id, learner.userId);
@@ -200,11 +244,11 @@ export class LearningService {
       // nothing about whether it exists elsewhere.
       throw AppError.notFound(`content=${contentId} is not part of course=${slug}`);
     }
-    if (content.kind !== expectedKind) {
+    if (!expectedKinds.includes(content.kind)) {
       throw new AppError(
         "validation",
-        `content=${contentId} is kind=${content.kind}, not ${expectedKind}`,
-        `Dieser Inhalt ist keine ${expectedKind === "video" ? "Videolektion" : "Lernerfolgskontrolle"}.`,
+        `content=${contentId} is kind=${content.kind}, expected one of ${expectedKinds.join("|")}`,
+        "Dieser Inhalt kann hier nicht geöffnet werden.",
       );
     }
 

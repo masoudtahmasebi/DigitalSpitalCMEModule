@@ -179,6 +179,44 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
 
+  /courses/{slug}/contents/{contentId}:
+    get:
+      tags: [learning]
+      operationId: getLesson
+      summary: Open a lesson
+      description: |
+        The lesson payload — the video URL or the text body — served **only
+        after the sequence gate agrees**.
+
+        This is why `CourseDetail` carries no `videoUrl`: a browse response
+        listing every video URL in the course would make the padlock on a later
+        chapter decorative, since the URL would already be readable while the
+        first chapter is unfinished. Here the gate is checked before anything
+        is produced, by the same `requireReachableContent` the progress and
+        quiz endpoints use.
+
+        A quiz is not openable here — it has its own endpoint whose response
+        shape cannot carry a correct answer.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+        - $ref: "#/components/parameters/ContentId"
+      responses:
+        "200":
+          description: The lesson.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LessonContent" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403":
+          description: |
+            The sequence gate refuses: an earlier chapter is still outstanding.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
   /courses/{slug}/contents/{contentId}/progress:
     post:
       tags: [learning]
@@ -197,10 +235,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ProjectHeader"
         - $ref: "#/components/parameters/CourseSlug"
-        - name: contentId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/ContentId"
       requestBody:
         required: true
         content:
@@ -234,10 +269,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ProjectHeader"
         - $ref: "#/components/parameters/CourseSlug"
-        - name: contentId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/ContentId"
       responses:
         "200":
           description: The quiz, without answers.
@@ -264,10 +296,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ProjectHeader"
         - $ref: "#/components/parameters/CourseSlug"
-        - name: contentId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/ContentId"
       requestBody:
         required: true
         content:
@@ -498,6 +527,12 @@ components:
       required: true
       schema: { type: string }
 
+    ContentId:
+      name: contentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
     ProjectHeader:
       name: X-DS-Project
       in: header
@@ -677,20 +712,27 @@ components:
     ContentSummary:
       type: object
       description: |
-        Deliberately has no field capable of carrying a quiz answer (P4-01).
-      required: [id, ordinal, kind, title, durationSec, fileUrl, mimeType]
+        What a course *contains*, for browsing — never what is inside it.
+
+        Deliberately has no field capable of carrying a quiz answer (P4-01),
+        and no `fileUrl`, `videoUrl` or `body`. This response is ungated: any
+        holder of a tenant token can read it, finished or not. A URL here would
+        make both padlocks in the product decorative at once — the Mediathek's,
+        which withholds `fileUrl` until the module is complete, and the
+        player's, which withholds `videoUrl` until the chapter is reachable.
+
+        The gated shapes are `Material` and `LessonContent`, and they are the
+        only ones that carry a URL.
+      required: [id, ordinal, kind, title, durationSec, mimeType]
       properties:
         id: { type: string, format: uuid }
         ordinal: { type: integer }
-        kind:
-          type: string
-          enum: [video, text, quiz, details, material]
+        kind: { $ref: "#/components/schemas/ContentKind" }
         title: { type: string }
         durationSec: { type: [integer, "null"] }
-        fileUrl:
+        mimeType:
           type: [string, "null"]
-          description: Mediathek downloads only.
-        mimeType: { type: [string, "null"] }
+          description: Metadata for an icon. Not a URL — see the description above.
 
     CourseExpert:
       type: object
@@ -843,6 +885,39 @@ components:
           description: |
             Where "Fortbildung fortsetzen" jumps to — the first unfinished
             content the learner may currently reach. Null when nothing is left.
+
+    ContentKind:
+      type: string
+      enum: [video, text, quiz, details, material]
+
+    LessonContent:
+      type: object
+      description: |
+        A lesson's actual payload. The **only** shape carrying `videoUrl` or
+        `body`, and reachable only through the sequence gate — see the
+        `getLesson` description.
+      required:
+        [id, kind, title, durationSec, videoUrl, body, lastPositionSec, watchedPercent]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/ContentKind" }
+        title: { type: string }
+        durationSec: { type: [integer, "null"] }
+        videoUrl: { type: [string, "null"] }
+        body:
+          type: [string, "null"]
+          description: Text lessons. Trusted authored content, not learner input.
+        lastPositionSec:
+          type: integer
+          minimum: 0
+          description: Where the learner left off, so the player resumes there.
+        watchedPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: |
+            The server's figure for this content, so the player shows the same
+            number the completion gate uses.
 
     WatchedSegment:
       type: object

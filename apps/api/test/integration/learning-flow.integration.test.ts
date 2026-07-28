@@ -46,6 +46,9 @@ const SUB = "learner-sub";
 
 const VIDEO_1_SEC = 600;
 const VIDEO_2_SEC = 400;
+/** Distinctive so a leak anywhere in a payload is greppable. */
+const VIDEO_1_URL = "https://cdn.example.org/lf-modul-1.mp4";
+const VIDEO_2_URL = "https://cdn.example.org/lf-modul-2-locked.mp4";
 
 let jwksServer: Server;
 let privateKey: CryptoKey;
@@ -110,14 +113,14 @@ beforeAll(async () => {
     [customerId, module2, "Kapitel 2"],
   );
   video1Id = await insert(
-    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, duration_sec)
-     VALUES ($1,$2,0,'video',$3,$4) RETURNING id`,
-    [customerId, chapter1, "Einführung", VIDEO_1_SEC],
+    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, duration_sec, video_url)
+     VALUES ($1,$2,0,'video',$3,$4,$5) RETURNING id`,
+    [customerId, chapter1, "Einführung", VIDEO_1_SEC, VIDEO_1_URL],
   );
   video2Id = await insert(
-    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, duration_sec)
-     VALUES ($1,$2,0,'video',$3,$4) RETURNING id`,
-    [customerId, chapter2, "Diagnostik", VIDEO_2_SEC],
+    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, duration_sec, video_url)
+     VALUES ($1,$2,0,'video',$3,$4,$5) RETURNING id`,
+    [customerId, chapter2, "Diagnostik", VIDEO_2_SEC, VIDEO_2_URL],
   );
   quizId = await insert(
     `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title)
@@ -255,6 +258,56 @@ describe("the learner journey", () => {
     expect(body.moduleCompletion).toEqual({ completed: 0, total: 2 });
     expect(body.outstanding).toEqual(["watch", "quiz", "evaluation", "efn"]);
     expect(body.resumeContentId).toBe(video1Id);
+  });
+
+  it("serves the first lesson's video URL, which is reachable", async () => {
+    const { status, body } = await call(
+      "GET",
+      `/courses/${courseSlug}/contents/${video1Id}`,
+    );
+
+    expect(status).toBe(200);
+    expect(body.videoUrl).toBe(VIDEO_1_URL);
+    expect(body.kind).toBe("video");
+    expect(body.durationSec).toBe(VIDEO_1_SEC);
+  });
+
+  it("withholds the locked lesson's video URL entirely", async () => {
+    // The whole reason `GET /contents/{id}` exists. A 403 with no body is the
+    // gate; returning the URL and trusting the client to hide it would not be.
+    const { status, body } = await call(
+      "GET",
+      `/courses/${courseSlug}/contents/${video2Id}`,
+    );
+
+    expect(status).toBe(403);
+    expect(JSON.stringify(body)).not.toContain(VIDEO_2_URL);
+  });
+
+  it("keeps every URL out of the ungated browse response", async () => {
+    // Both padlocks depend on this. `GET /courses/{slug}` is readable by any
+    // holder of a tenant token, finished or not — a URL in it is a URL with no
+    // gate in front of it, whatever the Mediathek and the player do later.
+    //
+    // This is a regression test for a real bypass: the catalog returned
+    // `fileUrl` on every content row, so every Mediathek download was
+    // reachable while its module was still padlocked.
+    const { body } = await call("GET", `/courses/${courseSlug}`);
+    const payload = JSON.stringify(body);
+
+    expect(payload).not.toContain(VIDEO_1_URL);
+    expect(payload).not.toContain(VIDEO_2_URL);
+    expect(payload).not.toContain("https://cdn.example.org/m1.pdf");
+    expect(payload).not.toContain("https://cdn.example.org/m2.pdf");
+  });
+
+  it("refuses to open a quiz as a lesson", async () => {
+    // The quiz has its own endpoint, whose shape cannot carry a correct
+    // answer. Routing it through the lesson endpoint would mean maintaining
+    // that guarantee in two places.
+    const { status } = await call("GET", `/courses/${courseSlug}/contents/${quizId}`);
+
+    expect(status).toBe(422);
   });
 
   it("refuses progress against the locked second module", async () => {

@@ -25,6 +25,33 @@ export type CourseExpert = components["schemas"]["CourseExpert"];
 export type DeliveryType = components["schemas"]["DeliveryType"];
 export type HealthStatus = components["schemas"]["HealthStatus"];
 
+export type EnrolmentState = components["schemas"]["EnrolmentState"];
+export type ModuleState = components["schemas"]["ModuleState"];
+export type ChapterState = components["schemas"]["ChapterState"];
+export type ContentState = components["schemas"]["ContentState"];
+export type ProgressSummary = components["schemas"]["ProgressSummary"];
+export type GateStatus = components["schemas"]["GateStatus"];
+export type CompletionCondition = components["schemas"]["CompletionCondition"];
+export type ContentKind = components["schemas"]["ContentKind"];
+export type LessonContent = components["schemas"]["LessonContent"];
+export type WatchedSegment = components["schemas"]["WatchedSegment"];
+export type ProgressReport = components["schemas"]["ProgressReport"];
+export type ProgressResult = components["schemas"]["ProgressResult"];
+export type RejectedSegment = components["schemas"]["RejectedSegment"];
+export type Quiz = components["schemas"]["Quiz"];
+export type QuizQuestion = components["schemas"]["QuizQuestion"];
+export type QuizOption = components["schemas"]["QuizOption"];
+export type QuizSubmission = components["schemas"]["QuizSubmission"];
+export type QuizAttemptResult = components["schemas"]["QuizAttemptResult"];
+export type MaterialLibrary = components["schemas"]["MaterialLibrary"];
+export type MaterialGroup = components["schemas"]["MaterialGroup"];
+export type Material = components["schemas"]["Material"];
+export type Evaluation = components["schemas"]["Evaluation"];
+export type EvaluationQuestion = components["schemas"]["EvaluationQuestion"];
+export type EvaluationSubmission = components["schemas"]["EvaluationSubmission"];
+export type Certificate = components["schemas"]["Certificate"];
+export type CompletionInput = components["schemas"]["CompletionInput"];
+
 export type CourseListQuery = NonNullable<
   operations["listCourses"]["parameters"]["query"]
 >;
@@ -92,11 +119,55 @@ export function createClient(options: ClientOptions) {
       throw new ApiError(await readProblem(response), response);
     }
 
+    // 204 is a real success shape in this API — `PUT /profile/efn` returns it
+    // deliberately, because echoing an EFN back is exactly what ADR-0004
+    // forbids. Parsing an empty body as JSON would turn that into an error.
+    if (response.status === 204) return undefined as T;
+
     return (await response.json()) as T;
   }
 
+  /**
+   * A request whose response is bytes, not JSON.
+   *
+   * Separate from `request` rather than a flag on it because the two differ in
+   * more than parsing: this one must not set `accept: application/json`, and
+   * its caller wants the `Response` so it can read the filename out of
+   * `content-disposition`.
+   */
+  async function requestBlob(path: string, isRetry = false): Promise<Response> {
+    const token = await options.getToken();
+    const headers = new Headers();
+    headers.set("x-ds-project", options.projectSlug);
+    if (token !== undefined) headers.set("authorization", `Bearer ${token}`);
+
+    const response = await fetch(new URL(path, options.baseUrl), { headers });
+
+    if (response.status === 401 && !isRetry && options.onUnauthorized) {
+      const refreshed = await options.onUnauthorized();
+      if (refreshed !== undefined) return requestBlob(path, true);
+    }
+
+    if (!response.ok) {
+      throw new ApiError(await readProblem(response), response);
+    }
+
+    return response;
+  }
+
+  function json(body: unknown): RequestInit {
+    return {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    };
+  }
+
+  const course = (slug: string) => `/courses/${encodeURIComponent(slug)}`;
+
   return {
     request,
+    requestBlob,
 
     health: (): Promise<HealthStatus> => request("/health"),
 
@@ -109,12 +180,99 @@ export function createClient(options: ClientOptions) {
       return request(qs === "" ? "/courses" : `/courses?${qs}`);
     },
 
-    getCourseBySlug: (slug: string): Promise<CourseDetail> =>
-      request(`/courses/${encodeURIComponent(slug)}`),
+    getCourseBySlug: (slug: string): Promise<CourseDetail> => request(course(slug)),
+
+    /** Idempotent: enrolling twice returns the same enrolment. */
+    enrol: (slug: string): Promise<EnrolmentState> =>
+      request(`${course(slug)}/enrolment`, { method: "POST" }),
+
+    getEnrolment: (slug: string): Promise<EnrolmentState> =>
+      request(`${course(slug)}/enrolment`),
+
+    /** The lesson payload, behind the sequence gate. */
+    getLesson: (slug: string, contentId: string): Promise<LessonContent> =>
+      request(`${course(slug)}/contents/${encodeURIComponent(contentId)}`),
+
+    /**
+     * Report watched intervals. The returned percentage is the server's own
+     * recomputation — the widget renders that figure and never its own.
+     */
+    recordProgress: (
+      slug: string,
+      contentId: string,
+      report: ProgressReport,
+    ): Promise<ProgressResult> =>
+      request(
+        `${course(slug)}/contents/${encodeURIComponent(contentId)}/progress`,
+        json(report),
+      ),
+
+    getQuiz: (slug: string, contentId: string): Promise<Quiz> =>
+      request(`${course(slug)}/contents/${encodeURIComponent(contentId)}/quiz`),
+
+    submitQuiz: (
+      slug: string,
+      contentId: string,
+      submission: QuizSubmission,
+    ): Promise<QuizAttemptResult> =>
+      request(
+        `${course(slug)}/contents/${encodeURIComponent(contentId)}/quiz`,
+        json(submission),
+      ),
+
+    getMaterials: (slug: string): Promise<MaterialLibrary> =>
+      request(`${course(slug)}/materials`),
+
+    getEvaluation: (slug: string): Promise<Evaluation> =>
+      request(`${course(slug)}/evaluation`),
+
+    submitEvaluation: (
+      slug: string,
+      submission: EvaluationSubmission,
+    ): Promise<EnrolmentState> =>
+      request(`${course(slug)}/evaluation`, json(submission)),
+
+    /** Write-only. There is deliberately no `getEfn` — see ADR-0004. */
+    setEfn: (efn: string): Promise<void> =>
+      request("/profile/efn", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ efn }),
+      }),
+
+    completeCourse: (
+      slug: string,
+      input: CompletionInput = {},
+    ): Promise<EnrolmentState> => request(`${course(slug)}/completion`, json(input)),
+
+    getCertificate: (slug: string): Promise<Certificate> =>
+      request(`${course(slug)}/certificate`),
+
+    /** The rendered PDF plus the filename the server chose for it. */
+    downloadCertificate: async (
+      slug: string,
+    ): Promise<{ blob: Blob; filename: string }> => {
+      const response = await requestBlob(`${course(slug)}/certificate/pdf`);
+      return {
+        blob: await response.blob(),
+        filename: filenameFromDisposition(response.headers.get("content-disposition")),
+      };
+    },
   };
 }
 
 export type ApiClient = ReturnType<typeof createClient>;
+
+/**
+ * The filename the server put on the download.
+ *
+ * Falls back to a generic name rather than throwing: a header a proxy chose to
+ * strip is not a reason to withhold a certificate the learner has earned.
+ */
+function filenameFromDisposition(header: string | null): string {
+  const match = header?.match(/filename="([^"]+)"/);
+  return match?.[1] ?? "Teilnahmebescheinigung.pdf";
+}
 
 async function readProblem(response: Response): Promise<ProblemDetails> {
   try {

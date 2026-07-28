@@ -104,6 +104,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/courses/{slug}/contents/{contentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Open a lesson
+         * @description The lesson payload — the video URL or the text body — served **only
+         *     after the sequence gate agrees**.
+         *
+         *     This is why `CourseDetail` carries no `videoUrl`: a browse response
+         *     listing every video URL in the course would make the padlock on a later
+         *     chapter decorative, since the URL would already be readable while the
+         *     first chapter is unfinished. Here the gate is checked before anything
+         *     is produced, by the same `requireReachableContent` the progress and
+         *     quiz endpoints use.
+         *
+         *     A quiz is not openable here — it has its own endpoint whose response
+         *     shape cannot carry a correct answer.
+         */
+        get: operations["getLesson"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/courses/{slug}/contents/{contentId}/progress": {
         parameters: {
             query?: never;
@@ -384,17 +415,27 @@ export interface components {
             title: string;
             contents: components["schemas"]["ContentSummary"][];
         };
-        /** @description Deliberately has no field capable of carrying a quiz answer (P4-01). */
+        /**
+         * @description What a course *contains*, for browsing — never what is inside it.
+         *
+         *     Deliberately has no field capable of carrying a quiz answer (P4-01),
+         *     and no `fileUrl`, `videoUrl` or `body`. This response is ungated: any
+         *     holder of a tenant token can read it, finished or not. A URL here would
+         *     make both padlocks in the product decorative at once — the Mediathek's,
+         *     which withholds `fileUrl` until the module is complete, and the
+         *     player's, which withholds `videoUrl` until the chapter is reachable.
+         *
+         *     The gated shapes are `Material` and `LessonContent`, and they are the
+         *     only ones that carry a URL.
+         */
         ContentSummary: {
             /** Format: uuid */
             id: string;
             ordinal: number;
-            /** @enum {string} */
-            kind: "video" | "text" | "quiz" | "details" | "material";
+            kind: components["schemas"]["ContentKind"];
             title: string;
             durationSec: number | null;
-            /** @description Mediathek downloads only. */
-            fileUrl: string | null;
+            /** @description Metadata for an icon. Not a URL — see the description above. */
             mimeType: string | null;
         };
         CourseExpert: {
@@ -493,6 +534,30 @@ export interface components {
              *     content the learner may currently reach. Null when nothing is left.
              */
             resumeContentId: string | null;
+        };
+        /** @enum {string} */
+        ContentKind: "video" | "text" | "quiz" | "details" | "material";
+        /**
+         * @description A lesson's actual payload. The **only** shape carrying `videoUrl` or
+         *     `body`, and reachable only through the sequence gate — see the
+         *     `getLesson` description.
+         */
+        LessonContent: {
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["ContentKind"];
+            title: string;
+            durationSec: number | null;
+            videoUrl: string | null;
+            /** @description Text lessons. Trusted authored content, not learner input. */
+            body: string | null;
+            /** @description Where the learner left off, so the player resumes there. */
+            lastPositionSec: number;
+            /**
+             * @description The server's figure for this content, so the player shows the same
+             *     number the completion gate uses.
+             */
+            watchedPercent: number;
         };
         /** @description One played interval, in seconds from the start of the media. */
         WatchedSegment: {
@@ -729,6 +794,7 @@ export interface components {
     };
     parameters: {
         CourseSlug: string;
+        ContentId: string;
         /**
          * @description Project slug identifying the calling host surface (ADR-0007). Resolves
          *     the Keycloak realm to validate against and pins the tenant. Unknown or
@@ -907,6 +973,49 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    getLesson: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+                contentId: components["parameters"]["ContentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The lesson. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonContent"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description The sequence gate refuses: an earlier chapter is still outstanding. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
     recordProgress: {
         parameters: {
             query?: never;
@@ -921,7 +1030,7 @@ export interface operations {
             };
             path: {
                 slug: components["parameters"]["CourseSlug"];
-                contentId: string;
+                contentId: components["parameters"]["ContentId"];
             };
             cookie?: never;
         };
@@ -968,7 +1077,7 @@ export interface operations {
             };
             path: {
                 slug: components["parameters"]["CourseSlug"];
-                contentId: string;
+                contentId: components["parameters"]["ContentId"];
             };
             cookie?: never;
         };
@@ -1010,7 +1119,7 @@ export interface operations {
             };
             path: {
                 slug: components["parameters"]["CourseSlug"];
-                contentId: string;
+                contentId: components["parameters"]["ContentId"];
             };
             cookie?: never;
         };

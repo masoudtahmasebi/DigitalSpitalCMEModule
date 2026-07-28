@@ -3,6 +3,8 @@ import tsPlugin from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
 import importPlugin from "eslint-plugin-import";
 import security from "eslint-plugin-security";
+import reactHooks from "eslint-plugin-react-hooks";
+import jsxA11y from "eslint-plugin-jsx-a11y";
 
 /**
  * Shared ESLint configuration for every workspace.
@@ -224,6 +226,36 @@ export default [
     files: ["apps/api/src/**/*.ts"],
     rules: {
       "@typescript-eslint/consistent-type-imports": "off",
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // The React apps: hooks correctness and the accessibility floor.
+  // ---------------------------------------------------------------------
+  // `react-hooks` is not style linting. Its two rules catch the stale-closure
+  // and conditional-hook bugs that produce a widget showing a percentage from
+  // three renders ago — exactly the class of defect that looks fine in review
+  // and is wrong on a physician's screen.
+  //
+  // `jsx-a11y` enforces the responsive/a11y floor that CLAUDE.md §3 costs in
+  // and declares non-negotiable. Only the subset that is mechanically decidable
+  // is enabled as an error; the plugin's full recommended set includes rules
+  // that guess at intent and would train people to disable it.
+  {
+    files: ["apps/widget/src/**/*.{ts,tsx}", "apps/admin/src/**/*.{ts,tsx}"],
+    plugins: { "react-hooks": reactHooks, "jsx-a11y": jsxA11y },
+    rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
+
+      "jsx-a11y/alt-text": "error",
+      "jsx-a11y/anchor-has-content": "error",
+      "jsx-a11y/aria-props": "error",
+      "jsx-a11y/aria-role": "error",
+      "jsx-a11y/label-has-associated-control": "error",
+      "jsx-a11y/media-has-caption": "warn",
+      "jsx-a11y/no-redundant-roles": "error",
+      "jsx-a11y/role-has-required-aria-props": "error",
     },
   },
 

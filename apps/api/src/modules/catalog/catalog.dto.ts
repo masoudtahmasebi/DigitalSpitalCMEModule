@@ -30,14 +30,29 @@ export const courseSummarySchema = z.object({
   totalDurationSec: z.number().int().nonnegative(),
 });
 
+/**
+ * What a course *contains*, for browsing. Never what is inside it.
+ *
+ * Deliberately carries no `fileUrl`, no `videoUrl` and no `body`. This is an
+ * ungated browse response — anyone holding a token for the tenant can read it,
+ * whether or not they have finished module 1. Putting a URL here would make
+ * both padlocks in the product decorative at once: the Mediathek's, which
+ * withholds `fileUrl` until the module is complete, and the player's, which
+ * withholds `videoUrl` until the chapter is reachable.
+ *
+ * A URL that a client is merely asked not to use is not a gate. The gated
+ * shapes are `Material` (via `GET /materials`) and `LessonContent` (via
+ * `GET /contents/{id}`), and they are the only ones that carry a URL.
+ *
+ * `mimeType` stays: it is metadata for an icon, and knowing a download is a
+ * PDF discloses nothing the title does not.
+ */
 export const contentSummarySchema = z.object({
   id: z.uuid(),
   ordinal: z.number().int(),
   kind: z.enum(["video", "text", "quiz", "details", "material"]),
   title: z.string(),
   durationSec: z.number().int().nullable(),
-  /** Mediathek downloads only. */
-  fileUrl: z.string().nullable(),
   mimeType: z.string().nullable(),
 });
 

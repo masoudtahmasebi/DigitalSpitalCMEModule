@@ -2,13 +2,49 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 /**
- * Placeholder build config (P5-01). The Shadow-DOM `<ds-lms>` custom element
- * and its real entry point are not built yet — this exists so `vite build`
- * succeeds from day one, the same reasoning `src/index.ts` gives for being
- * "a real module". Replace wholesale once the widget build pipeline lands;
- * nothing here — in particular, not library mode — is meant to survive that.
+ * The `<ds-lms>` build (P5-01).
+ *
+ * ## One file, no externals
+ *
+ * The output is a single self-contained ES module with React bundled in. A
+ * WordPress page is not a build target we control: it may already run its own
+ * React, a different React, or none. Sharing one would make the widget's
+ * behaviour depend on whatever a plugin update does to the host page, which is
+ * exactly the class of failure a Shadow-DOM widget exists to avoid. The
+ * duplicated React is the price of not caring what else the page loads.
+ *
+ * ## CSS is inlined, not emitted
+ *
+ * `cssCodeSplit: false` plus the `?inline` import in `element.ts` puts
+ * Tailwind's output in the bundle as a string, which the element adopts into
+ * its shadow root. A separate `.css` file would have to be enqueued by the
+ * WordPress plugin in the right order and would style nothing anyway — shadow
+ * roots do not inherit document stylesheets.
+ *
+ * ## ES module only
+ *
+ * `<script type="module">` is the only mode this ships in. Custom elements,
+ * Shadow DOM and constructable stylesheets all need a browser that supports
+ * modules, so a UMD fallback would target browsers that cannot run the widget.
  */
 // eslint-disable-next-line no-restricted-syntax -- vite requires a default export
 export default defineConfig({
   plugins: [react()],
+  define: {
+    // React reads this. Without it the development build's warning machinery
+    // ships to production and roughly doubles the bundle.
+    "process.env.NODE_ENV": JSON.stringify(process.env["NODE_ENV"] ?? "production"),
+  },
+  build: {
+    cssCodeSplit: false,
+    lib: {
+      entry: "src/index.ts",
+      formats: ["es"],
+      fileName: () => "ds-lms.js",
+    },
+    // One file, always: a WordPress plugin enqueues one script, and a lazily
+    // fetched chunk would be a second request against a path the plugin would
+    // have to know about.
+    rollupOptions: { output: { codeSplitting: false } },
+  },
 });

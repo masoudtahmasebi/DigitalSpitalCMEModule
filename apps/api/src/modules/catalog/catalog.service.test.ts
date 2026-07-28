@@ -87,7 +87,6 @@ function fakeRepository(overrides: Partial<CatalogRepositoryPort> = {}) {
                 kind: "video",
                 title: "Einführung",
                 durationSec: 1524,
-                fileUrl: null,
                 mimeType: null,
               },
               {
@@ -97,7 +96,6 @@ function fakeRepository(overrides: Partial<CatalogRepositoryPort> = {}) {
                 kind: "material",
                 title: "Patienteninformation (PDF)",
                 durationSec: null,
-                fileUrl: "https://cdn.example.org/info.pdf",
                 mimeType: "application/pdf",
               },
             ],
@@ -284,5 +282,32 @@ describe("the answer key has nowhere to go", () => {
     expect(serialised).not.toContain("isCorrect");
     expect(serialised).not.toContain("is_correct");
     expect(serialised).not.toContain("correctOptionIds");
+  });
+});
+
+describe("nor does an ungated URL", () => {
+  it("carries no fileUrl, videoUrl or body on any content", async () => {
+    // This response is readable by any holder of a tenant token, whether or
+    // not they have finished anything. A URL in it has no gate in front of it,
+    // whatever the Mediathek and the player do afterwards — which is how the
+    // Mediathek padlock was bypassable before this shape lost `fileUrl`.
+    //
+    // Asserted against the parsed value rather than the projection, because
+    // parsing strips anything the schema does not declare: this proves the
+    // contract, not just today's mapping code.
+    const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
+      "adhs-akademie-adult",
+    );
+    const parsed = courseDetailSchema.parse(detail);
+
+    for (const module of parsed.modules) {
+      for (const chapter of module.chapters) {
+        for (const content of chapter.contents) {
+          expect(content).not.toHaveProperty("fileUrl");
+          expect(content).not.toHaveProperty("videoUrl");
+          expect(content).not.toHaveProperty("body");
+        }
+      }
+    }
   });
 });

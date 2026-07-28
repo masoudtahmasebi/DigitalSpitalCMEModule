@@ -56,8 +56,11 @@ export interface TreeContentRow {
   ordinal: number;
   kind: "video" | "text" | "quiz" | "details" | "material";
   durationSec: number | null;
-  /** Mediathek fields; null for anything that is not a download. */
   title: string;
+  /** The lesson payload — only ever served through a gate check. */
+  body: string | null;
+  videoUrl: string | null;
+  /** Mediathek fields; null for anything that is not a download. */
   fileUrl: string | null;
   mimeType: string | null;
   fileSize: number | null;
@@ -227,6 +230,11 @@ export class LearningRepository implements LearningRepositoryPort {
         kind: contents.kind,
         durationSec: contents.durationSec,
         title: contents.title,
+        // The lesson payload. Selected here rather than in a second query
+        // because the gate decision needs the whole tree anyway, and a
+        // separate read would be a second place that could forget the gate.
+        body: contents.body,
+        videoUrl: contents.videoUrl,
         fileUrl: contents.fileUrl,
         mimeType: contents.mimeType,
         fileSize: contents.fileSize,

@@ -2,10 +2,79 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DS Education — Widget dev harness</title>
+    <!--
+      A deliberately hostile host page. The rules below are the kind of thing a
+      WordPress theme ships, and the widget must be unaffected by every one of
+      them — if the shadow root ever stops isolating, this page shows it
+      immediately rather than the client's site showing it later.
+    -->
+    <style>
+      * {
+        box-sizing: content-box;
+      }
+      button {
+        background: hotpink !important;
+        border-radius: 0 !important;
+        font-family: "Comic Sans MS", cursive;
+      }
+      body {
+        margin: 0;
+        font-family: Georgia, serif;
+        background: #f6f7f9;
+      }
+      .harness {
+        max-width: 60rem;
+        margin: 0 auto;
+        padding: 1.5rem;
+      }
+      .harness__note {
+        background: #fff8e1;
+        border: 1px solid #f0d48a;
+        padding: 0.75rem 1rem;
+        font-size: 0.85rem;
+        margin-bottom: 1rem;
+      }
+      ds-lms {
+        display: block;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 0.5rem;
+      }
+    </style>
   </head>
   <body>
-    <ds-lms></ds-lms>
-    <script type="module" src="/src/index.ts"></script>
+    <div class="harness">
+      <p class="harness__note">
+        Dev harness. This page applies a pink-button, serif, content-box theme on
+        purpose — the widget below must ignore all of it. Configure the target
+        API with <code>?api=</code>, <code>?project=</code>,
+        <code>?course=</code> and <code>?token=</code> in the URL.
+      </p>
+
+      <ds-lms></ds-lms>
+    </div>
+
+    <script type="module">
+      import "/src/index.ts";
+
+      /*
+       * A token provider for local development only.
+       *
+       * Reads a token from the query string so a developer can paste one minted
+       * by Keycloak. The WordPress plugin will do the same job properly against
+       * the WP session — see `src/token.ts`. Nothing in this file ships.
+       */
+      const params = new URLSearchParams(window.location.search);
+      const element = document.querySelector("ds-lms");
+
+      element.setAttribute("api-base", params.get("api") ?? "http://localhost:3000");
+      element.setAttribute("project", params.get("project") ?? "medice-adhs");
+      element.setAttribute("course", params.get("course") ?? "adhs-akademie-adult");
+
+      const token = params.get("token");
+      if (token) element.tokenProvider = async () => token;
+    </script>
   </body>
 </html>

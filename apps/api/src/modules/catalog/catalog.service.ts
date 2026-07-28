@@ -132,7 +132,6 @@ function toDetail(tree: CourseTreeRows): CourseDetail {
         kind: content.kind,
         title: content.title,
         durationSec: content.durationSec,
-        fileUrl: content.fileUrl,
         mimeType: content.mimeType,
       })),
     })),

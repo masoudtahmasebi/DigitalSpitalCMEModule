@@ -7,7 +7,7 @@
     "build": "vite build",
     "dev": "vite",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "lint": "echo \"linted by the root pass\""
   },
   "dependencies": {
@@ -25,6 +25,7 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.9.3",
     "vite": "^8.1.5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "jsdom": "^26.0.0"
   }
 }

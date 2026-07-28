@@ -1,7 +1,15 @@
 /**
  * `<ds-lms>` entry point (P5-01).
  *
- * Placeholder until the widget build pipeline lands. Kept as a real module so
- * the workspace typechecks and the boundary lint rules apply from day one.
+ * Registering on import is what lets a WordPress plugin ship one
+ * `<script type="module" src="ds-lms.js">` and then place the tag anywhere on
+ * the page — including in markup that was already parsed, since custom
+ * elements upgrade retroactively.
  */
-export const WIDGET_ELEMENT_NAME = "ds-lms";
+
+import { registerWidget } from "./element.js";
+
+export { DsLmsElement, WIDGET_ELEMENT_NAME, registerWidget } from "./element.js";
+export type { TokenProvider, TokenRequest } from "./token.js";
+
+registerWidget();

@@ -14,6 +14,30 @@ import { z } from "zod";
 
 export const gateStatusSchema = z.enum(["locked", "available", "completed"]);
 
+export const contentKindSchema = z.enum(["video", "text", "quiz", "details", "material"]);
+
+/**
+ * A lesson, served only through the sequence gate.
+ *
+ * This is the one shape that carries `videoUrl` and `body`, and it exists
+ * precisely so those never appear on a browse endpoint. `CourseDetail` lists
+ * what a course contains — titles, kinds, durations — because a learner
+ * choosing whether to enrol may see that. What is *inside* a lesson is behind
+ * `requireReachableContent`, so a locked chapter's video URL is not reachable
+ * by reading a catalog response and guessing an id.
+ */
+export const lessonContentSchema = z.object({
+  id: z.uuid(),
+  kind: contentKindSchema,
+  title: z.string(),
+  durationSec: z.number().int().positive().nullable(),
+  videoUrl: z.string().nullable(),
+  body: z.string().nullable(),
+  /** Where the learner left off, so the player can resume. */
+  lastPositionSec: z.number().int().nonnegative(),
+  watchedPercent: z.number().int().min(0).max(100),
+});
+
 export const progressSummarySchema = z.object({
   status: z.enum(["not_started", "in_progress", "completed"]),
   completedCount: z.number().int().nonnegative(),
@@ -115,6 +139,8 @@ export type ProgressResult = z.infer<typeof progressResultSchema>;
 export type ModuleState = z.infer<typeof moduleStateSchema>;
 export type ChapterState = z.infer<typeof chapterStateSchema>;
 export type ContentState = z.infer<typeof contentStateSchema>;
+export type ContentKind = z.infer<typeof contentKindSchema>;
+export type LessonContent = z.infer<typeof lessonContentSchema>;
 
 /**
  * Mediathek (P5). The layout groups downloads under "Materialien zu Modul N",

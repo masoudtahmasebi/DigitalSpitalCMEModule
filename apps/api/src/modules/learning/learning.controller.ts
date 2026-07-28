@@ -46,6 +46,26 @@ export class LearningController {
     });
   }
 
+  /**
+   * The lesson payload, behind the sequence gate.
+   *
+   * Deliberately not part of `GET /courses/{slug}` — see `getLesson`. A
+   * padlock the client is merely asked to honour is not a gate.
+   */
+  @Get("contents/:contentId")
+  @Roles("learner", "department_admin", "customer_admin", "super_admin")
+  async getLesson(
+    @Param("slug") slug: string,
+    @Param("contentId") contentId: string,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    return LearningService.fromDb(db).getLesson(slug, contentId, {
+      customerId: principal.customerId,
+      userId: principal.userId,
+    });
+  }
+
   @Get("materials")
   @Roles("learner", "department_admin", "customer_admin", "super_admin")
   async getMaterials(

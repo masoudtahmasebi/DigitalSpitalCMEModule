@@ -45,7 +45,7 @@ export class AssessmentService {
       slug,
       contentId,
       learner,
-      "quiz",
+      ["quiz"],
     );
 
     const { questions, options } =
@@ -82,7 +82,7 @@ export class AssessmentService {
       slug,
       contentId,
       learner,
-      "quiz",
+      ["quiz"],
     );
 
     const attemptsUsed = await this.repository.countAttempts(enrolment.id, contentId);
