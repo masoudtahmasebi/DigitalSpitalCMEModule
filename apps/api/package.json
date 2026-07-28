@@ -20,6 +20,7 @@
     "@nestjs/platform-express": "^11.1.28",
     "bwip-js": "^4.11.2",
     "drizzle-orm": "^0.45.2",
+    "express": "^5.2.1",
     "helmet": "^8.3.0",
     "ioredis": "^5.11.1",
     "jose": "^6.2.4",

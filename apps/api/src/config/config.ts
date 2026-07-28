@@ -47,6 +47,18 @@ const schema = z.object({
   // unbounded payload. Per-user/IP rate limiting is P10-03, not this.
   MAX_REQUEST_BODY_SIZE: z.string().default("1mb"),
 
+  /**
+   * The limit for `PUT /admin/branding/font` alone (P10-08).
+   *
+   * The column allows a 2 MB font and base64 inflates that to about 2.8 MB, so
+   * the global 1 MB limit would refuse a legitimate upload with an opaque 413
+   * — before the validation that produces a readable German error ever ran.
+   * Scoped to one route in `main.ts`: the reason there is a body limit at all
+   * is that a JSON parser is a denial-of-service surface, and raising it
+   * everywhere to accommodate one endpoint gives that up.
+   */
+  MAX_FONT_BODY_SIZE: z.string().default("3mb"),
+
   // ---------------------------------------------------------------------
   // EIV-FOBI submission worker (P7-06)
   // ---------------------------------------------------------------------

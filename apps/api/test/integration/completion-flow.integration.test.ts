@@ -24,6 +24,8 @@ import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "jose";
 import { AppModule } from "../../src/app.module.js";
+import { configureApp } from "../../src/configure-app.js";
+import { loadConfig } from "../../src/config/config.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -210,7 +212,15 @@ beforeAll(async () => {
     [adminId, customerId],
   );
 
-  app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: false });
+  app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    logger: false,
+    // Configured by `configureApp` below, exactly as `main.ts` does it. A
+    // suite that boots the app differently from production is testing a
+    // different application — which is how the font route's body limit got
+    // past this suite once already.
+    bodyParser: false,
+  });
+  await configureApp(app, loadConfig());
   await app.listen(0);
   const address = app.getHttpServer().address();
   if (address === null || typeof address === "string") {
@@ -935,6 +945,45 @@ describe("the white-label font", () => {
     expect(file.headers.get("x-content-type-options")).toBe("nosniff");
 
     expect(Buffer.from(await file.arrayBuffer()).equals(uploaded)).toBe(true);
+  });
+
+  it("accepts a font at a realistic size, not only a token one", async () => {
+    // Every other assertion here uses a 64-byte font, which is why the body
+    // limit went unnoticed: base64 inflates a 2 MB file to ~2.8 MB, the global
+    // JSON limit is 1 MB, and the parser would have refused a real family with
+    // an opaque 413 long before any German error message was produced. 1.5 MB
+    // is a plausible unsubsetted family and does not fit under the global
+    // limit, so this fails if the route-scoped one is ever removed.
+    const large = fontFile("wOF2", 1_500_000);
+
+    const { status, body } = await callAs(ADMIN_SUB, "PUT", "/admin/branding/font", {
+      fontBase64: large.toString("base64"),
+      fontFamilyName: "Medice Sans",
+    });
+
+    expect(status).toBe(200);
+    expect(body.fontBytes).toBe(1_500_000);
+
+    // Put the small one back so the byte-for-byte assertion above still
+    // describes what is stored.
+    await callAs(ADMIN_SUB, "PUT", "/admin/branding/font", {
+      fontBase64: fontFile("wOF2", 96).toString("base64"),
+      fontFamilyName: "Medice Sans",
+    });
+  });
+
+  it("still refuses one over the column's own bound", async () => {
+    // The route-scoped limit is 3 MB so a legitimate 2 MB file fits. The 2 MB
+    // rule itself is enforced by the service and by a CHECK constraint, not by
+    // the body parser — a larger limit must not become a larger allowance.
+    const oversized = fontFile("wOF2", 2_200_000);
+
+    const { status } = await callAs(ADMIN_SUB, "PUT", "/admin/branding/font", {
+      fontBase64: oversized.toString("base64"),
+      fontFamilyName: "Medice Sans",
+    });
+
+    expect(status).toBe(422);
   });
 
   it("names the font in the public branding, and nothing else from the row", async () => {

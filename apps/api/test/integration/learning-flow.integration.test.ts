@@ -20,6 +20,8 @@ import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "jose";
 import { AppModule } from "../../src/app.module.js";
+import { configureApp } from "../../src/configure-app.js";
+import { loadConfig } from "../../src/config/config.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -157,7 +159,15 @@ beforeAll(async () => {
     [userId, customerId],
   );
 
-  app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: false });
+  app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    logger: false,
+    // Configured by `configureApp` below, exactly as `main.ts` does it. A
+    // suite that boots the app differently from production is testing a
+    // different application — which is how the font route's body limit got
+    // past this suite once already.
+    bodyParser: false,
+  });
+  await configureApp(app, loadConfig());
   await app.listen(0);
   const address = app.getHttpServer().address();
   if (address === null || typeof address === "string") {
