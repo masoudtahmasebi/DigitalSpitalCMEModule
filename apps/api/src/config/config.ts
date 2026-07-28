@@ -41,6 +41,16 @@ const schema = z.object({
         .split(",")
         .map((origin) => origin.trim())
         .filter((origin) => origin !== ""),
+    )
+    // A wildcard is refused at boot rather than silently misbehaving. `cors`
+    // treats an array containing "*" as a literal origin to match, so it would
+    // in fact deny everything — which is safe but reads as "CORS is broken" and
+    // invites somebody to reach for a configuration that genuinely is open. An
+    // API that returns a physician's participation record has no origin it can
+    // afford to allow blindly.
+    .refine(
+      (origins) => !origins.includes("*"),
+      "ALLOWED_ORIGINS may not contain '*' — list every origin explicitly",
     ),
 
   // Express json body size limit — cheap hygiene against a client sending an

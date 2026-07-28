@@ -134,6 +134,7 @@ erasure, which is cross-tenant by nature. See
 | How is this deployed, and how do I roll it back?                  | [`infra/deploy/README.md`](infra/deploy/README.md)                              |
 | How does the WordPress side work?                                 | [`wordpress/ds-lms/README.md`](wordpress/ds-lms/README.md)                      |
 | How do I extend it — and what may I not extend?                   | [`docs/adr/0010-extension-points.md`](docs/adr/0010-extension-points.md)        |
+| What did the security review find, and what is accepted risk?     | [`docs/security-audit.md`](docs/security-audit.md)                              |
 
 ---
 

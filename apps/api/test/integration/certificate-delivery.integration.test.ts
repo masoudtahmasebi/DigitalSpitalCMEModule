@@ -258,13 +258,17 @@ describe("a successful delivery", () => {
     expect(sent[0]?.from).toBe('"MEDICE" <fortbildung@example.de>');
   });
 
-  it("links to the download token the database generated", async () => {
+  it("links to the course page and never leaks the download token", async () => {
     const { certificateId } = await queueCertificate();
     const { service, sent } = build();
     await service.sweep(new Date());
 
     const row = await certificateRow(certificateId);
-    expect(sent[0]?.body).toContain(row.download_token);
+    expect(sent[0]?.body).toContain(
+      `https://fortbildung.example.de/kurs/cert-course-${suffix}`,
+    );
+    // The token is the certificate's non-enumerable id, not a URL credential.
+    expect(sent[0]?.body).not.toContain(row.download_token);
   });
 });
 

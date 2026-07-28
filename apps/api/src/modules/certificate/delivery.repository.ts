@@ -34,7 +34,14 @@ export interface DueDelivery {
   readonly id: string;
   readonly enrolmentId: string;
   readonly courseTitle: string;
+  readonly courseSlug: string;
   readonly participantName: string;
+  /**
+   * Not currently placed in the email — see `delivery.service.ts` on why the
+   * link points at the authenticated course page instead. Kept because it is
+   * the certificate's non-enumerable identifier and the thing any future
+   * tokenised URL would use.
+   */
   readonly downloadToken: string;
   readonly attemptCount: number;
   readonly firstAttemptAt: Date | null;
@@ -115,6 +122,7 @@ export class DeliveryRepository implements DeliveryRepositoryPort {
           id: certificates.id,
           enrolmentId: certificates.enrolmentId,
           courseTitle: courses.title,
+          courseSlug: courses.slug,
           participantName: certificates.participantName,
           downloadToken: certificates.downloadToken,
           attemptCount: certificates.deliveryAttemptCount,

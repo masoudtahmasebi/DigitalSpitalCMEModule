@@ -34,6 +34,7 @@ function row(over: Partial<DueDelivery> = {}): DueDelivery {
     id: CERTIFICATE,
     enrolmentId: "33333333-3333-3333-3333-333333333333",
     courseTitle: "ADHS Akademie adult",
+    courseSlug: "adhs-akademie-adult",
     participantName: NAME,
     downloadToken: TOKEN,
     attemptCount: 0,
@@ -54,6 +55,7 @@ function row(over: Partial<DueDelivery> = {}): DueDelivery {
 function build(
   rows: DueDelivery[],
   outcome: DeliveryOutcome = { status: "delivered", reference: "<id@example.de>" },
+  portalBaseUrl = "https://fortbildung.example.de/",
 ) {
   const sent: OutboundMessage[] = [];
   const audits: Array<{ customerId: string; entry: AuditEntry }> = [];
@@ -96,10 +98,15 @@ function build(
   const service = new CertificateDeliveryService(repository, channel, audit, {
     batchSize: 25,
     leaseSeconds: 600,
-    portalBaseUrl: "https://fortbildung.example.de/",
+    portalBaseUrl,
   });
 
   return { service, sent, audits, written };
+}
+
+/** `build` with a different portal base — for the "no portal deployed" case. */
+function buildWith(rows: DueDelivery[], portalBaseUrl: string) {
+  return build(rows, undefined, portalBaseUrl);
 }
 
 describe("a successful delivery", () => {
@@ -175,14 +182,18 @@ describe("a successful delivery", () => {
     expect(JSON.stringify(written)).not.toContain(SMTP_PASSWORD);
   });
 
-  it("links to the download token, not the certificate id", async () => {
-    // An id in an inbox is an enumerable identifier. The token is 32 random
-    // bytes with a unique constraint behind it (P8-04).
+  it("links to the course page, never to an unauthenticated download", async () => {
+    // A URL that hands over a Teilnahmebescheinigung to whoever presents it is
+    // a bearer credential sitting in a mailbox. The link costs a sign-in that
+    // Keycloak's SSO session usually makes invisible; the attachment is what
+    // most recipients use anyway.
     const { service, sent } = build([row()]);
     await service.sweep(NOW);
 
-    expect(sent[0]?.body).toContain(`https://fortbildung.example.de/zertifikat/${TOKEN}`);
-    expect(sent[0]?.body).not.toContain(CERTIFICATE);
+    const body = sent[0]?.body ?? "";
+    expect(body).toContain("https://fortbildung.example.de/kurs/adhs-akademie-adult");
+    expect(body).not.toContain(TOKEN);
+    expect(body).not.toContain(CERTIFICATE);
   });
 
   it("writes no personal data to the audit log", async () => {
@@ -199,6 +210,19 @@ describe("a successful delivery", () => {
 });
 
 describe("the email's contents", () => {
+  it("omits the link paragraph when no portal is deployed", async () => {
+    // `PORTAL_BASE_URL` unset. A relative `/kurs/slug` in an email is not a
+    // link — a mail client has no origin to resolve it against. The attachment
+    // still arrives, which is the part that matters.
+    const { service, sent } = buildWith([row()], "");
+    await service.sweep(NOW);
+
+    const body = sent[0]?.body ?? "";
+    expect(body).not.toContain("/kurs/");
+    expect(body).not.toContain("herunterladen");
+    expect(body).toContain("im Anhang");
+  });
+
   it("carries no EFN and no score", async () => {
     // An email is the least controlled place a physician's data can end up.
     const { service, sent } = build([row()]);

@@ -215,7 +215,7 @@ export class CertificateDeliveryService {
     const { subject, body } = certificateEmail({
       participantName: row.participantName,
       courseTitle: row.courseTitle,
-      downloadUrl: this.downloadUrl(row.downloadToken),
+      courseUrl: this.courseUrl(row.courseSlug),
     });
 
     return {
@@ -240,15 +240,31 @@ export class CertificateDeliveryService {
   }
 
   /**
-   * The link in the email.
+   * The link in the email — the course page, which requires signing in.
    *
-   * The download token, not the certificate id: an id in an email is an
-   * enumerable identifier in somebody's inbox, and the token is 32 random bytes
-   * with a unique constraint behind it (P8-04).
+   * **Deliberately not a tokenised download URL**, which is what P8-04
+   * imagined. A link that hands over a Teilnahmebescheinigung to whoever
+   * presents it is a bearer credential sitting in a mailbox, and mailboxes are
+   * forwarded, backed up, synced to phones and occasionally breached — for a
+   * document that names a physician and states what they were examined on.
+   *
+   * The authenticated path already satisfies P8-04's actual requirement more
+   * strongly: `GET /courses/{slug}/certificate/pdf` is scoped to the calling
+   * learner, so nobody can fetch anybody else's whatever they know. Keycloak's
+   * SSO session usually makes the sign-in invisible anyway.
+   *
+   * The download token stays on the row. It is the certificate's
+   * non-enumerable identifier, and it is what a tokenised URL would use if one
+   * is ever genuinely wanted — with an expiry, which a link in an inbox that
+   * never expires would also need.
    */
-  private downloadUrl(token: string): string {
+  private courseUrl(slug: string): string {
     const base = this.options.portalBaseUrl.replace(/\/+$/, "");
-    return `${base}/zertifikat/${encodeURIComponent(token)}`;
+    // Unset means no portal is deployed. Returning `/kurs/slug` would put a
+    // relative path in an email, which no mail client can resolve — the copy
+    // drops the paragraph instead, and the attachment still arrives.
+    if (base === "") return "";
+    return `${base}/kurs/${encodeURIComponent(slug)}`;
   }
 }
 
