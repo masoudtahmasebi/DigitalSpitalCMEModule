@@ -291,6 +291,149 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The tenant's courses, with their authoring status
+         * @description Scoped by PostgreSQL RLS to the caller's customer (ADR-0002), like
+         *     everything else. `certificateReady` and `missingCertificateFields` are
+         *     computed with the **same rule the certificate endpoint enforces**, so
+         *     the console cannot report a course as ready that would then refuse to
+         *     issue.
+         */
+        get: operations["adminListCourses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/courses/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One course's settings */
+        get: operations["adminGetCourse"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit a course's compliance and certificate fields
+         * @description Every field is optional — an absent field means "leave alone", so
+         *     editing the issue place does not require resending the VNR password.
+         *
+         *     **Lowering `passThresholdPercent` below the accredited minimum is
+         *     refused** unless `acknowledgeAccreditationRisk` is true. The 70 %
+         *     threshold is a condition of the Anerkennungsbescheid, not a difficulty
+         *     setting: below it the Ärztekammer does not credit the points, so every
+         *     point awarded afterwards is unearned. The check is server-side because
+         *     a confirmation a client can skip is not a confirmation.
+         *
+         *     Changes never apply retroactively — an enrolment carries the thresholds
+         *     snapshotted when it was created (P3-01).
+         */
+        patch: operations["adminUpdateCourse"];
+        trace?: never;
+    };
+    "/admin/courses/{slug}/certificate-assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upload the stamp and signature of the Wissenschaftliche Leitung
+         * @description The Bescheid requires the Teilnahmebescheinigung to carry the stamp of,
+         *     and be signed by, the Wissenschaftliche Leitung — and those belong to
+         *     the **course**, supplied by whoever creates it, not to the platform.
+         *
+         *     PUT because it replaces: a certificate carries one stamp, so "add
+         *     another" has no meaning. Base64 in JSON rather than multipart — these
+         *     are a few kilobytes, and a multipart parser would add a file-upload
+         *     surface for one endpoint.
+         *
+         *     PNG and JPEG only, 512 KB each, and the **magic bytes are checked
+         *     rather than the declared type**. SVG is deliberately excluded: it is
+         *     executable markup, and this asset is customer-uploaded and rendered by
+         *     the server into a PDF.
+         */
+        put: operations["adminSetCertificateAssets"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/courses/{slug}/participants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Participant status for one course
+         * @description Every figure comes from the **same rollup the learner's own screen
+         *     renders from** (CLAUDE.md §4 invariant 6). A list showing a physician
+         *     96 % where their own screen shows 100 % would be two different answers
+         *     to "did this person earn a CME point", one of which has already gone to
+         *     the Ärztekammer.
+         *
+         *     `eivState` distinguishes `needs_attention` from a generic failure on
+         *     purpose: a submission unresolved after the fast retries will not fix
+         *     itself, and the Bescheid's paper fallback is only open while the 8-day
+         *     deadline has not passed (P9-06).
+         *
+         *     The EFN is never returned — only whether one is on file (ADR-0004).
+         */
+        get: operations["adminListParticipants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/courses/{slug}/participants.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The participant list as CSV
+         * @description Exactly the rows the list returns — built from the same call, not a
+         *     second query. UTF-8 with a BOM and a `sep=;` line so Excel in a German
+         *     locale opens it correctly, and cells that could be read as spreadsheet
+         *     formulas are neutralised. The export is audited: it is the point where
+         *     personal data leaves the system's access controls.
+         */
+        get: operations["adminExportParticipants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/profile/efn": {
         parameters: {
             query?: never;
@@ -731,6 +874,119 @@ export interface components {
              *     the identity authority — this only decides what is printed.
              */
             attestedName?: string;
+        };
+        /**
+         * @description A course as an admin sees it. Carries no secret and no image bytes —
+         *     only whether one is stored. A field that can be read is a field that
+         *     can leak, and one of them authenticates DigitalSpital to a legally
+         *     binding accreditation interface.
+         */
+        AdminCourseSummary: {
+            slug: string;
+            title: string;
+            vnr: string | null;
+            cmePoints: number | null;
+            cmeCategory: string | null;
+            requiredWatchPercent: number;
+            passThresholdPercent: number;
+            enrolmentCount: number;
+            completedCount: number;
+            /**
+             * @description Whether this course could issue a valid Teilnahmebescheinigung
+             *     today. Computed with the same rule the certificate endpoint
+             *     enforces.
+             */
+            certificateReady: boolean;
+            missingCertificateFields: string[];
+        };
+        AdminCourseDetail: components["schemas"]["AdminCourseSummary"] & {
+            organizer: string | null;
+            eventLocation: string | null;
+            accreditationBody: string | null;
+            scientificLeadName: string | null;
+            scientificLeadTitle: string | null;
+            certificateIssuePlace: string | null;
+            /** @description Presence only. The bytes are never returned. */
+            hasStampImage: boolean;
+            hasSignatureImage: boolean;
+            /**
+             * @description The only readable trace of the VNR password anywhere in the
+             *     API. Not the value, not a mask, not a length.
+             */
+            hasVnrPassword: boolean;
+            maxQuizAttempts: number | null;
+            revealCorrectAnswers: boolean;
+        };
+        /**
+         * @description A PATCH: every field optional, an absent field means "leave alone".
+         *     `null` clears a nullable text field.
+         */
+        AdminCourseUpdate: {
+            requiredWatchPercent?: number;
+            passThresholdPercent?: number;
+            organizer?: string | null;
+            eventLocation?: string | null;
+            accreditationBody?: string | null;
+            scientificLeadName?: string | null;
+            scientificLeadTitle?: string | null;
+            certificateIssuePlace?: string | null;
+            /**
+             * @description Write-only. Encrypted at rest with the application KMS key, never
+             *     returned by any endpoint and never written to a log.
+             */
+            vnrPassword?: string;
+            /**
+             * @description Required to be true when lowering `passThresholdPercent` below the
+             *     accredited minimum. Without it the request is refused with 409.
+             */
+            acknowledgeAccreditationRisk?: boolean;
+        };
+        /**
+         * @description Base64 without a `data:` prefix. The magic bytes are checked; the
+         *     declared mime type is treated as a claim, not as truth.
+         */
+        CertificateAssetUpload: {
+            stampImageBase64?: string;
+            /** @enum {string} */
+            stampImageMime?: "image/png" | "image/jpeg";
+            signatureImageBase64?: string;
+            /** @enum {string} */
+            signatureImageMime?: "image/png" | "image/jpeg";
+        };
+        /**
+         * @description `needs_attention` is distinct from `failed` on purpose: a submission
+         *     unresolved after the fast retries will not fix itself, and the paper
+         *     fallback is only open while the 8-day deadline has not passed.
+         * @enum {string}
+         */
+        EivState: "none" | "queued" | "submitted" | "failed" | "needs_attention" | "abandoned";
+        /**
+         * @description One participant's status. The EFN itself never appears — only whether
+         *     one is on file (ADR-0004).
+         */
+        ParticipantRow: {
+            /** Format: uuid */
+            enrolmentId: string;
+            participantName: string;
+            email: string | null;
+            efnPresent: boolean;
+            watchedPercent: number;
+            quizPassed: boolean;
+            evaluationSubmitted: boolean;
+            progressPercent: number;
+            complete: boolean;
+            /** Format: date-time */
+            completedAt: string | null;
+            eivState: components["schemas"]["EivState"];
+            eivAttempts: number;
+            /** Format: date-time */
+            eivReportDueAt: string | null;
+            /** @enum {string} */
+            certificateState: "none" | "pending" | "issued" | "delivered" | "bounced";
+        };
+        ParticipantList: {
+            courseSlug: string;
+            rows: components["schemas"]["ParticipantRow"][];
         };
         EfnInput: {
             /** @description 15 digits. Never returned by any endpoint once stored. */
@@ -1341,6 +1597,223 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+        };
+    };
+    adminListCourses: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The courses this admin may see. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCourseSummary"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminGetCourse: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCourseDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminUpdateCourse: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCourseUpdate"];
+            };
+        };
+        responses: {
+            /** @description The updated course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCourseDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /**
+             * @description The pass threshold would fall below the accredited minimum and the
+             *     risk was not acknowledged.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminSetCertificateAssets: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CertificateAssetUpload"];
+            };
+        };
+        responses: {
+            /** @description The updated course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCourseDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminListParticipants: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The participants. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipantList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminExportParticipants: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The CSV. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     setEfn: {

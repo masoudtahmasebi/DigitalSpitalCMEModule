@@ -98,6 +98,9 @@ importers:
       autoprefixer:
         specifier: ^10.4.20
         version: 10.5.4(postcss@8.5.23)
+      jsdom:
+        specifier: ^26.0.0
+        version: 26.1.0
       postcss:
         specifier: ^8.4.49
         version: 8.5.23

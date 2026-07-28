@@ -1,0 +1,542 @@
+import { describe, expect, it } from "vitest";
+import { AdminService, ACCREDITED_MIN_PASS_PERCENT } from "./admin.service.js";
+import { adminCourseDetailSchema, participantListSchema } from "./admin.dto.js";
+import { AppError } from "../../shared/problem-details.js";
+import { PlaintextSecretCipher } from "../../shared/secret-cipher.js";
+import type {
+  AdminCourseRow,
+  AdminRepositoryPort,
+  CertificateAssetPatch,
+  CoursePatch,
+  EnrolmentListRow,
+} from "./admin.repository.js";
+import type {
+  CourseTree,
+  LearningRepositoryPort,
+  ProgressRow,
+} from "../learning/learning.repository.js";
+
+const COURSE_ID = "f47ac10b-58cc-4372-a567-0e02b2c3d479";
+const ENROLMENT_ID = "a1b2c3d4-0000-4000-8000-000000000001";
+const USER_ID = "11111111-0000-4000-8000-000000000001";
+const CUSTOMER_ID = "22222222-0000-4000-8000-000000000001";
+const M1 = "aaaaaaaa-0000-4000-8000-000000000001";
+const C1 = "bbbbbbbb-0000-4000-8000-000000000001";
+const VIDEO = "cccccccc-0000-4000-8000-000000000001";
+
+const NOW = new Date("2026-07-28T10:00:00Z");
+const actor = { customerId: CUSTOMER_ID, userId: USER_ID };
+
+/** 1×1 opaque PNG. */
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+).toString("base64");
+
+/** 1×1 baseline JPEG. */
+const JPEG =
+  "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/9oACAEBAAA/AP38ooooA//Z";
+
+const course: AdminCourseRow = {
+  id: COURSE_ID,
+  slug: "adhs-akademie-adult",
+  title: "ADHS Akademie adult",
+  vnr: "2760552025919300018",
+  cmePoints: 4,
+  cmeCategory: "D",
+  requiredWatchPercent: 100,
+  passThresholdPercent: 70,
+  maxQuizAttempts: null,
+  revealCorrectAnswers: false,
+  organizer: "Medice Arzneimittel Pütter GmbH & Co. KG, Iserlohn",
+  eventLocation: "online",
+  accreditationBody: "Ärztekammer Westfalen-Lippe",
+  scientificLeadName: "Muster-Leitung",
+  scientificLeadTitle: "Prof. Dr. med.",
+  certificateIssuePlace: "Iserlohn",
+  hasStampImage: true,
+  hasSignatureImage: true,
+  hasVnrPassword: false,
+};
+
+const tree: CourseTree = {
+  modules: [{ id: M1, ordinal: 0, title: "Modul 1" }],
+  chapters: [{ id: C1, moduleId: M1, ordinal: 0 }],
+  contents: [
+    {
+      id: VIDEO,
+      chapterId: C1,
+      ordinal: 0,
+      kind: "video",
+      durationSec: 600,
+      title: "Grundlagen",
+      body: null,
+      videoUrl: null,
+      fileUrl: null,
+      mimeType: null,
+      fileSize: null,
+    },
+  ],
+};
+
+const enrolment: EnrolmentListRow = {
+  enrolmentId: ENROLMENT_ID,
+  userId: USER_ID,
+  requiredWatchPercent: 100,
+  passThresholdPercent: 70,
+  completedAt: null,
+  attestedName: null,
+  firstName: "Anna",
+  lastName: "Müller",
+  email: "anna@example.org",
+};
+
+function build(
+  options: {
+    course?: Partial<AdminCourseRow>;
+    enrolments?: EnrolmentListRow[];
+    progress?: ProgressRow[];
+    submission?: {
+      status: string;
+      attemptCount: number;
+      reportDueAt: Date;
+    };
+    efnPresent?: boolean;
+    evaluationSubmitted?: boolean;
+  } = {},
+) {
+  const patches: CoursePatch[] = [];
+  const assetPatches: CertificateAssetPatch[] = [];
+  const audits: Array<Record<string, unknown>> = [];
+  const row = { ...course, ...options.course };
+
+  const repository: AdminRepositoryPort = {
+    listCourses: async () => [row],
+    findCourse: async (slug) => (slug === row.slug ? row : undefined),
+    countEnrolments: async () => new Map([[row.id, { total: 1, completed: 0 }]]),
+    updateCourse: async (_id, patch) => {
+      patches.push(patch);
+    },
+    setCertificateAssets: async (_id, assets) => {
+      assetPatches.push(assets);
+    },
+    listEnrolments: async () => options.enrolments ?? [enrolment],
+    findProgressByEnrolment: async () =>
+      new Map([[ENROLMENT_ID, options.progress ?? []]]),
+    findEvaluationSubmitted: async () =>
+      options.evaluationSubmitted === true ? new Set([ENROLMENT_ID]) : new Set(),
+    findEfnPresent: async () =>
+      options.efnPresent === true ? new Set([USER_ID]) : new Set(),
+    findSubmissions: async () =>
+      options.submission === undefined
+        ? new Map()
+        : new Map([
+            [
+              ENROLMENT_ID,
+              {
+                enrolmentId: ENROLMENT_ID,
+                ...options.submission,
+              } as never,
+            ],
+          ]),
+    findCertificates: async () => new Map(),
+    audit: async (entry) => {
+      audits.push(entry as unknown as Record<string, unknown>);
+    },
+  };
+
+  const learning = {
+    findCourseTree: async () => tree,
+  } as unknown as LearningRepositoryPort;
+
+  const service = new AdminService(
+    repository,
+    learning,
+    new PlaintextSecretCipher("test"),
+  );
+
+  return { service, patches, assetPatches, audits };
+}
+
+describe("the accreditation threshold is a rule, not a preference", () => {
+  it("refuses to lower the pass threshold without an explicit acknowledgement", async () => {
+    // The Bescheid: "Voraussetzung für die Punktevergaben ist, dass der Anteil
+    // der richtig beantworteten Fragen … mindestens 70 % beträgt." An admin
+    // lowering it is voiding the accreditation, not tuning difficulty.
+    const error = (await build()
+      .service.updateCourse("adhs-akademie-adult", { passThresholdPercent: 50 }, actor)
+      .catch((e) => e)) as AppError;
+
+    expect(error.kind).toBe("conflict");
+    expect(error.clientDetail).toContain("Anerkennungsbescheid");
+  });
+
+  it("does not write anything when it refuses", async () => {
+    const { service, patches } = build();
+
+    await service
+      .updateCourse("adhs-akademie-adult", { passThresholdPercent: 50 }, actor)
+      .catch(() => undefined);
+
+    expect(patches).toEqual([]);
+  });
+
+  it("allows it once the risk is acknowledged, and records that in the audit", async () => {
+    // The confirmation is server-side because a confirmation a client can skip
+    // is not a confirmation.
+    const { service, patches, audits } = build();
+
+    await service.updateCourse(
+      "adhs-akademie-adult",
+      { passThresholdPercent: 50, acknowledgeAccreditationRisk: true },
+      actor,
+    );
+
+    expect(patches[0]?.passThresholdPercent).toBe(50);
+    expect(audits[0]?.["detail"]).toMatchObject({
+      accreditationRiskAcknowledged: true,
+      newPassThreshold: 50,
+    });
+  });
+
+  it("needs no acknowledgement at or above the accredited minimum", async () => {
+    const { service, patches } = build();
+
+    await service.updateCourse(
+      "adhs-akademie-adult",
+      { passThresholdPercent: ACCREDITED_MIN_PASS_PERCENT },
+      actor,
+    );
+
+    expect(patches[0]?.passThresholdPercent).toBe(ACCREDITED_MIN_PASS_PERCENT);
+  });
+
+  it("needs no acknowledgement when raising it", async () => {
+    const { service, patches } = build();
+    await service.updateCourse(
+      "adhs-akademie-adult",
+      { passThresholdPercent: 90 },
+      actor,
+    );
+    expect(patches[0]?.passThresholdPercent).toBe(90);
+  });
+});
+
+describe("secrets", () => {
+  it("encrypts the VNR password before it reaches the repository", async () => {
+    const { service, patches } = build();
+
+    await service.updateCourse("adhs-akademie-adult", { vnrPassword: "s3cret" }, actor);
+
+    // The plaintext cipher is identity in test, so this asserts the *shape*:
+    // the repository receives a Buffer on the `_enc` column, never a string on
+    // a plaintext one.
+    expect(patches[0]?.vnrPasswordEnc).toBeInstanceOf(Buffer);
+    expect("vnrPassword" in (patches[0] ?? {})).toBe(false);
+  });
+
+  it("never puts the password value in the audit trail", async () => {
+    const { service, audits } = build();
+
+    await service.updateCourse("adhs-akademie-adult", { vnrPassword: "s3cret" }, actor);
+
+    expect(JSON.stringify(audits)).not.toContain("s3cret");
+    // Field names are fine and are what makes the audit useful.
+    expect(JSON.stringify(audits)).toContain("vnrPasswordEnc");
+  });
+
+  it("never returns the password, only whether one is stored", async () => {
+    const detail = await build({ course: { hasVnrPassword: true } }).service.getCourse(
+      "adhs-akademie-adult",
+    );
+
+    const parsed = adminCourseDetailSchema.parse(detail);
+    expect(parsed.hasVnrPassword).toBe(true);
+    expect(JSON.stringify(parsed)).not.toContain('vnrPassword":"');
+  });
+
+  it("leaves the password alone when the patch does not mention it", async () => {
+    // An admin editing the issue place must not have to resend a credential to
+    // avoid clearing it.
+    const { service, patches } = build();
+
+    await service.updateCourse(
+      "adhs-akademie-adult",
+      { certificateIssuePlace: "Münster" },
+      actor,
+    );
+
+    expect(patches[0]).toEqual({ certificateIssuePlace: "Münster" });
+  });
+});
+
+describe("certificate assets", () => {
+  it("accepts a PNG and records its sniffed type", async () => {
+    const { service, assetPatches } = build();
+
+    await service.setCertificateAssets(
+      "adhs-akademie-adult",
+      { stampImageBase64: PNG, stampImageMime: "image/png" },
+      actor,
+    );
+
+    expect(assetPatches[0]?.stampImageMime).toBe("image/png");
+    expect(assetPatches[0]?.stampImage).toBeInstanceOf(Buffer);
+  });
+
+  it("accepts a JPEG signature", async () => {
+    const { service, assetPatches } = build();
+
+    await service.setCertificateAssets(
+      "adhs-akademie-adult",
+      { signatureImageBase64: JPEG, signatureImageMime: "image/jpeg" },
+      actor,
+    );
+
+    expect(assetPatches[0]?.signatureImageMime).toBe("image/jpeg");
+  });
+
+  it("rejects a file that is not an image, whatever it claims to be", async () => {
+    // SVG is excluded by the column constraint because it is executable
+    // markup — but the check that matters is the magic bytes, since the
+    // declared type is a claim by the uploader.
+    const svg = Buffer.from('<svg onload="alert(1)"></svg>').toString("base64");
+
+    const error = (await build()
+      .service.setCertificateAssets(
+        "adhs-akademie-adult",
+        { stampImageBase64: svg, stampImageMime: "image/png" },
+        actor,
+      )
+      .catch((e) => e)) as AppError;
+
+    expect(error.kind).toBe("validation");
+  });
+
+  it("rejects a PNG declared as a JPEG", async () => {
+    const error = (await build()
+      .service.setCertificateAssets(
+        "adhs-akademie-adult",
+        { stampImageBase64: PNG, stampImageMime: "image/jpeg" },
+        actor,
+      )
+      .catch((e) => e)) as AppError;
+
+    expect(error.kind).toBe("validation");
+  });
+
+  it("rejects an oversized image before it reaches the column constraint", async () => {
+    const huge = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+      Buffer.alloc(600_000),
+    ]).toString("base64");
+
+    const error = (await build()
+      .service.setCertificateAssets(
+        "adhs-akademie-adult",
+        { stampImageBase64: huge },
+        actor,
+      )
+      .catch((e) => e)) as AppError;
+
+    expect(error.kind).toBe("validation");
+    expect(error.clientDetail).toContain("512 KB");
+  });
+
+  it("refuses an upload containing neither image", async () => {
+    const error = (await build()
+      .service.setCertificateAssets("adhs-akademie-adult", {}, actor)
+      .catch((e) => e)) as AppError;
+
+    expect(error.kind).toBe("validation");
+  });
+
+  it("audits sizes, not bytes", async () => {
+    const { service, audits } = build();
+
+    await service.setCertificateAssets(
+      "adhs-akademie-adult",
+      { stampImageBase64: PNG },
+      actor,
+    );
+
+    expect(audits[0]?.["detail"]).toMatchObject({ stampBytes: expect.any(Number) });
+    expect(JSON.stringify(audits)).not.toContain(PNG.slice(0, 20));
+  });
+});
+
+describe("certificate readiness matches what the certificate endpoint enforces", () => {
+  it("reports a fully configured course as ready", async () => {
+    const [summary] = await build().service.listCourses();
+    expect(summary?.certificateReady).toBe(true);
+    expect(summary?.missingCertificateFields).toEqual([]);
+  });
+
+  it("names the missing stamp rather than only saying not ready", async () => {
+    const [summary] = await build({
+      course: { hasStampImage: false },
+    }).service.listCourses();
+
+    expect(summary?.certificateReady).toBe(false);
+    expect(summary?.missingCertificateFields).toContain("stampImage");
+  });
+
+  it("names a missing data field too", async () => {
+    const [summary] = await build({
+      course: { scientificLeadName: null, vnr: null },
+    }).service.listCourses();
+
+    expect(summary?.missingCertificateFields).toEqual(
+      expect.arrayContaining(["vnr", "scientificLeadName"]),
+    );
+  });
+
+  it("does not report the learner's own fields as course gaps", async () => {
+    // `participantName` and `completedAt` belong to a participation, not to
+    // the course, so a course with neither is still correctly configured.
+    const [summary] = await build().service.listCourses();
+    expect(summary?.missingCertificateFields).not.toContain("participantName");
+    expect(summary?.missingCertificateFields).not.toContain("completedAt");
+  });
+});
+
+describe("the participant list", () => {
+  const watchedFully: ProgressRow[] = [
+    {
+      contentId: VIDEO,
+      status: "completed",
+      watchedPercent: 100,
+      watchedSegments: [{ startSec: 0, endSec: 600 }],
+      lastPositionSec: 600,
+      scorePercent: null,
+      updatedAt: NOW,
+    },
+  ];
+
+  it("returns a contract-valid list", async () => {
+    const list = await build().service.listParticipants("adhs-akademie-adult", NOW);
+    expect(() => participantListSchema.parse(list)).not.toThrow();
+  });
+
+  it("reports the same watched percentage the learner's own screen shows", async () => {
+    // CLAUDE.md §4 invariant 6 — the integration suite proves this end to end
+    // against a real learner request; here it is the unit-level guard.
+    const list = await build({ progress: watchedFully }).service.listParticipants(
+      "adhs-akademie-adult",
+      NOW,
+    );
+
+    expect(list.rows[0]?.watchedPercent).toBe(100);
+    expect(list.rows[0]?.progressPercent).toBe(100);
+  });
+
+  it("counts a partially watched video as partial, not as done", async () => {
+    const list = await build({
+      progress: [
+        {
+          ...watchedFully[0]!,
+          watchedPercent: 40,
+          watchedSegments: [{ startSec: 0, endSec: 240 }],
+          status: "in_progress",
+        },
+      ],
+    }).service.listParticipants("adhs-akademie-adult", NOW);
+
+    expect(list.rows[0]?.watchedPercent).toBe(40);
+    expect(list.rows[0]?.complete).toBe(false);
+  });
+
+  it("never returns an EFN, only whether one is on file", async () => {
+    const list = await build({ efnPresent: true }).service.listParticipants(
+      "adhs-akademie-adult",
+      NOW,
+    );
+
+    expect(list.rows[0]?.efnPresent).toBe(true);
+    expect(JSON.stringify(list)).not.toContain('efn":"');
+  });
+
+  it("prefers the attested name, which is what the certificate prints", async () => {
+    const list = await build({
+      enrolments: [{ ...enrolment, attestedName: "Dr. med. Anna Müller" }],
+    }).service.listParticipants("adhs-akademie-adult", NOW);
+
+    expect(list.rows[0]?.participantName).toBe("Dr. med. Anna Müller");
+  });
+
+  it("falls back to the profile name when none was attested", async () => {
+    const list = await build().service.listParticipants("adhs-akademie-adult", NOW);
+    expect(list.rows[0]?.participantName).toBe("Anna Müller");
+  });
+});
+
+describe("EIV state is what an admin has to act on", () => {
+  const due = new Date("2026-08-05T21:59:59Z");
+
+  it("calls a healthy queued submission queued", async () => {
+    const list = await build({
+      submission: { status: "queued", attemptCount: 1, reportDueAt: due },
+    }).service.listParticipants("adhs-akademie-adult", NOW);
+
+    expect(list.rows[0]?.eivState).toBe("queued");
+  });
+
+  it("flags one that burned through the fast retries", async () => {
+    // P7-06 retries three times at 10-minute intervals. Still queued after
+    // that will not fix itself, and folding it into a generic count is how a
+    // statutory deadline passes quietly.
+    const list = await build({
+      submission: { status: "queued", attemptCount: 3, reportDueAt: due },
+    }).service.listParticipants("adhs-akademie-adult", NOW);
+
+    expect(list.rows[0]?.eivState).toBe("needs_attention");
+  });
+
+  it("flags one whose reporting deadline has passed while still queued", async () => {
+    const list = await build({
+      submission: {
+        status: "queued",
+        attemptCount: 0,
+        reportDueAt: new Date("2026-07-01T00:00:00Z"),
+      },
+    }).service.listParticipants("adhs-akademie-adult", NOW);
+
+    expect(list.rows[0]?.eivState).toBe("needs_attention");
+  });
+
+  it("flags a retryable failure", async () => {
+    const list = await build({
+      submission: { status: "failed_retryable", attemptCount: 2, reportDueAt: due },
+    }).service.listParticipants("adhs-akademie-adult", NOW);
+
+    expect(list.rows[0]?.eivState).toBe("needs_attention");
+  });
+
+  it("distinguishes an abandoned submission from one needing attention", async () => {
+    // A closed correction window cannot be rescued electronically — the paper
+    // fallback is the only route, and that is a different action.
+    for (const status of ["failed_permanent", "window_closed"]) {
+      const list = await build({
+        submission: { status, attemptCount: 4, reportDueAt: due },
+      }).service.listParticipants("adhs-akademie-adult", NOW);
+
+      expect(list.rows[0]?.eivState).toBe("abandoned");
+    }
+  });
+
+  it("reports no submission as none, not as a failure", async () => {
+    const list = await build().service.listParticipants("adhs-akademie-adult", NOW);
+    expect(list.rows[0]?.eivState).toBe("none");
+    expect(list.rows[0]?.eivReportDueAt).toBeNull();
+  });
+});
+
+describe("a course outside the tenant", () => {
+  it("is a 404, not a 403 — existence is never disclosed", async () => {
+    const error = (await build()
+      .service.getCourse("some-other-course")
+      .catch((e) => e)) as AppError;
+
+    expect(error.kind).toBe("not_found");
+  });
+});

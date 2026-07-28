@@ -44,6 +44,14 @@ import type {
   efnInputSchema,
   evaluationSchema,
 } from "../../src/modules/completion/completion.dto.js";
+import type {
+  adminCourseDetailSchema,
+  adminCourseSummarySchema,
+  adminCourseUpdateSchema,
+  certificateAssetSchema,
+  participantListSchema,
+  participantRowSchema,
+} from "../../src/modules/admin/admin.dto.js";
 import type { Expect, MutuallyAssignable } from "./assignable.js";
 
 type Schemas = components["schemas"];
@@ -94,6 +102,39 @@ type _Assessment = [
 type _Completion = [
   Expect<MutuallyAssignable<z.infer<typeof evaluationSchema>, Schemas["Evaluation"]>>,
   Expect<MutuallyAssignable<z.infer<typeof efnInputSchema>, Schemas["EfnInput"]>>,
+];
+
+type _Admin = [
+  Expect<
+    MutuallyAssignable<
+      z.infer<typeof adminCourseSummarySchema>,
+      Schemas["AdminCourseSummary"]
+    >
+  >,
+  Expect<
+    MutuallyAssignable<
+      z.infer<typeof adminCourseDetailSchema>,
+      Schemas["AdminCourseDetail"]
+    >
+  >,
+  Expect<
+    MutuallyAssignable<
+      z.infer<typeof adminCourseUpdateSchema>,
+      Schemas["AdminCourseUpdate"]
+    >
+  >,
+  Expect<
+    MutuallyAssignable<
+      z.infer<typeof certificateAssetSchema>,
+      Schemas["CertificateAssetUpload"]
+    >
+  >,
+  Expect<
+    MutuallyAssignable<z.infer<typeof participantRowSchema>, Schemas["ParticipantRow"]>
+  >,
+  Expect<
+    MutuallyAssignable<z.infer<typeof participantListSchema>, Schemas["ParticipantList"]>
+  >,
 ];
 
 describe("contract: DTOs match the generated SDK types", () => {

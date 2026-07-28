@@ -44,6 +44,7 @@ tags:
   - name: assessment
   - name: completion
   - name: certificate
+  - name: admin
 
 paths:
   /health:
@@ -447,6 +448,184 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /admin/courses:
+    get:
+      tags: [admin]
+      operationId: adminListCourses
+      summary: The tenant's courses, with their authoring status
+      description: |
+        Scoped by PostgreSQL RLS to the caller's customer (ADR-0002), like
+        everything else. `certificateReady` and `missingCertificateFields` are
+        computed with the **same rule the certificate endpoint enforces**, so
+        the console cannot report a course as ready that would then refuse to
+        issue.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      responses:
+        "200":
+          description: The courses this admin may see.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminCourseSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/courses/{slug}:
+    get:
+      tags: [admin]
+      operationId: adminGetCourse
+      summary: One course's settings
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: The course.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminCourseDetail" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+    patch:
+      tags: [admin]
+      operationId: adminUpdateCourse
+      summary: Edit a course's compliance and certificate fields
+      description: |
+        Every field is optional — an absent field means "leave alone", so
+        editing the issue place does not require resending the VNR password.
+
+        **Lowering `passThresholdPercent` below the accredited minimum is
+        refused** unless `acknowledgeAccreditationRisk` is true. The 70 %
+        threshold is a condition of the Anerkennungsbescheid, not a difficulty
+        setting: below it the Ärztekammer does not credit the points, so every
+        point awarded afterwards is unearned. The check is server-side because
+        a confirmation a client can skip is not a confirmation.
+
+        Changes never apply retroactively — an enrolment carries the thresholds
+        snapshotted when it was created (P3-01).
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminCourseUpdate" }
+      responses:
+        "200":
+          description: The updated course.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminCourseDetail" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            The pass threshold would fall below the accredited minimum and the
+            risk was not acknowledged.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/courses/{slug}/certificate-assets:
+    put:
+      tags: [admin]
+      operationId: adminSetCertificateAssets
+      summary: Upload the stamp and signature of the Wissenschaftliche Leitung
+      description: |
+        The Bescheid requires the Teilnahmebescheinigung to carry the stamp of,
+        and be signed by, the Wissenschaftliche Leitung — and those belong to
+        the **course**, supplied by whoever creates it, not to the platform.
+
+        PUT because it replaces: a certificate carries one stamp, so "add
+        another" has no meaning. Base64 in JSON rather than multipart — these
+        are a few kilobytes, and a multipart parser would add a file-upload
+        surface for one endpoint.
+
+        PNG and JPEG only, 512 KB each, and the **magic bytes are checked
+        rather than the declared type**. SVG is deliberately excluded: it is
+        executable markup, and this asset is customer-uploaded and rendered by
+        the server into a PDF.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CertificateAssetUpload" }
+      responses:
+        "200":
+          description: The updated course.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminCourseDetail" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/courses/{slug}/participants:
+    get:
+      tags: [admin]
+      operationId: adminListParticipants
+      summary: Participant status for one course
+      description: |
+        Every figure comes from the **same rollup the learner's own screen
+        renders from** (CLAUDE.md §4 invariant 6). A list showing a physician
+        96 % where their own screen shows 100 % would be two different answers
+        to "did this person earn a CME point", one of which has already gone to
+        the Ärztekammer.
+
+        `eivState` distinguishes `needs_attention` from a generic failure on
+        purpose: a submission unresolved after the fast retries will not fix
+        itself, and the Bescheid's paper fallback is only open while the 8-day
+        deadline has not passed (P9-06).
+
+        The EFN is never returned — only whether one is on file (ADR-0004).
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: The participants.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ParticipantList" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/courses/{slug}/participants.csv:
+    get:
+      tags: [admin]
+      operationId: adminExportParticipants
+      summary: The participant list as CSV
+      description: |
+        Exactly the rows the list returns — built from the same call, not a
+        second query. UTF-8 with a BOM and a `sep=;` line so Excel in a German
+        locale opens it correctly, and cells that could be read as spreadsheet
+        formulas are neutralised. The export is audited: it is the point where
+        personal data leaves the system's access controls.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: The CSV.
+          content:
+            text/csv:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /profile/efn:
     put:
@@ -1197,6 +1376,179 @@ components:
             because the Keycloak profile may be stale or carry no name at all,
             and the certificate cannot be issued without one. The token stays
             the identity authority — this only decides what is printed.
+
+    AdminCourseSummary:
+      type: object
+      description: |
+        A course as an admin sees it. Carries no secret and no image bytes —
+        only whether one is stored. A field that can be read is a field that
+        can leak, and one of them authenticates DigitalSpital to a legally
+        binding accreditation interface.
+      required:
+        [
+          slug,
+          title,
+          vnr,
+          cmePoints,
+          cmeCategory,
+          requiredWatchPercent,
+          passThresholdPercent,
+          enrolmentCount,
+          completedCount,
+          certificateReady,
+          missingCertificateFields,
+        ]
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        vnr: { type: [string, "null"] }
+        cmePoints: { type: [integer, "null"] }
+        cmeCategory: { type: [string, "null"] }
+        requiredWatchPercent: { type: integer, minimum: 0, maximum: 100 }
+        passThresholdPercent: { type: integer, minimum: 0, maximum: 100 }
+        enrolmentCount: { type: integer, minimum: 0 }
+        completedCount: { type: integer, minimum: 0 }
+        certificateReady:
+          type: boolean
+          description: |
+            Whether this course could issue a valid Teilnahmebescheinigung
+            today. Computed with the same rule the certificate endpoint
+            enforces.
+        missingCertificateFields:
+          type: array
+          items: { type: string }
+
+    AdminCourseDetail:
+      allOf:
+        - $ref: "#/components/schemas/AdminCourseSummary"
+        - type: object
+          required:
+            [
+              organizer,
+              eventLocation,
+              accreditationBody,
+              scientificLeadName,
+              scientificLeadTitle,
+              certificateIssuePlace,
+              hasStampImage,
+              hasSignatureImage,
+              hasVnrPassword,
+              maxQuizAttempts,
+              revealCorrectAnswers,
+            ]
+          properties:
+            organizer: { type: [string, "null"] }
+            eventLocation: { type: [string, "null"] }
+            accreditationBody: { type: [string, "null"] }
+            scientificLeadName: { type: [string, "null"] }
+            scientificLeadTitle: { type: [string, "null"] }
+            certificateIssuePlace: { type: [string, "null"] }
+            hasStampImage:
+              type: boolean
+              description: Presence only. The bytes are never returned.
+            hasSignatureImage: { type: boolean }
+            hasVnrPassword:
+              type: boolean
+              description: |
+                The only readable trace of the VNR password anywhere in the
+                API. Not the value, not a mask, not a length.
+            maxQuizAttempts: { type: [integer, "null"] }
+            revealCorrectAnswers: { type: boolean }
+
+    AdminCourseUpdate:
+      type: object
+      description: |
+        A PATCH: every field optional, an absent field means "leave alone".
+        `null` clears a nullable text field.
+      properties:
+        requiredWatchPercent: { type: integer, minimum: 0, maximum: 100 }
+        passThresholdPercent: { type: integer, minimum: 0, maximum: 100 }
+        organizer: { type: [string, "null"], maxLength: 300 }
+        eventLocation: { type: [string, "null"], maxLength: 300 }
+        accreditationBody: { type: [string, "null"], maxLength: 300 }
+        scientificLeadName: { type: [string, "null"], maxLength: 200 }
+        scientificLeadTitle: { type: [string, "null"], maxLength: 100 }
+        certificateIssuePlace: { type: [string, "null"], maxLength: 200 }
+        vnrPassword:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: |
+            Write-only. Encrypted at rest with the application KMS key, never
+            returned by any endpoint and never written to a log.
+        acknowledgeAccreditationRisk:
+          type: boolean
+          description: |
+            Required to be true when lowering `passThresholdPercent` below the
+            accredited minimum. Without it the request is refused with 409.
+
+    CertificateAssetUpload:
+      type: object
+      description: |
+        Base64 without a `data:` prefix. The magic bytes are checked; the
+        declared mime type is treated as a claim, not as truth.
+      properties:
+        stampImageBase64: { type: string, maxLength: 700000 }
+        stampImageMime: { type: string, enum: [image/png, image/jpeg] }
+        signatureImageBase64: { type: string, maxLength: 700000 }
+        signatureImageMime: { type: string, enum: [image/png, image/jpeg] }
+
+    EivState:
+      type: string
+      description: |
+        `needs_attention` is distinct from `failed` on purpose: a submission
+        unresolved after the fast retries will not fix itself, and the paper
+        fallback is only open while the 8-day deadline has not passed.
+      enum: [none, queued, submitted, failed, needs_attention, abandoned]
+
+    ParticipantRow:
+      type: object
+      description: |
+        One participant's status. The EFN itself never appears — only whether
+        one is on file (ADR-0004).
+      required:
+        [
+          enrolmentId,
+          participantName,
+          email,
+          efnPresent,
+          watchedPercent,
+          quizPassed,
+          evaluationSubmitted,
+          progressPercent,
+          complete,
+          completedAt,
+          eivState,
+          eivAttempts,
+          eivReportDueAt,
+          certificateState,
+        ]
+      properties:
+        enrolmentId: { type: string, format: uuid }
+        participantName: { type: string }
+        email: { type: [string, "null"] }
+        efnPresent: { type: boolean }
+        watchedPercent: { type: integer, minimum: 0, maximum: 100 }
+        quizPassed: { type: boolean }
+        evaluationSubmitted: { type: boolean }
+        progressPercent: { type: integer, minimum: 0, maximum: 100 }
+        complete: { type: boolean }
+        completedAt: { type: [string, "null"], format: date-time }
+        eivState: { $ref: "#/components/schemas/EivState" }
+        eivAttempts: { type: integer, minimum: 0 }
+        eivReportDueAt: { type: [string, "null"], format: date-time }
+        certificateState:
+          type: string
+          enum: [none, pending, issued, delivered, bounced]
+
+    ParticipantList:
+      type: object
+      required: [courseSlug, rows]
+      properties:
+        courseSlug: { type: string }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/ParticipantRow" }
 
     EfnInput:
       type: object

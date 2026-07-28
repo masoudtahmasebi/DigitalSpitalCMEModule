@@ -47,6 +47,7 @@ process.env["EIV_WORKER_ENABLED"] = "no";
 const KID = "completion-flow-key";
 const AUDIENCE = "ds-education-api";
 const SUB = "completion-learner";
+const ADMIN_SUB = "completion-admin";
 const VNR = "2760552025919300018";
 const EFN = "123456789012345";
 /** What the learner confirms at completion — deliberately not the token's name. */
@@ -190,6 +191,17 @@ beforeAll(async () => {
     [userId, customerId],
   );
 
+  // A customer admin in the same tenant, for the console's own assertions.
+  const adminId = await insert(
+    `INSERT INTO users (keycloak_realm, keycloak_sub, email, first_name, last_name)
+     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [issuer, ADMIN_SUB, "admin@example.org", "Admin", "Person"],
+  );
+  await seedPool.query(
+    "INSERT INTO user_roles (user_id, role, customer_id) VALUES ($1,'customer_admin',$2)",
+    [adminId, customerId],
+  );
+
   app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: false });
   await app.listen(0);
   const address = app.getHttpServer().address();
@@ -239,12 +251,22 @@ async function call(
   path: string,
   body?: unknown,
 ): Promise<{ status: number; body: any }> {
+  return callAs(SUB, method, path, body);
+}
+
+/** The same request, as somebody else — used for the admin console's own calls. */
+async function callAs(
+  sub: string,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; body: any }> {
   const jwt = await new SignJWT({})
     .setProtectedHeader({ alg: "RS256", kid: KID })
     .setIssuedAt()
     .setIssuer(issuer)
     .setAudience(AUDIENCE)
-    .setSubject(SUB)
+    .setSubject(sub)
     .setExpirationTime("5m")
     .sign(privateKey);
 
@@ -596,5 +618,196 @@ describe("the Teilnahmebescheinigung", () => {
 
     expect(after.rows).toHaveLength(1);
     expect(after.rows[0]!.download_token).toBe(before.rows[0]!.download_token);
+  });
+});
+
+describe("the admin console sees the same truth the learner does", () => {
+  it("reports the participant's figures exactly as the learner's own screen does", async () => {
+    // CLAUDE.md §4 invariant 6. This is the assertion the invariant exists
+    // for: a console telling MEDICE 96 % where the physician's own screen says
+    // 100 % is two different answers to "did this person earn a CME point",
+    // and one of them has already gone to the Ärztekammer.
+    const learner = await call("GET", `/courses/${courseSlug}/enrolment`);
+    const admin = await callAs(
+      ADMIN_SUB,
+      "GET",
+      `/admin/courses/${courseSlug}/participants`,
+    );
+
+    expect(admin.status).toBe(200);
+    const row = admin.body.rows.find(
+      (entry: { enrolmentId: string }) => entry.enrolmentId === enrolmentId,
+    );
+
+    expect(row).toBeDefined();
+    expect(row.watchedPercent).toBe(learner.body.achievedWatchPercent);
+    expect(row.progressPercent).toBe(learner.body.progress.percent);
+    expect(row.quizPassed).toBe(learner.body.quizPassed);
+    expect(row.evaluationSubmitted).toBe(learner.body.evaluationSubmitted);
+    expect(row.complete).toBe(learner.body.complete);
+    expect(row.completedAt).toBe(learner.body.completedAt);
+    expect(row.efnPresent).toBe(learner.body.efnPresent);
+  });
+
+  it("shows the attested name, and never the EFN", async () => {
+    const { body } = await callAs(
+      ADMIN_SUB,
+      "GET",
+      `/admin/courses/${courseSlug}/participants`,
+    );
+
+    const row = body.rows.find(
+      (entry: { enrolmentId: string }) => entry.enrolmentId === enrolmentId,
+    );
+    expect(row.participantName).toBe(ATTESTED_NAME);
+    expect(JSON.stringify(body)).not.toContain(EFN);
+  });
+
+  it("reports the course as ready to issue certificates", async () => {
+    const { status, body } = await callAs(
+      ADMIN_SUB,
+      "GET",
+      `/admin/courses/${courseSlug}`,
+    );
+
+    expect(status).toBe(200);
+    // The same rule the certificate endpoint enforces — and that endpoint has
+    // already issued a PDF for this course above, so "ready" is provably true.
+    expect(body.certificateReady).toBe(true);
+    expect(body.missingCertificateFields).toEqual([]);
+  });
+
+  it("never returns the stamp bytes or the VNR password", async () => {
+    const { body } = await callAs(ADMIN_SUB, "GET", `/admin/courses/${courseSlug}`);
+
+    expect(body.hasStampImage).toBe(true);
+    expect(body.hasSignatureImage).toBe(true);
+    expect(JSON.stringify(body)).not.toContain('stampImage":"');
+    expect(JSON.stringify(body)).not.toContain("vnrPassword");
+    // And not the raw PNG, under any key.
+    expect(JSON.stringify(body)).not.toContain(PLACEHOLDER_IMAGE.toString("base64"));
+  });
+});
+
+describe("the admin surface is closed to a learner", () => {
+  it("403s every admin route for a learner token", async () => {
+    for (const path of [
+      "/admin/courses",
+      `/admin/courses/${courseSlug}`,
+      `/admin/courses/${courseSlug}/participants`,
+      `/admin/courses/${courseSlug}/participants.csv`,
+    ]) {
+      const { status } = await call("GET", path);
+      expect(status).toBe(403);
+    }
+  });
+
+  it("403s a course edit for a learner token", async () => {
+    const { status } = await call("PATCH", `/admin/courses/${courseSlug}`, {
+      certificateIssuePlace: "Nirgendwo",
+    });
+    expect(status).toBe(403);
+  });
+
+  it("leaves the course unchanged after the refused edit", async () => {
+    // A 403 that still wrote would be the worst of both.
+    const { rows } = await seedPool.query<{ certificate_issue_place: string }>(
+      "SELECT certificate_issue_place FROM courses WHERE slug = $1",
+      [courseSlug],
+    );
+    expect(rows[0]!.certificate_issue_place).toBe("Iserlohn");
+  });
+});
+
+describe("the accreditation threshold, over HTTP", () => {
+  it("refuses to lower it below the accredited minimum", async () => {
+    const { status, body } = await callAs(
+      ADMIN_SUB,
+      "PATCH",
+      `/admin/courses/${courseSlug}`,
+      { passThresholdPercent: 40 },
+    );
+
+    expect(status).toBe(409);
+    expect(body.detail).toContain("Anerkennungsbescheid");
+  });
+
+  it("did not write the refused value", async () => {
+    const { rows } = await seedPool.query<{ pass_threshold_percent: number }>(
+      "SELECT pass_threshold_percent FROM courses WHERE slug = $1",
+      [courseSlug],
+    );
+    expect(rows[0]!.pass_threshold_percent).toBe(70);
+  });
+
+  it("accepts it with the acknowledgement, and audits that", async () => {
+    const { status } = await callAs(ADMIN_SUB, "PATCH", `/admin/courses/${courseSlug}`, {
+      passThresholdPercent: 40,
+      acknowledgeAccreditationRisk: true,
+    });
+    expect(status).toBe(200);
+
+    const { rows } = await seedPool.query<{ detail: Record<string, unknown> }>(
+      "SELECT detail FROM audit_log WHERE action = 'admin.course.update' ORDER BY id DESC LIMIT 1",
+    );
+    expect(rows[0]!.detail).toMatchObject({ accreditationRiskAcknowledged: true });
+
+    // Put it back — later assertions in other suites read this course.
+    await callAs(ADMIN_SUB, "PATCH", `/admin/courses/${courseSlug}`, {
+      passThresholdPercent: 70,
+    });
+  });
+
+  it("does not change an existing enrolment's snapshotted threshold", async () => {
+    // P3-01: a learner who started under 70 % finishes under it. This is what
+    // makes a threshold edit safe to allow at all.
+    const { rows } = await seedPool.query<{ pass_threshold_percent: number }>(
+      "SELECT pass_threshold_percent FROM enrolments WHERE id = $1",
+      [enrolmentId],
+    );
+    expect(rows[0]!.pass_threshold_percent).toBe(70);
+  });
+});
+
+describe("the CSV export", () => {
+  it("returns a spreadsheet-safe file with the same rows as the list", async () => {
+    const jwt = await new SignJWT({})
+      .setProtectedHeader({ alg: "RS256", kid: KID })
+      .setIssuedAt()
+      .setIssuer(issuer)
+      .setAudience(AUDIENCE)
+      .setSubject(ADMIN_SUB)
+      .setExpirationTime("5m")
+      .sign(privateKey);
+
+    const response = await fetch(
+      `${baseUrl}/admin/courses/${courseSlug}/participants.csv`,
+      { headers: { authorization: `Bearer ${jwt}`, "x-ds-project": projectSlug } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/csv");
+    expect(response.headers.get("cache-control")).toContain("no-store");
+
+    // Read as bytes, not text: `Response.text()` decodes UTF-8 and strips the
+    // BOM, so asserting on the string would silently pass with no BOM on the
+    // wire — which is exactly the Excel bug this is meant to catch.
+    const bytes = Buffer.from(await response.arrayBuffer());
+    expect(bytes.subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf]));
+
+    const csv = bytes.toString("utf8");
+    expect(csv).toContain("sep=;");
+    expect(csv).toContain(ATTESTED_NAME);
+    // The EFN never leaves the system in a file.
+    expect(csv).not.toContain(EFN);
+  });
+
+  it("audits the export, with a row count and no row content", async () => {
+    const { rows } = await seedPool.query<{ detail: Record<string, unknown> }>(
+      "SELECT detail FROM audit_log WHERE action = 'admin.participants.export' ORDER BY id DESC LIMIT 1",
+    );
+
+    expect(rows[0]!.detail).toMatchObject({ format: "csv", rowCount: 1 });
+    expect(JSON.stringify(rows[0]!.detail)).not.toContain(ATTESTED_NAME);
   });
 });

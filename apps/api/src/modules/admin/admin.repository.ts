@@ -1,0 +1,344 @@
+/**
+ * Admin console data access (P9). Infrastructure layer — ADR-0006.
+ *
+ * Everything here runs inside the tenant transaction, so RLS scopes every read
+ * and write to the caller's customer (ADR-0002). There is no `customer_id`
+ * filter in these queries by choice: adding one would be defence in depth, and
+ * writing it here would invite the belief that it is the defence.
+ *
+ * ## Why the participant list reads in batches
+ *
+ * The list needs each enrolment's stored progress to compute its figures
+ * through the one rollup path. Reading that per enrolment would be one query
+ * per participant. `findProgressByEnrolment` reads them all in a single query
+ * and returns exactly the same `ProgressRow` shape the learner path uses, so
+ * the rollup input is identical — only the fetch is batched.
+ */
+
+import { count, eq, inArray, sql } from "drizzle-orm";
+import type { Db } from "../../db/tenant-db.js";
+import {
+  auditLog,
+  certificates,
+  contentProgress,
+  courses,
+  efnProfiles,
+  eivSubmissions,
+  enrolments,
+  evaluationResponses,
+  users,
+} from "../../db/schema.js";
+import type { ProgressRow } from "../learning/learning.repository.js";
+
+export interface AdminCourseRow {
+  id: string;
+  slug: string;
+  title: string;
+  vnr: string | null;
+  cmePoints: number | null;
+  cmeCategory: string | null;
+  requiredWatchPercent: number;
+  passThresholdPercent: number;
+  maxQuizAttempts: number | null;
+  revealCorrectAnswers: boolean;
+  organizer: string | null;
+  eventLocation: string | null;
+  accreditationBody: string | null;
+  scientificLeadName: string | null;
+  scientificLeadTitle: string | null;
+  certificateIssuePlace: string | null;
+  /**
+   * Presence, not bytes. The query asks Postgres whether the column is null
+   * rather than selecting a bytea the API would then have to remember not to
+   * return — the safest place to not leak a value is to not read it.
+   */
+  hasStampImage: boolean;
+  hasSignatureImage: boolean;
+  hasVnrPassword: boolean;
+}
+
+export interface EnrolmentListRow {
+  enrolmentId: string;
+  userId: string;
+  requiredWatchPercent: number;
+  passThresholdPercent: number;
+  completedAt: Date | null;
+  attestedName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+}
+
+export interface SubmissionStateRow {
+  enrolmentId: string;
+  status:
+    | "queued"
+    | "held"
+    | "submitted"
+    | "failed_retryable"
+    | "failed_permanent"
+    | "window_closed";
+  attemptCount: number;
+  reportDueAt: Date;
+}
+
+export interface CertificateStateRow {
+  enrolmentId: string;
+  status: "pending" | "issued" | "delivered" | "bounced";
+}
+
+export interface AdminRepositoryPort {
+  listCourses(): Promise<AdminCourseRow[]>;
+  findCourse(slug: string): Promise<AdminCourseRow | undefined>;
+  countEnrolments(
+    courseIds: readonly string[],
+  ): Promise<Map<string, { total: number; completed: number }>>;
+  updateCourse(courseId: string, patch: CoursePatch): Promise<void>;
+  setCertificateAssets(courseId: string, assets: CertificateAssetPatch): Promise<void>;
+  listEnrolments(courseId: string): Promise<EnrolmentListRow[]>;
+  findProgressByEnrolment(
+    enrolmentIds: readonly string[],
+  ): Promise<Map<string, ProgressRow[]>>;
+  findEvaluationSubmitted(enrolmentIds: readonly string[]): Promise<Set<string>>;
+  findEfnPresent(userIds: readonly string[]): Promise<Set<string>>;
+  findSubmissions(
+    enrolmentIds: readonly string[],
+  ): Promise<Map<string, SubmissionStateRow>>;
+  findCertificates(
+    enrolmentIds: readonly string[],
+  ): Promise<Map<string, CertificateStateRow>>;
+  audit(entry: {
+    customerId: string;
+    actorId: string;
+    action: string;
+    subject: string;
+    detail: Record<string, unknown>;
+  }): Promise<void>;
+}
+
+export interface CoursePatch {
+  requiredWatchPercent?: number;
+  passThresholdPercent?: number;
+  organizer?: string | null;
+  eventLocation?: string | null;
+  accreditationBody?: string | null;
+  scientificLeadName?: string | null;
+  scientificLeadTitle?: string | null;
+  certificateIssuePlace?: string | null;
+  /** Already encrypted by the service — a repository never holds a plaintext secret. */
+  vnrPasswordEnc?: Buffer;
+}
+
+export interface CertificateAssetPatch {
+  stampImage?: Buffer;
+  stampImageMime?: string;
+  signatureImage?: Buffer;
+  signatureImageMime?: string;
+}
+
+const COURSE_COLUMNS = {
+  id: courses.id,
+  slug: courses.slug,
+  title: courses.title,
+  vnr: courses.vnr,
+  cmePoints: courses.cmePoints,
+  cmeCategory: courses.cmeCategory,
+  requiredWatchPercent: courses.requiredWatchPercent,
+  passThresholdPercent: courses.passThresholdPercent,
+  maxQuizAttempts: courses.maxQuizAttempts,
+  revealCorrectAnswers: courses.revealCorrectAnswers,
+  organizer: courses.organizer,
+  eventLocation: courses.eventLocation,
+  accreditationBody: courses.accreditationBody,
+  scientificLeadName: courses.scientificLeadName,
+  scientificLeadTitle: courses.scientificLeadTitle,
+  certificateIssuePlace: courses.certificateIssuePlace,
+  hasStampImage: sql<boolean>`${courses.stampImage} IS NOT NULL`,
+  hasSignatureImage: sql<boolean>`${courses.signatureImage} IS NOT NULL`,
+  hasVnrPassword: sql<boolean>`${courses.vnrPasswordEnc} IS NOT NULL`,
+};
+
+export class AdminRepository implements AdminRepositoryPort {
+  constructor(private readonly db: Db) {}
+
+  async listCourses(): Promise<AdminCourseRow[]> {
+    return this.db.select(COURSE_COLUMNS).from(courses).orderBy(courses.title);
+  }
+
+  async findCourse(slug: string): Promise<AdminCourseRow | undefined> {
+    const [row] = await this.db
+      .select(COURSE_COLUMNS)
+      .from(courses)
+      .where(eq(courses.slug, slug))
+      .limit(1);
+    return row;
+  }
+
+  async countEnrolments(
+    courseIds: readonly string[],
+  ): Promise<Map<string, { total: number; completed: number }>> {
+    if (courseIds.length === 0) return new Map();
+
+    const rows = await this.db
+      .select({
+        courseId: enrolments.courseId,
+        total: count(),
+        completed: sql<number>`count(${enrolments.completedAt})::int`,
+      })
+      .from(enrolments)
+      .where(inArray(enrolments.courseId, [...courseIds]))
+      .groupBy(enrolments.courseId);
+
+    return new Map(
+      rows.map((row) => [row.courseId, { total: row.total, completed: row.completed }]),
+    );
+  }
+
+  async updateCourse(courseId: string, patch: CoursePatch): Promise<void> {
+    // An empty patch would produce `UPDATE ... SET WHERE`, which is a syntax
+    // error rather than a no-op.
+    if (Object.keys(patch).length === 0) return;
+
+    await this.db
+      .update(courses)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(courses.id, courseId));
+  }
+
+  async setCertificateAssets(
+    courseId: string,
+    assets: CertificateAssetPatch,
+  ): Promise<void> {
+    if (Object.keys(assets).length === 0) return;
+
+    await this.db
+      .update(courses)
+      .set({ ...assets, updatedAt: new Date() })
+      .where(eq(courses.id, courseId));
+  }
+
+  async listEnrolments(courseId: string): Promise<EnrolmentListRow[]> {
+    return this.db
+      .select({
+        enrolmentId: enrolments.id,
+        userId: enrolments.userId,
+        requiredWatchPercent: enrolments.requiredWatchPercent,
+        passThresholdPercent: enrolments.passThresholdPercent,
+        completedAt: enrolments.completedAt,
+        attestedName: enrolments.attestedName,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+      })
+      .from(enrolments)
+      .innerJoin(users, eq(users.id, enrolments.userId))
+      .where(eq(enrolments.courseId, courseId))
+      .orderBy(enrolments.createdAt);
+  }
+
+  async findProgressByEnrolment(
+    enrolmentIds: readonly string[],
+  ): Promise<Map<string, ProgressRow[]>> {
+    if (enrolmentIds.length === 0) return new Map();
+
+    const rows = await this.db
+      .select({
+        enrolmentId: contentProgress.enrolmentId,
+        contentId: contentProgress.contentId,
+        status: contentProgress.status,
+        watchedPercent: contentProgress.watchedPercent,
+        watchedSegments: contentProgress.watchedSegments,
+        lastPositionSec: contentProgress.lastPositionSec,
+        scorePercent: contentProgress.scorePercent,
+        updatedAt: contentProgress.updatedAt,
+      })
+      .from(contentProgress)
+      .where(inArray(contentProgress.enrolmentId, [...enrolmentIds]));
+
+    const grouped = new Map<string, ProgressRow[]>();
+    for (const { enrolmentId, ...progress } of rows) {
+      const existing = grouped.get(enrolmentId);
+      if (existing === undefined) grouped.set(enrolmentId, [progress as ProgressRow]);
+      else existing.push(progress as ProgressRow);
+    }
+    return grouped;
+  }
+
+  async findEvaluationSubmitted(enrolmentIds: readonly string[]): Promise<Set<string>> {
+    if (enrolmentIds.length === 0) return new Set();
+
+    const rows = await this.db
+      .selectDistinct({ enrolmentId: evaluationResponses.enrolmentId })
+      .from(evaluationResponses)
+      .where(inArray(evaluationResponses.enrolmentId, [...enrolmentIds]));
+
+    return new Set(rows.map((row) => row.enrolmentId));
+  }
+
+  /**
+   * Which of these users have an EFN on file.
+   *
+   * Returns ids, never the EFN itself. `efn_profiles` is not customer-scoped
+   * (one physician, one EFN, across customers — see completion.repository.ts),
+   * so this is the one query here that must filter explicitly: RLS is not
+   * doing it, and reading it by user id is what keeps that safe.
+   */
+  async findEfnPresent(userIds: readonly string[]): Promise<Set<string>> {
+    if (userIds.length === 0) return new Set();
+
+    const rows = await this.db
+      .select({ userId: efnProfiles.userId })
+      .from(efnProfiles)
+      .where(inArray(efnProfiles.userId, [...userIds]));
+
+    return new Set(rows.map((row) => row.userId));
+  }
+
+  async findSubmissions(
+    enrolmentIds: readonly string[],
+  ): Promise<Map<string, SubmissionStateRow>> {
+    if (enrolmentIds.length === 0) return new Map();
+
+    const rows = await this.db
+      .select({
+        enrolmentId: eivSubmissions.enrolmentId,
+        status: eivSubmissions.status,
+        attemptCount: eivSubmissions.attemptCount,
+        reportDueAt: eivSubmissions.reportDueAt,
+      })
+      .from(eivSubmissions)
+      .where(inArray(eivSubmissions.enrolmentId, [...enrolmentIds]));
+
+    return new Map(rows.map((row) => [row.enrolmentId, row]));
+  }
+
+  async findCertificates(
+    enrolmentIds: readonly string[],
+  ): Promise<Map<string, CertificateStateRow>> {
+    if (enrolmentIds.length === 0) return new Map();
+
+    const rows = await this.db
+      .select({
+        enrolmentId: certificates.enrolmentId,
+        status: certificates.status,
+      })
+      .from(certificates)
+      .where(inArray(certificates.enrolmentId, [...enrolmentIds]));
+
+    return new Map(rows.map((row) => [row.enrolmentId, row]));
+  }
+
+  /**
+   * Append-only. `detail` carries ids and counts — never an EFN, a name, a
+   * password or a free-text evaluation answer (ADR-0004).
+   */
+  async audit(entry: {
+    customerId: string;
+    actorId: string;
+    action: string;
+    subject: string;
+    detail: Record<string, unknown>;
+  }): Promise<void> {
+    await this.db.insert(auditLog).values(entry);
+  }
+}

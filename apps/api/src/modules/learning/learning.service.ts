@@ -393,42 +393,90 @@ export class LearningService {
       this.repository.hasEvaluationResponse(enrolment.id),
     ]);
 
-    const courseNode = toCourseNode(tree);
-    const records = toProgressRecords(stored, tree);
-    const rollup = rollupProgress(courseNode, records);
-    const gates = evaluateSequence(courseChapterSequence(courseNode, rollup));
-
-    const coverage = courseWatchCoverage(courseNode, toContentSegments(stored));
-    const quizPassed = hasPassedQuiz(records, tree, enrolment.passThresholdPercent);
-
-    const completion = isCourseComplete({
+    const figures = summariseEnrolment({
+      tree,
+      stored,
       requiredWatchPercent: enrolment.requiredWatchPercent,
-      achievedWatchPercent: coverage.percent,
-      quizPassed,
-      evaluationSubmitted,
+      passThresholdPercent: enrolment.passThresholdPercent,
       efnPresent,
+      evaluationSubmitted,
     });
 
-    const modules = buildModuleStates(tree, rollup, gates);
+    const courseNode = toCourseNode(tree);
+    const rollup = rollupProgress(courseNode, toProgressRecords(stored, tree));
+    const gates = evaluateSequence(courseChapterSequence(courseNode, rollup));
 
     return {
       enrolmentId: enrolment.id,
       courseSlug: slug,
       requiredWatchPercent: enrolment.requiredWatchPercent,
       passThresholdPercent: enrolment.passThresholdPercent,
-      achievedWatchPercent: coverage.percent,
-      quizPassed,
+      achievedWatchPercent: figures.achievedWatchPercent,
+      quizPassed: figures.quizPassed,
       evaluationSubmitted,
       efnPresent,
-      complete: completion.complete,
-      outstanding: [...completion.outstanding],
+      complete: figures.complete,
+      outstanding: [...figures.outstanding],
       completedAt: enrolment.completedAt?.toISOString() ?? null,
-      progress: rollup.course,
-      moduleCompletion: rollup.moduleCompletion,
-      modules,
+      progress: figures.progress,
+      moduleCompletion: figures.moduleCompletion,
+      modules: buildModuleStates(tree, rollup, gates),
       resumeContentId: firstReachableIncomplete(tree, rollup, gates),
     };
   }
+}
+
+/**
+ * The compliance figures for one enrolment, from its stored rows.
+ *
+ * **This is the one rollup path** (CLAUDE.md §4 invariant 6). The learner's own
+ * `GET /enrolment` and the admin console's participant list both call it, over
+ * the same `findCourseTree` and the same `ProgressRow` shape. Two
+ * implementations would eventually disagree, and a participant list showing a
+ * physician 96 % while their own screen shows 100 % is not a display bug — it
+ * is two different answers to "did this person earn a CME point", one of which
+ * has already been reported to the Ärztekammer.
+ *
+ * Pure: rows in, figures out, no I/O. The caller reads the rows.
+ */
+export function summariseEnrolment(input: {
+  tree: CourseTree;
+  stored: readonly ProgressRow[];
+  requiredWatchPercent: number;
+  passThresholdPercent: number;
+  efnPresent: boolean;
+  evaluationSubmitted: boolean;
+}): {
+  achievedWatchPercent: number;
+  quizPassed: boolean;
+  progress: CourseRollup["course"];
+  moduleCompletion: CourseRollup["moduleCompletion"];
+  complete: boolean;
+  outstanding: readonly EnrolmentState["outstanding"][number][];
+} {
+  const courseNode = toCourseNode(input.tree);
+  const records = toProgressRecords(input.stored, input.tree);
+  const rollup = rollupProgress(courseNode, records);
+
+  const coverage = courseWatchCoverage(courseNode, toContentSegments(input.stored));
+  const quizPassed = hasPassedQuiz(records, input.tree, input.passThresholdPercent);
+
+  const completion = isCourseComplete({
+    requiredWatchPercent: input.requiredWatchPercent,
+    achievedWatchPercent: coverage.percent,
+    quizPassed,
+    evaluationSubmitted: input.evaluationSubmitted,
+    efnPresent: input.efnPresent,
+  });
+
+  return {
+    achievedWatchPercent: coverage.percent,
+    quizPassed,
+    progress: rollup.course,
+    moduleCompletion: rollup.moduleCompletion,
+    complete: completion.complete,
+    outstanding: completion.outstanding,
+  };
 }
 
 /**

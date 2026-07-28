@@ -52,6 +52,14 @@ export type EvaluationSubmission = components["schemas"]["EvaluationSubmission"]
 export type Certificate = components["schemas"]["Certificate"];
 export type CompletionInput = components["schemas"]["CompletionInput"];
 
+export type AdminCourseSummary = components["schemas"]["AdminCourseSummary"];
+export type AdminCourseDetail = components["schemas"]["AdminCourseDetail"];
+export type AdminCourseUpdate = components["schemas"]["AdminCourseUpdate"];
+export type CertificateAssetUpload = components["schemas"]["CertificateAssetUpload"];
+export type ParticipantRow = components["schemas"]["ParticipantRow"];
+export type ParticipantList = components["schemas"]["ParticipantList"];
+export type EivState = components["schemas"]["EivState"];
+
 export type CourseListQuery = NonNullable<
   operations["listCourses"]["parameters"]["query"]
 >;
@@ -257,6 +265,54 @@ export function createClient(options: ClientOptions) {
         filename: filenameFromDisposition(response.headers.get("content-disposition")),
       };
     },
+
+    // ----------------------------------------------------------------
+    // Admin console (P9). Refused with 403 for a learner token — the
+    // navigation hiding these is a convenience, the API is the gate.
+    // ----------------------------------------------------------------
+
+    adminListCourses: (): Promise<AdminCourseSummary[]> => request("/admin/courses"),
+
+    adminGetCourse: (slug: string): Promise<AdminCourseDetail> =>
+      request(`/admin/courses/${encodeURIComponent(slug)}`),
+
+    adminUpdateCourse: (
+      slug: string,
+      update: AdminCourseUpdate,
+    ): Promise<AdminCourseDetail> =>
+      request(`/admin/courses/${encodeURIComponent(slug)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(update),
+      }),
+
+    adminSetCertificateAssets: (
+      slug: string,
+      upload: CertificateAssetUpload,
+    ): Promise<AdminCourseDetail> =>
+      request(`/admin/courses/${encodeURIComponent(slug)}/certificate-assets`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(upload),
+      }),
+
+    adminListParticipants: (slug: string): Promise<ParticipantList> =>
+      request(`/admin/courses/${encodeURIComponent(slug)}/participants`),
+
+    adminExportParticipants: async (
+      slug: string,
+    ): Promise<{ blob: Blob; filename: string }> => {
+      const response = await requestBlob(
+        `/admin/courses/${encodeURIComponent(slug)}/participants.csv`,
+      );
+      return {
+        blob: await response.blob(),
+        filename: filenameFromDisposition(
+          response.headers.get("content-disposition"),
+          `teilnehmende-${slug}.csv`,
+        ),
+      };
+    },
   };
 }
 
@@ -268,9 +324,12 @@ export type ApiClient = ReturnType<typeof createClient>;
  * Falls back to a generic name rather than throwing: a header a proxy chose to
  * strip is not a reason to withhold a certificate the learner has earned.
  */
-function filenameFromDisposition(header: string | null): string {
+function filenameFromDisposition(
+  header: string | null,
+  fallback = "Teilnahmebescheinigung.pdf",
+): string {
   const match = header?.match(/filename="([^"]+)"/);
-  return match?.[1] ?? "Teilnahmebescheinigung.pdf";
+  return match?.[1] ?? fallback;
 }
 
 async function readProblem(response: Response): Promise<ProblemDetails> {

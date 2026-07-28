@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Unlike the widget, this app owns its page, so Tailwind's preflight is on —
+ * it is doing exactly the job it was designed for.
+ */
+body {
+  background: #f9fafb;
+}
+
+/*
+ * A visible focus ring is an accessibility floor, not a preference
+ * (CLAUDE.md §3).
+ */
+:focus-visible {
+  outline: 2px solid #255a94;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
