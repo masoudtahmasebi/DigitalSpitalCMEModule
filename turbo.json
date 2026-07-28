@@ -14,7 +14,13 @@
     },
     "test:integration": {
       "dependsOn": ["^build"],
-      "cache": false
+      "cache": false,
+      "env": [
+        "DATABASE_URL",
+        "MIGRATION_DATABASE_URL",
+        "POSTGRES_SUPERUSER_URL",
+        "REDIS_URL"
+      ]
     },
     "dev": {
       "cache": false,

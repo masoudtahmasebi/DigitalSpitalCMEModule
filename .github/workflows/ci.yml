@@ -137,7 +137,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # gitleaks diffs from the pre-push SHA to HEAD, which can span several
+      # commits. actions/checkout's default fetch-depth: 1 only has HEAD
+      # itself, so that diff fails with "unknown revision" the moment a push
+      # carries more than one commit — full history avoids depending on
+      # guessing the right depth.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
