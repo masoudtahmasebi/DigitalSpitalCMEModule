@@ -63,6 +63,32 @@ export type Branding = components["schemas"]["Branding"];
 export type FontUpload = components["schemas"]["FontUpload"];
 export type FontState = components["schemas"]["FontState"];
 
+// Authoring (P9-02, P9-04, P9-05). The read shapes carry learner-record counts
+// so the console can disable a delete *and say why* before it is clicked; the
+// write shapes carry no ordinal anywhere, because position is position in an
+// array.
+export type DepartmentSummary = components["schemas"]["DepartmentSummary"];
+export type DepartmentCreate = components["schemas"]["DepartmentCreate"];
+export type DepartmentUpdate = components["schemas"]["DepartmentUpdate"];
+export type ProjectSummary = components["schemas"]["ProjectSummary"];
+export type ProjectCreate = components["schemas"]["ProjectCreate"];
+export type ProjectUpdate = components["schemas"]["ProjectUpdate"];
+export type CourseCreate = components["schemas"]["CourseCreate"];
+export type CourseStructure = components["schemas"]["CourseStructure"];
+export type AuthoringModule = components["schemas"]["AuthoringModule"];
+export type AuthoringChapter = components["schemas"]["AuthoringChapter"];
+export type AuthoringContent = components["schemas"]["AuthoringContent"];
+export type AuthoringExpert = components["schemas"]["AuthoringExpert"];
+export type ModuleWrite = components["schemas"]["ModuleWrite"];
+export type ChapterWrite = components["schemas"]["ChapterWrite"];
+export type ContentWrite = components["schemas"]["ContentWrite"];
+export type StructureOrder = components["schemas"]["StructureOrder"];
+export type ExpertsWrite = components["schemas"]["ExpertsWrite"];
+export type AuthoringQuiz = components["schemas"]["AuthoringQuiz"];
+export type QuizWrite = components["schemas"]["QuizWrite"];
+export type AuthoringEvaluation = components["schemas"]["AuthoringEvaluation"];
+export type EvaluationWrite = components["schemas"]["EvaluationWrite"];
+
 export type CourseListQuery = NonNullable<
   operations["listCourses"]["parameters"]["query"]
 >;
@@ -166,15 +192,17 @@ export function createClient(options: ClientOptions) {
     return response;
   }
 
-  function json(body: unknown): RequestInit {
+  function json(body: unknown, method: "POST" | "PUT" | "PATCH" = "POST"): RequestInit {
     return {
-      method: "POST",
+      method,
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     };
   }
 
   const course = (slug: string) => `/courses/${encodeURIComponent(slug)}`;
+  const adminCourse = (slug: string) => `/admin/courses/${encodeURIComponent(slug)}`;
+  const seg = (value: string) => encodeURIComponent(value);
 
   return {
     request,
@@ -304,50 +332,35 @@ export function createClient(options: ClientOptions) {
     adminListCourses: (): Promise<AdminCourseSummary[]> => request("/admin/courses"),
 
     adminGetCourse: (slug: string): Promise<AdminCourseDetail> =>
-      request(`/admin/courses/${encodeURIComponent(slug)}`),
+      request(adminCourse(slug)),
 
     adminUpdateCourse: (
       slug: string,
       update: AdminCourseUpdate,
-    ): Promise<AdminCourseDetail> =>
-      request(`/admin/courses/${encodeURIComponent(slug)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(update),
-      }),
+    ): Promise<AdminCourseDetail> => request(adminCourse(slug), json(update, "PATCH")),
 
     adminSetCertificateAssets: (
       slug: string,
       upload: CertificateAssetUpload,
     ): Promise<AdminCourseDetail> =>
-      request(`/admin/courses/${encodeURIComponent(slug)}/certificate-assets`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(upload),
-      }),
+      request(`${adminCourse(slug)}/certificate-assets`, json(upload, "PUT")),
 
     /** The project's white-label font: metadata only, never the bytes. */
     adminGetFont: (): Promise<FontState> => request("/admin/branding/font"),
 
     adminSetFont: (upload: FontUpload): Promise<FontState> =>
-      request("/admin/branding/font", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(upload),
-      }),
+      request("/admin/branding/font", json(upload, "PUT")),
 
     adminClearFont: (): Promise<FontState> =>
       request("/admin/branding/font", { method: "DELETE" }),
 
     adminListParticipants: (slug: string): Promise<ParticipantList> =>
-      request(`/admin/courses/${encodeURIComponent(slug)}/participants`),
+      request(`${adminCourse(slug)}/participants`),
 
     adminExportParticipants: async (
       slug: string,
     ): Promise<{ blob: Blob; filename: string }> => {
-      const response = await requestBlob(
-        `/admin/courses/${encodeURIComponent(slug)}/participants.csv`,
-      );
+      const response = await requestBlob(`${adminCourse(slug)}/participants.csv`);
       return {
         blob: await response.blob(),
         filename: filenameFromDisposition(
@@ -356,6 +369,120 @@ export function createClient(options: ClientOptions) {
         ),
       };
     },
+
+    // ----------------------------------------------------------------
+    // Authoring (P9-02, P9-04, P9-05)
+    //
+    // Every structure mutation returns the whole `CourseStructure` rather
+    // than the row it touched. That looks wasteful and is not: a create
+    // shifts nothing but a reorder shifts everything, and a console that
+    // patched its own local tree after each call would eventually hold a
+    // shape the server does not. One response, one truth — the same reason
+    // the widget renders the server's watched percentage instead of its own.
+    // ----------------------------------------------------------------
+
+    adminListDepartments: (): Promise<DepartmentSummary[]> =>
+      request("/admin/departments"),
+
+    adminCreateDepartment: (input: DepartmentCreate): Promise<DepartmentSummary[]> =>
+      request("/admin/departments", json(input)),
+
+    adminUpdateDepartment: (
+      slug: string,
+      update: DepartmentUpdate,
+    ): Promise<DepartmentSummary[]> =>
+      request(`/admin/departments/${seg(slug)}`, json(update, "PATCH")),
+
+    adminListProjects: (): Promise<ProjectSummary[]> => request("/admin/projects"),
+
+    adminCreateProject: (input: ProjectCreate): Promise<ProjectSummary[]> =>
+      request("/admin/projects", json(input)),
+
+    /**
+     * Edit a project. `smtpPassword` is write-only and never comes back —
+     * `hasSmtpPassword` on the response is its only trace.
+     */
+    adminUpdateProject: (
+      slug: string,
+      update: ProjectUpdate,
+    ): Promise<ProjectSummary[]> =>
+      request(`/admin/projects/${seg(slug)}`, json(update, "PATCH")),
+
+    adminCreateCourse: (input: CourseCreate): Promise<CourseStructure> =>
+      request("/admin/courses", json(input)),
+
+    adminGetStructure: (slug: string): Promise<CourseStructure> =>
+      request(`${adminCourse(slug)}/structure`),
+
+    adminCreateModule: (slug: string, input: ModuleWrite): Promise<CourseStructure> =>
+      request(`${adminCourse(slug)}/modules`, json(input)),
+
+    adminUpdateModule: (id: string, input: ModuleWrite): Promise<CourseStructure> =>
+      request(`/admin/modules/${seg(id)}`, json(input, "PATCH")),
+
+    /** Refused with 409 if any learner record points into it. */
+    adminDeleteModule: (id: string): Promise<CourseStructure> =>
+      request(`/admin/modules/${seg(id)}`, { method: "DELETE" }),
+
+    adminCreateChapter: (
+      moduleId: string,
+      input: ChapterWrite,
+    ): Promise<CourseStructure> =>
+      request(`/admin/modules/${seg(moduleId)}/chapters`, json(input)),
+
+    adminUpdateChapter: (id: string, input: ChapterWrite): Promise<CourseStructure> =>
+      request(`/admin/chapters/${seg(id)}`, json(input, "PATCH")),
+
+    adminDeleteChapter: (id: string): Promise<CourseStructure> =>
+      request(`/admin/chapters/${seg(id)}`, { method: "DELETE" }),
+
+    adminCreateContent: (
+      chapterId: string,
+      input: ContentWrite,
+    ): Promise<CourseStructure> =>
+      request(`/admin/chapters/${seg(chapterId)}/contents`, json(input)),
+
+    adminUpdateContent: (id: string, input: ContentWrite): Promise<CourseStructure> =>
+      request(`/admin/contents/${seg(id)}`, json(input, "PATCH")),
+
+    adminDeleteContent: (id: string): Promise<CourseStructure> =>
+      request(`/admin/contents/${seg(id)}`, { method: "DELETE" }),
+
+    /**
+     * Reorder the whole tree in one request.
+     *
+     * Not per-list, because a chapter dragged between two modules changes both
+     * and two requests would leave it briefly belonging to neither. The server
+     * validates every level as a permutation before writing anything, so a
+     * request that is wrong anywhere changes nothing anywhere.
+     */
+    adminReorderStructure: (
+      slug: string,
+      order: StructureOrder,
+    ): Promise<CourseStructure> =>
+      request(`${adminCourse(slug)}/structure/order`, json(order, "PUT")),
+
+    adminReplaceExperts: (slug: string, input: ExpertsWrite): Promise<CourseStructure> =>
+      request(`${adminCourse(slug)}/experts`, json(input, "PUT")),
+
+    /**
+     * The quiz **with** its answer key — the only call in this SDK that
+     * returns `isCorrect`, and one a learner token cannot make.
+     */
+    adminGetQuiz: (contentId: string): Promise<AuthoringQuiz> =>
+      request(`/admin/contents/${seg(contentId)}/quiz`),
+
+    adminSetQuiz: (contentId: string, input: QuizWrite): Promise<AuthoringQuiz> =>
+      request(`/admin/contents/${seg(contentId)}/quiz`, json(input, "PUT")),
+
+    adminGetEvaluation: (slug: string): Promise<AuthoringEvaluation> =>
+      request(`${adminCourse(slug)}/evaluation`),
+
+    adminSetEvaluation: (
+      slug: string,
+      input: EvaluationWrite,
+    ): Promise<AuthoringEvaluation> =>
+      request(`${adminCourse(slug)}/evaluation`, json(input, "PUT")),
   };
 }
 
@@ -388,6 +515,18 @@ export function isForbidden(error: unknown): boolean {
 /** Not visible in this tenant — which is indistinguishable from not existing. */
 export function isNotFound(error: unknown): boolean {
   return hasStatus(error, 404);
+}
+
+/**
+ * The request was fine; the current state refuses it.
+ *
+ * Distinct from a validation failure on purpose: nothing about the request is
+ * wrong, and the same request would have succeeded before a learner touched
+ * the thing being deleted. A console that showed "ungültige Eingabe" here would
+ * be telling an author to fix something that is not broken.
+ */
+export function isConflict(error: unknown): boolean {
+  return hasStatus(error, 409);
 }
 
 /** Too many requests. `retryAfterSec` is on the response, not the problem. */

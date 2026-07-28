@@ -557,6 +557,33 @@ paths:
                 items: { $ref: "#/components/schemas/AdminCourseSummary" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin]
+      operationId: adminCreateCourse
+      summary: Create a course
+      description: |
+        Deliberately minimal. Everything a certificate needs — VNR, points,
+        Veranstalter, the Wissenschaftliche Leitung — is set afterwards on the
+        settings screen, which already refuses a pass threshold below the
+        accredited minimum and reports which certificate fields are missing.
+        Duplicating those rules into a creation form would be a second place to
+        get them wrong.
+      parameters: [{ $ref: "#/components/parameters/ProjectHeader" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CourseCreate" }
+      responses:
+        "201":
+          description: The new course's (empty) structure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
 
   /admin/courses/{slug}:
     get:
@@ -742,6 +769,570 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  # ---------------------------------------------------------------------------
+  # Authoring (P9-02, P9-04, P9-05)
+  #
+  # Every mutating route returns the whole structure it changed. An authoring
+  # screen re-renders after each edit and the edit is rarely local — creating a
+  # module appends it, deleting one renumbers what follows, a reorder moves
+  # several things at once. Returning the tree makes the client's state the
+  # server's answer rather than a local edit that has to agree with it.
+  # ---------------------------------------------------------------------------
+
+  /admin/departments:
+    get:
+      tags: [admin]
+      operationId: adminListDepartments
+      summary: Departments in this tenant
+      parameters: [{ $ref: "#/components/parameters/ProjectHeader" }]
+      responses:
+        "200":
+          description: The departments.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DepartmentSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin]
+      operationId: adminCreateDepartment
+      summary: Create a department
+      description: |
+        The insert names no customer: `customer_id` comes from the RLS session
+        variable, so a department cannot be created into another tenant because
+        there is no way to say which tenant (ADR-0002).
+      parameters: [{ $ref: "#/components/parameters/ProjectHeader" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DepartmentCreate" }
+      responses:
+        "201":
+          description: The departments, including the new one.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DepartmentSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/departments/{slug}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdateDepartment
+      summary: Rename a department
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: slug
+          in: path
+          required: true
+          description: The department's slug.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DepartmentUpdate" }
+      responses:
+        "200":
+          description: The departments.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DepartmentSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/projects:
+    get:
+      tags: [admin]
+      operationId: adminListProjects
+      summary: Projects in this tenant
+      description: |
+        Carries the Keycloak binding and the SMTP settings, and **never** the
+        SMTP password — `hasSmtpPassword` is the only readable trace, exactly
+        as `hasVnrPassword` is for a course (CLAUDE.md §4 invariant 7).
+      parameters: [{ $ref: "#/components/parameters/ProjectHeader" }]
+      responses:
+        "200":
+          description: The projects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ProjectSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin]
+      operationId: adminCreateProject
+      summary: Create a project
+      parameters: [{ $ref: "#/components/parameters/ProjectHeader" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectCreate" }
+      responses:
+        "201":
+          description: The projects, including the new one.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ProjectSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/projects/{slug}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdateProject
+      summary: Edit a project, its branding, its Keycloak binding and its SMTP
+      description: |
+        The Keycloak binding decides which realm every token for this project is
+        validated against (ADR-0003). Changing it wrongly locks every learner
+        out at once, which is why the console confirms before saving it — the
+        API applies what it is given, because a platform that refused to let an
+        admin change their own IdP would be a worse failure than the one it
+        prevented.
+
+        `branding` is re-validated against `@ds/domain`'s grammars and the
+        *parsed* result is stored, so a value that fails is dropped here rather
+        than stored and dropped again on every read.
+
+        `smtpPassword` is write-only.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: slug
+          in: path
+          required: true
+          description: |
+            The project's own slug — the resource being edited, which is not
+            necessarily the project in `X-DS-Project`.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectUpdate" }
+      responses:
+        "200":
+          description: The projects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ProjectSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/courses/{slug}/structure:
+    get:
+      tags: [admin]
+      operationId: adminGetStructure
+      summary: The authoring tree
+      description: |
+        Modules, chapters and content in author order, plus two counts the
+        console needs: `learnerRecords`, which disables deletion and says why,
+        and `questionCount`, which is zero for a quiz nobody can pass yet.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: The structure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/courses/{slug}/modules:
+    post:
+      tags: [admin]
+      operationId: adminCreateModule
+      summary: Append a module
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModuleWrite" }
+      responses:
+        "201":
+          description: The structure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/modules/{id}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdateModule
+      summary: Edit a module
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModuleWrite" }
+      responses:
+        "200":
+          description: The structure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [admin]
+      operationId: adminDeleteModule
+      summary: Delete a module
+      description: |
+        Refused with 409 if any learner record points into it. That row is the
+        evidence behind a CME point that may already have been reported to an
+        Ärztekammer.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: The structure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/modules/{id}/chapters:
+    post:
+      tags: [admin]
+      operationId: adminCreateChapter
+      summary: Append a chapter
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChapterWrite" }
+      responses:
+        "201":
+          description: The structure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/chapters/{id}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdateChapter
+      summary: Edit a chapter
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChapterWrite" }
+      responses:
+        "200":
+          description: The structure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [admin]
+      operationId: adminDeleteChapter
+      summary: Delete a chapter
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: The structure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/chapters/{id}/contents:
+    post:
+      tags: [admin]
+      operationId: adminCreateContent
+      summary: Append a content item
+      description: |
+        A `video` **must** carry `durationSec`. The watch requirement is a
+        percentage of a known length; with no length there is nothing to reach,
+        and the item would be skippable while appearing to count toward a CME
+        point. Refused with 422 naming the field, not with a database error.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ContentWrite" }
+      responses:
+        "201":
+          description: The structure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/contents/{id}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdateContent
+      summary: Edit a content item
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ContentWrite" }
+      responses:
+        "200":
+          description: The structure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [admin]
+      operationId: adminDeleteContent
+      summary: Delete a content item
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: The structure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/courses/{slug}/structure/order:
+    put:
+      tags: [admin]
+      operationId: adminReorderStructure
+      summary: Reorder the whole tree, atomically
+      description: |
+        Ids only — this route moves things, it never edits them. A chapter
+        listed under a different module **is** the move, which is why this
+        cannot be a set of per-list requests: a chapter in flight between two
+        modules would briefly belong to neither.
+
+        Every level is validated as a **permutation** of what exists before
+        anything is written, so a request that is wrong anywhere changes nothing
+        anywhere. A list that lost an item is rejected rather than obeyed —
+        obeying it would delete a chapter from a course learners are part-way
+        through.
+
+        Ordering decides gating (`gating.ts`), so this is a
+        compliance-adjacent operation rather than a convenience.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StructureOrder" }
+      responses:
+        "200":
+          description: The structure, in its new order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/courses/{slug}/experts:
+    put:
+      tags: [admin]
+      operationId: adminReplaceExperts
+      summary: Replace the Experten/Referenten list
+      description: |
+        Replaced wholesale rather than diffed: no learner state points at an
+        expert, so unlike everything else here a full replace is safe — and it
+        is what the screen does anyway.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExpertsWrite" }
+      responses:
+        "200":
+          description: The structure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/contents/{id}/quiz:
+    get:
+      tags: [admin]
+      operationId: adminGetQuiz
+      summary: The quiz, with its answer key
+      description: |
+        **The only route in the platform that returns `isCorrect`.** It is
+        reachable by an author role and nothing else; the learner-facing `Quiz`
+        has no field capable of carrying the flag, which is what makes leaking
+        it a compile error rather than something a reviewer has to notice
+        (P4-01).
+
+        `answerCount` per question is what blocks deletion: an
+        already-submitted attempt must keep meaning what it meant.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: The quiz.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthoringQuiz" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [admin]
+      operationId: adminSetQuiz
+      summary: Replace the quiz
+      description: |
+        Diffed, not wiped and rewritten. `id` present means "the existing row,
+        changed"; absent means "new"; anything the server holds and this
+        document does not name is a deletion — and a deletion of something a
+        learner has answered is refused with the count.
+
+        Two refusals no form should be trusted with: a question with **no**
+        correct answer cannot be passed by anybody, and a `single` question with
+        **two** correct answers cannot either, because scoring is exact-set.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuizWrite" }
+      responses:
+        "200":
+          description: The quiz, as stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthoringQuiz" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/courses/{slug}/evaluation:
+    get:
+      tags: [admin]
+      operationId: adminGetEvaluation
+      summary: The Evaluationsbogen, for editing
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: The evaluation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthoringEvaluation" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [admin]
+      operationId: adminSetEvaluation
+      summary: Replace the Evaluationsbogen
+      description: |
+        Same diffing rule as the quiz: a question somebody has answered cannot
+        be deleted. The Anerkennung requires an evaluation, so an empty one is
+        a course that cannot be completed.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluationWrite" }
+      responses:
+        "200":
+          description: The evaluation, as stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthoringEvaluation" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
   /admin/courses/{slug}/participants:
     get:
       tags: [admin]
@@ -882,6 +1473,16 @@ components:
       required: true
       schema: { type: string, format: uuid }
 
+    ResourceId:
+      name: id
+      in: path
+      required: true
+      description: |
+        The id of the module, chapter or content item being addressed. Always a
+        uuid, and always resolved under RLS: an id belonging to another tenant
+        is a 404, indistinguishable from one that does not exist.
+      schema: { type: string, format: uuid }
+
     ProjectHeader:
       name: X-DS-Project
       in: header
@@ -916,6 +1517,15 @@ components:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
     ValidationFailed:
       description: One or more request parameters are invalid.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+    Conflict:
+      description: |
+        The request is well-formed but the current state refuses it — a slug
+        already taken, or a delete of something a learner has already used. The
+        second kind is not a validation failure: nothing about the request is
+        wrong, and the same request would have succeeded yesterday.
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
@@ -1878,3 +2488,465 @@ components:
             altersgruppe:
               type: array
               items: { $ref: "#/components/schemas/FacetCount" }
+
+    # -----------------------------------------------------------------------
+    # Authoring (P9-02, P9-04, P9-05)
+    #
+    # Two families of shape here, and the difference is deliberate.
+    #
+    # *Read* shapes (`CourseStructure`, `AuthoringQuiz`, `AuthoringEvaluation`)
+    # carry counts of learner records alongside the content. The console needs
+    # them to disable deletion **and say why** before an author clicks, rather
+    # than after.
+    #
+    # *Write* shapes carry no `ordinal` field anywhere. Position is expressed
+    # by position in an array. A client that can set ordinals directly can set
+    # two siblings to the same one, and `UNIQUE (parent_id, ordinal)` then turns
+    # an authoring mistake into a 500.
+    # -----------------------------------------------------------------------
+
+    Slug:
+      type: string
+      pattern: "^[a-z0-9-]{1,100}$"
+      description: |
+        Lowercase letters, digits and hyphens. Must not begin or end with a
+        hyphen — checked separately rather than folded into the pattern, since
+        the natural regex for it nests quantifiers.
+
+    DepartmentSummary:
+      type: object
+      required: [slug, name, projectCount]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        projectCount:
+          type: integer
+          minimum: 0
+          description: Projects under this department, in this tenant.
+
+    DepartmentCreate:
+      type: object
+      required: [slug, name]
+      description: |
+        Names no customer. `customer_id` comes from the RLS session variable, so
+        there is no field capable of creating a department into another tenant
+        (ADR-0002).
+      properties:
+        slug: { $ref: "#/components/schemas/Slug" }
+        name: { type: string, minLength: 1, maxLength: 300 }
+
+    DepartmentUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 300 }
+
+    ProjectSummary:
+      type: object
+      description: |
+        Carries the Keycloak binding and the SMTP settings, and **never** the
+        SMTP password. `hasSmtpPassword` is its only readable trace, exactly as
+        `hasVnrPassword` is for a course (CLAUDE.md §4 invariant 7).
+      required:
+        [
+          slug,
+          name,
+          departmentSlug,
+          keycloakIssuer,
+          keycloakAudience,
+          keycloakRealm,
+          smtpHost,
+          smtpPort,
+          smtpUsername,
+          smtpFromAddress,
+          smtpFromName,
+          hasSmtpPassword,
+          branding,
+          courseCount,
+        ]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        departmentSlug: { type: string }
+        keycloakIssuer: { type: [string, "null"] }
+        keycloakAudience: { type: [string, "null"] }
+        keycloakRealm: { type: [string, "null"] }
+        smtpHost: { type: [string, "null"] }
+        smtpPort: { type: [integer, "null"] }
+        smtpUsername: { type: [string, "null"] }
+        smtpFromAddress: { type: [string, "null"] }
+        smtpFromName: { type: [string, "null"] }
+        hasSmtpPassword:
+          type: boolean
+          description: Presence only. The ciphertext is never returned.
+        branding: { $ref: "#/components/schemas/Branding" }
+        courseCount: { type: integer, minimum: 0 }
+
+    ProjectCreate:
+      type: object
+      required: [departmentSlug, slug, name]
+      properties:
+        departmentSlug: { $ref: "#/components/schemas/Slug" }
+        slug: { $ref: "#/components/schemas/Slug" }
+        name: { type: string, minLength: 1, maxLength: 300 }
+
+    ProjectUpdate:
+      type: object
+      description: |
+        Every field optional; absent means unchanged. `smtpPassword` is
+        write-only — settable here, returned by nothing.
+
+        The Keycloak binding decides which realm every token for this project is
+        validated against (ADR-0003), so a wrong value locks every learner out
+        at once. The console confirms before saving it; the API applies what it
+        is given, because refusing to let an admin change their own IdP would be
+        a worse failure than the one it prevented.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 300 }
+        keycloakIssuer: { type: [string, "null"], format: uri, maxLength: 2000 }
+        keycloakAudience: { type: [string, "null"], maxLength: 200 }
+        keycloakRealm: { type: [string, "null"], maxLength: 200 }
+        smtpHost: { type: [string, "null"], maxLength: 300 }
+        smtpPort: { type: [integer, "null"], minimum: 1, maximum: 65535 }
+        smtpUsername: { type: [string, "null"], maxLength: 300 }
+        smtpPassword:
+          type: string
+          minLength: 1
+          maxLength: 300
+          writeOnly: true
+          description: |
+            Encrypted with the application KMS key before storage. An empty
+            string is rejected rather than read as "clear it" — clearing a
+            password by sending nothing is too easy to do by accident.
+        smtpFromAddress: { type: [string, "null"], format: email, maxLength: 300 }
+        smtpFromName: { type: [string, "null"], maxLength: 200 }
+        branding:
+          type: object
+          additionalProperties: true
+          description: |
+            Send a `Branding`. Typed open rather than as `$ref: Branding`
+            because the server is deliberately lenient here: the grammars that
+            decide what a valid colour or font stack is live in `@ds/domain`,
+            the *parsed* result is what gets stored, and anything unrecognised
+            is dropped rather than rejected or repaired. Restating those
+            grammars in this document would be a second copy to keep in step.
+
+            What comes back on the next read is the parsed value — see
+            `ProjectSummary.branding`.
+
+    CourseCreate:
+      type: object
+      required: [projectSlug, slug, title]
+      description: |
+        Deliberately minimal. Everything a certificate needs is set afterwards
+        on the settings screen, which already refuses a pass threshold below the
+        accredited minimum and reports the missing fields. Duplicating those
+        rules into a creation form would be a second place to get them wrong.
+      properties:
+        projectSlug: { $ref: "#/components/schemas/Slug" }
+        slug: { $ref: "#/components/schemas/Slug" }
+        title: { type: string, minLength: 1, maxLength: 300 }
+        description: { type: [string, "null"], maxLength: 20000 }
+        deliveryType: { $ref: "#/components/schemas/DeliveryType" }
+
+    AuthoringContent:
+      type: object
+      required:
+        [
+          id,
+          kind,
+          title,
+          body,
+          videoUrl,
+          durationSec,
+          fileUrl,
+          fileSize,
+          mimeType,
+          learnerRecords,
+          questionCount,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/ContentKind" }
+        title: { type: string }
+        body: { type: [string, "null"] }
+        videoUrl: { type: [string, "null"] }
+        durationSec: { type: [integer, "null"] }
+        fileUrl: { type: [string, "null"] }
+        fileSize: { type: [integer, "null"] }
+        mimeType: { type: [string, "null"] }
+        learnerRecords:
+          type: integer
+          minimum: 0
+          description: |
+            How many learner records point at this item. Non-zero disables
+            deletion in the console and explains itself there, rather than
+            letting an author click delete and receive a refusal to interpret.
+        questionCount:
+          type: [integer, "null"]
+          description: Quiz items only. Zero is a quiz nobody can pass.
+
+    AuthoringChapter:
+      type: object
+      required: [id, title, body, contents]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        body: { type: [string, "null"] }
+        contents:
+          type: array
+          items: { $ref: "#/components/schemas/AuthoringContent" }
+
+    AuthoringModule:
+      type: object
+      required: [id, title, subtitle, chapters]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        subtitle: { type: [string, "null"] }
+        chapters:
+          type: array
+          items: { $ref: "#/components/schemas/AuthoringChapter" }
+
+    AuthoringExpert:
+      type: object
+      required: [id, roleLabel, name, institution, biography, photoUrl]
+      properties:
+        id: { type: string, format: uuid }
+        roleLabel: { type: string }
+        name: { type: string }
+        institution: { type: [string, "null"] }
+        biography: { type: [string, "null"] }
+        photoUrl: { type: [string, "null"] }
+
+    CourseStructure:
+      type: object
+      description: |
+        The whole authoring tree, in author order. Returned by every structure
+        mutation as well as the GET, so the console never has to reconstruct
+        what the server now holds — and never disagrees with it.
+      required: [courseSlug, title, modules, experts]
+      properties:
+        courseSlug: { type: string }
+        title: { type: string }
+        modules:
+          type: array
+          items: { $ref: "#/components/schemas/AuthoringModule" }
+        experts:
+          type: array
+          items: { $ref: "#/components/schemas/AuthoringExpert" }
+
+    ModuleWrite:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 300 }
+        subtitle: { type: [string, "null"], maxLength: 300 }
+
+    ChapterWrite:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 300 }
+        body: { type: [string, "null"], maxLength: 20000 }
+
+    ContentWrite:
+      type: object
+      required: [kind, title]
+      description: |
+        Every field is accepted for every kind; the rules are applied by
+        `contentProblems` in `@ds/domain` rather than by this document, so there
+        is one place that knows a `video` needs a `durationSec` instead of five
+        branches here and five more in the console.
+
+        That one is not stylistic: the watch requirement is a percentage of a
+        known length, and a video with no length would be skippable while
+        appearing to count toward a CME point. It is refused with a 422 naming
+        the field.
+      properties:
+        kind: { $ref: "#/components/schemas/ContentKind" }
+        title: { type: string, minLength: 1, maxLength: 300 }
+        body: { type: [string, "null"], maxLength: 20000 }
+        videoUrl: { type: [string, "null"], format: uri, maxLength: 2000 }
+        durationSec: { type: [integer, "null"], minimum: 1, maximum: 86400 }
+        fileUrl: { type: [string, "null"], format: uri, maxLength: 2000 }
+        fileSize: { type: [integer, "null"], minimum: 0 }
+        mimeType: { type: [string, "null"], maxLength: 200 }
+
+    StructureOrder:
+      type: object
+      description: |
+        Ids only — this shape moves things, it never edits them. A chapter
+        listed under a different module than it currently sits in **is** the
+        move.
+
+        Every level must be a permutation of what the server holds. A list that
+        lost an item during a re-render is rejected rather than obeyed; obeying
+        it would delete a chapter from a course learners are part-way through.
+      required: [modules]
+      properties:
+        modules:
+          type: array
+          items:
+            type: object
+            required: [id, chapters]
+            properties:
+              id: { type: string, format: uuid }
+              chapters:
+                type: array
+                items:
+                  type: object
+                  required: [id, contents]
+                  properties:
+                    id: { type: string, format: uuid }
+                    contents:
+                      type: array
+                      items: { type: string, format: uuid }
+
+    ExpertsWrite:
+      type: object
+      required: [experts]
+      properties:
+        experts:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            required: [roleLabel, name]
+            properties:
+              roleLabel: { type: string, minLength: 1, maxLength: 100 }
+              name: { type: string, minLength: 1, maxLength: 200 }
+              institution: { type: [string, "null"], maxLength: 300 }
+              biography: { type: [string, "null"], maxLength: 20000 }
+              photoUrl: { type: [string, "null"], format: uri, maxLength: 2000 }
+
+    AuthoringQuiz:
+      type: object
+      description: |
+        A quiz as its author sees it — **with** the answer key. The only shape
+        in this document carrying `isCorrect`, and reachable only from an admin
+        route. The learner-facing `QuizOption` has no field capable of holding
+        it, which is what makes leaking the key a type error rather than
+        something a reviewer has to notice.
+      required: [contentId, questions]
+      properties:
+        contentId: { type: string, format: uuid }
+        questions:
+          type: array
+          items:
+            type: object
+            required: [id, prompt, kind, answerCount, options]
+            properties:
+              id: { type: string, format: uuid }
+              prompt: { type: string }
+              kind: { type: string, enum: [single, multi] }
+              answerCount:
+                type: integer
+                minimum: 0
+                description: |
+                  Answers recorded against this question. Non-zero refuses
+                  deletion: an already-submitted attempt has to keep meaning
+                  what it meant when it was scored.
+              options:
+                type: array
+                items:
+                  type: object
+                  required: [id, label, isCorrect]
+                  properties:
+                    id: { type: string, format: uuid }
+                    label: { type: string }
+                    isCorrect: { type: boolean }
+
+    QuizWrite:
+      type: object
+      description: |
+        Diffed, not wiped and rewritten. `id` present means "the existing row,
+        changed"; absent means "new"; anything the server holds and this
+        document does not name is a deletion — refused, with the count, if a
+        learner has answered it.
+
+        Two refusals no form should be trusted with: a question with **no**
+        correct option cannot be passed by anybody, and a `single` question with
+        **two** correct options cannot either, because scoring is exact-set.
+      required: [questions]
+      properties:
+        questions:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [prompt, kind, options]
+            properties:
+              id: { type: string, format: uuid }
+              prompt: { type: string, minLength: 1, maxLength: 2000 }
+              kind: { type: string, enum: [single, multi] }
+              options:
+                type: array
+                minItems: 2
+                maxItems: 10
+                items:
+                  type: object
+                  required: [label, isCorrect]
+                  properties:
+                    id: { type: string, format: uuid }
+                    label: { type: string, minLength: 1, maxLength: 1000 }
+                    isCorrect: { type: boolean }
+
+    AuthoringEvaluation:
+      type: object
+      required: [courseSlug, questions]
+      properties:
+        courseSlug: { type: string }
+        questions:
+          type: array
+          items:
+            type: object
+            required: [id, prompt, kind, required, options, responseCount]
+            properties:
+              id: { type: string, format: uuid }
+              prompt: { type: string }
+              kind: { type: string, enum: [scale, text, single] }
+              required: { type: boolean }
+              options:
+                type: array
+                items: { type: string }
+              responseCount:
+                type: integer
+                minimum: 0
+                description: Responses recorded. Non-zero refuses deletion.
+
+    EvaluationWrite:
+      type: object
+      description: |
+        Same diffing rule as the quiz. The Anerkennung requires an evaluation,
+        so an empty one is a course that cannot be completed.
+
+        Note for whoever edits this next: `required` and `options` describe
+        their fallbacks in prose rather than with `default:`. `openapi-typescript`
+        treats a property carrying `default:` as always present — correct for a
+        response, wrong for a request body, where the whole point of a default
+        is that the field may be omitted. Adding `default:` here makes the
+        generated type require a field the server is happy to supply itself,
+        and the DTO-parity test fails.
+      required: [questions]
+      properties:
+        questions:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            required: [prompt, kind]
+            properties:
+              id: { type: string, format: uuid }
+              prompt: { type: string, minLength: 1, maxLength: 2000 }
+              kind: { type: string, enum: [scale, text, single] }
+              required:
+                type: boolean
+                description: Omitted means `true`.
+              options:
+                type: array
+                maxItems: 20
+                items: { type: string, minLength: 1, maxLength: 200 }
+                description: |
+                  Omitted means none. `scale` and `text` questions do not use
+                  it; a `single` question without options is one nobody can
+                  answer.

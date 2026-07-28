@@ -22,6 +22,7 @@
  */
 
 import { z } from "zod";
+import type { Branding } from "@ds/domain";
 
 const title = z.string().trim().min(1).max(300);
 /**
@@ -97,7 +98,14 @@ export const projectUpdateSchema = z.object({
   smtpPassword: z.string().min(1).max(300).optional(),
   smtpFromAddress: z.email().max(300).nullable().optional(),
   smtpFromName: z.string().trim().max(200).nullable().optional(),
-  /** Validated against `@ds/domain`'s grammars before it is stored. */
+  /**
+   * Accepted loosely on purpose, then narrowed by `parseBranding`.
+   *
+   * The grammars that decide what a valid colour or font stack is live in
+   * `@ds/domain`, and restating them here would be a second copy to keep in
+   * step. So the shape is open, the domain drops what it does not recognise,
+   * and the *parsed* result is what gets stored — never the submitted blob.
+   */
   branding: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -115,7 +123,15 @@ export const projectSummarySchema = z.object({
   smtpFromName: z.string().nullable(),
   /** Presence only — the ciphertext is never returned. */
   hasSmtpPassword: z.boolean(),
-  branding: z.record(z.string(), z.unknown()),
+  /**
+   * Always the output of `parseBranding`, never the raw jsonb column.
+   *
+   * `z.custom` rather than a restated object: this schema is a type source,
+   * and the value has already been through the one validator that defines what
+   * branding is. A second zod copy of those grammars could only ever disagree
+   * with the first.
+   */
+  branding: z.custom<Branding>(),
   courseCount: z.number().int().nonnegative(),
 });
 

@@ -106,7 +106,7 @@ export class AuthoringService {
       ...row,
       // Validated on read: a value stored before a grammar tightened must not
       // reach a settings form as though it were still acceptable.
-      branding: parseBranding(row.branding) as Record<string, unknown>,
+      branding: parseBranding(row.branding),
     }));
   }
 

@@ -382,7 +382,16 @@ export interface paths {
          */
         get: operations["adminListCourses"];
         put?: never;
-        post?: never;
+        /**
+         * Create a course
+         * @description Deliberately minimal. Everything a certificate needs — VNR, points,
+         *     Veranstalter, the Wissenschaftliche Leitung — is set afterwards on the
+         *     settings screen, which already refuses a pass threshold below the
+         *     accredited minimum and reports which certificate fields are missing.
+         *     Duplicating those rules into a creation form would be a second place to
+         *     get them wrong.
+         */
+        post: operations["adminCreateCourse"];
         delete?: never;
         options?: never;
         head?: never;
@@ -502,6 +511,353 @@ export interface paths {
          *     degraded one.
          */
         delete: operations["adminClearFont"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/departments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Departments in this tenant */
+        get: operations["adminListDepartments"];
+        put?: never;
+        /**
+         * Create a department
+         * @description The insert names no customer: `customer_id` comes from the RLS session
+         *     variable, so a department cannot be created into another tenant because
+         *     there is no way to say which tenant (ADR-0002).
+         */
+        post: operations["adminCreateDepartment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/departments/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Rename a department */
+        patch: operations["adminUpdateDepartment"];
+        trace?: never;
+    };
+    "/admin/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Projects in this tenant
+         * @description Carries the Keycloak binding and the SMTP settings, and **never** the
+         *     SMTP password — `hasSmtpPassword` is the only readable trace, exactly
+         *     as `hasVnrPassword` is for a course (CLAUDE.md §4 invariant 7).
+         */
+        get: operations["adminListProjects"];
+        put?: never;
+        /** Create a project */
+        post: operations["adminCreateProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/projects/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit a project, its branding, its Keycloak binding and its SMTP
+         * @description The Keycloak binding decides which realm every token for this project is
+         *     validated against (ADR-0003). Changing it wrongly locks every learner
+         *     out at once, which is why the console confirms before saving it — the
+         *     API applies what it is given, because a platform that refused to let an
+         *     admin change their own IdP would be a worse failure than the one it
+         *     prevented.
+         *
+         *     `branding` is re-validated against `@ds/domain`'s grammars and the
+         *     *parsed* result is stored, so a value that fails is dropped here rather
+         *     than stored and dropped again on every read.
+         *
+         *     `smtpPassword` is write-only.
+         */
+        patch: operations["adminUpdateProject"];
+        trace?: never;
+    };
+    "/admin/courses/{slug}/structure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The authoring tree
+         * @description Modules, chapters and content in author order, plus two counts the
+         *     console needs: `learnerRecords`, which disables deletion and says why,
+         *     and `questionCount`, which is zero for a quiz nobody can pass yet.
+         */
+        get: operations["adminGetStructure"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/courses/{slug}/modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append a module */
+        post: operations["adminCreateModule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/modules/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a module
+         * @description Refused with 409 if any learner record points into it. That row is the
+         *     evidence behind a CME point that may already have been reported to an
+         *     Ärztekammer.
+         */
+        delete: operations["adminDeleteModule"];
+        options?: never;
+        head?: never;
+        /** Edit a module */
+        patch: operations["adminUpdateModule"];
+        trace?: never;
+    };
+    "/admin/modules/{id}/chapters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append a chapter */
+        post: operations["adminCreateChapter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/chapters/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a chapter */
+        delete: operations["adminDeleteChapter"];
+        options?: never;
+        head?: never;
+        /** Edit a chapter */
+        patch: operations["adminUpdateChapter"];
+        trace?: never;
+    };
+    "/admin/chapters/{id}/contents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Append a content item
+         * @description A `video` **must** carry `durationSec`. The watch requirement is a
+         *     percentage of a known length; with no length there is nothing to reach,
+         *     and the item would be skippable while appearing to count toward a CME
+         *     point. Refused with 422 naming the field, not with a database error.
+         */
+        post: operations["adminCreateContent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/contents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a content item */
+        delete: operations["adminDeleteContent"];
+        options?: never;
+        head?: never;
+        /** Edit a content item */
+        patch: operations["adminUpdateContent"];
+        trace?: never;
+    };
+    "/admin/courses/{slug}/structure/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder the whole tree, atomically
+         * @description Ids only — this route moves things, it never edits them. A chapter
+         *     listed under a different module **is** the move, which is why this
+         *     cannot be a set of per-list requests: a chapter in flight between two
+         *     modules would briefly belong to neither.
+         *
+         *     Every level is validated as a **permutation** of what exists before
+         *     anything is written, so a request that is wrong anywhere changes nothing
+         *     anywhere. A list that lost an item is rejected rather than obeyed —
+         *     obeying it would delete a chapter from a course learners are part-way
+         *     through.
+         *
+         *     Ordering decides gating (`gating.ts`), so this is a
+         *     compliance-adjacent operation rather than a convenience.
+         */
+        put: operations["adminReorderStructure"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/courses/{slug}/experts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace the Experten/Referenten list
+         * @description Replaced wholesale rather than diffed: no learner state points at an
+         *     expert, so unlike everything else here a full replace is safe — and it
+         *     is what the screen does anyway.
+         */
+        put: operations["adminReplaceExperts"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/contents/{id}/quiz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The quiz, with its answer key
+         * @description **The only route in the platform that returns `isCorrect`.** It is
+         *     reachable by an author role and nothing else; the learner-facing `Quiz`
+         *     has no field capable of carrying the flag, which is what makes leaking
+         *     it a compile error rather than something a reviewer has to notice
+         *     (P4-01).
+         *
+         *     `answerCount` per question is what blocks deletion: an
+         *     already-submitted attempt must keep meaning what it meant.
+         */
+        get: operations["adminGetQuiz"];
+        /**
+         * Replace the quiz
+         * @description Diffed, not wiped and rewritten. `id` present means "the existing row,
+         *     changed"; absent means "new"; anything the server holds and this
+         *     document does not name is a deletion — and a deletion of something a
+         *     learner has answered is refused with the count.
+         *
+         *     Two refusals no form should be trusted with: a question with **no**
+         *     correct answer cannot be passed by anybody, and a `single` question with
+         *     **two** correct answers cannot either, because scoring is exact-set.
+         */
+        put: operations["adminSetQuiz"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/courses/{slug}/evaluation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The Evaluationsbogen, for editing */
+        get: operations["adminGetEvaluation"];
+        /**
+         * Replace the Evaluationsbogen
+         * @description Same diffing rule as the quiz: a question somebody has answered cannot
+         *     be deleted. The Anerkennung requires an evaluation, so an empty one is
+         *     a course that cannot be completed.
+         */
+        put: operations["adminSetEvaluation"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1223,6 +1579,326 @@ export interface components {
                 altersgruppe: components["schemas"]["FacetCount"][];
             };
         };
+        /**
+         * @description Lowercase letters, digits and hyphens. Must not begin or end with a
+         *     hyphen — checked separately rather than folded into the pattern, since
+         *     the natural regex for it nests quantifiers.
+         */
+        Slug: string;
+        DepartmentSummary: {
+            slug: string;
+            name: string;
+            /** @description Projects under this department, in this tenant. */
+            projectCount: number;
+        };
+        /**
+         * @description Names no customer. `customer_id` comes from the RLS session variable, so
+         *     there is no field capable of creating a department into another tenant
+         *     (ADR-0002).
+         */
+        DepartmentCreate: {
+            slug: components["schemas"]["Slug"];
+            name: string;
+        };
+        DepartmentUpdate: {
+            name?: string;
+        };
+        /**
+         * @description Carries the Keycloak binding and the SMTP settings, and **never** the
+         *     SMTP password. `hasSmtpPassword` is its only readable trace, exactly as
+         *     `hasVnrPassword` is for a course (CLAUDE.md §4 invariant 7).
+         */
+        ProjectSummary: {
+            slug: string;
+            name: string;
+            departmentSlug: string;
+            keycloakIssuer: string | null;
+            keycloakAudience: string | null;
+            keycloakRealm: string | null;
+            smtpHost: string | null;
+            smtpPort: number | null;
+            smtpUsername: string | null;
+            smtpFromAddress: string | null;
+            smtpFromName: string | null;
+            /** @description Presence only. The ciphertext is never returned. */
+            hasSmtpPassword: boolean;
+            branding: components["schemas"]["Branding"];
+            courseCount: number;
+        };
+        ProjectCreate: {
+            departmentSlug: components["schemas"]["Slug"];
+            slug: components["schemas"]["Slug"];
+            name: string;
+        };
+        /**
+         * @description Every field optional; absent means unchanged. `smtpPassword` is
+         *     write-only — settable here, returned by nothing.
+         *
+         *     The Keycloak binding decides which realm every token for this project is
+         *     validated against (ADR-0003), so a wrong value locks every learner out
+         *     at once. The console confirms before saving it; the API applies what it
+         *     is given, because refusing to let an admin change their own IdP would be
+         *     a worse failure than the one it prevented.
+         */
+        ProjectUpdate: {
+            name?: string;
+            /** Format: uri */
+            keycloakIssuer?: string | null;
+            keycloakAudience?: string | null;
+            keycloakRealm?: string | null;
+            smtpHost?: string | null;
+            smtpPort?: number | null;
+            smtpUsername?: string | null;
+            /**
+             * @description Encrypted with the application KMS key before storage. An empty
+             *     string is rejected rather than read as "clear it" — clearing a
+             *     password by sending nothing is too easy to do by accident.
+             */
+            smtpPassword?: string;
+            /** Format: email */
+            smtpFromAddress?: string | null;
+            smtpFromName?: string | null;
+            /**
+             * @description Send a `Branding`. Typed open rather than as `$ref: Branding`
+             *     because the server is deliberately lenient here: the grammars that
+             *     decide what a valid colour or font stack is live in `@ds/domain`,
+             *     the *parsed* result is what gets stored, and anything unrecognised
+             *     is dropped rather than rejected or repaired. Restating those
+             *     grammars in this document would be a second copy to keep in step.
+             *
+             *     What comes back on the next read is the parsed value — see
+             *     `ProjectSummary.branding`.
+             */
+            branding?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * @description Deliberately minimal. Everything a certificate needs is set afterwards
+         *     on the settings screen, which already refuses a pass threshold below the
+         *     accredited minimum and reports the missing fields. Duplicating those
+         *     rules into a creation form would be a second place to get them wrong.
+         */
+        CourseCreate: {
+            projectSlug: components["schemas"]["Slug"];
+            slug: components["schemas"]["Slug"];
+            title: string;
+            description?: string | null;
+            deliveryType?: components["schemas"]["DeliveryType"];
+        };
+        AuthoringContent: {
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["ContentKind"];
+            title: string;
+            body: string | null;
+            videoUrl: string | null;
+            durationSec: number | null;
+            fileUrl: string | null;
+            fileSize: number | null;
+            mimeType: string | null;
+            /**
+             * @description How many learner records point at this item. Non-zero disables
+             *     deletion in the console and explains itself there, rather than
+             *     letting an author click delete and receive a refusal to interpret.
+             */
+            learnerRecords: number;
+            /** @description Quiz items only. Zero is a quiz nobody can pass. */
+            questionCount: number | null;
+        };
+        AuthoringChapter: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            body: string | null;
+            contents: components["schemas"]["AuthoringContent"][];
+        };
+        AuthoringModule: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            subtitle: string | null;
+            chapters: components["schemas"]["AuthoringChapter"][];
+        };
+        AuthoringExpert: {
+            /** Format: uuid */
+            id: string;
+            roleLabel: string;
+            name: string;
+            institution: string | null;
+            biography: string | null;
+            photoUrl: string | null;
+        };
+        /**
+         * @description The whole authoring tree, in author order. Returned by every structure
+         *     mutation as well as the GET, so the console never has to reconstruct
+         *     what the server now holds — and never disagrees with it.
+         */
+        CourseStructure: {
+            courseSlug: string;
+            title: string;
+            modules: components["schemas"]["AuthoringModule"][];
+            experts: components["schemas"]["AuthoringExpert"][];
+        };
+        ModuleWrite: {
+            title: string;
+            subtitle?: string | null;
+        };
+        ChapterWrite: {
+            title: string;
+            body?: string | null;
+        };
+        /**
+         * @description Every field is accepted for every kind; the rules are applied by
+         *     `contentProblems` in `@ds/domain` rather than by this document, so there
+         *     is one place that knows a `video` needs a `durationSec` instead of five
+         *     branches here and five more in the console.
+         *
+         *     That one is not stylistic: the watch requirement is a percentage of a
+         *     known length, and a video with no length would be skippable while
+         *     appearing to count toward a CME point. It is refused with a 422 naming
+         *     the field.
+         */
+        ContentWrite: {
+            kind: components["schemas"]["ContentKind"];
+            title: string;
+            body?: string | null;
+            /** Format: uri */
+            videoUrl?: string | null;
+            durationSec?: number | null;
+            /** Format: uri */
+            fileUrl?: string | null;
+            fileSize?: number | null;
+            mimeType?: string | null;
+        };
+        /**
+         * @description Ids only — this shape moves things, it never edits them. A chapter
+         *     listed under a different module than it currently sits in **is** the
+         *     move.
+         *
+         *     Every level must be a permutation of what the server holds. A list that
+         *     lost an item during a re-render is rejected rather than obeyed; obeying
+         *     it would delete a chapter from a course learners are part-way through.
+         */
+        StructureOrder: {
+            modules: {
+                /** Format: uuid */
+                id: string;
+                chapters: {
+                    /** Format: uuid */
+                    id: string;
+                    contents: string[];
+                }[];
+            }[];
+        };
+        ExpertsWrite: {
+            experts: {
+                roleLabel: string;
+                name: string;
+                institution?: string | null;
+                biography?: string | null;
+                /** Format: uri */
+                photoUrl?: string | null;
+            }[];
+        };
+        /**
+         * @description A quiz as its author sees it — **with** the answer key. The only shape
+         *     in this document carrying `isCorrect`, and reachable only from an admin
+         *     route. The learner-facing `QuizOption` has no field capable of holding
+         *     it, which is what makes leaking the key a type error rather than
+         *     something a reviewer has to notice.
+         */
+        AuthoringQuiz: {
+            /** Format: uuid */
+            contentId: string;
+            questions: {
+                /** Format: uuid */
+                id: string;
+                prompt: string;
+                /** @enum {string} */
+                kind: "single" | "multi";
+                /**
+                 * @description Answers recorded against this question. Non-zero refuses
+                 *     deletion: an already-submitted attempt has to keep meaning
+                 *     what it meant when it was scored.
+                 */
+                answerCount: number;
+                options: {
+                    /** Format: uuid */
+                    id: string;
+                    label: string;
+                    isCorrect: boolean;
+                }[];
+            }[];
+        };
+        /**
+         * @description Diffed, not wiped and rewritten. `id` present means "the existing row,
+         *     changed"; absent means "new"; anything the server holds and this
+         *     document does not name is a deletion — refused, with the count, if a
+         *     learner has answered it.
+         *
+         *     Two refusals no form should be trusted with: a question with **no**
+         *     correct option cannot be passed by anybody, and a `single` question with
+         *     **two** correct options cannot either, because scoring is exact-set.
+         */
+        QuizWrite: {
+            questions: {
+                /** Format: uuid */
+                id?: string;
+                prompt: string;
+                /** @enum {string} */
+                kind: "single" | "multi";
+                options: {
+                    /** Format: uuid */
+                    id?: string;
+                    label: string;
+                    isCorrect: boolean;
+                }[];
+            }[];
+        };
+        AuthoringEvaluation: {
+            courseSlug: string;
+            questions: {
+                /** Format: uuid */
+                id: string;
+                prompt: string;
+                /** @enum {string} */
+                kind: "scale" | "text" | "single";
+                required: boolean;
+                options: string[];
+                /** @description Responses recorded. Non-zero refuses deletion. */
+                responseCount: number;
+            }[];
+        };
+        /**
+         * @description Same diffing rule as the quiz. The Anerkennung requires an evaluation,
+         *     so an empty one is a course that cannot be completed.
+         *
+         *     Note for whoever edits this next: `required` and `options` describe
+         *     their fallbacks in prose rather than with `default:`. `openapi-typescript`
+         *     treats a property carrying `default:` as always present — correct for a
+         *     response, wrong for a request body, where the whole point of a default
+         *     is that the field may be omitted. Adding `default:` here makes the
+         *     generated type require a field the server is happy to supply itself,
+         *     and the DTO-parity test fails.
+         */
+        EvaluationWrite: {
+            questions: {
+                /** Format: uuid */
+                id?: string;
+                prompt: string;
+                /** @enum {string} */
+                kind: "scale" | "text" | "single";
+                /** @description Omitted means `true`. */
+                required?: boolean;
+                /**
+                 * @description Omitted means none. `scale` and `text` questions do not use
+                 *     it; a `single` question without options is one nobody can
+                 *     answer.
+                 */
+                options?: string[];
+            }[];
+        };
     };
     responses: {
         /**
@@ -1268,10 +1944,30 @@ export interface components {
                 "application/problem+json": components["schemas"]["ProblemDetails"];
             };
         };
+        /**
+         * @description The request is well-formed but the current state refuses it — a slug
+         *     already taken, or a delete of something a learner has already used. The
+         *     second kind is not a validation failure: nothing about the request is
+         *     wrong, and the same request would have succeeded yesterday.
+         */
+        Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
     };
     parameters: {
         CourseSlug: string;
         ContentId: string;
+        /**
+         * @description The id of the module, chapter or content item being addressed. Always a
+         *     uuid, and always resolved under RLS: an id belonging to another tenant
+         *     is a 404, indistinguishable from one that does not exist.
+         */
+        ResourceId: string;
         /**
          * @description Project slug identifying the calling host surface (ADR-0007). Resolves
          *     the Keycloak realm to validate against and pins the tenant. Unknown or
@@ -1918,6 +2614,42 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    adminCreateCourse: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CourseCreate"];
+            };
+        };
+        responses: {
+            /** @description The new course's (empty) structure. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
     adminGetCourse: {
         parameters: {
             query?: never;
@@ -2135,6 +2867,849 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    adminListDepartments: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The departments. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentSummary"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminCreateDepartment: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartmentCreate"];
+            };
+        };
+        responses: {
+            /** @description The departments, including the new one. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentSummary"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminUpdateDepartment: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /** @description The department's slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartmentUpdate"];
+            };
+        };
+        responses: {
+            /** @description The departments. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentSummary"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminListProjects: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The projects. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectSummary"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminCreateProject: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectCreate"];
+            };
+        };
+        responses: {
+            /** @description The projects, including the new one. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectSummary"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminUpdateProject: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /**
+                 * @description The project's own slug — the resource being edited, which is not
+                 *     necessarily the project in `X-DS-Project`.
+                 */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectUpdate"];
+            };
+        };
+        responses: {
+            /** @description The projects. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectSummary"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminGetStructure: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The structure. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminCreateModule: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModuleWrite"];
+            };
+        };
+        responses: {
+            /** @description The structure. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminDeleteModule: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /**
+                 * @description The id of the module, chapter or content item being addressed. Always a
+                 *     uuid, and always resolved under RLS: an id belonging to another tenant
+                 *     is a 404, indistinguishable from one that does not exist.
+                 */
+                id: components["parameters"]["ResourceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The structure. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    adminUpdateModule: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /**
+                 * @description The id of the module, chapter or content item being addressed. Always a
+                 *     uuid, and always resolved under RLS: an id belonging to another tenant
+                 *     is a 404, indistinguishable from one that does not exist.
+                 */
+                id: components["parameters"]["ResourceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModuleWrite"];
+            };
+        };
+        responses: {
+            /** @description The structure. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminCreateChapter: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /**
+                 * @description The id of the module, chapter or content item being addressed. Always a
+                 *     uuid, and always resolved under RLS: an id belonging to another tenant
+                 *     is a 404, indistinguishable from one that does not exist.
+                 */
+                id: components["parameters"]["ResourceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChapterWrite"];
+            };
+        };
+        responses: {
+            /** @description The structure. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminDeleteChapter: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /**
+                 * @description The id of the module, chapter or content item being addressed. Always a
+                 *     uuid, and always resolved under RLS: an id belonging to another tenant
+                 *     is a 404, indistinguishable from one that does not exist.
+                 */
+                id: components["parameters"]["ResourceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The structure. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    adminUpdateChapter: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /**
+                 * @description The id of the module, chapter or content item being addressed. Always a
+                 *     uuid, and always resolved under RLS: an id belonging to another tenant
+                 *     is a 404, indistinguishable from one that does not exist.
+                 */
+                id: components["parameters"]["ResourceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChapterWrite"];
+            };
+        };
+        responses: {
+            /** @description The structure. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminCreateContent: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /**
+                 * @description The id of the module, chapter or content item being addressed. Always a
+                 *     uuid, and always resolved under RLS: an id belonging to another tenant
+                 *     is a 404, indistinguishable from one that does not exist.
+                 */
+                id: components["parameters"]["ResourceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContentWrite"];
+            };
+        };
+        responses: {
+            /** @description The structure. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminDeleteContent: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /**
+                 * @description The id of the module, chapter or content item being addressed. Always a
+                 *     uuid, and always resolved under RLS: an id belonging to another tenant
+                 *     is a 404, indistinguishable from one that does not exist.
+                 */
+                id: components["parameters"]["ResourceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The structure. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    adminUpdateContent: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /**
+                 * @description The id of the module, chapter or content item being addressed. Always a
+                 *     uuid, and always resolved under RLS: an id belonging to another tenant
+                 *     is a 404, indistinguishable from one that does not exist.
+                 */
+                id: components["parameters"]["ResourceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContentWrite"];
+            };
+        };
+        responses: {
+            /** @description The structure. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminReorderStructure: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StructureOrder"];
+            };
+        };
+        responses: {
+            /** @description The structure, in its new order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminReplaceExperts: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpertsWrite"];
+            };
+        };
+        responses: {
+            /** @description The structure. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminGetQuiz: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /**
+                 * @description The id of the module, chapter or content item being addressed. Always a
+                 *     uuid, and always resolved under RLS: an id belonging to another tenant
+                 *     is a 404, indistinguishable from one that does not exist.
+                 */
+                id: components["parameters"]["ResourceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The quiz. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthoringQuiz"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminSetQuiz: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /**
+                 * @description The id of the module, chapter or content item being addressed. Always a
+                 *     uuid, and always resolved under RLS: an id belonging to another tenant
+                 *     is a 404, indistinguishable from one that does not exist.
+                 */
+                id: components["parameters"]["ResourceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuizWrite"];
+            };
+        };
+        responses: {
+            /** @description The quiz, as stored. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthoringQuiz"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminGetEvaluation: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The evaluation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthoringEvaluation"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminSetEvaluation: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvaluationWrite"];
+            };
+        };
+        responses: {
+            /** @description The evaluation, as stored. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthoringEvaluation"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     adminListParticipants: {

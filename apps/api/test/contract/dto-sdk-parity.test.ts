@@ -54,6 +54,25 @@ import type {
   participantListSchema,
   participantRowSchema,
 } from "../../src/modules/admin/admin.dto.js";
+import type {
+  authoringEvaluationSchema,
+  authoringQuizSchema,
+  chapterWriteSchema,
+  contentWriteSchema,
+  courseCreateSchema,
+  courseStructureSchema,
+  departmentCreateSchema,
+  departmentSummarySchema,
+  departmentUpdateSchema,
+  evaluationWriteSchema,
+  expertsWriteSchema,
+  moduleWriteSchema,
+  projectCreateSchema,
+  projectSummarySchema,
+  projectUpdateSchema,
+  quizWriteSchema,
+  structureOrderSchema,
+} from "../../src/modules/authoring/authoring.dto.js";
 import type { Expect, MutuallyAssignable } from "./assignable.js";
 
 type Schemas = components["schemas"];
@@ -139,6 +158,71 @@ type _Admin = [
   >,
   Expect<MutuallyAssignable<z.infer<typeof fontUploadSchema>, Schemas["FontUpload"]>>,
   Expect<MutuallyAssignable<z.infer<typeof fontStateSchema>, Schemas["FontState"]>>,
+];
+
+/**
+ * Authoring (P9-02, P9-04, P9-05).
+ *
+ * Request schemas are compared as `z.input`, response schemas as `z.infer`,
+ * and the difference is not pedantry: `courseCreateSchema.deliveryType` and
+ * `evaluationWriteSchema.required` carry `.default(…)`, so their *output* type
+ * is required while what a client may send is optional. `z.infer` on a request
+ * schema would assert the contract must demand a field the server is happy to
+ * supply itself — the wrong direction, and it would have forced the contract
+ * to lie about what a valid request looks like.
+ */
+type _Authoring = [
+  Expect<
+    MutuallyAssignable<
+      z.infer<typeof departmentSummarySchema>,
+      Schemas["DepartmentSummary"]
+    >
+  >,
+  Expect<
+    MutuallyAssignable<
+      z.input<typeof departmentCreateSchema>,
+      Schemas["DepartmentCreate"]
+    >
+  >,
+  Expect<
+    MutuallyAssignable<
+      z.input<typeof departmentUpdateSchema>,
+      Schemas["DepartmentUpdate"]
+    >
+  >,
+  Expect<
+    MutuallyAssignable<z.infer<typeof projectSummarySchema>, Schemas["ProjectSummary"]>
+  >,
+  Expect<
+    MutuallyAssignable<z.input<typeof projectCreateSchema>, Schemas["ProjectCreate"]>
+  >,
+  Expect<
+    MutuallyAssignable<z.input<typeof projectUpdateSchema>, Schemas["ProjectUpdate"]>
+  >,
+  Expect<MutuallyAssignable<z.input<typeof courseCreateSchema>, Schemas["CourseCreate"]>>,
+  Expect<
+    MutuallyAssignable<z.infer<typeof courseStructureSchema>, Schemas["CourseStructure"]>
+  >,
+  Expect<MutuallyAssignable<z.input<typeof moduleWriteSchema>, Schemas["ModuleWrite"]>>,
+  Expect<MutuallyAssignable<z.input<typeof chapterWriteSchema>, Schemas["ChapterWrite"]>>,
+  Expect<MutuallyAssignable<z.input<typeof contentWriteSchema>, Schemas["ContentWrite"]>>,
+  Expect<
+    MutuallyAssignable<z.input<typeof structureOrderSchema>, Schemas["StructureOrder"]>
+  >,
+  Expect<MutuallyAssignable<z.input<typeof expertsWriteSchema>, Schemas["ExpertsWrite"]>>,
+  Expect<
+    MutuallyAssignable<z.infer<typeof authoringQuizSchema>, Schemas["AuthoringQuiz"]>
+  >,
+  Expect<MutuallyAssignable<z.input<typeof quizWriteSchema>, Schemas["QuizWrite"]>>,
+  Expect<
+    MutuallyAssignable<
+      z.infer<typeof authoringEvaluationSchema>,
+      Schemas["AuthoringEvaluation"]
+    >
+  >,
+  Expect<
+    MutuallyAssignable<z.input<typeof evaluationWriteSchema>, Schemas["EvaluationWrite"]>
+  >,
 ];
 
 describe("contract: DTOs match the generated SDK types", () => {
