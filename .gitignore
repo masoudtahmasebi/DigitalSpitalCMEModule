@@ -18,8 +18,9 @@ pnpm-debug.log*
 .vscode/*
 !.vscode/extensions.json
 
-# generated
-packages/sdk/src/generated/
+# packages/sdk/src/generated/ is deliberately COMMITTED, not ignored: CI's
+# drift check regenerates it and fails on `git diff -- packages/sdk`, which
+# only bites if the generated output is tracked. Never hand-edit it.
 
 # ad-hoc local smoke/debug scripts — never committed
 *.local.mjs

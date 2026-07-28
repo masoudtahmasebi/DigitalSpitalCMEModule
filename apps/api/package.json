@@ -27,6 +27,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@ds/sdk": "workspace:*",
     "@types/express": "^5.0.6",
     "@types/express-serve-static-core": "^5.1.2",
     "@types/pg": "^8.11.10",

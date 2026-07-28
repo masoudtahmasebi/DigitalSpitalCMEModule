@@ -147,6 +147,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@ds/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6

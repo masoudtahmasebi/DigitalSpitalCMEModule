@@ -17,6 +17,8 @@ export const courseSummarySchema = z.object({
   slug: z.string(),
   title: z.string(),
   description: z.string().nullable(),
+  /** Course artwork — the list card and the detail hero use the same asset. */
+  heroImageUrl: z.string().nullable(),
   deliveryType: z.enum(["on_demand", "live", "praesenz"]),
   thema: z.array(z.string()),
   altersgruppe: z.array(z.string()),
@@ -74,6 +76,10 @@ export const courseExpertSchema = z.object({
  * contradiction impossible to ship (P5-06).
  */
 export const courseDetailSchema = courseSummarySchema.extend({
+  /** The "Lernziele" checklist, one entry per bullet. */
+  learningObjectives: z.array(z.string()),
+  /** The "Zielgruppe" section; plain text, newlines are the only formatting. */
+  targetAudience: z.string().nullable(),
   vnr: z.string().nullable(),
   accreditationBody: z.string().nullable(),
   organizer: z.string().nullable(),

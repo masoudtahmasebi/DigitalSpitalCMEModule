@@ -89,6 +89,7 @@ function toSummary(
     slug: row.slug,
     title: row.title,
     description: row.description,
+    heroImageUrl: row.heroImageUrl,
     deliveryType: row.deliveryType,
     thema: row.thema,
     altersgruppe: row.altersgruppe,
@@ -144,6 +145,8 @@ function toDetail(tree: CourseTreeRows): CourseDetail {
 
   return {
     ...toSummary(course, { moduleCount: tree.modules.length, totalDurationSec }),
+    learningObjectives: course.learningObjectives,
+    targetAudience: course.targetAudience,
     vnr: course.vnr,
     accreditationBody: course.accreditationBody,
     organizer: course.organizer,

@@ -1,0 +1,369 @@
+# The API contract (P0-06 / P2-06). Written before implementation for new
+# surface, and the single source the SDK generates from — CI fails if
+# packages/sdk/src/generated drifts from this file.
+#
+# Scope: exactly what the API implements. Endpoints land here first, then in
+# code; nothing lands here speculatively. The learner-progress, quiz,
+# evaluation and certificate paths arrive with their phases (P3–P8).
+#
+# Conventions (CLAUDE.md §5):
+# - Errors are RFC 7807 problem documents, application/problem+json.
+# - Percentages are integers 0–100. Durations are integer seconds.
+# - Timestamps are ISO 8601 UTC. German local time is presentation only.
+# - 404 for "not visible in this tenant" — existence is never disclosed.
+
+openapi: 3.1.0
+
+info:
+  title: DS Education Platform API
+  version: 0.1.0
+  description: |
+    Headless learner API for the DS Education Platform (CME).
+
+    Every request carries two credentials:
+    - a **bearer token**, validated server-side against the project's own
+      Keycloak realm (signature, issuer, audience, expiry — ADR-0003), and
+    - the **X-DS-Project header**, identifying which host surface is calling
+      (ADR-0007). The project binding decides the Keycloak realm and pins the
+      tenant; a token from another realm is rejected regardless of validity.
+
+    All compliance decisions are server-side. The client renders; it is never
+    the source of truth for anything affecting a CME point.
+
+servers:
+  - url: /
+    description: Relative to wherever the API is deployed.
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: health
+  - name: catalog
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      operationId: getHealth
+      summary: Liveness/readiness probe
+      description: Public — a load balancer cannot present a bearer token.
+      security: []
+      responses:
+        "200":
+          description: The API and its database are reachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /courses:
+    get:
+      tags: [catalog]
+      operationId: listCourses
+      summary: List the tenant's courses
+      description: |
+        Backs the course list screen: the delivery-type tabs, the Thema and
+        Altersgruppe filters with their facet counts, pagination, and the card
+        metadata line ("5 CME Punkte | 5 Module | 2 Stunden 30 Minuten").
+        Rows are scoped to the caller's tenant by PostgreSQL RLS (ADR-0002).
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: thema
+          in: query
+          schema: { type: string }
+        - name: altersgruppe
+          in: query
+          schema: { type: string }
+        - name: deliveryType
+          in: query
+          schema: { $ref: "#/components/schemas/DeliveryType" }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: perPage
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        "200":
+          description: One page of courses plus facet counts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourseListResponse"
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /courses/{slug}:
+    get:
+      tags: [catalog]
+      operationId: getCourseBySlug
+      summary: One course with its full module tree
+      description: |
+        The whole tree in one response — modules, chapters, contents, experts —
+        so the detail view does not waterfall. Quiz contents carry no options
+        and no answers here; the assessment endpoints (P4) own those, and the
+        answer key never appears in any learner-facing shape.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The course detail tree.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourseDetail"
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Keycloak access token. Verified against the realm bound to the
+        X-DS-Project header — issuer and audience come from that binding,
+        never from the token (ADR-0003).
+
+  parameters:
+    ProjectHeader:
+      name: X-DS-Project
+      in: header
+      required: true
+      description: |
+        Project slug identifying the calling host surface (ADR-0007). Resolves
+        the Keycloak realm to validate against and pins the tenant. Unknown or
+        unbound slugs are a generic 401 — never a 404 that would confirm or
+        deny a project's existence.
+      schema: { type: string }
+
+  responses:
+    Unauthenticated:
+      description: |
+        Missing/invalid token, missing project header, or unknown project.
+        Always the same generic document — the reason is logged server-side
+        only.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+    Forbidden:
+      description: Authenticated, but no grant reaches this tenant.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+    NotFound:
+      description: |
+        Not found — or not visible in this tenant; the two are
+        indistinguishable by design.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+    ValidationFailed:
+      description: One or more request parameters are invalid.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  schemas:
+    ProblemDetails:
+      type: object
+      description: RFC 7807. No stack traces, no internal identifiers.
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+
+    DeliveryType:
+      type: string
+      description: The course list's three tabs.
+      enum: [on_demand, live, praesenz]
+
+    CourseSummary:
+      type: object
+      description: One card on the course list screen.
+      required:
+        - id
+        - slug
+        - title
+        - description
+        - heroImageUrl
+        - deliveryType
+        - thema
+        - altersgruppe
+        - cmePoints
+        - cmeCategory
+        - moduleCount
+        - totalDurationSec
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        title: { type: string }
+        description: { type: [string, "null"] }
+        heroImageUrl:
+          type: [string, "null"]
+          description: Course artwork; the card and the detail hero share it.
+        deliveryType: { $ref: "#/components/schemas/DeliveryType" }
+        thema:
+          type: array
+          items: { type: string }
+        altersgruppe:
+          type: array
+          items: { type: string }
+        cmePoints:
+          type: [integer, "null"]
+          description: Rendered as "5 CME Punkte" in the card metadata line.
+        cmeCategory: { type: [string, "null"] }
+        moduleCount: { type: integer, minimum: 0 }
+        totalDurationSec:
+          type: integer
+          minimum: 0
+          description: Sum of video durations; formatted client-side.
+
+    CourseDetail:
+      allOf:
+        - $ref: "#/components/schemas/CourseSummary"
+        - type: object
+          required:
+            - learningObjectives
+            - targetAudience
+            - vnr
+            - accreditationBody
+            - organizer
+            - eventLocation
+            - validFrom
+            - validTo
+            - requiredWatchPercent
+            - passThresholdPercent
+            - modules
+            - experts
+          properties:
+            learningObjectives:
+              type: array
+              items: { type: string }
+              description: The "Lernziele" checklist, one entry per bullet.
+            targetAudience:
+              type: [string, "null"]
+              description: The "Zielgruppe" text; newlines are the only formatting.
+            vnr: { type: [string, "null"] }
+            accreditationBody: { type: [string, "null"] }
+            organizer: { type: [string, "null"] }
+            eventLocation: { type: [string, "null"] }
+            validFrom: { type: [string, "null"], format: date-time }
+            validTo: { type: [string, "null"], format: date-time }
+            requiredWatchPercent:
+              type: integer
+              minimum: 0
+              maximum: 100
+              description: |
+                The course's actual configured value — the Zertifizierung tab
+                renders this, never a hardcoded number (P5-06).
+            passThresholdPercent:
+              type: integer
+              minimum: 0
+              maximum: 100
+            modules:
+              type: array
+              items: { $ref: "#/components/schemas/ModuleSummary" }
+            experts:
+              type: array
+              items: { $ref: "#/components/schemas/CourseExpert" }
+
+    ModuleSummary:
+      type: object
+      required: [id, ordinal, title, subtitle, chapters]
+      properties:
+        id: { type: string, format: uuid }
+        ordinal: { type: integer }
+        title: { type: string }
+        subtitle: { type: [string, "null"] }
+        chapters:
+          type: array
+          items: { $ref: "#/components/schemas/ChapterSummary" }
+
+    ChapterSummary:
+      type: object
+      required: [id, ordinal, title, contents]
+      properties:
+        id: { type: string, format: uuid }
+        ordinal: { type: integer }
+        title: { type: string }
+        contents:
+          type: array
+          items: { $ref: "#/components/schemas/ContentSummary" }
+
+    ContentSummary:
+      type: object
+      description: |
+        Deliberately has no field capable of carrying a quiz answer (P4-01).
+      required: [id, ordinal, kind, title, durationSec, fileUrl, mimeType]
+      properties:
+        id: { type: string, format: uuid }
+        ordinal: { type: integer }
+        kind:
+          type: string
+          enum: [video, text, quiz, details, material]
+        title: { type: string }
+        durationSec: { type: [integer, "null"] }
+        fileUrl:
+          type: [string, "null"]
+          description: Mediathek downloads only.
+        mimeType: { type: [string, "null"] }
+
+    CourseExpert:
+      type: object
+      required: [id, ordinal, roleLabel, name, institution, biography, photoUrl]
+      properties:
+        id: { type: string, format: uuid }
+        ordinal: { type: integer }
+        roleLabel: { type: string }
+        name: { type: string }
+        institution: { type: [string, "null"] }
+        biography: { type: [string, "null"] }
+        photoUrl: { type: [string, "null"] }
+
+    FacetCount:
+      type: object
+      required: [value, count]
+      properties:
+        value: { type: string }
+        count: { type: integer }
+
+    CourseListResponse:
+      type: object
+      required: [items, page, perPage, total, facets]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CourseSummary" }
+        page: { type: integer, minimum: 1 }
+        perPage: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+        facets:
+          type: object
+          required: [thema, altersgruppe]
+          properties:
+            thema:
+              type: array
+              items: { $ref: "#/components/schemas/FacetCount" }
+            altersgruppe:
+              type: array
+              items: { $ref: "#/components/schemas/FacetCount" }

@@ -10,6 +10,12 @@ const adhs: CourseRow = {
   slug: "adhs-akademie-adult",
   title: "ADHS Akademie adult",
   description: "Fortbildung zu ADHS bei Erwachsenen",
+  heroImageUrl: "https://cdn.example.org/adhs-akademie-adult-hero.png",
+  learningObjectives: [
+    "Sichere Diagnosestellung von ADHS im Erwachsenenalter",
+    "Evidenzbasierte Therapieoptionen: Medikation und Psychotherapie",
+  ],
+  targetAudience: "Fachärzte für Psychiatrie und Psychotherapie",
   deliveryType: "on_demand",
   thema: ["ADHS"],
   altersgruppe: ["Erwachsene"],
@@ -218,6 +224,16 @@ describe("getCourseBySlug", () => {
 
     expect(detail.requiredWatchPercent).toBe(100);
     expect(detail.passThresholdPercent).toBe(70);
+  });
+
+  it("carries the Übersicht tab's content: Lernziele, Zielgruppe, hero image", async () => {
+    const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
+      "adhs-akademie-adult",
+    );
+
+    expect(detail.learningObjectives).toHaveLength(2);
+    expect(detail.targetAudience).toContain("Psychiatrie");
+    expect(detail.heroImageUrl).toContain("hero");
   });
 
   it("surfaces the accreditation data the certificate will need", async () => {

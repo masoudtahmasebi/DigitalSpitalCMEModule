@@ -21,6 +21,9 @@ export interface CourseRow {
   slug: string;
   title: string;
   description: string | null;
+  heroImageUrl: string | null;
+  learningObjectives: string[];
+  targetAudience: string | null;
   deliveryType: "on_demand" | "live" | "praesenz";
   thema: string[];
   altersgruppe: string[];
