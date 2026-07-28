@@ -45,22 +45,29 @@ both arise from the Anerkennungsbescheid. They fit in one email to
 `zertifizierung@aekwl.de`, and S12 is the one worth sending today — it is the
 only item on this list with no engineering workaround at all.
 
-| #       | Item                                                                   | Blocks           | Needed by | Owner              |
-| ------- | ---------------------------------------------------------------------- | ---------------- | --------- | ------------------ |
-| S12     | **"Originalstempel" may invalidate an emailed certificate**            | M3 · 30.08       | **14.08** | ÄKWL               |
-| S2      | Whether the WP plugin persists a refresh token, and the token lifespan | M1 · 09.08       | **31.07** | MEDICE dev         |
-| S3      | WordPress repository access                                            | M1 · 09.08       | **31.07** | MEDICE             |
-| S4      | Scope decision on 4 layout features not in the 140 h                   | M2 · 23.08       | **06.08** | PM + DigitalSpital |
-| S11     | Confirm `Veranstaltungsende` = the learner's completion date           | M3 · 30.08       | 07.08     | ÄKWL               |
-| S5      | Certificate-after-EIV vs the launch fallback                           | M3 · 30.08       | 14.08     | PM + MEDICE        |
-| S7      | `required_watch_percent`: 80 % or 100 %, in writing                    | M2 · 23.08       | 14.08     | MEDICE             |
-| S8      | ADHS SMTP configuration, and which MEDICE account sends                | M3 · 30.08       | 21.08     | MEDICE             |
-| S14     | Accreditation expires 12.10.2026; platform change must be notified     | post-launch      | 24.08     | MEDICE             |
-| S9      | Hetzner account ownership and DNS                                      | M4 · 06.09       | 24.08     | DigitalSpital      |
-| S10     | VNR password was shared over chat                                      | —                | now       | DigitalSpital      |
-| ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                   | **CLOSED 28.07** | —         | —                  |
-| ~~S6~~  | ~~Signature/stamp asset~~                                              | **CLOSED 28.07** | —         | —                  |
-| ~~S1~~  | ~~Repository write access~~                                            | **CLOSED 27.07** | —         | —                  |
+**Two more arrived on 28.07 with the plugin source.** S3 closes — we have the
+code. Reading it closed S2 too, in the worst way: **the plugin stores no token
+at all**, so P6-02's premise is void and MEDICE has a decision to make this
+week. And it surfaced **S15**, a live API key hardcoded in that file, which
+wants action today.
+
+| #       | Item                                                                    | Blocks           | Needed by | Owner              |
+| ------- | ----------------------------------------------------------------------- | ---------------- | --------- | ------------------ |
+| S12     | **"Originalstempel" may invalidate an emailed certificate**             | M3 · 30.08       | **14.08** | ÄKWL               |
+| S15     | **Live API key hardcoded in the MEDICE plugin — rotate it**             | —                | **today** | MEDICE             |
+| S2      | **The WP plugin stores no token.** Decide how it will, + token lifespan | M1 · 09.08       | **31.07** | MEDICE dev         |
+| S4      | Scope decision on 4 layout features not in the 140 h                    | M2 · 23.08       | **06.08** | PM + DigitalSpital |
+| S11     | Confirm `Veranstaltungsende` = the learner's completion date            | M3 · 30.08       | 07.08     | ÄKWL               |
+| S5      | Certificate-after-EIV vs the launch fallback                            | M3 · 30.08       | 14.08     | PM + MEDICE        |
+| S7      | `required_watch_percent`: 80 % or 100 %, in writing                     | M2 · 23.08       | 14.08     | MEDICE             |
+| S8      | ADHS SMTP configuration, and which MEDICE account sends                 | M3 · 30.08       | 21.08     | MEDICE             |
+| S14     | Accreditation expires 12.10.2026; platform change must be notified      | post-launch      | 24.08     | MEDICE             |
+| S9      | Hetzner account ownership and DNS                                       | M4 · 06.09       | 24.08     | DigitalSpital      |
+| S10     | VNR password was shared over chat                                       | —                | now       | DigitalSpital      |
+| ~~S3~~  | ~~WordPress repository access~~                                         | **CLOSED 28.07** | —         | —                  |
+| ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                    | **CLOSED 28.07** | —         | —                  |
+| ~~S6~~  | ~~Signature/stamp asset~~                                               | **CLOSED 28.07** | —         | —                  |
+| ~~S1~~  | ~~Repository write access~~                                             | **CLOSED 27.07** | —         | —                  |
 
 S11 drops from first place to fifth: the Muster answers it, and the answer is
 already what the code does. It stays open because confirming a reading is not
@@ -200,42 +207,92 @@ matters at all.
 
 ---
 
-## S2 · Does the WordPress plugin persist a refresh token? — narrowed, not closed
+## S2 · The WordPress plugin does **not** persist a token — **ANSWERED 28.07, and the answer is the bad one**
 
-The MEDICE developer confirms the token is **held in the session**, and expects a
-refresh token exists "since this is an OAuth method". That closes finding (a)
-below and narrows the risk from _unknown_ to _unconfirmed_. Two questions still
-decide P6's 5 h estimate.
+The plugin source arrived on 28.07 and it settles this. It also overturns the
+developer's description, which is why it moved from "unconfirmed" to a blocker.
 
-**a) Token storage — answered.** Held in the PHP session. The supplied `Keycloak`
-class does not show it, but the developer confirms it.
+### What `keycloakwordpressplugin` actually contains
 
-**b) Refresh — still unconfirmed, and this is the one that matters.** The plugin
-uses the **password grant** (`grant_type=password`) and requests `offline_access`,
-so a refresh token is very likely _returned_. Nothing in the supplied code
-**stores or uses** it. "OAuth usually has one" is not the same as "this plugin
-keeps it".
+437 lines. The entire surface:
 
-> **Two questions for the MEDICE developer:**
->
-> 1. Is the **refresh token** written into the session alongside the access
->    token, and is there existing refresh logic anywhere in the plugin?
-> 2. What is the realm's **access-token lifespan**?
+| Member                                       | What it does                                                  |
+| -------------------------------------------- | ------------------------------------------------------------- |
+| `Keycloak::getAccessTokenByUnamePass($u,$p)` | Password grant against the realm; **returns** the token array |
+| `Keycloak::getUserInfoByToken($token)`       | userinfo lookup                                               |
+| `Keycloak::sendConsentToMediceApi($profile)` | POSTs consent to the MEDICE API                               |
+| `Keycloak::getSettings()`                    | Options, overridden by environment variables                  |
+| `Settings`                                   | The admin screen                                              |
 
-Question 2 is why this still matters. At Keycloak's default of five minutes, a
-25-minute video outlives the token four times over. ADR-0003 and P5-02 both
-promise the learner is never interrupted mid-video. Without a stored refresh
-token, either the session dies mid-video or we build refresh into a production
-plugin — materially more than the "one small additive endpoint" P6 is costed at.
+It registers **two hooks, both `admin_*`**. There is no login handler, no
+`setcookie`, no `$_SESSION` write, no user-meta write and no refresh-token
+handling anywhere in it. `LOGGED_IN_COOKIE` and `SHORT_CODE_TAG` are declared
+and never used. Whatever calls `getAccessTokenByUnamePass` lives in the theme
+or another plugin we still have not seen; the token it gets back is used to
+fetch userinfo and then dropped on the floor.
 
-**c) The class shown is not the whole plugin.** `private static $session_init`
-implies session handling in code we have not seen, and there is no `wp_login`
-hook, no cookie-setting and no `class-keycloak.php` body here. We are reasoning
-about roughly a third of the integration surface — another reason S3 matters.
+**So: the token is not held in the session. It is not held anywhere.** There is
+nothing for the widget's token endpoint to read.
 
-**Impact if unanswered:** P6 is estimated at 5 h on the assumption that the
-integration is one nonce-protected endpoint returning an already-stored token.
-If refresh has to be built, that estimate is wrong, and M1 on **09.08** slips.
+### What this costs, and the decision MEDICE has to make
+
+P6-02 assumed "read the token the plugin already has". That work does not
+exist. Instead the login path has to start **storing** the token, and somebody
+has to decide where:
+
+| Option                                         | Cost      | Notes                                                                                                                            |
+| ---------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **A — store at login, expose via the filter**  | ~1 h them | One `add_filter( 'ds_lms_access_token', … )` plus a write wherever the login happens. Purely additive, which is what P6-02 asks. |
+| **B — the widget's own Keycloak login (PKCE)** | ~4 h us   | The admin console already does exactly this (`apps/admin/src/auth.ts`). Costs the learner a second visible login.                |
+
+**Recommendation: A.** B works and the code exists, but the whole point of the
+WordPress integration is "no second login" — that is M1's demo criterion.
+
+**The remaining unknown is the token lifespan.** The realm's access-token TTL
+still decides whether a 25-minute video outlives it. At the Keycloak default of
+five minutes it does, several times over — and with **no refresh token stored**,
+option A must either re-run the password grant (it cannot; the password is not
+kept) or store the refresh token too. **Ask MEDICE for the realm's
+`Access Token Lifespan` and `SSO Session Idle`.**
+
+### Three defects in the supplied plugin, reported as a courtesy
+
+Not ours to fix, and not blocking, but they were visible while reading it:
+
+1. **A live-looking API key is hardcoded as a fallback default** in
+   `sendConsentToMediceApi` — see S15 below. This one is urgent.
+2. **The consent payload is built by string concatenation**, so an email
+   containing `"` breaks the JSON and can inject fields:
+   `'{"email": "' . $profile['userinfo']['email'] . '", …'`. `wp_json_encode`
+   fixes it in one line.
+3. **`getAccessTokenByUnamePass` echoes the cURL error and calls `die('--')`**
+   on transport failure, printing diagnostics into the page on a production
+   login path.
+
+---
+
+## S15 · A live API key is committed in the MEDICE plugin — **act today**
+
+`inc/class-keycloak.php` carries this as the default when the environment
+variable is absent:
+
+```php
+$consent_api_key = getenv_docker( 'KEYCLOAK_CONSENT_API_KEY', '<40-hex-character key, redacted here>' );
+```
+
+A 40-character hex token, in source, in a repository, and in the zip that was
+shared over chat. It authenticates writes to
+`https://login.medice.com/api/v1/adhs-network/request/` — the endpoint that
+records a physician's consent.
+
+**It is deliberately not reproduced in this repository**, and nothing
+DigitalSpital builds uses it.
+
+**Action for MEDICE:** rotate it, then remove the default so an unset variable
+fails loudly instead of silently falling back to a shared credential. This is
+the same class of finding as S10 (the VNR password shared over chat) and has the
+same remedy — credentials belong in the environment or a secret store, never in
+source.
 
 ---
 

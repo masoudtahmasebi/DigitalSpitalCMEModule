@@ -24,6 +24,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/branding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * White-label branding for a project
+         * @description Logo, colours and typeface for the project named in `X-DS-Project`.
+         *
+         *     **Public**, and one of only two routes that are. The widget renders
+         *     branded loading, session-expired and misconfiguration states before it
+         *     holds a token, and the admin console's login screen never holds one.
+         *
+         *     What it discloses is what the customer's public website already shows
+         *     every visitor. It returns no id, no Keycloak binding and no SMTP
+         *     settings even though those live on the same row — enforced in SQL by a
+         *     narrow SECURITY DEFINER function, not by this handler.
+         *
+         *     An unknown slug returns **empty branding with 200**, identical to a
+         *     known-but-unbranded project: a 404 here would be a project-slug oracle
+         *     (ADR-0007).
+         *
+         *     `fontFamily` is a CSS font stack, never a URL. The platform loads no
+         *     third-party font — a German healthcare site transmitting visitor IPs to
+         *     a font CDN is a GDPR exposure, not a convenience.
+         */
+        get: operations["getBranding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/courses": {
         parameters: {
             query?: never;
@@ -876,6 +913,35 @@ export interface components {
             attestedName?: string;
         };
         /**
+         * @description Every field optional. An absent or invalid value falls back to the
+         *     widget's own default, which is always valid — a malformed branding
+         *     record must not be able to break a learner's screen.
+         *
+         *     Values are validated against strict grammars in `@ds/domain` before
+         *     storage **and** on read, because each one ends up inside a CSS
+         *     declaration on a page that holds a bearer token. Invalid values are
+         *     dropped, never repaired.
+         */
+        Branding: {
+            /** @description HTTPS only. Accepted only together with `logoAlt`. */
+            logoUrl?: string;
+            /**
+             * @description Required whenever a logo is set. A logo a screen reader announces
+             *     as "image" is worse than no logo (CLAUDE.md §3).
+             */
+            logoAlt?: string;
+            primaryColor?: string;
+            primaryContrastColor?: string;
+            accentColor?: string;
+            /**
+             * @description A CSS font stack, e.g. `Inter, system-ui, sans-serif`. **Not a
+             *     URL.** Characters that could terminate a CSS declaration are
+             *     rejected, so `url(` cannot be expressed.
+             */
+            fontFamily?: string;
+            cornerRadiusPx?: number;
+        };
+        /**
          * @description A course as an admin sees it. Carries no secret and no image bytes —
          *     only whether one is stored. A field that can be read is a field that
          *     can leak, and one of them authenticates DigitalSpital to a legally
@@ -1081,6 +1147,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthStatus"];
+                };
+            };
+        };
+    };
+    getBranding: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The branding, possibly empty. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Branding"];
                 };
             };
         };

@@ -57,3 +57,35 @@ export class ProjectBindingRepository implements ProjectBindingRepositoryPort {
     };
   }
 }
+
+/**
+ * White-label branding for a project slug (P10-05).
+ *
+ * Separate from `ProjectBindingRepository` because it answers a different
+ * question for a different caller: this one runs for an **unauthenticated**
+ * request, since the widget renders branded loading and error states before it
+ * has a token.
+ *
+ * Also on the raw pool, via its own SECURITY DEFINER function — see
+ * `db/migrations/0007_project_branding_lookup.sql` for why it is not folded
+ * into `resolve_project_binding`.
+ */
+export interface ProjectBrandingRepositoryPort {
+  resolve(slug: string): Promise<unknown>;
+}
+
+export class ProjectBrandingRepository implements ProjectBrandingRepositoryPort {
+  constructor(private readonly pool: Pool) {}
+
+  /**
+   * Returns the raw JSON. Validation is `parseBranding` in `@ds/domain` —
+   * a repository returns rows, and what counts as a valid colour is a rule.
+   */
+  async resolve(slug: string): Promise<unknown> {
+    const result = await this.pool.query<{ branding: unknown }>(
+      "SELECT * FROM resolve_project_branding($1)",
+      [slug],
+    );
+    return result.rows[0]?.branding ?? {};
+  }
+}

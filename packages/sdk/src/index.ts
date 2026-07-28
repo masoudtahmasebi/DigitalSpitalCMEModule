@@ -59,6 +59,7 @@ export type CertificateAssetUpload = components["schemas"]["CertificateAssetUplo
 export type ParticipantRow = components["schemas"]["ParticipantRow"];
 export type ParticipantList = components["schemas"]["ParticipantList"];
 export type EivState = components["schemas"]["EivState"];
+export type Branding = components["schemas"]["Branding"];
 
 export type CourseListQuery = NonNullable<
   operations["listCourses"]["parameters"]["query"]
@@ -178,6 +179,14 @@ export function createClient(options: ClientOptions) {
     requestBlob,
 
     health: (): Promise<HealthStatus> => request("/health"),
+
+    /**
+     * White-label branding for this project (P10-05).
+     *
+     * Public: the widget renders branded loading and error states before it
+     * has a token, and the admin console's login screen never has one.
+     */
+    getBranding: (): Promise<Branding> => request("/branding"),
 
     listCourses: (query: CourseListQuery = {}): Promise<CourseListResponse> => {
       const search = new URLSearchParams();

@@ -18,7 +18,8 @@
  * learner would experience as the page vanishing.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { parseBranding, type Branding } from "@ds/domain";
 import type { ContentSummary } from "@ds/sdk";
 import { createWidgetClient, isConfigured, type WidgetConfig } from "./api.js";
 import { de } from "./locale/de.js";
@@ -116,6 +117,7 @@ function Loaded(props: WidgetConfig & { getToken: TokenProvider }) {
   return (
     <div className="space-y-6 p-4">
       <header className="space-y-3">
+        <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
         <h1 className="text-xl font-bold text-gray-900">{detail.title}</h1>
 
         <div className="flex items-center gap-4">
@@ -243,6 +245,52 @@ function Loaded(props: WidgetConfig & { getToken: TokenProvider }) {
  * live without turning `Loaded` into a waterfall — a learner on the
  * Zertifizierung tab never pays for the Mediathek's request.
  */
+
+/**
+ * The customer's logo, when they have set one.
+ *
+ * Its own tiny fetch rather than a prop threaded from the element, so a
+ * branding failure cannot delay or break the course render — the colours are
+ * applied separately by `element.ts` and do not depend on this at all.
+ *
+ * `alt` is never derived: `parseBranding` refuses a logo without one, so if
+ * this renders, the text came from the customer.
+ */
+function BrandLogo(props: { apiBase: string; projectSlug: string }) {
+  const [branding, setBranding] = useState<Branding | undefined>();
+
+  const { apiBase, projectSlug } = props;
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(new URL("/branding", apiBase), {
+      headers: { accept: "application/json", "x-ds-project": projectSlug },
+    })
+      .then((response) => (response.ok ? response.json() : {}))
+      .then((body: unknown) => {
+        if (!cancelled) setBranding(parseBranding(body));
+      })
+      .catch(() => {
+        // An unbranded header is not something a learner can act on.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase, projectSlug]);
+
+  if (branding?.logoUrl === undefined) return null;
+
+  return (
+    <img
+      src={branding.logoUrl}
+      alt={branding.logoAlt ?? ""}
+      className="max-h-12 w-auto"
+      // The logo is a customer asset on a customer CDN; no reason to tell it
+      // which page a physician is reading.
+      referrerPolicy="no-referrer"
+    />
+  );
+}
 
 function Lesson(props: {
   client: ReturnType<typeof createWidgetClient>;

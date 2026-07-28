@@ -41,6 +41,7 @@ import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 // The built Tailwind output, as a string — see vite.config.ts.
 import styles from "./styles.css?inline";
+import { brandingCssVariables, parseBranding } from "@ds/domain";
 import { App } from "./App.js";
 import { cachingProvider, resolveTokenProvider, type TokenProvider } from "./token.js";
 
@@ -98,15 +99,59 @@ export class DsLmsElement extends HTMLElement {
       endpoint: this.getAttribute("token-endpoint") ?? undefined,
     });
 
+    const apiBase = this.getAttribute("api-base") ?? "";
+    const projectSlug = this.getAttribute("project") ?? "";
+
+    // Applied to the wrapper as soon as it arrives, independently of React.
+    // Branding must reach the loading and error states too, and those render
+    // before — or instead of — anything the token can fetch.
+    void this.#applyBranding(mount, apiBase, projectSlug);
+
     this.#root = createRoot(mount);
     this.#root.render(
       createElement(App, {
-        apiBase: this.getAttribute("api-base") ?? "",
-        projectSlug: this.getAttribute("project") ?? "",
+        apiBase,
+        projectSlug,
         courseSlug: this.getAttribute("course") ?? "",
         getToken: provider === undefined ? undefined : cachingProvider(provider),
       }),
     );
+  }
+
+  /**
+   * Fetch the project's branding and set it as CSS custom properties.
+   *
+   * Unauthenticated, because it has to work before a token exists. Failure is
+   * silent and deliberately so: an unbranded widget is a cosmetic problem, and
+   * an error banner about a logo would be worse than the missing logo.
+   *
+   * The values are re-validated here by `parseBranding` even though the API
+   * already validated them. This is the point where a string becomes CSS, and
+   * the widget does not get to assume the response came from an API it trusts.
+   */
+  async #applyBranding(
+    mount: HTMLElement,
+    apiBase: string,
+    projectSlug: string,
+  ): Promise<void> {
+    if (apiBase === "" || projectSlug === "") return;
+
+    try {
+      const response = await fetch(new URL("/branding", apiBase), {
+        headers: { accept: "application/json", "x-ds-project": projectSlug },
+      });
+      if (!response.ok) return;
+
+      for (const [name, value] of brandingCssVariables(
+        parseBranding(await response.json()),
+      )) {
+        // `setProperty`, never a built-up stylesheet string: this API takes a
+        // name and a value and cannot be talked into a third declaration.
+        mount.style.setProperty(name, value);
+      }
+    } catch {
+      // Network failure, blocked request, malformed JSON — the defaults stand.
+    }
   }
 
   disconnectedCallback(): void {

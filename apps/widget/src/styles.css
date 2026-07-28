@@ -2,15 +2,20 @@
 @tailwind utilities;
 
 /*
- * The shadow root's own reset.
+ * The shadow root's own reset, and the branding surface.
  *
  * Tailwind's preflight is disabled (see tailwind.config.js), so the few
  * document-level resets the widget actually needs are written out here, scoped
  * to the widget's own wrapper. Scoping matters: a bare `*` rule inside a shadow
  * root still reaches anything slotted in from the host page.
+ *
+ * Every `--ds-*` variable has a valid default, so a project with no branding —
+ * or with values that failed validation in `@ds/domain` — renders these rather
+ * than nothing. `element.ts` sets the overrides with `setProperty`, which
+ * cannot be escaped out of.
  */
 .ds-lms-root {
-  font-family: Inter, system-ui, sans-serif;
+  font-family: var(--ds-font-family, Inter, system-ui, sans-serif);
   color: #1f2937;
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
@@ -42,10 +47,11 @@
 /*
  * A visible focus ring is an accessibility floor, not a preference — it is
  * costed into the budget (CLAUDE.md §3) and must survive any host page that
- * has blanket-removed outlines.
+ * has blanket-removed outlines. It follows the accent colour so it stays
+ * visible against a customer's own palette.
  */
 .ds-lms-root :focus-visible {
-  outline: 2px solid #255a94;
+  outline: 2px solid var(--ds-accent, #255a94);
   outline-offset: 2px;
 }
 

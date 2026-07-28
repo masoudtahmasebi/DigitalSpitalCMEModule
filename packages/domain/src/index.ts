@@ -39,6 +39,13 @@ export type { GateReason, GateResult, GateStatus, GatingItem } from "./gating.js
 export { courseWatchCoverage } from "./coverage.js";
 export type { ContentSegments, WatchCoverage } from "./coverage.js";
 
+export {
+  brandingCssVariables,
+  invalidBrandingFields,
+  parseBranding,
+} from "./branding.js";
+export type { Branding } from "./branding.js";
+
 export { courseChapterSequence, rollupProgress } from "./progress.js";
 export type { CourseRollup, ModuleCompletion, ProgressSummary } from "./progress.js";
 

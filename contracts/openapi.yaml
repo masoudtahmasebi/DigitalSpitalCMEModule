@@ -62,6 +62,40 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 
+  /branding:
+    get:
+      tags: [catalog]
+      operationId: getBranding
+      summary: White-label branding for a project
+      description: |
+        Logo, colours and typeface for the project named in `X-DS-Project`.
+
+        **Public**, and one of only two routes that are. The widget renders
+        branded loading, session-expired and misconfiguration states before it
+        holds a token, and the admin console's login screen never holds one.
+
+        What it discloses is what the customer's public website already shows
+        every visitor. It returns no id, no Keycloak binding and no SMTP
+        settings even though those live on the same row — enforced in SQL by a
+        narrow SECURITY DEFINER function, not by this handler.
+
+        An unknown slug returns **empty branding with 200**, identical to a
+        known-but-unbranded project: a 404 here would be a project-slug oracle
+        (ADR-0007).
+
+        `fontFamily` is a CSS font stack, never a URL. The platform loads no
+        third-party font — a German healthcare site transmitting visitor IPs to
+        a font CDN is a GDPR exposure, not a convenience.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      responses:
+        "200":
+          description: The branding, possibly empty.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Branding" }
+
   /courses:
     get:
       tags: [catalog]
@@ -1376,6 +1410,48 @@ components:
             because the Keycloak profile may be stale or carry no name at all,
             and the certificate cannot be issued without one. The token stays
             the identity authority — this only decides what is printed.
+
+    Branding:
+      type: object
+      description: |
+        Every field optional. An absent or invalid value falls back to the
+        widget's own default, which is always valid — a malformed branding
+        record must not be able to break a learner's screen.
+
+        Values are validated against strict grammars in `@ds/domain` before
+        storage **and** on read, because each one ends up inside a CSS
+        declaration on a page that holds a bearer token. Invalid values are
+        dropped, never repaired.
+      properties:
+        logoUrl:
+          type: string
+          description: HTTPS only. Accepted only together with `logoAlt`.
+        logoAlt:
+          type: string
+          maxLength: 200
+          description: |
+            Required whenever a logo is set. A logo a screen reader announces
+            as "image" is worse than no logo (CLAUDE.md §3).
+        primaryColor:
+          type: string
+          pattern: "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+        primaryContrastColor:
+          type: string
+          pattern: "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+        accentColor:
+          type: string
+          pattern: "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+        fontFamily:
+          type: string
+          maxLength: 200
+          description: |
+            A CSS font stack, e.g. `Inter, system-ui, sans-serif`. **Not a
+            URL.** Characters that could terminate a CSS declaration are
+            rejected, so `url(` cannot be expressed.
+        cornerRadiusPx:
+          type: integer
+          minimum: 0
+          maximum: 24
 
     AdminCourseSummary:
       type: object

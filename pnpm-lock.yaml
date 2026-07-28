@@ -211,6 +211,9 @@ importers:
 
   apps/widget:
     dependencies:
+      '@ds/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@ds/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
