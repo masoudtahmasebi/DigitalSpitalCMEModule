@@ -7,7 +7,7 @@
  * it cannot itself depend on that context already existing.
  */
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { Pool } from "pg";
 import { schema, users, userRoles } from "../../db/schema.js";
@@ -63,6 +63,14 @@ export class UserRepository implements UserRepositoryPort {
    * `ON CONFLICT` makes concurrent first-requests for the same `sub` resolve to
    * exactly one row (P1-02 acceptance criterion) without a separate SELECT-then-
    * INSERT race window.
+   *
+   * **An absent claim never erases a stored value.** Whether a token carries
+   * `given_name` depends on the client's scopes, so a token minted without the
+   * profile scope would otherwise null out a name we already knew — and that
+   * name is what prints on the Teilnahmebescheinigung. `coalesce(excluded.x,
+   * users.x)` keeps the last value Keycloak actually told us. Clearing a name
+   * is not something an absent claim can express; it needs an explicit empty
+   * string, which passes through unchanged.
    */
   async provisionOrUpdate(input: UserProfileInput): Promise<UserRow> {
     const [row] = await this.db
@@ -77,9 +85,9 @@ export class UserRepository implements UserRepositoryPort {
       .onConflictDoUpdate({
         target: [users.keycloakRealm, users.keycloakSub],
         set: {
-          email: input.email ?? null,
-          firstName: input.firstName ?? null,
-          lastName: input.lastName ?? null,
+          email: sql`coalesce(excluded.${sql.raw(users.email.name)}, ${users.email})`,
+          firstName: sql`coalesce(excluded.${sql.raw(users.firstName.name)}, ${users.firstName})`,
+          lastName: sql`coalesce(excluded.${sql.raw(users.lastName.name)}, ${users.lastName})`,
           updatedAt: new Date(),
         },
       })

@@ -10,6 +10,7 @@ import { LearningModule } from "./modules/learning/learning.module.js";
 import { AssessmentModule } from "./modules/assessment/assessment.module.js";
 import { CompletionModule } from "./modules/completion/completion.module.js";
 import { EivModule } from "./modules/eiv/eiv.module.js";
+import { CertificateModule } from "./modules/certificate/certificate.module.js";
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { EivModule } from "./modules/eiv/eiv.module.js";
     AssessmentModule,
     CompletionModule,
     EivModule,
+    CertificateModule,
   ],
   providers: [
     // Runs after AuthGuard/RolesGuard (guards execute before interceptors in

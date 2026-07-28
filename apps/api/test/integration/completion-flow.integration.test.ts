@@ -49,7 +49,15 @@ const AUDIENCE = "ds-education-api";
 const SUB = "completion-learner";
 const VNR = "2760552025919300018";
 const EFN = "123456789012345";
+/** What the learner confirms at completion — deliberately not the token's name. */
+const ATTESTED_NAME = "Dr. med. Anna Müller";
 const VIDEO_SEC = 300;
+
+/** 1×1 PNG, stored as the course's stamp and signature. */
+const PLACEHOLDER_IMAGE = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 let jwksServer: Server;
 let privateKey: CryptoKey;
@@ -96,9 +104,25 @@ beforeAll(async () => {
   );
   const courseId = await insert(
     `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
-                          pass_threshold_percent, vnr, cme_points, cme_category)
-     VALUES ($1,$2,$3,$4,100,70,$5,4,'D') RETURNING id`,
-    [customerId, projectId, courseSlug, "Completion flow course", VNR],
+                          pass_threshold_percent, vnr, cme_points, cme_category,
+                          organizer, event_location, accreditation_body,
+                          scientific_lead_name, scientific_lead_title,
+                          certificate_issue_place,
+                          stamp_image, stamp_image_mime,
+                          signature_image, signature_image_mime)
+     VALUES ($1,$2,$3,$4,100,70,$5,4,'D',$6,'online',$7,$8,'Prof. Dr. med.','Iserlohn',
+             $9,'image/png',$9,'image/png') RETURNING id`,
+    [
+      customerId,
+      projectId,
+      courseSlug,
+      "Completion flow course",
+      VNR,
+      "Medice Arzneimittel Pütter GmbH & Co. KG, Iserlohn",
+      "Ärztekammer Westfalen-Lippe",
+      "Muster-Leitung",
+      PLACEHOLDER_IMAGE,
+    ],
   );
 
   // One module, one chapter, one video then one quiz — the smallest course
@@ -412,7 +436,11 @@ describe("the road to a CME point", () => {
   });
 
   it("completes and queues the Punktemeldung", async () => {
-    const { status, body } = await call("POST", `/courses/${courseSlug}/completion`);
+    // The learner confirms the name that will print on the certificate — the
+    // Keycloak profile is pre-filled but editable (requirements §6.5).
+    const { status, body } = await call("POST", `/courses/${courseSlug}/completion`, {
+      attestedName: ATTESTED_NAME,
+    });
 
     expect(status).toBe(200);
     expect(body.complete).toBe(true);
@@ -468,5 +496,103 @@ describe("the road to a CME point", () => {
       const { body } = await call("GET", path);
       expect(JSON.stringify(body)).not.toContain(EFN);
     }
+  });
+});
+
+describe("the Teilnahmebescheinigung", () => {
+  it("exposes the fields the Bescheid requires", async () => {
+    const { status, body } = await call("GET", `/courses/${courseSlug}/certificate`);
+
+    expect(status).toBe(200);
+    expect(body.vnr).toBe(VNR);
+    expect(body.cmePoints).toBe(4);
+    expect(body.cmeCategory).toBe("D");
+    expect(body.eventLocation).toBe("online");
+    expect(body.scientificLeadName).toContain("Muster-Leitung");
+    // The name the learner attested to, not the (absent) token profile name.
+    expect(body.participantName).toBe(ATTESTED_NAME);
+    // The participation date is the completion instant — for an on-demand
+    // course there is no other date the certificate could mean.
+    expect(body.completedAt).not.toBeNull();
+  });
+
+  it("templates the creditability sentence from the course's own values", async () => {
+    const { body } = await call("GET", `/courses/${courseSlug}/certificate`);
+
+    expect(body.creditSentence).toContain("4 Punkten (Kategorie D)");
+    expect(body.creditSentence).toContain("Ärztekammer Westfalen-Lippe");
+  });
+
+  it("downloads a real PDF with the right headers", async () => {
+    const jwt = await new SignJWT({})
+      .setProtectedHeader({ alg: "RS256", kid: KID })
+      .setIssuedAt()
+      .setIssuer(issuer)
+      .setAudience(AUDIENCE)
+      .setSubject(SUB)
+      .setExpirationTime("5m")
+      .sign(privateKey);
+
+    const response = await fetch(`${baseUrl}/courses/${courseSlug}/certificate/pdf`, {
+      headers: { authorization: `Bearer ${jwt}`, "x-ds-project": projectSlug },
+    });
+
+    // On failure the body is problem-details JSON — surfacing it here turns
+    // "expected 409 to be 200" into the actual reason.
+    if (response.status !== 200) {
+      throw new Error(`certificate download failed: ${response.status} ${await response.text()}`);
+    }
+    expect(response.headers.get("content-type")).toContain("application/pdf");
+    expect(response.headers.get("content-disposition")).toContain(
+      "Teilnahmebescheinigung",
+    );
+    // A named physician's participation record must not sit in a shared cache.
+    expect(response.headers.get("cache-control")).toContain("no-store");
+
+    const bytes = Buffer.from(await response.arrayBuffer());
+    expect(bytes.subarray(0, 5).toString()).toBe("%PDF-");
+    // Big enough to contain two barcodes and two images, not an error page.
+    expect(bytes.length).toBeGreaterThan(3000);
+  });
+
+  it("records the issue exactly once, with a high-entropy token", async () => {
+    const { rows } = await seedPool.query<{ download_token: string; status: string }>(
+      `SELECT download_token, status FROM certificates WHERE enrolment_id = $1`,
+      [enrolmentId],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe("issued");
+    // 32 bytes of CSPRNG, hex-encoded: this token is the capability to fetch a
+    // named physician's record.
+    expect(rows[0]!.download_token).toHaveLength(64);
+  });
+
+  it("does not mint a new token on a second download", async () => {
+    const before = await seedPool.query<{ download_token: string }>(
+      "SELECT download_token FROM certificates WHERE enrolment_id = $1",
+      [enrolmentId],
+    );
+
+    await call("GET", `/courses/${courseSlug}/certificate`);
+    const jwt = await new SignJWT({})
+      .setProtectedHeader({ alg: "RS256", kid: KID })
+      .setIssuedAt()
+      .setIssuer(issuer)
+      .setAudience(AUDIENCE)
+      .setSubject(SUB)
+      .setExpirationTime("5m")
+      .sign(privateKey);
+    await fetch(`${baseUrl}/courses/${courseSlug}/certificate/pdf`, {
+      headers: { authorization: `Bearer ${jwt}`, "x-ds-project": projectSlug },
+    });
+
+    const after = await seedPool.query<{ download_token: string }>(
+      "SELECT download_token FROM certificates WHERE enrolment_id = $1",
+      [enrolmentId],
+    );
+
+    expect(after.rows).toHaveLength(1);
+    expect(after.rows[0]!.download_token).toBe(before.rows[0]!.download_token);
   });
 });

@@ -258,6 +258,28 @@ describe("GET /courses — deny by default", () => {
   });
 });
 
+describe("first-sight provisioning", () => {
+  it("does not erase a stored name when the token carries no name claims", async () => {
+    // `mint` sets no given_name/family_name — which is what a token issued
+    // without the profile scope looks like. The stored name must survive it:
+    // it is the fallback that prints as "Name des Teilnehmenden" on the
+    // Teilnahmebescheinigung, and an absent claim is not an instruction to
+    // clear it.
+    const token = await mint(GRANTED_SUB);
+    await fetch(`${baseUrl}/courses`, {
+      headers: { authorization: `Bearer ${token}`, "x-ds-project": projectSlug },
+    });
+
+    const { rows } = await seedPool.query<{ first_name: string; last_name: string }>(
+      "SELECT first_name, last_name FROM users WHERE keycloak_realm = $1 AND keycloak_sub = $2",
+      [issuer, GRANTED_SUB],
+    );
+
+    expect(rows[0]?.first_name).toBe("Anna");
+    expect(rows[0]?.last_name).toBe("Müller");
+  });
+});
+
 describe("GET /courses/:slug", () => {
   it("returns the course's actual configured percentages, not a hardcoded value (P5-06)", async () => {
     const token = await mint(GRANTED_SUB);

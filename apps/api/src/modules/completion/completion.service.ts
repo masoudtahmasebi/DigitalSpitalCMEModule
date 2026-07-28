@@ -30,7 +30,11 @@ import {
   CompletionRepository,
   type CompletionRepositoryPort,
 } from "./completion.repository.js";
-import type { Evaluation, EvaluationSubmission } from "./completion.dto.js";
+import type {
+  CompletionInput,
+  Evaluation,
+  EvaluationSubmission,
+} from "./completion.dto.js";
 
 const EVALUATION_KINDS = ["scale", "single", "multi", "text"] as const;
 type EvaluationKind = (typeof EVALUATION_KINDS)[number];
@@ -157,6 +161,7 @@ export class CompletionService {
    */
   async complete(
     slug: string,
+    input: CompletionInput,
     learner: LearnerContext,
     now: Date,
   ): Promise<EnrolmentState> {
@@ -177,7 +182,9 @@ export class CompletionService {
       );
     }
 
-    await this.learning.markCompleted(enrolment.id, now);
+    // The name the learner attests to, stamped with the completion it belongs
+    // to. Absent means "use my profile name" — see completion.dto.ts.
+    await this.learning.markCompleted(enrolment.id, now, input.attestedName ?? null);
 
     await this.queueSubmission(course.vnr, enrolment.id, learner, now);
 

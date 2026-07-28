@@ -101,7 +101,7 @@ export interface LearningRepositoryPort {
   }): Promise<void>;
   hasEfn(userId: string): Promise<boolean>;
   hasEvaluationResponse(enrolmentId: string): Promise<boolean>;
-  markCompleted(enrolmentId: string, at: Date): Promise<void>;
+  markCompleted(enrolmentId: string, at: Date, attestedName: string | null): Promise<void>;
 }
 
 export class LearningRepository implements LearningRepositoryPort {
@@ -311,10 +311,26 @@ export class LearningRepository implements LearningRepositoryPort {
     return row !== undefined;
   }
 
-  async markCompleted(enrolmentId: string, at: Date): Promise<void> {
+  /**
+   * Stamp completion, and the attested name with it.
+   *
+   * One UPDATE rather than two: the name is what prints on the certificate for
+   * this completion, so a crash between the two writes must not be able to
+   * leave a completed enrolment carrying the wrong name. `null` leaves whatever
+   * is stored alone — an omitted name is not an instruction to erase one.
+   */
+  async markCompleted(
+    enrolmentId: string,
+    at: Date,
+    attestedName: string | null,
+  ): Promise<void> {
     await this.db
       .update(enrolments)
-      .set({ completedAt: at, updatedAt: new Date() })
+      .set({
+        completedAt: at,
+        updatedAt: new Date(),
+        ...(attestedName === null ? {} : { attestedName }),
+      })
       .where(eq(enrolments.id, enrolmentId));
   }
 }

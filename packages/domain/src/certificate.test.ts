@@ -16,6 +16,7 @@ const medice: CertificateInput = {
   cmeCategory: "D",
   accreditationBody: "Ärztekammer Westfalen-Lippe",
   participantName: "Dr. med. Anna Müller",
+  scientificLeadName: "Prof. Dr. med. Wissenschaftliche Leitung",
 };
 
 describe("creditSentence", () => {
@@ -100,11 +101,29 @@ describe("missingCertificateFields", () => {
     ).toContain("completedAt");
   });
 
-  it("does NOT block on a missing address — S13 is still open", () => {
+  it("does not block on a missing address — it is not in the Bescheid's minimum list", () => {
     // Anschrift is required by the Muster but its necessity for an online format
     // is unresolved, so its absence must not make the data 'incomplete' yet.
     const noAddress = missingCertificateFields(medice);
     expect(noAddress).not.toContain("participantAddress" as never);
     expect(noAddress).toEqual([]);
+  });
+});
+
+describe("the Wissenschaftliche Leitung is mandatory", () => {
+  it("reports a missing scientific lead", () => {
+    // The Bescheid: "Die Teilnahmebescheinigungen sind mit dem Stempel der
+    // Wissenschaftlichen Leitung zu versehen und von diesem zu unterzeichnen."
+    // A certificate without one is not valid, so its absence is a missing
+    // field rather than a cosmetic gap.
+    expect(
+      missingCertificateFields({ ...medice, scientificLeadName: "" }),
+    ).toContain("scientificLeadName");
+  });
+
+  it("treats whitespace as absent", () => {
+    expect(
+      missingCertificateFields({ ...medice, scientificLeadName: "   " }),
+    ).toContain("scientificLeadName");
   });
 });

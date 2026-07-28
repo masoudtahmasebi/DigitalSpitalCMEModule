@@ -136,7 +136,7 @@ function build(
   const queued: Array<Record<string, unknown>> = [];
   const savedEfn: string[] = [];
   const savedResponses: Array<Record<string, unknown>> = [];
-  const completedCalls: Array<{ id: string; at: Date }> = [];
+  const completedCalls: Array<{ id: string; at: Date; attestedName: string | null }> = [];
   const efn = "efn" in options ? options.efn : undefined;
 
   const learningRepo: LearningRepositoryPort = {
@@ -154,8 +154,8 @@ function build(
     upsertProgress: async () => undefined,
     hasEfn: async () => efn !== undefined,
     hasEvaluationResponse: async () => options.evaluationSubmitted ?? false,
-    markCompleted: async (id, at) => {
-      completedCalls.push({ id, at });
+    markCompleted: async (id, at, attestedName) => {
+      completedCalls.push({ id, at, attestedName });
     },
   };
 
@@ -313,7 +313,7 @@ describe("complete", () => {
 
   it("refuses while any condition is outstanding, and names them", async () => {
     const error = (await build()
-      .service.complete(course.slug, learner, NOW)
+      .service.complete(course.slug, {}, learner, NOW)
       .catch((e) => e)) as AppError;
 
     expect(error.kind).toBe("conflict");
@@ -324,7 +324,7 @@ describe("complete", () => {
   it("does not queue a submission when it refuses", async () => {
     const { service, queued, completedCalls } = build();
 
-    await service.complete(course.slug, learner, NOW).catch(() => undefined);
+    await service.complete(course.slug, {}, learner, NOW).catch(() => undefined);
 
     expect(queued).toEqual([]);
     expect(completedCalls).toEqual([]);
@@ -337,7 +337,7 @@ describe("complete", () => {
       progress: satisfiedProgress,
       evaluationSubmitted: true,
     })
-      .service.complete(course.slug, learner, NOW)
+      .service.complete(course.slug, {}, learner, NOW)
       .catch((e) => e)) as AppError;
 
     expect(error.kind).toBe("conflict");
@@ -347,10 +347,10 @@ describe("complete", () => {
   it("completes and queues the Punktemeldung when every condition is met", async () => {
     const { service, queued, completedCalls } = build(ready);
 
-    const state = await service.complete(course.slug, learner, NOW);
+    const state = await service.complete(course.slug, {}, learner, NOW);
 
     expect(state.completedAt).toBe(NOW.toISOString());
-    expect(completedCalls).toEqual([{ id: ENROLMENT_ID, at: NOW }]);
+    expect(completedCalls).toEqual([{ id: ENROLMENT_ID, at: NOW, attestedName: null }]);
     expect(queued).toHaveLength(1);
     expect(queued[0]?.["vnr"]).toBe(course.vnr);
     expect(queued[0]?.["efn"]).toBe(EFN);
@@ -359,7 +359,7 @@ describe("complete", () => {
   it("sets the reporting deadline 8 days out from completion", async () => {
     const { service, queued } = build(ready);
 
-    await service.complete(course.slug, learner, NOW);
+    await service.complete(course.slug, {}, learner, NOW);
 
     const due = queued[0]?.["reportDueAt"] as Date;
     const days = (due.getTime() - NOW.getTime()) / 86_400_000;
@@ -375,7 +375,7 @@ describe("complete", () => {
       completedAt: new Date("2026-07-20T09:00:00Z"),
     });
 
-    const state = await service.complete(course.slug, learner, NOW);
+    const state = await service.complete(course.slug, {}, learner, NOW);
 
     expect(queued).toEqual([]);
     expect(completedCalls).toEqual([]);
@@ -385,7 +385,7 @@ describe("complete", () => {
   it("does not queue twice if a submission already exists", async () => {
     const { service, queued } = build({ ...ready, hasEiv: true });
 
-    await service.complete(course.slug, learner, NOW);
+    await service.complete(course.slug, {}, learner, NOW);
 
     expect(queued).toEqual([]);
   });
@@ -395,17 +395,25 @@ describe("complete", () => {
     // reason to withhold a completion the learner has genuinely earned.
     const { service, queued, completedCalls } = build({ ...ready, vnr: null });
 
-    const state = await service.complete(course.slug, learner, NOW);
+    const state = await service.complete(course.slug, {}, learner, NOW);
 
     expect(state.completedAt).toBe(NOW.toISOString());
     expect(completedCalls).toHaveLength(1);
     expect(queued).toEqual([]);
   });
 
+  it("stores the name the learner attested to for the certificate", async () => {
+    const { service, completedCalls } = build(ready);
+
+    await service.complete(course.slug, { attestedName: "Dr. med. Anna Müller" }, learner, NOW);
+
+    expect(completedCalls[0]?.attestedName).toBe("Dr. med. Anna Müller");
+  });
+
   it("never returns the EFN in the completed state", async () => {
     const { service } = build(ready);
 
-    const state = await service.complete(course.slug, learner, NOW);
+    const state = await service.complete(course.slug, {}, learner, NOW);
 
     expect(JSON.stringify(state)).not.toContain(EFN);
     expect(state.efnPresent).toBe(true);

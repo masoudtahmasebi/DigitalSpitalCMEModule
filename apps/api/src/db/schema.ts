@@ -143,6 +143,18 @@ export const courses = pgTable("courses", {
   passThresholdPercent: integer("pass_threshold_percent").notNull().default(70),
   maxQuizAttempts: integer("max_quiz_attempts"),
   revealCorrectAnswers: boolean("reveal_correct_answers").notNull().default(false),
+
+  // Certificate signing assets (P8). Supplied per course by whoever creates it:
+  // the Bescheid requires the stamp and signature of that course's
+  // Wissenschaftliche Leitung. Images are bytes, not URLs — see migration 0006.
+  scientificLeadName: text("scientific_lead_name"),
+  scientificLeadTitle: text("scientific_lead_title"),
+  stampImage: bytea("stamp_image"),
+  stampImageMime: text("stamp_image_mime"),
+  signatureImage: bytea("signature_image"),
+  signatureImageMime: text("signature_image_mime"),
+  certificateIssuePlace: text("certificate_issue_place"),
+
   ...timestamps,
 });
 

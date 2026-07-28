@@ -276,9 +276,18 @@ export class LearningService {
     return { courseSlug: slug, groups: groups.filter((g) => g.materials.length > 0) };
   }
 
-  /** Stamped by the completion service once every condition is satisfied. */
-  async markCompleted(enrolmentId: string, at: Date): Promise<void> {
-    await this.repository.markCompleted(enrolmentId, at);
+  /**
+   * Stamped by the completion service once every condition is satisfied.
+   *
+   * `attestedName` is the name the learner confirmed for their certificate, or
+   * `null` to keep whatever is stored.
+   */
+  async markCompleted(
+    enrolmentId: string,
+    at: Date,
+    attestedName: string | null,
+  ): Promise<void> {
+    await this.repository.markCompleted(enrolmentId, at, attestedName);
   }
 
   /** Shared by the quiz, evaluation and completion services. */

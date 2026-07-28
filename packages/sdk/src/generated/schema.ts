@@ -211,6 +211,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/courses/{slug}/certificate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The certificate's fields
+         * @description The assembled Teilnahmebescheinigung data, for rendering a preview
+         *     before download. Available only once the course is complete.
+         */
+        get: operations["getCertificate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courses/{slug}/certificate/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download the Teilnahmebescheinigung as a PDF
+         * @description Renders the ÄKWL Muster: participant, course, both VNR barcodes
+         *     (Code 39 and Datamatrix), the participation date, the creditability
+         *     sentence, and the stamp and signature of the course's Wissenschaftliche
+         *     Leitung.
+         *
+         *     Refuses with 409 if the course has no stamp or signature configured —
+         *     the Bescheid makes a certificate without them invalid, and issuing an
+         *     invalid-looking document to a physician who has earned their points is
+         *     worse than telling the admin their course is incomplete.
+         */
+        get: operations["downloadCertificate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/profile/efn": {
         parameters: {
             query?: never;
@@ -576,6 +625,47 @@ export interface components {
                 /** @description Scale number, chosen option(s), or free text. */
                 answer: string | number | string[];
             }[];
+        };
+        /**
+         * @description Exactly the fields the Bescheid requires a Teilnahmebescheinigung to
+         *     carry, plus the pre-templated creditability sentence so no client ever
+         *     hardcodes a points figure.
+         */
+        Certificate: {
+            vnr: string;
+            courseTitle: string;
+            /**
+             * Format: date-time
+             * @description Both the Veranstaltungs-datum and -uhrzeit. For an on-demand course
+             *     this is the moment the learner completed it — the same instant that
+             *     starts the EIV reporting window, so certificate and Punktemeldung
+             *     agree by construction.
+             */
+            completedAt: string;
+            eventLocation: string;
+            organizer: string;
+            cmePoints: number;
+            cmeCategory: string;
+            accreditationBody: string;
+            participantName: string;
+            /**
+             * @description On the Muster but not in the Bescheid's minimum list, so the
+             *     platform does not collect it and the line renders blank.
+             */
+            participantAddress?: string;
+            scientificLeadName: string;
+            creditSentence: string;
+        };
+        CompletionInput: {
+            /**
+             * @description The name to print as "Name des Teilnehmenden" on the
+             *     Teilnahmebescheinigung and to report to the EIV. Optional: when
+             *     omitted the name from the validated token is used. It exists
+             *     because the Keycloak profile may be stale or carry no name at all,
+             *     and the certificate cannot be issued without one. The token stays
+             *     the identity authority — this only decides what is printed.
+             */
+            attestedName?: string;
         };
         EfnInput: {
             /** @description 15 digits. Never returned by any endpoint once stored. */
@@ -1063,6 +1153,87 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
         };
     };
+    getCertificate: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The certificate data. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Certificate"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description Not enrolled, or the course is not complete. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    downloadCertificate: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The certificate. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            /** @description Not complete, or the course is missing its signing assets. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     setEfn: {
         parameters: {
             query?: never;
@@ -1120,7 +1291,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CompletionInput"];
+            };
+        };
         responses: {
             /** @description Completed; the CME points are queued for reporting. */
             200: {

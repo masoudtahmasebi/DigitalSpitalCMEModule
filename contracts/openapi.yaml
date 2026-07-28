@@ -43,6 +43,7 @@ tags:
   - name: learning
   - name: assessment
   - name: completion
+  - name: certificate
 
 paths:
   /health:
@@ -361,6 +362,63 @@ paths:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+  /courses/{slug}/certificate:
+    get:
+      tags: [certificate]
+      operationId: getCertificate
+      summary: The certificate's fields
+      description: |
+        The assembled Teilnahmebescheinigung data, for rendering a preview
+        before download. Available only once the course is complete.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: The certificate data.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Certificate" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404":
+          description: Not enrolled, or the course is not complete.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /courses/{slug}/certificate/pdf:
+    get:
+      tags: [certificate]
+      operationId: downloadCertificate
+      summary: Download the Teilnahmebescheinigung as a PDF
+      description: |
+        Renders the ÄKWL Muster: participant, course, both VNR barcodes
+        (Code 39 and Datamatrix), the participation date, the creditability
+        sentence, and the stamp and signature of the course's Wissenschaftliche
+        Leitung.
+
+        Refuses with 409 if the course has no stamp or signature configured —
+        the Bescheid makes a certificate without them invalid, and issuing an
+        invalid-looking document to a physician who has earned their points is
+        worse than telling the admin their course is incomplete.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: The certificate.
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            Not complete, or the course is missing its signing assets.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
   /profile/efn:
     put:
       tags: [completion]
@@ -401,6 +459,11 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ProjectHeader"
         - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CompletionInput" }
       responses:
         "200":
           description: Completed; the CME points are queued for reporting.
@@ -1001,6 +1064,64 @@ components:
                   - type: number
                   - type: array
                     items: { type: string }
+
+    Certificate:
+      type: object
+      description: |
+        Exactly the fields the Bescheid requires a Teilnahmebescheinigung to
+        carry, plus the pre-templated creditability sentence so no client ever
+        hardcodes a points figure.
+      required:
+        - vnr
+        - courseTitle
+        - completedAt
+        - eventLocation
+        - organizer
+        - cmePoints
+        - cmeCategory
+        - accreditationBody
+        - participantName
+        - scientificLeadName
+        - creditSentence
+      properties:
+        vnr: { type: string }
+        courseTitle: { type: string }
+        completedAt:
+          type: string
+          format: date-time
+          description: |
+            Both the Veranstaltungs-datum and -uhrzeit. For an on-demand course
+            this is the moment the learner completed it — the same instant that
+            starts the EIV reporting window, so certificate and Punktemeldung
+            agree by construction.
+        eventLocation: { type: string }
+        organizer: { type: string }
+        cmePoints: { type: integer }
+        cmeCategory: { type: string }
+        accreditationBody: { type: string }
+        participantName: { type: string }
+        participantAddress:
+          type: string
+          description: |
+            On the Muster but not in the Bescheid's minimum list, so the
+            platform does not collect it and the line renders blank.
+        scientificLeadName: { type: string }
+        creditSentence: { type: string }
+
+    CompletionInput:
+      type: object
+      properties:
+        attestedName:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: |
+            The name to print as "Name des Teilnehmenden" on the
+            Teilnahmebescheinigung and to report to the EIV. Optional: when
+            omitted the name from the validated token is used. It exists
+            because the Keycloak profile may be stale or carry no name at all,
+            and the certificate cannot be issued without one. The token stays
+            the identity authority — this only decides what is printed.
 
     EfnInput:
       type: object

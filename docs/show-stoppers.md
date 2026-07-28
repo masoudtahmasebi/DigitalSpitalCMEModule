@@ -1,38 +1,104 @@
 # Show stoppers — items that need a PM decision or an external answer
 
-Status 27.07.2026, end of day 1. Everything here is **outside the engineering
-team's control**: it needs a decision, an asset, or an answer from a third
-party. Ordered by the date it stops being fixable.
+Status 28.07.2026. Everything here is **outside the engineering team's
+control**: it needs a decision, an asset, or an answer from a third party.
+Ordered by the date it stops being fixable.
+
+## Answered by the client on 28.07
+
+Four of these are now settled and the code follows the answers:
+
+| Item                            | Answer                                                                                                                     |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **Certificate field set**       | Confirmed as the Bescheid's minimum list. Built and asserted in `missingCertificateFields`; a certificate cannot be issued without every one. |
+| **Whose stamp, and where from** | The stamp and signature belong to **the course**, supplied by whoever creates it. Stored per course (migration `0006`), uploaded through the admin console — not a platform-wide asset. **S6 closes**: it is an authoring input, not a project blocker. |
+| **Delivery**                    | Learner downloads the PDF from the system now; per-customer SMTP delivery is **foreseen, not built** — see below.            |
+| **`Anschrift`**                 | Not in the required list, so it is not collected. The line renders blank, as on the paper Muster. **Half of S13 closes.**    |
+
+**S11 is also answered, by the Muster itself** — see the section below. What
+remains is confirming that reading with the ÄKWL, not deciding it.
+
+### What "foreseen, not built" means for email delivery
+
+Nothing about email is implemented, and no scope was widened to accommodate it.
+What exists is the absence of an obstacle:
+
+- `projects.smtp_host / smtp_port / smtp_user / smtp_password_enc` already exist
+  and the password column is encrypted at rest through the same `SecretCipher`
+  as the VNR password — so the credentials have a home that is not a plaintext
+  column.
+- `CertificateService.download()` returns `{ filename, bytes }`. A mailer would
+  be a **second caller of the same method**, not a second renderer — so the
+  certificate a physician downloads and the one that arrives by email are
+  byte-identical by construction.
+- The `certificates` table already carries `status` with `delivered` and
+  `bounced` values, so delivery state has somewhere to go without a migration.
+
+The open question that email would raise is **S5**, not a technical one.
 
 Nothing in this list is a reason to pause development — the week-1 work is done
 and week 2 can start. But **S11, S12, S2, S3 and S4** each have a date after
 which the launch on **06.09.2026** is at risk.
 
-**Three of these are questions for the Ärztekammer** (S11, S12, and half of S13)
-and they all arise from the Anerkennungsbescheid. They can go in one email to
-`zertifizierung@aekwl.de` — doing that today is the highest-value hour available
-this week, because S11 in particular has no engineering workaround.
+**Two of these are questions for the Ärztekammer** (S12, and confirming S11) and
+both arise from the Anerkennungsbescheid. They fit in one email to
+`zertifizierung@aekwl.de`, and S12 is the one worth sending today — it is the
+only item on this list with no engineering workaround at all.
 
 | #      | Item                                                                   | Blocks           | Needed by | Owner              |
 | ------ | ---------------------------------------------------------------------- | ---------------- | --------- | ------------------ |
-| S11    | **What is `Veranstaltungsende` for an on-demand course?**              | M3 · 30.08       | **07.08** | ÄKWL               |
-| S12    | **"Originalstempel" may invalidate an emailed certificate**            | M3 · 30.08       | **14.08** | ÄKWL               |
-| S2     | Whether the WP plugin persists a refresh token, and the token lifespan | M1 · 09.08       | **31.07** | MEDICE dev         |
-| S3     | WordPress repository access                                            | M1 · 09.08       | **31.07** | MEDICE             |
-| S4     | Scope decision on 4 layout features not in the 140 h                   | M2 · 23.08       | **06.08** | PM + DigitalSpital |
-| S13    | Certificate needs `Anschrift` and two VNR barcodes                     | M3 · 30.08       | 14.08     | PM + ÄKWL          |
-| S5     | Certificate-after-EIV vs the launch fallback                           | M3 · 30.08       | 14.08     | PM + MEDICE        |
-| S7     | `required_watch_percent`: 80 % or 100 %, in writing                    | M2 · 23.08       | 14.08     | MEDICE             |
-| S6     | Signature/stamp asset                                                  | M3 · 30.08       | 21.08     | MEDICE             |
-| S8     | ADHS SMTP configuration, and which MEDICE account sends                | M3 · 30.08       | 21.08     | MEDICE             |
-| S14    | Accreditation expires 12.10.2026; platform change must be notified     | post-launch      | 24.08     | MEDICE             |
-| S9     | Hetzner account ownership and DNS                                      | M4 · 06.09       | 24.08     | DigitalSpital      |
-| S10    | VNR password was shared over chat                                      | —                | now       | DigitalSpital      |
-| ~~S1~~ | ~~Repository write access~~                                            | **CLOSED 27.07** | —         | —                  |
+| S12     | **"Originalstempel" may invalidate an emailed certificate**            | M3 · 30.08       | **14.08** | ÄKWL               |
+| S2      | Whether the WP plugin persists a refresh token, and the token lifespan | M1 · 09.08       | **31.07** | MEDICE dev         |
+| S3      | WordPress repository access                                            | M1 · 09.08       | **31.07** | MEDICE             |
+| S4      | Scope decision on 4 layout features not in the 140 h                   | M2 · 23.08       | **06.08** | PM + DigitalSpital |
+| S11     | Confirm `Veranstaltungsende` = the learner's completion date           | M3 · 30.08       | 07.08     | ÄKWL               |
+| S5      | Certificate-after-EIV vs the launch fallback                           | M3 · 30.08       | 14.08     | PM + MEDICE        |
+| S7      | `required_watch_percent`: 80 % or 100 %, in writing                    | M2 · 23.08       | 14.08     | MEDICE             |
+| S8      | ADHS SMTP configuration, and which MEDICE account sends                | M3 · 30.08       | 21.08     | MEDICE             |
+| S14     | Accreditation expires 12.10.2026; platform change must be notified     | post-launch      | 24.08     | MEDICE             |
+| S9      | Hetzner account ownership and DNS                                      | M4 · 06.09       | 24.08     | DigitalSpital      |
+| S10     | VNR password was shared over chat                                      | —                | now       | DigitalSpital      |
+| ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                   | **CLOSED 28.07** | —         | —                  |
+| ~~S6~~  | ~~Signature/stamp asset~~                                              | **CLOSED 28.07** | —         | —                  |
+| ~~S1~~  | ~~Repository write access~~                                            | **CLOSED 27.07** | —         | —                  |
+
+S11 drops from first place to fifth: the Muster answers it, and the answer is
+already what the code does. It stays open because confirming a reading is not
+the same as having one.
 
 ---
 
-## S11 · What is `Veranstaltungsende` for an on-demand course? — **ask the ÄKWL first**
+## S11 · What is `Veranstaltungsende` for an on-demand course? — **the Muster answers it; confirm it**
+
+> **Plain-language version of the question, since it was asked on 28.07:**
+>
+> The Ärztekammer must be told about a learner's points within **8 days of the
+> event ending**. For a live seminar "the event ended" is obvious — everyone was
+> in the room, they all left at 17:00, the clock starts. This course has no
+> room and no 17:00. Every physician takes it at a different moment across a
+> year. So: **8 days from what?**
+>
+> The Bescheid gives two dates that could be meant — the Maßnahme is _am
+> 13.10.2025_, valid _13.10.2025 – 12.10.2026_ — and neither works. If the
+> deadline runs from 13.10.2025 it expired in October 2025 and every submission
+> is already too late. If it runs from 12.10.2026 nothing may be reported until
+> the accreditation is nearly over.
+>
+> **The Muster settles it.** It reads _"am \_\_\_\_\_\_\_\_ als on-demand-Webinar
+> teilgenommen hat"_ — one blank date, per participant, filled in by the
+> Veranstalter. On an on-demand format the only date that blank can hold is the
+> day that physician finished. So `Veranstaltungsende` is **the learner's own
+> completion**, and it is different for every learner.
+>
+> That is what the code does: `completion.service.ts` passes the completion
+> instant as `eventEndAt`, and the certificate prints the same instant as the
+> Veranstaltungsdatum. The date on the physician's certificate and the date the
+> 8-day clock runs from are the same value, from the same line of code —
+> they cannot drift apart.
+>
+> **Why it is still on this list:** that is our reading of a form, not a
+> statement from the ÄKWL. It is one sentence to confirm, and confirming it
+> costs nothing. The mitigation below means the launch does not wait for it.
 
 The single most consequential unknown in the project, and it comes straight out
 of the Anerkennungsbescheid.
@@ -241,14 +307,23 @@ still be coherent.
 
 ---
 
-## S6 · The stamp and signature asset
+## ~~S6~~ · The stamp and signature asset — **CLOSED 28.07**
 
-The **stamp and signature of the Wissenschaftliche Leitung** must be supplied as
-a digital asset before P8 in week 5.
+Answered by the client: the stamp and signature belong to **the course**, and
+whoever creates the course supplies them. That makes this an authoring input
+rather than a project-level blocker, and it is why migration `0006` puts
+`stamp_image` / `signature_image` on `courses` and not on `customers` — a second
+course with a different Wissenschaftliche Leitung needs a different stamp, and
+replacing an expired one must fix every future download without touching
+certificates already issued.
 
-Deliberately ranked **below S12**: if the ÄKWL says an emailed PDF cannot satisfy
-the Originalstempel clause, the format of the asset is moot. Ask S12 first, then
-this.
+The seed ships 1×1 placeholder PNGs so the pipeline runs locally, and says so on
+every run. **The real assets are still needed before anything ships** — that is
+now a content task on the course, tracked with the rest of the seeding, not an
+open question.
+
+Still ranked below S12 in consequence: if the ÄKWL says an emailed PDF cannot
+satisfy the Originalstempel clause, the format of the asset is moot.
 
 The Anerkennungsbescheid has now been read, and
 `docs/requirements/medice-adhs.md` §2 is rebuilt from it rather than from ticket
@@ -299,24 +374,24 @@ store, never in a ticket or chat thread.
 
 ---
 
-## S13 · The certificate needs an address and two barcodes
+## S13 · The certificate needs an address and two barcodes — **both resolved 28.07**
 
-Both come from the Teilnahmebescheinigung Muster, and neither is in the plan.
+Both come from the Teilnahmebescheinigung Muster.
 
-**`Anschrift:`** — the participant's postal address. We hold name and EFN and
-deliberately nothing more (ADR-0004 keeps the personal-data footprint minimal).
-Collecting an address adds a field, a capture step, a lawful-basis and retention
-decision, and more to erase on a subject request. **+2 h** across P1, P5 and P8.
+**`Anschrift:` — not collected.** The client confirmed the required field set,
+and it is the Bescheid's minimum list: VNR, Titel, Datum, Uhrzeit, Ort,
+Veranstaltender, Punkte und Kategorie, Name des Teilnehmenden. `Anschrift` is
+not among them. The field exists on the paper form for postal delivery, which
+does not apply to an online on-demand course, so **the line renders blank**,
+exactly as it does on the Muster, and ADR-0004's minimal personal-data footprint
+is preserved. No capture step, no retention decision, no extra erasure surface.
+`missingCertificateFields` deliberately excludes it.
 
-_Ask the ÄKWL whether a blank `Anschrift` is acceptable for an online on-demand
-format before building it_ — the field exists for postal delivery, which does not
-apply here.
-
-**Two barcodes of the VNR** — `VNR (Code 39)` and `VNR (Datamatrix, App*)`, with
-_"Felder bitte nicht überkleben"_. The Datamatrix is what the Ärztekammer's own
-app scans, so it is functional, not decorative. Needs a barcode library in the
-PDF pipeline: **+2 h** in P8. In scope — without them the certificate does not
-match the Muster.
+**Two barcodes of the VNR — built.** `VNR (Code 39)` and `VNR (Datamatrix,
+App*)` are rendered by `certificate.renderer.ts` via `bwip-js`. The Datamatrix
+is what the Ärztekammer's own app scans, so it is functional, not decorative.
+Same VNR string feeds both and the printed digits below them, so a mismatch is
+not representable.
 
 ---
 
@@ -361,19 +436,25 @@ This should be named explicitly in the P10-07 runbook.
 
 ## What is not blocked
 
-Week 2 can start on schedule. P1 (auth), P2 (hierarchy, catalog, RLS) and the
-OpenAPI contract need none of the above.
+The API is built and the learner journey runs end to end — catalog, gated
+player, quiz, evaluation, EFN, completion, Punktemeldung, certificate PDF.
+None of it waited on this list.
 
-Two items are blocked, and they are different in kind:
+One item is genuinely blocked:
 
-- **P6, the WordPress bridge** — S2 and S3. This is the item M1 is defined by, so
-  chase these first for schedule reasons.
-- **P8, the certificate** — S12, and to a lesser extent S13. Do not start
-  building until the ÄKWL answers whether an emailed PDF can be valid at all;
-  building a barcode pipeline and an address capture flow for a document that may
-  need a wet stamp is the wrong order.
+- **P6, the WordPress bridge** — S2 and S3. This is the item M1 is defined by,
+  so chase these first for schedule reasons.
 
-**S11 outranks everything on this list for consequence**, even though it blocks
-no code: `eivDeadlines` already takes the date as an argument, so nothing waits
-on it — but passing the wrong value means every learner's CME points miss their
-statutory deadline. It is one question to `zertifizierung@aekwl.de`.
+**P8 is no longer blocked and is built.** That is a change from 27.07, and a
+deliberate one. The reasoning then was "do not build a barcode pipeline for a
+document that may need a wet stamp"; the client has since confirmed the field
+set and the stamp's provenance, and the barcodes turned out to be an afternoon
+rather than a pipeline. If S12 comes back badly, what is lost is the layout —
+the participation data, the VNR, the points and the audit trail are all needed
+either way, and a wet-stamp fallback would print the same document for a human
+to sign.
+
+**S12 is now the only item on this list with no engineering workaround.** If an
+emailed or downloaded PDF cannot satisfy the Originalstempel clause, no amount
+of code fixes it — MEDICE signs by hand, and the platform's job becomes
+producing the sheet they sign. One question to `zertifizierung@aekwl.de`.

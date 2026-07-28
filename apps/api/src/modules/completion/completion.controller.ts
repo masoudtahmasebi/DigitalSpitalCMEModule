@@ -15,7 +15,11 @@ import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
 import { CompletionService } from "./completion.service.js";
-import { efnInputSchema, evaluationSubmissionSchema } from "./completion.dto.js";
+import {
+  completionInputSchema,
+  efnInputSchema,
+  evaluationSubmissionSchema,
+} from "./completion.dto.js";
 
 const LEARNER_ROLES = [
   "learner",
@@ -96,12 +100,30 @@ export class CompletionController {
   @Roles(...LEARNER_ROLES)
   async complete(
     @Param("slug") slug: string,
+    @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ) {
+    // The body is optional — a client that sends nothing completes with the
+    // profile name — so an absent body parses as `{}` rather than failing.
+    const parsed = completionInputSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      // A name is personal data; the message names the field, never the value.
+      throw new AppError(
+        "validation",
+        "completion input failed schema validation",
+        "Bitte geben Sie einen Namen für die Teilnahmebescheinigung an (höchstens 200 Zeichen).",
+      );
+    }
+
     // The clock is read at the edge and passed inward; the deadline arithmetic
     // in `@ds/domain` never reads one of its own.
-    return CompletionService.fromDb(db).complete(slug, context(principal), new Date());
+    return CompletionService.fromDb(db).complete(
+      slug,
+      parsed.data,
+      context(principal),
+      new Date(),
+    );
   }
 }
 

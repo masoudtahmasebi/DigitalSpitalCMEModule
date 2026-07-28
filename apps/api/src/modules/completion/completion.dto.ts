@@ -47,6 +47,22 @@ export const evaluationSubmissionSchema = z.object({
     .max(100),
 });
 
+/**
+ * The completion request body.
+ *
+ * `attestedName` is the name the learner confirms should appear on the
+ * Teilnahmebescheinigung and in the Punktemeldung. It is optional: when it is
+ * absent the Keycloak profile name is used. It exists because the Keycloak
+ * profile may be stale or incomplete and the certificate carries a mandatory
+ * "Name des Teilnehmenden" — see docs/requirements/medice-adhs.md §6.5. The
+ * token remains the identity authority; this is only what gets printed.
+ *
+ * Bounded at 200 characters: a name, not a free-text field.
+ */
+export const completionInputSchema = z.object({
+  attestedName: z.string().trim().min(1).max(200).optional(),
+});
+
 export const efnInputSchema = z.object({
   /**
    * 15 digits. Validated again by `isValidEfn` in `@ds/domain` before storage —
@@ -58,3 +74,4 @@ export const efnInputSchema = z.object({
 export type Evaluation = z.infer<typeof evaluationSchema>;
 export type EvaluationSubmission = z.infer<typeof evaluationSubmissionSchema>;
 export type EfnInput = z.infer<typeof efnInputSchema>;
+export type CompletionInput = z.infer<typeof completionInputSchema>;

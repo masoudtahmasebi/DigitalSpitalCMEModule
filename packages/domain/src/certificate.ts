@@ -3,10 +3,9 @@
  *
  * This is deliberately *not* a PDF renderer. It is the pure assembly of the
  * fields a Teilnahmebescheinigung must legally carry, from data we already own
- * at completion time. Rendering, barcodes and email delivery are a separate,
- * deferred concern (see docs/show-stoppers.md S12): the Ärztekammer has not yet
- * confirmed whether an emailed PDF can satisfy the "Originalstempel" clause, and
- * building a renderer before that answer arrives would be the wrong order.
+ * at completion time. Rendering, barcodes and delivery live in the API's
+ * certificate module, which has fonts, images and I/O; this file has none of
+ * those and stays exhaustively testable.
  *
  * What is NOT deferred is capturing the data. Every field here is snapshotted at
  * completion, so that a later change to the course record can never alter an
@@ -17,7 +16,10 @@
  * Source of the mandatory field set: the Anerkennungsbescheid (ÄKWL,
  * 18.06.2026), which states a Teilnahmebescheinigung must contain at minimum
  * "Veranstaltungsnummer (VNR), -titel, -datum, -uhrzeit, -ort, Veranstalter,
- * Punkte und Kategorie sowie den Namen des Teilnehmenden".
+ * Punkte und Kategorie sowie den Namen des Teilnehmenden", and additionally
+ * that the certificate carry the stamp of, and be signed by, the
+ * Wissenschaftliche Leitung. Those two are images and therefore the renderer's
+ * problem; the lead's *name* is data and lives here.
  */
 
 export interface CertificateInput {
@@ -33,11 +35,18 @@ export interface CertificateInput {
   readonly accreditationBody: string;
   readonly participantName: string;
   /**
-   * From the Muster ("Anschrift:"), still pending the S13 decision on whether a
-   * blank address is acceptable for an online on-demand format. Optional so
-   * completion is never blocked on it.
+   * Present on the Muster ("Anschrift:") but absent from the Bescheid's list of
+   * minimum required fields, so it is optional and the platform does not
+   * collect it. The renderer leaves the line blank when it is absent, matching
+   * the paper form.
    */
   readonly participantAddress?: string;
+  /**
+   * The Wissenschaftliche Leitung whose stamp and signature validate the
+   * document. Mandatory — a certificate without it is not valid per the
+   * Bescheid — and reported by `missingCertificateFields`.
+   */
+  readonly scientificLeadName: string;
 }
 
 export interface CertificateData extends CertificateInput {
@@ -100,14 +109,19 @@ export type CertificateField =
   | "cmePoints"
   | "cmeCategory"
   | "accreditationBody"
-  | "participantName";
+  | "participantName"
+  | "scientificLeadName";
 
 /**
  * The mandatory fields (per the Bescheid) that are absent or empty.
  *
- * `participantAddress` is intentionally excluded: it is required by the Muster
- * but its necessity for an online format is still an open question (S13), so a
- * missing address does not make the data incomplete for our purposes yet.
+ * `participantAddress` is intentionally excluded: it appears on the Muster but
+ * not in the Bescheid's minimum list, so its absence does not make a
+ * certificate incomplete.
+ *
+ * The stamp and signature *images* are likewise not checked here — this
+ * function is pure and never sees bytes. The renderer refuses separately if
+ * either asset is missing, which is the only place that can know.
  */
 export function missingCertificateFields(
   input: CertificateInput,
@@ -125,6 +139,7 @@ export function missingCertificateFields(
   if (isBlank(input.cmeCategory)) missing.push("cmeCategory");
   if (isBlank(input.accreditationBody)) missing.push("accreditationBody");
   if (isBlank(input.participantName)) missing.push("participantName");
+  if (isBlank(input.scientificLeadName)) missing.push("scientificLeadName");
 
   return missing;
 }

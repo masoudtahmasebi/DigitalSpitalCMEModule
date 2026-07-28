@@ -45,6 +45,20 @@ const COURSE_SLUG = "adhs-akademie-adult";
 /** Per the Bescheid. The password is never committed — see `.env.example`. */
 const VNR = "2760552025919300018";
 
+/**
+ * Placeholder stamp and signature so a seeded course can actually produce a
+ * certificate locally. 1×1 PNGs — deliberately obviously not real artwork.
+ *
+ * The real assets belong to the course's Wissenschaftliche Leitung and are
+ * uploaded through the admin console. Seeding a convincing-looking fake stamp
+ * would be worse than seeding an obvious placeholder: someone would eventually
+ * ship it.
+ */
+const PLACEHOLDER_IMAGE = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
 interface ModuleSeed {
   readonly title: string;
   readonly subtitle: string;
@@ -191,13 +205,17 @@ async function main(): Promise<void> {
          thema, altersgruppe, vnr, accreditation_body, cme_points, cme_category,
          event_location, organizer, valid_from, valid_to,
          required_watch_percent, pass_threshold_percent, max_quiz_attempts,
-         reveal_correct_answers, learning_objectives, target_audience
+         reveal_correct_answers, learning_objectives, target_audience,
+         scientific_lead_name, scientific_lead_title, certificate_issue_place,
+         stamp_image, stamp_image_mime, signature_image, signature_image_mime
        ) VALUES (
          $1,$2,$3,$4,$5,'on_demand',
          ARRAY['ADHS'], ARRAY['Erwachsene'], $6, $7, 4, 'D',
          'online', $8, $9, $10,
          100, 70, NULL,
-         false, $11, $12
+         false, $11, $12,
+         $13, $14, $15,
+         $16, 'image/png', $16, 'image/png'
        )
        ON CONFLICT (project_id, slug) DO UPDATE SET
          title = EXCLUDED.title,
@@ -208,6 +226,13 @@ async function main(): Promise<void> {
          required_watch_percent = EXCLUDED.required_watch_percent,
          learning_objectives = EXCLUDED.learning_objectives,
          target_audience = EXCLUDED.target_audience,
+         scientific_lead_name = EXCLUDED.scientific_lead_name,
+         scientific_lead_title = EXCLUDED.scientific_lead_title,
+         certificate_issue_place = EXCLUDED.certificate_issue_place,
+         stamp_image = EXCLUDED.stamp_image,
+         stamp_image_mime = EXCLUDED.stamp_image_mime,
+         signature_image = EXCLUDED.signature_image,
+         signature_image_mime = EXCLUDED.signature_image_mime,
          updated_at = now()
        RETURNING id`,
       [
@@ -237,6 +262,10 @@ async function main(): Promise<void> {
           "· Fachärzte für Allgemeinmedizin mit psychiatrischem Versorgungsauftrag",
           "· Ärzte in Weiterbildung der genannten Fachrichtungen",
         ].join("\n"),
+        "Muster-Wissenschaftliche-Leitung",
+        "Prof. Dr. med.",
+        "Iserlohn",
+        PLACEHOLDER_IMAGE,
       ],
     );
 
@@ -380,6 +409,10 @@ async function main(): Promise<void> {
         "",
         "No VNR password is seeded. Set courses.vnr_password_enc via the admin",
         "path before the EIV worker can authenticate.",
+        "",
+        "Stamp and signature are 1x1 placeholder PNGs so a certificate renders",
+        "locally. Replace them with the real assets of the course's",
+        "Wissenschaftliche Leitung before anything ships.",
       ].join("\n"),
     );
   } catch (error) {
