@@ -71,6 +71,9 @@ export {
   isValidEfn,
   REPORTING_WINDOW_DAYS,
 } from "./eiv.js";
+
+export { alertLevelFor, dueAlerts } from "./eiv-alert.js";
+export type { EivAlert, EivAlertCandidate, EivAlertLevel } from "./eiv-alert.js";
 export type { EivDeadlineInput, EivDeadlines, EivPhase } from "./eiv.js";
 
 export { MAX_ATTEMPTS, planEivAttempt, RETRY_INTERVAL_MINUTES } from "./eiv-retry.js";

@@ -59,6 +59,18 @@ const schema = z.object({
    */
   MAX_FONT_BODY_SIZE: z.string().default("3mb"),
 
+  /**
+   * Where a Punktemeldung deadline alarm is posted (P10-06).
+   *
+   * Optional, and the alarm works without it: every alert is logged at `error`
+   * regardless, so log-based alerting is the floor. A webhook is what turns
+   * that into something that reaches a person on a Saturday.
+   *
+   * Generic JSON, so Slack, Teams, PagerDuty or an internal endpoint all work
+   * without a code change. Empty means "log only".
+   */
+  ALERT_WEBHOOK_URL: z.union([z.literal(""), z.string().url()]).default(""),
+
   // ---------------------------------------------------------------------
   // EIV-FOBI submission worker (P7-06)
   // ---------------------------------------------------------------------

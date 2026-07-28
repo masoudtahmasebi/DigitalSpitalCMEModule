@@ -237,6 +237,16 @@ is only open while the 8-day window has not passed.
 submissions are held. Pointing a test environment at the real Punktemeldung
 interface should take a deliberate act.
 
+**The deadline alarm is separate from all of that.** A submission that cannot be
+sent stays queued and looks healthy in every graph while the 8-day window runs
+down; the console shows `needs_attention`, but that is a _pull_ signal and over
+eight days across a holiday nobody pulls. So the worker raises an alarm at 48 h
+and again at 12 h, once each, escalating rather than repeating — the escalation
+history lives in the append-only audit log, so an alert that was raised cannot
+be un-raised by an UPDATE. It runs **before** the submission sweep and in its
+own try/catch: the one thing that must not depend on the EIV interface being
+reachable is the alarm about the EIV interface not being reachable.
+
 ### The certificate
 
 Refused unless every field the Bescheid requires is present — the check is a

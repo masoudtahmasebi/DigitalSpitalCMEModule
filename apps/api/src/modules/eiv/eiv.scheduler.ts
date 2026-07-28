@@ -31,6 +31,8 @@ import type { AppConfig } from "../../config/config.js";
 import { AuditService } from "../../audit/audit.service.js";
 import { createSecretCipher } from "../../shared/secret-cipher.js";
 import { EivRepository } from "./eiv.repository.js";
+import { EivAlertRepository } from "./eiv-alert.repository.js";
+import { EivAlertService, WebhookAlertSink } from "./eiv-alert.service.js";
 import { EivService, LiveEivSubmitter } from "./eiv.service.js";
 
 @Injectable()
@@ -39,11 +41,21 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
   private timer: NodeJS.Timeout | undefined;
   private running = false;
   private readonly service: EivService;
+  private readonly alerts: EivAlertService;
 
   constructor(
     @Inject(PG_POOL) pool: Pool,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {
+    this.alerts = new EivAlertService(
+      new EivAlertRepository(pool),
+      new AuditService(pool),
+      this.logger,
+      config.ALERT_WEBHOOK_URL === ""
+        ? undefined
+        : new WebhookAlertSink(config.ALERT_WEBHOOK_URL),
+    );
+
     this.service = new EivService(
       new EivRepository(pool, createSecretCipher(config.NODE_ENV)),
       new LiveEivSubmitter(),
@@ -81,12 +93,38 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
     if (this.timer !== undefined) clearInterval(this.timer);
   }
 
+  /**
+   * The deadline alarm, in its own try/catch.
+   *
+   * Separated from the submission sweep so a failure in either cannot suppress
+   * the other. An alerting path that dies quietly when the thing it watches is
+   * broken is the worst possible shape for this code.
+   */
+  private async sweepAlerts(now: Date): Promise<void> {
+    try {
+      const raised = await this.alerts.sweep(now);
+      if (raised.length > 0) {
+        this.logger.warn(`EIV deadline alerts raised: ${raised.length}`);
+      }
+    } catch (error) {
+      this.logger.error(
+        `EIV deadline alert sweep failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    }
+  }
+
   /** Exposed so a test or an admin trigger can run one sweep synchronously. */
   async tick(now = new Date()): Promise<void> {
     if (this.running) return;
     this.running = true;
 
     try {
+      // Before the sweep, not after: if submitting throws, the deadline alarm
+      // has already run. The one thing that must not depend on the EIV
+      // interface being reachable is the alarm about the EIV interface not
+      // being reachable.
+      await this.sweepAlerts(now);
+
       const result = await this.service.sweep(now);
       if (result.considered > 0) {
         // Counts only. Nothing identifying a physician reaches a log line.

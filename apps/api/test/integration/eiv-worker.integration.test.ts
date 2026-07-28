@@ -19,6 +19,8 @@ import { AuditService } from "../../src/audit/audit.service.js";
 import { PlaintextSecretCipher } from "../../src/shared/secret-cipher.js";
 import { EivRepository } from "../../src/modules/eiv/eiv.repository.js";
 import { EivService, LiveEivSubmitter } from "../../src/modules/eiv/eiv.service.js";
+import { EivAlertRepository } from "../../src/modules/eiv/eiv-alert.repository.js";
+import { EivAlertService } from "../../src/modules/eiv/eiv-alert.service.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -264,5 +266,113 @@ describe("the worker refuses a live endpoint by default", () => {
     const row = await readSubmission(submissionId);
     expect(row.status).toBe("failed_permanent");
     expect(row.last_error).toBe("live_submission_not_allowed");
+  });
+});
+
+/**
+ * The deadline alarm (P10-06, CLAUDE.md §4 invariant 8), against real SQL.
+ *
+ * The unit tests cover the decision. What can only be checked here is that the
+ * two queries behind it are right: that a `queued` submission approaching its
+ * deadline is actually found, and that the escalation history really is read
+ * back out of the append-only audit log.
+ *
+ * That second one matters more than it looks. If `findAlertedLevels` silently
+ * returned nothing — a wrong `detail->>'level'`, a type mismatch on the id —
+ * every sweep would re-raise the same alert, and the channel it goes to would
+ * be muted within a day. A muted alert is worse than none, because it is
+ * believed to be working.
+ */
+describe("the deadline alarm finds what it needs to find", () => {
+  function alertService(sink?: { send: (alert: unknown) => Promise<void> }) {
+    return new EivAlertService(
+      new EivAlertRepository(appPool),
+      new AuditService(appPool),
+      { error: () => {}, warn: () => {} },
+      sink as never,
+    );
+  }
+
+  /** Only this suite's own rows — other suites share this database. */
+  function mine(alerts: readonly { enrolmentId: string }[], ids: readonly string[]) {
+    return alerts.filter((alert) => ids.includes(alert.enrolmentId));
+  }
+
+  it("does not raise anything for a submission with days to run", async () => {
+    await freshUser();
+    // Due in 8 days, which is what a freshly completed course looks like.
+    const { enrolmentId } = await queueSubmission();
+
+    const raised = await alertService().sweep(new Date());
+
+    expect(mine(raised, [enrolmentId])).toEqual([]);
+  });
+
+  it("raises, and records the level in the audit log", async () => {
+    await freshUser();
+    // Event ended 7 days ago: 8-day window, so ~24 h remain.
+    const eventEndAt = new Date(Date.now() - 7 * 86_400_000);
+    const { enrolmentId } = await queueSubmission({ eventEndAt });
+
+    const sent: Array<{ level: string }> = [];
+    const raised = await alertService({
+      send: async (alert) => void sent.push(alert as { level: string }),
+    }).sweep(new Date());
+
+    expect(mine(raised, [enrolmentId])).toHaveLength(1);
+    expect(sent.some((alert) => alert.level === "warning")).toBe(true);
+
+    const { rows } = await seedPool.query<{ detail: { level: string } }>(
+      "SELECT detail FROM audit_log WHERE action = 'eiv.deadline_alert' AND subject = $1",
+      [enrolmentId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.detail.level).toBe("warning");
+  });
+
+  it("stays silent on the next sweep, reading its own audit trail", async () => {
+    await freshUser();
+    const eventEndAt = new Date(Date.now() - 7 * 86_400_000);
+    const { enrolmentId } = await queueSubmission({ eventEndAt });
+
+    const service = alertService();
+    expect(mine(await service.sweep(new Date()), [enrolmentId])).toHaveLength(1);
+    expect(mine(await service.sweep(new Date()), [enrolmentId])).toEqual([]);
+
+    // Exactly one row, not two: the second sweep wrote nothing.
+    const { rows } = await seedPool.query(
+      "SELECT 1 FROM audit_log WHERE action = 'eiv.deadline_alert' AND subject = $1",
+      [enrolmentId],
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it("escalates when the same submission gets closer", async () => {
+    await freshUser();
+    const eventEndAt = new Date(Date.now() - 7 * 86_400_000);
+    const { enrolmentId } = await queueSubmission({ eventEndAt });
+
+    const service = alertService();
+    await service.sweep(new Date());
+
+    // Twenty hours later, the same row is inside the 12-hour threshold.
+    const later = new Date(Date.now() + 20 * 3_600_000);
+    const raised = mine(await service.sweep(later), [enrolmentId]);
+
+    expect(raised).toHaveLength(1);
+    expect(raised[0]).toMatchObject({ level: "urgent" });
+  });
+
+  it("ignores a submission that has already been reported", async () => {
+    await freshUser();
+    const eventEndAt = new Date(Date.now() - 7 * 86_400_000);
+    const { submissionId, enrolmentId } = await queueSubmission({ eventEndAt });
+
+    await seedPool.query(
+      "UPDATE eiv_submissions SET status = 'submitted' WHERE id = $1",
+      [submissionId],
+    );
+
+    expect(mine(await alertService().sweep(new Date()), [enrolmentId])).toEqual([]);
   });
 });
