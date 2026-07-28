@@ -271,6 +271,40 @@ Not ours to fix, and not blocking, but they were visible while reading it:
 
 ---
 
+## The MEDICE consent API — noted, deliberately not integrated
+
+`KEYCLOAK_CONSENT_API` (`https://login.medice.com/api/v1/adhs-network/request/`)
+and its key were supplied on 28.07. **Nothing in this platform calls it, and
+nothing should.** That is a decision, not an oversight, so here is the
+reasoning.
+
+The endpoint records that a person accepted MEDICE's AGB and newsletter terms.
+`Keycloak::sendConsentToMediceApi()` posts to it from the **registration**
+flow, at the moment somebody creates an account — which happens on MEDICE's
+site, before this platform has ever heard of them. By the time the CME module
+sees a learner, consent has already been given or the account would not exist.
+
+Calling it from here would mean:
+
+- **Recording consent nobody gave.** The payload hardcodes
+  `consent_agb_given: true` and `consent_newsletter_given: true`. Sending that
+  because a physician opened a course would assert agreement to a newsletter
+  they never saw. That is a GDPR problem, not a plumbing one.
+- **A second writer to a record with one owner.** Consent state belongs to
+  MEDICE's identity system. Two systems writing it is how it ends up
+  inconsistent, and the CME module has nothing to add.
+- **Holding a credential we do not need.** `KEYCLOAK_CONSENT_API_KEY` was
+  correctly withheld. The right amount of exposure to somebody else's consent
+  API is none — see S15 for what happens when that key does travel.
+
+**What would change this:** a requirement that the CME module itself collect a
+consent — a separate data-processing agreement for the learning record, say.
+That is not in the 140 h and is not in `docs/roadmap.md` §4. If it arrives, the
+integration point is the completion flow, next to the EFN, and it needs its own
+ticket, its own lawful basis and its own retention rule.
+
+---
+
 ## S15 · A live API key is committed in the MEDICE plugin — **act today**
 
 `inc/class-keycloak.php` carries this as the default when the environment
