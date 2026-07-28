@@ -409,7 +409,12 @@ describe("complete", () => {
   it("stores the name the learner attested to for the certificate", async () => {
     const { service, completedCalls } = build(ready);
 
-    await service.complete(course.slug, { attestedName: "Dr. med. Anna Müller" }, learner, NOW);
+    await service.complete(
+      course.slug,
+      { attestedName: "Dr. med. Anna Müller" },
+      learner,
+      NOW,
+    );
 
     expect(completedCalls[0]?.attestedName).toBe("Dr. med. Anna Müller");
   });

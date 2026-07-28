@@ -246,7 +246,8 @@ export async function renderCertificatePdf(
     color: BLACK,
   });
 
-  const footer = "Ort, Datum, Unterschrift / Stempel des ärztl. Antragstellenden/ Veranstaltungsleitenden";
+  const footer =
+    "Ort, Datum, Unterschrift / Stempel des ärztl. Antragstellenden/ Veranstaltungsleitenden";
   page.drawText(footer, {
     x: (A4.width - regular.widthOfTextAtSize(footer, 9)) / 2,
     y: signatureBlockY - 24,

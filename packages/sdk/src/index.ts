@@ -229,8 +229,7 @@ export function createClient(options: ClientOptions) {
     submitEvaluation: (
       slug: string,
       submission: EvaluationSubmission,
-    ): Promise<EnrolmentState> =>
-      request(`${course(slug)}/evaluation`, json(submission)),
+    ): Promise<EnrolmentState> => request(`${course(slug)}/evaluation`, json(submission)),
 
     /** Write-only. There is deliberately no `getEfn` — see ADR-0004. */
     setEfn: (efn: string): Promise<void> =>

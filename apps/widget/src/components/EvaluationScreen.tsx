@@ -34,7 +34,10 @@ export function EvaluationScreen(props: {
     return (
       <div className="space-y-4">
         <h2 className="text-lg font-semibold text-gray-900">{de.evaluation.title}</h2>
-        <p className="rounded-md bg-green-50 p-4 text-sm text-status-completed" role="status">
+        <p
+          className="rounded-md bg-green-50 p-4 text-sm text-status-completed"
+          role="status"
+        >
           {de.evaluation.submitted}
         </p>
         <Button variant="secondary" onClick={props.onBack}>

@@ -540,7 +540,9 @@ describe("the Teilnahmebescheinigung", () => {
     // On failure the body is problem-details JSON — surfacing it here turns
     // "expected 409 to be 200" into the actual reason.
     if (response.status !== 200) {
-      throw new Error(`certificate download failed: ${response.status} ${await response.text()}`);
+      throw new Error(
+        `certificate download failed: ${response.status} ${await response.text()}`,
+      );
     }
     expect(response.headers.get("content-type")).toContain("application/pdf");
     expect(response.headers.get("content-disposition")).toContain(

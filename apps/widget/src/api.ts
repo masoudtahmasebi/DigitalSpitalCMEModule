@@ -31,7 +31,5 @@ export function createWidgetClient(
 
 /** True when the element has everything it needs to talk to the API at all. */
 export function isConfigured(config: WidgetConfig): boolean {
-  return (
-    config.apiBase !== "" && config.projectSlug !== "" && config.courseSlug !== ""
-  );
+  return config.apiBase !== "" && config.projectSlug !== "" && config.courseSlug !== "";
 }

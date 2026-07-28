@@ -43,7 +43,10 @@ export interface CertificateRow {
 }
 
 export interface CertificateRepositoryPort {
-  findSource(courseSlug: string, userId: string): Promise<CertificateSourceRow | undefined>;
+  findSource(
+    courseSlug: string,
+    userId: string,
+  ): Promise<CertificateSourceRow | undefined>;
   findCertificate(enrolmentId: string): Promise<CertificateRow | undefined>;
   issue(input: {
     customerId: string;

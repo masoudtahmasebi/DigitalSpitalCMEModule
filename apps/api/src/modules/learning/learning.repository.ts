@@ -104,7 +104,11 @@ export interface LearningRepositoryPort {
   }): Promise<void>;
   hasEfn(userId: string): Promise<boolean>;
   hasEvaluationResponse(enrolmentId: string): Promise<boolean>;
-  markCompleted(enrolmentId: string, at: Date, attestedName: string | null): Promise<void>;
+  markCompleted(
+    enrolmentId: string,
+    at: Date,
+    attestedName: string | null,
+  ): Promise<void>;
 }
 
 export class LearningRepository implements LearningRepositoryPort {

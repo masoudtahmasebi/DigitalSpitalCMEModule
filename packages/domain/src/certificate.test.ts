@@ -116,14 +116,14 @@ describe("the Wissenschaftliche Leitung is mandatory", () => {
     // Wissenschaftlichen Leitung zu versehen und von diesem zu unterzeichnen."
     // A certificate without one is not valid, so its absence is a missing
     // field rather than a cosmetic gap.
-    expect(
-      missingCertificateFields({ ...medice, scientificLeadName: "" }),
-    ).toContain("scientificLeadName");
+    expect(missingCertificateFields({ ...medice, scientificLeadName: "" })).toContain(
+      "scientificLeadName",
+    );
   });
 
   it("treats whitespace as absent", () => {
-    expect(
-      missingCertificateFields({ ...medice, scientificLeadName: "   " }),
-    ).toContain("scientificLeadName");
+    expect(missingCertificateFields({ ...medice, scientificLeadName: "   " })).toContain(
+      "scientificLeadName",
+    );
   });
 });

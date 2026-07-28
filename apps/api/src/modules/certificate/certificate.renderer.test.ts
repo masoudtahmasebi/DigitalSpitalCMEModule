@@ -151,5 +151,4 @@ describe("image handling", () => {
       renderCertificatePdf(data, { ...assets, stampImageMime: null }),
     ).resolves.toBeDefined();
   });
-
 });

@@ -60,7 +60,10 @@ export function CertificatePanel(props: {
       <h2 className="text-lg font-semibold text-gray-900">{de.certificate.title}</h2>
 
       <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-        <Field label={de.certificate.participant} value={props.certificate.participantName} />
+        <Field
+          label={de.certificate.participant}
+          value={props.certificate.participantName}
+        />
         <Field label={de.certificate.vnr} value={props.certificate.vnr} />
         <Field label={de.certificate.date} value={formatDate(completedAt)} />
         <Field label={de.certificate.time} value={formatTime(completedAt)} />

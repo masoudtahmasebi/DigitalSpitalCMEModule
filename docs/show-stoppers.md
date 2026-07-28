@@ -8,12 +8,12 @@ Ordered by the date it stops being fixable.
 
 Four of these are now settled and the code follows the answers:
 
-| Item                            | Answer                                                                                                                     |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| **Certificate field set**       | Confirmed as the Bescheid's minimum list. Built and asserted in `missingCertificateFields`; a certificate cannot be issued without every one. |
+| Item                            | Answer                                                                                                                                                                                                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Certificate field set**       | Confirmed as the Bescheid's minimum list. Built and asserted in `missingCertificateFields`; a certificate cannot be issued without every one.                                                                                                           |
 | **Whose stamp, and where from** | The stamp and signature belong to **the course**, supplied by whoever creates it. Stored per course (migration `0006`), uploaded through the admin console — not a platform-wide asset. **S6 closes**: it is an authoring input, not a project blocker. |
-| **Delivery**                    | Learner downloads the PDF from the system now; per-customer SMTP delivery is **foreseen, not built** — see below.            |
-| **`Anschrift`**                 | Not in the required list, so it is not collected. The line renders blank, as on the paper Muster. **Half of S13 closes.**    |
+| **Delivery**                    | Learner downloads the PDF from the system now; per-customer SMTP delivery is **foreseen, not built** — see below.                                                                                                                                       |
+| **`Anschrift`**                 | Not in the required list, so it is not collected. The line renders blank, as on the paper Muster. **Half of S13 closes.**                                                                                                                               |
 
 **S11 is also answered, by the Muster itself** — see the section below. What
 remains is confirming that reading with the ÄKWL, not deciding it.
@@ -45,8 +45,8 @@ both arise from the Anerkennungsbescheid. They fit in one email to
 `zertifizierung@aekwl.de`, and S12 is the one worth sending today — it is the
 only item on this list with no engineering workaround at all.
 
-| #      | Item                                                                   | Blocks           | Needed by | Owner              |
-| ------ | ---------------------------------------------------------------------- | ---------------- | --------- | ------------------ |
+| #       | Item                                                                   | Blocks           | Needed by | Owner              |
+| ------- | ---------------------------------------------------------------------- | ---------------- | --------- | ------------------ |
 | S12     | **"Originalstempel" may invalidate an emailed certificate**            | M3 · 30.08       | **14.08** | ÄKWL               |
 | S2      | Whether the WP plugin persists a refresh token, and the token lifespan | M1 · 09.08       | **31.07** | MEDICE dev         |
 | S3      | WordPress repository access                                            | M1 · 09.08       | **31.07** | MEDICE             |

@@ -72,7 +72,11 @@ function Loaded(props: WidgetConfig & { getToken: TokenProvider }) {
   }
 
   const failure = course.error ?? enrolment.error;
-  if (failure !== undefined || course.data === undefined || enrolment.data === undefined) {
+  if (
+    failure !== undefined ||
+    course.data === undefined ||
+    enrolment.data === undefined
+  ) {
     return (
       <ErrorNotice
         title={de.error.title}
@@ -100,7 +104,9 @@ function Loaded(props: WidgetConfig & { getToken: TokenProvider }) {
     const content = contentsById.get(contentId);
     if (content === undefined) return;
     setScreen(
-      content.kind === "quiz" ? { kind: "quiz", contentId } : { kind: "lesson", contentId },
+      content.kind === "quiz"
+        ? { kind: "quiz", contentId }
+        : { kind: "lesson", contentId },
     );
   }
 
@@ -134,23 +140,22 @@ function Loaded(props: WidgetConfig & { getToken: TokenProvider }) {
               )}
             </p>
             {state.completedAt === null ? null : (
-              <p className="font-medium text-status-completed">
-                {de.overview.complete}
-              </p>
+              <p className="font-medium text-status-completed">{de.overview.complete}</p>
             )}
           </div>
         </div>
 
         {screen.kind === "outline" && state.resumeContentId !== null ? (
           <Button onClick={() => open(state.resumeContentId as string)}>
-            {state.progress.completedCount === 0
-              ? de.overview.start
-              : de.overview.resume}
+            {state.progress.completedCount === 0 ? de.overview.start : de.overview.resume}
           </Button>
         ) : null}
       </header>
 
-      <nav className="flex gap-1 border-b border-gray-200" aria-label={de.tabs.certification}>
+      <nav
+        className="flex gap-1 border-b border-gray-200"
+        aria-label={de.tabs.certification}
+      >
         {(["certification", "library"] as const).map((entry) => (
           <button
             key={entry}
@@ -210,10 +215,7 @@ function Loaded(props: WidgetConfig & { getToken: TokenProvider }) {
           <CourseOutline course={detail} state={state} onOpen={open} />
 
           {state.evaluationSubmitted ? null : (
-            <Button
-              variant="secondary"
-              onClick={() => setScreen({ kind: "evaluation" })}
-            >
+            <Button variant="secondary" onClick={() => setScreen({ kind: "evaluation" })}>
               {de.evaluation.title}
             </Button>
           )}
@@ -257,7 +259,10 @@ function Lesson(props: {
   if (lesson.loading) return <Spinner label={de.loading} />;
   if (lesson.data === undefined) {
     return (
-      <ErrorNotice title={de.error.title} message={describeError(lesson.error, de.error)} />
+      <ErrorNotice
+        title={de.error.title}
+        message={describeError(lesson.error, de.error)}
+      />
     );
   }
 
@@ -286,7 +291,9 @@ function QuizGate(props: {
 
   if (quiz.loading) return <Spinner label={de.loading} />;
   if (quiz.data === undefined) {
-    return <ErrorNotice title={de.error.title} message={describeError(quiz.error, de.error)} />;
+    return (
+      <ErrorNotice title={de.error.title} message={describeError(quiz.error, de.error)} />
+    );
   }
 
   return (
@@ -372,7 +379,10 @@ function Mediathek(props: {
   if (library.loading) return <Spinner label={de.loading} />;
   if (library.data === undefined) {
     return (
-      <ErrorNotice title={de.error.title} message={describeError(library.error, de.error)} />
+      <ErrorNotice
+        title={de.error.title}
+        message={describeError(library.error, de.error)}
+      />
     );
   }
 

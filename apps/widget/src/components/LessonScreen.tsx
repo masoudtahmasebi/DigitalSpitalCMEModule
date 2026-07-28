@@ -152,7 +152,9 @@ function VideoLesson(props: {
     <>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-gray-900">{lesson.title}</h2>
-        <span className="text-sm text-gray-600">{de.content.watched(watchedPercent)}</span>
+        <span className="text-sm text-gray-600">
+          {de.content.watched(watchedPercent)}
+        </span>
       </div>
 
       {lesson.videoUrl === null ? (

@@ -90,7 +90,10 @@ export function CompletionScreen(props: {
 
   if (state.completedAt !== null) {
     return (
-      <p className="rounded-md bg-green-50 p-4 text-sm text-status-completed" role="status">
+      <p
+        className="rounded-md bg-green-50 p-4 text-sm text-status-completed"
+        role="status"
+      >
         {de.completion.done}
       </p>
     );
@@ -109,10 +112,7 @@ export function CompletionScreen(props: {
         <p className="text-sm text-status-completed">{de.completion.efnSaved}</p>
       ) : (
         <div className="space-y-2">
-          <label
-            className="block text-sm font-medium text-gray-900"
-            htmlFor="ds-lms-efn"
-          >
+          <label className="block text-sm font-medium text-gray-900" htmlFor="ds-lms-efn">
             {de.completion.efnLabel}
           </label>
           <input

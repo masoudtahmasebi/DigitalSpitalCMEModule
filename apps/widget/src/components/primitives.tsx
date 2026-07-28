@@ -72,7 +72,10 @@ export function ProgressRing(props: { percent: number; label: string }) {
   );
 }
 
-export function GateBadge(props: { gate: GateStatus; labels: Record<GateStatus, string> }) {
+export function GateBadge(props: {
+  gate: GateStatus;
+  labels: Record<GateStatus, string>;
+}) {
   const skin: Record<GateStatus, string> = {
     locked: "bg-gray-100 text-status-locked",
     available: "bg-brand-50 text-brand-700",
