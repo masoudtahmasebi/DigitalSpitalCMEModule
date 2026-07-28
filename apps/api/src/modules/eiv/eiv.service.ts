@@ -17,7 +17,8 @@
  * stored `last_error` — only the failure *kind* does.
  */
 
-import { EivClient, EivError, type EivFailureKind } from "@ds/eiv-client";
+import { EivError, EIV_PASSWORD_KEY, type EivFailureKind } from "@ds/eiv-client";
+import type { AccreditationReporter } from "@ds/plugin-api";
 import { planEivAttempt, type EivAttemptFailure } from "@ds/domain";
 import type { AuditServicePort } from "../../audit/audit.service.js";
 import type {
@@ -35,38 +36,18 @@ export interface EivSweepResult {
 }
 
 /**
- * The transport, behind a port so the sweep can be unit-tested without a
- * network. The real implementation is `EivClient` from `@ds/eiv-client`.
+ * The transport is an `AccreditationReporter` from `@ds/plugin-api` (ADR-0010).
+ *
+ * It was a locally-declared port until the extension registry existed. Nothing
+ * about the sweep changed — the reporter still only *carries out* a decision
+ * this service and `@ds/domain` already made — but the interface is now the one
+ * a second Ärztekammer interface would implement, and the sweep can still be
+ * unit-tested with a fake because that is what an interface is for.
+ *
+ * The live implementation is `EivAccreditationReporter` in `@ds/eiv-client`,
+ * registered by `plugins.ts` at startup.
  */
-export interface EivSubmitterPort {
-  submit(input: {
-    baseUrl: string;
-    vnr: string;
-    vnrPassword: string;
-    efn: string;
-  }): Promise<{ accepted: boolean; reference?: string }>;
-}
-
-export class LiveEivSubmitter implements EivSubmitterPort {
-  async submit(input: {
-    baseUrl: string;
-    vnr: string;
-    vnrPassword: string;
-    efn: string;
-  }): Promise<{ accepted: boolean; reference?: string }> {
-    const client = new EivClient({
-      baseUrl: input.baseUrl,
-      vnr: input.vnr,
-      vnrPassword: input.vnrPassword,
-    });
-
-    const { push } = await client.submit(input.efn);
-    return {
-      accepted: push.accepted,
-      ...(push.reference === undefined ? {} : { reference: push.reference }),
-    };
-  }
-}
+export type EivSubmitterPort = AccreditationReporter;
 
 export interface EivServiceOptions {
   readonly baseUrl: string;
@@ -167,11 +148,19 @@ export class EivService {
     const attemptCount = row.attemptCount + 1;
 
     try {
-      const push = await this.submitter.submit({
-        baseUrl: this.options.baseUrl,
-        vnr: row.vnr,
-        vnrPassword: row.vnrPassword,
+      const push = await this.submitter.report({
         efn: row.efn,
+        vnr: row.vnr,
+        // `eventEndAt` is what the reporting deadline runs from — see
+        // `eivDeadlines`, and docs/show-stoppers.md for what "Veranstaltungsende"
+        // means for an on-demand course, which is still open with the ÄKWL.
+        completedAt: row.eventEndAt,
+        endpoint: this.options.baseUrl,
+        // Decrypted by the repository for this one call and handed straight
+        // on. It is never logged, never audited and never returned — the audit
+        // record below carries the attempt count and the reference, nothing
+        // that could authenticate anybody.
+        credentials: { [EIV_PASSWORD_KEY]: row.vnrPassword },
       });
 
       if (!push.accepted) {

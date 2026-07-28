@@ -23,6 +23,12 @@ export {
   type PushTeilnahmeResult,
 } from "./client.js";
 
+export {
+  EivAccreditationReporter,
+  MissingEivCredentialError,
+  EIV_PASSWORD_KEY,
+} from "./reporter.js";
+
 export { redact } from "./redact.js";
 
 export { startMockServer, type MockServer } from "./mock/server.js";

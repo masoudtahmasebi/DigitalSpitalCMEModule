@@ -30,10 +30,11 @@ import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { AuditService } from "../../audit/audit.service.js";
 import { createSecretCipher } from "../../shared/secret-cipher.js";
+import { pluginRegistry } from "../../plugins.js";
 import { EivRepository } from "./eiv.repository.js";
 import { EivAlertRepository } from "./eiv-alert.repository.js";
 import { EivAlertService, WebhookAlertSink } from "./eiv-alert.service.js";
-import { EivService, LiveEivSubmitter } from "./eiv.service.js";
+import { EivService } from "./eiv.service.js";
 
 @Injectable()
 export class EivScheduler implements OnModuleInit, OnModuleDestroy {
@@ -58,7 +59,7 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
 
     this.service = new EivService(
       new EivRepository(pool, createSecretCipher(config.NODE_ENV)),
-      new LiveEivSubmitter(),
+      pluginRegistry().require("accreditationReporter"),
       new AuditService(pool),
       {
         baseUrl: config.EIV_BASE_URL,

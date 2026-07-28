@@ -11,10 +11,16 @@ import { Logger } from "@nestjs/common";
 import { AppModule } from "./app.module.js";
 import { configureApp } from "./configure-app.js";
 import { loadConfig } from "./config/config.js";
+import { installPlugins } from "./plugins.js";
 
 async function bootstrap(): Promise<void> {
   const config = loadConfig();
   const logger = new Logger("Bootstrap");
+
+  // Before the application, not after: the EIV scheduler resolves its
+  // accreditation reporter in its constructor, which runs during module
+  // initialisation (ADR-0010).
+  installPlugins(logger);
 
   const app = await NestFactory.create(AppModule, {
     // Configured explicitly in `configureApp`, with explicit size limits.

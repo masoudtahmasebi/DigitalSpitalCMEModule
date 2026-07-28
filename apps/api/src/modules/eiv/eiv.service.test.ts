@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { EivError } from "@ds/eiv-client";
+import { EivError, EIV_PASSWORD_KEY } from "@ds/eiv-client";
+import type { ParticipationReport } from "@ds/plugin-api";
 import { EivService, type EivSubmitterPort } from "./eiv.service.js";
 import type {
   ClaimedSubmission,
@@ -66,7 +67,8 @@ function build(
   const service = new EivService(
     repository,
     {
-      submit: async () => ({ accepted: true, reference: "EIV-REF-1" }),
+      id: "fake",
+      report: async () => ({ accepted: true, reference: "EIV-REF-1" }),
       ...submitter,
     },
     audit,
@@ -116,26 +118,31 @@ describe("a successful submission", () => {
     expect(serialised).not.toContain(VNR_PASSWORD);
   });
 
-  it("passes the credentials to the transport but never returns them", async () => {
-    let seen: Record<string, unknown> | undefined;
+  it("passes the credentials to the reporter but never returns them", async () => {
+    let seen: ParticipationReport | undefined;
     const { service } = build([base], {
-      submit: async (input) => {
-        seen = { ...input };
+      report: async (input) => {
+        seen = input;
         return { accepted: true };
       },
     });
 
     const result = await service.sweep(NOW);
 
-    expect(seen?.["efn"]).toBe(EFN);
-    expect(seen?.["vnrPassword"]).toBe(VNR_PASSWORD);
+    expect(seen?.efn).toBe(EFN);
+    // Under `credentials`, opaque to the platform and named by the reporter —
+    // `EIV_PASSWORD_KEY`, so the two sides cannot drift.
+    expect(seen?.credentials[EIV_PASSWORD_KEY]).toBe(VNR_PASSWORD);
+    expect(seen?.endpoint).toBeTruthy();
+
+    // The point of the test: the secret reaches the transport and nothing else.
     expect(JSON.stringify(result)).not.toContain(VNR_PASSWORD);
   });
 });
 
 describe("a retryable failure", () => {
   const transportFailure = {
-    submit: async () => {
+    report: async () => {
       throw new EivError("transport", "connection refused");
     },
   };
@@ -178,7 +185,7 @@ describe("a permanent rejection is not retried", () => {
     // Retrying an EFN the Ärztekammer does not recognise spends the statutory
     // window to no purpose and hides the problem until it has closed.
     const { service, failures, retries } = build([base], {
-      submit: async () => {
+      report: async () => {
         throw new EivError("validation", "unknown EFN");
       },
     });
@@ -193,7 +200,7 @@ describe("a permanent rejection is not retried", () => {
 
   it("abandons an auth rejection — the credentials need a human", async () => {
     const { service, failures } = build([base], {
-      submit: async () => {
+      report: async () => {
         throw new EivError("auth", "VNR credentials rejected");
       },
     });
@@ -227,7 +234,7 @@ describe("the statutory windows", () => {
     const { service } = build(
       [{ ...base, eventEndAt: new Date("2026-06-01T12:00:00Z") }],
       {
-        submit: async () => {
+        report: async () => {
           called = true;
           return { accepted: true };
         },
@@ -265,7 +272,7 @@ describe("configuration guards", () => {
     const { service, failures } = build(
       [base],
       {
-        submit: async () => {
+        report: async () => {
           called = true;
           return { accepted: true };
         },
@@ -312,7 +319,7 @@ describe("sweeping a batch", () => {
         { ...base, id: "c", eventEndAt: new Date("2026-06-01T12:00:00Z") },
       ],
       {
-        submit: async () => {
+        report: async () => {
           call += 1;
           if (call === 2) throw new EivError("transport", "flaky");
           return { accepted: true, reference: "ref" };
@@ -338,7 +345,7 @@ describe("sweeping a batch", () => {
         { ...base, id: "b" },
       ],
       {
-        submit: async (input) => {
+        report: async (input) => {
           if (input.efn === EFN && successes.length === 0) {
             return { accepted: true, reference: "first" };
           }

@@ -23,6 +23,7 @@ advertisement.
 | [0006](0006-layered-architecture.md)            | Enforced layered architecture                                  | Accepted |
 | [0008](0008-erasure-is-pseudonymisation.md)     | Erasure means pseudonymisation, not deletion                   | Accepted |
 | [0009](0009-no-third-party-frontend-assets.md)  | No third-party frontend assets; fonts are uploaded             | Accepted |
+| [0010](0010-extension-points.md)                | Extension points, and where they are forbidden                 | Accepted |
 
 ## Writing a new one
 

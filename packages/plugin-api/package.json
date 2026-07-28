@@ -1,5 +1,5 @@
 {
-  "name": "@ds/eiv-client",
+  "name": "@ds/plugin-api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,18 +11,18 @@
       "default": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "echo \"linted by the root pass\""
   },
+  "dependencies": {},
   "devDependencies": {
-    "@types/node": "^22.20.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
-  },
-  "dependencies": {
-    "@ds/plugin-api": "workspace:*"
   }
 }

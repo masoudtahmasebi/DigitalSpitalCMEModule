@@ -18,7 +18,8 @@ import { startMockServer, type MockServer } from "@ds/eiv-client";
 import { AuditService } from "../../src/audit/audit.service.js";
 import { PlaintextSecretCipher } from "../../src/shared/secret-cipher.js";
 import { EivRepository } from "../../src/modules/eiv/eiv.repository.js";
-import { EivService, LiveEivSubmitter } from "../../src/modules/eiv/eiv.service.js";
+import { EivService } from "../../src/modules/eiv/eiv.service.js";
+import { EivAccreditationReporter } from "@ds/eiv-client";
 import { EivAlertRepository } from "../../src/modules/eiv/eiv-alert.repository.js";
 import { EivAlertService } from "../../src/modules/eiv/eiv-alert.service.js";
 
@@ -155,7 +156,7 @@ async function freshUser(): Promise<void> {
 function buildService(allowLive = false): EivService {
   return new EivService(
     new EivRepository(appPool, new PlaintextSecretCipher("test")),
-    new LiveEivSubmitter(),
+    new EivAccreditationReporter(),
     new AuditService(appPool),
     { baseUrl: mock.url, batchSize: 25, allowLive, leaseSeconds: 120 },
   );
@@ -251,7 +252,7 @@ describe("the worker refuses a live endpoint by default", () => {
 
     const service = new EivService(
       new EivRepository(appPool, new PlaintextSecretCipher("test")),
-      new LiveEivSubmitter(),
+      new EivAccreditationReporter(),
       new AuditService(appPool),
       {
         baseUrl: "https://punktemeldung.eiv-fobi.de/",
