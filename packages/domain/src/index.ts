@@ -36,6 +36,9 @@ export type {
 export { evaluateGate, evaluateSequence } from "./gating.js";
 export type { GateReason, GateResult, GateStatus, GatingItem } from "./gating.js";
 
+export { courseWatchCoverage } from "./coverage.js";
+export type { ContentSegments, WatchCoverage } from "./coverage.js";
+
 export { courseChapterSequence, rollupProgress } from "./progress.js";
 export type { CourseRollup, ModuleCompletion, ProgressSummary } from "./progress.js";
 

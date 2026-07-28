@@ -40,6 +40,9 @@ security:
 tags:
   - name: health
   - name: catalog
+  - name: learning
+  - name: assessment
+  - name: completion
 
 paths:
   /health:
@@ -122,6 +125,272 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /courses/{slug}/enrolment:
+    put:
+      tags: [learning]
+      operationId: enrol
+      summary: Start (or resume) this course
+      description: |
+        Idempotent: PUT again and the existing enrolment comes back unchanged.
+        On first call the course's compliance settings — required watch
+        percentage, pass threshold, CME points, VNR — are **snapshotted onto
+        the enrolment**, so a later edit to the course record cannot
+        retroactively invalidate work already done (P3-01).
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: The enrolment state, existing or newly created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnrolmentState" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+    get:
+      tags: [learning]
+      operationId: getEnrolment
+      summary: Progress, gating and resume point
+      description: |
+        The single resource the player screen renders from: the "Ihr
+        Fortschritt — X von Y" ring, each module's and chapter's lock state,
+        the resume target for "Fortbildung fortsetzen", and the outstanding
+        conditions still standing between the learner and their CME points.
+
+        Every value here is computed server-side from stored progress
+        (`@ds/domain`); the client never supplies a percentage or a lock state.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: The current enrolment state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnrolmentState" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: No enrolment yet, or the course is not visible.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /courses/{slug}/contents/{contentId}/progress:
+    post:
+      tags: [learning]
+      operationId: recordProgress
+      summary: Report watched intervals for a video
+      description: |
+        The client reports **which intervals it played**, never a percentage.
+        The server merges them into the stored union and recomputes coverage
+        (`CLAUDE.md` §4 invariant 5) — a maximum-position implementation would
+        make the gate skippable by dragging the scrub bar.
+
+        Segments claiming more playback than wall-clock time elapsed since the
+        last report are rejected and named in `rejected`, so tampering is
+        visible rather than silently discarded. The response always carries
+        the server's own recomputed figures.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+        - name: contentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProgressReport" }
+      responses:
+        "200":
+          description: Progress after merging the accepted intervals.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProgressResult" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403":
+          description: |
+            The content is locked — everything before it is not yet complete.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /courses/{slug}/contents/{contentId}/quiz:
+    get:
+      tags: [assessment]
+      operationId: getQuiz
+      summary: The Lernerfolgskontrolle questions
+      description: |
+        Questions and options with **no correctness marker of any kind** — the
+        shape has nowhere to put one (P4-01). Scoring happens exclusively
+        server-side.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+        - name: contentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The quiz, without answers.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Quiz" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403":
+          description: Locked until the preceding content is complete.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+    post:
+      tags: [assessment]
+      operationId: submitQuiz
+      summary: Submit an attempt
+      description: |
+        Scored server-side against the enrolment's snapshotted pass threshold.
+        The response reports the score and pass/fail; per-question correctness
+        is recorded in the attempt but only returned when the course sets
+        `revealCorrectAnswers`, which a CME-certified course never does.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+        - name: contentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuizSubmission" }
+      responses:
+        "200":
+          description: The scored attempt.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuizAttemptResult" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403":
+          description: Locked, or the attempt limit is exhausted.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /courses/{slug}/evaluation:
+    get:
+      tags: [completion]
+      operationId: getEvaluation
+      summary: The evaluation questionnaire
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: The questionnaire and whether it is already submitted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Evaluation" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+    post:
+      tags: [completion]
+      operationId: submitEvaluation
+      summary: Submit the evaluation
+      description: |
+        Required for completion (the Anerkennungsbescheid makes it a condition
+        of the Punktemeldung). Free-text answers are personal data and never
+        reach a log (ADR-0004).
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluationSubmission" }
+      responses:
+        "200":
+          description: Enrolment state after recording the evaluation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnrolmentState" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Already submitted.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /profile/efn:
+    put:
+      tags: [completion]
+      operationId: setEfn
+      summary: Store the learner's EFN
+      description: |
+        The EFN (Einheitliche Fortbildungsnummer) is 15 digits and is the key
+        the Ärztekammer credits points against. Stored once per user, not per
+        enrolment (ADR-0004), and never written to a log.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EfnInput" }
+      responses:
+        "204":
+          description: Stored.
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "422":
+          description: Not a valid 15-digit EFN.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /courses/{slug}/completion:
+    post:
+      tags: [completion]
+      operationId: completeCourse
+      summary: Finalise the course and report the points
+      description: |
+        Re-checks every condition server-side — watch coverage, quiz pass,
+        evaluation, EFN — and refuses if any is outstanding, naming which.
+        On success it stamps completion and queues the EIV submission with its
+        statutory deadlines (8 days to report, 7 to correct). Idempotent: a
+        second call returns the same completed state without re-queueing.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: Completed; the CME points are queued for reporting.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnrolmentState" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            Conditions are still outstanding; `detail` names which, and the
+            enrolment is unchanged.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -134,6 +403,12 @@ components:
         never from the token (ADR-0003).
 
   parameters:
+    CourseSlug:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string }
+
     ProjectHeader:
       name: X-DS-Project
       in: header
@@ -346,6 +621,333 @@ components:
       properties:
         value: { type: string }
         count: { type: integer }
+
+    GateStatus:
+      type: string
+      description: |
+        Server-decided access state. `locked` renders the padlock; the client
+        never computes this.
+      enum: [locked, available, completed]
+
+    ProgressSummary:
+      type: object
+      required: [status, completedCount, totalCount, percent]
+      properties:
+        status:
+          type: string
+          enum: [not_started, in_progress, completed]
+        completedCount: { type: integer, minimum: 0 }
+        totalCount: { type: integer, minimum: 0 }
+        percent: { type: integer, minimum: 0, maximum: 100 }
+        watchedPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Video content only. Union coverage, not furthest position.
+        scorePercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Quiz content only; best scored attempt.
+
+    ContentState:
+      type: object
+      required: [id, gate, progress]
+      properties:
+        id: { type: string, format: uuid }
+        gate: { $ref: "#/components/schemas/GateStatus" }
+        progress: { $ref: "#/components/schemas/ProgressSummary" }
+
+    ChapterState:
+      type: object
+      required: [id, gate, progress, contents]
+      properties:
+        id: { type: string, format: uuid }
+        gate: { $ref: "#/components/schemas/GateStatus" }
+        blockedBy:
+          type: string
+          format: uuid
+          description: |
+            The first incomplete chapter standing in the way, so the widget can
+            say which one to finish rather than only "locked".
+        progress: { $ref: "#/components/schemas/ProgressSummary" }
+        contents:
+          type: array
+          items: { $ref: "#/components/schemas/ContentState" }
+
+    ModuleState:
+      type: object
+      required: [id, gate, progress, chapters]
+      properties:
+        id: { type: string, format: uuid }
+        gate: { $ref: "#/components/schemas/GateStatus" }
+        progress: { $ref: "#/components/schemas/ProgressSummary" }
+        chapters:
+          type: array
+          items: { $ref: "#/components/schemas/ChapterState" }
+
+    CompletionCondition:
+      type: string
+      description: A condition still standing between the learner and the points.
+      enum: [watch, quiz, evaluation, efn]
+
+    EnrolmentState:
+      type: object
+      description: |
+        Everything the player screen renders: the progress ring, the module
+        tree with its lock states, the resume target, and what remains.
+      required:
+        - enrolmentId
+        - courseSlug
+        - requiredWatchPercent
+        - passThresholdPercent
+        - achievedWatchPercent
+        - quizPassed
+        - evaluationSubmitted
+        - efnPresent
+        - complete
+        - outstanding
+        - completedAt
+        - progress
+        - moduleCompletion
+        - modules
+        - resumeContentId
+      properties:
+        enrolmentId: { type: string, format: uuid }
+        courseSlug: { type: string }
+        requiredWatchPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Snapshotted at enrolment, not read live from the course.
+        passThresholdPercent: { type: integer, minimum: 0, maximum: 100 }
+        achievedWatchPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Union coverage across all video content in the course.
+        quizPassed: { type: boolean }
+        evaluationSubmitted: { type: boolean }
+        efnPresent:
+          type: boolean
+          description: Whether an EFN is on file. The EFN itself is never returned.
+        complete: { type: boolean }
+        outstanding:
+          type: array
+          items: { $ref: "#/components/schemas/CompletionCondition" }
+        completedAt: { type: [string, "null"], format: date-time }
+        progress:
+          $ref: "#/components/schemas/ProgressSummary"
+        moduleCompletion:
+          type: object
+          description: Feeds "Sie haben X von Y Modulen abgeschlossen".
+          required: [completed, total]
+          properties:
+            completed: { type: integer, minimum: 0 }
+            total: { type: integer, minimum: 0 }
+        modules:
+          type: array
+          items: { $ref: "#/components/schemas/ModuleState" }
+        resumeContentId:
+          type: [string, "null"]
+          format: uuid
+          description: |
+            Where "Fortbildung fortsetzen" jumps to — the first unfinished
+            content the learner may currently reach. Null when nothing is left.
+
+    WatchedSegment:
+      type: object
+      description: One played interval, in seconds from the start of the media.
+      required: [startSec, endSec]
+      properties:
+        startSec: { type: number, minimum: 0 }
+        endSec: { type: number, minimum: 0 }
+
+    ProgressReport:
+      type: object
+      required: [segments]
+      properties:
+        segments:
+          type: array
+          maxItems: 500
+          items: { $ref: "#/components/schemas/WatchedSegment" }
+        lastPositionSec:
+          type: number
+          minimum: 0
+          description: Playhead position, for resuming. Never a gate input.
+
+    RejectedSegment:
+      type: object
+      required: [segment, reason]
+      properties:
+        segment: { $ref: "#/components/schemas/WatchedSegment" }
+        reason:
+          type: string
+          description: |
+            Exactly `SegmentRejectionReason` from the compliance core — the
+            contract mirrors the domain's vocabulary rather than inventing a
+            parallel one that could drift from it.
+          enum:
+            [
+              not_finite,
+              negative,
+              zero_or_reversed,
+              beyond_duration,
+              faster_than_wallclock,
+            ]
+
+    ProgressResult:
+      type: object
+      description: The server's own recomputed figures, never the client's.
+      required: [contentId, watchedPercent, status, accepted, rejected]
+      properties:
+        contentId: { type: string, format: uuid }
+        watchedPercent: { type: integer, minimum: 0, maximum: 100 }
+        status:
+          type: string
+          enum: [not_started, in_progress, completed]
+        accepted:
+          type: integer
+          minimum: 0
+          description: How many reported intervals were counted.
+        rejected:
+          type: array
+          description: |
+            Named rather than silently dropped, so a client bug or a tampering
+            attempt is visible.
+          items: { $ref: "#/components/schemas/RejectedSegment" }
+
+    QuizOption:
+      type: object
+      description: No correctness marker — the shape has nowhere to put one.
+      required: [id, ordinal, label]
+      properties:
+        id: { type: string, format: uuid }
+        ordinal: { type: integer }
+        label: { type: string }
+
+    QuizQuestion:
+      type: object
+      required: [id, ordinal, kind, prompt, options]
+      properties:
+        id: { type: string, format: uuid }
+        ordinal: { type: integer }
+        kind:
+          type: string
+          enum: [single, multi]
+        prompt: { type: string }
+        options:
+          type: array
+          items: { $ref: "#/components/schemas/QuizOption" }
+
+    Quiz:
+      type: object
+      required: [contentId, passThresholdPercent, attemptsUsed, maxAttempts, questions]
+      properties:
+        contentId: { type: string, format: uuid }
+        passThresholdPercent: { type: integer, minimum: 0, maximum: 100 }
+        attemptsUsed: { type: integer, minimum: 0 }
+        maxAttempts:
+          type: [integer, "null"]
+          description: Null means unlimited, which is the MEDICE configuration.
+        questions:
+          type: array
+          items: { $ref: "#/components/schemas/QuizQuestion" }
+
+    QuizAnswer:
+      type: object
+      required: [questionId, selectedOptionIds]
+      properties:
+        questionId: { type: string, format: uuid }
+        selectedOptionIds:
+          type: array
+          items: { type: string, format: uuid }
+
+    QuizSubmission:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          items: { $ref: "#/components/schemas/QuizAnswer" }
+
+    QuizAttemptResult:
+      type: object
+      required:
+        [
+          attemptNumber,
+          correctCount,
+          totalCount,
+          scorePercent,
+          passed,
+          passThresholdPercent,
+        ]
+      properties:
+        attemptNumber: { type: integer, minimum: 1 }
+        correctCount: { type: integer, minimum: 0 }
+        totalCount: { type: integer, minimum: 0 }
+        scorePercent: { type: integer, minimum: 0, maximum: 100 }
+        passed: { type: boolean }
+        passThresholdPercent: { type: integer, minimum: 0, maximum: 100 }
+        perQuestion:
+          type: object
+          additionalProperties: { type: boolean }
+          description: |
+            Present only when the course sets `revealCorrectAnswers`, which a
+            CME-certified course never does.
+
+    EvaluationQuestion:
+      type: object
+      required: [id, ordinal, kind, prompt, required, options]
+      properties:
+        id: { type: string, format: uuid }
+        ordinal: { type: integer }
+        kind:
+          type: string
+          enum: [scale, single, multi, text]
+        prompt: { type: string }
+        required: { type: boolean }
+        options:
+          type: array
+          items: { type: string }
+
+    Evaluation:
+      type: object
+      required: [courseSlug, submitted, questions]
+      properties:
+        courseSlug: { type: string }
+        submitted: { type: boolean }
+        questions:
+          type: array
+          items: { $ref: "#/components/schemas/EvaluationQuestion" }
+
+    EvaluationSubmission:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          items:
+            type: object
+            required: [evaluationId, answer]
+            properties:
+              evaluationId: { type: string, format: uuid }
+              answer:
+                description: Scale number, chosen option(s), or free text.
+                oneOf:
+                  - type: string
+                  - type: number
+                  - type: array
+                    items: { type: string }
+
+    EfnInput:
+      type: object
+      required: [efn]
+      properties:
+        efn:
+          type: string
+          pattern: "^[0-9]{15}$"
+          description: 15 digits. Never returned by any endpoint once stored.
 
     CourseListResponse:
       type: object

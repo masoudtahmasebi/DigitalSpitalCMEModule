@@ -70,6 +70,166 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/courses/{slug}/enrolment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Progress, gating and resume point
+         * @description The single resource the player screen renders from: the "Ihr
+         *     Fortschritt — X von Y" ring, each module's and chapter's lock state,
+         *     the resume target for "Fortbildung fortsetzen", and the outstanding
+         *     conditions still standing between the learner and their CME points.
+         *
+         *     Every value here is computed server-side from stored progress
+         *     (`@ds/domain`); the client never supplies a percentage or a lock state.
+         */
+        get: operations["getEnrolment"];
+        /**
+         * Start (or resume) this course
+         * @description Idempotent: PUT again and the existing enrolment comes back unchanged.
+         *     On first call the course's compliance settings — required watch
+         *     percentage, pass threshold, CME points, VNR — are **snapshotted onto
+         *     the enrolment**, so a later edit to the course record cannot
+         *     retroactively invalidate work already done (P3-01).
+         */
+        put: operations["enrol"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courses/{slug}/contents/{contentId}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report watched intervals for a video
+         * @description The client reports **which intervals it played**, never a percentage.
+         *     The server merges them into the stored union and recomputes coverage
+         *     (`CLAUDE.md` §4 invariant 5) — a maximum-position implementation would
+         *     make the gate skippable by dragging the scrub bar.
+         *
+         *     Segments claiming more playback than wall-clock time elapsed since the
+         *     last report are rejected and named in `rejected`, so tampering is
+         *     visible rather than silently discarded. The response always carries
+         *     the server's own recomputed figures.
+         */
+        post: operations["recordProgress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courses/{slug}/contents/{contentId}/quiz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Lernerfolgskontrolle questions
+         * @description Questions and options with **no correctness marker of any kind** — the
+         *     shape has nowhere to put one (P4-01). Scoring happens exclusively
+         *     server-side.
+         */
+        get: operations["getQuiz"];
+        put?: never;
+        /**
+         * Submit an attempt
+         * @description Scored server-side against the enrolment's snapshotted pass threshold.
+         *     The response reports the score and pass/fail; per-question correctness
+         *     is recorded in the attempt but only returned when the course sets
+         *     `revealCorrectAnswers`, which a CME-certified course never does.
+         */
+        post: operations["submitQuiz"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courses/{slug}/evaluation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The evaluation questionnaire */
+        get: operations["getEvaluation"];
+        put?: never;
+        /**
+         * Submit the evaluation
+         * @description Required for completion (the Anerkennungsbescheid makes it a condition
+         *     of the Punktemeldung). Free-text answers are personal data and never
+         *     reach a log (ADR-0004).
+         */
+        post: operations["submitEvaluation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/efn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Store the learner's EFN
+         * @description The EFN (Einheitliche Fortbildungsnummer) is 15 digits and is the key
+         *     the Ärztekammer credits points against. Stored once per user, not per
+         *     enrolment (ADR-0004), and never written to a log.
+         */
+        put: operations["setEfn"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courses/{slug}/completion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finalise the course and report the points
+         * @description Re-checks every condition server-side — watch coverage, quiz pass,
+         *     evaluation, EFN — and refuses if any is outstanding, naming which.
+         *     On success it stamps completion and queues the EIV submission with its
+         *     statutory deadlines (8 days to report, 7 to correct). Idempotent: a
+         *     second call returns the same completed state without re-queueing.
+         */
+        post: operations["completeCourse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -175,6 +335,199 @@ export interface components {
             value: string;
             count: number;
         };
+        /**
+         * @description Server-decided access state. `locked` renders the padlock; the client
+         *     never computes this.
+         * @enum {string}
+         */
+        GateStatus: "locked" | "available" | "completed";
+        ProgressSummary: {
+            /** @enum {string} */
+            status: "not_started" | "in_progress" | "completed";
+            completedCount: number;
+            totalCount: number;
+            percent: number;
+            /** @description Video content only. Union coverage, not furthest position. */
+            watchedPercent?: number;
+            /** @description Quiz content only; best scored attempt. */
+            scorePercent?: number;
+        };
+        ContentState: {
+            /** Format: uuid */
+            id: string;
+            gate: components["schemas"]["GateStatus"];
+            progress: components["schemas"]["ProgressSummary"];
+        };
+        ChapterState: {
+            /** Format: uuid */
+            id: string;
+            gate: components["schemas"]["GateStatus"];
+            /**
+             * Format: uuid
+             * @description The first incomplete chapter standing in the way, so the widget can
+             *     say which one to finish rather than only "locked".
+             */
+            blockedBy?: string;
+            progress: components["schemas"]["ProgressSummary"];
+            contents: components["schemas"]["ContentState"][];
+        };
+        ModuleState: {
+            /** Format: uuid */
+            id: string;
+            gate: components["schemas"]["GateStatus"];
+            progress: components["schemas"]["ProgressSummary"];
+            chapters: components["schemas"]["ChapterState"][];
+        };
+        /**
+         * @description A condition still standing between the learner and the points.
+         * @enum {string}
+         */
+        CompletionCondition: "watch" | "quiz" | "evaluation" | "efn";
+        /**
+         * @description Everything the player screen renders: the progress ring, the module
+         *     tree with its lock states, the resume target, and what remains.
+         */
+        EnrolmentState: {
+            /** Format: uuid */
+            enrolmentId: string;
+            courseSlug: string;
+            /** @description Snapshotted at enrolment, not read live from the course. */
+            requiredWatchPercent: number;
+            passThresholdPercent: number;
+            /** @description Union coverage across all video content in the course. */
+            achievedWatchPercent: number;
+            quizPassed: boolean;
+            evaluationSubmitted: boolean;
+            /** @description Whether an EFN is on file. The EFN itself is never returned. */
+            efnPresent: boolean;
+            complete: boolean;
+            outstanding: components["schemas"]["CompletionCondition"][];
+            /** Format: date-time */
+            completedAt: string | null;
+            progress: components["schemas"]["ProgressSummary"];
+            /** @description Feeds "Sie haben X von Y Modulen abgeschlossen". */
+            moduleCompletion: {
+                completed: number;
+                total: number;
+            };
+            modules: components["schemas"]["ModuleState"][];
+            /**
+             * Format: uuid
+             * @description Where "Fortbildung fortsetzen" jumps to — the first unfinished
+             *     content the learner may currently reach. Null when nothing is left.
+             */
+            resumeContentId: string | null;
+        };
+        /** @description One played interval, in seconds from the start of the media. */
+        WatchedSegment: {
+            startSec: number;
+            endSec: number;
+        };
+        ProgressReport: {
+            segments: components["schemas"]["WatchedSegment"][];
+            /** @description Playhead position, for resuming. Never a gate input. */
+            lastPositionSec?: number;
+        };
+        RejectedSegment: {
+            segment: components["schemas"]["WatchedSegment"];
+            /**
+             * @description Exactly `SegmentRejectionReason` from the compliance core — the
+             *     contract mirrors the domain's vocabulary rather than inventing a
+             *     parallel one that could drift from it.
+             * @enum {string}
+             */
+            reason: "not_finite" | "negative" | "zero_or_reversed" | "beyond_duration" | "faster_than_wallclock";
+        };
+        /** @description The server's own recomputed figures, never the client's. */
+        ProgressResult: {
+            /** Format: uuid */
+            contentId: string;
+            watchedPercent: number;
+            /** @enum {string} */
+            status: "not_started" | "in_progress" | "completed";
+            /** @description How many reported intervals were counted. */
+            accepted: number;
+            /**
+             * @description Named rather than silently dropped, so a client bug or a tampering
+             *     attempt is visible.
+             */
+            rejected: components["schemas"]["RejectedSegment"][];
+        };
+        /** @description No correctness marker — the shape has nowhere to put one. */
+        QuizOption: {
+            /** Format: uuid */
+            id: string;
+            ordinal: number;
+            label: string;
+        };
+        QuizQuestion: {
+            /** Format: uuid */
+            id: string;
+            ordinal: number;
+            /** @enum {string} */
+            kind: "single" | "multi";
+            prompt: string;
+            options: components["schemas"]["QuizOption"][];
+        };
+        Quiz: {
+            /** Format: uuid */
+            contentId: string;
+            passThresholdPercent: number;
+            attemptsUsed: number;
+            /** @description Null means unlimited, which is the MEDICE configuration. */
+            maxAttempts: number | null;
+            questions: components["schemas"]["QuizQuestion"][];
+        };
+        QuizAnswer: {
+            /** Format: uuid */
+            questionId: string;
+            selectedOptionIds: string[];
+        };
+        QuizSubmission: {
+            answers: components["schemas"]["QuizAnswer"][];
+        };
+        QuizAttemptResult: {
+            attemptNumber: number;
+            correctCount: number;
+            totalCount: number;
+            scorePercent: number;
+            passed: boolean;
+            passThresholdPercent: number;
+            /**
+             * @description Present only when the course sets `revealCorrectAnswers`, which a
+             *     CME-certified course never does.
+             */
+            perQuestion?: {
+                [key: string]: boolean;
+            };
+        };
+        EvaluationQuestion: {
+            /** Format: uuid */
+            id: string;
+            ordinal: number;
+            /** @enum {string} */
+            kind: "scale" | "single" | "multi" | "text";
+            prompt: string;
+            required: boolean;
+            options: string[];
+        };
+        Evaluation: {
+            courseSlug: string;
+            submitted: boolean;
+            questions: components["schemas"]["EvaluationQuestion"][];
+        };
+        EvaluationSubmission: {
+            answers: {
+                /** Format: uuid */
+                evaluationId: string;
+                /** @description Scale number, chosen option(s), or free text. */
+                answer: string | number | string[];
+            }[];
+        };
+        EfnInput: {
+            /** @description 15 digits. Never returned by any endpoint once stored. */
+            efn: string;
+        };
         CourseListResponse: {
             items: components["schemas"]["CourseSummary"][];
             page: number;
@@ -232,6 +585,7 @@ export interface components {
         };
     };
     parameters: {
+        CourseSlug: string;
         /**
          * @description Project slug identifying the calling host surface (ADR-0007). Resolves
          *     the Keycloak realm to validate against and pins the tenant. Unknown or
@@ -334,6 +688,378 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getEnrolment: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current enrolment state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrolmentState"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /** @description No enrolment yet, or the course is not visible. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    enrol: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The enrolment state, existing or newly created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrolmentState"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    recordProgress: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+                contentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProgressReport"];
+            };
+        };
+        responses: {
+            /** @description Progress after merging the accepted intervals. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgressResult"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description The content is locked — everything before it is not yet complete. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getQuiz: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+                contentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The quiz, without answers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Quiz"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description Locked until the preceding content is complete. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    submitQuiz: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+                contentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuizSubmission"];
+            };
+        };
+        responses: {
+            /** @description The scored attempt. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuizAttemptResult"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description Locked, or the attempt limit is exhausted. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getEvaluation: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The questionnaire and whether it is already submitted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Evaluation"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    submitEvaluation: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvaluationSubmission"];
+            };
+        };
+        responses: {
+            /** @description Enrolment state after recording the evaluation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrolmentState"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            /** @description Already submitted. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    setEfn: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EfnInput"];
+            };
+        };
+        responses: {
+            /** @description Stored. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description Not a valid 15-digit EFN. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    completeCourse: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Completed; the CME points are queued for reporting. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrolmentState"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            /**
+             * @description Conditions are still outstanding; `detail` names which, and the
+             *     enrolment is unchanged.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
 }

@@ -6,9 +6,10 @@ import { TenantTransactionInterceptor } from "./db/tenant-transaction.intercepto
 import { ProblemDetailsFilter } from "./shared/problem-details.filter.js";
 import { CatalogModule } from "./modules/catalog/catalog.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
+import { LearningModule } from "./modules/learning/learning.module.js";
 
 @Module({
-  imports: [DbModule, AuthModule, HealthModule, CatalogModule],
+  imports: [DbModule, AuthModule, HealthModule, CatalogModule, LearningModule],
   providers: [
     // Runs after AuthGuard/RolesGuard (guards execute before interceptors in
     // Nest's pipeline), so request.principal is already set when this opens

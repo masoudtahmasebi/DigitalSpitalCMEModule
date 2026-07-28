@@ -13,6 +13,8 @@ import { defineConfig } from "vitest/config";
 // eslint-disable-next-line no-restricted-syntax -- vitest requires a default export
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts"],
+    // `test/contract` belongs here, not in the integration suite: those are
+    // compile-time type assertions and need no infrastructure at all.
+    include: ["src/**/*.test.ts", "test/contract/**/*.test.ts"],
   },
 });

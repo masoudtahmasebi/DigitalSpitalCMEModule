@@ -1,0 +1,526 @@
+import { describe, expect, it } from "vitest";
+import { LearningService } from "./learning.service.js";
+import { enrolmentStateSchema, progressResultSchema } from "./learning.dto.js";
+import { AppError } from "../../shared/problem-details.js";
+import type {
+  CourseComplianceRow,
+  CourseTree,
+  EnrolmentRow,
+  LearningRepositoryPort,
+  ProgressRow,
+} from "./learning.repository.js";
+
+const COURSE_ID = "f47ac10b-58cc-4372-a567-0e02b2c3d479";
+const ENROLMENT_ID = "a1b2c3d4-0000-4000-8000-000000000001";
+const USER_ID = "11111111-0000-4000-8000-000000000001";
+const CUSTOMER_ID = "22222222-0000-4000-8000-000000000001";
+
+const M1 = "aaaaaaaa-0000-4000-8000-000000000001";
+const M2 = "aaaaaaaa-0000-4000-8000-000000000002";
+const C1 = "bbbbbbbb-0000-4000-8000-000000000001";
+const C2 = "bbbbbbbb-0000-4000-8000-000000000002";
+const VIDEO_1 = "cccccccc-0000-4000-8000-000000000001";
+const VIDEO_2 = "cccccccc-0000-4000-8000-000000000002";
+const QUIZ = "cccccccc-0000-4000-8000-000000000003";
+
+const learner = { customerId: CUSTOMER_ID, userId: USER_ID };
+
+const course: CourseComplianceRow = {
+  id: COURSE_ID,
+  slug: "adhs-akademie-adult",
+  requiredWatchPercent: 100,
+  passThresholdPercent: 70,
+  maxQuizAttempts: null,
+  revealCorrectAnswers: false,
+  cmePoints: 4,
+  cmeCategory: "D",
+  vnr: "2760552025919300018",
+};
+
+/** Two modules, one chapter each; module 1 has a video, module 2 video + quiz. */
+const tree: CourseTree = {
+  modules: [
+    { id: M1, ordinal: 0 },
+    { id: M2, ordinal: 1 },
+  ],
+  chapters: [
+    { id: C1, moduleId: M1, ordinal: 0 },
+    { id: C2, moduleId: M2, ordinal: 1 },
+  ],
+  contents: [
+    { id: VIDEO_1, chapterId: C1, ordinal: 0, kind: "video", durationSec: 600 },
+    { id: VIDEO_2, chapterId: C2, ordinal: 0, kind: "video", durationSec: 400 },
+    { id: QUIZ, chapterId: C2, ordinal: 1, kind: "quiz", durationSec: null },
+  ],
+};
+
+const enrolment: EnrolmentRow = {
+  id: ENROLMENT_ID,
+  courseId: COURSE_ID,
+  userId: USER_ID,
+  requiredWatchPercent: 100,
+  passThresholdPercent: 70,
+  maxQuizAttempts: null,
+  completedAt: null,
+};
+
+interface FakeState {
+  // Explicitly `| undefined` rather than optional: `exactOptionalPropertyTypes`
+  // makes "absent" and "present but undefined" different types, and the
+  // not-enrolled cases below pass the latter deliberately.
+  enrolment: EnrolmentRow | undefined;
+  progress: ProgressRow[];
+  efn: boolean;
+  evaluation: boolean;
+}
+
+function fakeRepository(
+  initial: Partial<FakeState> = {},
+  overrides: Partial<LearningRepositoryPort> = {},
+) {
+  const state: FakeState = {
+    enrolment: enrolment,
+    progress: [],
+    efn: false,
+    evaluation: false,
+    ...initial,
+  };
+
+  const created: EnrolmentRow[] = [];
+  const written: Array<Record<string, unknown>> = [];
+
+  const base: LearningRepositoryPort = {
+    findCourseBySlug: async (slug) => (slug === course.slug ? course : undefined),
+    findEnrolment: async () => state.enrolment,
+    createEnrolment: async (input) => {
+      const row: EnrolmentRow = {
+        id: ENROLMENT_ID,
+        courseId: input.courseId,
+        userId: input.userId,
+        requiredWatchPercent: input.course.requiredWatchPercent,
+        passThresholdPercent: input.course.passThresholdPercent,
+        maxQuizAttempts: input.course.maxQuizAttempts,
+        completedAt: null,
+      };
+      created.push(row);
+      state.enrolment = row;
+      return row;
+    },
+    findCourseTree: async () => tree,
+    findProgress: async () => state.progress,
+    upsertProgress: async (input) => {
+      written.push({ ...input });
+    },
+    hasEfn: async () => state.efn,
+    hasEvaluationResponse: async () => state.evaluation,
+    markCompleted: async () => undefined,
+    ...overrides,
+  };
+
+  return { repository: base, created, written, state };
+}
+
+function progressRow(over: Partial<ProgressRow> & { contentId: string }): ProgressRow {
+  return {
+    status: "completed",
+    watchedPercent: 100,
+    watchedSegments: [],
+    lastPositionSec: 0,
+    scorePercent: null,
+    updatedAt: new Date("2026-07-01T10:00:00Z"),
+    ...over,
+  };
+}
+
+describe("enrol", () => {
+  it("snapshots the course's settings onto a new enrolment", async () => {
+    // The settings must be copied, not referenced: a later edit to the course
+    // cannot retroactively change what this learner signed up to (P3-01).
+    const { repository, created } = fakeRepository({ enrolment: undefined });
+
+    await new LearningService(repository).enrol(course.slug, learner);
+
+    expect(created).toHaveLength(1);
+    expect(created[0]?.requiredWatchPercent).toBe(100);
+    expect(created[0]?.passThresholdPercent).toBe(70);
+  });
+
+  it("is idempotent — a second call creates nothing", async () => {
+    const { repository, created } = fakeRepository();
+
+    await new LearningService(repository).enrol(course.slug, learner);
+
+    expect(created).toHaveLength(0);
+  });
+
+  it("returns a contract-valid state", async () => {
+    const state = await new LearningService(fakeRepository().repository).enrol(
+      course.slug,
+      learner,
+    );
+
+    expect(() => enrolmentStateSchema.parse(state)).not.toThrow();
+  });
+
+  it("404s a course the tenant cannot see rather than disclosing it exists", async () => {
+    const service = new LearningService(fakeRepository().repository);
+
+    const error = await service.enrol("someone-elses-course", learner).catch((e) => e);
+
+    expect(error).toBeInstanceOf(AppError);
+    expect((error as AppError).kind).toBe("not_found");
+  });
+});
+
+describe("getState — the progress ring and the module tree", () => {
+  it("reports nothing done on a fresh enrolment", async () => {
+    const state = await new LearningService(fakeRepository().repository).getState(
+      course.slug,
+      learner,
+    );
+
+    expect(state.achievedWatchPercent).toBe(0);
+    expect(state.moduleCompletion).toEqual({ completed: 0, total: 2 });
+    expect(state.complete).toBe(false);
+  });
+
+  it("locks the second module until the first chapter is complete", async () => {
+    const state = await new LearningService(fakeRepository().repository).getState(
+      course.slug,
+      learner,
+    );
+
+    expect(state.modules[0]?.gate).toBe("available");
+    expect(state.modules[1]?.gate).toBe("locked");
+    // The widget can name the blocker rather than only showing a padlock.
+    expect(state.modules[1]?.chapters[0]?.blockedBy).toBe(C1);
+  });
+
+  it("unlocks the next module once the previous chapter completes", async () => {
+    const { repository } = fakeRepository({
+      progress: [progressRow({ contentId: VIDEO_1 })],
+    });
+
+    const state = await new LearningService(repository).getState(course.slug, learner);
+
+    expect(state.modules[0]?.gate).toBe("completed");
+    expect(state.modules[1]?.gate).toBe("available");
+    expect(state.moduleCompletion).toEqual({ completed: 1, total: 2 });
+  });
+
+  it("weights watch coverage by duration across the whole course", async () => {
+    // VIDEO_1 is 600 s of the course's 1000 s, so finishing only it is 60 %.
+    const { repository } = fakeRepository({
+      progress: [
+        progressRow({
+          contentId: VIDEO_1,
+          watchedSegments: [{ startSec: 0, endSec: 600 }],
+        }),
+      ],
+    });
+
+    const state = await new LearningService(repository).getState(course.slug, learner);
+
+    expect(state.achievedWatchPercent).toBe(60);
+  });
+
+  it("points the resume button at the first unfinished reachable content", async () => {
+    const { repository } = fakeRepository({
+      progress: [progressRow({ contentId: VIDEO_1 })],
+    });
+
+    const state = await new LearningService(repository).getState(course.slug, learner);
+
+    expect(state.resumeContentId).toBe(VIDEO_2);
+  });
+
+  it("returns a null resume target when nothing is left", async () => {
+    const { repository } = fakeRepository({
+      progress: [
+        progressRow({ contentId: VIDEO_1 }),
+        progressRow({ contentId: VIDEO_2 }),
+        progressRow({ contentId: QUIZ, scorePercent: 80 }),
+      ],
+    });
+
+    const state = await new LearningService(repository).getState(course.slug, learner);
+
+    expect(state.resumeContentId).toBeNull();
+  });
+
+  it("never points the resume button into a locked chapter", async () => {
+    const state = await new LearningService(fakeRepository().repository).getState(
+      course.slug,
+      learner,
+    );
+
+    expect(state.resumeContentId).toBe(VIDEO_1);
+  });
+
+  it("404s when the learner is not enrolled", async () => {
+    const { repository } = fakeRepository({ enrolment: undefined });
+    const service = new LearningService(repository);
+
+    const error = await service.getState(course.slug, learner).catch((e) => e);
+
+    expect((error as AppError).kind).toBe("not_found");
+  });
+});
+
+describe("getState — the completion verdict", () => {
+  it("names every outstanding condition rather than a bare false", async () => {
+    const state = await new LearningService(fakeRepository().repository).getState(
+      course.slug,
+      learner,
+    );
+
+    expect(state.outstanding).toEqual(["watch", "quiz", "evaluation", "efn"]);
+  });
+
+  it("is complete only when watch, quiz, evaluation and EFN are all satisfied", async () => {
+    const { repository } = fakeRepository({
+      progress: [
+        progressRow({
+          contentId: VIDEO_1,
+          watchedSegments: [{ startSec: 0, endSec: 600 }],
+        }),
+        progressRow({
+          contentId: VIDEO_2,
+          watchedSegments: [{ startSec: 0, endSec: 400 }],
+        }),
+        progressRow({ contentId: QUIZ, scorePercent: 80 }),
+      ],
+      efn: true,
+      evaluation: true,
+    });
+
+    const state = await new LearningService(repository).getState(course.slug, learner);
+
+    expect(state.achievedWatchPercent).toBe(100);
+    expect(state.quizPassed).toBe(true);
+    expect(state.outstanding).toEqual([]);
+    expect(state.complete).toBe(true);
+  });
+
+  it("does not count a quiz scored below the threshold as passed", async () => {
+    const { repository } = fakeRepository({
+      progress: [progressRow({ contentId: QUIZ, scorePercent: 69 })],
+    });
+
+    const state = await new LearningService(repository).getState(course.slug, learner);
+
+    expect(state.quizPassed).toBe(false);
+    expect(state.outstanding).toContain("quiz");
+  });
+
+  it("never returns the EFN itself, only whether one is on file", async () => {
+    // ADR-0004: the EFN is personal data with one purpose. Nothing reads it
+    // back out through this surface.
+    const { repository } = fakeRepository({ efn: true });
+
+    const state = await new LearningService(repository).getState(course.slug, learner);
+
+    expect(state.efnPresent).toBe(true);
+    expect(JSON.stringify(state)).not.toMatch(/\d{15}/);
+  });
+});
+
+describe("recordProgress", () => {
+  const now = new Date("2026-07-01T12:00:00Z");
+
+  it("stores the union of intervals and recomputes the percentage server-side", async () => {
+    const { repository, written } = fakeRepository();
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      {
+        segments: [
+          { startSec: 0, endSec: 100 },
+          { startSec: 50, endSec: 200 },
+        ],
+      },
+      learner,
+      now,
+    );
+
+    // 0–200 merged out of 600 s = 33 %, computed here, not sent by the client.
+    expect(result.watchedPercent).toBe(33);
+    expect(written[0]?.["watchedSegments"]).toEqual([{ startSec: 0, endSec: 200 }]);
+  });
+
+  it("ignores any percentage the client might try to assert", async () => {
+    const { repository } = fakeRepository();
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      // Extra fields are not in the schema and reach nothing.
+      { segments: [{ startSec: 0, endSec: 60 }] },
+      learner,
+      now,
+    );
+
+    expect(result.watchedPercent).toBe(10);
+  });
+
+  it("merges new intervals into previously stored ones", async () => {
+    const { repository, written } = fakeRepository({
+      progress: [
+        progressRow({
+          contentId: VIDEO_1,
+          status: "in_progress",
+          watchedPercent: 50,
+          watchedSegments: [{ startSec: 0, endSec: 300 }],
+          updatedAt: new Date("2026-07-01T11:00:00Z"),
+        }),
+      ],
+    });
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      { segments: [{ startSec: 300, endSec: 600 }] },
+      learner,
+      now,
+    );
+
+    expect(result.watchedPercent).toBe(100);
+    expect(result.status).toBe("completed");
+    expect(written[0]?.["watchedSegments"]).toEqual([{ startSec: 0, endSec: 600 }]);
+  });
+
+  it("rejects a segment claiming more playback than wall-clock time allows", async () => {
+    // One hour of "playback" reported one minute after the last write is not
+    // playback. Rejecting it is what stops a scripted client from completing a
+    // 25-minute video instantly.
+    const { repository } = fakeRepository({
+      progress: [
+        progressRow({
+          contentId: VIDEO_1,
+          status: "in_progress",
+          watchedPercent: 0,
+          watchedSegments: [],
+          updatedAt: new Date("2026-07-01T11:59:00Z"),
+        }),
+      ],
+    });
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      { segments: [{ startSec: 0, endSec: 600 }] },
+      learner,
+      now,
+    );
+
+    expect(result.rejected).toHaveLength(1);
+    expect(result.rejected[0]?.reason).toBe("faster_than_wallclock");
+    expect(result.watchedPercent).toBe(0);
+  });
+
+  it("names rejected segments rather than dropping them silently", async () => {
+    const { repository } = fakeRepository();
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      {
+        segments: [
+          { startSec: 0, endSec: 60 },
+          { startSec: 500, endSec: 400 },
+          { startSec: 0, endSec: 9_000 },
+        ],
+      },
+      learner,
+      now,
+    );
+
+    expect(result.accepted).toBe(1);
+    expect(result.rejected.map((entry) => entry.reason)).toEqual([
+      "zero_or_reversed",
+      "beyond_duration",
+    ]);
+    expect(() => progressResultSchema.parse(result)).not.toThrow();
+  });
+
+  it("refuses progress against a locked chapter", async () => {
+    // The gate has to hold at the API, not only in the UI: posting straight to
+    // a later module must not walk around the sequence.
+    const service = new LearningService(fakeRepository().repository);
+
+    const error = await service
+      .recordProgress(course.slug, VIDEO_2, { segments: [] }, learner, now)
+      .catch((e) => e);
+
+    expect(error).toBeInstanceOf(AppError);
+    expect((error as AppError).kind).toBe("gate_locked");
+  });
+
+  it("allows progress once the blocking chapter is complete", async () => {
+    const { repository } = fakeRepository({
+      progress: [progressRow({ contentId: VIDEO_1 })],
+    });
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_2,
+      { segments: [{ startSec: 0, endSec: 200 }] },
+      learner,
+      now,
+    );
+
+    expect(result.watchedPercent).toBe(50);
+  });
+
+  it("refuses to record watch progress against a quiz", async () => {
+    const { repository } = fakeRepository({
+      progress: [progressRow({ contentId: VIDEO_1 })],
+    });
+    const service = new LearningService(repository);
+
+    const error = await service
+      .recordProgress(course.slug, QUIZ, { segments: [] }, learner, now)
+      .catch((e) => e);
+
+    expect((error as AppError).kind).toBe("validation");
+  });
+
+  it("404s content that belongs to another course", async () => {
+    const service = new LearningService(fakeRepository().repository);
+
+    const error = await service
+      .recordProgress(
+        course.slug,
+        "dddddddd-0000-4000-8000-000000000009",
+        { segments: [] },
+        learner,
+        now,
+      )
+      .catch((e) => e);
+
+    expect((error as AppError).kind).toBe("not_found");
+  });
+
+  it("survives a malformed stored segments column rather than trapping the learner", async () => {
+    const { repository } = fakeRepository({
+      progress: [
+        progressRow({
+          contentId: VIDEO_1,
+          watchedSegments: { nonsense: true },
+          updatedAt: new Date("2026-07-01T11:00:00Z"),
+        }),
+      ],
+    });
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      { segments: [{ startSec: 0, endSec: 300 }] },
+      learner,
+      now,
+    );
+
+    expect(result.watchedPercent).toBe(50);
+  });
+});
