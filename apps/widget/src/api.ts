@@ -13,6 +13,11 @@ import type { TokenProvider } from "./token.js";
 export interface WidgetConfig {
   readonly apiBase: string;
   readonly projectSlug: string;
+  /**
+   * Optional. With a slug the widget opens that course directly, which is how
+   * MEDICE embeds it on a page dedicated to one Fortbildung. Without one it
+   * opens the catalogue, which is what a host page that lists several needs.
+   */
   readonly courseSlug: string;
 }
 
@@ -29,7 +34,14 @@ export function createWidgetClient(
   });
 }
 
-/** True when the element has everything it needs to talk to the API at all. */
+/**
+ * True when the element has everything it needs to talk to the API at all.
+ *
+ * `courseSlug` is deliberately not required: an embed with no course attribute
+ * is a catalogue, not a misconfiguration. The two values that *are* required
+ * are the ones without which no request can be made — the API's address and
+ * the project binding that resolves the tenant and the Keycloak realm.
+ */
 export function isConfigured(config: WidgetConfig): boolean {
-  return config.apiBase !== "" && config.projectSlug !== "" && config.courseSlug !== "";
+  return config.apiBase !== "" && config.projectSlug !== "";
 }

@@ -42,7 +42,7 @@ export class CatalogService {
     return new CatalogService(new CatalogRepository(db));
   }
 
-  async listCourses(query: CourseListQuery): Promise<CourseListResponse> {
+  async listCourses(query: CourseListQuery, userId: string): Promise<CourseListResponse> {
     const { rows, total, durations } = await this.repository.listCourses({
       ...(query.thema === undefined ? {} : { thema: query.thema }),
       ...(query.altersgruppe === undefined ? {} : { altersgruppe: query.altersgruppe }),
@@ -51,9 +51,19 @@ export class CatalogService {
       offset: (query.page - 1) * query.perPage,
     });
 
+    // One query for the page, not one per card.
+    const enrolled = await this.repository.findEnrolments(
+      rows.map((row) => row.id),
+      userId,
+    );
+
     return {
       items: rows.map((row) =>
-        toSummary(row, durations.get(row.id) ?? { moduleCount: 0, totalDurationSec: 0 }),
+        toSummary(
+          row,
+          durations.get(row.id) ?? { moduleCount: 0, totalDurationSec: 0 },
+          enrolled.get(row.id) ?? null,
+        ),
       ),
       page: query.page,
       perPage: query.perPage,
@@ -69,20 +79,23 @@ export class CatalogService {
    * exist: RLS returns no row, and this returns 404 rather than 403. Existence
    * is not disclosed (P2-05 acceptance criterion).
    */
-  async getCourseBySlug(slug: string): Promise<CourseDetail> {
+  async getCourseBySlug(slug: string, userId: string): Promise<CourseDetail> {
     const tree = await this.repository.findCourseTree(slug);
 
     if (tree === undefined) {
       throw AppError.notFound(`course slug=${slug} not visible in this tenant`);
     }
 
-    return toDetail(tree);
+    const enrolled = await this.repository.findEnrolments([tree.course.id], userId);
+
+    return toDetail(tree, enrolled.get(tree.course.id) ?? null);
   }
 }
 
 function toSummary(
   row: CourseRow,
   aggregate: { moduleCount: number; totalDurationSec: number },
+  enrolment: { complete: boolean } | null,
 ): CourseSummary {
   return {
     id: row.id,
@@ -97,10 +110,14 @@ function toSummary(
     cmeCategory: row.cmeCategory,
     moduleCount: aggregate.moduleCount,
     totalDurationSec: aggregate.totalDurationSec,
+    enrolment,
   };
 }
 
-function toDetail(tree: CourseTreeRows): CourseDetail {
+function toDetail(
+  tree: CourseTreeRows,
+  enrolment: { complete: boolean } | null,
+): CourseDetail {
   const { course } = tree;
 
   const contentsByChapter = new Map<string, CourseTreeRows["contents"]>();
@@ -143,7 +160,11 @@ function toDetail(tree: CourseTreeRows): CourseDetail {
   );
 
   return {
-    ...toSummary(course, { moduleCount: tree.modules.length, totalDurationSec }),
+    ...toSummary(
+      course,
+      { moduleCount: tree.modules.length, totalDurationSec },
+      enrolment,
+    ),
     learningObjectives: course.learningObjectives,
     targetAudience: course.targetAudience,
     vnr: course.vnr,

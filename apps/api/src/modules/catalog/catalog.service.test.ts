@@ -36,6 +36,9 @@ const adhs: CourseRow = {
  * no database at all — that is the property ADR-0006's layering buys, and the
  * reason this suite runs in milliseconds.
  */
+/** A stable learner id; the service takes it from the validated token. */
+const LEARNER = "11111111-0000-4000-8000-000000000001";
+
 function fakeRepository(overrides: Partial<CatalogRepositoryPort> = {}) {
   const base: CatalogRepositoryPort = {
     listCourses: async () => ({
@@ -47,6 +50,8 @@ function fakeRepository(overrides: Partial<CatalogRepositoryPort> = {}) {
       thema: [{ value: "ADHS", count: 1 }],
       altersgruppe: [{ value: "Erwachsene", count: 1 }],
     }),
+    // Not enrolled by default; the tests that care override it.
+    findEnrolments: async () => new Map(),
     findCourseTree: async (slug) =>
       slug === adhs.slug
         ? {
@@ -119,10 +124,13 @@ function fakeRepository(overrides: Partial<CatalogRepositoryPort> = {}) {
 
 describe("listCourses", () => {
   it("returns a contract-valid response", async () => {
-    const result = await new CatalogService(fakeRepository()).listCourses({
-      page: 1,
-      perPage: 10,
-    });
+    const result = await new CatalogService(fakeRepository()).listCourses(
+      {
+        page: 1,
+        perPage: 10,
+      },
+      LEARNER,
+    );
 
     expect(() => courseListResponseSchema.parse(result)).not.toThrow();
     expect(result.items[0]?.title).toBe("ADHS Akademie adult");
@@ -130,10 +138,13 @@ describe("listCourses", () => {
 
   it("carries the card metadata the design needs: points, modules, duration", async () => {
     // "5 CME Punkte | 5 Module | 2 Stunden 30 Minuten"
-    const result = await new CatalogService(fakeRepository()).listCourses({
-      page: 1,
-      perPage: 10,
-    });
+    const result = await new CatalogService(fakeRepository()).listCourses(
+      {
+        page: 1,
+        perPage: 10,
+      },
+      LEARNER,
+    );
 
     const card = result.items[0];
     expect(card?.cmePoints).toBe(4);
@@ -150,7 +161,7 @@ describe("listCourses", () => {
       },
     });
 
-    await new CatalogService(repo).listCourses({ page: 3, perPage: 10 });
+    await new CatalogService(repo).listCourses({ page: 3, perPage: 10 }, LEARNER);
 
     expect(seen).toEqual({ limit: 10, offset: 20 });
   });
@@ -164,13 +175,16 @@ describe("listCourses", () => {
       },
     });
 
-    await new CatalogService(repo).listCourses({
-      page: 1,
-      perPage: 10,
-      thema: "ADHS",
-      altersgruppe: "Erwachsene",
-      deliveryType: "on_demand",
-    });
+    await new CatalogService(repo).listCourses(
+      {
+        page: 1,
+        perPage: 10,
+        thema: "ADHS",
+        altersgruppe: "Erwachsene",
+        deliveryType: "on_demand",
+      },
+      LEARNER,
+    );
 
     expect(seen).toMatchObject({
       thema: "ADHS",
@@ -184,7 +198,10 @@ describe("listCourses", () => {
       listCourses: async () => ({ rows: [adhs], total: 1, durations: new Map() }),
     });
 
-    const result = await new CatalogService(repo).listCourses({ page: 1, perPage: 10 });
+    const result = await new CatalogService(repo).listCourses(
+      { page: 1, perPage: 10 },
+      LEARNER,
+    );
 
     expect(result.items[0]?.moduleCount).toBe(0);
     expect(result.items[0]?.totalDurationSec).toBe(0);
@@ -195,6 +212,7 @@ describe("getCourseBySlug", () => {
   it("returns the whole tree in one call, so the detail view does not waterfall", async () => {
     const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
       "adhs-akademie-adult",
+      LEARNER,
     );
 
     expect(() => courseDetailSchema.parse(detail)).not.toThrow();
@@ -206,6 +224,7 @@ describe("getCourseBySlug", () => {
   it("nests chapters and contents under the right parents", async () => {
     const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
       "adhs-akademie-adult",
+      LEARNER,
     );
 
     const modul3 = detail.modules.find((m) => m.title.startsWith("Modul 3"));
@@ -218,6 +237,7 @@ describe("getCourseBySlug", () => {
     // ship: the Zertifizierung tab renders whatever the course actually says.
     const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
       "adhs-akademie-adult",
+      LEARNER,
     );
 
     expect(detail.requiredWatchPercent).toBe(100);
@@ -227,6 +247,7 @@ describe("getCourseBySlug", () => {
   it("carries the Übersicht tab's content: Lernziele, Zielgruppe, hero image", async () => {
     const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
       "adhs-akademie-adult",
+      LEARNER,
     );
 
     expect(detail.learningObjectives).toHaveLength(2);
@@ -237,6 +258,7 @@ describe("getCourseBySlug", () => {
   it("surfaces the accreditation data the certificate will need", async () => {
     const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
       "adhs-akademie-adult",
+      LEARNER,
     );
 
     expect(detail.vnr).toBe("2760552025919300018");
@@ -250,7 +272,9 @@ describe("getCourseBySlug", () => {
     // are indistinguishable to the caller (P2-05).
     const service = new CatalogService(fakeRepository());
 
-    const error = await service.getCourseBySlug("other-tenant-course").catch((e) => e);
+    const error = await service
+      .getCourseBySlug("other-tenant-course", LEARNER)
+      .catch((e) => e);
 
     expect(error).toBeInstanceOf(AppError);
     expect((error as AppError).kind).toBe("not_found");
@@ -259,7 +283,7 @@ describe("getCourseBySlug", () => {
   it("keeps the internal reason out of the client-facing detail", async () => {
     const service = new CatalogService(fakeRepository());
     const error = (await service
-      .getCourseBySlug("other-tenant-course")
+      .getCourseBySlug("other-tenant-course", LEARNER)
       .catch((e) => e)) as AppError;
 
     // The reason mentions the tenant, which is for the audit log only.
@@ -272,6 +296,7 @@ describe("the answer key has nowhere to go", () => {
   it("no quiz content field can carry a correctness marker", async () => {
     const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
       "adhs-akademie-adult",
+      LEARNER,
     );
 
     // P4-01: the strongest guarantee is a shape with nowhere to put it. Parsing
@@ -297,6 +322,7 @@ describe("nor does an ungated URL", () => {
     // contract, not just today's mapping code.
     const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
       "adhs-akademie-adult",
+      LEARNER,
     );
     const parsed = courseDetailSchema.parse(detail);
 
@@ -309,5 +335,58 @@ describe("nor does an ungated URL", () => {
         }
       }
     }
+  });
+});
+
+describe("the card's call to action reflects the caller's own enrolment", () => {
+  it("reports no enrolment for a course the learner has not started", async () => {
+    const result = await new CatalogService(fakeRepository()).listCourses(
+      { page: 1, perPage: 10 },
+      LEARNER,
+    );
+
+    expect(result.items[0]?.enrolment).toBeNull();
+  });
+
+  it("reports an unfinished enrolment, which is what 'fortsetzen' means", async () => {
+    const repo = fakeRepository({
+      findEnrolments: async () => new Map([[adhs.id, { complete: false }]]),
+    });
+
+    const result = await new CatalogService(repo).listCourses(
+      { page: 1, perPage: 10 },
+      LEARNER,
+    );
+
+    expect(result.items[0]?.enrolment).toEqual({ complete: false });
+  });
+
+  it("asks only about the courses on this page, for this learner", async () => {
+    // One query for the page. A request per card would be ten round trips for
+    // a list of ten, and passing anything but the token's own user id would
+    // show one learner another's standing.
+    const seen: Array<{ ids: readonly string[]; userId: string }> = [];
+    const repo = fakeRepository({
+      findEnrolments: async (ids, userId) => {
+        seen.push({ ids, userId });
+        return new Map();
+      },
+    });
+
+    await new CatalogService(repo).listCourses({ page: 1, perPage: 10 }, LEARNER);
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.ids).toEqual([adhs.id]);
+    expect(seen[0]?.userId).toBe(LEARNER);
+  });
+
+  it("carries the same field on the detail response", async () => {
+    const repo = fakeRepository({
+      findEnrolments: async () => new Map([[adhs.id, { complete: true }]]),
+    });
+
+    const detail = await new CatalogService(repo).getCourseBySlug(adhs.slug, LEARNER);
+
+    expect(detail.enrolment).toEqual({ complete: true });
   });
 });

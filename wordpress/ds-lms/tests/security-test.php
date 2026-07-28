@@ -266,7 +266,7 @@ $html = DS_LMS_Renderer::shortcode( array( 'course' => '" onload="alert(1)' ) );
 check(
 	'a shortcode attribute cannot break out of the attribute',
 	1 === preg_match(
-		'/^<ds-lms api-base="[^"]*" project="[^"]*" course="[a-z0-9-]*"><\/ds-lms>$/',
+		'/^<ds-lms api-base="[^"]*" project="[^"]*"(?: course="[a-z0-9-]+")?><\/ds-lms>$/',
 		$html
 	)
 );
@@ -285,6 +285,33 @@ $settings = DS_LMS_Settings::sanitize(
 check( 'a javascript: API base is rejected', '' === $settings['api_base'] );
 check( 'a project slug is reduced to [a-z0-9-]', 'bsescript' === $settings['project_slug'] );
 check( 'and so is a course slug', 'etcpasswd' === $settings['course_slug'] );
+
+// ---------------------------------------------------------------------------
+echo "\nCatalogue mode\n";
+// ---------------------------------------------------------------------------
+
+ds_test_reset();
+update_option(
+	DS_LMS_Settings::OPTION,
+	array(
+		'api_base'               => 'https://api.example.test',
+		'project_slug'           => 'medice-adhs',
+		// No default course: this site lists several Fortbildungen.
+		'course_slug'            => '',
+		'token_endpoint_enabled' => true,
+	)
+);
+sign_in( 7, SECRET_TOKEN );
+$catalogue = DS_LMS_Renderer::shortcode( array() );
+
+check(
+	'a site with no default course still renders the element',
+	str_contains( $catalogue, '<ds-lms' )
+);
+check(
+	'and omits the course attribute rather than emitting an empty one',
+	! str_contains( $catalogue, 'course=' )
+);
 
 // ---------------------------------------------------------------------------
 echo "\nWhen the plugin is not configured\n";

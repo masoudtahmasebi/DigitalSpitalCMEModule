@@ -28,6 +28,30 @@ export const courseSummarySchema = z.object({
   moduleCount: z.number().int().nonnegative(),
   /** Sum of video durations; the widget formats "2 Stunden 30 Minuten". */
   totalDurationSec: z.number().int().nonnegative(),
+  /**
+   * The caller's own standing on this course, or `null` if they have not
+   * enrolled.
+   *
+   * The card's CTA depends on it: _Zur Fortbildung_ for a course not yet
+   * started, _Fortbildung fortsetzen_ for one in progress (layout §4.1). A
+   * client cannot work that out from the summary alone, and fetching an
+   * enrolment per card would be a request per row.
+   *
+   * **Deliberately not a percentage.** A course's progress percentage is the
+   * output of `rollupProgress` over the whole course tree, and there is exactly
+   * one path to it (CLAUDE.md §4 invariant 6). Producing it for ten cards would
+   * mean ten tree builds per list request, and the cheap approximation that
+   * invites — counting completed contents, say — would be a second answer to
+   * "how far has this person got", which is the thing the invariant exists to
+   * prevent. Both fields here are stored columns: a row exists, and
+   * `completed_at` is or is not null.
+   */
+  enrolment: z
+    .object({
+      /** `completed_at IS NOT NULL` — the course is finished. */
+      complete: z.boolean(),
+    })
+    .nullable(),
 });
 
 /**

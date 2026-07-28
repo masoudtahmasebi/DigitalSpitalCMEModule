@@ -99,6 +99,18 @@ final class DS_LMS_Renderer {
 	/**
 	 * The one place the element is produced.
 	 *
+	 * ## With a course, and without one
+	 *
+	 * A course slug — from the block, the shortcode, or the plugin settings —
+	 * opens that Fortbildung directly. **No slug is not an error**: the widget
+	 * then renders the catalogue, which is what a page listing several
+	 * Fortbildungen needs, and it is the only way to reach the delivery-type
+	 * tabs and the Thema/Altersgruppe filters.
+	 *
+	 * That is why the guard below no longer requires `$course`. It used to, and
+	 * a site with no default course configured got an editor warning telling it
+	 * to fill in a field it did not need.
+	 *
 	 * @param string $course_override Course slug from the block or shortcode.
 	 */
 	private static function render( string $course_override ): string {
@@ -108,12 +120,12 @@ final class DS_LMS_Renderer {
 			? (string) preg_replace( '/[^a-z0-9-]/', '', strtolower( $course_override ) )
 			: $settings['course_slug'];
 
-		if ( '' === $settings['api_base'] || '' === $settings['project_slug'] || '' === $course ) {
+		if ( '' === $settings['api_base'] || '' === $settings['project_slug'] ) {
 			// Editors see what is wrong; visitors see nothing at all rather
 			// than a broken widget.
 			if ( current_user_can( 'edit_posts' ) ) {
 				return '<p>' . esc_html__(
-					'DS Education: Bitte API-Basis-URL, Projekt-Slug und Fortbildung in den Einstellungen hinterlegen.',
+					'DS Education: Bitte API-Basis-URL und Projekt-Slug in den Einstellungen hinterlegen.',
 					'ds-lms'
 				) . '</p>';
 			}
@@ -124,11 +136,18 @@ final class DS_LMS_Renderer {
 		add_filter( 'script_loader_tag', array( self::class, 'as_module' ), 10, 2 );
 		self::attach_token_provider();
 
+		// The attribute is omitted entirely rather than emitted empty: the
+		// widget distinguishes "no course attribute" (show the catalogue) from
+		// a slug, and `course=""` would be a slug that matches nothing.
+		$course_attribute = '' === $course
+			? ''
+			: sprintf( ' course="%s"', esc_attr( $course ) );
+
 		return sprintf(
-			'<ds-lms api-base="%1$s" project="%2$s" course="%3$s"></ds-lms>',
+			'<ds-lms api-base="%1$s" project="%2$s"%3$s></ds-lms>',
 			esc_url( $settings['api_base'] ),
 			esc_attr( $settings['project_slug'] ),
-			esc_attr( $course )
+			$course_attribute
 		);
 	}
 

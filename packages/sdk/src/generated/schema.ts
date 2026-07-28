@@ -648,6 +648,25 @@ export interface components {
             moduleCount: number;
             /** @description Sum of video durations; formatted client-side. */
             totalDurationSec: number;
+            /**
+             * @description The **caller's own** standing on this course, or `null` if they
+             *     have not enrolled. Taken from the validated token's user id, never
+             *     from a parameter.
+             *
+             *     The card's call to action depends on it: _Zur Fortbildung_ when
+             *     absent, _Fortbildung fortsetzen_ when present and unfinished.
+             *
+             *     **Deliberately not a percentage.** A course percentage is the
+             *     output of `rollupProgress` over the whole tree and there is exactly
+             *     one path to it (CLAUDE.md §4 invariant 6); producing it for ten
+             *     cards would mean ten tree builds per request, and the cheap
+             *     approximation that invites would be a second answer to "how far has
+             *     this person got". Both fields here are stored columns.
+             */
+            enrolment: {
+                /** @description `completed_at IS NOT NULL` — the course is finished. */
+                complete: boolean;
+            } | null;
         };
         CourseDetail: components["schemas"]["CourseSummary"] & {
             /** @description The "Lernziele" checklist, one entry per bullet. */

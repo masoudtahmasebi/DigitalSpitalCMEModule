@@ -14,7 +14,14 @@
 
 import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../../db/tenant-db.js";
-import { chapters, contents, courseExperts, courses, modules } from "../../db/schema.js";
+import {
+  chapters,
+  contents,
+  courseExperts,
+  courses,
+  enrolments,
+  modules,
+} from "../../db/schema.js";
 
 export interface CourseRow {
   id: string;
@@ -91,10 +98,40 @@ export interface CatalogRepositoryPort {
     altersgruppe: Array<{ value: string; count: number }>;
   }>;
   findCourseTree(slug: string): Promise<CourseTreeRows | undefined>;
+  findEnrolments(
+    courseIds: readonly string[],
+    userId: string,
+  ): Promise<Map<string, { complete: boolean }>>;
 }
 
 export class CatalogRepository implements CatalogRepositoryPort {
   constructor(private readonly db: Db) {}
+
+  /**
+   * Which of these courses the caller is enrolled on, and which are finished.
+   *
+   * One query for the whole page rather than one per card. Scoped to the user
+   * explicitly *and* by RLS: `enrolments` is tenant-isolated, and the
+   * `user_id` filter is what stops a caller seeing another learner's standing
+   * within their own tenant — that part is not RLS's job.
+   */
+  async findEnrolments(
+    courseIds: readonly string[],
+    userId: string,
+  ): Promise<Map<string, { complete: boolean }>> {
+    if (courseIds.length === 0) return new Map();
+
+    const rows = await this.db
+      .select({ courseId: enrolments.courseId, completedAt: enrolments.completedAt })
+      .from(enrolments)
+      .where(
+        and(inArray(enrolments.courseId, [...courseIds]), eq(enrolments.userId, userId)),
+      );
+
+    return new Map(
+      rows.map((row) => [row.courseId, { complete: row.completedAt !== null }]),
+    );
+  }
 
   async listCourses(filter: CourseListFilter) {
     const conditions = [];

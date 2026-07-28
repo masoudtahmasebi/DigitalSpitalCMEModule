@@ -1,6 +1,13 @@
 /**
  * The widget's root (P5).
  *
+ * ## Two entry points, one screen graph
+ *
+ * With a `course` attribute the widget opens that Fortbildung directly — how
+ * MEDICE embeds it on a page dedicated to one course. Without one it opens the
+ * catalogue (layout §4.1) and the learner picks. Everything after the pick is
+ * identical, so there is one course screen rather than two.
+ *
  * ## One rule governs the whole screen graph
  *
  * `EnrolmentState` is the only thing that says what is unlocked, what is
@@ -25,7 +32,10 @@ import { createWidgetClient, isConfigured, type WidgetConfig } from "./api.js";
 import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
 import type { TokenProvider } from "./token.js";
+import { CourseList } from "./components/CourseList.js";
 import { CourseOutline } from "./components/CourseOutline.js";
+import { ExpertsTab } from "./components/ExpertsTab.js";
+import { OverviewTab } from "./components/OverviewTab.js";
 import { LessonScreen } from "./components/LessonScreen.js";
 import { QuizScreen } from "./components/QuizScreen.js";
 import { EvaluationScreen } from "./components/EvaluationScreen.js";
@@ -34,7 +44,10 @@ import { CertificatePanel } from "./components/CertificatePanel.js";
 import { MediathekPanel } from "./components/MediathekPanel.js";
 import { Button, ErrorNotice, ProgressRing, Spinner } from "./components/primitives.js";
 
-type Tab = "certification" | "library";
+/** The four tabs of the course detail (layout §4.2). */
+const TABS = ["overview", "speakers", "certification", "library"] as const;
+type Tab = (typeof TABS)[number];
+
 type Screen =
   | { kind: "outline" }
   | { kind: "lesson"; contentId: string }
@@ -46,15 +59,23 @@ export interface AppProps extends WidgetConfig {
 }
 
 export function App(props: AppProps) {
-  // A missing attribute is a page-integration mistake, not a learner problem,
-  // so it gets its own message rather than a wall of failed requests.
+  // A missing api-base or project is a page-integration mistake, not a learner
+  // problem, so it gets its own message rather than a wall of failed requests.
   if (!isConfigured(props) || props.getToken === undefined) {
     return <ErrorNotice title={de.error.title} message={de.error.misconfigured} />;
   }
-  return <Loaded {...props} getToken={props.getToken} />;
+  return <Routed {...props} getToken={props.getToken} />;
 }
 
-function Loaded(props: WidgetConfig & { getToken: TokenProvider }) {
+/**
+ * Catalogue or course.
+ *
+ * The client is built once here, from the project binding alone, and passed
+ * down — the course slug is a screen's argument, not the client's
+ * configuration, so moving between courses does not rebuild it and lose the
+ * token cache with it.
+ */
+function Routed(props: WidgetConfig & { getToken: TokenProvider }) {
   const { apiBase, projectSlug, courseSlug, getToken } = props;
 
   const client = useMemo(
@@ -62,7 +83,44 @@ function Loaded(props: WidgetConfig & { getToken: TokenProvider }) {
     [apiBase, projectSlug, courseSlug, getToken],
   );
 
-  const [tab, setTab] = useState<Tab>("certification");
+  // The attribute wins for the whole lifetime of the element: a page that
+  // names a course is showing that course, and there is no back link to a
+  // catalogue the host page never asked for.
+  const [selected, setSelected] = useState<string | undefined>(
+    courseSlug === "" ? undefined : courseSlug,
+  );
+
+  if (selected === undefined) {
+    return (
+      <div className="space-y-6 p-4">
+        <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
+        <CourseList client={client} onOpen={setSelected} />
+      </div>
+    );
+  }
+
+  return (
+    <Loaded
+      apiBase={apiBase}
+      projectSlug={projectSlug}
+      courseSlug={selected}
+      client={client}
+      // Only offered when the learner arrived through the catalogue.
+      onBackToCatalogue={courseSlug === "" ? () => setSelected(undefined) : undefined}
+    />
+  );
+}
+
+function Loaded(props: {
+  apiBase: string;
+  projectSlug: string;
+  courseSlug: string;
+  client: ReturnType<typeof createWidgetClient>;
+  onBackToCatalogue: (() => void) | undefined;
+}) {
+  const { apiBase, projectSlug, courseSlug, client } = props;
+
+  const [tab, setTab] = useState<Tab>("overview");
   const [screen, setScreen] = useState<Screen>({ kind: "outline" });
 
   const course = useAsync(() => client.getCourseBySlug(courseSlug), [client, courseSlug]);
@@ -118,7 +176,19 @@ function Loaded(props: WidgetConfig & { getToken: TokenProvider }) {
     <div className="space-y-6 p-4">
       <header className="space-y-3">
         <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
+
+        {props.onBackToCatalogue === undefined ? null : (
+          <button
+            type="button"
+            onClick={props.onBackToCatalogue}
+            className="text-sm font-medium text-brand-700 underline"
+          >
+            {de.catalog.back}
+          </button>
+        )}
+
         <h1 className="text-xl font-bold text-gray-900">{detail.title}</h1>
+        <p className="text-sm text-gray-600">{de.catalog.cardMeta(detail)}</p>
 
         <div className="flex items-center gap-4">
           <ProgressRing
@@ -155,10 +225,10 @@ function Loaded(props: WidgetConfig & { getToken: TokenProvider }) {
       </header>
 
       <nav
-        className="flex gap-1 border-b border-gray-200"
-        aria-label={de.tabs.certification}
+        className="flex flex-wrap gap-1 border-b border-gray-200"
+        aria-label={detail.title}
       >
-        {(["certification", "library"] as const).map((entry) => (
+        {TABS.map((entry) => (
           <button
             key={entry}
             type="button"
@@ -173,12 +243,16 @@ function Loaded(props: WidgetConfig & { getToken: TokenProvider }) {
                 : "border-transparent text-gray-600"
             }`}
           >
-            {entry === "certification" ? de.tabs.certification : de.tabs.library}
+            {de.tabs[entry]}
           </button>
         ))}
       </nav>
 
-      {tab === "library" ? (
+      {tab === "overview" && screen.kind === "outline" ? (
+        <OverviewTab course={detail} state={state} />
+      ) : tab === "speakers" && screen.kind === "outline" ? (
+        <ExpertsTab experts={detail.experts} />
+      ) : tab === "library" ? (
         <Mediathek client={client} courseSlug={courseSlug} key={state.progress.percent} />
       ) : screen.kind === "lesson" ? (
         <Lesson

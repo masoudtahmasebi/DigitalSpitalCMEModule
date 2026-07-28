@@ -11,6 +11,8 @@
  */
 
 import { Controller, Get, Param, Query } from "@nestjs/common";
+import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
+import type { Principal } from "../../auth/principal.js";
 import { Roles } from "../../auth/roles.decorator.js";
 import { AppError } from "../../shared/problem-details.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
@@ -29,7 +31,11 @@ const ANY_AUTHENTICATED_ROLE = [
 export class CatalogController {
   @Get()
   @Roles(...ANY_AUTHENTICATED_ROLE)
-  async list(@Query() query: Record<string, unknown>, @TenantDb() db: Db) {
+  async list(
+    @Query() query: Record<string, unknown>,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
     const parsed = courseListQuerySchema.safeParse(query);
     if (!parsed.success) {
       throw new AppError(
@@ -38,12 +44,19 @@ export class CatalogController {
         "One or more query parameters are invalid.",
       );
     }
-    return CatalogService.fromDb(db).listCourses(parsed.data);
+    // The user id comes from the validated token, never from the query — the
+    // card's "Fortbildung fortsetzen" reflects the caller's own enrolment and
+    // nobody else's.
+    return CatalogService.fromDb(db).listCourses(parsed.data, principal.userId);
   }
 
   @Get(":slug")
   @Roles(...ANY_AUTHENTICATED_ROLE)
-  async detail(@Param("slug") slug: string, @TenantDb() db: Db) {
-    return CatalogService.fromDb(db).getCourseBySlug(slug);
+  async detail(
+    @Param("slug") slug: string,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    return CatalogService.fromDb(db).getCourseBySlug(slug, principal.userId);
   }
 }

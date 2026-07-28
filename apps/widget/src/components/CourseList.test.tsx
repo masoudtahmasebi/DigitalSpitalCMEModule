@@ -1,0 +1,225 @@
+/**
+ * The catalogue's behaviour, not its appearance.
+ *
+ * Three properties worth a test, and they are all about **who decides what**:
+ *
+ * 1. Filtering and paging are sent to the server as a query. The list never
+ *    narrows an array it already holds — with paging that would be wrong, and
+ *    the facet counts describe the tenant's whole catalogue rather than the
+ *    page in hand.
+ * 2. Changing a filter resets to page 1. The bug this prevents is silent: a
+ *    learner on page 3 narrows a filter, the result set is now one page long,
+ *    and they are looking at an empty page 3 being told nothing matches.
+ * 3. A chip's ✕ and the dropdown's "Alle" are the same operation, because they
+ *    write the same state.
+ */
+
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ApiClient, CourseListResponse } from "@ds/sdk";
+import { CourseList } from "./CourseList.js";
+
+afterEach(cleanup);
+
+function course(slug: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id: `00000000-0000-4000-8000-${slug.padEnd(12, "0").slice(0, 12)}`,
+    slug,
+    title: `Kurs ${slug}`,
+    description: null,
+    heroImageUrl: null,
+    deliveryType: "on_demand",
+    thema: ["ADHS"],
+    altersgruppe: ["Erwachsene"],
+    cmePoints: 4,
+    cmeCategory: "D",
+    moduleCount: 5,
+    totalDurationSec: 9000,
+    enrolment: null,
+    ...overrides,
+  };
+}
+
+/** Records every query the component sends, and answers with `total` items. */
+function stubClient(total = 1) {
+  const queries: Record<string, unknown>[] = [];
+
+  const listCourses = vi.fn(async (query: Record<string, unknown> = {}) => {
+    queries.push(query);
+    const page = Number(query["page"] ?? 1);
+    const perPage = Number(query["perPage"] ?? 10);
+    const start = (page - 1) * perPage;
+
+    return {
+      items: Array.from(
+        { length: Math.max(0, Math.min(perPage, total - start)) },
+        (_, i) => course(`k${start + i + 1}`),
+      ),
+      total,
+      page,
+      perPage,
+      facets: {
+        thema: [
+          { value: "ADHS", count: 3 },
+          { value: "Schlaf", count: 1 },
+        ],
+        altersgruppe: [{ value: "Erwachsene", count: 4 }],
+      },
+    } as unknown as CourseListResponse;
+  });
+
+  return { client: { listCourses } as unknown as ApiClient, queries };
+}
+
+describe("the catalogue asks the server, it does not filter locally", () => {
+  it("sends the delivery type, the filters and the page as a query", async () => {
+    const { client, queries } = stubClient(3);
+    render(<CourseList client={client} onOpen={() => {}} />);
+
+    await screen.findByText("Kurs k1");
+
+    fireEvent.change(screen.getByLabelText("Thema"), { target: { value: "Schlaf" } });
+    await waitFor(() => expect(queries.length).toBeGreaterThan(1));
+
+    expect(queries.at(-1)).toMatchObject({
+      deliveryType: "on_demand",
+      thema: "Schlaf",
+      page: 1,
+    });
+  });
+
+  it("switches delivery type without carrying the old one", async () => {
+    const { client, queries } = stubClient(1);
+    render(<CourseList client={client} onOpen={() => {}} />);
+    await screen.findByText("Kurs k1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Präsenz" }));
+    await waitFor(() =>
+      expect(queries.at(-1)).toMatchObject({ deliveryType: "praesenz" }),
+    );
+  });
+
+  it("returns to page 1 when a filter changes", async () => {
+    // 25 items over 10 per page: three pages, so page 3 exists before the
+    // filter narrows the set.
+    const { client, queries } = stubClient(25);
+    render(<CourseList client={client} onOpen={() => {}} />);
+    await screen.findByText("Kurs k1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Seite 3" }));
+    await waitFor(() => expect(queries.at(-1)).toMatchObject({ page: 3 }));
+
+    fireEvent.change(screen.getByLabelText("Altersgruppe"), {
+      target: { value: "Erwachsene" },
+    });
+
+    await waitFor(() =>
+      expect(queries.at(-1)).toMatchObject({ altersgruppe: "Erwachsene", page: 1 }),
+    );
+  });
+});
+
+describe("filters and their chips are one piece of state", () => {
+  it("shows a chip for an active filter and clears it from the chip", async () => {
+    const { client, queries } = stubClient(1);
+    render(<CourseList client={client} onOpen={() => {}} />);
+    await screen.findByText("Kurs k1");
+
+    fireEvent.change(screen.getByLabelText("Thema"), { target: { value: "ADHS" } });
+
+    const chip = await screen.findByRole("button", { name: 'Filter „ADHS" entfernen' });
+    fireEvent.click(chip);
+
+    await waitFor(() => expect(queries.at(-1)?.["thema"]).toBeUndefined());
+    // And the dropdown followed, rather than still showing a filter that is
+    // no longer applied.
+    expect((screen.getByLabelText("Thema") as HTMLSelectElement).value).toBe("");
+  });
+});
+
+describe("the card carries the metadata line from the layout", () => {
+  it("renders points, modules and duration", async () => {
+    const { client } = stubClient(1);
+    render(<CourseList client={client} onOpen={() => {}} />);
+
+    expect(
+      await screen.findByText("4 CME Punkte | 5 Module | 2 Stunden 30 Minuten"),
+    ).toBeDefined();
+  });
+
+  it("omits a part it has no value for rather than printing a zero", async () => {
+    // "0 CME Punkte" would read as an accredited course worth nothing, which
+    // is not the same as one whose accreditation is not recorded yet.
+    const listCourses = vi.fn(async () => ({
+      items: [course("k1", { cmePoints: null, totalDurationSec: 0 })],
+      total: 1,
+      page: 1,
+      perPage: 10,
+      facets: { thema: [], altersgruppe: [] },
+    }));
+
+    render(
+      <CourseList client={{ listCourses } as unknown as ApiClient} onOpen={() => {}} />,
+    );
+
+    expect(await screen.findByText("5 Module")).toBeDefined();
+  });
+});
+
+describe("empty states", () => {
+  it("says so rather than rendering an empty list", async () => {
+    const { client } = stubClient(0);
+    render(<CourseList client={client} onOpen={() => {}} />);
+
+    expect(
+      await screen.findByText(
+        "Für die gewählten Filter stehen derzeit keine Fortbildungen zur Verfügung.",
+      ),
+    ).toBeDefined();
+  });
+});
+
+describe("the call to action comes from the server, not from the card", () => {
+  it("invites a learner who has not enrolled", async () => {
+    const { client } = stubClient(1);
+    render(<CourseList client={client} onOpen={() => {}} />);
+
+    expect(await screen.findByRole("button", { name: "Zur Fortbildung" })).toBeDefined();
+  });
+
+  it("offers to resume an unfinished enrolment", async () => {
+    const listCourses = vi.fn(async () => ({
+      items: [course("k1", { enrolment: { complete: false } })],
+      total: 1,
+      page: 1,
+      perPage: 10,
+      facets: { thema: [], altersgruppe: [] },
+    }));
+
+    render(
+      <CourseList client={{ listCourses } as unknown as ApiClient} onOpen={() => {}} />,
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "Fortbildung fortsetzen" }),
+    ).toBeDefined();
+  });
+
+  it("does not say 'fortsetzen' about a course already finished", async () => {
+    const listCourses = vi.fn(async () => ({
+      items: [course("k1", { enrolment: { complete: true } })],
+      total: 1,
+      page: 1,
+      perPage: 10,
+      facets: { thema: [], altersgruppe: [] },
+    }));
+
+    render(
+      <CourseList client={{ listCourses } as unknown as ApiClient} onOpen={() => {}} />,
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "Fortbildung ansehen" }),
+    ).toBeDefined();
+  });
+});

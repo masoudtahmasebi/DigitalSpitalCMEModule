@@ -15,9 +15,77 @@
 
 export const de = {
   tabs: {
+    overview: "Übersicht",
+    speakers: "Experten/Referenten",
     certification: "Zertifizierung",
     library: "Mediathek",
-    speakers: "Referenten",
+  },
+
+  catalog: {
+    title: "Fortbildungsbereich",
+    empty: "Für die gewählten Filter stehen derzeit keine Fortbildungen zur Verfügung.",
+    open: "Zur Fortbildung",
+    /** Already finished — the course stays open for the certificate and the Mediathek. */
+    review: "Fortbildung ansehen",
+    back: "Zurück zur Übersicht",
+
+    deliveryType: {
+      on_demand: "On Demand",
+      live: "Live",
+      praesenz: "Präsenz",
+    },
+
+    thema: "Thema",
+    altersgruppe: "Altersgruppe",
+    all: "Alle",
+    activeFilters: "Aktive Filter",
+    removeFilter: (value: string): string => `Filter „${value}" entfernen`,
+
+    pagination: "Seitennavigation",
+    previous: "Zurück",
+    next: "Vor",
+    goToPage: (page: number): string => `Seite ${page}`,
+
+    /**
+     * "5 CME Punkte | 5 Module | 2 Stunden 30 Minuten" — the card metadata
+     * line from the layout. Parts with no value are dropped rather than shown
+     * as a zero: a course with no accredited points is not a "0 CME Punkte"
+     * course, it is one whose accreditation is not recorded yet.
+     */
+    cardMeta: (course: {
+      cmePoints: number | null;
+      moduleCount: number;
+      totalDurationSec: number;
+    }): string =>
+      [
+        course.cmePoints === null ? undefined : `${course.cmePoints} CME Punkte`,
+        `${course.moduleCount} ${course.moduleCount === 1 ? "Modul" : "Module"}`,
+        course.totalDurationSec === 0 ? undefined : duration(course.totalDurationSec),
+      ]
+        .filter((part): part is string => part !== undefined)
+        .join(" | "),
+  },
+
+  overviewTab: {
+    description: "Beschreibung der Fortbildung",
+    objectives: "Lernziele",
+    audience: "Zielgruppe",
+    contents: "Inhalte",
+    more: "Mehr lesen …",
+    less: "Weniger anzeigen",
+    moduleLabel: (ordinal: number): string => `Modul ${ordinal}`,
+    /** "25:24 Min. · 3 Kapitel" */
+    moduleMeta: (durationSec: number, chapters: number): string =>
+      [
+        durationSec === 0 ? undefined : minutesAndSeconds(durationSec),
+        `${chapters} ${chapters === 1 ? "Kapitel" : "Kapitel"}`,
+      ]
+        .filter((part): part is string => part !== undefined)
+        .join(" · "),
+  },
+
+  experts: {
+    empty: "Für diese Fortbildung sind keine Referentinnen und Referenten hinterlegt.",
   },
 
   loading: "Wird geladen …",
@@ -154,3 +222,30 @@ export const de = {
 } as const;
 
 export type Locale = typeof de;
+
+/**
+ * "2 Stunden 30 Minuten" — the long form from the card metadata line.
+ *
+ * Whole minutes: the layout never shows seconds here, and rounding up a partial
+ * minute would make a 2:00:30 course read as taking longer than it does.
+ */
+function duration(totalSec: number): string {
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+
+  const parts = [
+    hours === 0 ? undefined : `${hours} ${hours === 1 ? "Stunde" : "Stunden"}`,
+    minutes === 0 ? undefined : `${minutes} ${minutes === 1 ? "Minute" : "Minuten"}`,
+  ].filter((part): part is string => part !== undefined);
+
+  // Under a minute is still a duration; showing nothing would drop the part
+  // from the metadata line entirely and misalign the separators.
+  return parts.length === 0 ? "unter 1 Minute" : parts.join(" ");
+}
+
+/** "25:24 Min." — the short form the module list uses. */
+function minutesAndSeconds(totalSec: number): string {
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")} Min.`;
+}
