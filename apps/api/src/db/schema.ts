@@ -366,7 +366,14 @@ export const certificates = pgTable("certificates", {
   participantName: text("participant_name").notNull(),
   issuedAt: timestamp("issued_at", { withTimezone: true }),
   deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  /** The last transport failure. A code, never a server message (P8-03). */
   deliveryError: text("delivery_error"),
+  deliveryAttemptCount: integer("delivery_attempt_count").notNull().default(0),
+  /** Also the worker's lease — see `claim_due_certificate_deliveries`. */
+  deliveryNextAttemptAt: timestamp("delivery_next_attempt_at", { withTimezone: true }),
+  deliveryFirstAttemptAt: timestamp("delivery_first_attempt_at", { withTimezone: true }),
+  /** One of `DeliveryAbandonReason`. Non-null means the queue has stopped. */
+  deliveryAbandonedReason: text("delivery_abandoned_reason"),
   ...timestamps,
 });
 

@@ -147,6 +147,8 @@ export interface CertificateRenderer<TData = unknown> {
 
 export interface OutboundMessage {
   readonly to: string;
+  /** The sender the project is configured with, not a platform-wide address. */
+  readonly from: string;
   readonly subject: string;
   /** Plain text. No EFN, no quiz result — see `docs/gdpr.md`. */
   readonly body: string;
@@ -155,6 +157,24 @@ export interface OutboundMessage {
     readonly mediaType: string;
     readonly bytes: Uint8Array;
   }>;
+  /**
+   * Per-project transport settings, decrypted by the caller for this one send.
+   *
+   * Here for the same reason `ParticipationReport.credentials` is: a channel is
+   * one object for the whole process, but SMTP is configured **per project** so
+   * each customer's mail leaves from their own server with their own sender
+   * (P8-02). A channel that held connection settings of its own could only
+   * serve one tenant.
+   *
+   * A bag of strings because what a transport needs differs — SMTP wants host,
+   * port, username, password and a TLS flag; a portal-inbox channel wants none
+   * of them.
+   *
+   * **Never log this, and never put it in an error message.** The caller
+   * records the failure reason against the certificate row, and a channel that
+   * interpolated a password into the reason it returned would write it there.
+   */
+  readonly transport: Readonly<Record<string, string>>;
 }
 
 /**

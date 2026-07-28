@@ -15,6 +15,7 @@
   "dependencies": {
     "@ds/domain": "workspace:*",
     "@ds/eiv-client": "workspace:*",
+    "@ds/mail": "workspace:*",
     "@ds/plugin-api": "workspace:*",
     "@nestjs/common": "^11.1.28",
     "@nestjs/core": "^11.1.28",

@@ -29,6 +29,7 @@
 
 import { Logger } from "@nestjs/common";
 import { EivAccreditationReporter } from "@ds/eiv-client";
+import { SmtpDeliveryChannel } from "@ds/mail";
 import { createPluginRegistry, type PluginRegistry } from "@ds/plugin-api";
 
 let registry: PluginRegistry | undefined;
@@ -55,15 +56,21 @@ export function installPlugins(logger?: Logger): PluginRegistry {
   // submission worker.
   built.register("accreditationReporter", new EivAccreditationReporter());
 
+  // SMTP, for the Teilnahmebescheinigung (P8-03). Registered unconditionally
+  // even though many projects have no SMTP settings: *whether* a given project
+  // can send is a per-project question the channel answers per message, and
+  // making the registration conditional would need this file to read the
+  // database before the application exists. A project with no host gets a
+  // `permanent` outcome naming exactly that, which is what the participant list
+  // then shows.
+  built.register("deliveryChannel", new SmtpDeliveryChannel());
+
   // Not registered, and that is the correct state rather than an omission:
   //
   // - `certificateRenderer` — the PDF renderer is injected directly into
   //   `CertificateService` and there is exactly one. It moves here the day a
   //   second one exists; registering a capability with one implementation and
   //   no prospect of another is indirection for its own sake.
-  // - `deliveryChannel` — certificate email is P8-03 and unbuilt. Its absence
-  //   is why nothing is sent, and `find` returning undefined is the documented
-  //   behaviour rather than a crash.
   // - `contentIngestor` — Storyblok is on the deferred list (roadmap §4). The
   //   interface exists so that when somebody builds it, the shape is already
   //   decided; declaring it is not permission to build it.

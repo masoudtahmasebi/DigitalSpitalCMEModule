@@ -1,0 +1,364 @@
+/**
+ * The certificate delivery worker against real Postgres (P8-03).
+ *
+ * The service unit tests use a faked repository, so they prove the retry policy
+ * is wired correctly. This suite proves the parts only the database can:
+ *
+ * - `claim_due_certificate_deliveries` actually runs, leases what it hands out,
+ *   and — the property the whole SECURITY DEFINER design exists for — returns
+ *   rows the `ds_app` role could not have selected for itself.
+ * - The status values the repository writes exist in the enum.
+ * - The recipient really is read live from `users`, so nulling the address
+ *   (which is what erasure does) really does stop delivery.
+ *
+ * The delivery channel is faked here, deliberately: standing up an SMTP server
+ * would test nodemailer, and the classification logic that is genuinely ours is
+ * unit-tested in `@ds/mail`.
+ */
+
+import { randomUUID } from "node:crypto";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Pool } from "pg";
+import type { DeliveryChannel, DeliveryOutcome, OutboundMessage } from "@ds/plugin-api";
+import { AuditService } from "../../src/audit/audit.service.js";
+import { PlaintextSecretCipher } from "../../src/shared/secret-cipher.js";
+import { DeliveryRepository } from "../../src/modules/certificate/delivery.repository.js";
+import { CertificateDeliveryService } from "../../src/modules/certificate/delivery.service.js";
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || value === "") {
+    throw new Error(`${name} must be set to run the integration suite.`);
+  }
+  return value;
+}
+
+const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
+const DATABASE_URL = requireEnv("DATABASE_URL");
+
+const SMTP_PASSWORD = "integration-smtp-password";
+const cipher = new PlaintextSecretCipher("test");
+
+let seedPool: Pool;
+let appPool: Pool;
+
+let customerId: string;
+let courseId: string;
+let suffix: string;
+
+beforeAll(async () => {
+  seedPool = new Pool({ connectionString: SUPERUSER_URL });
+  appPool = new Pool({ connectionString: DATABASE_URL, max: 5 });
+
+  suffix = randomUUID().slice(0, 8);
+
+  customerId = await insert(
+    "INSERT INTO customers (slug, name) VALUES ($1,$2) RETURNING id",
+    [`cert-customer-${suffix}`, "Certificate GmbH"],
+  );
+  const departmentId = await insert(
+    "INSERT INTO departments (customer_id, slug, name) VALUES ($1,$2,$3) RETURNING id",
+    [customerId, "default", "Default"],
+  );
+  const projectId = await insert(
+    `INSERT INTO projects (customer_id, department_id, slug, name,
+                           smtp_host, smtp_port, smtp_username, smtp_password_enc,
+                           smtp_from_address, smtp_from_name)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+    [
+      customerId,
+      departmentId,
+      `cert-project-${suffix}`,
+      "Certificate project",
+      "smtp.example.de",
+      587,
+      "medice",
+      cipher.encrypt(SMTP_PASSWORD),
+      "fortbildung@example.de",
+      "MEDICE",
+    ],
+  );
+  courseId = await insert(
+    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
+                          pass_threshold_percent)
+     VALUES ($1,$2,$3,$4,100,70) RETURNING id`,
+    [customerId, projectId, `cert-course-${suffix}`, "ADHS Akademie adult"],
+  );
+
+  // The sweep is global by design — it drains every tenant's queue. Other
+  // suites leave rows behind, so park anything not belonging to this customer
+  // before starting, or the tallies below count somebody else's work.
+  await seedPool.query(
+    `UPDATE certificates SET delivery_abandoned_reason = 'parked_by_test'
+      WHERE status = 'issued' AND delivered_at IS NULL
+        AND delivery_abandoned_reason IS NULL AND customer_id <> $1`,
+    [customerId],
+  );
+}, 30_000);
+
+afterAll(async () => {
+  await seedPool.end();
+  await appPool.end();
+});
+
+async function insert(sql: string, values: unknown[]): Promise<string> {
+  const { rows } = await seedPool.query<{ id: string }>(sql, values);
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error(`seed insert returned no id: ${sql}`);
+  return id;
+}
+
+/** An issued certificate waiting to be delivered. */
+async function queueCertificate(
+  over: { email?: string | null; attemptCount?: number } = {},
+): Promise<{ certificateId: string; userId: string }> {
+  const unique = randomUUID().slice(0, 8);
+
+  const userId = await insert(
+    `INSERT INTO users (keycloak_realm, keycloak_sub, email, first_name, last_name)
+     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [
+      `http://127.0.0.1/realms/cert-${suffix}`,
+      `cert-sub-${unique}`,
+      over.email === undefined ? `learner-${unique}@example.de` : over.email,
+      "Hans",
+      "Mustermann",
+    ],
+  );
+
+  const enrolmentId = await insert(
+    `INSERT INTO enrolments (customer_id, course_id, user_id, required_watch_percent,
+                             pass_threshold_percent, completed_at)
+     VALUES ($1,$2,$3,100,70,now()) RETURNING id`,
+    [customerId, courseId, userId],
+  );
+
+  const certificateId = await insert(
+    `INSERT INTO certificates (customer_id, enrolment_id, status, participant_name,
+                               issued_at, delivery_attempt_count)
+     VALUES ($1,$2,'issued',$3,now(),$4) RETURNING id`,
+    [customerId, enrolmentId, "Dr. med. Hans Mustermann", over.attemptCount ?? 0],
+  );
+
+  return { certificateId, userId };
+}
+
+function build(outcome: DeliveryOutcome = { status: "delivered", reference: "<a@b>" }) {
+  const sent: OutboundMessage[] = [];
+
+  const channel: DeliveryChannel = {
+    id: "fake",
+    deliver: async (message) => {
+      sent.push(message);
+      return outcome;
+    },
+  };
+
+  const service = new CertificateDeliveryService(
+    new DeliveryRepository(appPool, cipher),
+    channel,
+    new AuditService(appPool),
+    {
+      batchSize: 25,
+      leaseSeconds: 600,
+      portalBaseUrl: "https://fortbildung.example.de",
+    },
+  );
+
+  return { service, sent };
+}
+
+async function certificateRow(id: string): Promise<{
+  status: string;
+  delivered_at: Date | null;
+  delivery_attempt_count: number;
+  delivery_next_attempt_at: Date | null;
+  delivery_abandoned_reason: string | null;
+  delivery_error: string | null;
+  download_token: string;
+}> {
+  const { rows } = await seedPool.query("SELECT * FROM certificates WHERE id = $1", [id]);
+  return rows[0] as never;
+}
+
+describe("the claim function", () => {
+  it("hands out work the app role could not have found on its own", async () => {
+    // The point of the SECURITY DEFINER design: with no `app.customer_id` set,
+    // RLS shows `ds_app` zero rows — correctly. The function is the one narrow
+    // way past that, and it returns routing metadata only.
+    const { certificateId } = await queueCertificate();
+
+    const direct = await appPool.query("SELECT id FROM certificates WHERE id = $1", [
+      certificateId,
+    ]);
+    expect(direct.rowCount).toBe(0);
+
+    const claimed = await appPool.query(
+      "SELECT * FROM claim_due_certificate_deliveries($1, $2, $3)",
+      [10, new Date(), 600],
+    );
+    expect(
+      claimed.rows.map((r: { certificate_id: string }) => r.certificate_id),
+    ).toContain(certificateId);
+
+    // Routing metadata only — no name, no token, no address.
+    expect(Object.keys(claimed.rows[0] as object).sort()).toEqual([
+      "certificate_id",
+      "customer_id",
+    ]);
+  });
+
+  it("leases what it hands out, so a second sweep does not take it", async () => {
+    // Without the lease a slow send could be picked up twice and the physician
+    // would receive two copies.
+    const { certificateId } = await queueCertificate();
+    const now = new Date();
+
+    const first = await appPool.query(
+      "SELECT * FROM claim_due_certificate_deliveries($1, $2, $3)",
+      [50, now, 600],
+    );
+    expect(first.rows.map((r: { certificate_id: string }) => r.certificate_id)).toContain(
+      certificateId,
+    );
+
+    const second = await appPool.query(
+      "SELECT * FROM claim_due_certificate_deliveries($1, $2, $3)",
+      [50, now, 600],
+    );
+    expect(
+      second.rows.map((r: { certificate_id: string }) => r.certificate_id),
+    ).not.toContain(certificateId);
+  });
+});
+
+describe("a successful delivery", () => {
+  it("sends and marks the row delivered", async () => {
+    const { certificateId } = await queueCertificate();
+    const { service, sent } = build();
+
+    const result = await service.sweep(new Date());
+    expect(result.delivered).toBeGreaterThanOrEqual(1);
+
+    const row = await certificateRow(certificateId);
+    expect(row.status).toBe("delivered");
+    expect(row.delivered_at).not.toBeNull();
+    expect(row.delivery_attempt_count).toBe(1);
+    // The lease is cleared: nothing further is due.
+    expect(row.delivery_next_attempt_at).toBeNull();
+    expect(sent.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("decrypts the project's SMTP password and hands it to the channel", async () => {
+    await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent[0]?.transport["password"]).toBe(SMTP_PASSWORD);
+    expect(sent[0]?.from).toBe('"MEDICE" <fortbildung@example.de>');
+  });
+
+  it("links to the download token the database generated", async () => {
+    const { certificateId } = await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    const row = await certificateRow(certificateId);
+    expect(sent[0]?.body).toContain(row.download_token);
+  });
+});
+
+describe("a learner whose address has been removed", () => {
+  it("is abandoned rather than pursued", async () => {
+    // This is the erasure path (ADR-0008 nulls `users.email`). The address is
+    // read live rather than copied onto the certificate row precisely so that
+    // erasure stops delivery without the erasure code knowing this queue exists.
+    const { certificateId } = await queueCertificate({ email: null });
+    const { service, sent } = build();
+
+    await service.sweep(new Date());
+
+    const row = await certificateRow(certificateId);
+    expect(row.delivery_abandoned_reason).toBe("no_recipient");
+    expect(row.status).toBe("bounced");
+    expect(sent).toHaveLength(0);
+  });
+
+  it("stops delivery for a certificate already queued when erasure happens", async () => {
+    const { certificateId, userId } = await queueCertificate();
+
+    // Erase between queueing and the sweep.
+    await seedPool.query("UPDATE users SET email = NULL WHERE id = $1", [userId]);
+
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent).toHaveLength(0);
+    expect((await certificateRow(certificateId)).delivery_abandoned_reason).toBe(
+      "no_recipient",
+    );
+  });
+});
+
+describe("a permanent rejection", () => {
+  it("writes the reason and stops claiming the row", async () => {
+    const { certificateId } = await queueCertificate();
+    const { service } = build({ status: "permanent", reason: "SMTP 550" });
+
+    await service.sweep(new Date());
+
+    const row = await certificateRow(certificateId);
+    expect(row.delivery_abandoned_reason).toBe("permanent_rejection");
+    expect(row.delivery_error).toBe("SMTP 550");
+
+    // And the claim query no longer offers it.
+    const claimed = await appPool.query(
+      "SELECT * FROM claim_due_certificate_deliveries($1, $2, $3)",
+      [50, new Date(), 600],
+    );
+    expect(
+      claimed.rows.map((r: { certificate_id: string }) => r.certificate_id),
+    ).not.toContain(certificateId);
+  });
+});
+
+describe("a transient failure", () => {
+  it("schedules a retry the claim query will honour", async () => {
+    const { certificateId } = await queueCertificate();
+    const { service } = build({ status: "transient", reason: "SMTP 450" });
+
+    const now = new Date();
+    await service.sweep(now);
+
+    const row = await certificateRow(certificateId);
+    expect(row.status).toBe("issued");
+    expect(row.delivery_attempt_count).toBe(1);
+    expect(row.delivery_abandoned_reason).toBeNull();
+    expect(row.delivery_next_attempt_at?.getTime()).toBeGreaterThan(now.getTime());
+
+    // Not due yet, so a sweep right now leaves it alone.
+    const claimed = await appPool.query(
+      "SELECT * FROM claim_due_certificate_deliveries($1, $2, $3)",
+      [50, now, 600],
+    );
+    expect(
+      claimed.rows.map((r: { certificate_id: string }) => r.certificate_id),
+    ).not.toContain(certificateId);
+  });
+});
+
+describe("delivery and the download are independent", () => {
+  it("leaves the download token intact whatever the outcome", async () => {
+    // P8-03's central rule: a physician who has earned a Teilnahmebescheinigung
+    // must not lose it to a full mailbox.
+    const { certificateId } = await queueCertificate();
+    const before = await certificateRow(certificateId);
+
+    const { service } = build({ status: "permanent", reason: "SMTP 550" });
+    await service.sweep(new Date());
+
+    const after = await certificateRow(certificateId);
+    expect(after.download_token).toBe(before.download_token);
+    expect(after.download_token).not.toBe("");
+  });
+});

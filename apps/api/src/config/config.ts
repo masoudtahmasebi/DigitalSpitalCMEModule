@@ -91,6 +91,28 @@ const schema = z.object({
     .default("yes")
     .transform((value) => value !== "no"),
 
+  // Certificate delivery (P8-03). Slower than the EIV sweep on purpose: a
+  // Punktemeldung races an 8-day statutory window, a certificate has no
+  // deadline and its retry policy backs off over about a day. Sweeping every
+  // minute would mean 1,440 claims a day to find six rows still waiting.
+  CERTIFICATE_DELIVERY_INTERVAL_SEC: z.coerce.number().int().positive().default(300),
+  CERTIFICATE_DELIVERY_BATCH_SIZE: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(500)
+    .default(25),
+  // As with the EIV worker: lets a deployment scale web instances while
+  // running exactly one sender.
+  CERTIFICATE_DELIVERY_ENABLED: z
+    .string()
+    .default("yes")
+    .transform((value) => value !== "no"),
+  // Where the download link in the certificate email points. The portal, not
+  // the API: the link is for a person to click, and it has to land on a page
+  // that can sign them in.
+  PORTAL_BASE_URL: z.string().default(""),
+
   // ---------------------------------------------------------------------
   // Object storage for course media (P10-09)
   // ---------------------------------------------------------------------

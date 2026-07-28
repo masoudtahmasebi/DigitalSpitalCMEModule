@@ -141,3 +141,17 @@ export type {
 } from "./authorization.js";
 
 export { germanDuration, germanMinutesAndSeconds } from "./duration.js";
+
+export {
+  backoffMinutes,
+  planDeliveryAttempt,
+  DELIVERY_BACKOFF_MINUTES,
+  MAX_DELIVERY_ATTEMPTS,
+} from "./delivery-retry.js";
+export type {
+  DeliveryAbandonReason,
+  DeliveryAction,
+  DeliveryAttemptInput,
+  DeliveryFailure,
+  DeliveryPlan,
+} from "./delivery-retry.js";
