@@ -1195,6 +1195,14 @@ export interface components {
             title: string;
             durationSec: number | null;
             videoUrl: string | null;
+            /**
+             * @description WebVTT captions for the video, signed with the same lifetime as
+             *     `videoUrl`. WCAG 1.2.2 (Captions, Prerecorded) is **Level A**, and
+             *     EN 301 549 makes it the reference standard here — a physician who
+             *     cannot hear the video cannot earn the points, and the watch gate
+             *     will record that they did not. `null` when the author supplied none.
+             */
+            captionsUrl: string | null;
             /** @description Text lessons. Trusted authored content, not learner input. */
             body: string | null;
             /** @description Where the learner left off, so the player resumes there. */
@@ -1693,6 +1701,7 @@ export interface components {
             title: string;
             body: string | null;
             videoUrl: string | null;
+            captionsUrl: string | null;
             durationSec: number | null;
             fileUrl: string | null;
             fileSize: number | null;
@@ -1765,6 +1774,14 @@ export interface components {
             body?: string | null;
             /** Format: uri */
             videoUrl?: string | null;
+            /**
+             * Format: uri
+             * @description WebVTT. Owed for every video carrying speech — WCAG 1.2.2 is Level
+             *     A — but not enforced: a slide-only recording legitimately has none,
+             *     and the server cannot tell the two apart. The console asks for it
+             *     and says why.
+             */
+            captionsUrl?: string | null;
             durationSec?: number | null;
             /** Format: uri */
             fileUrl?: string | null;

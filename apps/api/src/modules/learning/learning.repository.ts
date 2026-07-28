@@ -60,6 +60,7 @@ export interface TreeContentRow {
   /** The lesson payload — only ever served through a gate check. */
   body: string | null;
   videoUrl: string | null;
+  captionsUrl: string | null;
   /** Mediathek fields; null for anything that is not a download. */
   fileUrl: string | null;
   mimeType: string | null;
@@ -239,6 +240,7 @@ export class LearningRepository implements LearningRepositoryPort {
         // separate read would be a second place that could forget the gate.
         body: contents.body,
         videoUrl: contents.videoUrl,
+        captionsUrl: contents.captionsUrl,
         fileUrl: contents.fileUrl,
         mimeType: contents.mimeType,
         fileSize: contents.fileSize,

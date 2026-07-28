@@ -56,8 +56,10 @@ import {
   ConfirmButton,
   Field,
   IconButton,
+  LoadFailure,
   Notice,
   Panel,
+  SaveProblem,
   Select,
   Spinner,
   TextArea,
@@ -105,14 +107,12 @@ export function CourseStructureEditor(props: {
 
   if (loadProblem !== undefined) {
     return (
-      <div className="space-y-3">
-        <Notice tone="error" title={de.error.title}>
-          {loadProblem}
-        </Notice>
-        <Button variant="secondary" onClick={retry}>
-          {de.error.retry}
-        </Button>
-      </div>
+      <LoadFailure
+        title={de.error.title}
+        retryLabel={de.error.retry}
+        problem={loadProblem}
+        onRetry={retry}
+      />
     );
   }
 
@@ -124,11 +124,7 @@ export function CourseStructureEditor(props: {
     <section className="space-y-4">
       <p className="max-w-3xl text-sm text-gray-600">{de.structure.intro}</p>
 
-      {saver.problem === undefined ? null : (
-        <Notice tone="error" title={de.error.title}>
-          {saver.problem}
-        </Notice>
-      )}
+      <SaveProblem title={de.error.title} problem={saver.problem} />
       {saver.state === "saving" ? (
         <p className="text-xs text-gray-500" role="status">
           {de.structure.reordering}
@@ -588,6 +584,7 @@ function ContentForm(props: {
   const [title, setTitle] = useState(initial?.title ?? "");
   const [body, setBody] = useState(initial?.body ?? "");
   const [videoUrl, setVideoUrl] = useState(initial?.videoUrl ?? "");
+  const [captionsUrl, setCaptionsUrl] = useState(initial?.captionsUrl ?? "");
   const [durationSec, setDurationSec] = useState(
     initial?.durationSec === null || initial?.durationSec === undefined
       ? ""
@@ -611,6 +608,7 @@ function ContentForm(props: {
               title: title.trim(),
               body: nullable(body),
               videoUrl: nullable(videoUrl),
+              captionsUrl: nullable(captionsUrl),
               durationSec: durationSec.trim() === "" ? null : Number(durationSec),
               fileUrl: nullable(fileUrl),
               mimeType: nullable(mimeType),
@@ -655,7 +653,30 @@ function ContentForm(props: {
               onChange={setDurationSec}
             />
           </Field>
+          <Field
+            label={de.structure.captionsUrl}
+            hint={de.structure.captionsHint}
+            htmlFor={id("captions")}
+          >
+            <TextInput
+              id={id("captions")}
+              value={captionsUrl}
+              maxLength={2000}
+              onChange={setCaptionsUrl}
+            />
+          </Field>
         </div>
+      ) : null}
+
+      {/*
+        Not a refusal. WCAG 1.2.2 is Level A and every video with speech owes
+        captions, but a slide-only recording legitimately has none and neither
+        this form nor the server can tell the two apart. Saying what is owed and
+        why is the honest middle — blocking the save would stop valid content,
+        and saying nothing would let an author not know.
+      */}
+      {kind === "video" && captionsUrl.trim() === "" ? (
+        <Notice tone="warning">{de.structure.captionsMissing}</Notice>
       ) : null}
 
       {kind === "text" || kind === "details" ? (
@@ -691,11 +712,7 @@ function ContentForm(props: {
         </div>
       ) : null}
 
-      {saver.problem === undefined ? null : (
-        <Notice tone="error" title={de.error.title}>
-          {saver.problem}
-        </Notice>
-      )}
+      <SaveProblem title={de.error.title} problem={saver.problem} />
 
       <div className="flex gap-2">
         <Button type="submit" disabled={saver.state === "saving" || title.trim() === ""}>
@@ -812,11 +829,7 @@ function EditForm(props: {
         );
       })}
 
-      {saver.problem === undefined ? null : (
-        <Notice tone="error" title={de.error.title}>
-          {saver.problem}
-        </Notice>
-      )}
+      <SaveProblem title={de.error.title} problem={saver.problem} />
 
       <div className="flex gap-2">
         <Button type="submit" disabled={saver.state === "saving" || incomplete}>

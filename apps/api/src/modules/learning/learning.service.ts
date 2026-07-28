@@ -237,6 +237,11 @@ export class LearningService {
       // Signed here and nowhere else: the gate has already agreed above, and
       // the URL is short-lived so it cannot outlive that agreement by much.
       videoUrl: this.media.resolve(content.videoUrl, learner.customerId, now),
+      // Signed the same way and for the same lifetime as the video. A caption
+      // track that expired before the video it belongs to would leave a
+      // hard-of-hearing learner watching an uncaptioned recording — the exact
+      // failure the track exists to prevent.
+      captionsUrl: this.media.resolve(content.captionsUrl, learner.customerId, now),
       body: content.body,
       lastPositionSec: progress?.lastPositionSec ?? 0,
       watchedPercent: progress?.watchedPercent ?? 0,

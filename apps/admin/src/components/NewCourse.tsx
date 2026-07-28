@@ -15,7 +15,7 @@ import type { ApiClient, CourseCreate, ProjectSummary } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { slugify } from "../drafts.js";
 import { useSaver } from "../hooks.js";
-import { Button, Field, Notice, Select, TextArea, TextInput } from "./ui.js";
+import { Button, Field, Notice, SaveProblem, Select, TextArea, TextInput } from "./ui.js";
 
 type DeliveryType = NonNullable<CourseCreate["deliveryType"]>;
 
@@ -127,11 +127,7 @@ export function NewCourse(props: {
           />
         </Field>
 
-        {saver.problem === undefined ? null : (
-          <Notice tone="error" title={de.error.title}>
-            {saver.problem}
-          </Notice>
-        )}
+        <SaveProblem title={de.error.title} problem={saver.problem} />
 
         <div className="flex gap-2">
           <Button

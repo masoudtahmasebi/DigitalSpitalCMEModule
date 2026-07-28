@@ -162,10 +162,17 @@ function VideoLesson(props: {
           {de.content.videoUnsupported}
         </p>
       ) : (
-        // Captions warn rather than error: a <track> is a content-authoring
-        // obligation on the course, and the schema has no caption field in this
-        // budget. The warning is the reminder that it is owed, not noise to
-        // silence — see docs/backlog/P5.md.
+        /*
+          The <track> is rendered below, conditionally on the author having
+          supplied one. `jsx-a11y/media-has-caption` only recognises a static
+          child and cannot see a conditional, so it warns about markup that is
+          in fact present.
+
+          A narrow, single-line disable for exactly that reason: the day the
+          <track> is deleted, the next reviewer finds a disable with no
+          corresponding element.
+        */
+        // eslint-disable-next-line jsx-a11y/media-has-caption
         <video
           ref={videoRef}
           src={lesson.videoUrl}
@@ -177,6 +184,27 @@ function VideoLesson(props: {
           onSeeking={handleStop}
           onEnded={handleEnded}
         >
+          {/*
+            WCAG 1.2.2 (Captions, Prerecorded) is Level A, and EN 301 549 makes
+            it the reference standard for accessibility in Germany. This is
+            professional education a physician is required to complete: one who
+            cannot hear the video cannot earn the points, and the watch gate
+            records that they did not.
+
+            Rendered only when the author supplied a track. An empty <track>
+            with no `src` is worse than none — the player offers a captions
+            control that produces nothing, which reads as broken captions
+            rather than absent ones.
+          */}
+          {lesson.captionsUrl === null ? null : (
+            <track
+              kind="captions"
+              src={lesson.captionsUrl}
+              srcLang="de"
+              label={de.content.captions}
+              default
+            />
+          )}
           {de.content.videoUnsupported}
         </video>
       )}

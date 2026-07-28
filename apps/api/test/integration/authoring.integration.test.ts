@@ -290,12 +290,20 @@ describe("building a course from nothing", () => {
         kind: "video",
         title: "Grundlagen",
         videoUrl: "https://cdn/x.mp4",
+        // Captions supplied here, and asserted to reach the learner further
+        // down. WCAG 1.2.2 is Level A; a field the console can store but the
+        // player never surfaces would be worse than none, because the console
+        // would report captions nobody can see.
+        captionsUrl: "https://cdn/x.de.vtt",
         durationSec: 600,
       },
     );
 
     expect(status).toBe(201);
     videoContentId = body.modules[0].chapters[0].contents[0].id;
+    expect(body.modules[0].chapters[0].contents[0].captionsUrl).toBe(
+      "https://cdn/x.de.vtt",
+    );
   });
 
   it("adds a quiz item and reports that it has no questions yet", async () => {
@@ -653,6 +661,19 @@ describe("an authored course is a course the learner API can serve", () => {
     expect(learner.body.modules.map((m: any) => m.title)).toEqual(
       author.body.modules.map((m: any) => m.title),
     );
+  });
+
+  it("hands the learner's player the caption track the author supplied", async () => {
+    // The half that makes the column worth having. WCAG 1.2.2 is Level A, and
+    // a caption URL that the console stores but the lesson payload drops would
+    // report captions to an author that no learner can turn on.
+    const lesson = await asLearner(
+      "GET",
+      `/courses/${courseSlug}/contents/${videoContentId}`,
+    );
+
+    expect(lesson.status).toBe(200);
+    expect(lesson.body.captionsUrl).toContain("x.de.vtt");
   });
 
   it("gates the authored quiz behind the authored video", async () => {

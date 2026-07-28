@@ -195,6 +195,8 @@ export const contents = pgTable("contents", {
   title: text("title").notNull(),
   body: text("body"),
   videoUrl: text("video_url"),
+  /** WebVTT captions (WCAG 1.2.2 Level A). NULL means none authored. */
+  captionsUrl: text("captions_url"),
   durationSec: integer("duration_sec"),
   fileUrl: text("file_url"),
   fileSize: bigint("file_size", { mode: "number" }),

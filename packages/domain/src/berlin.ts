@@ -100,16 +100,51 @@ function readParts(instant: Date): Parts {
   }
 
   return {
-    year: parsed["year"] ?? 0,
-    month: parsed["month"] ?? 1,
-    day: parsed["day"] ?? 1,
+    year: require_(parsed, "year"),
+    month: require_(parsed, "month"),
+    day: require_(parsed, "day"),
     // Under hour12: false, midnight formats as 24 in some ICU versions. The
     // normalisation applies to the hour alone — applying it to the date fields
     // would corrupt them.
-    hour: (parsed["hour"] ?? 0) % 24,
-    minute: parsed["minute"] ?? 0,
-    second: parsed["second"] ?? 0,
+    hour: require_(parsed, "hour") % 24,
+    minute: require_(parsed, "minute"),
+    second: require_(parsed, "second"),
   };
+}
+
+/**
+ * Read a formatted part, or refuse.
+ *
+ * These used to be `?? 0` / `?? 1` defaults. That was the wrong shape for this
+ * module: a missing part would have produced the 1st of January in the year 0
+ * and carried it into an 8-day statutory deadline, silently. Nobody would have
+ * seen a wrong date — they would have seen a rejected Punktemeldung weeks
+ * later, with no way to reopen the window.
+ *
+ * Unreachable with the options `PARTS` is configured with; every `Intl`
+ * implementation that supports the locale emits all six. It throws rather than
+ * guessing because the alternative to a loud failure here is a quiet wrong
+ * answer about a legal deadline.
+ */
+function require_(parsed: Record<string, number>, key: string): number {
+  const value = parsed[key];
+  if (value === undefined || !Number.isFinite(value)) {
+    throw new BerlinFormatError(key);
+  }
+  return value;
+}
+
+/**
+ * `Intl` did not produce a part this module needs.
+ *
+ * Its own class so a caller can tell "the platform's timezone data is broken"
+ * from an ordinary validation failure — they need very different responses.
+ */
+export class BerlinFormatError extends Error {
+  constructor(readonly part: string) {
+    super(`Intl.DateTimeFormat produced no "${part}" part for Europe/Berlin`);
+    this.name = "BerlinFormatError";
+  }
 }
 
 // ---------------------------------------------------------------------------

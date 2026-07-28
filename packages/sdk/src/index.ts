@@ -517,22 +517,16 @@ export function isNotFound(error: unknown): boolean {
   return hasStatus(error, 404);
 }
 
-/**
- * The request was fine; the current state refuses it.
+/*
+ * There is deliberately no `isConflict` or `isRateLimited` here.
  *
- * Distinct from a validation failure on purpose: nothing about the request is
- * wrong, and the same request would have succeeded before a learner touched
- * the thing being deleted. A console that showed "ungültige Eingabe" here would
- * be telling an author to fix something that is not broken.
+ * Both existed and neither was used: every caller reaches for `problemDetail`,
+ * because a 409 from this API already carries a German sentence saying *which*
+ * learner records block the delete, and a predicate would only let a client
+ * replace that with something vaguer. A complete-looking family of predicates
+ * is not a reason to ship two nobody calls — they are API surface that has to
+ * keep working.
  */
-export function isConflict(error: unknown): boolean {
-  return hasStatus(error, 409);
-}
-
-/** Too many requests. `retryAfterSec` is on the response, not the problem. */
-export function isRateLimited(error: unknown): boolean {
-  return hasStatus(error, 429);
-}
 
 /**
  * The human-readable sentence the API wrote, if it wrote one.

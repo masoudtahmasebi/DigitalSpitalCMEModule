@@ -32,6 +32,14 @@ export const lessonContentSchema = z.object({
   title: z.string(),
   durationSec: z.number().int().positive().nullable(),
   videoUrl: z.string().nullable(),
+  /**
+   * WebVTT captions, when the author supplied them.
+   *
+   * Travels with the video rather than being fetched separately: a `<track>`
+   * the player has to discover is a `<track>` that is sometimes missing, and
+   * captions are a Level A requirement rather than an enhancement.
+   */
+  captionsUrl: z.string().nullable(),
   body: z.string().nullable(),
   /** Where the learner left off, so the player can resume. */
   lastPositionSec: z.number().int().nonnegative(),

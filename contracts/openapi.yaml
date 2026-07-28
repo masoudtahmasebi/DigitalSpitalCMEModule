@@ -1881,13 +1881,31 @@ components:
         `body`, and reachable only through the sequence gate — see the
         `getLesson` description.
       required:
-        [id, kind, title, durationSec, videoUrl, body, lastPositionSec, watchedPercent]
+        [
+          id,
+          kind,
+          title,
+          durationSec,
+          videoUrl,
+          captionsUrl,
+          body,
+          lastPositionSec,
+          watchedPercent,
+        ]
       properties:
         id: { type: string, format: uuid }
         kind: { $ref: "#/components/schemas/ContentKind" }
         title: { type: string }
         durationSec: { type: [integer, "null"] }
         videoUrl: { type: [string, "null"] }
+        captionsUrl:
+          type: [string, "null"]
+          description: |
+            WebVTT captions for the video, signed with the same lifetime as
+            `videoUrl`. WCAG 1.2.2 (Captions, Prerecorded) is **Level A**, and
+            EN 301 549 makes it the reference standard here — a physician who
+            cannot hear the video cannot earn the points, and the watch gate
+            will record that they did not. `null` when the author supplied none.
         body:
           type: [string, "null"]
           description: Text lessons. Trusted authored content, not learner input.
@@ -2657,6 +2675,7 @@ components:
           title,
           body,
           videoUrl,
+          captionsUrl,
           durationSec,
           fileUrl,
           fileSize,
@@ -2670,6 +2689,7 @@ components:
         title: { type: string }
         body: { type: [string, "null"] }
         videoUrl: { type: [string, "null"] }
+        captionsUrl: { type: [string, "null"] }
         durationSec: { type: [integer, "null"] }
         fileUrl: { type: [string, "null"] }
         fileSize: { type: [integer, "null"] }
@@ -2767,6 +2787,15 @@ components:
         title: { type: string, minLength: 1, maxLength: 300 }
         body: { type: [string, "null"], maxLength: 20000 }
         videoUrl: { type: [string, "null"], format: uri, maxLength: 2000 }
+        captionsUrl:
+          type: [string, "null"]
+          format: uri
+          maxLength: 2000
+          description: |
+            WebVTT. Owed for every video carrying speech — WCAG 1.2.2 is Level
+            A — but not enforced: a slide-only recording legitimately has none,
+            and the server cannot tell the two apart. The console asks for it
+            and says why.
         durationSec: { type: [integer, "null"], minimum: 1, maximum: 86400 }
         fileUrl: { type: [string, "null"], format: uri, maxLength: 2000 }
         fileSize: { type: [integer, "null"], minimum: 0 }

@@ -28,8 +28,10 @@ import {
   ConfirmButton,
   Field,
   IconButton,
+  LoadFailure,
   Notice,
   Panel,
+  SaveProblem,
   Select,
   Spinner,
   TextArea,
@@ -69,14 +71,12 @@ export function EvaluationEditor(props: { client: ApiClient; courseSlug: string 
 
   if (loadProblem !== undefined) {
     return (
-      <div className="space-y-3">
-        <Notice tone="error" title={de.error.title}>
-          {loadProblem}
-        </Notice>
-        <Button variant="secondary" onClick={retry}>
-          {de.error.retry}
-        </Button>
-      </div>
+      <LoadFailure
+        title={de.error.title}
+        retryLabel={de.error.retry}
+        problem={loadProblem}
+        onRetry={retry}
+      />
     );
   }
 
@@ -93,11 +93,7 @@ export function EvaluationEditor(props: { client: ApiClient; courseSlug: string 
         <Notice tone="warning">{de.evaluation.freeTextPrivacy}</Notice>
       ) : null}
 
-      {saver.problem === undefined ? null : (
-        <Notice tone="error" title={de.error.title}>
-          {saver.problem}
-        </Notice>
-      )}
+      <SaveProblem title={de.error.title} problem={saver.problem} />
       {saver.state === "saved" && draft === undefined ? (
         <Notice tone="success">{de.common.saved}</Notice>
       ) : null}

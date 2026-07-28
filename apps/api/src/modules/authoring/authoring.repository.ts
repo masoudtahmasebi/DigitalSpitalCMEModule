@@ -171,6 +171,7 @@ export interface ContentValues {
   title: string;
   body: string | null;
   videoUrl: string | null;
+  captionsUrl: string | null;
   durationSec: number | null;
   fileUrl: string | null;
   fileSize: number | null;
@@ -195,6 +196,7 @@ export interface StructureRows {
     title: string;
     body: string | null;
     videoUrl: string | null;
+    captionsUrl: string | null;
     durationSec: number | null;
     fileUrl: string | null;
     fileSize: number | null;
@@ -460,6 +462,7 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
               title: contents.title,
               body: contents.body,
               videoUrl: contents.videoUrl,
+              captionsUrl: contents.captionsUrl,
               durationSec: contents.durationSec,
               fileUrl: contents.fileUrl,
               fileSize: contents.fileSize,
@@ -561,12 +564,13 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
   async createContent(chapterId: string, input: ContentValues): Promise<void> {
     await this.db.execute(sql`
       INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, body,
-                            video_url, duration_sec, file_url, file_size, mime_type)
+                            video_url, captions_url, duration_sec, file_url,
+                            file_size, mime_type)
       VALUES (
         current_setting('app.customer_id')::uuid, ${chapterId},
         (SELECT coalesce(max(ordinal), -1) + 1 FROM contents WHERE chapter_id = ${chapterId}),
         ${input.kind}::content_kind, ${input.title}, ${input.body},
-        ${input.videoUrl}, ${input.durationSec}, ${input.fileUrl},
+        ${input.videoUrl}, ${input.captionsUrl}, ${input.durationSec}, ${input.fileUrl},
         ${input.fileSize}, ${input.mimeType}
       )
     `);

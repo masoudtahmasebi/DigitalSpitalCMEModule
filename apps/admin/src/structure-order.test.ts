@@ -27,6 +27,7 @@ function content(id: string, learnerRecords = 0): AuthoringContent {
     title: id,
     body: null,
     videoUrl: null,
+    captionsUrl: null,
     durationSec: null,
     fileUrl: null,
     fileSize: null,

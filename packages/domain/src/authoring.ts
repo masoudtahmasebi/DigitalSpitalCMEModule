@@ -88,6 +88,16 @@ export interface ContentDraft {
   readonly title: string;
   readonly body?: string | null;
   readonly videoUrl?: string | null;
+  /**
+   * WebVTT captions.
+   *
+   * Carried but **not required**: WCAG 1.2.2 is Level A and every video with
+   * speech owes captions, but a slide-only recording with no speech legitimately
+   * has none, and this function cannot tell the two apart. Refusing every
+   * uncaptioned video would block valid content; the console asks for it and
+   * says why instead.
+   */
+  readonly captionsUrl?: string | null;
   readonly durationSec?: number | null;
   readonly fileUrl?: string | null;
   readonly mimeType?: string | null;

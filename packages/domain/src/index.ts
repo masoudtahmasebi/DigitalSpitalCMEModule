@@ -128,6 +128,7 @@ export {
   formatBerlinDate,
   formatBerlinDateTime,
   formatBerlinTime,
+  BerlinFormatError,
 } from "./berlin.js";
 export type { BerlinDate } from "./berlin.js";
 

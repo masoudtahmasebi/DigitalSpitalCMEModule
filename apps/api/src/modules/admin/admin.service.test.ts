@@ -75,6 +75,7 @@ const tree: CourseTree = {
       title: "Grundlagen",
       body: null,
       videoUrl: null,
+      captionsUrl: null,
       fileUrl: null,
       mimeType: null,
       fileSize: null,

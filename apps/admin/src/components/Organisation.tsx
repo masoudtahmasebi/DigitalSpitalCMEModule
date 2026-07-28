@@ -28,7 +28,17 @@ import type { ApiClient, DepartmentSummary, ProjectSummary } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { slugify } from "../drafts.js";
 import { useLoaded, useSaver } from "../hooks.js";
-import { Button, Field, Notice, Panel, Select, Spinner, Table, TextInput } from "./ui.js";
+import {
+  Button,
+  Field,
+  Notice,
+  Panel,
+  SaveProblem,
+  Select,
+  Spinner,
+  Table,
+  TextInput,
+} from "./ui.js";
 
 export function Organisation(props: { client: ApiClient }) {
   const { client } = props;
@@ -201,11 +211,7 @@ function NewDepartment(props: {
         />
       </Field>
 
-      {saver.problem === undefined ? null : (
-        <Notice tone="error" title={de.error.title}>
-          {saver.problem}
-        </Notice>
-      )}
+      <SaveProblem title={de.error.title} problem={saver.problem} />
 
       <div className="flex gap-2">
         <Button
@@ -437,11 +443,7 @@ function NewProject(props: {
         />
       </Field>
 
-      {saver.problem === undefined ? null : (
-        <Notice tone="error" title={de.error.title}>
-          {saver.problem}
-        </Notice>
-      )}
+      <SaveProblem title={de.error.title} problem={saver.problem} />
 
       <div className="flex gap-2">
         <Button
@@ -610,11 +612,7 @@ function ProjectSettings(props: {
         </p>
       </fieldset>
 
-      {saver.problem === undefined ? null : (
-        <Notice tone="error" title={de.error.title}>
-          {saver.problem}
-        </Notice>
-      )}
+      <SaveProblem title={de.error.title} problem={saver.problem} />
 
       <Button type="submit" disabled={saver.state === "saving"}>
         {saver.state === "saving" ? de.common.saving : de.common.save}

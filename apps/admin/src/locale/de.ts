@@ -138,6 +138,11 @@ export const de = {
     durationSec: "Länge in Sekunden",
     durationHint:
       "Pflichtangabe für Videos. Der erforderliche Videoanteil ist ein Prozentsatz dieser Länge — ohne Länge gibt es nichts zu erreichen und der Inhalt wäre überspringbar.",
+    captionsUrl: "Untertitel-Datei (WebVTT)",
+    captionsHint:
+      "URL einer .vtt-Datei mit deutschen Untertiteln. Untertitel sind Stufe A der Barrierefreiheitsrichtlinien (WCAG 1.2.2, EN 301 549): Ohne sie können hörbeeinträchtigte Ärztinnen und Ärzte die Fortbildung nicht absolvieren — und der Fortschritt wird sie als nicht angesehen erfassen.",
+    captionsMissing:
+      "Für dieses Video sind keine Untertitel hinterlegt. Bei Videos mit Sprache ist das ein Barrierefreiheitsmangel. Reine Folienaufzeichnungen ohne Ton benötigen keine.",
     body: "Text",
     fileUrl: "Datei-URL",
     mimeType: "Dateityp",

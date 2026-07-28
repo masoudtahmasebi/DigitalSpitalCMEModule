@@ -94,7 +94,3 @@ export function toProblemDetails(error: unknown, instance?: string): ProblemDeta
     ...(instance === undefined ? {} : { instance }),
   };
 }
-
-export function statusFor(error: unknown): number {
-  return error instanceof AppError ? STATUS[error.kind] : 500;
-}

@@ -130,6 +130,8 @@ export const de = {
     back: "Zurück zur Übersicht",
     next: "Weiter",
     watched: (percent: number): string => `${percent} % angesehen`,
+    /** The <track> label a player shows in its captions menu. */
+    captions: "Untertitel (Deutsch)",
     videoUnsupported:
       "Ihr Browser kann dieses Video nicht abspielen. Bitte verwenden Sie einen aktuellen Browser.",
   },

@@ -172,6 +172,7 @@ export const authoringContentSchema = z.object({
   title: z.string(),
   body: z.string().nullable(),
   videoUrl: z.string().nullable(),
+  captionsUrl: z.string().nullable(),
   durationSec: z.number().int().nullable(),
   fileUrl: z.string().nullable(),
   fileSize: z.number().int().nullable(),
@@ -244,6 +245,8 @@ export const contentWriteSchema = z.object({
   title,
   body: richText.nullable().optional(),
   videoUrl: url.nullable().optional(),
+  /** WebVTT. Owed for every video with speech — WCAG 1.2.2 is Level A. */
+  captionsUrl: url.nullable().optional(),
   durationSec: z.number().int().positive().max(86_400).nullable().optional(),
   fileUrl: url.nullable().optional(),
   fileSize: z.number().int().nonnegative().nullable().optional(),

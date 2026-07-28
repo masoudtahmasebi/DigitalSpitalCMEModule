@@ -107,7 +107,7 @@ export function pluginRegistry(): PluginRegistry {
   return registry ?? installPlugins();
 }
 
-/** Test seam: drop the registry so a suite can install a different set. */
-export function resetPluginsForTesting(): void {
-  registry = undefined;
-}
+// No `resetForTesting` seam, deliberately: a test that wants a different set
+// builds its own with `createPluginRegistry()` and passes it in, which is what
+// every test here already does. A mutable escape hatch on a sealed singleton is
+// exactly the thing the seal exists to prevent.

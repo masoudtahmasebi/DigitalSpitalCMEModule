@@ -149,6 +149,49 @@ export function IconButton(props: {
   );
 }
 
+/**
+ * A screen that could not load, with a way to try again.
+ *
+ * Four editors rendered this identically before the best-practices audit found
+ * it. Four copies of a two-element block is not a crisis, but it is four places
+ * a retry button can go missing — and a load failure with no way out is the
+ * one error state a user cannot work around.
+ */
+export function LoadFailure(props: {
+  title: string;
+  retryLabel: string;
+  problem: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <Notice tone="error" title={props.title}>
+        {props.problem}
+      </Notice>
+      <Button variant="secondary" onClick={props.onRetry}>
+        {props.retryLabel}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * The error from the last save, if there was one.
+ *
+ * Renders nothing when there is none, so callers write `<SaveProblem …/>`
+ * rather than the six-line ternary this replaces. Six copies of that ternary
+ * existed; the one thing they all got right was showing the API's own German
+ * sentence rather than a generic one, and keeping that consistent is the point.
+ */
+export function SaveProblem(props: { title: string; problem: string | undefined }) {
+  if (props.problem === undefined) return null;
+  return (
+    <Notice tone="error" title={props.title}>
+      {props.problem}
+    </Notice>
+  );
+}
+
 export function Spinner(props: { label: string }) {
   return (
     <p className="py-8 text-sm text-gray-600" role="status">

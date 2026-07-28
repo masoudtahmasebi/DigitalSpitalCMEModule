@@ -23,8 +23,10 @@ import {
   Button,
   Field,
   IconButton,
+  LoadFailure,
   Notice,
   Panel,
+  SaveProblem,
   Spinner,
   TextArea,
   TextInput,
@@ -55,14 +57,12 @@ export function ExpertsEditor(props: { client: ApiClient; courseSlug: string }) 
 
   if (loadProblem !== undefined) {
     return (
-      <div className="space-y-3">
-        <Notice tone="error" title={de.error.title}>
-          {loadProblem}
-        </Notice>
-        <Button variant="secondary" onClick={retry}>
-          {de.error.retry}
-        </Button>
-      </div>
+      <LoadFailure
+        title={de.error.title}
+        retryLabel={de.error.retry}
+        problem={loadProblem}
+        onRetry={retry}
+      />
     );
   }
 
@@ -78,11 +78,7 @@ export function ExpertsEditor(props: { client: ApiClient; courseSlug: string }) 
     <section className="space-y-4">
       <p className="max-w-3xl text-sm text-gray-600">{de.experts.intro}</p>
 
-      {saver.problem === undefined ? null : (
-        <Notice tone="error" title={de.error.title}>
-          {saver.problem}
-        </Notice>
-      )}
+      <SaveProblem title={de.error.title} problem={saver.problem} />
       {saver.state === "saved" && draft === undefined ? (
         <Notice tone="success">{de.common.saved}</Notice>
       ) : null}
