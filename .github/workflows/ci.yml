@@ -104,7 +104,15 @@ jobs:
           --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgres://ds_app:ds_app_dev@127.0.0.1:5432/ds_education
-      MIGRATION_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/ds_education
+      # Must be ds_migrator, not the postgres superuser: `ALTER DEFAULT
+      # PRIVILEGES FOR ROLE ds_migrator` (infra/postgres/init-roles.sql) only
+      # grants ds_app access to objects *ds_migrator* creates. Migrating as
+      # the superuser silently leaves ds_app with zero grants — "permission
+      # denied", not RLS-filtered rows — which looks like isolation working
+      # until you check which error it actually is.
+      MIGRATION_DATABASE_URL: postgres://ds_migrator:ds_migrator_dev@127.0.0.1:5432/ds_education
+      # Integration test fixture seeding only (BYPASSRLS) — see .env.example.
+      POSTGRES_SUPERUSER_URL: postgres://postgres:postgres@127.0.0.1:5432/ds_education
       REDIS_URL: redis://127.0.0.1:6379
     steps:
       - uses: actions/checkout@v4
@@ -120,9 +128,9 @@ jobs:
           PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d ds_education \
             -f infra/postgres/init-roles.sql
       - name: Migrate
-        run: pnpm db:migrate || echo "no migration runner yet"
+        run: pnpm db:migrate
       - name: Integration tests
-        run: pnpm test:integration || echo "no integration suite yet"
+        run: pnpm test:integration
 
   security:
     name: Security audit
