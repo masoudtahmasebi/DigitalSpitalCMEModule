@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { LearningService } from "./learning.service.js";
-import { enrolmentStateSchema, progressResultSchema } from "./learning.dto.js";
+import {
+  enrolmentStateSchema,
+  materialLibrarySchema,
+  progressResultSchema,
+} from "./learning.dto.js";
 import { AppError } from "../../shared/problem-details.js";
 import type {
   CourseComplianceRow,
@@ -22,6 +26,8 @@ const C2 = "bbbbbbbb-0000-4000-8000-000000000002";
 const VIDEO_1 = "cccccccc-0000-4000-8000-000000000001";
 const VIDEO_2 = "cccccccc-0000-4000-8000-000000000002";
 const QUIZ = "cccccccc-0000-4000-8000-000000000003";
+const PDF_1 = "cccccccc-0000-4000-8000-000000000004";
+const PDF_2 = "cccccccc-0000-4000-8000-000000000005";
 
 const learner = { customerId: CUSTOMER_ID, userId: USER_ID };
 
@@ -40,17 +46,69 @@ const course: CourseComplianceRow = {
 /** Two modules, one chapter each; module 1 has a video, module 2 video + quiz. */
 const tree: CourseTree = {
   modules: [
-    { id: M1, ordinal: 0 },
-    { id: M2, ordinal: 1 },
+    { id: M1, ordinal: 0, title: "Modul 1" },
+    { id: M2, ordinal: 1, title: "Modul 2" },
   ],
   chapters: [
     { id: C1, moduleId: M1, ordinal: 0 },
     { id: C2, moduleId: M2, ordinal: 1 },
   ],
   contents: [
-    { id: VIDEO_1, chapterId: C1, ordinal: 0, kind: "video", durationSec: 600 },
-    { id: VIDEO_2, chapterId: C2, ordinal: 0, kind: "video", durationSec: 400 },
-    { id: QUIZ, chapterId: C2, ordinal: 1, kind: "quiz", durationSec: null },
+    {
+      id: VIDEO_1,
+      chapterId: C1,
+      ordinal: 0,
+      kind: "video",
+      durationSec: 600,
+      title: "Inhalt",
+      fileUrl: null,
+      mimeType: null,
+      fileSize: null,
+    },
+    {
+      id: VIDEO_2,
+      chapterId: C2,
+      ordinal: 0,
+      kind: "video",
+      durationSec: 400,
+      title: "Inhalt",
+      fileUrl: null,
+      mimeType: null,
+      fileSize: null,
+    },
+    {
+      id: QUIZ,
+      chapterId: C2,
+      ordinal: 1,
+      kind: "quiz",
+      durationSec: null,
+      title: "Lernerfolgskontrolle",
+      fileUrl: null,
+      mimeType: null,
+      fileSize: null,
+    },
+    {
+      id: PDF_1,
+      chapterId: C1,
+      ordinal: 2,
+      kind: "material",
+      durationSec: null,
+      title: "Patienteninformation (PDF)",
+      fileUrl: "https://cdn.example.org/modul-1.pdf",
+      mimeType: "application/pdf",
+      fileSize: 1024,
+    },
+    {
+      id: PDF_2,
+      chapterId: C2,
+      ordinal: 2,
+      kind: "material",
+      durationSec: null,
+      title: "Diagnostik-Leitfaden (PDF)",
+      fileUrl: "https://cdn.example.org/modul-2.pdf",
+      mimeType: "application/pdf",
+      fileSize: 2048,
+    },
   ],
 };
 
@@ -522,5 +580,106 @@ describe("recordProgress", () => {
     );
 
     expect(result.watchedPercent).toBe(50);
+  });
+});
+
+describe("getMaterials — the Mediathek", () => {
+  it("returns a contract-valid library grouped by module", async () => {
+    const library = await new LearningService(fakeRepository().repository).getMaterials(
+      course.slug,
+      learner,
+    );
+
+    expect(() => materialLibrarySchema.parse(library)).not.toThrow();
+    expect(library.groups).toHaveLength(2);
+    expect(library.groups[0]?.moduleTitle).toBe("Modul 1");
+  });
+
+  it("locks every module's material while nothing is complete", async () => {
+    const library = await new LearningService(fakeRepository().repository).getMaterials(
+      course.slug,
+      learner,
+    );
+
+    expect(library.groups.every((group) => group.locked)).toBe(true);
+  });
+
+  it("withholds the download URL while locked — the absent URL is the gate", async () => {
+    // Returning the URL next to `locked: true` and trusting the client to hide
+    // it would not be a gate: the JSON is readable by anyone with the token.
+    const library = await new LearningService(fakeRepository().repository).getMaterials(
+      course.slug,
+      learner,
+    );
+
+    const urls = library.groups.flatMap((group) =>
+      group.materials.map((material) => material.fileUrl),
+    );
+    expect(urls.every((url) => url === null)).toBe(true);
+    expect(JSON.stringify(library)).not.toContain("cdn.example.org");
+  });
+
+  it("unlocks a module's material once that module is complete", async () => {
+    // Per module, not per course: waiting for the whole course would make the
+    // Mediathek useless until the very end.
+    const { repository } = fakeRepository({
+      // Only the video: a download is not a step, so finishing the video is
+      // what completes module 1.
+      progress: [progressRow({ contentId: VIDEO_1 })],
+    });
+
+    const library = await new LearningService(repository).getMaterials(
+      course.slug,
+      learner,
+    );
+
+    expect(library.groups[0]?.locked).toBe(false);
+    expect(library.groups[0]?.materials[0]?.fileUrl).toBe(
+      "https://cdn.example.org/modul-1.pdf",
+    );
+    // Module 2 is still unfinished, so its material stays padlocked.
+    expect(library.groups[1]?.locked).toBe(true);
+    expect(library.groups[1]?.materials[0]?.fileUrl).toBeNull();
+  });
+
+  it("keeps the title and size visible while locked, so the padlock has a label", async () => {
+    const library = await new LearningService(fakeRepository().repository).getMaterials(
+      course.slug,
+      learner,
+    );
+
+    const material = library.groups[0]?.materials[0];
+    expect(material?.title).toBe("Patienteninformation (PDF)");
+    expect(material?.fileSize).toBe(1024);
+    expect(material?.locked).toBe(true);
+  });
+
+  it("omits modules with nothing to download rather than showing empty sections", async () => {
+    const { repository } = fakeRepository(
+      {},
+      {
+        findCourseTree: async () => ({
+          ...tree,
+          contents: tree.contents.filter((content) => content.kind !== "material"),
+        }),
+      },
+    );
+
+    const library = await new LearningService(repository).getMaterials(
+      course.slug,
+      learner,
+    );
+
+    expect(library.groups).toEqual([]);
+  });
+
+  it("404s when the learner is not enrolled", async () => {
+    const { repository } = fakeRepository({ enrolment: undefined });
+
+    const error = await new LearningService(repository)
+      .getMaterials(course.slug, learner)
+      .catch((e) => e);
+
+    expect((error as AppError).kind).toBe("not_found");
   });
 });

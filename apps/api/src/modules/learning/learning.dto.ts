@@ -115,3 +115,36 @@ export type ProgressResult = z.infer<typeof progressResultSchema>;
 export type ModuleState = z.infer<typeof moduleStateSchema>;
 export type ChapterState = z.infer<typeof chapterStateSchema>;
 export type ContentState = z.infer<typeof contentStateSchema>;
+
+/**
+ * Mediathek (P5). The layout groups downloads under "Materialien zu Modul N",
+ * with later modules padlocked until their content is complete.
+ *
+ * `fileUrl` is nullable and is **null whenever `locked`** — the gate is the
+ * absent URL. A `locked: true` that the client is merely trusted to honour is
+ * not a gate; anyone can read the JSON.
+ */
+export const materialSchema = z.object({
+  id: z.uuid(),
+  title: z.string(),
+  locked: z.boolean(),
+  fileUrl: z.string().nullable(),
+  mimeType: z.string().nullable(),
+  fileSize: z.number().int().nullable(),
+});
+
+export const materialGroupSchema = z.object({
+  moduleId: z.uuid(),
+  moduleTitle: z.string(),
+  ordinal: z.number().int(),
+  locked: z.boolean(),
+  materials: z.array(materialSchema),
+});
+
+export const materialLibrarySchema = z.object({
+  courseSlug: z.string(),
+  groups: z.array(materialGroupSchema),
+});
+
+export type Material = z.infer<typeof materialSchema>;
+export type MaterialLibrary = z.infer<typeof materialLibrarySchema>;

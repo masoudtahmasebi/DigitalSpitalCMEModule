@@ -27,6 +27,7 @@ import { AuthGuard } from "./auth.guard.js";
 import { RolesGuard } from "./roles.guard.js";
 import { JwksRegistry } from "./jwks-registry.js";
 import { RedisJwksCache } from "./jwks-cache.redis.js";
+import { RateLimitGuard } from "../shared/rate-limit.guard.js";
 
 @Module({
   providers: [
@@ -86,8 +87,11 @@ import { RedisJwksCache } from "./jwks-cache.redis.js";
       ],
     },
     RolesGuard,
+    RateLimitGuard,
     { provide: APP_GUARD, useExisting: AuthGuard },
     { provide: APP_GUARD, useExisting: RolesGuard },
+    // Last: keyed on request.principal.userId, which AuthGuard sets.
+    { provide: APP_GUARD, useExisting: RateLimitGuard },
   ],
   exports: [UserService, AuditService],
 })

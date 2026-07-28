@@ -56,10 +56,15 @@ export interface TreeContentRow {
   ordinal: number;
   kind: "video" | "text" | "quiz" | "details" | "material";
   durationSec: number | null;
+  /** Mediathek fields; null for anything that is not a download. */
+  title: string;
+  fileUrl: string | null;
+  mimeType: string | null;
+  fileSize: number | null;
 }
 
 export interface CourseTree {
-  modules: Array<{ id: string; ordinal: number }>;
+  modules: Array<{ id: string; ordinal: number; title: string }>;
   chapters: Array<{ id: string; moduleId: string; ordinal: number }>;
   contents: TreeContentRow[];
 }
@@ -191,7 +196,7 @@ export class LearningRepository implements LearningRepositoryPort {
 
   async findCourseTree(courseId: string): Promise<CourseTree> {
     const moduleRows = await this.db
-      .select({ id: modules.id, ordinal: modules.ordinal })
+      .select({ id: modules.id, ordinal: modules.ordinal, title: modules.title })
       .from(modules)
       .where(eq(modules.courseId, courseId))
       .orderBy(asc(modules.ordinal));
@@ -221,6 +226,10 @@ export class LearningRepository implements LearningRepositoryPort {
         ordinal: contents.ordinal,
         kind: contents.kind,
         durationSec: contents.durationSec,
+        title: contents.title,
+        fileUrl: contents.fileUrl,
+        mimeType: contents.mimeType,
+        fileSize: contents.fileSize,
       })
       .from(contents)
       .where(inArray(contents.chapterId, chapterIds))

@@ -40,6 +40,8 @@ import type {
   ChapterState,
   ContentState,
   EnrolmentState,
+  Material,
+  MaterialLibrary,
   ModuleState,
   ProgressReport,
   ProgressResult,
@@ -215,6 +217,65 @@ export class LearningService {
     return { course, enrolment, tree, content, stored, rollup };
   }
 
+  /**
+   * The Mediathek (P5): downloads grouped by module, locked until that module
+   * is complete.
+   *
+   * A locked item comes back **without its `fileUrl`**. Returning the URL
+   * alongside `locked: true` and trusting the client to hide it would not be a
+   * gate — the JSON is readable by anyone holding the token. Withholding the
+   * URL is what makes the padlock mean something.
+   */
+  async getMaterials(slug: string, learner: LearnerContext): Promise<MaterialLibrary> {
+    const course = await this.requireCourse(slug);
+    const enrolment = await this.requireEnrolment(course.id, learner.userId);
+
+    const [tree, stored] = await Promise.all([
+      this.repository.findCourseTree(course.id),
+      this.repository.findProgress(enrolment.id),
+    ]);
+
+    const courseNode = toCourseNode(tree);
+    const rollup = rollupProgress(courseNode, toProgressRecords(stored, tree));
+
+    const groups = tree.modules.map((module) => {
+      // A module's material unlocks when the module's own content is done —
+      // not when the whole course is, which would make the Mediathek useless
+      // until the very end.
+      const locked = rollup.modules[module.id]?.status !== "completed";
+
+      const chapterIds = new Set(
+        tree.chapters
+          .filter((chapter) => chapter.moduleId === module.id)
+          .map((chapter) => chapter.id),
+      );
+
+      const materials: Material[] = tree.contents
+        .filter(
+          (content) => content.kind === "material" && chapterIds.has(content.chapterId),
+        )
+        .map((content) => ({
+          id: content.id,
+          title: content.title,
+          locked,
+          fileUrl: locked ? null : content.fileUrl,
+          mimeType: content.mimeType,
+          fileSize: content.fileSize,
+        }));
+
+      return {
+        moduleId: module.id,
+        moduleTitle: module.title,
+        ordinal: module.ordinal,
+        locked,
+        materials,
+      };
+    });
+
+    // Modules with nothing to download do not become empty padlocked sections.
+    return { courseSlug: slug, groups: groups.filter((g) => g.materials.length > 0) };
+  }
+
   /** Stamped by the completion service once every condition is satisfied. */
   async markCompleted(enrolmentId: string, at: Date): Promise<void> {
     await this.repository.markCompleted(enrolmentId, at);
@@ -317,6 +378,26 @@ export class LearningService {
   }
 }
 
+/**
+ * Is this content a step the learner completes, or a resource attached to one?
+ *
+ * `material` is a Mediathek download. It has no completion event — nothing
+ * happens when a PDF is fetched that could mark it done — so including it in
+ * the compliance tree would make its chapter permanently incomplete, which
+ * would in turn lock every later module forever. The Mediathek serves these
+ * from the raw tree and gates them on the module's own completion instead.
+ *
+ * Every traversal that feeds progress, gating or the resume target goes
+ * through this predicate, so the three cannot disagree about what counts.
+ */
+function isComplianceContent(
+  content: CourseTree["contents"][number],
+): content is CourseTree["contents"][number] & {
+  kind: "video" | "text" | "quiz" | "details";
+} {
+  return content.kind !== "material";
+}
+
 /** Maps flat rows into the tree shape `@ds/domain` consumes. */
 export function toCourseNode(tree: CourseTree): CourseNode {
   return {
@@ -331,13 +412,10 @@ export function toCourseNode(tree: CourseTree): CourseNode {
           ordinal: chapter.ordinal,
           contents: tree.contents
             .filter((content) => content.chapterId === chapter.id)
+            .filter(isComplianceContent)
             .map((content) => ({
               id: content.id,
-              // `material` is a Mediathek download, not a compliance item; the
-              // domain's ContentKind has no such member, and mapping it to
-              // `details` keeps it counted for progress without pretending it
-              // is watchable.
-              kind: content.kind === "material" ? "details" : content.kind,
+              kind: content.kind,
               ...(content.durationSec === null
                 ? {}
                 : { durationSec: content.durationSec }),
@@ -430,7 +508,9 @@ function buildModuleStates(
     const chapterStates: ChapterState[] = moduleChapters.map((chapter) => {
       const gate = gates.get(chapter.id);
       const contentStates: ContentState[] = tree.contents
-        .filter((content) => content.chapterId === chapter.id)
+        .filter(
+          (content) => content.chapterId === chapter.id && isComplianceContent(content),
+        )
         .map((content) => ({
           id: content.id,
           // Content inherits its chapter's gate: the sequence is evaluated at
@@ -480,7 +560,9 @@ function firstReachableIncomplete(
     for (const chapter of tree.chapters.filter((row) => row.moduleId === module.id)) {
       if (gates.get(chapter.id)?.status === "locked") continue;
 
-      for (const content of tree.contents.filter((row) => row.chapterId === chapter.id)) {
+      for (const content of tree.contents.filter(
+        (row) => row.chapterId === chapter.id && isComplianceContent(row),
+      )) {
         if (rollup.contents[content.id]?.status !== "completed") return content.id;
       }
     }

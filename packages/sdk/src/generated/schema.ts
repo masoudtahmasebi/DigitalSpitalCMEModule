@@ -161,6 +161,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/courses/{slug}/materials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Mediathek — downloadable material, grouped by module
+         * @description Backs the Mediathek tab. Material belonging to a module the learner has
+         *     not finished is returned **locked and without its download URL** — the
+         *     padlocked section in the layout, with "Wird nach Abschluss der Module
+         *     freigeschaltet".
+         *
+         *     Withholding the URL rather than only a flag is the point: a `locked:
+         *     true` the client is trusted to honour is not a gate, it is a
+         *     suggestion.
+         */
+        get: operations["getMaterials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/courses/{slug}/evaluation": {
         parameters: {
             query?: never;
@@ -452,6 +479,32 @@ export interface components {
              *     attempt is visible.
              */
             rejected: components["schemas"]["RejectedSegment"][];
+        };
+        /**
+         * @description One downloadable item. `fileUrl` is **null while locked** — the gate is
+         *     the absent URL, not the boolean.
+         */
+        Material: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            locked: boolean;
+            fileUrl: string | null;
+            mimeType: string | null;
+            fileSize: number | null;
+        };
+        /** @description The layout groups downloads under "Materialien zu Modul N". */
+        MaterialGroup: {
+            /** Format: uuid */
+            moduleId: string;
+            moduleTitle: string;
+            ordinal: number;
+            locked: boolean;
+            materials: components["schemas"]["Material"][];
+        };
+        MaterialLibrary: {
+            courseSlug: string;
+            groups: components["schemas"]["MaterialGroup"][];
         };
         /** @description No correctness marker — the shape has nowhere to put one. */
         QuizOption: {
@@ -898,6 +951,38 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getMaterials: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Material grouped by module, with lock state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialLibrary"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
         };
     };
     getEvaluation: {

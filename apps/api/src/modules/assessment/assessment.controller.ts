@@ -12,6 +12,7 @@ import { Roles } from "../../auth/roles.decorator.js";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
 import { AppError } from "../../shared/problem-details.js";
+import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
 import { AssessmentService } from "./assessment.service.js";
@@ -42,6 +43,7 @@ export class AssessmentController {
 
   @Post()
   @HttpCode(200)
+  @RateLimit("quizSubmit")
   @Roles(...LEARNER_ROLES)
   async submit(
     @Param("slug") slug: string,

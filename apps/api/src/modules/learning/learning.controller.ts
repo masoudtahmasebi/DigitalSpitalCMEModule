@@ -12,6 +12,7 @@ import { Roles } from "../../auth/roles.decorator.js";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
 import { AppError } from "../../shared/problem-details.js";
+import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
 import { LearningService } from "./learning.service.js";
@@ -45,10 +46,24 @@ export class LearningController {
     });
   }
 
+  @Get("materials")
+  @Roles("learner", "department_admin", "customer_admin", "super_admin")
+  async getMaterials(
+    @Param("slug") slug: string,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    return LearningService.fromDb(db).getMaterials(slug, {
+      customerId: principal.customerId,
+      userId: principal.userId,
+    });
+  }
+
   // 200, not Nest's default 201: reporting progress does not create a resource
   // at a new URL, and `contracts/openapi.yaml` is the authority on the status.
   @Post("contents/:contentId/progress")
   @HttpCode(200)
+  @RateLimit("progress")
   @Roles("learner", "department_admin", "customer_admin", "super_admin")
   async recordProgress(
     @Param("slug") slug: string,

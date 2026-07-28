@@ -287,6 +287,32 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+  /courses/{slug}/materials:
+    get:
+      tags: [learning]
+      operationId: getMaterials
+      summary: The Mediathek — downloadable material, grouped by module
+      description: |
+        Backs the Mediathek tab. Material belonging to a module the learner has
+        not finished is returned **locked and without its download URL** — the
+        padlocked section in the layout, with "Wird nach Abschluss der Module
+        freigeschaltet".
+
+        Withholding the URL rather than only a flag is the point: a `locked:
+        true` the client is trusted to honour is not a gate, it is a
+        suggestion.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: Material grouped by module, with lock state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MaterialLibrary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /courses/{slug}/evaluation:
     get:
       tags: [completion]
@@ -816,6 +842,42 @@ components:
             Named rather than silently dropped, so a client bug or a tampering
             attempt is visible.
           items: { $ref: "#/components/schemas/RejectedSegment" }
+
+    Material:
+      type: object
+      description: |
+        One downloadable item. `fileUrl` is **null while locked** — the gate is
+        the absent URL, not the boolean.
+      required: [id, title, locked, fileUrl, mimeType, fileSize]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        locked: { type: boolean }
+        fileUrl: { type: [string, "null"] }
+        mimeType: { type: [string, "null"] }
+        fileSize: { type: [integer, "null"] }
+
+    MaterialGroup:
+      type: object
+      description: The layout groups downloads under "Materialien zu Modul N".
+      required: [moduleId, moduleTitle, ordinal, locked, materials]
+      properties:
+        moduleId: { type: string, format: uuid }
+        moduleTitle: { type: string }
+        ordinal: { type: integer }
+        locked: { type: boolean }
+        materials:
+          type: array
+          items: { $ref: "#/components/schemas/Material" }
+
+    MaterialLibrary:
+      type: object
+      required: [courseSlug, groups]
+      properties:
+        courseSlug: { type: string }
+        groups:
+          type: array
+          items: { $ref: "#/components/schemas/MaterialGroup" }
 
     QuizOption:
       type: object

@@ -26,6 +26,7 @@ export type AppErrorKind =
   | "validation"
   | "conflict"
   | "gate_locked"
+  | "rate_limited"
   | "internal";
 
 const STATUS: Record<AppErrorKind, number> = {
@@ -35,6 +36,7 @@ const STATUS: Record<AppErrorKind, number> = {
   validation: 422,
   conflict: 409,
   gate_locked: 403,
+  rate_limited: 429,
   internal: 500,
 };
 
@@ -45,6 +47,7 @@ const TITLE: Record<AppErrorKind, string> = {
   validation: "Validation failed",
   conflict: "Conflict",
   gate_locked: "Content locked",
+  rate_limited: "Too many requests",
   internal: "Internal server error",
 };
 

@@ -44,11 +44,31 @@ const course: CourseComplianceRow = {
 };
 
 const tree: CourseTree = {
-  modules: [{ id: M1, ordinal: 0 }],
+  modules: [{ id: M1, ordinal: 0, title: "Modul 1" }],
   chapters: [{ id: C1, moduleId: M1, ordinal: 0 }],
   contents: [
-    { id: VIDEO, chapterId: C1, ordinal: 0, kind: "video", durationSec: 600 },
-    { id: QUIZ, chapterId: C1, ordinal: 1, kind: "quiz", durationSec: null },
+    {
+      id: VIDEO,
+      chapterId: C1,
+      ordinal: 0,
+      kind: "video",
+      durationSec: 600,
+      title: "Inhalt",
+      fileUrl: null,
+      mimeType: null,
+      fileSize: null,
+    },
+    {
+      id: QUIZ,
+      chapterId: C1,
+      ordinal: 1,
+      kind: "quiz",
+      durationSec: null,
+      title: "Inhalt",
+      fileUrl: null,
+      mimeType: null,
+      fileSize: null,
+    },
   ],
 };
 

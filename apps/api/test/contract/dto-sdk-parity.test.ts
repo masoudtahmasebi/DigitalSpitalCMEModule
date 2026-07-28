@@ -31,6 +31,7 @@ import type {
 } from "../../src/modules/catalog/catalog.dto.js";
 import type {
   enrolmentStateSchema,
+  materialLibrarySchema,
   progressReportSchema,
   progressResultSchema,
 } from "../../src/modules/learning/learning.dto.js";
@@ -71,6 +72,9 @@ type _Learning = [
   >,
   Expect<
     MutuallyAssignable<z.infer<typeof progressResultSchema>, Schemas["ProgressResult"]>
+  >,
+  Expect<
+    MutuallyAssignable<z.infer<typeof materialLibrarySchema>, Schemas["MaterialLibrary"]>
   >,
 ];
 

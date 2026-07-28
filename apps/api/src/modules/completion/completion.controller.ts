@@ -11,6 +11,7 @@ import { Roles } from "../../auth/roles.decorator.js";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
 import { AppError } from "../../shared/problem-details.js";
+import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
 import { CompletionService } from "./completion.service.js";
@@ -69,6 +70,7 @@ export class CompletionController {
    */
   @Put("profile/efn")
   @HttpCode(204)
+  @RateLimit("efnWrite")
   @Roles(...LEARNER_ROLES)
   async setEfn(
     @Body() body: unknown,
@@ -90,6 +92,7 @@ export class CompletionController {
 
   @Post("courses/:slug/completion")
   @HttpCode(200)
+  @RateLimit("completion")
   @Roles(...LEARNER_ROLES)
   async complete(
     @Param("slug") slug: string,

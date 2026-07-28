@@ -125,6 +125,18 @@ beforeAll(async () => {
     [customerId, chapter2, "Lernerfolgskontrolle"],
   );
 
+  // Mediathek downloads, one per module, to exercise the padlock.
+  await insert(
+    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, file_url, mime_type, file_size)
+     VALUES ($1,$2,9,'material',$3,$4,'application/pdf',1024) RETURNING id`,
+    [customerId, chapter1, "Modul 1 Handout", "https://cdn.example.org/m1.pdf"],
+  );
+  await insert(
+    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, file_url, mime_type, file_size)
+     VALUES ($1,$2,9,'material',$3,$4,'application/pdf',2048) RETURNING id`,
+    [customerId, chapter2, "Modul 2 Handout", "https://cdn.example.org/m2.pdf"],
+  );
+
   const userId = await insert(
     `INSERT INTO users (keycloak_realm, keycloak_sub, email, first_name, last_name)
      VALUES ($1,$2,$3,$4,$5) RETURNING id`,
@@ -383,5 +395,45 @@ describe("the learner journey", () => {
     expect(serialised).not.toContain("isCorrect");
     expect(serialised).not.toContain("is_correct");
     expect(serialised).not.toMatch(/\d{15}/);
+  });
+});
+
+describe("the Mediathek", () => {
+  it("locks every download and withholds its URL before anything is finished", async () => {
+    // Asserted at the very start of the suite's state would be ideal, but the
+    // journey above has already completed module 1 — so this checks module 2,
+    // which is still unfinished at this point.
+    const { status, body } = await call("GET", `/courses/${courseSlug}/materials`);
+
+    expect(status).toBe(200);
+    const locked = body.groups.find((g: any) => g.locked === true);
+    expect(locked).toBeDefined();
+    expect(locked.materials[0].fileUrl).toBeNull();
+    // The title survives so the padlocked row still has a label.
+    expect(locked.materials[0].title).toContain("Handout");
+  });
+
+  it("releases module 1's download, whose content is complete", async () => {
+    const { body } = await call("GET", `/courses/${courseSlug}/materials`);
+
+    const unlocked = body.groups.find((g: any) => g.locked === false);
+    expect(unlocked).toBeDefined();
+    expect(unlocked.materials[0].fileUrl).toBe("https://cdn.example.org/m1.pdf");
+  });
+
+  it("leaks no locked URL anywhere in the payload", async () => {
+    // The gate is the absent URL, so the locked module's file must not appear
+    // at all — not in another field, not in a sibling group.
+    const { body } = await call("GET", `/courses/${courseSlug}/materials`);
+
+    expect(JSON.stringify(body)).not.toContain("m2.pdf");
+  });
+
+  it("does not let a download block its chapter from completing", async () => {
+    // A PDF has no completion event. If it counted as a step, module 1 could
+    // never finish and module 2 would stay locked forever.
+    const { body } = await call("GET", `/courses/${courseSlug}/enrolment`);
+
+    expect(body.modules[0].gate).toBe("completed");
   });
 });

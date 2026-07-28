@@ -15,6 +15,7 @@ import { Pool } from "pg";
 import Redis from "ioredis";
 import { loadConfig, type AppConfig } from "../config/config.js";
 import { APP_CONFIG, PG_POOL, REDIS_CLIENT } from "./tokens.js";
+import { RateLimiter, RedisRateLimitStore } from "../shared/rate-limit.js";
 
 @Global()
 @Module({
@@ -37,8 +38,15 @@ import { APP_CONFIG, PG_POOL, REDIS_CLIENT } from "./tokens.js";
         new Redis(config.REDIS_URL, { maxRetriesPerRequest: 3 }),
       inject: [APP_CONFIG],
     },
+    {
+      // Shares the Redis client: the limit must hold across instances, so an
+      // in-process counter would multiply it by the replica count.
+      provide: RateLimiter,
+      useFactory: (redis: Redis) => new RateLimiter(new RedisRateLimitStore(redis)),
+      inject: [REDIS_CLIENT],
+    },
   ],
-  exports: [APP_CONFIG, PG_POOL, REDIS_CLIENT],
+  exports: [APP_CONFIG, PG_POOL, REDIS_CLIENT, RateLimiter],
 })
 export class DbModule implements OnModuleDestroy {
   constructor(
