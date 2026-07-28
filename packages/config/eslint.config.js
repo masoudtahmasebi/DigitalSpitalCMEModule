@@ -28,6 +28,13 @@ export default [
       // Ad-hoc local smoke/debug scripts, never committed (see .gitignore).
       "**/*.local.mjs",
       "**/*.local.ts",
+      // The widget bundle copied into the WordPress plugin by `pnpm wp:bundle`.
+      // It is a build artefact of apps/widget — linting it lints React.
+      "wordpress/*/assets/**",
+      // WordPress block editor script: plain browser ES for wp-admin, with no
+      // build step by design (see block/index.js). It is not part of any
+      // TypeScript project and the layer rules do not apply to it.
+      "wordpress/*/block/**",
     ],
   },
   js.configs.recommended,

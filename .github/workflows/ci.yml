@@ -45,6 +45,12 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      # The WordPress plugin's security properties (P6-01/02), executed against
+      # a stub WordPress. This one guards a file that will run on MEDICE's
+      # production login path, so "it was reviewed" is not enough.
+      - name: WordPress plugin security tests
+        run: pnpm test:wp
+
       - name: Build
         run: pnpm build
 

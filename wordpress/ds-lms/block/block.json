@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/block.json",
+  "apiVersion": 3,
+  "name": "ds-lms/course",
+  "title": "DS Education — Fortbildung",
+  "category": "embed",
+  "icon": "welcome-learn-more",
+  "description": "Bindet eine CME-Fortbildung als <ds-lms> ein.",
+  "textdomain": "ds-lms",
+  "supports": {
+    "html": false,
+    "multiple": true,
+    "reusable": false
+  },
+  "attributes": {
+    "courseSlug": {
+      "type": "string",
+      "default": ""
+    }
+  },
+  "editorScript": "file:./index.js"
+}

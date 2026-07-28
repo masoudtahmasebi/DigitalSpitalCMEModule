@@ -1,0 +1,4 @@
+# The built widget bundle, copied here by `pnpm wp:bundle`. Not committed:
+# it is a build artefact of apps/widget, and committing it would let the
+# plugin's copy drift from the source it was built from.
+ds-lms.js

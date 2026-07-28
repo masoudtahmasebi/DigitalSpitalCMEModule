@@ -105,6 +105,37 @@ describe("configuration", () => {
     );
   });
 
+  it("keeps a provider set before the element upgraded", async () => {
+    // The WordPress ordering, and the one that fails silently: the plugin's
+    // inline script runs *before* the deferred module that defines the
+    // element, so the property lands on a plain HTMLUnknownElement. A class
+    // field would erase it in the constructor at upgrade time, and the widget
+    // would claim it was not configured on a page configured perfectly.
+    //
+    // Parsed in a foreign document on purpose: `document.createElement` in
+    // this one upgrades immediately, since the element is already defined —
+    // which would make this assertion pass whether or not the bug exists.
+    const foreign = new DOMParser().parseFromString(
+      `<ds-lms api-base="https://api.test" project="medice-adhs" course="adhs-akademie-adult"></ds-lms>`,
+      "text/html",
+    );
+    const raw = foreign.querySelector("ds-lms")!;
+    expect(raw).not.toBeInstanceOf(DsLmsElement);
+
+    (raw as unknown as { tokenProvider: unknown }).tokenProvider = async () => "early";
+
+    // Adopting into this document is what triggers the upgrade.
+    host.append(document.adoptNode(raw));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(raw).toBeInstanceOf(DsLmsElement);
+    const upgraded = raw as unknown as DsLmsElement;
+    expect(await upgraded.tokenProvider?.({ refresh: false })).toBe("early");
+    expect(upgraded.shadowRootForTest?.textContent ?? "").not.toContain(
+      "nicht korrekt eingebunden",
+    );
+  });
+
   it("accepts a token provider set as a property before insertion", async () => {
     // The documented escape hatch for a host page that already holds a token.
     const element = new DsLmsElement();

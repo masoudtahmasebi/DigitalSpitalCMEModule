@@ -22,11 +22,13 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "wp:bundle": "pnpm --filter @ds/widget build && cp apps/widget/dist/ds-lms.js wordpress/ds-lms/assets/ds-lms.js",
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
     "typecheck": "turbo run typecheck && tsc -p db/tsconfig.json --noEmit",
     "test": "turbo run test",
+    "test:wp": "php wordpress/ds-lms/tests/security-test.php",
     "dev": "turbo run dev",
     "infra:up": "docker compose -f infra/docker-compose.yml up -d --wait",
     "infra:down": "docker compose -f infra/docker-compose.yml down",

@@ -47,14 +47,42 @@ import { cachingProvider, resolveTokenProvider, type TokenProvider } from "./tok
 export const WIDGET_ELEMENT_NAME = "ds-lms";
 
 export class DsLmsElement extends HTMLElement {
-  /** Set by the host page before or after insertion — see `token.ts`. */
-  tokenProvider?: TokenProvider;
-
+  #tokenProvider: TokenProvider | undefined;
   #root: Root | undefined;
   #shadow: ShadowRoot | undefined;
 
+  /**
+   * Set by the host page, before or after the element upgrades — see
+   * `token.ts`.
+   *
+   * An accessor pair rather than a plain field, and this is not a style
+   * choice. A class field compiles to a `[[Define]]` in the constructor, and
+   * the constructor runs at *upgrade* time. A host page that does
+   *
+   *     element.tokenProvider = provider;   // element not yet upgraded
+   *
+   * creates an own data property, which the field definition then overwrites
+   * with `undefined` the moment the bundle loads. The widget would render
+   * "not correctly embedded" on a page that had configured it perfectly.
+   *
+   * That ordering is not hypothetical — it is exactly what the WordPress
+   * plugin does, because its inline script runs before the deferred module
+   * that defines the element. So the property lives on the prototype, and
+   * `#upgradeProperty` re-applies anything that was set early.
+   */
+  get tokenProvider(): TokenProvider | undefined {
+    return this.#tokenProvider;
+  }
+
+  set tokenProvider(value: TokenProvider | undefined) {
+    this.#tokenProvider = value;
+  }
+
   connectedCallback(): void {
     if (this.#root !== undefined) return;
+
+    // Must run before anything reads the provider.
+    this.#upgradeProperty("tokenProvider");
 
     const shadow = this.attachShadow({ mode: "closed" });
     this.#shadow = shadow;
@@ -94,6 +122,26 @@ export class DsLmsElement extends HTMLElement {
   /** Exposed for tests: the shadow root is closed, so nothing else can see it. */
   get shadowRootForTest(): ShadowRoot | undefined {
     return this.#shadow;
+  }
+
+  /**
+   * Re-apply a property the host page set before this element upgraded.
+   *
+   * An own data property set on a not-yet-upgraded element shadows the
+   * prototype's accessor forever. Deleting it and reassigning routes the value
+   * through the setter, which is where it should have gone. This is the
+   * standard custom-element upgrade dance, and it exists because element
+   * definition is asynchronous while the page's scripts are not.
+   */
+  #upgradeProperty(name: "tokenProvider"): void {
+    if (!Object.prototype.hasOwnProperty.call(this, name)) return;
+    const value = this[name];
+    // The property being removed is the *own data property* the host page
+    // created before upgrade, not the prototype accessor declared above.
+    // TypeScript has no way to express that distinction, and `delete` on a
+    // non-optional member is an error — hence the widened view.
+    delete (this as Partial<DsLmsElement>)[name];
+    this[name] = value;
   }
 }
 

@@ -28,3 +28,6 @@ pnpm-debug.log*
 
 # Redis snapshot, written by a locally-started redis-server during integration runs
 dump.rdb
+
+# Built widget bundle copied into the WordPress plugin by `pnpm wp:bundle`.
+wordpress/*/assets/ds-lms.js
