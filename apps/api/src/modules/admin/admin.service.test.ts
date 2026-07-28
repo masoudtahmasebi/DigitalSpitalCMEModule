@@ -9,6 +9,8 @@ import type {
   CertificateAssetPatch,
   CoursePatch,
   EnrolmentListRow,
+  ProjectFontPatch,
+  ProjectFontState,
 } from "./admin.repository.js";
 import type {
   CourseTree,
@@ -25,6 +27,7 @@ const C1 = "bbbbbbbb-0000-4000-8000-000000000001";
 const VIDEO = "cccccccc-0000-4000-8000-000000000001";
 
 const NOW = new Date("2026-07-28T10:00:00Z");
+const PROJECT_SLUG = "medice-adhs";
 const actor = { customerId: CUSTOMER_ID, userId: USER_ID };
 
 /** 1×1 opaque PNG. */
@@ -107,8 +110,17 @@ function build(
 ) {
   const patches: CoursePatch[] = [];
   const assetPatches: CertificateAssetPatch[] = [];
+  const fontPatches: ProjectFontPatch[] = [];
   const audits: Array<Record<string, unknown>> = [];
   const row = { ...course, ...options.course };
+
+  // The project row, as the font endpoints see it. `undefined` stands for a
+  // slug that is not visible in this tenant.
+  let font: ProjectFontState = {
+    fontFamilyName: null,
+    fontUpdatedAt: null,
+    fontBytes: null,
+  };
 
   const repository: AdminRepositoryPort = {
     listCourses: async () => [row],
@@ -119,6 +131,17 @@ function build(
     },
     setCertificateAssets: async (_id, assets) => {
       assetPatches.push(assets);
+    },
+    findProjectFont: async (slug) => (slug === PROJECT_SLUG ? font : undefined),
+    setProjectFont: async (slug, patch) => {
+      if (slug !== PROJECT_SLUG) return undefined;
+      fontPatches.push(patch);
+      font = {
+        fontFamilyName: patch.fontFamilyName,
+        fontUpdatedAt: patch.fontUpdatedAt,
+        fontBytes: patch.fontFile?.byteLength ?? null,
+      };
+      return font;
     },
     listEnrolments: async () => options.enrolments ?? [enrolment],
     findProgressByEnrolment: async () =>
@@ -155,7 +178,7 @@ function build(
     new PlaintextSecretCipher("test"),
   );
 
-  return { service, patches, assetPatches, audits };
+  return { service, patches, assetPatches, fontPatches, audits };
 }
 
 describe("the accreditation threshold is a rule, not a preference", () => {
@@ -538,5 +561,163 @@ describe("a course outside the tenant", () => {
       .catch((e) => e)) as AppError;
 
     expect(error.kind).toBe("not_found");
+  });
+});
+
+/**
+ * A structurally valid font container: the right signature and a length field
+ * that agrees with the file. Nothing else about it is a real font, and nothing
+ * here needs it to be — the platform never parses glyphs, it only decides
+ * whether it is willing to store and serve these bytes.
+ */
+function fontFile(signature: string, totalBytes = 64, declaredLength = totalBytes) {
+  const bytes = Buffer.alloc(totalBytes);
+  bytes.write(signature, 0, "ascii");
+  bytes.writeUInt32BE(declaredLength, 8);
+  return bytes.toString("base64");
+}
+
+describe("the white-label font is decided by its bytes", () => {
+  it("stores a woff2 and reports it back without the file", async () => {
+    const { service, fontPatches } = build();
+
+    const state = await service.setFont(
+      PROJECT_SLUG,
+      { fontBase64: fontFile("wOF2", 96), fontFamilyName: "Medice Sans" },
+      actor,
+    );
+
+    expect(state.fontFamilyName).toBe("Medice Sans");
+    expect(state.fontBytes).toBe(96);
+    // A version is what makes a year-long cache safe to set on the file.
+    expect(state.fontVersion).not.toBeNull();
+    // And nothing in the response is the font.
+    expect(JSON.stringify(state)).not.toContain(fontFile("wOF2", 96).slice(0, 16));
+
+    expect(fontPatches[0]?.fontMime).toBe("font/woff2");
+  });
+
+  it("refuses an SVG font whatever it claims to be", async () => {
+    // The upload that must never succeed: executable markup, served from our
+    // own origin, to a page that holds a physician's bearer token.
+    const { service, fontPatches } = build();
+    const svg = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'.padEnd(
+        64,
+        " ",
+      ),
+    ).toString("base64");
+
+    const error = (await service
+      .setFont(
+        PROJECT_SLUG,
+        { fontBase64: svg, fontMime: "font/woff2", fontFamilyName: "Evil Sans" },
+        actor,
+      )
+      .catch((e) => e)) as AppError;
+
+    expect(error.kind).toBe("validation");
+    // Nothing was written.
+    expect(fontPatches).toEqual([]);
+  });
+
+  it("refuses a font with data appended to it", async () => {
+    const { service, fontPatches } = build();
+    const polyglot = Buffer.concat([
+      Buffer.from(fontFile("wOF2", 64), "base64"),
+      Buffer.from("<html>"),
+    ]).toString("base64");
+
+    await service
+      .setFont(PROJECT_SLUG, { fontBase64: polyglot, fontFamilyName: "X" }, actor)
+      .catch(() => undefined);
+
+    expect(fontPatches).toEqual([]);
+  });
+
+  it("refuses a declared type that disagrees with the file", async () => {
+    const { service } = build();
+
+    const error = (await service
+      .setFont(
+        PROJECT_SLUG,
+        {
+          fontBase64: fontFile("wOFF"),
+          fontMime: "font/woff2",
+          fontFamilyName: "Medice Sans",
+        },
+        actor,
+      )
+      .catch((e) => e)) as AppError;
+
+    expect(error.kind).toBe("validation");
+  });
+
+  it("says the same thing to the admin however the file is wrong", async () => {
+    // The log distinguishes "not a font" from "font with a payload appended";
+    // the admin does not, because the difference tells an uploader exactly
+    // which check they tripped.
+    const { service } = build();
+
+    const messages = await Promise.all(
+      [fontFile("OTTO"), fontFile("wOF2", 64, 4096)].map((file) =>
+        service
+          .setFont(PROJECT_SLUG, { fontBase64: file, fontFamilyName: "X" }, actor)
+          .catch((e: AppError) => e.clientDetail),
+      ),
+    );
+
+    expect(messages[0]).toBe(messages[1]);
+  });
+
+  it("audits the upload by size and format, never by content", async () => {
+    const { service, audits } = build();
+
+    await service.setFont(
+      PROJECT_SLUG,
+      { fontBase64: fontFile("wOF2", 96), fontFamilyName: "Medice Sans" },
+      actor,
+    );
+
+    expect(audits[0]).toMatchObject({
+      action: "admin.project.font.set",
+      detail: { bytes: 96, mime: "font/woff2" },
+    });
+  });
+
+  it("clears all four columns together", async () => {
+    // The table has a CHECK saying all or nothing: a family name with no file
+    // would name a family nothing declares.
+    const { service, fontPatches } = build();
+
+    await service.setFont(
+      PROJECT_SLUG,
+      { fontBase64: fontFile("wOF2"), fontFamilyName: "Medice Sans" },
+      actor,
+    );
+    const state = await service.clearFont(PROJECT_SLUG, actor);
+
+    expect(state).toEqual({ fontFamilyName: null, fontVersion: null, fontBytes: null });
+    expect(fontPatches[1]).toEqual({
+      fontFile: null,
+      fontMime: null,
+      fontFamilyName: null,
+      fontUpdatedAt: null,
+    });
+  });
+
+  it("treats an invisible project as not found rather than creating one", async () => {
+    const { service, fontPatches } = build();
+
+    const error = (await service
+      .setFont(
+        "some-other-tenants-project",
+        { fontBase64: fontFile("wOF2"), fontFamilyName: "Medice Sans" },
+        actor,
+      )
+      .catch((e) => e)) as AppError;
+
+    expect(error.kind).toBe("not_found");
+    expect(fontPatches).toEqual([]);
   });
 });

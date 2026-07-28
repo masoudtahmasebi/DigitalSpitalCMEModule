@@ -18,8 +18,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
+  Headers,
   Inject,
   Param,
   Patch,
@@ -37,7 +39,11 @@ import type { AppConfig } from "../../config/config.js";
 import { createSecretCipher } from "../../shared/secret-cipher.js";
 import { AdminService } from "./admin.service.js";
 import { participantsToCsv } from "./participant-csv.js";
-import { adminCourseUpdateSchema, certificateAssetSchema } from "./admin.dto.js";
+import {
+  adminCourseUpdateSchema,
+  certificateAssetSchema,
+  fontUploadSchema,
+} from "./admin.dto.js";
 
 const ADMIN_ROLES = ["department_admin", "customer_admin", "super_admin"] as const;
 
@@ -105,6 +111,74 @@ export class AdminController {
     }
 
     return this.service(db).setCertificateAssets(slug, parsed.data, context(principal));
+  }
+
+  /**
+   * The white-label font (P10-05).
+   *
+   * ## Why the project comes from the header
+   *
+   * `X-DS-Project` is the same binding every other request carries, and it is
+   * not trusted here any more than anywhere else: the write runs inside the
+   * tenant transaction, so RLS scopes it to the caller's customer. A slug
+   * belonging to another customer updates zero rows and comes back as the same
+   * 404 as a slug that does not exist — no cross-tenant write, and no oracle
+   * for which project slugs are real (ADR-0002, ADR-0007).
+   *
+   * Taking it from the header rather than the path also keeps the console from
+   * having to know a project id it is never told.
+   *
+   * ## Why `customer_admin` and above
+   *
+   * A department admin manages their department's participants. Replacing the
+   * typeface changes what every learner of every course in the project sees,
+   * which is a customer-level decision.
+   */
+  @Get("branding/font")
+  @Roles(...ADMIN_ROLES)
+  async getFont(@Headers("x-ds-project") projectSlug: string, @TenantDb() db: Db) {
+    return this.service(db).getFont(projectSlug);
+  }
+
+  /**
+   * Upload a font.
+   *
+   * PUT because a project has one typeface; "add another" has no meaning.
+   * Base64 in JSON rather than multipart for the same reason as the certificate
+   * assets — the API is otherwise entirely JSON, and a multipart parser is a
+   * file-upload attack surface added for one endpoint.
+   *
+   * The bytes are validated by `@ds/domain`'s sniffer in the service. Nothing
+   * about the declared type or the filename is believed.
+   */
+  @Put("branding/font")
+  @Roles("customer_admin", "super_admin")
+  async setFont(
+    @Headers("x-ds-project") projectSlug: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    const parsed = fontUploadSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new AppError(
+        "validation",
+        `invalid font upload: ${parsed.error.issues.map((i) => i.path.join(".")).join(", ")}`,
+        "Die hochgeladene Schriftdatei ist nicht gültig. Zulässig sind WOFF2 und WOFF bis 2 MB.",
+      );
+    }
+
+    return this.service(db).setFont(projectSlug, parsed.data, context(principal));
+  }
+
+  @Delete("branding/font")
+  @Roles("customer_admin", "super_admin")
+  async clearFont(
+    @Headers("x-ds-project") projectSlug: string,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    return this.service(db).clearFont(projectSlug, context(principal));
   }
 
   @Get("courses/:slug/participants")

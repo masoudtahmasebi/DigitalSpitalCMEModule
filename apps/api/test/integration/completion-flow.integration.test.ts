@@ -811,3 +811,152 @@ describe("the CSV export", () => {
     expect(JSON.stringify(rows[0]!.detail)).not.toContain(ATTESTED_NAME);
   });
 });
+
+/**
+ * The white-label font (P10-05).
+ *
+ * Three properties, and only the first is about typography:
+ *
+ * 1. An uploaded font round-trips — admin PUT, public GET, correct bytes.
+ * 2. **The bytes decide the format.** Anything that is not a woff/woff2
+ *    container is refused whatever it declares itself to be, because this file
+ *    is served from our own origin to a page that holds a bearer token.
+ * 3. The public routes disclose the font and nothing else on the project row.
+ */
+describe("the white-label font", () => {
+  /** A minimal but structurally valid container: signature, self-consistent length. */
+  function fontFile(signature: string, totalBytes = 64): Buffer {
+    const bytes = Buffer.alloc(totalBytes);
+    bytes.write(signature, 0, "ascii");
+    bytes.writeUInt32BE(totalBytes, 8);
+    return bytes;
+  }
+
+  /** The public routes take no token — that is the point of them. */
+  async function publicGet(path: string, headers: Record<string, string> = {}) {
+    return fetch(`${baseUrl}${path}`, { headers });
+  }
+
+  it("has no font before anybody uploads one", async () => {
+    const { status, body } = await callAs(ADMIN_SUB, "GET", "/admin/branding/font");
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ fontFamilyName: null, fontVersion: null, fontBytes: null });
+
+    const file = await publicGet("/branding/font", { "x-ds-project": projectSlug });
+    expect(file.status).toBe(404);
+  });
+
+  it("refuses a file that is not a font, however it is declared", async () => {
+    // An SVG font is executable markup served from our origin — the one upload
+    // that must never succeed. It is refused by its bytes, not its extension.
+    const svg = Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`.padEnd(
+        64,
+        " ",
+      ),
+    );
+
+    const { status } = await callAs(ADMIN_SUB, "PUT", "/admin/branding/font", {
+      fontBase64: svg.toString("base64"),
+      fontMime: "font/woff2",
+      fontFamilyName: "Evil Sans",
+    });
+
+    expect(status).toBe(422);
+
+    const { body } = await callAs(ADMIN_SUB, "GET", "/admin/branding/font");
+    expect(body.fontFamilyName).toBeNull();
+  });
+
+  it("refuses a real font with data appended to it", async () => {
+    // Valid woff2 to a font parser, something else to anything that keeps
+    // reading. We serve this with a year-long cache; it must be exactly as
+    // long as its own header claims.
+    const polyglot = Buffer.concat([fontFile("wOF2", 64), Buffer.from("<html>")]);
+
+    const { status } = await callAs(ADMIN_SUB, "PUT", "/admin/branding/font", {
+      fontBase64: polyglot.toString("base64"),
+      fontFamilyName: "Medice Sans",
+    });
+
+    expect(status).toBe(422);
+  });
+
+  it("refuses a family name that could break out of the @font-face block", async () => {
+    const { status } = await callAs(ADMIN_SUB, "PUT", "/admin/branding/font", {
+      fontBase64: fontFile("wOF2").toString("base64"),
+      fontFamilyName: 'X"}body{display:none}@font-face{font-family:"Y',
+    });
+
+    expect(status).toBe(422);
+  });
+
+  it("stores a woff2 and serves it back to an anonymous browser", async () => {
+    const uploaded = fontFile("wOF2", 96);
+
+    const put = await callAs(ADMIN_SUB, "PUT", "/admin/branding/font", {
+      fontBase64: uploaded.toString("base64"),
+      fontMime: "font/woff2",
+      fontFamilyName: "Medice Sans",
+    });
+
+    expect(put.status).toBe(200);
+    expect(put.body.fontFamilyName).toBe("Medice Sans");
+    expect(put.body.fontBytes).toBe(96);
+    expect(typeof put.body.fontVersion).toBe("string");
+
+    // Fetched with no token and no header but the project — the way a browser
+    // loads a font from an `@font-face` rule.
+    const file = await publicGet(
+      `/branding/font?project=${projectSlug}&v=${encodeURIComponent(put.body.fontVersion)}`,
+    );
+
+    expect(file.status).toBe(200);
+    expect(file.headers.get("content-type")).toContain("font/woff2");
+    // Cross-origin by definition: the widget runs on the customer's WordPress.
+    expect(file.headers.get("access-control-allow-origin")).toBe("*");
+    expect(file.headers.get("x-content-type-options")).toBe("nosniff");
+
+    expect(Buffer.from(await file.arrayBuffer()).equals(uploaded)).toBe(true);
+  });
+
+  it("names the font in the public branding, and nothing else from the row", async () => {
+    const response = await publicGet("/branding", { "x-ds-project": projectSlug });
+    const branding = (await response.json()) as Record<string, unknown>;
+
+    expect(response.status).toBe(200);
+    expect(branding["fontFamilyName"]).toBe("Medice Sans");
+    expect(typeof branding["fontVersion"]).toBe("string");
+
+    // The Keycloak binding and the SMTP settings live on the same row. This is
+    // a public route, and the SQL function is what keeps them off it.
+    const serialised = JSON.stringify(branding);
+    expect(serialised).not.toContain("keycloak");
+    expect(serialised).not.toContain("smtp");
+    expect(serialised).not.toContain(issuer);
+  });
+
+  it("refuses the upload for a learner token", async () => {
+    const { status } = await call("PUT", "/admin/branding/font", {
+      fontBase64: fontFile("wOF2").toString("base64"),
+      fontFamilyName: "Learner Sans",
+    });
+
+    expect(status).toBe(403);
+
+    // And nothing was written.
+    const { body } = await callAs(ADMIN_SUB, "GET", "/admin/branding/font");
+    expect(body.fontFamilyName).toBe("Medice Sans");
+  });
+
+  it("removes it again", async () => {
+    const { status, body } = await callAs(ADMIN_SUB, "DELETE", "/admin/branding/font");
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ fontFamilyName: null, fontVersion: null, fontBytes: null });
+
+    const file = await publicGet(`/branding/font?project=${projectSlug}`);
+    expect(file.status).toBe(404);
+  });
+});

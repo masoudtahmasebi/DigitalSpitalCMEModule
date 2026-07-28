@@ -26,6 +26,7 @@ import {
   eivSubmissions,
   enrolments,
   evaluationResponses,
+  projects,
   users,
 } from "../../db/schema.js";
 import type { ProgressRow } from "../learning/learning.repository.js";
@@ -87,6 +88,35 @@ export interface CertificateStateRow {
   status: "pending" | "issued" | "delivered" | "bounced";
 }
 
+/**
+ * The white-label font as an admin sees it: whether one is stored, what it is
+ * called, and when it changed. **Never the bytes.** The console renders a
+ * preview by pointing an `@font-face` at `GET /branding/font`, the same way a
+ * learner's browser does — putting a megabyte of base64 in a settings response
+ * would be a different code path for the same file, and the one that matters
+ * would be the untested one.
+ */
+export interface ProjectFontState {
+  fontFamilyName: string | null;
+  /** The upload timestamp, which doubles as the cache-busting version. */
+  fontUpdatedAt: Date | null;
+  fontBytes: number | null;
+}
+
+/**
+ * A font upload, or its removal.
+ *
+ * All four values or all four nulls — the table's `font_all_or_nothing` CHECK
+ * refuses anything in between, and a family name with no file would name a
+ * family nothing declares.
+ */
+export interface ProjectFontPatch {
+  fontFile: Buffer | null;
+  fontMime: string | null;
+  fontFamilyName: string | null;
+  fontUpdatedAt: Date | null;
+}
+
 export interface AdminRepositoryPort {
   listCourses(): Promise<AdminCourseRow[]>;
   findCourse(slug: string): Promise<AdminCourseRow | undefined>;
@@ -95,6 +125,11 @@ export interface AdminRepositoryPort {
   ): Promise<Map<string, { total: number; completed: number }>>;
   updateCourse(courseId: string, patch: CoursePatch): Promise<void>;
   setCertificateAssets(courseId: string, assets: CertificateAssetPatch): Promise<void>;
+  findProjectFont(slug: string): Promise<ProjectFontState | undefined>;
+  setProjectFont(
+    slug: string,
+    patch: ProjectFontPatch,
+  ): Promise<ProjectFontState | undefined>;
   listEnrolments(courseId: string): Promise<EnrolmentListRow[]>;
   findProgressByEnrolment(
     enrolmentIds: readonly string[],
@@ -158,6 +193,12 @@ const COURSE_COLUMNS = {
   hasVnrPassword: sql<boolean>`${courses.vnrPasswordEnc} IS NOT NULL`,
 };
 
+const PROJECT_FONT_COLUMNS = {
+  fontFamilyName: projects.fontFamilyName,
+  fontUpdatedAt: projects.fontUpdatedAt,
+  fontBytes: sql<number | null>`octet_length(${projects.fontFile})`,
+};
+
 export class AdminRepository implements AdminRepositoryPort {
   constructor(private readonly db: Db) {}
 
@@ -215,6 +256,41 @@ export class AdminRepository implements AdminRepositoryPort {
       .update(courses)
       .set({ ...assets, updatedAt: new Date() })
       .where(eq(courses.id, courseId));
+  }
+
+  /**
+   * The project's font metadata.
+   *
+   * `octet_length` rather than selecting the column: the size is what an admin
+   * screen wants and the bytes are what it must not be handed. Asking Postgres
+   * for the length keeps a megabyte out of the response by construction rather
+   * than by remembering to drop it (CLAUDE.md §4 invariant 7 is about secrets,
+   * but the same reasoning applies to anything large enough to be a mistake).
+   */
+  async findProjectFont(slug: string): Promise<ProjectFontState | undefined> {
+    const [row] = await this.db
+      .select(PROJECT_FONT_COLUMNS)
+      .from(projects)
+      .where(eq(projects.slug, slug))
+      .limit(1);
+    return row;
+  }
+
+  /**
+   * Store or clear the font. Scoped by RLS, not by a `customer_id` filter — a
+   * slug belonging to another tenant matches zero rows and the caller gets the
+   * same "not found" as for a slug that does not exist (ADR-0002, ADR-0007).
+   */
+  async setProjectFont(
+    slug: string,
+    patch: ProjectFontPatch,
+  ): Promise<ProjectFontState | undefined> {
+    const [row] = await this.db
+      .update(projects)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(projects.slug, slug))
+      .returning(PROJECT_FONT_COLUMNS);
+    return row;
   }
 
   async listEnrolments(courseId: string): Promise<EnrolmentListRow[]> {

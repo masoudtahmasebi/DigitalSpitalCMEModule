@@ -60,6 +60,8 @@ export type ParticipantRow = components["schemas"]["ParticipantRow"];
 export type ParticipantList = components["schemas"]["ParticipantList"];
 export type EivState = components["schemas"]["EivState"];
 export type Branding = components["schemas"]["Branding"];
+export type FontUpload = components["schemas"]["FontUpload"];
+export type FontState = components["schemas"]["FontState"];
 
 export type CourseListQuery = NonNullable<
   operations["listCourses"]["parameters"]["query"]
@@ -188,6 +190,25 @@ export function createClient(options: ClientOptions) {
      */
     getBranding: (): Promise<Branding> => request("/branding"),
 
+    /**
+     * The URL of the project's uploaded font, for an `@font-face` rule.
+     *
+     * A URL rather than a fetch: the browser must load this itself so it is
+     * cached and reused, and because a font fetched with `fetch()` would then
+     * need a blob URL for no benefit. Same origin as the API, never a CDN —
+     * that is the whole point of storing it (P10-05).
+     */
+    brandingFontUrl: (version: string): string => {
+      // The project slug travels as a query parameter here, not as the usual
+      // `X-DS-Project` header: a browser loading a font from an `@font-face`
+      // rule sends no custom headers, and there is no hook to add one. The
+      // route accepts both for exactly this reason.
+      const url = new URL("/branding/font", options.baseUrl);
+      url.searchParams.set("project", options.projectSlug);
+      url.searchParams.set("v", version);
+      return url.toString();
+    },
+
     listCourses: (query: CourseListQuery = {}): Promise<CourseListResponse> => {
       const search = new URLSearchParams();
       for (const [key, value] of Object.entries(query)) {
@@ -304,6 +325,19 @@ export function createClient(options: ClientOptions) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(upload),
       }),
+
+    /** The project's white-label font: metadata only, never the bytes. */
+    adminGetFont: (): Promise<FontState> => request("/admin/branding/font"),
+
+    adminSetFont: (upload: FontUpload): Promise<FontState> =>
+      request("/admin/branding/font", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(upload),
+      }),
+
+    adminClearFont: (): Promise<FontState> =>
+      request("/admin/branding/font", { method: "DELETE" }),
 
     adminListParticipants: (slug: string): Promise<ParticipantList> =>
       request(`/admin/courses/${encodeURIComponent(slug)}/participants`),

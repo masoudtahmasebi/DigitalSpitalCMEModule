@@ -19,20 +19,27 @@
  * Pure, exhaustively tested, no I/O — the same reason the compliance rules live
  * here (CLAUDE.md §4 invariant 4).
  *
- * ## Fonts are named, never fetched
+ * ## Fonts are self-hosted, never fetched from a third party
  *
- * `fontFamily` is a CSS font stack. It is **not** a URL and the platform never
- * loads a font from a third party. That is deliberate and it is a legal
- * position, not a technical preference: a German healthcare site that pulls a
- * webfont from Google Fonts transmits every visitor's IP address to a US
- * service, which German courts have already found unlawful without consent
- * (LG München I, 3 O 17493/20). A CME platform for physicians is precisely the
- * wrong place to relitigate that.
+ * A customer uploads a font file; it is stored on the project and served from
+ * our own origin (migration 0008). **No third party is ever contacted for a
+ * font.** That is a legal position, not a technical preference: a German
+ * healthcare site pulling a webfont from Google transmits every visitor's IP
+ * address to a US service, which LG München I (3 O 17493/20) found unlawful
+ * without consent. A CME platform for physicians is precisely the wrong place
+ * to relitigate that, and "self-host it on your own CDN" only moves the
+ * problem.
  *
- * A customer who wants their own typeface self-hosts it and declares
- * `@font-face` in their own page. A shadow root cannot declare fonts for the
- * document, but it *can* use families the document has already declared —
- * `@font-face` is document-scoped — so naming the family is enough.
+ * Two fields, and they do different jobs:
+ *
+ * - `fontFamily` is a CSS font **stack** — the fallback chain, e.g.
+ *   `Inter, system-ui, sans-serif`. Never a URL; the grammar cannot express
+ *   `url(`.
+ * - `fontFamilyName` names the uploaded file's family, and the widget emits
+ *   `@font-face { font-family: <name>; src: url(<our own origin>) }` for it.
+ *
+ * When both are present the uploaded family goes first, so the upload wins and
+ * the stack is what a browser falls back to while it downloads or if it fails.
  */
 
 export interface Branding {
@@ -48,6 +55,16 @@ export interface Branding {
   readonly accentColor?: string;
   /** A CSS font stack — never a URL. See the module header. */
   readonly fontFamily?: string;
+  /**
+   * The family name of the customer's uploaded font, if they have one.
+   *
+   * Set by the API from the project row, not by the client: the value has to
+   * match what the upload endpoint stored, or the `@font-face` rule names a
+   * family nothing declares.
+   */
+  readonly fontFamilyName?: string;
+  /** Cache-busting token for the font URL — the upload timestamp. */
+  readonly fontVersion?: string;
   /** Radius for buttons and cards, in pixels. 0–24. */
   readonly cornerRadiusPx?: number;
 }
@@ -74,6 +91,64 @@ const FONT_STACK = /^[A-Za-z0-9À-ɏ ,'"-]{1,200}$/;
 /** Logos are fetched by the browser, so the scheme matters. */
 const SAFE_URL = /^https:\/\/[^\s"'<>]{1,500}$/;
 
+/**
+ * An uploaded font's family name.
+ *
+ * Narrower than the stack grammar because this one is emitted inside an
+ * `@font-face` block, where a stray brace ends the rule and starts another.
+ * Letters, digits, spaces, hyphen and underscore — enough for every real
+ * family name, and nothing that means anything to a CSS parser. Mirrors the
+ * CHECK constraint in migration 0008.
+ */
+const FONT_FAMILY_NAME = /^[A-Za-z0-9 _-]{1,64}$/;
+
+/** An ISO timestamp or any opaque token; only used as a query parameter. */
+const FONT_VERSION = /^[A-Za-z0-9:.T_-]{1,40}$/;
+
+/**
+ * Characters permitted inside `src: url("…")`.
+ *
+ * Stricter than `SAFE_URL` because the destination is a CSS function call, not
+ * an HTML attribute: a `)` or a backslash would end the `url()` token and let
+ * whatever follows be parsed as CSS. Excluded accordingly, along with quotes
+ * and whitespace.
+ */
+const FONT_SRC_CHARS = /^[^\s"'<>()\\]{1,512}$/;
+
+/**
+ * The only hosts a font may be served from over plain HTTP.
+ *
+ * So a developer running the API on `localhost:3000` sees their branding. Any
+ * other host must be HTTPS: a font is a same-page subresource, and one fetched
+ * over plain HTTP on a page holding a bearer token is a downgrade a browser
+ * would block anyway.
+ */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1"]);
+
+/**
+ * Whether this URL's scheme and host are acceptable for a font source.
+ *
+ * Parsed with `URL` rather than matched with a pattern. A regular expression
+ * over a URL is where host-confusion bugs live — `http://localhost.evil.example`
+ * looks like loopback to anything doing a prefix comparison — and `URL` is a
+ * pure, standard parser that already knows what a host is. (It reads no clock,
+ * no environment and no I/O, so it does not breach the purity rule that governs
+ * this package.)
+ */
+function hasSafeFontOrigin(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    // Relative, scheme-less, or otherwise unparseable. A font source has to be
+    // absolute — the CSS it lands in is not on the API's origin.
+    return false;
+  }
+
+  if (parsed.protocol === "https:") return true;
+  return parsed.protocol === "http:" && LOOPBACK_HOSTS.has(parsed.hostname);
+}
+
 const MAX_ALT_LENGTH = 200;
 const MAX_CORNER_RADIUS_PX = 24;
 
@@ -98,6 +173,8 @@ export function parseBranding(value: unknown): Branding {
     primaryContrastColor?: string;
     accentColor?: string;
     fontFamily?: string;
+    fontFamilyName?: string;
+    fontVersion?: string;
     cornerRadiusPx?: number;
   } = {};
 
@@ -120,6 +197,15 @@ export function parseBranding(value: unknown): Branding {
   );
   assign(branding, "accentColor", matching(raw["accentColor"], HEX_COLOR));
   assign(branding, "fontFamily", matching(raw["fontFamily"], FONT_STACK));
+
+  // The uploaded font. Both halves or neither: a family name with no version
+  // has no URL to point at, and a version with no name has nothing to declare.
+  const fontFamilyName = matching(raw["fontFamilyName"], FONT_FAMILY_NAME);
+  const fontVersion = matching(raw["fontVersion"], FONT_VERSION);
+  if (fontFamilyName !== undefined && fontVersion !== undefined) {
+    branding.fontFamilyName = fontFamilyName;
+    branding.fontVersion = fontVersion;
+  }
 
   const radius = raw["cornerRadiusPx"];
   if (
@@ -219,14 +305,65 @@ export function brandingCssVariables(
   if (branding.accentColor !== undefined) {
     vars.push(["--ds-accent", branding.accentColor]);
   }
-  if (branding.fontFamily !== undefined) {
-    vars.push(["--ds-font-family", branding.fontFamily]);
-  }
+  // The uploaded family goes first, so it wins and the configured stack is
+  // what the browser uses while downloading it or if it fails to load.
+  const stack = [
+    branding.fontFamilyName === undefined ? undefined : `"${branding.fontFamilyName}"`,
+    branding.fontFamily,
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(", ");
+
+  if (stack !== "") vars.push(["--ds-font-family", stack]);
   if (branding.cornerRadiusPx !== undefined) {
     vars.push(["--ds-radius", `${branding.cornerRadiusPx}px`]);
   }
 
   return vars;
+}
+
+/**
+ * The `@font-face` rule for a customer's uploaded font, or `undefined`.
+ *
+ * ## Why this returns a string when everything else returns pairs
+ *
+ * `brandingCssVariables` deliberately avoids building CSS text, because
+ * `setProperty` cannot be escaped out of. An `@font-face` rule has no such API:
+ * a font face genuinely has to be declared as CSS, so this is the one place in
+ * the platform that concatenates a stylesheet — which is exactly why it lives
+ * here, pure and tested, rather than inline in a component.
+ *
+ * Both interpolated values are re-validated against their grammars *at the
+ * point of concatenation*, not merely trusted from `parseBranding`. Returning
+ * `undefined` rather than a sanitised rule is the same rule as everywhere else
+ * in this module: a repaired value is a value somebody has to reason about.
+ *
+ * ## Why the caller must put this in the document, not in a shadow root
+ *
+ * Chrome does not apply `@font-face` rules declared inside a shadow root — the
+ * font simply never loads and the fallback stack renders, which looks like a
+ * broken upload rather than a scoping rule. The rule goes in the document; the
+ * `font-family` reference stays inside the widget.
+ *
+ * @param familyName the uploaded font's family, from `Branding.fontFamilyName`
+ * @param url absolute URL of the font file, on the API's own origin
+ */
+export function fontFaceRule(familyName: string, url: string): string | undefined {
+  if (!FONT_FAMILY_NAME.test(familyName)) return undefined;
+  if (!FONT_SRC_CHARS.test(url)) return undefined;
+  if (!hasSafeFontOrigin(url)) return undefined;
+
+  return (
+    `@font-face{font-family:"${familyName}";src:url("${url}");` +
+    // `swap`: text renders immediately in the fallback stack and switches when
+    // the file arrives. The alternative is a physician looking at a blank
+    // paragraph while a webfont downloads on hospital wifi.
+    `font-display:swap;` +
+    // One uploaded file covers every weight. For a variable font this is the
+    // real range; for a static one it tells the browser to synthesise bold
+    // rather than silently falling back to a different family for it.
+    `font-weight:100 900;font-style:normal;}`
+  );
 }
 
 function matching(value: unknown, pattern: RegExp): string | undefined {

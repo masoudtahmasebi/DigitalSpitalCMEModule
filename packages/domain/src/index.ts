@@ -41,10 +41,14 @@ export type { ContentSegments, WatchCoverage } from "./coverage.js";
 
 export {
   brandingCssVariables,
+  fontFaceRule,
   invalidBrandingFields,
   parseBranding,
 } from "./branding.js";
 export type { Branding } from "./branding.js";
+
+export { sniffFontFormat } from "./font-file.js";
+export type { FontFormat, FontRejection, FontSniffResult } from "./font-file.js";
 
 export {
   courseAssetKey,

@@ -50,9 +50,46 @@ export interface paths {
          *
          *     `fontFamily` is a CSS font stack, never a URL. The platform loads no
          *     third-party font — a German healthcare site transmitting visitor IPs to
-         *     a font CDN is a GDPR exposure, not a convenience.
+         *     a font CDN is a GDPR exposure, not a convenience. When the customer has
+         *     uploaded their own typeface, `fontFamilyName` and `fontVersion` name it
+         *     and the file itself comes from `GET /branding/font` on this same origin.
          */
         get: operations["getBranding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/branding/font": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The project's uploaded webfont
+         * @description The font file for the project named in `X-DS-Project`, as uploaded by a
+         *     customer admin.
+         *
+         *     **Public, and that is the GDPR position.** Serving the typeface from
+         *     this origin means a learner's browser never contacts a font CDN, no IP
+         *     address reaches a third party, and there is nothing here for a consent
+         *     banner or a processing record to cover.
+         *
+         *     `woff2` or `woff` only, and which one is decided by the file's own
+         *     container signature rather than by anything the uploader declared. The
+         *     response is immutable and cached for a year; callers append
+         *     `?v=<fontVersion>` from `GET /branding`, so replacing a font changes
+         *     the URL rather than needing a purge.
+         *
+         *     A project with no font — or no such project — returns 404. A font is
+         *     evidence of nothing, so this one does not need ADR-0007's silence.
+         */
+        get: operations["getBrandingFont"];
         put?: never;
         post?: never;
         delete?: never;
@@ -411,6 +448,60 @@ export interface paths {
         put: operations["adminSetCertificateAssets"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/branding/font": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What font the project has on file
+         * @description Metadata only: the family name, the version, and the size in bytes.
+         *     Never the file — the console previews it by pointing an `@font-face` at
+         *     `GET /branding/font`, exactly as a learner's browser does. A second code
+         *     path to the same bytes would mean the one that matters is the one
+         *     nobody tested.
+         */
+        get: operations["adminGetFont"];
+        /**
+         * Upload the project's webfont
+         * @description White-labelling: the platform is sold to more than one customer, so the
+         *     typeface is data on the project, not a constant in a stylesheet
+         *     (P10-05).
+         *
+         *     `woff2` or `woff`, up to 2 MB, base64 in JSON. **The bytes decide the
+         *     format** — the container signature is read and the file must be exactly
+         *     as long as its own header claims, which rejects a font with a payload
+         *     appended to it. The declared `fontMime` is only cross-checked against
+         *     that; it can permit nothing.
+         *
+         *     **SVG fonts are impossible.** An SVG font is executable markup, and this
+         *     file is served from the API's own origin to a page holding a bearer
+         *     token.
+         *
+         *     `fontFamilyName` is emitted inside an `@font-face` block, so it is
+         *     restricted to letters, digits, spaces, hyphen and underscore in
+         *     `@ds/domain`, in this schema, and in a database CHECK.
+         *
+         *     Which project is written comes from `X-DS-Project`, and the write runs
+         *     under RLS: a slug belonging to another customer updates nothing and
+         *     returns 404.
+         */
+        put: operations["adminSetFont"];
+        post?: never;
+        /**
+         * Remove the project's webfont
+         * @description Learners fall back to the configured `fontFamily` stack, which is always
+         *     valid — a project without an uploaded font is the normal state, not a
+         *     degraded one.
+         */
+        delete: operations["adminClearFont"];
         options?: never;
         head?: never;
         patch?: never;
@@ -939,7 +1030,52 @@ export interface components {
              *     rejected, so `url(` cannot be expressed.
              */
             fontFamily?: string;
+            /**
+             * @description The family name of the customer's **uploaded** font, if they have
+             *     one. Set by the server from the project row, never by a client: it
+             *     has to match what the upload stored, or the `@font-face` rule names
+             *     a family nothing declares.
+             *
+             *     Present only together with `fontVersion`. When both are present the
+             *     uploaded family goes first in the CSS stack, so `fontFamily` is what
+             *     the browser uses while the file downloads or if it fails.
+             */
+            fontFamilyName?: string;
+            /**
+             * @description Cache-busting token for `GET /branding/font` — the upload
+             *     timestamp. Present only together with `fontFamilyName`.
+             */
+            fontVersion?: string;
             cornerRadiusPx?: number;
+        };
+        /**
+         * @description A white-label font. See `PUT /admin/branding/font` for why the declared
+         *     type is not believed and why SVG cannot be expressed here at all.
+         */
+        FontUpload: {
+            /** @description The file, base64, without a `data:` prefix. 2 MB decoded. */
+            fontBase64: string;
+            /**
+             * @description Optional, and only ever cross-checked against the sniffed format. A
+             *     mismatch is a 422; an absent value is fine.
+             * @enum {string}
+             */
+            fontMime?: "font/woff2" | "font/woff";
+            /**
+             * @description What the CSS will call this family. Narrow because it is emitted
+             *     inside an `@font-face` block, where a brace ends the rule.
+             */
+            fontFamilyName: string;
+        };
+        /**
+         * @description Metadata about the stored font. Never the bytes — those come from
+         *     `GET /branding/font`.
+         */
+        FontState: {
+            fontFamilyName: string | null;
+            /** @description The upload timestamp; append as `?v=` to the font URL. */
+            fontVersion: string | null;
+            fontBytes: number | null;
         };
         /**
          * @description A course as an admin sees it. Carries no secret and no image bytes —
@@ -1177,6 +1313,46 @@ export interface operations {
                     "application/json": components["schemas"]["Branding"];
                 };
             };
+        };
+    };
+    getBrandingFont: {
+        parameters: {
+            query?: {
+                /**
+                 * @description The project slug, for callers that cannot set a header. This is the
+                 *     one route a **browser** requests on its own behalf — from an
+                 *     `@font-face` rule, where the CSS engine sends no custom headers and
+                 *     there is no hook to add one. The header wins when both are given.
+                 */
+                project?: string;
+                /** @description Cache-busting token; ignored by the server. */
+                v?: string;
+            };
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The font file. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "font/woff2": string;
+                    "font/woff": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     listCourses: {
@@ -1842,6 +2018,104 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminGetFont: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The stored font, or nulls if there is none. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FontState"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminSetFont: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FontUpload"];
+            };
+        };
+        responses: {
+            /** @description The stored font. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FontState"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminClearFont: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The now-empty font state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FontState"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     adminListParticipants: {

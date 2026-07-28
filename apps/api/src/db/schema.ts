@@ -112,6 +112,14 @@ export const projects = pgTable("projects", {
   smtpPasswordEnc: bytea("smtp_password_enc"),
   smtpFromAddress: text("smtp_from_address"),
   smtpFromName: text("smtp_from_name"),
+  // The customer's own webfont (migration 0008). Stored rather than linked so
+  // that no learner's browser ever contacts a font CDN — see the migration for
+  // why that is a legal position and not a preference. All four columns are
+  // set together or all null; the table has a CHECK saying so.
+  fontFile: bytea("font_file"),
+  fontMime: text("font_mime"),
+  fontFamilyName: text("font_family_name"),
+  fontUpdatedAt: timestamp("font_updated_at", { withTimezone: true }),
   ...timestamps,
 });
 

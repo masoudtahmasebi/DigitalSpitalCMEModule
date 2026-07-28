@@ -85,7 +85,9 @@ paths:
 
         `fontFamily` is a CSS font stack, never a URL. The platform loads no
         third-party font — a German healthcare site transmitting visitor IPs to
-        a font CDN is a GDPR exposure, not a convenience.
+        a font CDN is a GDPR exposure, not a convenience. When the customer has
+        uploaded their own typeface, `fontFamilyName` and `fontVersion` name it
+        and the file itself comes from `GET /branding/font` on this same origin.
       security: []
       parameters:
         - $ref: "#/components/parameters/ProjectHeader"
@@ -95,6 +97,55 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Branding" }
+
+  /branding/font:
+    get:
+      tags: [catalog]
+      operationId: getBrandingFont
+      summary: The project's uploaded webfont
+      description: |
+        The font file for the project named in `X-DS-Project`, as uploaded by a
+        customer admin.
+
+        **Public, and that is the GDPR position.** Serving the typeface from
+        this origin means a learner's browser never contacts a font CDN, no IP
+        address reaches a third party, and there is nothing here for a consent
+        banner or a processing record to cover.
+
+        `woff2` or `woff` only, and which one is decided by the file's own
+        container signature rather than by anything the uploader declared. The
+        response is immutable and cached for a year; callers append
+        `?v=<fontVersion>` from `GET /branding`, so replacing a font changes
+        the URL rather than needing a purge.
+
+        A project with no font — or no such project — returns 404. A font is
+        evidence of nothing, so this one does not need ADR-0007's silence.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: project
+          in: query
+          required: false
+          description: |
+            The project slug, for callers that cannot set a header. This is the
+            one route a **browser** requests on its own behalf — from an
+            `@font-face` rule, where the CSS engine sends no custom headers and
+            there is no hook to add one. The header wins when both are given.
+          schema: { type: string }
+        - name: v
+          in: query
+          required: false
+          description: Cache-busting token; ignored by the server.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The font file.
+          content:
+            font/woff2:
+              schema: { type: string, format: binary }
+            font/woff:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /courses:
     get:
@@ -605,6 +656,91 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/branding/font:
+    get:
+      tags: [admin]
+      operationId: adminGetFont
+      summary: What font the project has on file
+      description: |
+        Metadata only: the family name, the version, and the size in bytes.
+        Never the file — the console previews it by pointing an `@font-face` at
+        `GET /branding/font`, exactly as a learner's browser does. A second code
+        path to the same bytes would mean the one that matters is the one
+        nobody tested.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      responses:
+        "200":
+          description: The stored font, or nulls if there is none.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FontState" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [admin]
+      operationId: adminSetFont
+      summary: Upload the project's webfont
+      description: |
+        White-labelling: the platform is sold to more than one customer, so the
+        typeface is data on the project, not a constant in a stylesheet
+        (P10-05).
+
+        `woff2` or `woff`, up to 2 MB, base64 in JSON. **The bytes decide the
+        format** — the container signature is read and the file must be exactly
+        as long as its own header claims, which rejects a font with a payload
+        appended to it. The declared `fontMime` is only cross-checked against
+        that; it can permit nothing.
+
+        **SVG fonts are impossible.** An SVG font is executable markup, and this
+        file is served from the API's own origin to a page holding a bearer
+        token.
+
+        `fontFamilyName` is emitted inside an `@font-face` block, so it is
+        restricted to letters, digits, spaces, hyphen and underscore in
+        `@ds/domain`, in this schema, and in a database CHECK.
+
+        Which project is written comes from `X-DS-Project`, and the write runs
+        under RLS: a slug belonging to another customer updates nothing and
+        returns 404.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FontUpload" }
+      responses:
+        "200":
+          description: The stored font.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FontState" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [admin]
+      operationId: adminClearFont
+      summary: Remove the project's webfont
+      description: |
+        Learners fall back to the configured `fontFamily` stack, which is always
+        valid — a project without an uploaded font is the normal state, not a
+        degraded one.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      responses:
+        "200":
+          description: The now-empty font state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FontState" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /admin/courses/{slug}/participants:
     get:
@@ -1448,10 +1584,72 @@ components:
             A CSS font stack, e.g. `Inter, system-ui, sans-serif`. **Not a
             URL.** Characters that could terminate a CSS declaration are
             rejected, so `url(` cannot be expressed.
+        fontFamilyName:
+          type: string
+          maxLength: 64
+          pattern: "^[A-Za-z0-9 _-]{1,64}$"
+          description: |
+            The family name of the customer's **uploaded** font, if they have
+            one. Set by the server from the project row, never by a client: it
+            has to match what the upload stored, or the `@font-face` rule names
+            a family nothing declares.
+
+            Present only together with `fontVersion`. When both are present the
+            uploaded family goes first in the CSS stack, so `fontFamily` is what
+            the browser uses while the file downloads or if it fails.
+        fontVersion:
+          type: string
+          maxLength: 40
+          description: |
+            Cache-busting token for `GET /branding/font` — the upload
+            timestamp. Present only together with `fontFamilyName`.
         cornerRadiusPx:
           type: integer
           minimum: 0
           maximum: 24
+
+    FontUpload:
+      type: object
+      description: |
+        A white-label font. See `PUT /admin/branding/font` for why the declared
+        type is not believed and why SVG cannot be expressed here at all.
+      required: [fontBase64, fontFamilyName]
+      properties:
+        fontBase64:
+          type: string
+          maxLength: 2800000
+          description: The file, base64, without a `data:` prefix. 2 MB decoded.
+        fontMime:
+          type: string
+          enum: [font/woff2, font/woff]
+          description: |
+            Optional, and only ever cross-checked against the sniffed format. A
+            mismatch is a 422; an absent value is fine.
+        fontFamilyName:
+          type: string
+          pattern: "^[A-Za-z0-9 _-]{1,64}$"
+          description: |
+            What the CSS will call this family. Narrow because it is emitted
+            inside an `@font-face` block, where a brace ends the rule.
+
+    FontState:
+      type: object
+      description: |
+        Metadata about the stored font. Never the bytes — those come from
+        `GET /branding/font`.
+      required: [fontFamilyName, fontVersion, fontBytes]
+      properties:
+        fontFamilyName:
+          type: string
+          nullable: true
+        fontVersion:
+          type: string
+          nullable: true
+          description: The upload timestamp; append as `?v=` to the font URL.
+        fontBytes:
+          type: integer
+          nullable: true
+          minimum: 0
 
     AdminCourseSummary:
       type: object

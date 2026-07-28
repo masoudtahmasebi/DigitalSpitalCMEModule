@@ -23,6 +23,7 @@ import { beginLogin, completeLogin, currentSession, logout } from "./auth.js";
 import { createAdminClient, describeError, isForbidden } from "./api.js";
 import { de } from "./locale/de.js";
 import { Badge, Button, Notice, Spinner, Table } from "./components/ui.js";
+import { BrandingSettings } from "./components/BrandingSettings.js";
 import { CourseSettings } from "./components/CourseSettings.js";
 import { Participants } from "./components/Participants.js";
 
@@ -106,6 +107,7 @@ function Shell(props: { children: React.ReactNode; onSignOut?: () => void }) {
 
 type View =
   | { kind: "courses" }
+  | { kind: "branding" }
   | { kind: "course"; slug: string; tab: "settings" | "participants" };
 
 function Console(props: {
@@ -175,8 +177,48 @@ function Console(props: {
     );
   }
 
+  // Two top-level sections. Branding is project-wide rather than per course —
+  // the typeface is a property of the customer, not of one Fortbildung — so it
+  // sits beside the course list rather than inside a course.
+  const sections = (
+    <nav className="flex gap-1 border-b border-gray-200">
+      {(
+        [
+          ["courses", de.nav.courses],
+          ["branding", de.nav.branding],
+        ] as const
+      ).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          aria-current={view.kind === value ? "page" : undefined}
+          onClick={() => setView({ kind: value })}
+          className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+            view.kind === value
+              ? "border-brand-600 text-brand-700"
+              : "border-transparent text-gray-600"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </nav>
+  );
+
+  if (view.kind === "branding") {
+    return (
+      <div className="space-y-5">
+        {sections}
+        {/* A department_admin gets a 403 from the PUT; the screen renders for
+            them because the API, not the navigation, is the gate (P9-01). */}
+        <BrandingSettings client={client} />
+      </div>
+    );
+  }
+
   return (
     <section className="space-y-4">
+      {sections}
       <h2 className="text-base font-semibold text-gray-900">{de.courses.title}</h2>
 
       {courses.length === 0 ? (

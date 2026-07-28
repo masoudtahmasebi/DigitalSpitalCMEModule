@@ -41,7 +41,7 @@ import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 // The built Tailwind output, as a string — see vite.config.ts.
 import styles from "./styles.css?inline";
-import { brandingCssVariables, parseBranding } from "@ds/domain";
+import { brandingCssVariables, fontFaceRule, parseBranding } from "@ds/domain";
 import { App } from "./App.js";
 import { cachingProvider, resolveTokenProvider, type TokenProvider } from "./token.js";
 
@@ -142,12 +142,16 @@ export class DsLmsElement extends HTMLElement {
       });
       if (!response.ok) return;
 
-      for (const [name, value] of brandingCssVariables(
-        parseBranding(await response.json()),
-      )) {
+      const branding = parseBranding(await response.json());
+
+      for (const [name, value] of brandingCssVariables(branding)) {
         // `setProperty`, never a built-up stylesheet string: this API takes a
         // name and a value and cannot be talked into a third declaration.
         mount.style.setProperty(name, value);
+      }
+
+      if (branding.fontFamilyName !== undefined && branding.fontVersion !== undefined) {
+        declareFont(apiBase, projectSlug, branding.fontFamilyName, branding.fontVersion);
       }
     } catch {
       // Network failure, blocked request, malformed JSON — the defaults stand.
@@ -209,6 +213,56 @@ function adoptStyles(shadow: ShadowRoot, css: string): void {
   const style = document.createElement("style");
   style.textContent = css;
   shadow.append(style);
+}
+
+/**
+ * Declare the customer's uploaded font — in the **document**, not the shadow
+ * root (P10-05).
+ *
+ * ## Why not in the shadow root, where the rest of the CSS lives
+ *
+ * Chrome does not apply `@font-face` rules declared inside a shadow root. The
+ * rule parses, the font never loads, and the fallback stack renders — which
+ * looks exactly like a broken upload rather than like a scoping rule, and would
+ * be diagnosed as such. Only the `@font-face` declaration escapes; every
+ * `font-family` reference stays inside the widget, so this adds no style the
+ * host page can see. A host page that already declares a font of the same name
+ * is the customer's own site declaring their own typeface.
+ *
+ * ## Why the URL carries the project as a query parameter
+ *
+ * The browser fetches this file from CSS, where no custom header can be
+ * attached. `GET /branding/font` accepts `?project=` for that reason alone.
+ *
+ * Idempotent by construction: several `<ds-lms>` elements on one page, or a
+ * page that mounts the widget twice, produce one `<style>` element per
+ * font version. Keyed on the version too, so replacing a font in the admin
+ * console takes effect on the next load rather than being masked by the first
+ * declaration to win.
+ */
+function declareFont(
+  apiBase: string,
+  projectSlug: string,
+  familyName: string,
+  version: string,
+): void {
+  const id = `ds-lms-font-${projectSlug}-${version}`;
+  if (document.getElementById(id) !== null) return;
+
+  const url = new URL("/branding/font", apiBase);
+  url.searchParams.set("project", projectSlug);
+  url.searchParams.set("v", version);
+
+  // Built and validated in `@ds/domain`. `undefined` means a value failed its
+  // grammar at the point of concatenation, and an unstyled widget is the right
+  // outcome for that.
+  const rule = fontFaceRule(familyName, url.toString());
+  if (rule === undefined) return;
+
+  const style = document.createElement("style");
+  style.id = id;
+  style.textContent = rule;
+  document.head.append(style);
 }
 
 /**

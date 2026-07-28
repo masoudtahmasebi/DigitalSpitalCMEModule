@@ -49,6 +49,8 @@ import type {
   adminCourseSummarySchema,
   adminCourseUpdateSchema,
   certificateAssetSchema,
+  fontStateSchema,
+  fontUploadSchema,
   participantListSchema,
   participantRowSchema,
 } from "../../src/modules/admin/admin.dto.js";
@@ -135,6 +137,8 @@ type _Admin = [
   Expect<
     MutuallyAssignable<z.infer<typeof participantListSchema>, Schemas["ParticipantList"]>
   >,
+  Expect<MutuallyAssignable<z.infer<typeof fontUploadSchema>, Schemas["FontUpload"]>>,
+  Expect<MutuallyAssignable<z.infer<typeof fontStateSchema>, Schemas["FontState"]>>,
 ];
 
 describe("contract: DTOs match the generated SDK types", () => {

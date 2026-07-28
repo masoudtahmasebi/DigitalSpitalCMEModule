@@ -28,7 +28,12 @@
  * invariant 7).
  */
 
-import { missingCertificateFields, type CertificateField } from "@ds/domain";
+import {
+  missingCertificateFields,
+  sniffFontFormat,
+  type CertificateField,
+  type FontRejection,
+} from "@ds/domain";
 import { AppError } from "../../shared/problem-details.js";
 import type { Db } from "../../db/tenant-db.js";
 import type { SecretCipher } from "../../shared/secret-cipher.js";
@@ -43,6 +48,7 @@ import {
   type AdminRepositoryPort,
   type CertificateAssetPatch,
   type CoursePatch,
+  type ProjectFontState,
 } from "./admin.repository.js";
 import type {
   AdminCourseDetail,
@@ -50,6 +56,8 @@ import type {
   AdminCourseUpdate,
   CertificateAssetUpload,
   EivState,
+  FontState,
+  FontUpload,
   ParticipantList,
   ParticipantRow,
 } from "./admin.dto.js";
@@ -255,6 +263,112 @@ export class AdminService {
     return this.getCourse(slug);
   }
 
+  /** What the console shows on the branding screen. Never the bytes. */
+  async getFont(projectSlug: string): Promise<FontState> {
+    const row = await this.repository.findProjectFont(projectSlug);
+    if (row === undefined) {
+      throw AppError.notFound(`project slug=${projectSlug} not visible in this tenant`);
+    }
+    return fontState(row);
+  }
+
+  /**
+   * Store the customer's own webfont (P10-05).
+   *
+   * Three things make this safe to expose to a customer admin, and all three
+   * are here rather than in the controller because they are rules, not
+   * plumbing:
+   *
+   * 1. **The bytes decide the type, not the uploader.** `sniffFontFormat` reads
+   *    the container signature and checks the file is exactly as long as its
+   *    own header claims. The declared `fontMime` is only ever cross-checked
+   *    against that result — it can narrow nothing and permit nothing.
+   * 2. **SVG cannot be reached.** The sniffer has no branch that returns it.
+   *    That matters because this file is served from our own origin to a page
+   *    holding a bearer token; an SVG font is markup with a `<script>` in it.
+   * 3. **The family name is a CSS token.** It is emitted inside an
+   *    `@font-face` block, so it is constrained by `@ds/domain`'s grammar, by
+   *    the zod schema, and by a CHECK constraint. Three places for one value
+   *    that reaches a stylesheet is not redundancy worth removing.
+   */
+  async setFont(
+    projectSlug: string,
+    upload: FontUpload,
+    actor: AdminContext,
+  ): Promise<FontState> {
+    const bytes = Buffer.from(upload.fontBase64, "base64");
+
+    if (bytes.byteLength > MAX_FONT_BYTES) {
+      throw new AppError(
+        "validation",
+        `font upload is ${bytes.byteLength} bytes, over the ${MAX_FONT_BYTES} limit`,
+        "Die Schriftdatei ist zu groß (maximal 2 MB).",
+      );
+    }
+
+    const sniffed = sniffFontFormat(bytes);
+    if (!sniffed.ok) {
+      throw new AppError("validation", fontLogMessage(sniffed.reason), FONT_HINT_DE);
+    }
+    if (upload.fontMime !== undefined && upload.fontMime !== sniffed.mime) {
+      throw new AppError(
+        "validation",
+        `font upload declared ${upload.fontMime} but is ${sniffed.mime}`,
+        "Der Dateityp der Schriftdatei stimmt nicht mit dem Inhalt überein.",
+      );
+    }
+
+    const now = new Date();
+    const row = await this.repository.setProjectFont(projectSlug, {
+      fontFile: bytes,
+      fontMime: sniffed.mime,
+      fontFamilyName: upload.fontFamilyName,
+      // Doubles as the cache-busting version: the widget appends it to the
+      // font URL, so replacing a font invalidates a year-long cache without a
+      // purge (see branding.controller.ts).
+      fontUpdatedAt: now,
+    });
+
+    if (row === undefined) {
+      throw AppError.notFound(`project slug=${projectSlug} not visible in this tenant`);
+    }
+
+    await this.repository.audit({
+      customerId: actor.customerId,
+      actorId: actor.userId,
+      action: "admin.project.font.set",
+      subject: projectSlug,
+      // Size and format, never the file. An audit row is not a blob store.
+      detail: { bytes: bytes.byteLength, mime: sniffed.mime },
+    });
+
+    return fontState(row);
+  }
+
+  /** Remove it. Learners fall back to the configured stack, which is always valid. */
+  async clearFont(projectSlug: string, actor: AdminContext): Promise<FontState> {
+    const row = await this.repository.setProjectFont(projectSlug, {
+      fontFile: null,
+      fontMime: null,
+      fontFamilyName: null,
+      fontUpdatedAt: null,
+    });
+
+    if (row === undefined) {
+      throw AppError.notFound(`project slug=${projectSlug} not visible in this tenant`);
+    }
+
+    await this.repository.audit({
+      customerId: actor.customerId,
+      actorId: actor.userId,
+      action: "admin.project.font.clear",
+      subject: projectSlug,
+      detail: {},
+    });
+
+    return fontState(row);
+  }
+
   /**
    * The participant list (P9-06).
    *
@@ -440,6 +554,42 @@ function assign<K extends keyof CoursePatch>(
   value: CoursePatch[K] | undefined,
 ): void {
   if (value !== undefined) patch[key] = value;
+}
+
+/** The column's own bound (migration 0008). Enforced here for a clear error. */
+const MAX_FONT_BYTES = 2 * 1024 * 1024;
+
+/**
+ * One German message for every rejection.
+ *
+ * The reasons differ usefully in the log — "this is not a font" and "this font
+ * has something appended to it" are different incidents — but they are the same
+ * instruction to the admin, and a message that distinguished them would tell an
+ * uploader exactly which check they had tripped.
+ */
+const FONT_HINT_DE =
+  "Die Datei ist keine gültige WOFF- oder WOFF2-Schriftdatei. " +
+  "Bitte laden Sie eine .woff2- oder .woff-Datei hoch.";
+
+function fontLogMessage(reason: FontRejection): string {
+  switch (reason) {
+    case "empty":
+      return "font upload is too short to contain a font header";
+    case "unknown_signature":
+      return "font upload is neither wOFF nor wOF2 by its signature";
+    case "length_mismatch":
+      // Worth its own line: this is a font with data appended to it, which is
+      // an attempt, not a mistake.
+      return "font upload length disagrees with its own header — appended data";
+  }
+}
+
+function fontState(row: ProjectFontState): FontState {
+  return {
+    fontFamilyName: row.fontFamilyName,
+    fontVersion: row.fontUpdatedAt?.toISOString() ?? null,
+    fontBytes: row.fontBytes,
+  };
 }
 
 const MAGIC = {

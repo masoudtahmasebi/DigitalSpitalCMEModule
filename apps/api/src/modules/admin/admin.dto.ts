@@ -94,6 +94,44 @@ export const certificateAssetSchema = z.object({
   signatureImageMime: z.enum(["image/png", "image/jpeg"]).optional(),
 });
 
+/**
+ * A white-label font upload (P10-05).
+ *
+ * woff2 and woff only. Not because older formats are unsupported — because
+ * they are unnecessary parser surface. **SVG fonts are excluded absolutely**:
+ * an SVG font is executable markup, uploaded by a customer admin and served
+ * from our own origin, which is a stored XSS with extra steps.
+ *
+ * The declared type is a claim. The service sniffs the magic bytes and the
+ * column has its own CHECK; this schema only rejects the obviously malformed.
+ */
+export const fontUploadSchema = z.object({
+  /** Base64 without a data: prefix. Bounded to the column's 2 MB. */
+  fontBase64: z.string().min(1).max(2_800_000),
+  fontMime: z.enum(["font/woff2", "font/woff"]).optional(),
+  /**
+   * The family name the CSS will refer to. Narrow, because it is emitted
+   * inside an `@font-face` block where a brace ends the rule.
+   */
+  fontFamilyName: z
+    .string()
+    .regex(
+      /^[A-Za-z0-9 _-]{1,64}$/,
+      "letters, digits, spaces, hyphen and underscore only",
+    ),
+});
+
+/**
+ * What the console knows about the stored font. Metadata only — the file is
+ * served by `GET /branding/font`, the same route a learner's browser uses.
+ */
+export const fontStateSchema = z.object({
+  fontFamilyName: z.string().nullable(),
+  /** The upload timestamp, used as the cache-busting version. */
+  fontVersion: z.string().nullable(),
+  fontBytes: z.number().int().nonnegative().nullable(),
+});
+
 export const eivStateSchema = z.enum([
   "none",
   "queued",
@@ -134,6 +172,8 @@ export type AdminCourseSummary = z.infer<typeof adminCourseSummarySchema>;
 export type AdminCourseDetail = z.infer<typeof adminCourseDetailSchema>;
 export type AdminCourseUpdate = z.infer<typeof adminCourseUpdateSchema>;
 export type CertificateAssetUpload = z.infer<typeof certificateAssetSchema>;
+export type FontUpload = z.infer<typeof fontUploadSchema>;
+export type FontState = z.infer<typeof fontStateSchema>;
 export type ParticipantRow = z.infer<typeof participantRowSchema>;
 export type ParticipantList = z.infer<typeof participantListSchema>;
 export type EivState = z.infer<typeof eivStateSchema>;

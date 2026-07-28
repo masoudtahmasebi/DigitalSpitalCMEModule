@@ -7,7 +7,7 @@
  * boundary, not about React.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DsLmsElement, registerWidget, WIDGET_ELEMENT_NAME } from "./element.js";
 
 registerWidget();
@@ -152,6 +152,92 @@ describe("configuration", () => {
       "nicht korrekt eingebunden",
     );
   });
+});
+
+describe("white-label branding", () => {
+  const branding = {
+    primaryColor: "#0a7f4b",
+    fontFamily: "Inter, system-ui, sans-serif",
+    fontFamilyName: "Medice Sans",
+    fontVersion: "2026-07-28T12:00:00.000Z",
+  };
+
+  /** Answers `/branding` with the given record and nothing else. */
+  function stubBranding(record: unknown): void {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/branding")) {
+        return new Response(JSON.stringify(record), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    for (const style of document.head.querySelectorAll("style[id^='ds-lms-font-']")) {
+      style.remove();
+    }
+  });
+
+  it("declares the uploaded font in the document, not the shadow root", async () => {
+    // Chrome does not apply an `@font-face` declared inside a shadow root: the
+    // rule parses, the file never loads, and the fallback stack renders — which
+    // reads as a broken upload rather than as a scoping rule. This assertion is
+    // the only thing standing between that and a customer's rebrand silently
+    // doing nothing.
+    const element = await mountWith(branding);
+
+    const injected = document.head.querySelector("style[id^='ds-lms-font-']");
+    expect(injected?.textContent).toContain('font-family:"Medice Sans"');
+    // On our own origin, with the project as a query parameter — a font
+    // fetched from CSS carries no custom header to put the slug in.
+    expect(injected?.textContent).toContain("/branding/font?project=medice-adhs");
+    expect(injected?.textContent).toContain("v=2026-07-28T12%3A00%3A00.000Z");
+
+    // And nothing extra leaked: the widget's own styles stay scoped.
+    const shadowStyles = element.shadowRootForTest?.querySelectorAll("style") ?? [];
+    for (const style of shadowStyles) {
+      expect(style.textContent ?? "").not.toContain("@font-face");
+    }
+  });
+
+  it("declares it once however many widgets are on the page", async () => {
+    await mountWith(branding);
+    await mountWith(branding);
+
+    expect(document.head.querySelectorAll("style[id^='ds-lms-font-']")).toHaveLength(1);
+  });
+
+  it("declares nothing when the customer has not uploaded a font", async () => {
+    await mountWith({ primaryColor: "#0a7f4b" });
+    expect(document.head.querySelector("style[id^='ds-lms-font-']")).toBeNull();
+  });
+
+  it("declares nothing for a family name that would break out of the rule", async () => {
+    // The API validates on write and again on read; the widget validates a
+    // third time because this is where the value becomes CSS on a page that
+    // holds a bearer token.
+    await mountWith({
+      ...branding,
+      fontFamilyName: 'X"}body{display:none}@font-face{font-family:"Y',
+    });
+
+    expect(document.head.querySelector("style[id^='ds-lms-font-']")).toBeNull();
+  });
+
+  async function mountWith(record: unknown): Promise<DsLmsElement> {
+    stubBranding(record);
+    const element = await mount(
+      `<ds-lms api-base="https://api.test" project="medice-adhs" course="c"></ds-lms>`,
+    );
+    // The branding fetch is deliberately not awaited by connectedCallback —
+    // a logo must never block the first render.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return element;
+  }
 });
 
 describe("lifecycle", () => {

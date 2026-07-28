@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   brandingCssVariables,
+  fontFaceRule,
   invalidBrandingFields,
   parseBranding,
 } from "./branding.js";
@@ -208,5 +209,144 @@ describe("brandingCssVariables", () => {
       expect(value).not.toContain(";");
       expect(value).not.toContain("}");
     }
+  });
+});
+
+describe("an uploaded font", () => {
+  it("goes first in the stack, so the upload wins", () => {
+    // And the configured stack is what a browser uses while the file
+    // downloads, or if it never arrives.
+    const vars = brandingCssVariables(
+      parseBranding({
+        fontFamilyName: "Medice Sans",
+        fontVersion: "2026-07-28T12:00:00.000Z",
+        fontFamily: "Inter, system-ui, sans-serif",
+      }),
+    );
+
+    expect(vars).toContainEqual([
+      "--ds-font-family",
+      '"Medice Sans", Inter, system-ui, sans-serif',
+    ]);
+  });
+
+  it("stands alone when no fallback stack is configured", () => {
+    expect(
+      brandingCssVariables(
+        parseBranding({ fontFamilyName: "Medice Sans", fontVersion: "v1" }),
+      ),
+    ).toContainEqual(["--ds-font-family", '"Medice Sans"']);
+  });
+
+  it("needs both the name and the version, since one without the other is unusable", () => {
+    // A name with no version has no URL to point at; a version with no name
+    // has nothing to declare.
+    expect(
+      parseBranding({ fontFamilyName: "Medice Sans" }).fontFamilyName,
+    ).toBeUndefined();
+    expect(parseBranding({ fontVersion: "v1" }).fontVersion).toBeUndefined();
+  });
+
+  it("refuses a family name that would break out of the @font-face block", () => {
+    // This one is emitted inside `@font-face { font-family: … }`, where a
+    // brace ends the rule and starts another.
+    for (const name of [
+      'Evil"; } body { display: none } @font-face { font-family: "x',
+      "Evil}",
+      "Evil;",
+      "url(https://evil/x)",
+      "Evil'",
+    ]) {
+      expect(
+        parseBranding({ fontFamilyName: name, fontVersion: "v1" }).fontFamilyName,
+      ).toBeUndefined();
+    }
+  });
+
+  it("refuses a version that could escape the query string", () => {
+    for (const version of ['v1" onload="x', "v1&evil=1", "../../etc", "v1 v2"]) {
+      expect(
+        parseBranding({ fontFamilyName: "Medice Sans", fontVersion: version })
+          .fontVersion,
+      ).toBeUndefined();
+    }
+  });
+
+  it("accepts the real shape — a name and an ISO timestamp", () => {
+    const branding = parseBranding({
+      fontFamilyName: "Medice Sans",
+      fontVersion: "2026-07-28T12:00:00.000Z",
+    });
+
+    expect(branding.fontFamilyName).toBe("Medice Sans");
+    expect(branding.fontVersion).toBe("2026-07-28T12:00:00.000Z");
+  });
+});
+
+describe("fontFaceRule", () => {
+  const url = "https://api.cme.example.de/branding/font?project=medice-adhs&v=2026-07-28";
+
+  it("emits a rule naming the family and the file", () => {
+    const rule = fontFaceRule("Medice Sans", url);
+
+    expect(rule).toContain('font-family:"Medice Sans"');
+    expect(rule).toContain(`src:url("${url}")`);
+    // The physician reads text while the file downloads, rather than a blank
+    // paragraph on hospital wifi.
+    expect(rule).toContain("font-display:swap");
+    // One uploaded file has to serve every weight, or bold text falls back to
+    // a different family mid-sentence.
+    expect(rule).toContain("font-weight:100 900");
+  });
+
+  it("produces exactly one balanced rule", () => {
+    const rule = fontFaceRule("Medice Sans", url) ?? "";
+    expect(rule.match(/@font-face/g)).toHaveLength(1);
+    expect(rule.match(/\{/g)).toHaveLength(1);
+    expect(rule.match(/\}/g)).toHaveLength(1);
+  });
+
+  it("refuses a family name that would close the rule", () => {
+    // This is the one place in the platform that concatenates CSS text, so the
+    // grammar is re-checked here rather than trusted from parseBranding.
+    for (const name of [
+      'X"}body{display:none}@font-face{font-family:"Y',
+      "X; }",
+      "X\\22 }",
+    ]) {
+      expect(fontFaceRule(name, url)).toBeUndefined();
+    }
+  });
+
+  it("refuses a URL that would close the url() token", () => {
+    for (const bad of [
+      'https://evil.example/f.woff2");}body{display:none}@font-face{src:url("x',
+      "https://evil.example/f.woff2)",
+      "https://evil.example/a\\)b",
+      "https://evil.example/a b",
+      "javascript:alert(1)",
+      "data:font/woff2;base64,AAAA",
+      "//evil.example/f.woff2",
+    ]) {
+      expect(fontFaceRule("Medice Sans", bad)).toBeUndefined();
+    }
+  });
+
+  it("refuses plain HTTP except on loopback", () => {
+    // The page holding this font also holds a bearer token. A developer on
+    // localhost is the one case where there is no network to downgrade.
+    expect(
+      fontFaceRule("Medice Sans", "http://api.example.de/branding/font"),
+    ).toBeUndefined();
+    expect(
+      fontFaceRule("Medice Sans", "http://localhost:3000/branding/font?v=1"),
+    ).toContain("@font-face");
+    expect(
+      fontFaceRule("Medice Sans", "http://127.0.0.1:3000/branding/font?v=1"),
+    ).toContain("@font-face");
+    // Not a loopback host, however much it looks like one.
+    expect(
+      fontFaceRule("Medice Sans", "http://localhost.evil.example/branding/font"),
+    ).toBeUndefined();
   });
 });

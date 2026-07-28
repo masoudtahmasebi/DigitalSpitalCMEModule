@@ -70,22 +70,70 @@ export class ProjectBindingRepository implements ProjectBindingRepositoryPort {
  * `db/migrations/0007_project_branding_lookup.sql` for why it is not folded
  * into `resolve_project_binding`.
  */
+export interface ProjectBrandingRow {
+  /** The raw `branding` JSON. Validated by `parseBranding` in the service. */
+  readonly branding: unknown;
+  readonly fontFamilyName: string | null;
+  readonly fontUpdatedAt: Date | null;
+}
+
 export interface ProjectBrandingRepositoryPort {
-  resolve(slug: string): Promise<unknown>;
+  resolve(slug: string): Promise<ProjectBrandingRow>;
+}
+
+/** The uploaded font file itself. */
+export interface ProjectFontRow {
+  readonly bytes: Buffer;
+  readonly mime: string;
+  readonly updatedAt: Date;
+}
+
+export interface ProjectFontRepositoryPort {
+  resolve(slug: string): Promise<ProjectFontRow | undefined>;
 }
 
 export class ProjectBrandingRepository implements ProjectBrandingRepositoryPort {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * Returns the raw JSON. Validation is `parseBranding` in `@ds/domain` —
+   * Returns raw values. Validation is `parseBranding` in `@ds/domain` —
    * a repository returns rows, and what counts as a valid colour is a rule.
    */
-  async resolve(slug: string): Promise<unknown> {
-    const result = await this.pool.query<{ branding: unknown }>(
-      "SELECT * FROM resolve_project_branding($1)",
-      [slug],
-    );
-    return result.rows[0]?.branding ?? {};
+  async resolve(slug: string): Promise<ProjectBrandingRow> {
+    const result = await this.pool.query<{
+      branding: unknown;
+      font_family_name: string | null;
+      font_updated_at: Date | null;
+    }>("SELECT * FROM resolve_project_branding($1)", [slug]);
+
+    const row = result.rows[0];
+    return {
+      branding: row?.branding ?? {},
+      fontFamilyName: row?.font_family_name ?? null,
+      fontUpdatedAt: row?.font_updated_at ?? null,
+    };
+  }
+}
+
+/**
+ * The uploaded webfont's bytes (P10-05).
+ *
+ * Its own repository and its own SQL function so the branding lookup — called
+ * on every widget render — never drags a megabyte of font through it.
+ */
+export class ProjectFontRepository implements ProjectFontRepositoryPort {
+  constructor(private readonly pool: Pool) {}
+
+  async resolve(slug: string): Promise<ProjectFontRow | undefined> {
+    const result = await this.pool.query<{
+      font_file: Buffer;
+      font_mime: string;
+      font_updated_at: Date;
+    }>("SELECT * FROM resolve_project_font($1)", [slug]);
+
+    const row = result.rows[0];
+    if (row === undefined) return undefined;
+
+    return { bytes: row.font_file, mime: row.font_mime, updatedAt: row.font_updated_at };
   }
 }

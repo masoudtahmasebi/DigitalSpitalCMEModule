@@ -24,7 +24,35 @@ export const de = {
   nav: {
     courses: "Fortbildungen",
     participants: "Teilnehmende",
+    branding: "Erscheinungsbild",
     back: "Zurück",
+  },
+
+  branding: {
+    title: "Schriftart",
+    intro:
+      "Die hochgeladene Schriftart wird in der Lernoberfläche verwendet. Ohne eigene Schriftart wird die Standardschrift angezeigt.",
+    privacy:
+      "Die Datei wird auf unseren eigenen Servern gespeichert und von dort ausgeliefert. Es werden keine Schriften von Drittanbietern geladen, sodass keine IP-Adressen Ihrer Nutzerinnen und Nutzer an Dritte übermittelt werden.",
+
+    familyName: "Name der Schriftfamilie",
+    familyNameHint:
+      "Frei wählbar, zum Beispiel „Medice Sans“. Erlaubt sind Buchstaben, Ziffern, Leerzeichen, Bindestrich und Unterstrich.",
+    familyNameInvalid:
+      "Nur Buchstaben, Ziffern, Leerzeichen, Bindestrich und Unterstrich, höchstens 64 Zeichen.",
+
+    file: "Schriftdatei",
+    fileHint:
+      "WOFF2 oder WOFF, höchstens 2 MB. Andere Formate werden abgelehnt. Bitte laden Sie nur Schriften hoch, für die Sie die Lizenz zur Web-Einbindung besitzen.",
+    tooLarge: "Die Schriftdatei ist zu groß (maximal 2 MB).",
+
+    stored: "Hinterlegt",
+    none: "Keine eigene Schriftart",
+    saved: "Die Schriftart wurde gespeichert.",
+
+    remove: "Schriftart entfernen",
+    removeHint:
+      "Danach wird wieder die Standardschrift verwendet. Bereits ausgelieferte Bescheinigungen bleiben unverändert.",
   },
 
   loading: "Wird geladen …",
