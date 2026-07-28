@@ -21,6 +21,8 @@ advertisement.
 | [0005](0005-eiv-contract-first.md)              | EIV-FOBI integration is built contract-first, behind a harness | Accepted |
 | [0007](0007-headless-core-and-host-adapters.md) | Headless core, host adapters at the edge                       | Accepted |
 | [0006](0006-layered-architecture.md)            | Enforced layered architecture                                  | Accepted |
+| [0008](0008-erasure-is-pseudonymisation.md)     | Erasure means pseudonymisation, not deletion                   | Accepted |
+| [0009](0009-no-third-party-frontend-assets.md)  | No third-party frontend assets; fonts are uploaded             | Accepted |
 
 ## Writing a new one
 

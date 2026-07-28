@@ -160,21 +160,39 @@ criteria, and note assumptions in the PR.
 ## 8. Repository map
 
 ```
+README.md                start here — what this is and how to run it
 contracts/openapi.yaml   API contract — written before implementation
 db/                      migrations (SQL, ordered) and seed data
+docs/architecture.md     how the system fits together, and why
 docs/roadmap.md          the delivery plan
 docs/adr/                architecture decision records
 docs/backlog/            the work orders, one file per phase
-infra/                   docker-compose and Keycloak dev realm
+docs/gdpr.md             processing record, retention, subject rights
+docs/show-stoppers.md    open questions blocking work, with who owns each
+infra/                   docker-compose, Keycloak dev realm, nginx, deploy
 apps/api                 NestJS API
 apps/widget              learner web component <ds-lms>
 apps/admin               admin console SPA
 apps/eiv-harness         EIV-FOBI contract test CLI + mock server
 packages/domain          pure compliance logic
 packages/sdk             generated API client
+packages/eiv-client      EIV-FOBI protocol client
 packages/config          shared eslint / tsconfig / tailwind presets
 wordpress/ds-lms         thin WordPress plugin
 ```
+
+Where documentation goes, when you add something:
+
+| What you changed                                 | Where it is recorded                       |
+| ------------------------------------------------ | ------------------------------------------ |
+| A decision that would be expensive to reverse    | a new ADR, and a line in `architecture.md` |
+| A new module or a new rule                       | the file's own header comment              |
+| Anything touching personal data                  | `docs/gdpr.md` §2 and §4                   |
+| A question only the client or ÄKWL can answer    | `docs/show-stoppers.md`, with an owner     |
+| An acceptance criterion met, or deliberately not | the ticket in `docs/backlog/`              |
+
+A file header explains **why this file exists and what would go wrong without
+it**. It is not a summary of the code below it — that is what the code is for.
 
 ## 9. Interim ticket IDs
 
