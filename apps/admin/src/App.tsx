@@ -17,7 +17,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AdminCourseDetail, AdminCourseSummary, ParticipantList } from "@ds/sdk";
+import type {
+  AdminCourseDetail,
+  AdminCourseSummary,
+  ApiClient,
+  ParticipantList,
+  ProjectSummary,
+} from "@ds/sdk";
 import { readConfig } from "./config.js";
 import { beginLogin, completeLogin, currentSession, logout } from "./auth.js";
 import { createAdminClient, describeError, isForbidden } from "./api.js";
@@ -26,6 +32,12 @@ import { Badge, Button, Notice, Spinner, Table } from "./components/ui.js";
 import { BrandingSettings } from "./components/BrandingSettings.js";
 import { CourseSettings } from "./components/CourseSettings.js";
 import { Participants } from "./components/Participants.js";
+import { Organisation } from "./components/Organisation.js";
+import { NewCourse } from "./components/NewCourse.js";
+import { CourseStructureEditor } from "./components/CourseStructure.js";
+import { QuizEditor } from "./components/QuizEditor.js";
+import { EvaluationEditor } from "./components/EvaluationEditor.js";
+import { ExpertsEditor } from "./components/ExpertsEditor.js";
 
 type AuthState = "checking" | "anonymous" | "signed-in" | "failed";
 
@@ -105,10 +117,35 @@ function Shell(props: { children: React.ReactNode; onSignOut?: () => void }) {
   );
 }
 
+/**
+ * Which course tab is open.
+ *
+ * `structure` is where a course is actually built, so it is the tab a newly
+ * created course lands on — settings would open on a form asking for a VNR
+ * before there is anything to accredit.
+ */
+type CourseTab = "settings" | "structure" | "experts" | "evaluation" | "participants";
+
+const COURSE_TABS: ReadonlyArray<readonly [CourseTab, string]> = [
+  ["structure", de.structure.title],
+  ["settings", de.course.settings],
+  ["experts", de.experts.title],
+  ["evaluation", de.evaluation.title],
+  ["participants", de.participants.title],
+];
+
 type View =
   | { kind: "courses" }
+  | { kind: "new-course" }
+  | { kind: "organisation" }
   | { kind: "branding" }
-  | { kind: "course"; slug: string; tab: "settings" | "participants" };
+  | { kind: "course"; slug: string; tab: CourseTab };
+
+const SECTIONS: ReadonlyArray<readonly [View["kind"], string]> = [
+  ["courses", de.nav.courses],
+  ["organisation", de.nav.organisation],
+  ["branding", de.nav.branding],
+];
 
 function Console(props: {
   config: ReturnType<typeof readConfig> & object;
@@ -177,22 +214,31 @@ function Console(props: {
     );
   }
 
-  // Two top-level sections. Branding is project-wide rather than per course —
-  // the typeface is a property of the customer, not of one Fortbildung — so it
-  // sits beside the course list rather than inside a course.
+  if (view.kind === "new-course") {
+    return (
+      <NewCourseScreen
+        client={client}
+        onCreated={(slug) => {
+          void loadCourses();
+          setView({ kind: "course", slug, tab: "structure" });
+        }}
+        onCancel={() => setView({ kind: "courses" })}
+      />
+    );
+  }
+
+  // Three top-level sections. Branding and organisation are project-wide rather
+  // than per course — a typeface and a Keycloak realm are properties of the
+  // customer, not of one Fortbildung — so they sit beside the course list
+  // rather than inside a course.
   const sections = (
     <nav className="flex gap-1 border-b border-gray-200">
-      {(
-        [
-          ["courses", de.nav.courses],
-          ["branding", de.nav.branding],
-        ] as const
-      ).map(([value, label]) => (
+      {SECTIONS.map(([value, label]) => (
         <button
           key={value}
           type="button"
           aria-current={view.kind === value ? "page" : undefined}
-          onClick={() => setView({ kind: value })}
+          onClick={() => setView({ kind: value } as View)}
           className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
             view.kind === value
               ? "border-brand-600 text-brand-700"
@@ -216,10 +262,24 @@ function Console(props: {
     );
   }
 
+  if (view.kind === "organisation") {
+    return (
+      <div className="space-y-5">
+        {sections}
+        <Organisation client={client} />
+      </div>
+    );
+  }
+
   return (
     <section className="space-y-4">
       {sections}
-      <h2 className="text-base font-semibold text-gray-900">{de.courses.title}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-semibold text-gray-900">{de.courses.title}</h2>
+        <Button onClick={() => setView({ kind: "new-course" })}>
+          {de.newCourse.action}
+        </Button>
+      </div>
 
       {courses.length === 0 ? (
         <p className="text-sm text-gray-600">{de.courses.empty}</p>
@@ -240,7 +300,7 @@ function Console(props: {
                   type="button"
                   className="font-medium text-brand-700 underline"
                   onClick={() =>
-                    setView({ kind: "course", slug: course.slug, tab: "settings" })
+                    setView({ kind: "course", slug: course.slug, tab: "structure" })
                   }
                 >
                   {course.title}
@@ -270,16 +330,66 @@ function Console(props: {
   );
 }
 
+/**
+ * Creating a course needs the project list, and only this screen needs it.
+ *
+ * Fetched here rather than alongside the course list so opening the console
+ * costs one request, not two — an admin who never creates a course never asks
+ * for it.
+ */
+function NewCourseScreen(props: {
+  client: ApiClient;
+  onCreated: (slug: string) => void;
+  onCancel: () => void;
+}) {
+  const [projects, setProjects] = useState<ProjectSummary[] | undefined>();
+  const [problem, setProblem] = useState<string | undefined>();
+  const { client } = props;
+
+  useEffect(() => {
+    client.adminListProjects().then(setProjects, (error: unknown) => {
+      setProblem(describeError(error, de.error.generic));
+    });
+  }, [client]);
+
+  if (problem !== undefined) {
+    return (
+      <Notice tone="error" title={de.error.title}>
+        {problem}
+      </Notice>
+    );
+  }
+
+  if (projects === undefined) return <Spinner label={de.loading} />;
+
+  return (
+    <NewCourse
+      client={client}
+      projects={projects}
+      onCreated={props.onCreated}
+      onCancel={props.onCancel}
+    />
+  );
+}
+
 function CourseScreen(props: {
-  client: ReturnType<typeof createAdminClient>;
+  client: ApiClient;
   slug: string;
-  tab: "settings" | "participants";
-  onTab: (tab: "settings" | "participants") => void;
+  tab: CourseTab;
+  onTab: (tab: CourseTab) => void;
   onBack: () => void;
 }) {
   const [course, setCourse] = useState<AdminCourseDetail | undefined>();
   const [participants, setParticipants] = useState<ParticipantList | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
+  /**
+   * Editing one quiz replaces the structure tab rather than opening beside it.
+   *
+   * A quiz belongs to a content item, which belongs to a chapter — so it is a
+   * level deeper than the tabs, and giving it a tab of its own would mean a tab
+   * that is meaningless until something in another tab is selected.
+   */
+  const [quiz, setQuiz] = useState<{ contentId: string; title: string } | undefined>();
 
   const { client, slug, tab } = props;
 
@@ -297,6 +407,11 @@ function CourseScreen(props: {
     });
   }, [client, slug, tab]);
 
+  // Leaving the structure tab abandons a quiz that was open under it.
+  useEffect(() => {
+    if (tab !== "structure") setQuiz(undefined);
+  }, [tab]);
+
   return (
     <section className="space-y-5">
       <div className="flex items-center gap-3">
@@ -308,13 +423,8 @@ function CourseScreen(props: {
         </h2>
       </div>
 
-      <nav className="flex gap-1 border-b border-gray-200">
-        {(
-          [
-            ["settings", de.course.settings],
-            ["participants", de.participants.title],
-          ] as const
-        ).map(([value, label]) => (
+      <nav className="flex flex-wrap gap-1 border-b border-gray-200">
+        {COURSE_TABS.map(([value, label]) => (
           <button
             key={value}
             type="button"
@@ -337,15 +447,73 @@ function CourseScreen(props: {
         </Notice>
       )}
 
-      {course === undefined ? (
-        <Spinner label={de.loading} />
-      ) : tab === "settings" ? (
-        <CourseSettings client={client} course={course} onSaved={setCourse} />
-      ) : participants === undefined ? (
-        <Spinner label={de.loading} />
-      ) : (
-        <Participants client={client} courseSlug={props.slug} list={participants} />
-      )}
+      <CourseTabContent
+        client={client}
+        slug={slug}
+        tab={tab}
+        course={course}
+        participants={participants}
+        quiz={quiz}
+        onEditQuiz={(contentId, title) => setQuiz({ contentId, title })}
+        onCloseQuiz={() => setQuiz(undefined)}
+        onCourseSaved={setCourse}
+      />
     </section>
   );
+}
+
+function CourseTabContent(props: {
+  client: ApiClient;
+  slug: string;
+  tab: CourseTab;
+  course: AdminCourseDetail | undefined;
+  participants: ParticipantList | undefined;
+  quiz: { contentId: string; title: string } | undefined;
+  onEditQuiz: (contentId: string, title: string) => void;
+  onCloseQuiz: () => void;
+  onCourseSaved: (course: AdminCourseDetail) => void;
+}) {
+  const { client, slug } = props;
+
+  switch (props.tab) {
+    case "structure":
+      return props.quiz === undefined ? (
+        <CourseStructureEditor
+          client={client}
+          courseSlug={slug}
+          onEditQuiz={props.onEditQuiz}
+        />
+      ) : (
+        <QuizEditor
+          client={client}
+          contentId={props.quiz.contentId}
+          contentTitle={props.quiz.title}
+          onBack={props.onCloseQuiz}
+        />
+      );
+
+    case "experts":
+      return <ExpertsEditor client={client} courseSlug={slug} />;
+
+    case "evaluation":
+      return <EvaluationEditor client={client} courseSlug={slug} />;
+
+    case "settings":
+      return props.course === undefined ? (
+        <Spinner label={de.loading} />
+      ) : (
+        <CourseSettings
+          client={client}
+          course={props.course}
+          onSaved={props.onCourseSaved}
+        />
+      );
+
+    case "participants":
+      return props.participants === undefined ? (
+        <Spinner label={de.loading} />
+      ) : (
+        <Participants client={client} courseSlug={slug} list={props.participants} />
+      );
+  }
 }

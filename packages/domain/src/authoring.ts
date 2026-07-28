@@ -20,6 +20,8 @@
  * exhaustively testable and cannot be quietly bypassed by a second code path.
  */
 
+import type { QuestionKind } from "./assessment.js";
+
 /** What kind of thing an author is arranging. Used only in messages. */
 export type OrderedKind = "module" | "chapter" | "content" | "question" | "option";
 
@@ -139,6 +141,84 @@ export function contentProblems(draft: ContentDraft): readonly ContentProblem[] 
   }
 
   return problems;
+}
+
+// ---------------------------------------------------------------------------
+// Quiz questions
+// ---------------------------------------------------------------------------
+
+/**
+ * `QuestionKind` comes from `assessment.ts` rather than being declared again:
+ * the kind an author picks and the kind the scorer branches on are the same
+ * thing. Two identical unions would compile happily and then drift the day a
+ * third kind is added to one of them.
+ */
+export interface QuestionDraft {
+  readonly kind: QuestionKind;
+  readonly prompt: string;
+  readonly options: ReadonlyArray<{
+    readonly label: string;
+    readonly isCorrect: boolean;
+  }>;
+}
+
+/**
+ * Why a question cannot be used.
+ *
+ * `no_correct_option` and `too_many_correct_options` are the two that make a
+ * quiz *unpassable* rather than merely untidy, which is why they are named
+ * separately from the rest.
+ */
+export type QuestionProblem =
+  | "empty_prompt"
+  | "too_few_options"
+  | "empty_option"
+  | "no_correct_option"
+  | "too_many_correct_options";
+
+/** Fewer than this and there is nothing to choose between. */
+export const MIN_QUIZ_OPTIONS = 2;
+
+/**
+ * What is wrong with one quiz question, if anything.
+ *
+ * Lives here — not in the API service and not in the console — because both
+ * need it and a second copy would eventually disagree with the first. The
+ * server refuses on it and the console marks the offending question with it, so
+ * an author sees *which* of eleven questions is wrong before submitting rather
+ * than one sentence about the document afterwards.
+ *
+ * The two rules that matter are not stylistic:
+ *
+ * - **No correct option** means the question cannot be answered correctly by
+ *   anybody, including a physician who knows the material. Every future attempt
+ *   is capped below the accredited 70 % by an authoring slip.
+ * - **A `single` question with two correct options** is the same defect wearing
+ *   a different hat. Scoring is exact-set (`assessment.ts`): the submitted set
+ *   must equal the correct set, and a learner picking one option can never
+ *   submit a set of two.
+ *
+ * Returned in a fixed order so a caller rendering them gets a stable list, and
+ * so a test can compare arrays rather than sets.
+ */
+export function questionProblems(draft: QuestionDraft): readonly QuestionProblem[] {
+  const problems: QuestionProblem[] = [];
+  const correct = draft.options.filter((option) => option.isCorrect).length;
+
+  if (draft.prompt.trim() === "") problems.push("empty_prompt");
+  if (draft.options.length < MIN_QUIZ_OPTIONS) problems.push("too_few_options");
+  if (draft.options.some((option) => option.label.trim() === "")) {
+    problems.push("empty_option");
+  }
+  if (correct === 0) problems.push("no_correct_option");
+  if (draft.kind === "single" && correct > 1) problems.push("too_many_correct_options");
+
+  return problems;
+}
+
+/** How many options a question marks correct. Reported in refusals. */
+export function correctOptionCount(draft: QuestionDraft): number {
+  return draft.options.filter((option) => option.isCorrect).length;
 }
 
 // ---------------------------------------------------------------------------

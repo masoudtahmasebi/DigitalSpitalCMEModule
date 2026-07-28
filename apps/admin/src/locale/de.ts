@@ -25,7 +25,204 @@ export const de = {
     courses: "Fortbildungen",
     participants: "Teilnehmende",
     branding: "Erscheinungsbild",
+    organisation: "Organisation",
     back: "Zurück",
+  },
+
+  common: {
+    add: "Hinzufügen",
+    save: "Speichern",
+    saving: "Wird gespeichert …",
+    saved: "Gespeichert.",
+    cancel: "Abbrechen",
+    edit: "Bearbeiten",
+    delete: "Löschen",
+    confirmDelete: "Wirklich löschen",
+    moveUp: "Nach oben verschieben",
+    moveDown: "Nach unten verschieben",
+    name: "Name",
+    slug: "Kürzel",
+    title: "Titel",
+    optional: "optional",
+    slugHint:
+      "Kleinbuchstaben, Ziffern und Bindestriche. Das Kürzel erscheint in Adressen und lässt sich später nicht ändern.",
+    unsaved: "Es gibt ungespeicherte Änderungen.",
+  },
+
+  organisation: {
+    title: "Organisation",
+    intro:
+      "Abteilungen und Projekte gliedern die Fortbildungen dieses Mandanten. Ein Projekt ist eine Oberfläche — die WordPress-Seite eines Kunden oder das eigene Portal — und entscheidet, gegen welchen Keycloak-Realm Anmeldungen geprüft werden.",
+
+    departments: "Abteilungen",
+    departmentsEmpty: "Es sind noch keine Abteilungen angelegt.",
+    newDepartment: "Neue Abteilung",
+    columnProjects: "Projekte",
+
+    projects: "Projekte",
+    projectsEmpty: "Es sind noch keine Projekte angelegt.",
+    newProject: "Neues Projekt",
+    columnDepartment: "Abteilung",
+    columnCourses: "Fortbildungen",
+    columnRealm: "Keycloak-Realm",
+
+    keycloak: "Anmeldung (Keycloak)",
+    keycloakWarning:
+      "Diese Werte entscheiden, gegen welchen Realm jedes Zugangstoken dieses Projekts geprüft wird. Ein falscher Wert sperrt alle Teilnehmenden dieses Projekts aus.",
+    issuer: "Issuer",
+    issuerHint: "Zum Beispiel https://auth.example.de/realms/medice",
+    audience: "Audience",
+    realm: "Realm",
+
+    smtp: "E-Mail-Versand (SMTP)",
+    smtpIntro:
+      "Wird für den Versand der Teilnahmebescheinigungen verwendet. Ohne Angaben versendet die Plattform keine E-Mails für dieses Projekt.",
+    smtpHost: "Server",
+    smtpPort: "Port",
+    smtpUsername: "Benutzername",
+    smtpPassword: "Passwort",
+    smtpPasswordHint:
+      "Wird verschlüsselt gespeichert und niemals wieder angezeigt. Leer lassen, um das gespeicherte Passwort beizubehalten.",
+    smtpPasswordStored: "Ein Passwort ist hinterlegt.",
+    smtpPasswordMissing: "Es ist kein Passwort hinterlegt.",
+    smtpFromAddress: "Absenderadresse",
+    smtpFromName: "Absendername",
+  },
+
+  newCourse: {
+    action: "Neue Fortbildung",
+    title: "Neue Fortbildung anlegen",
+    intro:
+      "Nur das Nötigste. VNR, Punkte, Veranstaltender und wissenschaftliche Leitung werden danach in den Einstellungen ergänzt — dort prüft die Plattform auch, was für die Teilnahmebescheinigung noch fehlt.",
+    project: "Projekt",
+    description: "Beschreibung",
+    deliveryType: "Format",
+    delivery: {
+      on_demand: "on-demand",
+      live: "Live-Webinar",
+      praesenz: "Präsenz",
+    },
+    create: "Fortbildung anlegen",
+    noProjects:
+      "Bevor eine Fortbildung angelegt werden kann, muss es mindestens ein Projekt geben.",
+  },
+
+  structure: {
+    title: "Inhalte",
+    intro:
+      "Reihenfolge bestimmt die Freischaltung: ein Kapitel wird erst erreichbar, wenn das vorhergehende abgeschlossen ist. Änderungen an der Reihenfolge wirken sich deshalb auf laufende Teilnahmen aus.",
+    empty: "Diese Fortbildung hat noch keine Module.",
+
+    module: "Modul",
+    newModule: "Modul hinzufügen",
+    moduleSubtitle: "Untertitel",
+
+    chapter: "Kapitel",
+    newChapter: "Kapitel hinzufügen",
+    chapterBody: "Einleitungstext",
+    noChapters: "Noch keine Kapitel.",
+    moveToModule: "In anderes Modul verschieben",
+
+    content: "Inhalt",
+    newContent: "Inhalt hinzufügen",
+    noContents: "Noch keine Inhalte.",
+    kind: "Art",
+    kinds: {
+      video: "Video",
+      text: "Text",
+      quiz: "Lernerfolgskontrolle",
+      details: "Detailinformation",
+      material: "Mediathek-Datei",
+    },
+    videoUrl: "Video-URL",
+    durationSec: "Länge in Sekunden",
+    durationHint:
+      "Pflichtangabe für Videos. Der erforderliche Videoanteil ist ein Prozentsatz dieser Länge — ohne Länge gibt es nichts zu erreichen und der Inhalt wäre überspringbar.",
+    body: "Text",
+    fileUrl: "Datei-URL",
+    mimeType: "Dateityp",
+
+    /** "3 Teilnahmen erfasst" — why a delete is refused. */
+    learnerRecords: (count: number): string =>
+      count === 1 ? "1 Teilnahme erfasst" : `${count} Teilnahmen erfasst`,
+    lockedByRecords:
+      "Kann nicht gelöscht werden: es sind bereits Teilnahmen erfasst. Diese Daten sind der Nachweis für bereits vergebene Punkte.",
+    questionCount: (count: number): string =>
+      count === 1 ? "1 Frage" : `${count} Fragen`,
+    noQuestions: "Keine Fragen — diese Lernerfolgskontrolle kann niemand bestehen.",
+    editQuiz: "Fragen bearbeiten",
+
+    reordering: "Reihenfolge wird gespeichert …",
+    reorderFailed:
+      "Die Reihenfolge konnte nicht gespeichert werden. Es wurde nichts geändert.",
+  },
+
+  experts: {
+    title: "Referenten",
+    intro:
+      "Erscheinen im Reiter „Referenten“ der Lernoberfläche. Die Liste wird vollständig ersetzt.",
+    empty: "Es sind keine Referenten hinterlegt.",
+    add: "Referent hinzufügen",
+    roleLabel: "Rolle",
+    roleLabelHint: "Zum Beispiel „Wissenschaftliche Leitung“ oder „Referent“.",
+    name: "Name",
+    institution: "Institution",
+    biography: "Kurzvita",
+    photoUrl: "Foto-URL",
+  },
+
+  quiz: {
+    title: "Lernerfolgskontrolle",
+    intro:
+      "Die Reihenfolge der Fragen ist die Reihenfolge in der Prüfung. Bewertet wird auf exakte Übereinstimmung: bei „eine richtige Antwort“ muss genau die richtige Option gewählt sein, bei „mehrere richtige Antworten“ genau die Menge der richtigen.",
+    empty: "Noch keine Fragen.",
+    addQuestion: "Frage hinzufügen",
+    prompt: "Frage",
+    kind: "Antworttyp",
+    kinds: {
+      single: "eine richtige Antwort",
+      multi: "mehrere richtige Antworten",
+    },
+    option: "Antwortoption",
+    addOption: "Antwortoption hinzufügen",
+    isCorrect: "richtig",
+    answered: (count: number): string =>
+      count === 1 ? "1 Antwort erfasst" : `${count} Antworten erfasst`,
+    lockedByAnswers:
+      "Kann nicht gelöscht werden: diese Frage wurde bereits beantwortet. Ein abgegebener Versuch muss weiter das bedeuten, was er bei der Bewertung bedeutet hat.",
+
+    noCorrect: "Mindestens eine Antwortoption muss als richtig markiert sein.",
+    tooManyCorrect:
+      "Bei „eine richtige Antwort“ darf genau eine Option als richtig markiert sein.",
+    tooFewOptions: "Mindestens zwei Antwortoptionen.",
+    emptyPrompt: "Die Frage darf nicht leer sein.",
+    emptyOption: "Antwortoptionen dürfen nicht leer sein.",
+    fixBeforeSaving: "Bitte korrigieren Sie die markierten Fragen, bevor Sie speichern.",
+  },
+
+  evaluation: {
+    title: "Evaluationsbogen",
+    intro:
+      "Der Anerkennungsbescheid verlangt eine Evaluation. Ohne Fragen kann die Fortbildung nicht abgeschlossen werden.",
+    empty: "Noch keine Fragen.",
+    addQuestion: "Frage hinzufügen",
+    prompt: "Frage",
+    kind: "Art",
+    kinds: {
+      scale: "Skala 1–5",
+      text: "Freitext",
+      single: "Auswahl",
+    },
+    required: "Pflichtfrage",
+    options: "Auswahlmöglichkeiten",
+    addOption: "Auswahlmöglichkeit hinzufügen",
+    optionsHint:
+      "Nur für „Auswahl“. Eine Auswahlfrage ohne Möglichkeiten kann niemand beantworten.",
+    answered: (count: number): string =>
+      count === 1 ? "1 Antwort erfasst" : `${count} Antworten erfasst`,
+    lockedByAnswers: "Kann nicht gelöscht werden: diese Frage wurde bereits beantwortet.",
+    freeTextPrivacy:
+      "Freitextantworten können personenbezogene Angaben enthalten. Sie werden ausschließlich aggregiert ausgewertet und erscheinen in keinem Protokoll.",
   },
 
   branding: {

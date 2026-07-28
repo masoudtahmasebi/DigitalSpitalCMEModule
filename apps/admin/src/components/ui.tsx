@@ -6,7 +6,7 @@
  * app.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 export function Button(props: {
   onClick?: () => void;
@@ -61,9 +61,9 @@ export function Field(props: {
 export function TextInput(props: {
   id: string;
   value: string;
-  type?: string;
-  maxLength?: number;
-  autoComplete?: string;
+  type?: string | undefined;
+  maxLength?: number | undefined;
+  autoComplete?: string | undefined;
   onChange: (value: string) => void;
 }) {
   return (
@@ -76,6 +76,76 @@ export function TextInput(props: {
       onChange={(event) => props.onChange(event.target.value)}
       className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
     />
+  );
+}
+
+export function TextArea(props: {
+  id: string;
+  value: string;
+  rows?: number | undefined;
+  maxLength?: number | undefined;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <textarea
+      id={props.id}
+      value={props.value}
+      rows={props.rows ?? 4}
+      maxLength={props.maxLength}
+      onChange={(event) => props.onChange(event.target.value)}
+      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+    />
+  );
+}
+
+export function Select<T extends string>(props: {
+  id: string;
+  value: T;
+  options: ReadonlyArray<readonly [T, string]>;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <select
+      id={props.id}
+      value={props.value}
+      onChange={(event) => props.onChange(event.target.value as T)}
+      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+    >
+      {props.options.map(([value, label]) => (
+        <option key={value} value={value}>
+          {label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * A small square button carrying only an icon-ish glyph.
+ *
+ * `label` is mandatory and becomes the accessible name. The glyph is
+ * `aria-hidden`, so a screen reader reads "Nach oben verschieben" rather than
+ * "up arrow" — these are the reorder controls, and a control whose purpose a
+ * screen-reader user cannot determine is not a control (CLAUDE.md §3, the a11y
+ * floor is costed in and not reducible).
+ */
+export function IconButton(props: {
+  label: string;
+  glyph: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={props.label}
+      title={props.label}
+      disabled={props.disabled === true}
+      onClick={props.onClick}
+      className="inline-flex h-8 w-8 items-center justify-center rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-30"
+    >
+      <span aria-hidden="true">{props.glyph}</span>
+    </button>
   );
 }
 
@@ -119,6 +189,88 @@ export function Badge(props: { tone: "ok" | "warn" | "muted"; children: ReactNod
     <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${skin}`}>
       {props.children}
     </span>
+  );
+}
+
+/**
+ * A destructive action that asks once, inline.
+ *
+ * Inline rather than a modal dialog on purpose. A modal has to trap focus,
+ * restore it on close, and be dismissible by Escape, and getting any of those
+ * subtly wrong makes the console unusable by keyboard — for a confirmation that
+ * is one sentence long. Two buttons that swap places do the same job with
+ * nothing to get wrong.
+ *
+ * `disabledReason` is the more important half: when a delete is refused because
+ * learners have used the thing, the console says so *before* the click rather
+ * than turning the API's 409 into a surprise.
+ */
+export function ConfirmButton(props: {
+  label: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  disabledReason?: string | undefined;
+  onConfirm: () => void;
+}) {
+  const [armed, setArmed] = useState(false);
+
+  if (props.disabledReason !== undefined) {
+    return (
+      <span className="text-xs text-gray-500" title={props.disabledReason}>
+        {props.disabledReason}
+      </span>
+    );
+  }
+
+  if (!armed) {
+    return (
+      <Button variant="secondary" onClick={() => setArmed(true)}>
+        {props.label}
+      </Button>
+    );
+  }
+
+  return (
+    <span className="inline-flex gap-2">
+      <Button
+        variant="danger"
+        onClick={() => {
+          setArmed(false);
+          props.onConfirm();
+        }}
+      >
+        {props.confirmLabel}
+      </Button>
+      <Button variant="secondary" onClick={() => setArmed(false)}>
+        {props.cancelLabel}
+      </Button>
+    </span>
+  );
+}
+
+/** A bordered block. Used to separate levels of the authoring tree visually. */
+export function Panel(props: {
+  title?: ReactNode;
+  actions?: ReactNode;
+  tone?: "default" | "nested";
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={`rounded-md border p-3 ${
+        props.tone === "nested"
+          ? "border-gray-200 bg-gray-50"
+          : "border-gray-300 bg-white"
+      }`}
+    >
+      {props.title === undefined && props.actions === undefined ? null : (
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm font-semibold text-gray-900">{props.title}</div>
+          <div className="flex flex-wrap items-center gap-2">{props.actions}</div>
+        </div>
+      )}
+      {props.children}
+    </div>
   );
 }
 

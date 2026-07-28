@@ -24,7 +24,16 @@
  * prompt, never an answer key (CLAUDE.md §4 invariant 7).
  */
 
-import { canDelete, contentProblems, validateReorder, parseBranding } from "@ds/domain";
+import {
+  canDelete,
+  contentProblems,
+  correctOptionCount,
+  parseBranding,
+  questionProblems,
+  validateReorder,
+  MIN_QUIZ_OPTIONS,
+  type QuestionProblem,
+} from "@ds/domain";
 import { AppError } from "../../shared/problem-details.js";
 import type { Db } from "../../db/tenant-db.js";
 import type { SecretCipher } from "../../shared/secret-cipher.js";
@@ -452,25 +461,20 @@ export class AuthoringService {
   ): Promise<AuthoringQuiz> {
     await this.slugOwning(await this.repository.courseIdOfContent(contentId), contentId);
 
+    // The rules themselves live in `@ds/domain` and are shared with the admin
+    // console, which marks the offending question in the form. Two copies of
+    // "a question with no correct answer is unpassable" would eventually
+    // disagree, and the copy that decides is this one.
     for (const [index, question] of input.questions.entries()) {
-      const correct = question.options.filter((option) => option.isCorrect).length;
+      const problems = questionProblems(question);
+      if (problems.length === 0) continue;
 
-      if (correct === 0) {
-        throw new AppError(
-          "validation",
-          `question ${index} has no correct option`,
-          `Frage ${index + 1} hat keine richtige Antwort. Eine Frage ohne richtige Antwort kann niemand bestehen.`,
-        );
-      }
-      if (question.kind === "single" && correct > 1) {
-        // Scoring is exact-set (`assessment.ts`): a single-choice question with
-        // two correct options cannot be answered correctly by anybody.
-        throw new AppError(
-          "validation",
-          `single-choice question ${index} has ${correct} correct options`,
-          `Frage ${index + 1} ist als Einfachauswahl angelegt, hat aber ${correct} richtige Antworten. Bitte auf eine reduzieren oder auf Mehrfachauswahl umstellen.`,
-        );
-      }
+      const correct = correctOptionCount(question);
+      throw new AppError(
+        "validation",
+        `question ${index} rejected: ${problems.join(",")}`,
+        germanQuestionProblem(problems, index, correct),
+      );
     }
 
     const existing = await this.repository.loadQuiz(contentId);
@@ -731,4 +735,35 @@ function assign<K extends keyof ProjectPatch>(
   value: ProjectPatch[K] | undefined,
 ): void {
   if (value !== undefined) patch[key] = value;
+}
+
+/**
+ * A German sentence for a rejected question.
+ *
+ * The *rules* come from `@ds/domain`; the copy is here, because the console
+ * renders its own words for the same problems and the two audiences differ — a
+ * form marks a field, an API writes one sentence somebody may read in a log
+ * viewer. The first problem wins: an author fixes one thing at a time, and a
+ * paragraph listing five is read as none.
+ */
+function germanQuestionProblem(
+  problems: readonly QuestionProblem[],
+  index: number,
+  correct: number,
+): string {
+  const number = index + 1;
+  switch (problems[0]) {
+    case "empty_prompt":
+      return `Frage ${number} hat keinen Text.`;
+    case "too_few_options":
+      return `Frage ${number} braucht mindestens ${MIN_QUIZ_OPTIONS} Antwortoptionen.`;
+    case "empty_option":
+      return `Frage ${number} hat eine leere Antwortoption.`;
+    case "no_correct_option":
+      return `Frage ${number} hat keine richtige Antwort. Eine Frage ohne richtige Antwort kann niemand bestehen.`;
+    case "too_many_correct_options":
+      return `Frage ${number} ist als Einfachauswahl angelegt, hat aber ${correct} richtige Antworten. Bitte auf eine reduzieren oder auf Mehrfachauswahl umstellen.`;
+    default:
+      return `Frage ${number} ist unvollständig.`;
+  }
 }

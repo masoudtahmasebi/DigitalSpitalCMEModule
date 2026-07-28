@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   canDelete,
   contentProblems,
+  correctOptionCount,
+  questionProblems,
   validateReorder,
   type ContentDraft,
+  type QuestionDraft,
 } from "./authoring.js";
 
 describe("validateReorder is a permutation check, not a filter", () => {
@@ -140,5 +143,122 @@ describe("canDelete", () => {
     // the record of what earned it gone.
     expect(canDelete(1)).toBe(false);
     expect(canDelete(4000)).toBe(false);
+  });
+});
+
+describe("questionProblems", () => {
+  const question = (over: Partial<QuestionDraft> = {}): QuestionDraft => ({
+    kind: "single",
+    prompt: "Welche Dosierung ist indiziert?",
+    options: [
+      { label: "10 mg", isCorrect: true },
+      { label: "20 mg", isCorrect: false },
+    ],
+    ...over,
+  });
+
+  it("accepts a well-formed single-choice question", () => {
+    expect(questionProblems(question())).toEqual([]);
+  });
+
+  it("accepts a multi-choice question with several correct options", () => {
+    expect(
+      questionProblems(
+        question({
+          kind: "multi",
+          options: [
+            { label: "a", isCorrect: true },
+            { label: "b", isCorrect: true },
+            { label: "c", isCorrect: false },
+          ],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("refuses a question nobody can answer correctly", () => {
+    // Not a tidiness rule. Every future attempt at this quiz is capped below
+    // the accredited 70 % by an authoring slip nobody would notice until a
+    // physician failed a course they knew the material for.
+    expect(
+      questionProblems(
+        question({
+          options: [
+            { label: "a", isCorrect: false },
+            { label: "b", isCorrect: false },
+          ],
+        }),
+      ),
+    ).toContain("no_correct_option");
+  });
+
+  it("refuses a single-choice question with two correct options", () => {
+    // Scoring is exact-set: the submitted set must equal the correct set, and
+    // a learner who can pick one option can never submit a set of two.
+    expect(
+      questionProblems(
+        question({
+          kind: "single",
+          options: [
+            { label: "a", isCorrect: true },
+            { label: "b", isCorrect: true },
+          ],
+        }),
+      ),
+    ).toContain("too_many_correct_options");
+  });
+
+  it("does not apply the single-choice rule to a multi question", () => {
+    expect(
+      questionProblems(
+        question({
+          kind: "multi",
+          options: [
+            { label: "a", isCorrect: true },
+            { label: "b", isCorrect: true },
+          ],
+        }),
+      ),
+    ).not.toContain("too_many_correct_options");
+  });
+
+  it("requires a prompt, two options, and no empty option", () => {
+    expect(questionProblems(question({ prompt: "  " }))).toContain("empty_prompt");
+    expect(
+      questionProblems(question({ options: [{ label: "a", isCorrect: true }] })),
+    ).toContain("too_few_options");
+    expect(
+      questionProblems(
+        question({
+          options: [
+            { label: "a", isCorrect: true },
+            { label: "   ", isCorrect: false },
+          ],
+        }),
+      ),
+    ).toContain("empty_option");
+  });
+
+  it("reports every problem a question has, not only the first", () => {
+    const problems = questionProblems({ kind: "single", prompt: "", options: [] });
+    expect(problems).toContain("empty_prompt");
+    expect(problems).toContain("too_few_options");
+    expect(problems).toContain("no_correct_option");
+  });
+});
+
+describe("correctOptionCount", () => {
+  it("counts the options marked correct", () => {
+    expect(
+      correctOptionCount({
+        kind: "multi",
+        prompt: "p",
+        options: [
+          { label: "a", isCorrect: true },
+          { label: "b", isCorrect: false },
+          { label: "c", isCorrect: true },
+        ],
+      }),
+    ).toBe(2);
   });
 });
