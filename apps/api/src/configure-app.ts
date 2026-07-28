@@ -27,6 +27,19 @@ export async function configureApp(
   app: INestApplication,
   config: AppConfig,
 ): Promise<void> {
+  // One proxy in front: Caddy, which sets X-Real-IP and X-Forwarded-Proto
+  // (infra/deploy/Caddyfile). Without this, `request.ip` is Caddy's address
+  // for every caller — so the rate limiter's IP fallback would be one shared
+  // bucket, and `request.protocol` would read `http` behind TLS.
+  //
+  // The number matters: `true` would trust the whole X-Forwarded-For chain,
+  // including hops a client wrote itself. `1` trusts exactly the one proxy
+  // that is actually there.
+  const http = app.getHttpAdapter().getInstance() as {
+    set?: (key: string, value: unknown) => void;
+  };
+  http.set?.("trust proxy", 1);
+
   app.use(helmet());
 
   // A wildcard here would defeat the point of restricting who may call the

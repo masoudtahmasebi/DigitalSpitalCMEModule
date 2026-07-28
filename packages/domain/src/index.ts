@@ -100,7 +100,14 @@ export type {
   CertificateInput,
 } from "./certificate.js";
 
-export { addCalendarDays, berlinDateOf, endOfBerlinDay } from "./berlin.js";
+export {
+  addCalendarDays,
+  berlinDateOf,
+  endOfBerlinDay,
+  formatBerlinDate,
+  formatBerlinDateTime,
+  formatBerlinTime,
+} from "./berlin.js";
 export type { BerlinDate } from "./berlin.js";
 
 export { resolveTenantContext } from "./authorization.js";

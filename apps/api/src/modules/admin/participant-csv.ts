@@ -30,6 +30,7 @@
  * spreadsheet on a laptop is outside every access control this platform has.
  */
 
+import { formatBerlinDateTime } from "@ds/domain";
 import type { ParticipantRow } from "./admin.dto.js";
 
 const SEPARATOR = ";";
@@ -122,19 +123,11 @@ function yesNo(value: boolean): string {
 /**
  * German local presentation of a UTC instant.
  *
- * `Europe/Berlin` explicitly: these dates are read against the Ärztekammer's
- * deadlines, which are German dates. Rendering them in the server's zone, or
- * the reader's, would produce a file where a submission due "on the 8th" is
- * dated the 7th.
+ * `formatBerlinDateTime` rather than a local `Intl` call: these dates are read
+ * against the Ärztekammer's deadlines, and the certificate, the admin list and
+ * the widget must show the same day for the same instant. Four files used to
+ * decide that independently.
  */
 function germanDateTime(iso: string | null): string {
-  if (iso === null) return "";
-  return new Intl.DateTimeFormat("de-DE", {
-    timeZone: "Europe/Berlin",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(iso));
+  return iso === null ? "" : formatBerlinDateTime(new Date(iso));
 }

@@ -31,6 +31,7 @@
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage } from "pdf-lib";
 import { toBuffer } from "bwip-js/node";
+import { formatBerlinDate, formatBerlinTime } from "@ds/domain";
 import type { CertificateData } from "@ds/domain";
 
 /** The signing assets, supplied per course. */
@@ -368,21 +369,13 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
 /**
  * German local time, which is a presentation concern only — everything is
  * stored UTC (`CLAUDE.md` §5). A certificate read in Germany showing a UTC
- * timestamp would be wrong by an hour or two in the reader's eyes.
+ * timestamp would be wrong by an hour or two in the reader's eyes, and a
+ * certificate read from Vienna must still show the German day, because that is
+ * the day reported to the Ärztekammer.
+ *
+ * Both formatters come from `@ds/domain` so the PDF, the CSV export, the admin
+ * list and the widget cannot disagree about what day an instant was.
  */
 function formatBerlin(at: Date): string {
-  return `${formatBerlinDate(at)} um ${new Intl.DateTimeFormat("de-DE", {
-    timeZone: "Europe/Berlin",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(at)} Uhr`;
-}
-
-function formatBerlinDate(at: Date): string {
-  return new Intl.DateTimeFormat("de-DE", {
-    timeZone: "Europe/Berlin",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(at);
+  return `${formatBerlinDate(at)} um ${formatBerlinTime(at)}`;
 }

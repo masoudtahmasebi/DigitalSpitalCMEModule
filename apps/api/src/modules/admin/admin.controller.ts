@@ -28,6 +28,7 @@ import {
   Put,
   StreamableFile,
 } from "@nestjs/common";
+import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { Roles } from "../../auth/roles.decorator.js";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
@@ -94,6 +95,7 @@ export class AdminController {
    * one endpoint.
    */
   @Put("courses/:slug/certificate-assets")
+  @RateLimit("adminUpload")
   @Roles("customer_admin", "super_admin")
   async setCertificateAssets(
     @Param("slug") slug: string,
@@ -152,6 +154,7 @@ export class AdminController {
    * about the declared type or the filename is believed.
    */
   @Put("branding/font")
+  @RateLimit("adminUpload")
   @Roles("customer_admin", "super_admin")
   async setFont(
     @Headers("x-ds-project") projectSlug: string,
@@ -195,6 +198,7 @@ export class AdminController {
    * the only way to guarantee that is for both to be the same rows.
    */
   @Get("courses/:slug/participants.csv")
+  @RateLimit("adminExport")
   @Header("content-type", "text/csv; charset=utf-8")
   // A participant list is personal data; no shared cache should hold a copy.
   @Header("cache-control", "no-store, private")

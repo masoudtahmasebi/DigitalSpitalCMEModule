@@ -13,6 +13,7 @@
  */
 
 import { Controller, Get, Header, Param, StreamableFile } from "@nestjs/common";
+import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { Roles } from "../../auth/roles.decorator.js";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
@@ -54,6 +55,7 @@ export class CertificateController {
    * back to `TenantTransactionInterceptor`, which responds only after COMMIT.
    */
   @Get("pdf")
+  @RateLimit("certificatePdf")
   @Header("content-type", "application/pdf")
   // No-store: this is a named physician's participation record, and a shared
   // proxy holding a copy is a disclosure the learner did not agree to.

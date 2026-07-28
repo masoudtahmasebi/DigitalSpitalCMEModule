@@ -16,6 +16,7 @@
  */
 
 import { useState } from "react";
+import { formatBerlinDate, formatBerlinTime } from "@ds/domain";
 import type { ApiClient, Certificate } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { describeError } from "../hooks.js";
@@ -65,8 +66,8 @@ export function CertificatePanel(props: {
           value={props.certificate.participantName}
         />
         <Field label={de.certificate.vnr} value={props.certificate.vnr} />
-        <Field label={de.certificate.date} value={formatDate(completedAt)} />
-        <Field label={de.certificate.time} value={formatTime(completedAt)} />
+        <Field label={de.certificate.date} value={formatBerlinDate(completedAt)} />
+        <Field label={de.certificate.time} value={formatBerlinTime(completedAt)} />
         <Field label={de.certificate.location} value={props.certificate.eventLocation} />
         <Field label={de.certificate.organizer} value={props.certificate.organizer} />
       </dl>
@@ -93,29 +94,4 @@ function Field(props: { label: string; value: string }) {
       <dd className="text-gray-900">{props.value}</dd>
     </div>
   );
-}
-
-/**
- * German presentation of a UTC instant.
- *
- * `Europe/Berlin` is named explicitly rather than relying on the browser's
- * zone: the date on a Teilnahmebescheinigung is the German event date, and a
- * physician reading it from another timezone must see the same day the
- * Ärztekammer was told about — not their local rendering of the same instant.
- */
-function formatDate(date: Date): string {
-  return new Intl.DateTimeFormat("de-DE", {
-    timeZone: "Europe/Berlin",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
-}
-
-function formatTime(date: Date): string {
-  return `${new Intl.DateTimeFormat("de-DE", {
-    timeZone: "Europe/Berlin",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date)} Uhr`;
 }

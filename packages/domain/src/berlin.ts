@@ -111,3 +111,58 @@ function readParts(instant: Date): Parts {
     second: parsed["second"] ?? 0,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Presentation
+//
+// German local time is a presentation concern — everything is stored UTC
+// (CLAUDE.md §5) — but *which* presentation is not a free choice. A
+// Teilnahmebescheinigung, a CSV export, an admin list and the widget must all
+// show the same day for the same instant, because that day is the one the
+// Ärztekammer was told about. A physician reading their certificate from
+// Vienna must see the German date, not their own rendering of the same moment.
+//
+// Four files had written this formatter independently, three of them with
+// their own comment explaining the timezone. That is three chances for one of
+// them to drift, on a value that appears on a legal document.
+//
+// `Intl` reads no clock — the instant is always an argument — so this belongs
+// here for the same reason the calendar arithmetic above does.
+// ---------------------------------------------------------------------------
+
+const DATE = new Intl.DateTimeFormat("de-DE", {
+  timeZone: BERLIN,
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
+const TIME = new Intl.DateTimeFormat("de-DE", {
+  timeZone: BERLIN,
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+const DATE_TIME = new Intl.DateTimeFormat("de-DE", {
+  timeZone: BERLIN,
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+/** `28.07.2026` */
+export function formatBerlinDate(instant: Date): string {
+  return DATE.format(instant);
+}
+
+/** `14:35 Uhr` — the unit included, because a bare `14:35` on a document is a duration. */
+export function formatBerlinTime(instant: Date): string {
+  return `${TIME.format(instant)} Uhr`;
+}
+
+/** `28.07.2026, 14:35` — for tables and exports, where the unit is the column. */
+export function formatBerlinDateTime(instant: Date): string {
+  return DATE_TIME.format(instant);
+}

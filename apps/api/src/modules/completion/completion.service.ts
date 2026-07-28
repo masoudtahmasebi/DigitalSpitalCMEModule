@@ -53,8 +53,7 @@ export class CompletionService {
   }
 
   async getEvaluation(slug: string, learner: LearnerContext): Promise<Evaluation> {
-    const course = await this.learning.requireCourse(slug);
-    const enrolment = await this.learning.requireEnrolment(course.id, learner.userId);
+    const { course, enrolment } = await this.learning.requireEnrolled(slug, learner);
 
     const [questions, submitted] = await Promise.all([
       this.repository.findEvaluationQuestions(course.id),
@@ -85,8 +84,7 @@ export class CompletionService {
     submission: EvaluationSubmission,
     learner: LearnerContext,
   ): Promise<EnrolmentState> {
-    const course = await this.learning.requireCourse(slug);
-    const enrolment = await this.learning.requireEnrolment(course.id, learner.userId);
+    const { course, enrolment } = await this.learning.requireEnrolled(slug, learner);
 
     if (await this.repository.hasEvaluationResponse(enrolment.id)) {
       throw new AppError(
@@ -165,8 +163,7 @@ export class CompletionService {
     learner: LearnerContext,
     now: Date,
   ): Promise<EnrolmentState> {
-    const course = await this.learning.requireCourse(slug);
-    const enrolment = await this.learning.requireEnrolment(course.id, learner.userId);
+    const { course, enrolment } = await this.learning.requireEnrolled(slug, learner);
 
     // The authority on whether this is allowed — recomputed from stored rows,
     // never taken from the client or from a cached view.

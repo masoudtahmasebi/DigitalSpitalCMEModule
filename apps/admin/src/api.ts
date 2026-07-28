@@ -10,7 +10,7 @@
  * session that has genuinely expired.
  */
 
-import { ApiError, createClient, type ApiClient } from "@ds/sdk";
+import { createClient, isForbidden, problemDetail, type ApiClient } from "@ds/sdk";
 import { currentSession } from "./auth.js";
 import type { AdminConfig } from "./config.js";
 
@@ -31,24 +31,19 @@ export function createAdminClient(config: AdminConfig, onExpired: () => void): A
 /**
  * A German sentence for a failure, without leaking internals.
  *
- * `detail` on a problem document is the message the API wrote for a person to
- * read; it carries no identifiers or stack traces by construction
- * (`problem-details.ts`). Anything else gets the generic line.
+ * The predicates and the `detail` extraction come from `@ds/sdk`, which owns
+ * `ApiError`; what stays here is the copy, because an admin on a settings
+ * screen and a physician mid-video need different words for the same status.
+ *
+ * A 403 gets the generic line on purpose: the API's own detail for a refused
+ * admin action is written for a developer reading a log, and telling an admin
+ * which role they lack is more than they need to act on it.
  */
 export function describeError(error: unknown, generic: string): string {
-  if (error instanceof ApiError) {
-    if (error.problem.status === 403) return generic;
-    if (error.problem.detail !== undefined && error.problem.detail !== "") {
-      return error.problem.detail;
-    }
-  }
-  return generic;
+  if (isForbidden(error)) return generic;
+  return problemDetail(error) ?? generic;
 }
 
-export function isForbidden(error: unknown): boolean {
-  return error instanceof ApiError && error.problem.status === 403;
-}
-
-export function isUnauthenticated(error: unknown): boolean {
-  return error instanceof ApiError && error.problem.status === 401;
-}
+// Re-exported so components import their failure vocabulary from one place
+// rather than reaching into the SDK for some of it and this file for the rest.
+export { isForbidden, isUnauthenticated } from "@ds/sdk";

@@ -16,6 +16,7 @@
  */
 
 import { useState } from "react";
+import { formatBerlinDate } from "@ds/domain";
 import type { ApiClient, ParticipantList, ParticipantRow } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
@@ -173,13 +174,11 @@ function eivTone(state: ParticipantRow["eivState"]): "ok" | "warn" | "muted" {
   return "muted";
 }
 
-/** German dates, in Berlin time — these are read against German deadlines. */
+/**
+ * German dates, in Berlin time — these are read against German deadlines, and
+ * the same instant must render as the same day here, on the certificate and in
+ * the CSV export. `@ds/domain` owns that decision.
+ */
 function formatDate(iso: string | null): string {
-  if (iso === null) return "—";
-  return new Intl.DateTimeFormat("de-DE", {
-    timeZone: "Europe/Berlin",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(new Date(iso));
+  return iso === null ? "—" : formatBerlinDate(new Date(iso));
 }

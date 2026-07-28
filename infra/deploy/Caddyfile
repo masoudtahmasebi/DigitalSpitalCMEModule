@@ -55,9 +55,20 @@
 		header_up X-Forwarded-Proto {scheme}
 	}
 
-	# A 25-minute video is not proxied through here — media comes from object
-	# storage — but a certificate PDF and a CSV export are, and neither should
-	# be cut off by a default timeout.
+	# Request bodies. Two limits, because one endpoint is genuinely different:
+	# a white-label font may be 2 MB and base64 inflates it to ~2.8 MB, while
+	# every other request here is a small JSON document. A single 2 MB limit
+	# refused a legitimate font upload with a 413 that never reached the API,
+	# and a single 4 MB limit would hand every other endpoint a four-megabyte
+	# allowance for no reason.
+	#
+	# The API enforces the same split again (MAX_FONT_BODY_SIZE), and the 2 MB
+	# rule on the file itself is enforced a third time by a CHECK constraint.
+	# This layer exists to stop a large body being buffered at all.
+	@font_upload path /admin/branding/font
+	request_body @font_upload {
+		max_size 4MB
+	}
 	request_body {
 		max_size 2MB
 	}

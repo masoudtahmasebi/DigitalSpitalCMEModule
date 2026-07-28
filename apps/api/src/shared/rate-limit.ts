@@ -52,6 +52,27 @@ export const RATE_LIMIT_RULES = {
   efnWrite: { limit: 10, windowSec: 60 },
   /** Generous on purpose — see the note above. */
   progress: { limit: 600, windowSec: 60 },
+  /**
+   * Rendering a PDF is the most expensive thing a learner token can ask for:
+   * pdf-lib composes the document, embeds two images and draws two barcodes,
+   * all on the event loop. A learner legitimately downloads their certificate
+   * once, occasionally twice. A loop over this endpoint is a CPU denial of
+   * service that requires nothing but a valid token.
+   */
+  certificatePdf: { limit: 10, windowSec: 60 },
+  /**
+   * Admin uploads: a font is up to 2 MB and the certificate images 512 KB
+   * each, all written to bytea. The role check already limits who can do this,
+   * so the limit is about a stuck client or a compromised admin session
+   * filling a disk, not about an anonymous attacker.
+   */
+  adminUpload: { limit: 20, windowSec: 60 },
+  /**
+   * A participant export is where personal data leaves the system's access
+   * controls entirely. Every one of them is audited (P9-07); a limit is what
+   * keeps that audit trail a record of deliberate acts rather than of a script.
+   */
+  adminExport: { limit: 10, windowSec: 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMIT_RULES;

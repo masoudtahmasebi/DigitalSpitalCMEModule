@@ -13,7 +13,13 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, type ApiClient } from "@ds/sdk";
+import {
+  isNotFound,
+  isUnauthenticated,
+  problemDetail,
+  type ApiClient,
+  type ApiError,
+} from "@ds/sdk";
 
 export interface AsyncState<T> {
   readonly data: T | undefined;
@@ -78,30 +84,24 @@ export function useEnrolment(client: ApiClient, courseSlug: string) {
 }
 
 /**
- * Whether an error is the session having expired.
+ * The learner-facing sentence for a failure, in German.
  *
- * The SDK has already tried exactly one refresh by the time this is asked, so
- * a 401 here means the host page could not produce a valid token — which the
- * learner fixes by reloading and logging in, not by retrying.
+ * The predicates and the `detail` extraction live in `@ds/sdk`, which owns
+ * `ApiError`. What stays here is the copy: a 401 means "the host page could
+ * not produce a valid token", which a physician fixes by reloading and logging
+ * in — not by retrying, and not by reading whatever the API called it.
  */
-export function isUnauthenticated(error: unknown): boolean {
-  return error instanceof ApiError && error.problem.status === 401;
-}
-
-/** The learner-facing sentence for a failure, in German, without leaking internals. */
 export function describeError(
   error: Error | undefined,
   copy: { unauthenticated: string; generic: string; noCourse: string },
 ): string {
   if (error === undefined) return copy.generic;
   if (isUnauthenticated(error)) return copy.unauthenticated;
-  if (error instanceof ApiError) {
-    if (error.problem.status === 404) return copy.noCourse;
-    // `detail` is the German message the API wrote for a learner to read; it
-    // is deliberately free of identifiers and stack traces (CLAUDE.md §5).
-    if (error.problem.detail !== undefined && error.problem.detail !== "") {
-      return error.problem.detail;
-    }
-  }
-  return copy.generic;
+  if (isNotFound(error)) return copy.noCourse;
+  // `detail` is the German message the API wrote for a learner to read; it is
+  // deliberately free of identifiers and stack traces (CLAUDE.md §5).
+  return problemDetail(error) ?? copy.generic;
 }
+
+// Re-exported so a screen imports its failure vocabulary from one place.
+export { isUnauthenticated } from "@ds/sdk";

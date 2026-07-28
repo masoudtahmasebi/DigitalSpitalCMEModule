@@ -32,6 +32,7 @@ import { PassthroughMediaResolver, type MediaResolver } from "../../shared/media
 import type { Db } from "../../db/tenant-db.js";
 import {
   LearningRepository,
+  type CourseComplianceRow,
   type CourseTree,
   type EnrolmentRow,
   type LearningRepositoryPort,
@@ -57,6 +58,20 @@ const OPENABLE_KINDS: readonly ContentKind[] = ["video", "text", "details"];
 export interface LearnerContext {
   readonly customerId: string;
   readonly userId: string;
+}
+
+/**
+ * Everything needed to decide anything about one learner's position in one
+ * course. Built by `loadProgressContext` and by nothing else.
+ */
+export interface ProgressContext {
+  readonly course: CourseComplianceRow;
+  readonly enrolment: EnrolmentRow;
+  readonly tree: CourseTree;
+  readonly stored: readonly ProgressRow[];
+  /** The tree as `@ds/domain` sees it — the input to every rule. */
+  readonly courseNode: CourseNode;
+  readonly rollup: CourseRollup;
 }
 
 export class LearningService {
@@ -99,9 +114,7 @@ export class LearningService {
   }
 
   async getState(slug: string, learner: LearnerContext): Promise<EnrolmentState> {
-    const course = await this.requireCourse(slug);
-    const enrolment = await this.requireEnrolment(course.id, learner.userId);
-
+    const { course, enrolment } = await this.requireEnrolled(slug, learner);
     return this.buildState(slug, course.id, enrolment, learner);
   }
 
@@ -247,11 +260,9 @@ export class LearningService {
     learner: LearnerContext,
     expectedKinds: readonly ContentKind[],
   ) {
-    const course = await this.requireCourse(slug);
-    const enrolment = await this.requireEnrolment(course.id, learner.userId);
+    const context = await this.loadProgressContext(slug, learner);
 
-    const tree = await this.repository.findCourseTree(course.id);
-    const content = tree.contents.find((row) => row.id === contentId);
+    const content = context.tree.contents.find((row) => row.id === contentId);
     if (content === undefined) {
       // Content outside this course is a 404, not a 403: the caller learns
       // nothing about whether it exists elsewhere.
@@ -265,13 +276,9 @@ export class LearningService {
       );
     }
 
-    const stored = await this.repository.findProgress(enrolment.id);
-    const courseNode = toCourseNode(tree);
-    const rollup = rollupProgress(courseNode, toProgressRecords(stored, tree));
+    this.assertReachable(context.courseNode, context.rollup, context.tree, contentId);
 
-    this.assertReachable(courseNode, rollup, tree, contentId);
-
-    return { course, enrolment, tree, content, stored, rollup };
+    return { ...context, content };
   }
 
   /**
@@ -288,16 +295,7 @@ export class LearningService {
     learner: LearnerContext,
     now: Date,
   ): Promise<MaterialLibrary> {
-    const course = await this.requireCourse(slug);
-    const enrolment = await this.requireEnrolment(course.id, learner.userId);
-
-    const [tree, stored] = await Promise.all([
-      this.repository.findCourseTree(course.id),
-      this.repository.findProgress(enrolment.id),
-    ]);
-
-    const courseNode = toCourseNode(tree);
-    const rollup = rollupProgress(courseNode, toProgressRecords(stored, tree));
+    const { tree, rollup } = await this.loadProgressContext(slug, learner);
 
     const groups = tree.modules.map((module) => {
       // A module's material unlocks when the module's own content is done —
@@ -353,6 +351,51 @@ export class LearningService {
     attestedName: string | null,
   ): Promise<void> {
     await this.repository.markCompleted(enrolmentId, at, attestedName);
+  }
+
+  /**
+   * The course and the caller's enrolment on it, or a 404.
+   *
+   * Seven call sites across three services opened with these two lines. That
+   * is fine right up until one of them is written without the second, at which
+   * point a learner acts on a course they never enrolled on — so the pair is a
+   * single operation with a single name.
+   */
+  async requireEnrolled(
+    slug: string,
+    learner: LearnerContext,
+  ): Promise<{ course: CourseComplianceRow; enrolment: EnrolmentRow }> {
+    const course = await this.requireCourse(slug);
+    const enrolment = await this.requireEnrolment(course.id, learner.userId);
+    return { course, enrolment };
+  }
+
+  /**
+   * Everything the compliance rules need to decide anything about a learner:
+   * the course tree, their stored progress, and the rollup over both.
+   *
+   * The four screens that need this — lesson, materials, state, progress —
+   * each built it by hand from the same five calls in the same order. The
+   * order is not arbitrary (the rollup is computed over the tree, not over the
+   * rows), and a fifth screen assembling it slightly differently would produce
+   * a second answer to "how far has this person got". CLAUDE.md §4 invariant 6
+   * says there is one rollup path; this is the loader that feeds it.
+   */
+  async loadProgressContext(
+    slug: string,
+    learner: LearnerContext,
+  ): Promise<ProgressContext> {
+    const { course, enrolment } = await this.requireEnrolled(slug, learner);
+
+    const [tree, stored] = await Promise.all([
+      this.repository.findCourseTree(course.id),
+      this.repository.findProgress(enrolment.id),
+    ]);
+
+    const courseNode = toCourseNode(tree);
+    const rollup = rollupProgress(courseNode, toProgressRecords(stored, tree));
+
+    return { course, enrolment, tree, stored, courseNode, rollup };
   }
 
   /** Shared by the quiz, evaluation and completion services. */

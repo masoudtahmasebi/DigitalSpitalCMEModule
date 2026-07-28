@@ -361,6 +361,59 @@ export function createClient(options: ClientOptions) {
 
 export type ApiClient = ReturnType<typeof createClient>;
 
+// ---------------------------------------------------------------------------
+// Reading a failure
+//
+// These live here rather than in each frontend because they are about
+// `ApiError`, which is defined here — and because both frontends had written
+// their own copy of `error instanceof ApiError && error.problem.status === 401`,
+// which is exactly the kind of predicate that drifts between two files until
+// one of them is subtly wrong.
+//
+// What is deliberately *not* here is the copy. Each app maps a failure onto
+// its own German sentences, because "the session expired" reads differently to
+// a physician mid-video and to an admin on a settings screen.
+// ---------------------------------------------------------------------------
+
+/** The session is gone. The SDK has already spent its one refresh attempt. */
+export function isUnauthenticated(error: unknown): boolean {
+  return hasStatus(error, 401);
+}
+
+/** Authenticated, but not allowed. Never a reason to retry. */
+export function isForbidden(error: unknown): boolean {
+  return hasStatus(error, 403);
+}
+
+/** Not visible in this tenant — which is indistinguishable from not existing. */
+export function isNotFound(error: unknown): boolean {
+  return hasStatus(error, 404);
+}
+
+/** Too many requests. `retryAfterSec` is on the response, not the problem. */
+export function isRateLimited(error: unknown): boolean {
+  return hasStatus(error, 429);
+}
+
+/**
+ * The human-readable sentence the API wrote, if it wrote one.
+ *
+ * `detail` is written for a person to read and is free of identifiers and
+ * stack traces by construction (`problem-details.ts` on the server). Anything
+ * absent or empty comes back as `undefined` so the caller falls through to its
+ * own copy — an empty string rendered as an error message is worse than a
+ * generic one.
+ */
+export function problemDetail(error: unknown): string | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  const detail = error.problem.detail;
+  return detail === undefined || detail.trim() === "" ? undefined : detail;
+}
+
+function hasStatus(error: unknown, status: number): boolean {
+  return error instanceof ApiError && error.problem.status === status;
+}
+
 /**
  * The filename the server put on the download.
  *
