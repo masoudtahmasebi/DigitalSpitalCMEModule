@@ -25,3 +25,6 @@ pnpm-debug.log*
 # ad-hoc local smoke/debug scripts — never committed
 *.local.mjs
 *.local.ts
+
+# Redis snapshot, written by a locally-started redis-server during integration runs
+dump.rdb

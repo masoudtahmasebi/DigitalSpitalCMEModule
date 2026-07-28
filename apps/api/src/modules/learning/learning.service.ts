@@ -109,33 +109,19 @@ export class LearningService {
     learner: LearnerContext,
     now: Date,
   ): Promise<ProgressResult> {
-    const course = await this.requireCourse(slug);
-    const enrolment = await this.requireEnrolment(course.id, learner.userId);
+    const { enrolment, content, stored } = await this.requireReachableContent(
+      slug,
+      contentId,
+      learner,
+      "video",
+    );
 
-    const tree = await this.repository.findCourseTree(course.id);
-    const content = tree.contents.find((row) => row.id === contentId);
-    if (content === undefined) {
-      throw AppError.notFound(`content=${contentId} is not part of course=${slug}`);
-    }
-    if (content.kind !== "video") {
-      throw new AppError(
-        "validation",
-        `content=${contentId} is kind=${content.kind}, not video`,
-        "Watch progress can only be reported for video content.",
-      );
-    }
     if (content.durationSec === null || content.durationSec <= 0) {
       throw new AppError(
         "internal",
         `content=${contentId} is video but has no usable duration`,
       );
     }
-
-    const stored = await this.repository.findProgress(enrolment.id);
-    const courseNode = toCourseNode(tree);
-    const rollup = rollupProgress(courseNode, toProgressRecords(stored, tree));
-
-    this.assertReachable(courseNode, rollup, tree, contentId);
 
     const existing = stored.find((row) => row.contentId === contentId);
     const previousSegments = readSegments(existing?.watchedSegments);
@@ -183,6 +169,55 @@ export class LearningService {
         reason: entry.reason,
       })),
     };
+  }
+
+  /**
+   * Resolve a piece of content the learner may currently act on, or throw.
+   *
+   * The single entry point for "is this allowed" — the player, the quiz and
+   * anything added later all come through here, so the sequence gate has one
+   * implementation rather than one per feature. Two gates would eventually
+   * disagree, and a gate that disagrees with itself is a compliance incident.
+   *
+   * Returns the loaded rows too, so the caller does not re-query what this
+   * already had to read in order to decide.
+   */
+  async requireReachableContent(
+    slug: string,
+    contentId: string,
+    learner: LearnerContext,
+    expectedKind: "video" | "quiz",
+  ) {
+    const course = await this.requireCourse(slug);
+    const enrolment = await this.requireEnrolment(course.id, learner.userId);
+
+    const tree = await this.repository.findCourseTree(course.id);
+    const content = tree.contents.find((row) => row.id === contentId);
+    if (content === undefined) {
+      // Content outside this course is a 404, not a 403: the caller learns
+      // nothing about whether it exists elsewhere.
+      throw AppError.notFound(`content=${contentId} is not part of course=${slug}`);
+    }
+    if (content.kind !== expectedKind) {
+      throw new AppError(
+        "validation",
+        `content=${contentId} is kind=${content.kind}, not ${expectedKind}`,
+        `Dieser Inhalt ist keine ${expectedKind === "video" ? "Videolektion" : "Lernerfolgskontrolle"}.`,
+      );
+    }
+
+    const stored = await this.repository.findProgress(enrolment.id);
+    const courseNode = toCourseNode(tree);
+    const rollup = rollupProgress(courseNode, toProgressRecords(stored, tree));
+
+    this.assertReachable(courseNode, rollup, tree, contentId);
+
+    return { course, enrolment, tree, content, stored, rollup };
+  }
+
+  /** Stamped by the completion service once every condition is satisfied. */
+  async markCompleted(enrolmentId: string, at: Date): Promise<void> {
+    await this.repository.markCompleted(enrolmentId, at);
   }
 
   /** Shared by the quiz, evaluation and completion services. */

@@ -34,6 +34,15 @@ import type {
   progressReportSchema,
   progressResultSchema,
 } from "../../src/modules/learning/learning.dto.js";
+import type {
+  quizAttemptResultSchema,
+  quizSchema,
+  quizSubmissionSchema,
+} from "../../src/modules/assessment/assessment.dto.js";
+import type {
+  efnInputSchema,
+  evaluationSchema,
+} from "../../src/modules/completion/completion.dto.js";
 import type { Expect, MutuallyAssignable } from "./assignable.js";
 
 type Schemas = components["schemas"];
@@ -63,6 +72,24 @@ type _Learning = [
   Expect<
     MutuallyAssignable<z.infer<typeof progressResultSchema>, Schemas["ProgressResult"]>
   >,
+];
+
+type _Assessment = [
+  Expect<MutuallyAssignable<z.infer<typeof quizSchema>, Schemas["Quiz"]>>,
+  Expect<
+    MutuallyAssignable<z.infer<typeof quizSubmissionSchema>, Schemas["QuizSubmission"]>
+  >,
+  Expect<
+    MutuallyAssignable<
+      z.infer<typeof quizAttemptResultSchema>,
+      Schemas["QuizAttemptResult"]
+    >
+  >,
+];
+
+type _Completion = [
+  Expect<MutuallyAssignable<z.infer<typeof evaluationSchema>, Schemas["Evaluation"]>>,
+  Expect<MutuallyAssignable<z.infer<typeof efnInputSchema>, Schemas["EfnInput"]>>,
 ];
 
 describe("contract: DTOs match the generated SDK types", () => {

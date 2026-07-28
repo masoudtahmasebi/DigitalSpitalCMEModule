@@ -112,6 +112,15 @@ order. `static fromDb` sidesteps the whole problem: nothing is Nest-managed
 past the controller, so there is no resolution order to get wrong, and it
 matches how the unit tests already build these classes.
 
+**Reuse the gate; never re-implement it.** Whether a learner may act on a piece
+of content is answered in exactly one place —
+`LearningService.requireReachableContent` — which resolves the course, the
+enrolment and the sequence gate together and returns the rows it had to load
+anyway. The quiz module calls it rather than repeating the checks. Two gates
+would eventually disagree, and a gate that disagrees with itself is a
+compliance incident, not a bug. The same applies to `requireCourse` and
+`requireEnrolment`.
+
 **The repository import belongs in the service file, not the controller.**
 `EnrolmentController` imports only `EnrolmentService`; `fromDb` is where
 `EnrolmentRepository` gets imported and instantiated. A controller importing a
@@ -145,16 +154,32 @@ Controller does HTTP. Each has one job.
 
 ### 5. Tests
 
-| Layer                         | Test style                     | Needs infrastructure |
-| ----------------------------- | ------------------------------ | -------------------- |
-| `packages/domain`             | Unit, exhaustive               | No                   |
-| Service                       | Unit, faked repository         | No                   |
-| Repository / tenant isolation | Integration, **real Postgres** | Yes                  |
-| Contract                      | Derived from `openapi.yaml`    | Runs in CI           |
+| Layer                         | Test style                     | Where                           | Needs infrastructure |
+| ----------------------------- | ------------------------------ | ------------------------------- | -------------------- |
+| `packages/domain`             | Unit, exhaustive               | `packages/domain/src/*.test.ts` | No                   |
+| Service                       | Unit, faked repository         | `<feature>.service.test.ts`     | No                   |
+| Contract (DTO ⇄ SDK)          | Type-level assertions          | `apps/api/test/contract/`       | No                   |
+| Repository / tenant isolation | Integration, **real Postgres** | `apps/api/test/integration/`    | Yes                  |
+
+`pnpm test` runs the first three; `pnpm test:integration` runs the last, and CI
+gives it its own job with Postgres and Redis services.
 
 Never mock the database to test a repository. Tenant isolation is a property of
 PostgreSQL RLS (ADR-0002) and a mock will happily "prove" an isolation guarantee
 that does not exist.
+
+**The contract chain, and why each link exists.** `contracts/openapi.yaml` is
+the source; the SDK generates from it and CI fails if the checked-in generated
+output drifts; `apps/api/test/contract/dto-sdk-parity.test.ts` asserts the zod
+DTOs and the generated types are mutually assignable; the service tests parse
+real responses against those same zod schemas. Break any one link and a shape
+the server produces can stop matching the shape the contract promises. When you
+add a DTO, add its assertion — the file is a list, and adding to it is one line.
+
+Its `Normalise` helper exists for one reason: `exactOptionalPropertyTypes` makes
+zod's `?: T | undefined` and openapi-typescript's `?: T` non-assignable even
+though both describe the same JSON. It cancels that on both sides and nothing
+else — a required/optional flip or an extra field still fails.
 
 ---
 
