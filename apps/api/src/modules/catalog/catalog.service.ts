@@ -10,10 +10,12 @@
  */
 
 import { AppError } from "../../shared/problem-details.js";
-import type {
-  CatalogRepositoryPort,
-  CourseRow,
-  CourseTreeRows,
+import type { Db } from "../../db/tenant-db.js";
+import {
+  CatalogRepository,
+  type CatalogRepositoryPort,
+  type CourseRow,
+  type CourseTreeRows,
 } from "./catalog.repository.js";
 import type {
   CourseDetail,
@@ -25,6 +27,20 @@ import type {
 
 export class CatalogService {
   constructor(private readonly repository: CatalogRepositoryPort) {}
+
+  /**
+   * The composition entry point controllers use.
+   *
+   * The repository import stays inside this file — the application layer —
+   * rather than in the controller, which is what ADR-0006 requires: the
+   * interface layer may construct a use case, but it must not know the
+   * concrete infrastructure class backing it. See
+   * `db/tenant-db.decorator.ts` for why this per-request construction
+   * replaces NestJS request-scoped DI here.
+   */
+  static fromDb(db: Db): CatalogService {
+    return new CatalogService(new CatalogRepository(db));
+  }
 
   async listCourses(query: CourseListQuery): Promise<CourseListResponse> {
     const { rows, total, durations } = await this.repository.listCourses({

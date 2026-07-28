@@ -70,3 +70,12 @@ export type {
 
 export { addCalendarDays, berlinDateOf, endOfBerlinDay } from "./berlin.js";
 export type { BerlinDate } from "./berlin.js";
+
+export { resolveTenantContext } from "./authorization.js";
+export type {
+  AppRole,
+  RoleGrant,
+  TenantDenialReason,
+  TenantResolution,
+  TenantResolutionResult,
+} from "./authorization.js";

@@ -28,6 +28,26 @@ const schema = z.object({
 
   // JWKS cache TTL in Redis (P1-03).
   JWKS_CACHE_TTL_SEC: z.coerce.number().int().positive().default(3600),
+
+  // Comma-separated origins allowed to call the API. The widget's origin is
+  // never the WordPress site's — it is wherever apps/widget is served from —
+  // so this must be explicit rather than derived (ADR-0007: the API knows
+  // nothing about any specific host).
+  ALLOWED_ORIGINS: z
+    .string()
+    .default("")
+    .transform((value) =>
+      value
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter((origin) => origin !== ""),
+    ),
+
+  // Express json body size limit — cheap hygiene against a client sending an
+  // unbounded payload. Per-user/IP rate limiting is P10-03, not this.
+  MAX_REQUEST_BODY_SIZE: z.string().default("1mb"),
+
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
 export type AppConfig = z.infer<typeof schema>;

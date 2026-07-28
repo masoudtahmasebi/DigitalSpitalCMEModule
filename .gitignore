@@ -20,3 +20,7 @@ pnpm-debug.log*
 
 # generated
 packages/sdk/src/generated/
+
+# ad-hoc local smoke/debug scripts — never committed
+*.local.mjs
+*.local.ts

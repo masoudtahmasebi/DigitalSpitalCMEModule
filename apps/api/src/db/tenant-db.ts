@@ -15,10 +15,19 @@
  */
 
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-import { sql } from "drizzle-orm";
 import { schema } from "./schema.js";
 
 export type Db = NodePgDatabase<typeof schema>;
+
+declare module "express-serve-static-core" {
+  interface Request {
+    /**
+     * Set by `TenantTransactionInterceptor` once the RLS transaction is open.
+     * Undefined for public routes, which never touch tenant data.
+     */
+    db?: Db;
+  }
+}
 
 export interface TenantContext {
   /** The customer this request acts within. Required — no ambient default. */
@@ -119,7 +128,3 @@ export function tenantSetupStatements(
 
   return statements;
 }
-
-/** Marker used by the composition root; kept here to avoid importing Nest. */
-export const POOL = Symbol("PG_POOL");
-export const DB_CONTEXT = sql`app.customer_id`;

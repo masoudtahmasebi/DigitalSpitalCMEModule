@@ -23,6 +23,9 @@ export default [
       "**/node_modules/**",
       "**/.turbo/**",
       "packages/sdk/src/generated/**",
+      // Ad-hoc local smoke/debug scripts, never committed (see .gitignore).
+      "**/*.local.mjs",
+      "**/*.local.ts",
     ],
   },
   js.configs.recommended,
@@ -177,6 +180,23 @@ export default [
         { name: "fetch", message: "packages/domain performs no I/O." },
         { name: "process", message: "packages/domain reads no process state." },
       ],
+    },
+  },
+
+  // NestJS's `emitDecoratorMetadata` reads constructor parameter types as
+  // runtime values to build `design:paramtypes` for classes Nest constructs
+  // via reflection (a plain `providers: [Foo]` entry, or a controller with no
+  // custom factory). `@typescript-eslint/consistent-type-imports` cannot see
+  // that distinction — a type annotation on a decorated constructor parameter
+  // looks syntactically identical to a real type-only usage, so its autofix
+  // will happily rewrite the import to `import type` and erase the value Nest
+  // needs at runtime. The failure then shows up as a DI error at request time,
+  // not a compile error. Scoped off here rather than fought file by file — see
+  // CONTRIBUTING.md "A NestJS gotcha that will bite the autofixer".
+  {
+    files: ["apps/api/src/**/*.ts"],
+    rules: {
+      "@typescript-eslint/consistent-type-imports": "off",
     },
   },
 
