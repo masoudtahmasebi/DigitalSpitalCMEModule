@@ -1,0 +1,220 @@
+# Build, publish and deploy (P10-04).
+#
+# Runs only after CI has passed on the same commit — `workflow_run` rather than
+# `push`, so a red build cannot deploy. Manual dispatch exists for redeploying
+# an unchanged commit and for rollbacks.
+#
+# ## Why images are built here and not on the host
+#
+# Building on the target means the production host needs a toolchain, a
+# checkout and enough RAM to run tsc — and a failed build takes the site with
+# it. Building here means the host only ever pulls an artefact that already
+# exists, and a rollback is a tag change rather than a rebuild.
+#
+# ## Secrets this expects
+#
+# Repository or environment secrets, all set by the client:
+#
+#   DEPLOY_HOST            hostname or IP of the Hetzner box
+#   DEPLOY_USER            SSH user (not root; see the deploy runbook)
+#   DEPLOY_SSH_KEY         private key for that user
+#   DEPLOY_KNOWN_HOSTS     output of `ssh-keyscan <host>` — pinning, not TOFU
+#   PRODUCTION_ENV         the entire .env.production, as one secret
+#
+# `PRODUCTION_ENV` being one blob is deliberate. Twenty individual secrets
+# drift from twenty variable names, and the failure is a container that starts
+# with an empty password. One file is reviewed once and copied verbatim.
+
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      rollback_tag:
+        description: "Image tag to roll back to (leave empty to deploy this commit)"
+        required: false
+        type: string
+
+concurrency:
+  # Never two deployments at once: the second would migrate against a database
+  # the first is still moving.
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    name: Build and publish images
+    # `workflow_run` fires for failures too, so the conclusion is checked
+    # explicitly — this is the gate that stops a red build reaching production.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # For workflow_run, check out the commit CI actually tested, not the
+          # branch head — which may have moved since.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - id: meta
+        run: echo "tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/api:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/api:latest
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      # The console's configuration is inlined at build time (Vite), so the
+      # image is environment-specific. None of these is secret — see
+      # apps/admin/src/config.ts — but they do have to be right.
+      - name: Build and push the admin console
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/admin/Dockerfile
+          push: true
+          build-args: |
+            VITE_API_BASE=${{ vars.ADMIN_API_BASE }}
+            VITE_PROJECT_SLUG=${{ vars.ADMIN_PROJECT_SLUG }}
+            VITE_KEYCLOAK_ISSUER=${{ vars.ADMIN_KEYCLOAK_ISSUER }}
+            VITE_KEYCLOAK_CLIENT_ID=${{ vars.ADMIN_KEYCLOAK_CLIENT_ID }}
+            VITE_REDIRECT_URI=${{ vars.ADMIN_REDIRECT_URI }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/admin:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/admin:latest
+          cache-from: type=gha,scope=admin
+          cache-to: type=gha,scope=admin,mode=max
+
+      - name: Build and push the widget
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/widget/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/widget:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/widget:latest
+          cache-from: type=gha,scope=widget
+          cache-to: type=gha,scope=widget,mode=max
+
+      # The bundle a WordPress site can drop straight into the plugin, for a
+      # customer who prefers shipping it over loading it from our domain.
+      - name: Attach the widget bundle as a build artifact
+        run: |
+          container=$(docker create "${REGISTRY}/${{ github.repository }}/widget:${{ steps.meta.outputs.tag }}")
+          docker cp "$container:/usr/share/nginx/html/ds-lms.js" ./ds-lms.js
+          docker rm "$container" >/dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ds-lms-widget-${{ steps.meta.outputs.tag }}
+          path: ds-lms.js
+          retention-days: 30
+
+  deploy:
+    name: Deploy to production
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # A GitHub environment, so production can require a manual approval and so
+    # the deployment shows up in the repository's timeline.
+    environment:
+      name: production
+      url: https://${{ vars.API_DOMAIN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # Pinned host key rather than StrictHostKeyChecking=no. Accepting any
+          # key on first sight means a deploy can be man-in-the-middled into
+          # handing PRODUCTION_ENV — every credential the platform has — to
+          # whoever answers on port 22.
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Copy the deployment files
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            'mkdir -p ~/ds-education/infra/deploy ~/ds-education/infra/postgres'
+          scp -i ~/.ssh/id_ed25519 -r infra/deploy/. \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:~/ds-education/infra/deploy/"
+          scp -i ~/.ssh/id_ed25519 infra/postgres/init-roles.sql \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:~/ds-education/infra/postgres/"
+
+      - name: Write the environment file
+        env:
+          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          # Written with a restrictive umask and piped over stdin — never as a
+          # command-line argument, which would put every credential in the
+          # remote host's process list and shell history.
+          {
+            printf '%s\n' "$PRODUCTION_ENV"
+            printf 'IMAGE_API=%s\n'    "ghcr.io/${{ github.repository }}/api:${TAG}"
+            printf 'IMAGE_ADMIN=%s\n'  "ghcr.io/${{ github.repository }}/admin:${TAG}"
+            printf 'IMAGE_WIDGET=%s\n' "ghcr.io/${{ github.repository }}/widget:${TAG}"
+          } | ssh -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+              'umask 077 && cat > ~/ds-education/infra/deploy/.env.production'
+
+      - name: Log the host in to the registry
+        run: |
+          printf '%s' '${{ secrets.GITHUB_TOKEN }}' | ssh -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            'docker login ghcr.io -u ${{ github.actor }} --password-stdin'
+
+      - name: Deploy
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd ~/ds-education/infra/deploy && chmod +x deploy.sh && ./deploy.sh ${{ inputs.rollback_tag && format('--rollback {0}', inputs.rollback_tag) || '' }}"
+
+      - name: Smoke-test the deployment
+        run: |
+          # From outside the host entirely, over public DNS and real TLS. The
+          # deploy script already checked this from the host; this checks that
+          # the internet agrees.
+          curl --fail --silent --show-error --max-time 20 \
+            "https://${{ vars.API_DOMAIN }}/health" | tee /dev/stderr | grep -q '"status"'
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "::error::Deployment failed. The previous version is still running —"
+          echo "::error::deploy.sh exits non-zero without swapping if any step fails."
+          echo "::error::To roll back explicitly: run this workflow with rollback_tag set."

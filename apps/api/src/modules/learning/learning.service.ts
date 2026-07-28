@@ -28,6 +28,7 @@ import {
   type WatchedSegment,
 } from "@ds/domain";
 import { AppError } from "../../shared/problem-details.js";
+import { PassthroughMediaResolver, type MediaResolver } from "../../shared/media-url.js";
 import type { Db } from "../../db/tenant-db.js";
 import {
   LearningRepository,
@@ -59,10 +60,19 @@ export interface LearnerContext {
 }
 
 export class LearningService {
-  constructor(private readonly repository: LearningRepositoryPort) {}
+  /**
+   * `media` turns a stored reference into something a browser can fetch
+   * (P10-06). It defaults to passthrough, so a deployment with no object
+   * storage behaves exactly as before: plain URLs work, `s3://` references
+   * stay locked because nothing can sign them.
+   */
+  constructor(
+    private readonly repository: LearningRepositoryPort,
+    private readonly media: MediaResolver = new PassthroughMediaResolver(),
+  ) {}
 
-  static fromDb(db: Db): LearningService {
-    return new LearningService(new LearningRepository(db));
+  static fromDb(db: Db, media?: MediaResolver): LearningService {
+    return new LearningService(new LearningRepository(db), media);
   }
 
   /**
@@ -195,6 +205,7 @@ export class LearningService {
     slug: string,
     contentId: string,
     learner: LearnerContext,
+    now: Date,
   ): Promise<LessonContent> {
     const { content, stored } = await this.requireReachableContent(
       slug,
@@ -210,7 +221,9 @@ export class LearningService {
       kind: content.kind,
       title: content.title,
       durationSec: content.durationSec,
-      videoUrl: content.videoUrl,
+      // Signed here and nowhere else: the gate has already agreed above, and
+      // the URL is short-lived so it cannot outlive that agreement by much.
+      videoUrl: this.media.resolve(content.videoUrl, learner.customerId, now),
       body: content.body,
       lastPositionSec: progress?.lastPositionSec ?? 0,
       watchedPercent: progress?.watchedPercent ?? 0,
@@ -270,7 +283,11 @@ export class LearningService {
    * gate — the JSON is readable by anyone holding the token. Withholding the
    * URL is what makes the padlock mean something.
    */
-  async getMaterials(slug: string, learner: LearnerContext): Promise<MaterialLibrary> {
+  async getMaterials(
+    slug: string,
+    learner: LearnerContext,
+    now: Date,
+  ): Promise<MaterialLibrary> {
     const course = await this.requireCourse(slug);
     const enrolment = await this.requireEnrolment(course.id, learner.userId);
 
@@ -302,7 +319,11 @@ export class LearningService {
           id: content.id,
           title: content.title,
           locked,
-          fileUrl: locked ? null : content.fileUrl,
+          // A locked item still gets no URL at all — the gate is the absent
+          // URL, and signing one for a padlocked file would defeat it.
+          fileUrl: locked
+            ? null
+            : this.media.resolve(content.fileUrl, learner.customerId, now),
           mimeType: content.mimeType,
           fileSize: content.fileSize,
         }));

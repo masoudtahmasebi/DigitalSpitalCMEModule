@@ -46,6 +46,15 @@ export {
 } from "./branding.js";
 export type { Branding } from "./branding.js";
 
+export {
+  courseAssetKey,
+  customerPrefix,
+  InvalidStorageKeyError,
+  isStorageReference,
+  keyBelongsToCustomer,
+  storageKeyOf,
+} from "./storage-key.js";
+
 export { courseChapterSequence, rollupProgress } from "./progress.js";
 export type { CourseRollup, ModuleCompletion, ProgressSummary } from "./progress.js";
 

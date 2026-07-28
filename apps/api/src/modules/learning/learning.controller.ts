@@ -7,7 +7,16 @@
  * (ADR-0002).
  */
 
-import { Body, Controller, Get, HttpCode, Param, Post, Put } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Post,
+  Put,
+} from "@nestjs/common";
 import { Roles } from "../../auth/roles.decorator.js";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
@@ -15,11 +24,25 @@ import { AppError } from "../../shared/problem-details.js";
 import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
+import { APP_CONFIG } from "../../db/tokens.js";
+import type { AppConfig } from "../../config/config.js";
+import { mediaResolverFor } from "../../shared/media-url.factory.js";
 import { LearningService } from "./learning.service.js";
 import { progressReportSchema } from "./learning.dto.js";
 
 @Controller("courses/:slug")
 export class LearningController {
+  /**
+   * The media resolver is built once from config, not per request: it holds
+   * the signing key, and deriving it on every request would be pointless work
+   * on the hot path.
+   */
+  private readonly media;
+
+  constructor(@Inject(APP_CONFIG) config: AppConfig) {
+    this.media = mediaResolverFor(config);
+  }
+
   @Put("enrolment")
   @Roles("learner", "department_admin", "customer_admin", "super_admin")
   async enrol(
@@ -60,10 +83,12 @@ export class LearningController {
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ) {
-    return LearningService.fromDb(db).getLesson(slug, contentId, {
-      customerId: principal.customerId,
-      userId: principal.userId,
-    });
+    return LearningService.fromDb(db, this.media).getLesson(
+      slug,
+      contentId,
+      { customerId: principal.customerId, userId: principal.userId },
+      new Date(),
+    );
   }
 
   @Get("materials")
@@ -73,10 +98,11 @@ export class LearningController {
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ) {
-    return LearningService.fromDb(db).getMaterials(slug, {
-      customerId: principal.customerId,
-      userId: principal.userId,
-    });
+    return LearningService.fromDb(db, this.media).getMaterials(
+      slug,
+      { customerId: principal.customerId, userId: principal.userId },
+      new Date(),
+    );
   }
 
   // 200, not Nest's default 201: reporting progress does not create a resource

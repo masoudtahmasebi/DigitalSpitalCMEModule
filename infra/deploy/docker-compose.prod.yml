@@ -1,0 +1,158 @@
+# The production stack (P10-04).
+#
+# One Hetzner host, in Germany (CLAUDE.md §4). Everything is a container and
+# the whole thing comes up with `infra/deploy/deploy.sh`.
+#
+# ## Why Caddy rather than nginx + certbot
+#
+# Let's Encrypt certificates: Caddy obtains and renews them automatically from
+# the `tls` directive and the hostnames in the Caddyfile, with no cron job, no
+# renewal hook and no separate ACME client to forget about. The failure mode of
+# certbot on a host nobody logs into is an expired certificate at 03:00 on a
+# Sunday; the failure mode here is a container restart.
+#
+# ## What is and is not exposed
+#
+# Only Caddy publishes ports. Postgres, Redis and the API are reachable on the
+# internal network and nowhere else — `ports:` is deliberately absent from all
+# three. A database published on 5432 "just for migrations" is how a database
+# ends up on Shodan.
+#
+# ## Secrets
+#
+# Everything sensitive comes from `.env.production` on the host, which is
+# written by the deploy script from GitHub secrets and is never committed. The
+# compose file names variables; it never contains values.
+
+name: ds-education
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      # HTTP/3. Harmless if the firewall drops it; a real improvement on mobile
+      # networks, which is where a physician watches a 25-minute video.
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The certificate store. Losing this volume means re-issuing every
+      # certificate, and Let's Encrypt rate-limits that — so it is named, not
+      # anonymous.
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN}
+      WIDGET_DOMAIN: ${WIDGET_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [edge, internal]
+
+  api:
+    image: ${IMAGE_API}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_PORT: 3000
+      DATABASE_URL: postgres://ds_app:${DS_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
+      KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE}
+      KEYCLOAK_JWKS_URI: ${KEYCLOAK_JWKS_URI}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      EIV_BASE_URL: ${EIV_BASE_URL}
+      EIV_ALLOW_LIVE: ${EIV_ALLOW_LIVE}
+      # Exactly one submitter, whatever the API scales to. Two workers racing
+      # for the same submission is a duplicate Punktemeldung, which cannot be
+      # withdrawn after the correction window closes.
+      EIV_WORKER_ENABLED: ${EIV_WORKER_ENABLED:-yes}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-yes}
+      S3_URL_TTL_SEC: ${S3_URL_TTL_SEC:-3600}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      # `/health` is public precisely so a probe can reach it without a token.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    networks: [internal]
+
+  admin:
+    image: ${IMAGE_ADMIN}
+    restart: unless-stopped
+    networks: [internal]
+
+  widget:
+    image: ${IMAGE_WIDGET}
+    restart: unless-stopped
+    networks: [internal]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Creates ds_migrator, ds_app and ds_binding_resolver. ds_app is NOT
+      # BYPASSRLS — the whole of ADR-0002 depends on that.
+      - ../postgres/init-roles.sql:/docker-entrypoint-initdb.d/00-init-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Rate-limit counters and cache only — nothing here needs to survive a
+    # restart, and an AOF on a small host is cost without benefit.
+    command:
+      [
+        "redis-server",
+        "--save",
+        "",
+        "--appendonly",
+        "no",
+        "--maxmemory",
+        "256mb",
+        "--maxmemory-policy",
+        "allkeys-lru",
+      ]
+    networks: [internal]
+
+networks:
+  # Only Caddy is on both. Nothing else can be reached from outside the host.
+  edge:
+  internal:
+    internal: true
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

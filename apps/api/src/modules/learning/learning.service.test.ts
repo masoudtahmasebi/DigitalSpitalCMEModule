@@ -29,6 +29,7 @@ const QUIZ = "cccccccc-0000-4000-8000-000000000003";
 const PDF_1 = "cccccccc-0000-4000-8000-000000000004";
 const PDF_2 = "cccccccc-0000-4000-8000-000000000005";
 
+const NOW = new Date("2026-07-28T10:00:00Z");
 const learner = { customerId: CUSTOMER_ID, userId: USER_ID };
 
 const course: CourseComplianceRow = {
@@ -598,6 +599,7 @@ describe("getMaterials — the Mediathek", () => {
     const library = await new LearningService(fakeRepository().repository).getMaterials(
       course.slug,
       learner,
+      NOW,
     );
 
     expect(() => materialLibrarySchema.parse(library)).not.toThrow();
@@ -609,6 +611,7 @@ describe("getMaterials — the Mediathek", () => {
     const library = await new LearningService(fakeRepository().repository).getMaterials(
       course.slug,
       learner,
+      NOW,
     );
 
     expect(library.groups.every((group) => group.locked)).toBe(true);
@@ -620,6 +623,7 @@ describe("getMaterials — the Mediathek", () => {
     const library = await new LearningService(fakeRepository().repository).getMaterials(
       course.slug,
       learner,
+      NOW,
     );
 
     const urls = library.groups.flatMap((group) =>
@@ -641,6 +645,7 @@ describe("getMaterials — the Mediathek", () => {
     const library = await new LearningService(repository).getMaterials(
       course.slug,
       learner,
+      NOW,
     );
 
     expect(library.groups[0]?.locked).toBe(false);
@@ -656,6 +661,7 @@ describe("getMaterials — the Mediathek", () => {
     const library = await new LearningService(fakeRepository().repository).getMaterials(
       course.slug,
       learner,
+      NOW,
     );
 
     const material = library.groups[0]?.materials[0];
@@ -678,6 +684,7 @@ describe("getMaterials — the Mediathek", () => {
     const library = await new LearningService(repository).getMaterials(
       course.slug,
       learner,
+      NOW,
     );
 
     expect(library.groups).toEqual([]);
@@ -687,7 +694,7 @@ describe("getMaterials — the Mediathek", () => {
     const { repository } = fakeRepository({ enrolment: undefined });
 
     const error = await new LearningService(repository)
-      .getMaterials(course.slug, learner)
+      .getMaterials(course.slug, learner, NOW)
       .catch((e) => e);
 
     expect((error as AppError).kind).toBe("not_found");

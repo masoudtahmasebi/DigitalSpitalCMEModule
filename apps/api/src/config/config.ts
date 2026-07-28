@@ -67,6 +67,34 @@ const schema = z.object({
     .default("yes")
     .transform((value) => value !== "no"),
 
+  // ---------------------------------------------------------------------
+  // Object storage for course media (P10-06)
+  // ---------------------------------------------------------------------
+  // Optional as a group: a deployment whose courses use plain CDN URLs needs
+  // none of it. Configure all of it or none — `S3Presigner` refuses to build
+  // from a partial set rather than minting URLs that 403 mid-video.
+  //
+  // S3-*compatible*, not Amazon: hosting is Hetzner in Germany on purpose, and
+  // German physicians' course media in a US-controlled bucket is a transfer
+  // question nobody wants to answer.
+  S3_ENDPOINT: z.string().default(""),
+  S3_REGION: z.string().default(""),
+  S3_BUCKET: z.string().default(""),
+  S3_ACCESS_KEY_ID: z.string().default(""),
+  S3_SECRET_ACCESS_KEY: z.string().default(""),
+  // Path-style by default: MinIO wants it, every S3-compatible store accepts
+  // it, and it makes no assumptions about DNS or certificates for a bucket
+  // name.
+  S3_FORCE_PATH_STYLE: z
+    .string()
+    .default("yes")
+    .transform((value) => value !== "no"),
+  // How long a media URL stays usable. Short, because a presigned URL is a
+  // capability: one in a browser history or a proxy log keeps working until it
+  // expires. Long enough that a learner can finish a 25-minute video without
+  // the URL dying mid-playback.
+  S3_URL_TTL_SEC: z.coerce.number().int().positive().max(86_400).default(3_600),
+
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 

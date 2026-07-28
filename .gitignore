@@ -31,3 +31,6 @@ dump.rdb
 
 # Built widget bundle copied into the WordPress plugin by `pnpm wp:bundle`.
 wordpress/*/assets/ds-lms.js
+
+# Production environment file, written on the host by the deploy workflow.
+infra/deploy/.env.production

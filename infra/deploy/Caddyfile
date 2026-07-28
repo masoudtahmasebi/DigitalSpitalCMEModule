@@ -1,0 +1,91 @@
+# TLS termination and routing (P10-04).
+#
+# Caddy obtains and renews Let's Encrypt certificates for every hostname below,
+# automatically. There is no certbot, no renewal cron and no hook to forget:
+# the hostnames in this file *are* the certificate configuration.
+#
+# For that to work, each domain's A/AAAA record must already point at this host
+# before the container starts — ACME's HTTP-01 challenge is served on :80 by
+# Caddy itself. A domain that does not resolve here simply fails to get a
+# certificate and logs why; it does not take the other domains down.
+
+{
+	email {$ACME_EMAIL}
+
+	# Uncomment to use Let's Encrypt's staging CA while testing DNS. Production
+	# has a rate limit of 5 duplicate certificates per week, and burning it on
+	# a typo means waiting seven days.
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+# Headers every response gets. Kept in one snippet so a new site cannot quietly
+# ship without them.
+(baseline) {
+	header {
+		# One year, preload-eligible. Only meaningful once the domain is
+		# confirmed HTTPS-only — which it is, since Caddy redirects :80.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Nothing here needs a camera, a microphone or geolocation.
+		Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=()"
+		# Caddy's version is not information anyone outside needs.
+		-Server
+	}
+}
+
+# ---------------------------------------------------------------------------
+# The API
+# ---------------------------------------------------------------------------
+{$API_DOMAIN} {
+	import baseline
+
+	# The API is JSON and PDFs. Framing it achieves nothing, and a page that
+	# could frame it could read a physician's certificate.
+	header X-Frame-Options "DENY"
+
+	# CORS is handled by the API itself, from CORS_ALLOWED_ORIGINS — not here.
+	# Two places deciding which origins may call the API is one place too many,
+	# and the API is the one that can refuse the request as well as the
+	# preflight.
+	reverse_proxy api:3000 {
+		# Without these the API sees Caddy's address as the client, which
+		# makes rate limiting per-proxy rather than per-caller.
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	# A 25-minute video is not proxied through here — media comes from object
+	# storage — but a certificate PDF and a CSV export are, and neither should
+	# be cut off by a default timeout.
+	request_body {
+		max_size 2MB
+	}
+}
+
+# ---------------------------------------------------------------------------
+# The admin console
+# ---------------------------------------------------------------------------
+{$ADMIN_DOMAIN} {
+	import baseline
+	header X-Frame-Options "DENY"
+
+	# A strict CSP is affordable here because this app loads nothing from
+	# anywhere else: its own bundle, its own styles, and XHR to the API and
+	# Keycloak. `unsafe-inline` for styles is Vite's injected critical CSS; the
+	# script policy has no such escape.
+	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' {$API_DOMAIN_URL} {$KEYCLOAK_ORIGIN}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+
+	reverse_proxy admin:80
+}
+
+# ---------------------------------------------------------------------------
+# The widget bundle
+# ---------------------------------------------------------------------------
+{$WIDGET_DOMAIN} {
+	import baseline
+
+	# Deliberately no X-Frame-Options and no restrictive CORP: this file is
+	# meant to be loaded by other origins. Its own nginx sets the CORS headers.
+	reverse_proxy widget:80
+}
