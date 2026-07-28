@@ -59,7 +59,7 @@ export class ProjectBindingRepository implements ProjectBindingRepositoryPort {
 }
 
 /**
- * White-label branding for a project slug (P10-05).
+ * White-label branding for a project slug (P10-08).
  *
  * Separate from `ProjectBindingRepository` because it answers a different
  * question for a different caller: this one runs for an **unauthenticated**
@@ -116,7 +116,7 @@ export class ProjectBrandingRepository implements ProjectBrandingRepositoryPort 
 }
 
 /**
- * The uploaded webfont's bytes (P10-05).
+ * The uploaded webfont's bytes (P10-08).
  *
  * Its own repository and its own SQL function so the branding lookup — called
  * on every widget render — never drags a megabyte of font through it.

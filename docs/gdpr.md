@@ -9,7 +9,7 @@ a DPO can be handed to write one, and the document a reviewer can check the code
 against. Every claim here corresponds to something enforced in the schema, the
 API or the build — where it does not, it says so.
 
-Introduced by **P10-06**.
+Introduced by **P10-10**.
 
 ---
 
@@ -193,7 +193,7 @@ Not applicable to the compliance processing, which rests on Art. 6(1)(c).
 **No third-party frontend requests at all.** No font CDN, no analytics, no tag
 manager, no embedded video platform. The white-label typeface is uploaded by
 the customer and served from the API's own origin, which is why
-`GET /branding/font` exists (P10-05): a German healthcare site pulling a webfont
+`GET /branding/font` exists (P10-08): a German healthcare site pulling a webfont
 from Google transmits every visitor's IP to a US service, and LG München I
 (3 O 17493/20) found that unlawful without consent.
 

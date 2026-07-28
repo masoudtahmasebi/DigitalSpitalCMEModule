@@ -1,4 +1,4 @@
--- Self-hosted white-label fonts (P10-05).
+-- Self-hosted white-label fonts (P10-08).
 --
 -- WHY THE BYTES LIVE HERE AND NOT ON A CDN
 --

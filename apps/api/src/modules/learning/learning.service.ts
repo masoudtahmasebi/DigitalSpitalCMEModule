@@ -62,7 +62,7 @@ export interface LearnerContext {
 export class LearningService {
   /**
    * `media` turns a stored reference into something a browser can fetch
-   * (P10-06). It defaults to passthrough, so a deployment with no object
+   * (P10-09). It defaults to passthrough, so a deployment with no object
    * storage behaves exactly as before: plain URLs work, `s3://` references
    * stay locked because nothing can sign them.
    */

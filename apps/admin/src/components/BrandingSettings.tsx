@@ -1,5 +1,5 @@
 /**
- * The white-label typeface (P10-05).
+ * The white-label typeface (P10-08).
  *
  * ## Why this screen exists at all
  *

@@ -114,7 +114,7 @@ export class AdminController {
   }
 
   /**
-   * The white-label font (P10-05).
+   * The white-label font (P10-08).
    *
    * ## Why the project comes from the header
    *

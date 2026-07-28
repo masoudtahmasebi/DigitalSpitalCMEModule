@@ -273,7 +273,7 @@ export class AdminService {
   }
 
   /**
-   * Store the customer's own webfont (P10-05).
+   * Store the customer's own webfont (P10-08).
    *
    * Three things make this safe to expose to a customer admin, and all three
    * are here rather than in the controller because they are rules, not

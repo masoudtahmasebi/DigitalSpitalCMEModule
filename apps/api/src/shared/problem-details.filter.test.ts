@@ -68,7 +68,11 @@ function captureLogs(run: () => void): string {
 const filter = new ProblemDetailsFilter();
 
 describe("the query string is not disclosed", () => {
-  const TOKEN = "d2f0c9a1b3e54f6789ab0cd1e2f34567";
+  // Deliberately low-entropy and self-describing. A realistic-looking 32-hex
+  // string here is a secret scanner's problem — gitleaks flagged the first
+  // version of this file — and the assertions only need a distinctive
+  // needle to search the log output for.
+  const TOKEN = "not-a-real-token-not-a-real-token";
 
   it("keeps a download token out of the log line", () => {
     const { host } = hostFor(`/courses/adhs/certificate/pdf?token=${TOKEN}`);

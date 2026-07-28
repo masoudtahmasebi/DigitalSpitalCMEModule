@@ -829,7 +829,7 @@ describe("the CSV export", () => {
 });
 
 /**
- * The white-label font (P10-05).
+ * The white-label font (P10-08).
  *
  * Three properties, and only the first is about typography:
  *
@@ -978,7 +978,7 @@ describe("the white-label font", () => {
 });
 
 /**
- * GDPR Art. 17 erasure (P10-06), against the real schema.
+ * GDPR Art. 17 erasure (P10-10), against the real schema.
  *
  * The property under test is a balance, not a deletion:
  *
@@ -1032,30 +1032,48 @@ describe("erasure keeps the participation and removes the person", () => {
     await expect(eraseAs("app", learnerId)).rejects.toThrow(/permission denied/i);
   });
 
-  it("refuses while a Punktemeldung is still open", async () => {
-    // The completion above queued one. The EFN is the key the Ärztekammer
-    // credits points against; removing it now would leave a report that can
-    // neither be completed nor corrected, and the window closes permanently.
-    // Any of the open states, not one in particular: the worker suite shares
-    // this database and may have moved the row from `queued` to `held`. Which
-    // one it is does not matter — all three mean a report is in flight, and
-    // all three must block.
-    const { rows } = await seedPool.query<{ status: string }>(
-      `SELECT s.status FROM eiv_submissions s
-       JOIN enrolments e ON e.id = s.enrolment_id WHERE e.user_id = $1`,
-      [learnerId],
+  /**
+   * Force the subject's Punktemeldung into a given state.
+   *
+   * `next_attempt_at` is pushed an hour out at the same time, and that is not
+   * incidental. The worker suite shares this database and its scheduler sweeps
+   * every due submission, not only its own — so a row left `queued` with a due
+   * attempt gets picked up and moved to a terminal state between this update
+   * and the assertion that follows. A submission scheduled for a later attempt
+   * is still an open one, so the test loses nothing by saying so explicitly.
+   */
+  async function setSubmissionStatus(status: string): Promise<void> {
+    const { rowCount } = await seedPool.query(
+      `UPDATE eiv_submissions
+       SET status = $2, next_attempt_at = now() + interval '1 hour'
+       WHERE enrolment_id IN (SELECT id FROM enrolments WHERE user_id = $1)`,
+      [learnerId, status],
     );
-    expect(["queued", "held", "failed_retryable"]).toContain(rows[0]?.status);
+    // The completion above created exactly one. If it did not, the assertions
+    // below would be testing nothing.
+    expect(rowCount).toBeGreaterThan(0);
+  }
 
-    await expect(eraseAs("operator", learnerId)).rejects.toThrow(/still open/i);
-  });
+  it.each(["queued", "held", "failed_retryable"])(
+    "refuses while a Punktemeldung is %s",
+    async (status) => {
+      // Set here rather than read: the worker suite shares this database and
+      // decides for itself how far a submission gets. The property under test
+      // is the refusal, not what some other suite happened to leave behind —
+      // and the earlier version of this test failed in CI for exactly that
+      // reason, having passed locally.
+      //
+      // The EFN is the key the Ärztekammer credits points against. Removing it
+      // while a report is in flight leaves one that can neither be completed
+      // nor corrected, and the correction window closes permanently.
+      await setSubmissionStatus(status);
+
+      await expect(eraseAs("operator", learnerId)).rejects.toThrow(/still open/i);
+    },
+  );
 
   it("erases once the reporting window has closed", async () => {
-    await seedPool.query(
-      `UPDATE eiv_submissions SET status = 'submitted'
-       WHERE enrolment_id IN (SELECT id FROM enrolments WHERE user_id = $1)`,
-      [learnerId],
-    );
+    await setSubmissionStatus("submitted");
 
     const { rows } = await eraseAs("operator", learnerId);
     expect(Number(rows[0]!.enrolments_pseudonymised)).toBeGreaterThan(0);

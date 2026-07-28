@@ -1,5 +1,5 @@
 /**
- * Presigned S3 GET URLs (P10-06). Infrastructure — ADR-0006.
+ * Presigned S3 GET URLs (P10-09). Infrastructure — ADR-0006.
  *
  * ## Why this is 90 lines instead of a dependency
  *

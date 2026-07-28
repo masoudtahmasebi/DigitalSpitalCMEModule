@@ -42,7 +42,14 @@ process.env["EIV_WORKER_ENABLED"] = "no";
 
 const KID = "learning-flow-key";
 const AUDIENCE = "ds-education-api";
-const SUB = "learner-sub";
+/**
+ * Unique per run. `users` is keyed on `(keycloak_realm, keycloak_sub)` and the
+ * realm here is this run's ephemeral JWKS URL — which the OS will happily hand
+ * back to a later run on the same port. A fixed subject then collides with the
+ * previous run's row and the whole suite fails in `beforeAll`, which only
+ * happens when a port is reused and is therefore never reproducible.
+ */
+const SUB = `learner-sub-${randomUUID().slice(0, 8)}`;
 
 const VIDEO_1_SEC = 600;
 const VIDEO_2_SEC = 400;

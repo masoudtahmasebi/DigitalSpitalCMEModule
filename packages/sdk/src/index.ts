@@ -183,7 +183,7 @@ export function createClient(options: ClientOptions) {
     health: (): Promise<HealthStatus> => request("/health"),
 
     /**
-     * White-label branding for this project (P10-05).
+     * White-label branding for this project (P10-08).
      *
      * Public: the widget renders branded loading and error states before it
      * has a token, and the admin console's login screen never has one.
@@ -196,7 +196,7 @@ export function createClient(options: ClientOptions) {
      * A URL rather than a fetch: the browser must load this itself so it is
      * cached and reused, and because a font fetched with `fetch()` would then
      * need a blob URL for no benefit. Same origin as the API, never a CDN —
-     * that is the whole point of storing it (P10-05).
+     * that is the whole point of storing it (P10-08).
      */
     brandingFontUrl: (version: string): string => {
       // The project slug travels as a query parameter here, not as the usual

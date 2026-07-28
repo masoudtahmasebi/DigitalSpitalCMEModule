@@ -1,5 +1,5 @@
 /**
- * Chooses a media resolver from configuration (P10-06).
+ * Chooses a media resolver from configuration (P10-09).
  *
  * Its own file so `media-url.ts` stays free of configuration and remains
  * trivially unit-testable, and so the "is storage configured?" question is

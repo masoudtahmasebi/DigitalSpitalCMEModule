@@ -1,5 +1,5 @@
 /**
- * Turning a stored media reference into something a browser can fetch (P10-06).
+ * Turning a stored media reference into something a browser can fetch (P10-09).
  *
  * A `contents.video_url` or `contents.file_url` holds one of two things:
  *

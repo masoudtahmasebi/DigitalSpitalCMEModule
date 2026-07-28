@@ -686,7 +686,7 @@ paths:
       description: |
         White-labelling: the platform is sold to more than one customer, so the
         typeface is data on the project, not a constant in a stylesheet
-        (P10-05).
+        (P10-08).
 
         `woff2` or `woff`, up to 2 MB, base64 in JSON. **The bytes decide the
         format** — the container signature is read and the file must be exactly

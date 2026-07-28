@@ -95,7 +95,7 @@ export const certificateAssetSchema = z.object({
 });
 
 /**
- * A white-label font upload (P10-05).
+ * A white-label font upload (P10-08).
  *
  * woff2 and woff only. Not because older formats are unsupported — because
  * they are unnecessary parser surface. **SVG fonts are excluded absolutely**:

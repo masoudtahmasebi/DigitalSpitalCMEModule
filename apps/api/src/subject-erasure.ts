@@ -1,5 +1,5 @@
 /**
- * GDPR Art. 17 erasure, as a CLI (P10-06).
+ * GDPR Art. 17 erasure, as a CLI (P10-10).
  *
  * ## Why a CLI and not an endpoint
  *

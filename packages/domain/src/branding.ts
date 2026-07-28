@@ -1,5 +1,5 @@
 /**
- * White-label branding (P10-05).
+ * White-label branding (P10-08).
  *
  * The platform is sold to more than one customer, so logo, colours and
  * typeface are data on the project record, not constants in a stylesheet. This

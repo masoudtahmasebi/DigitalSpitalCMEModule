@@ -1,4 +1,4 @@
--- White-label branding lookup (P10-05), supporting ADR-0002 and ADR-0007.
+-- White-label branding lookup (P10-08), supporting ADR-0002 and ADR-0007.
 --
 -- WHY THIS EXISTS SEPARATELY FROM resolve_project_binding
 --

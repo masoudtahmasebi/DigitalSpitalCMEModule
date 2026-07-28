@@ -1,4 +1,4 @@
--- Erasure of a data subject, GDPR Art. 17 (P10-06).
+-- Erasure of a data subject, GDPR Art. 17 (P10-10).
 --
 -- WHY ERASURE HERE MEANS PSEUDONYMISATION, NOT DELETION
 --

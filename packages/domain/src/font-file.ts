@@ -1,5 +1,5 @@
 /**
- * What an uploaded webfont actually is (P10-05).
+ * What an uploaded webfont actually is (P10-08).
  *
  * A customer admin uploads a file and the platform serves it back from its own
  * origin, to every learner, on the same page that holds a bearer token. The

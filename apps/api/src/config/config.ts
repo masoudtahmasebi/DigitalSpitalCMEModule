@@ -68,7 +68,7 @@ const schema = z.object({
     .transform((value) => value !== "no"),
 
   // ---------------------------------------------------------------------
-  // Object storage for course media (P10-06)
+  // Object storage for course media (P10-09)
   // ---------------------------------------------------------------------
   // Optional as a group: a deployment whose courses use plain CDN URLs needs
   // none of it. Configure all of it or none — `S3Presigner` refuses to build

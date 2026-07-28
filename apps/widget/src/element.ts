@@ -217,7 +217,7 @@ function adoptStyles(shadow: ShadowRoot, css: string): void {
 
 /**
  * Declare the customer's uploaded font — in the **document**, not the shadow
- * root (P10-05).
+ * root (P10-08).
  *
  * ## Why not in the shadow root, where the rest of the CSS lives
  *

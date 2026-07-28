@@ -1,5 +1,5 @@
 /**
- * `GET /branding` and `GET /branding/font` (P10-05). Interface layer.
+ * `GET /branding` and `GET /branding/font` (P10-08). Interface layer.
  *
  * ## Why these two routes are public
  *

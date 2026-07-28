@@ -1,5 +1,5 @@
 /**
- * Object-storage keys, and the tenant isolation they carry (P10-06).
+ * Object-storage keys, and the tenant isolation they carry (P10-09).
  *
  * Course media — videos and Mediathek downloads — is too large for the
  * database and must not be public. It lives in S3-compatible object storage,
