@@ -166,6 +166,13 @@ supplies the token provider, and keeps the token out of the page HTML.
 
 Pre-launch. Target **06.09.2026**, budget fixed at 140 h.
 
+The admin console manages compliance settings, certificate assets, branding and
+participant reporting. It does **not** author content — modules, chapters, quiz
+questions and the Evaluationsbogen are seeded programmatically with
+`pnpm db:seed`. That is the declared trade lever, taken deliberately; see
+[`docs/backlog/P9.md`](docs/backlog/P9.md) for what it costs and when it stops
+being the right call.
+
 Open questions that need an answer from outside the team — including what
 `Veranstaltungsende` means for an on-demand course, which decides when a
 statutory reporting clock starts — are in

@@ -321,3 +321,12 @@ omission from a decision.
 - **No certificate email yet.** The customer's own SMTP is designed for and the
   credentials are already encrypted at rest; the delivery path is not built. PDF
   download is the launch behaviour.
+- **No content authoring in the admin console.** The console manages a course's
+  compliance settings, its certificate assets, its branding and its participant
+  list — but modules, chapters, content items, quiz questions and the
+  Evaluationsbogen are seeded programmatically (`db/seed/adhs.ts`). This is the
+  trade lever `CLAUDE.md` §3 names, taken on purpose; the full reasoning and
+  what it costs are in `docs/backlog/P9.md`. For one accredited course with a
+  fixed VNR, editing content through a reviewed change is arguably the stronger
+  control. For a second customer it is not, and that is when P9-04 becomes real
+  work.
