@@ -113,6 +113,9 @@ importers:
       '@ds/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@ds/eiv-client':
+        specifier: workspace:*
+        version: link:../../packages/eiv-client
       '@nestjs/common':
         specifier: ^11.1.28
         version: 11.1.28(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -174,6 +177,9 @@ importers:
       '@ds/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@ds/eiv-client':
+        specifier: workspace:*
+        version: link:../../packages/eiv-client
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -254,6 +260,18 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.1.10
         version: 4.1.10(vitest@4.1.10)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@22.20.1)(@vitest/coverage-v8@4.1.10)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.1)(jiti@1.21.7)(tsx@4.23.1))
+
+  packages/eiv-client:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

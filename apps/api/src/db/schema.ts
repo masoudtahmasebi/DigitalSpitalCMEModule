@@ -10,6 +10,7 @@
 
 import {
   bigint,
+  customType,
   bigserial,
   boolean,
   integer,
@@ -65,6 +66,19 @@ export const certificateStatus = pgEnum("certificate_status", [
   "bounced",
 ]);
 
+/**
+ * `bytea`, mapped to Buffer.
+ *
+ * Drizzle has no built-in bytea, and declaring these columns `text` — as this
+ * schema originally did — silently hands callers a Buffer typed as a string.
+ * That is not a type-safety nicety: it shipped the VNR password to the EIV
+ * client as `{"type":"Buffer","data":[...]}`, which authenticates as nobody.
+ * Caught by the worker's integration test against the mock.
+ */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => "bytea",
+});
+
 export const customers = pgTable("customers", {
   id: uuid("id").primaryKey().defaultRandom(),
   slug: text("slug").notNull().unique(),
@@ -93,8 +107,9 @@ export const projects = pgTable("projects", {
   smtpHost: text("smtp_host"),
   smtpPort: integer("smtp_port"),
   smtpUsername: text("smtp_username"),
-  // Write-only, encrypted at rest. Never selected into a response (CLAUDE.md §4).
-  smtpPasswordEnc: text("smtp_password_enc"),
+  // Write-only ciphertext, read only through SecretCipher. Never selected
+  // into a response (CLAUDE.md §4 invariant 7).
+  smtpPasswordEnc: bytea("smtp_password_enc"),
   smtpFromAddress: text("smtp_from_address"),
   smtpFromName: text("smtp_from_name"),
   ...timestamps,
@@ -114,7 +129,8 @@ export const courses = pgTable("courses", {
   thema: text("thema").array().notNull().default([]),
   altersgruppe: text("altersgruppe").array().notNull().default([]),
   vnr: text("vnr"),
-  vnrPasswordEnc: text("vnr_password_enc"),
+  // Ciphertext. Read only through SecretCipher; never selected into a response.
+  vnrPasswordEnc: bytea("vnr_password_enc"),
   fortbildungsnummer: text("fortbildungsnummer"),
   accreditationBody: text("accreditation_body"),
   cmePoints: integer("cme_points"),

@@ -16,8 +16,7 @@
  *   EIV_ALLOW_LIVE      must be "yes" to target a non-local host
  */
 
-import { EivClient, EivError, type EivExchange } from "./client.js";
-import { redact } from "./redact.js";
+import { EivClient, EivError, redact, type EivExchange } from "@ds/eiv-client";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:4010";
 

@@ -9,6 +9,7 @@ import { HealthModule } from "./modules/health/health.module.js";
 import { LearningModule } from "./modules/learning/learning.module.js";
 import { AssessmentModule } from "./modules/assessment/assessment.module.js";
 import { CompletionModule } from "./modules/completion/completion.module.js";
+import { EivModule } from "./modules/eiv/eiv.module.js";
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { CompletionModule } from "./modules/completion/completion.module.js";
     LearningModule,
     AssessmentModule,
     CompletionModule,
+    EivModule,
   ],
   providers: [
     // Runs after AuthGuard/RolesGuard (guards execute before interceptors in

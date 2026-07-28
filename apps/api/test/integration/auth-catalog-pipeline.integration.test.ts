@@ -44,6 +44,9 @@ process.env["KEYCLOAK_AUDIENCE"] ??= "unused";
 process.env["KEYCLOAK_JWKS_URI"] ??=
   "http://127.0.0.1:1/realms/unused/protocol/openid-connect/certs";
 process.env["NODE_ENV"] ??= "test";
+// The submission worker has its own suite; leaving it sweeping here would
+// mutate eiv_submissions rows underneath these assertions.
+process.env["EIV_WORKER_ENABLED"] = "no";
 
 const KID = "integration-test-key";
 

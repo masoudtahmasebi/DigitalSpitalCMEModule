@@ -53,6 +53,15 @@ export {
 } from "./eiv.js";
 export type { EivDeadlineInput, EivDeadlines, EivPhase } from "./eiv.js";
 
+export { MAX_ATTEMPTS, planEivAttempt, RETRY_INTERVAL_MINUTES } from "./eiv-retry.js";
+export type {
+  EivAbandonReason,
+  EivAction,
+  EivAttemptFailure,
+  EivAttemptInput,
+  EivAttemptPlan,
+} from "./eiv-retry.js";
+
 export { isCourseComplete } from "./completion.js";
 export type {
   CompletionCondition,

@@ -47,6 +47,26 @@ const schema = z.object({
   // unbounded payload. Per-user/IP rate limiting is P10-03, not this.
   MAX_REQUEST_BODY_SIZE: z.string().default("1mb"),
 
+  // ---------------------------------------------------------------------
+  // EIV-FOBI submission worker (P7-06)
+  // ---------------------------------------------------------------------
+  EIV_BASE_URL: z.string().url().default("http://127.0.0.1:4010"),
+  // Pointing EIV_BASE_URL at anything non-local additionally requires this to
+  // be exactly "yes". The configured VNR belongs to a real accreditation
+  // record, and a submission cannot be taken back (ADR-0005).
+  EIV_ALLOW_LIVE: z
+    .string()
+    .default("")
+    .transform((value) => value === "yes"),
+  EIV_SWEEP_INTERVAL_SEC: z.coerce.number().int().positive().default(60),
+  EIV_SWEEP_BATCH_SIZE: z.coerce.number().int().positive().max(500).default(25),
+  // Lets a deployment run the API without the worker — useful when scaling
+  // web instances horizontally but wanting exactly one submitter.
+  EIV_WORKER_ENABLED: z
+    .string()
+    .default("yes")
+    .transform((value) => value !== "no"),
+
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 

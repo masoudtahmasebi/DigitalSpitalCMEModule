@@ -145,6 +145,33 @@ export default [
     },
   },
 
+  // ---------------------------------------------------------------------
+  // Apps are leaves. Shared code is a package.
+  // ---------------------------------------------------------------------
+  // An app importing another app makes two deployables one deployable, and
+  // there is no build step that would tell you. This was a real mistake: the
+  // EIV client started inside `apps/eiv-harness`, and the API's submission
+  // worker needed it — so it moved to `packages/eiv-client`, which is where
+  // code with two consumers belongs. The rule exists so the next person is
+  // told at edit time rather than discovering it after wiring it up.
+  {
+    files: ["apps/*/src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@ds/api", "@ds/widget", "@ds/admin", "@ds/eiv-harness"],
+              message:
+                "Apps must not import other apps. Code with more than one consumer belongs in packages/ — see packages/eiv-client for the precedent.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // packages/domain is pure. purity.test.ts asserts this at runtime too; the
   // lint rule gives the same feedback a second earlier, in the editor.
   {

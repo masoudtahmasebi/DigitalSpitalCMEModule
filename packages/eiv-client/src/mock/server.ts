@@ -17,7 +17,6 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { pathToFileURL } from "node:url";
 
 /** Forces a specific failure via the `x-mock-behaviour` request header. */
 export type MockBehaviour =
@@ -214,16 +213,5 @@ function closeServer(server: Server): Promise<void> {
   return new Promise((resolve, reject) => {
     server.closeAllConnections();
     server.close((error) => (error ? reject(error) : resolve()));
-  });
-}
-
-// Run standalone: pnpm --filter @ds/eiv-harness start:mock
-if (
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
-  const port = Number(process.env["EIV_MOCK_PORT"] ?? 4010);
-  void startMockServer(port).then((mock) => {
-    console.warn(`EIV mock listening on ${mock.url}`);
   });
 }

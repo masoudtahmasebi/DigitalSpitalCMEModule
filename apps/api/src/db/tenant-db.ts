@@ -32,7 +32,15 @@ declare module "express-serve-static-core" {
 export interface TenantContext {
   /** The customer this request acts within. Required — no ambient default. */
   readonly customerId: string;
-  readonly role: "super_admin" | "customer_admin" | "department_admin" | "learner";
+  /**
+   * `system` is not a user role: it is the background worker acting for one
+   * customer at a time (P7-06). Named rather than borrowed from `super_admin`
+   * so an audit trail can tell "a person with the highest privilege did this"
+   * apart from "the submission queue did this" — which are very different
+   * things to find in a compliance log.
+   */
+  readonly role:
+    "super_admin" | "customer_admin" | "department_admin" | "learner" | "system";
   readonly userId?: string;
 }
 

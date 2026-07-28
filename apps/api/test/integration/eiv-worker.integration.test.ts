@@ -1,0 +1,268 @@
+/**
+ * The EIV submission worker against the real mock server (P7-06).
+ *
+ * The service unit tests use a faked submitter, so they prove the retry policy
+ * is wired correctly. This suite proves the parts only real infrastructure can:
+ * the `FOR UPDATE SKIP LOCKED` claim query actually runs, the status enum
+ * values the repository writes actually exist, and a full submit round trip
+ * against the mock produces the reference the schema stores.
+ *
+ * The mock is `@ds/eiv-client`'s own — the same double the client's contract
+ * tests use, so a change to the EIV contract breaks one place, not two.
+ */
+
+import { randomUUID } from "node:crypto";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Pool } from "pg";
+import { startMockServer, type MockServer } from "@ds/eiv-client";
+import { AuditService } from "../../src/audit/audit.service.js";
+import { PlaintextSecretCipher } from "../../src/shared/secret-cipher.js";
+import { EivRepository } from "../../src/modules/eiv/eiv.repository.js";
+import { EivService, LiveEivSubmitter } from "../../src/modules/eiv/eiv.service.js";
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || value === "") {
+    throw new Error(`${name} must be set to run the integration suite.`);
+  }
+  return value;
+}
+
+const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
+const DATABASE_URL = requireEnv("DATABASE_URL");
+
+const EFN = "987654321098765";
+const VNR = "2760552025919300018";
+const VNR_PASSWORD = "mock-vnr-password";
+const cipher = new PlaintextSecretCipher("test");
+
+let seedPool: Pool;
+let appPool: Pool;
+let mock: MockServer;
+
+let customerId: string;
+let courseId: string;
+let userId: string;
+
+beforeAll(async () => {
+  seedPool = new Pool({ connectionString: SUPERUSER_URL });
+  appPool = new Pool({ connectionString: DATABASE_URL, max: 5 });
+  mock = await startMockServer(0);
+
+  const suffix = randomUUID().slice(0, 8);
+
+  customerId = await insert(
+    "INSERT INTO customers (slug, name) VALUES ($1,$2) RETURNING id",
+    [`eiv-customer-${suffix}`, "EIV Worker GmbH"],
+  );
+  const departmentId = await insert(
+    "INSERT INTO departments (customer_id, slug, name) VALUES ($1,$2,$3) RETURNING id",
+    [customerId, "default", "Default"],
+  );
+  const projectId = await insert(
+    `INSERT INTO projects (customer_id, department_id, slug, name)
+     VALUES ($1,$2,$3,$4) RETURNING id`,
+    [customerId, departmentId, `eiv-project-${suffix}`, "EIV project"],
+  );
+  courseId = await insert(
+    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
+                          pass_threshold_percent, vnr, vnr_password_enc)
+     VALUES ($1,$2,$3,$4,100,70,$5,$6) RETURNING id`,
+    [
+      customerId,
+      projectId,
+      `eiv-course-${suffix}`,
+      "EIV course",
+      VNR,
+      cipher.encrypt(VNR_PASSWORD),
+    ],
+  );
+  userId = await insert(
+    `INSERT INTO users (keycloak_realm, keycloak_sub) VALUES ($1,$2) RETURNING id`,
+    [`http://127.0.0.1/realms/eiv-${suffix}`, `eiv-sub-${suffix}`],
+  );
+
+  // The sweep is global by design — it drains every tenant's queue. Other
+  // suites (and earlier runs against this database) leave their own rows
+  // behind, so park anything not belonging to this customer before starting.
+  // Without this the tally below counts other suites' work and the assertions
+  // become order-dependent.
+  await seedPool.query(
+    `UPDATE eiv_submissions SET status = 'held'
+      WHERE status IN ('queued', 'failed_retryable') AND customer_id <> $1`,
+    [customerId],
+  );
+}, 30_000);
+
+afterAll(async () => {
+  await mock?.close();
+  await seedPool.end();
+  await appPool.end();
+});
+
+async function insert(sql: string, values: unknown[]): Promise<string> {
+  const { rows } = await seedPool.query<{ id: string }>(sql, values);
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error(`seed insert returned no id: ${sql}`);
+  return id;
+}
+
+/** A completed enrolment with a queued submission, ready for the worker. */
+async function queueSubmission(
+  over: { eventEndAt?: Date; attemptCount?: number; lastError?: string } = {},
+): Promise<{ submissionId: string; enrolmentId: string }> {
+  const eventEndAt = over.eventEndAt ?? new Date();
+
+  const enrolmentId = await insert(
+    `INSERT INTO enrolments (customer_id, course_id, user_id, required_watch_percent,
+                             pass_threshold_percent, completed_at)
+     VALUES ($1,$2,$3,100,70,$4) RETURNING id`,
+    [customerId, courseId, userId, eventEndAt],
+  );
+
+  // A fresh user per enrolment: enrolments are unique on (course_id, user_id).
+  const submissionId = await insert(
+    `INSERT INTO eiv_submissions (customer_id, enrolment_id, vnr, efn, event_end_at,
+                                  report_due_at, attempt_count, last_error, status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    [
+      customerId,
+      enrolmentId,
+      VNR,
+      EFN,
+      eventEndAt,
+      new Date(eventEndAt.getTime() + 8 * 86_400_000),
+      over.attemptCount ?? 0,
+      over.lastError ?? null,
+      over.attemptCount === undefined ? "queued" : "failed_retryable",
+    ],
+  );
+
+  return { submissionId, enrolmentId };
+}
+
+/** Each enrolment needs its own user, so mint one per scenario. */
+async function freshUser(): Promise<void> {
+  const suffix = randomUUID().slice(0, 8);
+  userId = await insert(
+    `INSERT INTO users (keycloak_realm, keycloak_sub) VALUES ($1,$2) RETURNING id`,
+    [`http://127.0.0.1/realms/eiv-${suffix}`, `eiv-sub-${suffix}`],
+  );
+}
+
+function buildService(allowLive = false): EivService {
+  return new EivService(
+    new EivRepository(appPool, new PlaintextSecretCipher("test")),
+    new LiveEivSubmitter(),
+    new AuditService(appPool),
+    { baseUrl: mock.url, batchSize: 25, allowLive, leaseSeconds: 120 },
+  );
+}
+
+async function readSubmission(id: string) {
+  const { rows } = await seedPool.query<{
+    status: string;
+    attempt_count: number;
+    external_reference: string | null;
+    first_submitted_at: Date | null;
+    next_attempt_at: Date | null;
+    last_error: string | null;
+  }>(
+    `SELECT status, attempt_count, external_reference, first_submitted_at,
+            next_attempt_at, last_error
+       FROM eiv_submissions WHERE id = $1`,
+    [id],
+  );
+  return rows[0]!;
+}
+
+describe("the worker submits a queued participation", () => {
+  it("submits against the mock and stores the reference", async () => {
+    await freshUser();
+    const { submissionId } = await queueSubmission();
+
+    const result = await buildService().sweep(new Date());
+
+    expect(result).toMatchObject({ considered: 1, submitted: 1 });
+
+    const row = await readSubmission(submissionId);
+    expect(row.status).toBe("submitted");
+    expect(row.attempt_count).toBe(1);
+    expect(row.external_reference).not.toBeNull();
+    expect(row.first_submitted_at).not.toBeNull();
+    expect(row.last_error).toBeNull();
+  });
+
+  it("delivered the EFN and VNR to the mock", async () => {
+    // The mock records what it received, which is how we know the payload was
+    // shaped as the EIV contract requires rather than merely accepted.
+    const received = mock.submissions.at(-1);
+
+    expect(received?.efn).toBe(EFN);
+    expect(received?.vnr).toBe(VNR);
+    expect(received?.rolle).toBe("TEILNEHMER");
+  });
+
+  it("does not pick up an already-submitted row on the next sweep", async () => {
+    const before = mock.submissions.length;
+
+    await buildService().sweep(new Date());
+
+    expect(mock.submissions.length).toBe(before);
+  });
+
+  it("writes an audit entry that carries no EFN", async () => {
+    const { rows } = await seedPool.query<{ action: string; detail: unknown }>(
+      `SELECT action, detail FROM audit_log
+        WHERE customer_id = $1 AND action = 'eiv.submitted'
+        ORDER BY created_at DESC LIMIT 1`,
+      [customerId],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(JSON.stringify(rows[0]!.detail)).not.toContain(EFN);
+  });
+});
+
+describe("the worker respects the statutory window", () => {
+  it("marks a submission past the reporting deadline as window_closed", async () => {
+    await freshUser();
+    const { submissionId } = await queueSubmission({
+      eventEndAt: new Date(Date.now() - 30 * 86_400_000),
+    });
+    const before = mock.submissions.length;
+
+    await buildService().sweep(new Date());
+
+    const row = await readSubmission(submissionId);
+    expect(row.status).toBe("window_closed");
+    expect(row.last_error).toBe("reporting_window_missed");
+    // Never even attempted — the door is shut.
+    expect(mock.submissions.length).toBe(before);
+  });
+});
+
+describe("the worker refuses a live endpoint by default", () => {
+  it("abandons rather than submitting to a non-local base URL", async () => {
+    await freshUser();
+    const { submissionId } = await queueSubmission();
+
+    const service = new EivService(
+      new EivRepository(appPool, new PlaintextSecretCipher("test")),
+      new LiveEivSubmitter(),
+      new AuditService(appPool),
+      {
+        baseUrl: "https://punktemeldung.eiv-fobi.de/",
+        batchSize: 25,
+        allowLive: false,
+        leaseSeconds: 120,
+      },
+    );
+
+    await service.sweep(new Date());
+
+    const row = await readSubmission(submissionId);
+    expect(row.status).toBe("failed_permanent");
+    expect(row.last_error).toBe("live_submission_not_allowed");
+  });
+});
