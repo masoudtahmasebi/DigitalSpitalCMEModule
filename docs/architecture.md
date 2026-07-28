@@ -37,26 +37,38 @@ reading first.
 ## 2. Shape
 
 ```
-      WordPress (customer's site)                Admin console (Vite SPA)
-              │                                            │
-     <ds-lms> custom element                               │
-     shadow root, no cookies                               │
-              │  bearer token from                         │  bearer token from
-              │  /wp-json/ds-lms/v1/token                  │  OIDC + PKCE
-              ▼                                            ▼
-      ┌──────────────────────────────────────────────────────────┐
-      │                    API (NestJS)                          │
-      │   AuthGuard → RolesGuard → TenantTransactionInterceptor   │
-      │        every decision that affects a CME point            │
-      └──────────────────────────────────────────────────────────┘
+   WordPress (customer's site)     Portal (ours)      Admin console (Vite SPA)
+              │                          │                        │
+     <ds-lms> custom element   <ds-lms>, same bundle              │
+     shadow root, no cookies             │                        │
+              │  token from              │  token from            │  token from
+              │  /wp-json/…/token        │  OIDC + PKCE           │  OIDC + PKCE
+              ▼                          ▼                        ▼
+      ┌──────────────────────────────────────────────────────────────┐
+      │                        API (NestJS)                          │
+      │     AuthGuard → RolesGuard → TenantTransactionInterceptor     │
+      │            every decision that affects a CME point            │
+      └──────────────────────────────────────────────────────────────┘
               │                    │                    │
               ▼                    ▼                    ▼
-      PostgreSQL 16          Redis (limits,        EIV-FOBI
-      RLS per tenant          cache)               (Ärztekammer)
+      PostgreSQL 16          Redis (limits,      accreditationReporter
+      RLS per tenant          cache)             → EIV-FOBI (Ärztekammer)
 ```
 
 Everything the learner and the admin see is a rendering of what the API
-returned. Neither frontend holds a rule.
+returned. No frontend holds a rule.
+
+The two learner surfaces are **host adapters** and are equals
+([ADR-0007](adr/0007-headless-core-and-host-adapters.md)): a page that mounts
+`<ds-lms>` and supplies a token. They load the same bundle, built once. The API
+cannot tell them apart, and that is the property being asserted — a second host
+that shares no code with the first is how "headless" stops being a claim and
+becomes a test.
+
+`accreditationReporter` is drawn as a seam because it is one
+([ADR-0010](adr/0010-extension-points.md)). EIV-FOBI is the implementation; the
+platform decides _whether_ a Punktemeldung is due and the reporter only carries
+it.
 
 ### Requests, in order
 
@@ -185,7 +197,7 @@ makes the schedule possible.
 
 ---
 
-## 6. The learner widget
+## 6. The learner widget, and its two hosts
 
 A **Shadow-DOM custom element**, not a mounted SPA
 ([ADR-0007](adr/0007-headless-core-and-host-adapters.md)).
@@ -214,6 +226,30 @@ Things that surprise people:
   the host theme.
 
 ---
+
+### The two hosts
+
+A host adapter is a page that mounts `<ds-lms>` and answers one question: _what
+is the current bearer token?_ That is the whole contract.
+
+|                   | `wordpress/ds-lms`                                                      | `apps/portal`                                                           |
+| ----------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Token comes from  | `/wp-json/ds-lms/v1/token`, nonce-protected, minted from the WP session | Keycloak directly, Authorization Code + PKCE (`@ds/oidc`)               |
+| On a 401          | Re-fetch with `refresh=1`                                               | Back through Keycloak — the portal holds no refresh token, deliberately |
+| Around the widget | The customer's theme                                                    | A catalogue screen, ours                                                |
+| Widget bundle     | Copied into `assets/` by `scripts/bundle-widget.mjs`                    | Copied into `public/` by the same script                                |
+
+Both load the **artifact** the widget build produced, never its source. The
+widget's Tailwind is scoped under `.ds-lms-root` and inlined as a string for the
+shadow root; a host that re-compiled it with its own config would style it
+differently in each host, which is precisely what the shadow root exists to
+prevent.
+
+The portal is not privileged for being ours. It appears in
+`CORS_ALLOWED_ORIGINS` like any other origin, its Keycloak client is a separate
+public client from the console's, and the API validates its tokens the same way.
+Building it is what turns "the core is headless" from an intention into
+something that fails visibly if it stops being true.
 
 ## 7. Compliance paths worth reading before changing
 
@@ -318,15 +354,15 @@ omission from a decision.
 - **No E2E suite.** Not in this budget. Integration tests run against a real
   Postgres, which is where the properties that matter actually live.
 - **No tab deep-linking in the widget**, because the URL belongs to the host.
-- **No certificate email yet.** The customer's own SMTP is designed for and the
-  credentials are already encrypted at rest; the delivery path is not built. PDF
-  download is the launch behaviour.
-- **No content authoring in the admin console.** The console manages a course's
-  compliance settings, its certificate assets, its branding and its participant
-  list — but modules, chapters, content items, quiz questions and the
-  Evaluationsbogen are seeded programmatically (`db/seed/adhs.ts`). This is the
-  trade lever `CLAUDE.md` §3 names, taken on purpose; the full reasoning and
-  what it costs are in `docs/backlog/P9.md`. For one accredited course with a
-  fixed VNR, editing content through a reviewed change is arguably the stronger
-  control. For a second customer it is not, and that is when P9-04 becomes real
-  work.
+- **No certificate email yet.** The customer's own SMTP is designed for, the
+  credentials are encrypted at rest, and the console edits them — but the
+  delivery path is not built (P8-03). The `deliveryChannel` capability is
+  declared and deliberately unregistered, so `find()` returns `undefined` and
+  nothing is sent; that is the documented behaviour, not a crash. PDF download
+  is the launch behaviour.
+- **No runtime plugin loading.** There are extension points (ADR-0010) and they
+  are compile-time: a workspace package implementing a contract from
+  `@ds/plugin-api`, registered in `apps/api/src/plugins.ts`. There is no plugin
+  directory and no dynamic import of a configured path, because the process
+  being extended holds a non-BYPASSRLS database connection, the KMS key, and the
+  audit log that is the evidence behind reported CME points.

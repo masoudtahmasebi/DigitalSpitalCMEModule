@@ -273,14 +273,14 @@ learners earning CME points.
 
 ## 11. Risks against the fixed date
 
-| Risk                                                                  | Mitigation                                                                                                          |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| EIV credentials arrive late or the API differs from its documentation | Harness + mock in week 1; hard checkpoint in week 4; launch-with-queued-submissions fallback                        |
-| 140 h is tight against 337 h of ideal scope                           | Contractual deferred list; admin console (18 h) is the declared trade lever; weekly demos surface drift immediately |
-| Widget styling clashes with the MEDICE theme                          | Shadow DOM isolation proven on the real site in week 2, not on a clone                                              |
-| 80 % vs 100 % video rule contradiction between layout and MEDICE-292  | Rule is configurable; written confirmation needed before week 5; layout copy corrected to match                     |
-| WordPress token endpoint changes touch a production plugin            | Additive change only, nonce-protected, behind a feature flag, reviewed with the MEDICE team                         |
-| Content not ready for launch                                          | Seed course from week 1; MEDICE content deadline set for week 5                                                     |
+| Risk                                                                  | Mitigation                                                                                                                                                                                                            |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| EIV credentials arrive late or the API differs from its documentation | Harness + mock in week 1; hard checkpoint in week 4; launch-with-queued-submissions fallback                                                                                                                          |
+| 140 h is tight against 337 h of ideal scope                           | Contractual deferred list; the admin console (18 h) is the declared trade lever and remains available as one, though it is currently built in full — see `docs/backlog/P9.md`; weekly demos surface drift immediately |
+| Widget styling clashes with the MEDICE theme                          | Shadow DOM isolation proven on the real site in week 2, not on a clone                                                                                                                                                |
+| 80 % vs 100 % video rule contradiction between layout and MEDICE-292  | Rule is configurable; written confirmation needed before week 5; layout copy corrected to match                                                                                                                       |
+| WordPress token endpoint changes touch a production plugin            | Additive change only, nonce-protected, behind a feature flag, reviewed with the MEDICE team                                                                                                                           |
+| Content not ready for launch                                          | Seed course from week 1; MEDICE content deadline set for week 5                                                                                                                                                       |
 
 ## 12. Open items
 

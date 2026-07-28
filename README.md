@@ -47,11 +47,15 @@ infra/                   local docker-compose, Keycloak dev realm, nginx, deploy
 apps/api                 NestJS API — the only thing that decides anything
 apps/widget              the learner's <ds-lms> custom element
 apps/admin               the admin console (Vite SPA)
+apps/portal              our own learner frontend — a host adapter, like the plugin
 apps/eiv-harness         EIV-FOBI contract test CLI and mock server
 packages/domain          pure compliance logic — no I/O, no clock, no framework
 packages/sdk             API client, generated from the contract
-packages/eiv-client      the EIV-FOBI protocol client
+packages/oidc            Keycloak login (PKCE), shared by the console and the portal
+packages/plugin-api      the extension contracts — and what may not be extended
+packages/eiv-client      the EIV-FOBI protocol client, and its reporter plugin
 packages/config          shared eslint / tsconfig / tailwind presets
+scripts/                 repository tooling (the widget bundler)
 wordpress/ds-lms         the WordPress plugin that mounts the widget
 ```
 
@@ -129,6 +133,7 @@ erasure, which is cross-tenant by nature. See
 | How do I add a module without breaking the layering?              | [`CONTRIBUTING.md`](CONTRIBUTING.md)                                            |
 | How is this deployed, and how do I roll it back?                  | [`infra/deploy/README.md`](infra/deploy/README.md)                              |
 | How does the WordPress side work?                                 | [`wordpress/ds-lms/README.md`](wordpress/ds-lms/README.md)                      |
+| How do I extend it — and what may I not extend?                   | [`docs/adr/0010-extension-points.md`](docs/adr/0010-extension-points.md)        |
 
 ---
 
@@ -158,7 +163,10 @@ calling, which resolves the Keycloak realm the token is validated against and
 pins the tenant. It is not a secret and grants nothing on its own.
 
 In WordPress none of this is written by hand — the plugin renders the element,
-supplies the token provider, and keeps the token out of the page HTML.
+supplies the token provider, and keeps the token out of the page HTML. Our own
+portal (`apps/portal`) does the same thing in React, with a token it obtained
+from Keycloak itself. Those two are the whole of what a **host adapter** is
+(ADR-0007): mount the element, hand it a way to get a token.
 
 ---
 
@@ -166,12 +174,23 @@ supplies the token provider, and keeps the token out of the page HTML.
 
 Pre-launch. Target **06.09.2026**, budget fixed at 140 h.
 
-The admin console manages compliance settings, certificate assets, branding and
-participant reporting. It does **not** author content — modules, chapters, quiz
-questions and the Evaluationsbogen are seeded programmatically with
-`pnpm db:seed`. That is the declared trade lever, taken deliberately; see
-[`docs/backlog/P9.md`](docs/backlog/P9.md) for what it costs and when it stops
-being the right call.
+The admin console is complete: compliance settings, certificate assets,
+branding, participant reporting, **and** authoring — departments and projects,
+course creation, the module/chapter/content tree with reordering, the
+Lernerfolgskontrolle and the Evaluationsbogen. It was the plan's declared trade
+lever and was for a while partly unbuilt; [`docs/backlog/P9.md`](docs/backlog/P9.md)
+records what changed and what the hours cost.
+
+`db/seed/adhs.ts` still creates the ADHS course. The console is how it is
+_changed_ after launch — and the rules that matter still refuse from the server:
+a pass threshold below the accredited minimum, a video with no duration, a quiz
+question nobody could answer correctly, and the deletion of anything a learner
+has already touched.
+
+There are two learner frontends and they are equals. `wordpress/ds-lms` embeds
+the widget in a customer's site; `apps/portal` is our own. Neither is
+privileged — the API validates every token against Keycloak JWKS and cannot tell
+them apart, which is the point of ADR-0007.
 
 Open questions that need an answer from outside the team — including what
 `Veranstaltungsende` means for an on-demand course, which decides when a

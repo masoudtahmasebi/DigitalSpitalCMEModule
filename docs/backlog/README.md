@@ -1,4 +1,4 @@
-# Backlog — work orders P0–P10
+# Backlog — work orders P0–P11
 
 One file per phase. Each file is an **Epic**; each entry inside it is a **Task**
 written so it can be handed to Claude Code verbatim.
@@ -16,7 +16,14 @@ written so it can be handed to Claude Code verbatim.
 | P8 · Certificates & email                | [P8.md](P8.md)   | 7 h       | 5     |
 | P9 · Admin console                       | [P9.md](P9.md)   | 18 h      | 5–6   |
 | P10 · Hardening, Hetzner deploy & launch | [P10.md](P10.md) | 10 h      | 6     |
-| **Total**                                |                  | **140 h** |       |
+| **Total (the plan)**                     |                  | **140 h** |       |
+| P11 · Second host and extension points   | [P11.md](P11.md) | 12 h ⚠    | —     |
+
+⚠ **P11 is outside the 140 h plan.** It was built on an explicit instruction and
+is recorded rather than absorbed: `CLAUDE.md` §3 says the rest of the plan is not
+negotiable, so those hours came from somewhere. See the header of
+[P11.md](P11.md), which also states that its work orders were written after the
+code — a process violation, named rather than hidden.
 
 ## Global definition of done
 
