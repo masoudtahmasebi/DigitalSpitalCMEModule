@@ -46,8 +46,16 @@ process.env["EIV_WORKER_ENABLED"] = "no";
 
 const KID = "completion-flow-key";
 const AUDIENCE = "ds-education-api";
-const SUB = "completion-learner";
-const ADMIN_SUB = "completion-admin";
+/**
+ * Unique per run. The suite seeds its users under `(keycloak_realm,
+ * keycloak_sub)`, and the realm is the JWKS server's ephemeral URL — which the
+ * OS will happily hand back to a later run. A fixed subject then collides with
+ * the previous run's row, and the collision only appears when a port is
+ * reused, which is exactly the kind of failure nobody can reproduce.
+ */
+const RUN = randomUUID().slice(0, 8);
+const SUB = `completion-learner-${RUN}`;
+const ADMIN_SUB = `completion-admin-${RUN}`;
 const VNR = "2760552025919300018";
 const EFN = "123456789012345";
 /** What the learner confirms at completion — deliberately not the token's name. */
@@ -261,7 +269,15 @@ async function callAs(
   path: string,
   body?: unknown,
 ): Promise<{ status: number; body: any }> {
-  const jwt = await new SignJWT({})
+  // Profile claims on purpose: `provisionOrUpdate` writes them into `users` on
+  // every request, which is what the erasure trigger has to hold against. A
+  // token with no name would make that assertion pass whether the trigger
+  // exists or not.
+  const jwt = await new SignJWT({
+    email: `${sub}@example.org`,
+    given_name: "Anna",
+    family_name: "Müller",
+  })
     .setProtectedHeader({ alg: "RS256", kid: KID })
     .setIssuedAt()
     .setIssuer(issuer)
@@ -958,5 +974,180 @@ describe("the white-label font", () => {
 
     const file = await publicGet(`/branding/font?project=${projectSlug}`);
     expect(file.status).toBe(404);
+  });
+});
+
+/**
+ * GDPR Art. 17 erasure (P10-06), against the real schema.
+ *
+ * The property under test is a balance, not a deletion:
+ *
+ * - **Everything identifying goes.** Name, email, EFN, attested name, free-text
+ *   evaluation answers, the name printed on the certificate.
+ * - **The participation record stays.** Which course, which VNR, how many
+ *   points, when it completed, that a Punktemeldung was made. Art. 17(3)(b):
+ *   that record exists under a legal obligation, and deleting it would not
+ *   honour a right, it would destroy the counterpart of a report already filed
+ *   with the Ärztekammer.
+ *
+ * This suite runs last on purpose — it pseudonymises the learner every earlier
+ * assertion in this file depends on.
+ */
+describe("erasure keeps the participation and removes the person", () => {
+  /**
+   * Erasure runs as `ds_migrator`. The API's own role cannot execute the
+   * function at all, which is the point — see subject-erasure.ts.
+   */
+  async function eraseAs(role: "app" | "operator", userId: string) {
+    const url =
+      role === "operator"
+        ? requireEnv("MIGRATION_DATABASE_URL")
+        : requireEnv("DATABASE_URL");
+    const pool = new Pool({ connectionString: url });
+    try {
+      return await pool.query("SELECT * FROM erase_subject($1, $2)", [userId, "test"]);
+    } finally {
+      await pool.end();
+    }
+  }
+
+  let learnerId: string;
+
+  beforeAll(async () => {
+    // Scoped by realm as well as subject: every run of this suite starts its
+    // JWKS server on a fresh port, so the issuer differs and the table
+    // accumulates one `completion-learner` per run. Taking the first match
+    // would pick an arbitrary previous run's user — one this suite has
+    // already erased.
+    const { rows } = await seedPool.query<{ id: string }>(
+      "SELECT id FROM users WHERE keycloak_sub = $1 AND keycloak_realm = $2",
+      [SUB, issuer],
+    );
+    learnerId = rows[0]!.id;
+  });
+
+  it("is not something the API's own database role can do", async () => {
+    // `ds_app` runs every HTTP request. If it could execute this, a bug in any
+    // controller would be an erasure primitive.
+    await expect(eraseAs("app", learnerId)).rejects.toThrow(/permission denied/i);
+  });
+
+  it("refuses while a Punktemeldung is still open", async () => {
+    // The completion above queued one. The EFN is the key the Ärztekammer
+    // credits points against; removing it now would leave a report that can
+    // neither be completed nor corrected, and the window closes permanently.
+    // Any of the open states, not one in particular: the worker suite shares
+    // this database and may have moved the row from `queued` to `held`. Which
+    // one it is does not matter — all three mean a report is in flight, and
+    // all three must block.
+    const { rows } = await seedPool.query<{ status: string }>(
+      `SELECT s.status FROM eiv_submissions s
+       JOIN enrolments e ON e.id = s.enrolment_id WHERE e.user_id = $1`,
+      [learnerId],
+    );
+    expect(["queued", "held", "failed_retryable"]).toContain(rows[0]?.status);
+
+    await expect(eraseAs("operator", learnerId)).rejects.toThrow(/still open/i);
+  });
+
+  it("erases once the reporting window has closed", async () => {
+    await seedPool.query(
+      `UPDATE eiv_submissions SET status = 'submitted'
+       WHERE enrolment_id IN (SELECT id FROM enrolments WHERE user_id = $1)`,
+      [learnerId],
+    );
+
+    const { rows } = await eraseAs("operator", learnerId);
+    expect(Number(rows[0]!.enrolments_pseudonymised)).toBeGreaterThan(0);
+  });
+
+  it("leaves no identifier behind", async () => {
+    const { rows } = await seedPool.query<{
+      email: string | null;
+      first_name: string | null;
+      last_name: string | null;
+      erased_at: Date | null;
+      attested_name: string | null;
+      efn: string;
+      participant_name: string;
+      efn_profiles: string;
+    }>(
+      `SELECT u.email, u.first_name, u.last_name, u.erased_at,
+              e.attested_name, s.efn, c.participant_name,
+              (SELECT count(*) FROM efn_profiles p WHERE p.user_id = u.id) AS efn_profiles
+       FROM users u
+       JOIN enrolments e ON e.user_id = u.id
+       JOIN eiv_submissions s ON s.enrolment_id = e.id
+       JOIN certificates c ON c.enrolment_id = e.id
+       WHERE u.id = $1`,
+      [learnerId],
+    );
+
+    const row = rows[0]!;
+    expect(row.email).toBeNull();
+    expect(row.first_name).toBeNull();
+    expect(row.last_name).toBeNull();
+    expect(row.erased_at).not.toBeNull();
+    expect(row.attested_name).toBeNull();
+    expect(row.participant_name).not.toBe(ATTESTED_NAME);
+    expect(Number(row.efn_profiles)).toBe(0);
+    // The submission row survives as evidence a report was made; the
+    // identifier in it does not.
+    expect(row.efn).not.toBe(EFN);
+  });
+
+  it("keeps the participation record intact", async () => {
+    const { rows } = await seedPool.query<{
+      vnr: string;
+      cme_points: number;
+      completed_at: Date;
+      status: string;
+    }>(
+      `SELECT e.vnr, e.cme_points, e.completed_at, s.status
+       FROM enrolments e JOIN eiv_submissions s ON s.enrolment_id = e.id
+       WHERE e.user_id = $1`,
+      [learnerId],
+    );
+
+    const row = rows[0]!;
+    expect(row.vnr).toBe(VNR);
+    expect(row.cme_points).toBe(4);
+    expect(row.completed_at).not.toBeNull();
+    expect(row.status).toBe("submitted");
+  });
+
+  it("does not let a later sign-in write the profile back", async () => {
+    // `provisionOrUpdate` writes name and email from the token on every single
+    // request. Without the trigger, an erased subject signing in once would
+    // silently undo the erasure, as a side effect of a normal request.
+    const { status } = await call("GET", `/courses/${courseSlug}/enrolment`);
+    expect(status).toBe(200);
+
+    const { rows } = await seedPool.query<{ email: string | null; erased_at: Date }>(
+      "SELECT email, erased_at FROM users WHERE id = $1",
+      [learnerId],
+    );
+
+    expect(rows[0]!.email).toBeNull();
+    expect(rows[0]!.erased_at).not.toBeNull();
+  });
+
+  it("records the erasure without recording who it was", async () => {
+    const { rows } = await seedPool.query<{ detail: Record<string, unknown> }>(
+      "SELECT detail FROM audit_log WHERE action = 'gdpr.subject.erased' AND subject = $1",
+      [learnerId],
+    );
+
+    expect(rows).toHaveLength(1);
+    // Art. 19 needs the erasure to be provable. An audit row quoting the erased
+    // name would be the one place the name survived.
+    const serialised = JSON.stringify(rows[0]!.detail);
+    expect(serialised).not.toContain(ATTESTED_NAME);
+    expect(serialised).not.toContain(EFN);
+  });
+
+  it("answers a repeated request instead of running twice", async () => {
+    const { rows } = await eraseAs("operator", learnerId);
+    expect(Number(rows[0]!.enrolments_pseudonymised)).toBe(0);
   });
 });

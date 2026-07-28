@@ -1,14 +1,15 @@
 -- Database roles (P0-03), implementing ADR-0002.
 --
--- Three roles:
+-- Four roles:
 --
 --   ds_migrator        owns the schema and runs migrations. The application
 --                       never connects as this role.
 --   ds_app              used by the API. NOT a superuser, NOT BYPASSRLS, and
 --                       NOT the owner of any table.
---   ds_binding_resolver owns exactly one function
---                       (resolve_project_binding, see migration 0002) and
---                       nothing else. NOLOGIN — nothing ever connects as it.
+--   ds_binding_resolver owns the pre-authentication lookups (migrations 0002,
+--                       0007, 0008) and nothing else. NOLOGIN.
+--   ds_erasure          owns exactly one function, `erase_subject` (migration
+--                       0009), and nothing else. NOLOGIN.
 --
 -- The ds_app point is the one that is easy to get wrong. A table owner
 -- bypasses row-level security by default, so if the application role ever
@@ -16,13 +17,23 @@
 -- ROW LEVEL SECURITY` in the migration closes that door, and keeping
 -- ownership with ds_migrator means the door was never open.
 --
--- `ds_binding_resolver` is the one deliberate BYPASSRLS in this schema. FORCE
--- ROW LEVEL SECURITY applies to every owner, ds_migrator included, so the
--- SECURITY DEFINER function that resolves a project's tenant *before*
--- app.customer_id exists needs an owner that can actually see the row. Its
--- entire blast radius is documented in migration 0002 alongside the function
--- it owns. `GRANT ... TO ds_migrator` lets migrations reassign ownership to
--- it without needing superuser for that one ALTER.
+-- BYPASSRLS appears exactly twice, and both are deliberate. FORCE ROW LEVEL
+-- SECURITY applies to every owner, ds_migrator included, so a SECURITY DEFINER
+-- function that has to act outside a tenant context needs an owner that can
+-- see the rows at all.
+--
+--   ds_binding_resolver  resolves a project's tenant *before* app.customer_id
+--                        exists — the chicken-and-egg at the start of every
+--                        request. Blast radius documented in migration 0002.
+--   ds_erasure           performs a GDPR Art. 17 erasure, which is inherently
+--                        cross-tenant: one physician has one EFN and may hold
+--                        enrolments at several customers. Blast radius
+--                        documented in migration 0009.
+--
+-- Neither can be connected as, neither is granted to ds_app, and each owns one
+-- fixed function whose whole body is in a reviewed migration. `GRANT ... TO
+-- ds_migrator` lets migrations reassign ownership without needing superuser
+-- for that one ALTER.
 
 DO $$
 BEGIN
@@ -37,10 +48,49 @@ BEGIN
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'ds_binding_resolver') THEN
     CREATE ROLE ds_binding_resolver NOLOGIN BYPASSRLS;
   END IF;
+
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'ds_erasure') THEN
+    CREATE ROLE ds_erasure NOLOGIN BYPASSRLS;
+  END IF;
 END
 $$;
 
+-- ---------------------------------------------------------------------------
+-- Passwords
+-- ---------------------------------------------------------------------------
+--
+-- The literals above are development credentials, and they are in the
+-- repository on purpose: `infra/docker-compose.yml`, the CI job and
+-- `.env.example` all use them, and a local database with a secret nobody can
+-- read is a local database nobody can use.
+--
+-- They must never be what production runs with. This file is mounted into
+-- `docker-entrypoint-initdb.d`, so without the block below a production
+-- database would come up with two login roles whose passwords are published on
+-- GitHub, and `DS_APP_PASSWORD` from the deployment secrets would go
+-- unused — the API would fail to connect and somebody would "fix" it by
+-- putting the dev password in the env file.
+--
+-- So: when the environment supplies a password, it wins. `\getenv` leaves the
+-- psql variable unset when the environment variable is absent, which is what
+-- `:{?…}` tests — a local run sets neither and keeps the dev values.
+--
+-- `:'name'` is psql's quoting form and is not string interpolation: the value
+-- is escaped as a literal by psql itself.
+
+\getenv ds_migrator_password DS_MIGRATOR_PASSWORD
+\getenv ds_app_password DS_APP_PASSWORD
+
+\if :{?ds_migrator_password}
+ALTER ROLE ds_migrator PASSWORD :'ds_migrator_password';
+\endif
+
+\if :{?ds_app_password}
+ALTER ROLE ds_app PASSWORD :'ds_app_password';
+\endif
+
 GRANT ds_binding_resolver TO ds_migrator;
+GRANT ds_erasure TO ds_migrator;
 
 -- Postgres requires the TARGET of "ALTER ... OWNER TO" to hold CREATE on the
 -- containing schema, independent of role membership -- membership alone is not
@@ -48,6 +98,7 @@ GRANT ds_binding_resolver TO ds_migrator;
 -- can ever connect as it to use the privilege directly), and CREATE only
 -- permits adding new objects, not reading existing tenant data.
 GRANT CREATE ON SCHEMA public TO ds_binding_resolver;
+GRANT CREATE ON SCHEMA public TO ds_erasure;
 
 GRANT ALL ON DATABASE ds_education TO ds_migrator;
 GRANT CONNECT ON DATABASE ds_education TO ds_app;

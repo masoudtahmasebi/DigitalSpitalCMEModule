@@ -137,6 +137,18 @@ if [[ "$RUN_MIGRATIONS" == "1" ]]; then
   # -------------------------------------------------------------------------
   # 4. Migrate
   # -------------------------------------------------------------------------
+  # Roles first. `init-roles.sql` is mounted into docker-entrypoint-initdb.d,
+  # which Postgres runs **only when the data directory is empty** — so a role
+  # added in a later commit (ds_erasure, migration 0009) would never exist on
+  # an already-initialised database, and the migration that grants to it would
+  # fail. The file is written to be idempotent (every CREATE ROLE is guarded),
+  # so applying it on every deploy is both safe and the only way the role set
+  # stays in step with the repository.
+  log "Ensuring database roles"
+  compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
+    psql -v ON_ERROR_STOP=1 -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
+    < ../postgres/init-roles.sql
+
   log "Running migrations"
   # As ds_migrator, never as the superuser: `ALTER DEFAULT PRIVILEGES FOR ROLE
   # ds_migrator` only grants ds_app on objects ds_migrator creates. Migrating

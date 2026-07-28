@@ -222,6 +222,12 @@ export const users = pgTable("users", {
   email: text("email"),
   firstName: text("first_name"),
   lastName: text("last_name"),
+  /**
+   * When this subject was erased (migration 0009). Read-only from the API's
+   * point of view: a database trigger blanks the profile columns on every
+   * update once this is set, so a later sign-in cannot write the name back.
+   */
+  erasedAt: timestamp("erased_at", { withTimezone: true }),
   ...timestamps,
 });
 

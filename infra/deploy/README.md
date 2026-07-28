@@ -106,13 +106,20 @@ can debug at 22:00.
 2. **Pull.** A registry hiccup must not disturb the running site.
 3. **Back up.** `pg_dump` to `/var/backups/ds-education`, before any migration.
    Fourteen kept.
-4. **Migrate**, as `ds_migrator` — never the superuser. `ALTER DEFAULT
+4. **Ensure roles.** Re-applies `infra/postgres/init-roles.sql`, which is
+   idempotent. Postgres runs `docker-entrypoint-initdb.d` **only on an empty
+   data directory**, so a role introduced by a later commit would otherwise
+   never exist on a database that is already running — and the migration that
+   grants to it would fail. This step also applies `DS_APP_PASSWORD` and
+   `DS_MIGRATOR_PASSWORD` from the env file; the passwords in the SQL are
+   development values and are in the repository.
+5. **Migrate**, as `ds_migrator` — never the superuser. `ALTER DEFAULT
 PRIVILEGES FOR ROLE ds_migrator` only grants `ds_app` on objects
    _ds_migrator_ creates, so migrating as `postgres` leaves `ds_app` with no
    grants at all. That presents as "permission denied" rather than as RLS
    filtering, and looks like isolation working until you read the error.
-5. **Start**, and wait for the API's health check.
-6. **Verify** over public TLS. An internal health check passing while the
+6. **Start**, and wait for the API's health check.
+7. **Verify** over public TLS. An internal health check passing while the
    certificate is broken is a deploy that looks green and serves nothing.
 
 Any failure exits non-zero with the previous version still running.
@@ -166,3 +173,32 @@ docker compose -f docker-compose.prod.yml --env-file .env.production logs caddy 
 | Widget blocked in the browser | The WordPress origin is missing from `CORS_ALLOWED_ORIGINS`            |
 | Videos 403 after a while      | `S3_URL_TTL_SEC` shorter than a lesson; presigned URLs expire          |
 | Submissions stuck queued      | `EIV_ALLOW_LIVE` unset while `EIV_BASE_URL` points live — by design    |
+| API cannot authenticate to PG | `DS_APP_PASSWORD` changed in the env file but the deploy was skipped   |
+
+---
+
+## Erasing a data subject
+
+GDPR Art. 17. The reasoning, and what "erasure" means for a CME record, is in
+[`docs/gdpr.md`](../../docs/gdpr.md) — in short, the participation record is
+retained under a legal obligation while every identifier is removed.
+
+```bash
+cd ~/ds-education/infra/deploy
+set -a && . ./.env.production && set +a
+
+# Dry run. Prints counts, never names. Changes nothing.
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm \
+  -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD}@postgres:5432/${POSTGRES_DB}" \
+  --entrypoint node api dist/subject-erasure.js \
+  --subject "<keycloak-sub>" --reason "Antrag vom <date>"
+
+# Then, once the printed plan is the right person, add --confirm.
+```
+
+It refuses while a Punktemeldung is still open — erasing the EFN mid-report
+leaves one that can neither be completed nor corrected — and it is idempotent.
+Afterwards the **customer** deletes the Keycloak account; their IdP is theirs.
+
+Note the role: erasure runs as `ds_migrator`. `ds_app`, which every HTTP request
+uses, cannot execute the function at all.

@@ -15,6 +15,24 @@
  * Every unexpected error is logged server-side with a correlation id before
  * being reduced to a safe response, so the detail is never lost — only kept
  * off the wire.
+ *
+ * ## Query strings are never logged and never echoed
+ *
+ * `request.originalUrl` carries the query string, and a query string is where
+ * capability tokens end up. Today ours carry only a project slug and a
+ * cache-busting version, so nothing is leaking right now — but
+ * `certificates.download_token` already exists in the schema for the emailed
+ * certificate, and the first link that carries one will put it here. A log
+ * line is the wrong place for it: logs outlive sessions, are shipped where the
+ * database is not, and are read by people who have no business being able to
+ * download somebody's Teilnahmebescheinigung.
+ *
+ * Dropping the query now means that link cannot introduce the leak later.
+ *
+ * So the path is used and the query is dropped, in the log **and** in the
+ * response's `instance`. This is a data-minimisation rule (Art. 5(1)(c) GDPR)
+ * as much as a security one, and it is applied here rather than at each call
+ * site because there is exactly one place every error passes through.
  */
 
 import {
@@ -39,9 +57,11 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     const request = ctx.getRequest<Request>();
     const correlationId = randomUUID();
 
+    const path = safePath(request);
+
     if (exception instanceof AppError) {
-      const problem = toProblemDetails(exception, request.originalUrl);
-      this.logAppError(exception, correlationId, request);
+      const problem = toProblemDetails(exception, path);
+      this.logAppError(exception, correlationId, request, path);
       response.status(problem.status).json({ ...problem, correlationId });
       return;
     }
@@ -57,7 +77,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         title: HttpStatus[status] ?? "Error",
         status,
         ...(message === "" ? {} : { detail: message }),
-        instance: request.originalUrl,
+        instance: path,
         correlationId,
       });
       return;
@@ -66,7 +86,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     // Unknown failure. Logged in full server-side; the client gets nothing
     // beyond a correlation id to quote back.
     this.logger.error(
-      `unhandled error [${correlationId}] ${request.method} ${request.originalUrl}`,
+      `unhandled error [${correlationId}] ${request.method} ${path}`,
       exception instanceof Error ? exception.stack : String(exception),
     );
 
@@ -74,16 +94,38 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       type: "https://docs.ds-education.de/errors/internal",
       title: "Internal server error",
       status: 500,
-      instance: request.originalUrl,
+      instance: path,
       correlationId,
     });
   }
 
-  private logAppError(error: AppError, correlationId: string, request: Request): void {
+  private logAppError(
+    error: AppError,
+    correlationId: string,
+    request: Request,
+    path: string,
+  ): void {
     // The internal reason is exactly the detail that must never reach the
-    // client — logged here, not in the response.
+    // client — logged here, not in the response. `reason` is written by us and
+    // carries ids and slugs; ADR-0004 forbids putting an EFN, a name or a
+    // free-text evaluation answer in one.
     this.logger.warn(
-      `${error.kind} [${correlationId}] ${request.method} ${request.originalUrl}: ${error.reason}`,
+      `${error.kind} [${correlationId}] ${request.method} ${path}: ${error.reason}`,
     );
   }
 }
+
+/**
+ * The request path with the query string removed.
+ *
+ * Truncated as well: a path is a route, and a kilobyte of it is somebody
+ * probing rather than somebody browsing. Logging the whole of it would let a
+ * caller choose how much of our log file they fill.
+ */
+function safePath(request: Request): string {
+  const url = request.originalUrl;
+  const query = url.indexOf("?");
+  return (query === -1 ? url : url.slice(0, query)).slice(0, MAX_LOGGED_PATH);
+}
+
+const MAX_LOGGED_PATH = 200;

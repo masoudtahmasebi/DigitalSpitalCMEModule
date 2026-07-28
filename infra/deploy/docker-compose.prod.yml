@@ -115,6 +115,12 @@ services:
       POSTGRES_USER: ${POSTGRES_SUPERUSER}
       POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      # Read by init-roles.sql via psql's `\getenv`. Without these the login
+      # roles would be created with the development passwords that are in the
+      # repository, and the API would fail to connect with the ones from the
+      # deployment secrets — which somebody would then "fix" the wrong way.
+      DS_MIGRATOR_PASSWORD: ${DS_MIGRATOR_PASSWORD}
+      DS_APP_PASSWORD: ${DS_APP_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       # Creates ds_migrator, ds_app and ds_binding_resolver. ds_app is NOT
