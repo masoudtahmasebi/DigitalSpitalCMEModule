@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Unlike the widget, this app owns its page, so Tailwind's preflight is on —
+ * it is doing exactly the job it was designed for.
+ */
+body {
+  background: #f9fafb;
+}
+
+/*
+ * A visible focus ring is an accessibility floor, not a preference
+ * (CLAUDE.md §3).
+ */
+:focus-visible {
+  outline: 2px solid #255a94;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+ * Two button shapes, as component classes rather than repeated utility strings.
+ *
+ * The admin console has a `<Button>` component for this; the portal has three
+ * buttons and a shell, so a class is enough and a component would be a layer
+ * with nothing in it. Both apps deliberately stop short of a shared UI package:
+ * they have different audiences, and a shared component is a shared constraint.
+ */
+@layer components {
+  .ds-button {
+    @apply inline-flex items-center rounded-md bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50;
+  }
+
+  .ds-button-secondary {
+    @apply inline-flex items-center rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50;
+  }
+}

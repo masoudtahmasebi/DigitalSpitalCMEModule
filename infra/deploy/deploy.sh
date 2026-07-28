@@ -105,7 +105,7 @@ compose() { docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
 # 2. Pull
 # ---------------------------------------------------------------------------
 log "Pulling images"
-compose pull --quiet api admin widget
+compose pull --quiet api admin portal widget
 
 # ---------------------------------------------------------------------------
 # 3. Back up before touching the schema

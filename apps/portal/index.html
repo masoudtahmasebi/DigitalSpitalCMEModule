@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fortbildungen</title>
+    <!--
+      The widget, loaded as its own module rather than bundled into this app.
+
+      It has to be the artifact `apps/widget` produced: its Tailwind is scoped
+      under `.ds-lms-root` and inlined as a string for the shadow root, and
+      re-compiling it with this app's Tailwind config would style it
+      differently here than in WordPress. See scripts/bundle-widget.mjs.
+    -->
+    <script type="module" src="/ds-lms.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

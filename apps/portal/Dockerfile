@@ -1,7 +1,13 @@
-# The admin console image (P10-04).
+# The standalone portal image (P11-01).
 #
 # A static SPA, so the runtime stage is a web server with files in it — no
 # Node, no dependency tree, nothing that needs patching monthly.
+#
+# The build also produces `ds-lms.js`: `pnpm --filter @ds/portal... build`
+# builds `@ds/widget` first (the portal declares it as a dependency for exactly
+# that ordering), and the portal's own build step copies the resulting bundle
+# into `public/`. One widget artifact, built once, shared with the WordPress
+# plugin — see scripts/bundle-widget.mjs for why it must not be re-bundled.
 #
 # ## Build-time configuration, and what that means for deployment
 #
@@ -42,9 +48,9 @@ ENV VITE_API_BASE=$VITE_API_BASE \
     VITE_KEYCLOAK_CLIENT_ID=$VITE_KEYCLOAK_CLIENT_ID \
     VITE_REDIRECT_URI=$VITE_REDIRECT_URI
 
-RUN pnpm --filter @ds/admin... build
+RUN pnpm --filter @ds/portal... build
 
 FROM nginx:1.27-alpine AS runtime
-COPY --from=build /repo/apps/admin/dist /usr/share/nginx/html
-COPY infra/nginx/admin.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /repo/apps/portal/dist /usr/share/nginx/html
+COPY infra/nginx/portal.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

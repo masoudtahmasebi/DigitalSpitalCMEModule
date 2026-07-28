@@ -91,6 +91,23 @@
 }
 
 # ---------------------------------------------------------------------------
+# The standalone portal
+# ---------------------------------------------------------------------------
+{$PORTAL_DOMAIN} {
+	import baseline
+	header X-Frame-Options "DENY"
+
+	# Same policy as the console, and for the same reason: this app loads
+	# nothing from anywhere else. `ds-lms.js` is served from this very origin
+	# — the portal ships its own copy rather than pointing at the widget
+	# domain, so `script-src 'self'` covers it and a learner's browser makes no
+	# cross-origin request to start a Fortbildung.
+	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https:; connect-src 'self' {$API_DOMAIN_URL} {$KEYCLOAK_ORIGIN}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+
+	reverse_proxy portal:80
+}
+
+# ---------------------------------------------------------------------------
 # The widget bundle
 # ---------------------------------------------------------------------------
 {$WIDGET_DOMAIN} {

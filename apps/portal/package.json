@@ -1,11 +1,11 @@
 {
-  "name": "@ds/admin",
+  "name": "@ds/portal",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "dev": "vite",
+    "build": "node ../../scripts/bundle-widget.mjs apps/portal/public && vite build",
+    "dev": "node ../../scripts/bundle-widget.mjs apps/portal/public && vite",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "lint": "echo \"linted by the root pass\""
@@ -14,6 +14,7 @@
     "@ds/domain": "workspace:*",
     "@ds/oidc": "workspace:*",
     "@ds/sdk": "workspace:*",
+    "@ds/widget": "workspace:*",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

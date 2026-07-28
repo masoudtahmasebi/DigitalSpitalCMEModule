@@ -22,7 +22,7 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "wp:bundle": "pnpm --filter @ds/widget build && cp apps/widget/dist/ds-lms.js wordpress/ds-lms/assets/ds-lms.js",
+    "wp:bundle": "pnpm --filter @ds/widget build && node scripts/bundle-widget.mjs wordpress/ds-lms/assets",
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",

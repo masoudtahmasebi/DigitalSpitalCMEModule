@@ -15,11 +15,13 @@ WORKDIR /repo
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
 COPY apps/api/package.json                 apps/api/
 COPY apps/admin/package.json               apps/admin/
+COPY apps/portal/package.json              apps/portal/
 COPY apps/widget/package.json              apps/widget/
 COPY apps/eiv-harness/package.json         apps/eiv-harness/
 COPY packages/domain/package.json          packages/domain/
 COPY packages/sdk/package.json             packages/sdk/
 COPY packages/eiv-client/package.json      packages/eiv-client/
+COPY packages/oidc/package.json            packages/oidc/
 COPY packages/config/package.json          packages/config/
 
 RUN pnpm install --frozen-lockfile

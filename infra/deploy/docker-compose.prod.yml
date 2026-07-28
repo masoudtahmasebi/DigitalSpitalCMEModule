@@ -103,6 +103,15 @@ services:
     restart: unless-stopped
     networks: [internal]
 
+  # The platform's own learner frontend. A host adapter like the WordPress
+  # plugin, not a privileged one (ADR-0007): it holds no credential the API
+  # trusts, and serves its own copy of the widget bundle so a learner's browser
+  # makes no cross-origin request to load it.
+  portal:
+    image: ${IMAGE_PORTAL}
+    restart: unless-stopped
+    networks: [internal]
+
   widget:
     image: ${IMAGE_WIDGET}
     restart: unless-stopped

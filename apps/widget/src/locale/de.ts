@@ -13,6 +13,8 @@
  * decided here instead of at each call site.
  */
 
+import { germanDuration, germanMinutesAndSeconds } from "@ds/domain";
+
 export const de = {
   tabs: {
     overview: "Übersicht",
@@ -224,28 +226,11 @@ export const de = {
 export type Locale = typeof de;
 
 /**
- * "2 Stunden 30 Minuten" — the long form from the card metadata line.
+ * Both duration forms come from `@ds/domain`.
  *
- * Whole minutes: the layout never shows seconds here, and rounding up a partial
- * minute would make a 2:00:30 course read as taking longer than it does.
+ * They were local functions here until the standalone portal needed the same
+ * card metadata line. Two copies would be two sets of pluralisation rules to
+ * keep in step, and this file is not the only German the platform renders.
  */
-function duration(totalSec: number): string {
-  const hours = Math.floor(totalSec / 3600);
-  const minutes = Math.floor((totalSec % 3600) / 60);
-
-  const parts = [
-    hours === 0 ? undefined : `${hours} ${hours === 1 ? "Stunde" : "Stunden"}`,
-    minutes === 0 ? undefined : `${minutes} ${minutes === 1 ? "Minute" : "Minuten"}`,
-  ].filter((part): part is string => part !== undefined);
-
-  // Under a minute is still a duration; showing nothing would drop the part
-  // from the metadata line entirely and misalign the separators.
-  return parts.length === 0 ? "unter 1 Minute" : parts.join(" ");
-}
-
-/** "25:24 Min." — the short form the module list uses. */
-function minutesAndSeconds(totalSec: number): string {
-  const minutes = Math.floor(totalSec / 60);
-  const seconds = totalSec % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")} Min.`;
-}
+const duration = germanDuration;
+const minutesAndSeconds = germanMinutesAndSeconds;

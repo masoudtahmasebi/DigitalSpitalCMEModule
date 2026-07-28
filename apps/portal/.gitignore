@@ -1,0 +1,9 @@
+dist
+
+# Copied in from apps/widget/dist by scripts/bundle-widget.mjs, exactly as in
+# wordpress/ds-lms/assets. Committing it would give us two copies of the widget
+# that could disagree about which is current.
+#
+# Not in public/.gitignore, because Vite copies everything under public/ into
+# the build output — including the ignore file, which would then be served.
+public/ds-lms.js

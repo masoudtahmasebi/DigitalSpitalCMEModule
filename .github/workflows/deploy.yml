@@ -114,6 +114,28 @@ jobs:
           cache-from: type=gha,scope=admin
           cache-to: type=gha,scope=admin,mode=max
 
+      # The portal's configuration is inlined at build time too, and points at
+      # its own Keycloak client — a learner-facing public client, not the
+      # console's. Same realm, different client id, because the two have
+      # different redirect URIs and should be revocable independently.
+      - name: Build and push the portal
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/portal/Dockerfile
+          push: true
+          build-args: |
+            VITE_API_BASE=${{ vars.PORTAL_API_BASE }}
+            VITE_PROJECT_SLUG=${{ vars.PORTAL_PROJECT_SLUG }}
+            VITE_KEYCLOAK_ISSUER=${{ vars.PORTAL_KEYCLOAK_ISSUER }}
+            VITE_KEYCLOAK_CLIENT_ID=${{ vars.PORTAL_KEYCLOAK_CLIENT_ID }}
+            VITE_REDIRECT_URI=${{ vars.PORTAL_REDIRECT_URI }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/portal:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/portal:latest
+          cache-from: type=gha,scope=portal
+          cache-to: type=gha,scope=portal,mode=max
+
       - name: Build and push the widget
         uses: docker/build-push-action@v6
         with:
@@ -189,6 +211,7 @@ jobs:
             printf '%s\n' "$PRODUCTION_ENV"
             printf 'IMAGE_API=%s\n'    "ghcr.io/${{ github.repository }}/api:${TAG}"
             printf 'IMAGE_ADMIN=%s\n'  "ghcr.io/${{ github.repository }}/admin:${TAG}"
+            printf 'IMAGE_PORTAL=%s\n' "ghcr.io/${{ github.repository }}/portal:${TAG}"
             printf 'IMAGE_WIDGET=%s\n' "ghcr.io/${{ github.repository }}/widget:${TAG}"
           } | ssh -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
               'umask 077 && cat > ~/ds-education/infra/deploy/.env.production'

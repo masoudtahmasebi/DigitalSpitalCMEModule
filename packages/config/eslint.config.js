@@ -28,9 +28,11 @@ export default [
       // Ad-hoc local smoke/debug scripts, never committed (see .gitignore).
       "**/*.local.mjs",
       "**/*.local.ts",
-      // The widget bundle copied into the WordPress plugin by `pnpm wp:bundle`.
-      // It is a build artefact of apps/widget — linting it lints React.
+      // The widget bundle, copied into each host adapter by
+      // `scripts/bundle-widget.mjs`. It is a build artefact of apps/widget —
+      // linting it lints React, twice.
       "wordpress/*/assets/**",
+      "apps/portal/public/**",
       // WordPress block editor script: plain browser ES for wp-admin, with no
       // build step by design (see block/index.js). It is not part of any
       // TypeScript project and the layer rules do not apply to it.
@@ -249,7 +251,14 @@ export default [
   // is enabled as an error; the plugin's full recommended set includes rules
   // that guess at intent and would train people to disable it.
   {
-    files: ["apps/widget/src/**/*.{ts,tsx}", "apps/admin/src/**/*.{ts,tsx}"],
+    // Every React app we ship. A new frontend added here without this line
+    // would silently opt out of the accessibility floor, which is exactly how
+    // a floor stops being one.
+    files: [
+      "apps/widget/src/**/*.{ts,tsx}",
+      "apps/admin/src/**/*.{ts,tsx}",
+      "apps/portal/src/**/*.{ts,tsx}",
+    ],
     plugins: { "react-hooks": reactHooks, "jsx-a11y": jsxA11y },
     rules: {
       "react-hooks/rules-of-hooks": "error",
@@ -263,6 +272,17 @@ export default [
       "jsx-a11y/media-has-caption": "warn",
       "jsx-a11y/no-redundant-roles": "error",
       "jsx-a11y/role-has-required-aria-props": "error",
+    },
+  },
+
+  // Repository tooling: plain ES modules run by Node, outside any TypeScript
+  // project. `no-undef` is on for these (it is switched off for .ts files,
+  // where TypeScript does the job properly), so Node's globals have to be
+  // declared or every `process` and `console` is an error.
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: { process: "readonly", console: "readonly", URL: "readonly" },
     },
   },
 

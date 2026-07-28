@@ -139,3 +139,5 @@ export type {
   TenantResolution,
   TenantResolutionResult,
 } from "./authorization.js";
+
+export { germanDuration, germanMinutesAndSeconds } from "./duration.js";
