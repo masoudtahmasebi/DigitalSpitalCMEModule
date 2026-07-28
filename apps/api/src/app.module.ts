@@ -12,6 +12,7 @@ import { CompletionModule } from "./modules/completion/completion.module.js";
 import { EivModule } from "./modules/eiv/eiv.module.js";
 import { CertificateModule } from "./modules/certificate/certificate.module.js";
 import { AdminModule } from "./modules/admin/admin.module.js";
+import { AuthoringModule } from "./modules/authoring/authoring.module.js";
 import { ProjectsModule } from "./modules/projects/projects.module.js";
 
 @Module({
@@ -26,6 +27,7 @@ import { ProjectsModule } from "./modules/projects/projects.module.js";
     EivModule,
     CertificateModule,
     AdminModule,
+    AuthoringModule,
     ProjectsModule,
   ],
   providers: [

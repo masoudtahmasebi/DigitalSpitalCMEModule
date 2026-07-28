@@ -47,6 +47,15 @@ export {
 } from "./branding.js";
 export type { Branding } from "./branding.js";
 
+export { canDelete, contentProblems, validateReorder } from "./authoring.js";
+export type {
+  ContentDraft,
+  ContentProblem,
+  OrderedKind,
+  ReorderRejection,
+  ReorderResult,
+} from "./authoring.js";
+
 export { sniffFontFormat } from "./font-file.js";
 export type { FontFormat, FontRejection, FontSniffResult } from "./font-file.js";
 
