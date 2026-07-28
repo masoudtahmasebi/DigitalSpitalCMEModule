@@ -105,38 +105,28 @@ interface Preview {
 }
 
 async function preview(pool: pg.Pool, userId: string): Promise<Preview> {
+  // Through `preview_subject_erasure`, not with plain SELECTs — see migration
+  // 0010. On this connection RLS filters every tenant-scoped count to zero,
+  // so a hand-written query here reports a subject with three enrolments and a
+  // queued Punktemeldung as having none. The plan a human reads before typing
+  // `--confirm` has to see exactly what the erasure will see.
   const { rows } = await pool.query<{
-    erased_at: Date | null;
-    enrolments: string;
-    open_submissions: string;
-    free_text: string;
+    already_erased: boolean;
+    enrolments: number;
+    open_submissions: number;
+    free_text_responses: number;
     has_efn: boolean;
-  }>(
-    `SELECT
-       u.erased_at,
-       (SELECT count(*) FROM enrolments e WHERE e.user_id = u.id) AS enrolments,
-       (SELECT count(*) FROM eiv_submissions s
-          JOIN enrolments e ON e.id = s.enrolment_id
-          WHERE e.user_id = u.id
-            AND s.status IN ('queued','held','failed_retryable')) AS open_submissions,
-       (SELECT count(*) FROM evaluation_responses r
-          JOIN enrolments e ON e.id = r.enrolment_id
-          JOIN evaluations q ON q.id = r.evaluation_id
-          WHERE e.user_id = u.id AND q.kind = 'text') AS free_text,
-       EXISTS (SELECT 1 FROM efn_profiles p WHERE p.user_id = u.id) AS has_efn
-     FROM users u WHERE u.id = $1`,
-    [userId],
-  );
+  }>("SELECT * FROM preview_subject_erasure($1)", [userId]);
 
   const row = rows[0];
   if (row === undefined) throw new Error(`no such user: ${userId}`);
 
   return {
     userId,
-    alreadyErased: row.erased_at !== null,
-    enrolments: Number(row.enrolments),
-    openSubmissions: Number(row.open_submissions),
-    freeTextResponses: Number(row.free_text),
+    alreadyErased: row.already_erased,
+    enrolments: row.enrolments,
+    openSubmissions: row.open_submissions,
+    freeTextResponses: row.free_text_responses,
     hasEfn: row.has_efn,
   };
 }

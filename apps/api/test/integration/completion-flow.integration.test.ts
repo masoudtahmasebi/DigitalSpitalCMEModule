@@ -1054,6 +1054,33 @@ describe("erasure keeps the participation and removes the person", () => {
     expect(rowCount).toBeGreaterThan(0);
   }
 
+  it("previews what the erasure will actually do, not what RLS lets it see", async () => {
+    // The dry run is what a human reads before typing --confirm. Built with
+    // plain SELECTs on the operator's connection it reported zero for every
+    // tenant-scoped count — "0 enrolments" for a subject with one, and "0 open
+    // Punktemeldungen" for a subject whose report was in flight. Both readings
+    // lead somewhere bad: a lawful request goes unactioned, or an operator
+    // confirms an erasure that then refuses. Migration 0010 gives the preview
+    // the same visibility as the erasure.
+    await setSubmissionStatus("queued");
+
+    const pool = new Pool({ connectionString: requireEnv("MIGRATION_DATABASE_URL") });
+    try {
+      const { rows } = await pool.query<{
+        enrolments: number;
+        open_submissions: number;
+      }>("SELECT * FROM preview_subject_erasure($1)", [learnerId]);
+
+      expect(rows[0]!.enrolments).toBeGreaterThan(0);
+      // And it agrees with the refusal below, which is the whole point.
+      expect(rows[0]!.open_submissions).toBeGreaterThan(0);
+    } finally {
+      await pool.end();
+    }
+
+    await expect(eraseAs("operator", learnerId)).rejects.toThrow(/still open/i);
+  });
+
   it.each(["queued", "held", "failed_retryable"])(
     "refuses while a Punktemeldung is %s",
     async (status) => {
