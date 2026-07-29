@@ -250,9 +250,18 @@ export function createClient(options: ClientOptions) {
 
     getCourseBySlug: (slug: string): Promise<CourseDetail> => request(course(slug)),
 
-    /** Idempotent: enrolling twice returns the same enrolment. */
+    /**
+     * Idempotent: enrolling twice returns the same enrolment.
+     *
+     * **PUT**, matching `operationId: enrol` in the contract. It was `POST`
+     * until a demo run showed a first-time learner getting a 404 and never
+     * reaching a course — the API only ever declared `PUT`. Nothing caught it:
+     * the parity test compares *shapes*, the integration suite calls the
+     * endpoint directly with its own verb, and the widget's tests stub this
+     * client. `methodOf` below is what closes that gap.
+     */
     enrol: (slug: string): Promise<EnrolmentState> =>
-      request(`${course(slug)}/enrolment`, { method: "POST" }),
+      request(`${course(slug)}/enrolment`, { method: "PUT" }),
 
     getEnrolment: (slug: string): Promise<EnrolmentState> =>
       request(`${course(slug)}/enrolment`),

@@ -4,6 +4,12 @@
  *
  * ## Why the bar is sticky
  *
+ * Opaque, not translucent. It was `bg-white/95` with a `backdrop-blur`, and on
+ * a running page the tab row and the progress panel were plainly legible
+ * sliding underneath it — five per cent is not much, but it is enough to read,
+ * and it looks like a rendering fault rather than a design. A bar that content
+ * passes behind has to hide it.
+ *
  * It carries the two things a learner needs from anywhere on a long page: what
  * the course is worth, and the way back into it. The Übersicht tab alone runs
  * to several screens of Beschreibung, Lernziele and a module list, and a resume
@@ -31,7 +37,7 @@ export function StickyMetaBar(props: {
   onResume: (() => void) | undefined;
 }) {
   return (
-    <div className="sticky top-0 z-10 -mx-4 mb-2 border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur">
+    <div className="sticky top-0 z-10 -mx-4 mb-2 border-b border-gray-200 bg-white px-4 py-3">
       {props.onBack === undefined ? null : (
         <button
           type="button"

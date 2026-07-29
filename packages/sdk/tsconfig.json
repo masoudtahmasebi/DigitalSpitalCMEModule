@@ -5,5 +5,9 @@
     "rootDir": "src",
     "lib": ["ES2022", "DOM"]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  // As every other package does. Without it the compiled tests land in `dist`,
+  // where vitest's default glob then finds them — so a stale copy of a test
+  // shadows the source and the suite silently runs the previous version.
+  "exclude": ["src/**/*.test.ts"]
 }

@@ -19,6 +19,48 @@
   color: #1f2937;
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
+
+  /*
+   * Tailwind's filter variables, which preflight would normally declare.
+   *
+   * Without them `blur-sm` compiles to
+   *   filter: var(--tw-blur) var(--tw-brightness) … var(--tw-drop-shadow);
+   * every one of those is undefined, the whole declaration is invalid, and the
+   * browser drops it. The class is applied, the CSS is present, and **nothing
+   * happens** — silently. It cost two features: the Mediathek's locked groups
+   * rendered unblurred behind their padlock, and the sticky bar's
+   * `backdrop-blur` did nothing.
+   *
+   * Declared on the **root only**, not on `.ds-lms-root *`. Custom properties
+   * inherit, so every descendant still gets the empty defaults — but a `*` rule
+   * ties `.blur-sm` on specificity and, sitting after `@tailwind utilities` in
+   * this file, would *win* and reset the variable the utility had just set.
+   * That was the first attempt at this fix, and it changed nothing: the
+   * computed `--tw-blur` was `""` and `filter` stayed `none`. Inheritance from
+   * the root has no such conflict, because the utility writes the variable on
+   * the element itself.
+   *
+   * Empty values, exactly as preflight sets them, so `var(--tw-blur)` resolves
+   * to nothing and the shorthand stays valid.
+   */
+  --tw-blur: ;
+  --tw-brightness: ;
+  --tw-contrast: ;
+  --tw-grayscale: ;
+  --tw-hue-rotate: ;
+  --tw-invert: ;
+  --tw-saturate: ;
+  --tw-sepia: ;
+  --tw-drop-shadow: ;
+  --tw-backdrop-blur: ;
+  --tw-backdrop-brightness: ;
+  --tw-backdrop-contrast: ;
+  --tw-backdrop-grayscale: ;
+  --tw-backdrop-hue-rotate: ;
+  --tw-backdrop-invert: ;
+  --tw-backdrop-opacity: ;
+  --tw-backdrop-saturate: ;
+  --tw-backdrop-sepia: ;
 }
 
 .ds-lms-root *,

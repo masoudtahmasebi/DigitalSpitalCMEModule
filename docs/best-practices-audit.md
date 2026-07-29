@@ -8,7 +8,7 @@ next person be able to change this safely". Findings are ordered by that: dead
 surface first, then duplication, then the one that turned out to matter most —
 a lint warning that had been dismissed on reasoning that had since expired.
 
-**Eight findings. All fixed.** B-07 came out of the layout alignment pass
+**Ten findings. All fixed.** B-07 came out of the layout alignment pass
 (P5-11) and B-08 out of the player work (P5-12) — both surfaced while building
 something else, which is where this kind of thing surfaces.
 
@@ -188,6 +188,63 @@ clock_ — in two renders and 55 ms, and it fails when the fix is removed.
 The general lesson is worth keeping: a test that fails one run in twenty is
 either testing something real intermittently or testing nothing reliably, and
 both are worth the twenty minutes to tell apart.
+
+### B-09 · The SDK called an endpoint that does not exist
+
+**Found by:** running the product. Not by a test — by opening the demo page and
+watching a first-time learner get "Diese Fortbildung wurde nicht gefunden".
+
+`enrol` sent `POST /courses/{slug}/enrolment`. The contract and the API both
+declare **PUT**. So the very first click on any course 404'd, and the entire
+learner journey was unreachable.
+
+What makes this worth recording is not the typo, it is that **three test layers
+all looked like they covered it and none did**:
+
+- the DTO/SDK parity test compares request and response _shapes_, and a shape is
+  identical whichever verb carries it;
+- the integration suite calls endpoints over HTTP writing the verb itself, so it
+  tested the API rather than the client;
+- the widget and console tests stub `ApiClient`, so the transport never runs.
+
+`openapi-typescript` cannot help either: it emits types, and a `method` string
+inside a `RequestInit` is not checked against them. The line joining a URL to a
+verb existed in no layer.
+
+_Fixed_ in one character, and then properly: `packages/sdk/src/routes.test.ts`
+drives **every** client method against a recording `fetch` and looks each
+`(method, path)` up in `contracts/openapi.yaml`. Fifty pairs, and a
+`covers every method on the client` assertion so a new endpoint cannot be added
+without one. Verified by restoring `POST` and watching it fail.
+
+### B-10 · Two features were inert because a CSS variable was never declared
+
+**Found by:** looking at a running page. Both features had passing tests.
+
+The widget disables Tailwind's preflight — correctly, since it renders into a
+shadow root where document-level resets are useless and dangerous. Preflight is
+also where Tailwind declares `--tw-blur`, `--tw-brightness` and the rest. Without
+them `blur-sm` compiles to `filter: var(--tw-blur) var(--tw-brightness) …`, every
+variable is undefined, the whole declaration is invalid, and the browser drops
+it. The class is applied. The CSS is present. **Nothing happens**, with no
+warning anywhere.
+
+Two things silently did nothing: the Mediathek's locked groups rendered
+unblurred behind their padlock, and the sticky metadata bar's `backdrop-blur`.
+No test could have seen it — jsdom does not compute styles, and the classes were
+all exactly as asserted.
+
+_Fixed_ by declaring the variables in the widget's own scoped reset. **The first
+attempt did not work**, and the reason is the useful part: putting them on
+`.ds-lms-root *` ties `.blur-sm` on specificity, and since the reset sits after
+`@tailwind utilities` it _won_ — resetting the variable the utility had just
+set. Computed `--tw-blur` was `""` and `filter` stayed `none`. They belong on the
+root alone: custom properties inherit, and the utility writes to the element
+itself, so there is no conflict left to lose.
+
+The sticky bar was made opaque at the same time. At `bg-white/95` with no working
+blur, the tab row and the progress panel were legible sliding underneath it —
+five per cent is enough to read, and it looks like a rendering fault.
 
 ---
 
