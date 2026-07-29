@@ -104,14 +104,71 @@ export const de = {
   },
 
   overview: {
+    title: "Ihr Fortschritt",
     resume: "Fortbildung fortsetzen",
     start: "Fortbildung starten",
+    /** The ring's centre reads "2 von 5" — modules, not a percentage. */
+    ringValue: (completed: number, total: number): string => `${completed} von ${total}`,
     /** "Sie haben 2 von 5 Modulen abgeschlossen." */
     moduleProgress: (completed: number, total: number): string =>
       `Sie haben ${completed} von ${total} ${total === 1 ? "Modul" : "Modulen"} abgeschlossen.`,
     watchProgress: (achieved: number, required: number): string =>
       `${achieved} % der Videoinhalte angesehen (erforderlich: ${required} %).`,
     complete: "Fortbildung abgeschlossen",
+  },
+
+  /**
+   * The player (layout §4.3).
+   *
+   * One deliberate deviation from the layout's wording, recorded in
+   * `docs/show-stoppers.md` as S16: the screen shows a bare `63% absolviert`
+   * whose referent is not stated, and the requirements record notes that it
+   * matches neither the video position nor anything else derivable from the
+   * screenshot. Rather than guess which quantity the learner is being told
+   * about, `courseProgress` names it. The layout's own word is kept.
+   */
+  player: {
+    /** "Modul 3 von 5" */
+    moduleOf: (current: number, total: number): string => `Modul ${current} von ${total}`,
+    /** "14:35 / 25:45" */
+    position: (position: string, duration: string): string => `${position} / ${duration}`,
+    positionLabel: "Wiedergabeposition",
+    courseProgress: (percent: number): string =>
+      `${percent} % der Fortbildung absolviert`,
+    autosave: "Ihr Fortschritt wird automatisch gespeichert",
+    pause: "Fortbildung pausieren",
+    back: "Zurück zur Übersicht",
+
+    outline: "Modul Übersicht",
+    toggleModule: (title: string): string => `Modul „${title}" ein- oder ausklappen`,
+
+    /**
+     * The accessible name of each sidebar state glyph. Not decorative: in the
+     * sidebar the icon is the only thing separating a finished chapter from a
+     * locked one, so it has to be readable.
+     */
+    state: {
+      completed: "Abgeschlossen",
+      playing: "Wird angesehen",
+      paused: "Pausiert",
+      available: "Verfügbar",
+      locked: "Gesperrt",
+    },
+
+    tabsLabel: "Inhalte zu diesem Abschnitt",
+    tabs: {
+      summary: "Zusammenfassung",
+      quiz: "Lernerfolgskontrolle",
+      reporting: "CME Punktemeldung",
+    },
+    /** Appended to a locked tab's accessible name, so the padlock is not the only cue. */
+    tabLocked: "gesperrt",
+
+    noSummary: "Für diesen Abschnitt ist keine Zusammenfassung hinterlegt.",
+    quizLocked: "Wird nach Abschluss der Module freigeschaltet.",
+    quizOpen: "Zur Lernerfolgskontrolle",
+    reportingLocked: "Wird nach bestandener Lernerfolgskontrolle freigeschaltet.",
+    reportingOpen: "Zur CME Punktemeldung",
   },
 
   gate: {
@@ -214,7 +271,11 @@ export const de = {
   library: {
     title: "Mediathek",
     empty: "Für diese Fortbildung stehen keine Materialien zur Verfügung.",
-    lockedGroup: "Wird nach Abschluss dieses Moduls freigeschaltet.",
+    /** The layout's exact wording for a padlocked group (§4.2). */
+    lockedGroup: "Wird nach Abschluss der Module freigeschaltet",
+    /** The padlock is decorative; this is what a screen reader hears instead. */
+    lockedGroupLabel: (moduleTitle: string): string =>
+      `Materialien zu „${moduleTitle}" sind gesperrt`,
     download: "Herunterladen",
     /** Byte sizes are shown in German notation: "1,4 MB". */
     size: (bytes: number): string => {

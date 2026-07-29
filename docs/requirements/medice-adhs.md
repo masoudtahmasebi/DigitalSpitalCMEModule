@@ -302,6 +302,46 @@ Two findings here:
 
 ---
 
+## 4a. Built against §4 — and the four places it deviates
+
+`apps/widget/src/components/PlayerScreen.tsx`, `ModuleSidebar.tsx`,
+`CourseHeader.tsx` and `MediathekPanel.tsx`. Every deviation below is
+deliberate, and each is here so that the layout review has a list rather than a
+diff.
+
+| §   | Deviation                                                                                      | Why                                                                                                                                                        |
+| --- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 4.3 | `63% absolviert` renders as **`63 % der Fortbildung absolviert`**                              | The bare figure does not state what it measures, and three plausible readings diverge mid-course. `CLAUDE.md` §7. **Confirm the intended quantity — S16.** |
+| 4.3 | **Zur Teilprüfung** is **omitted**, not rendered locked                                        | Out of the 140 h scope (§6.1). A padlock on a feature that will never unlock is a promise the product cannot keep.                                         |
+| 4.3 | The sidebar renders **three** levels — module › chapter › content — where the layout shows two | The widget navigates by content. A two-level sidebar would be unclickable, or would have to invent which content a chapter opens.                          |
+| 4.3 | The sidebar's state icons carry accessible names                                               | They are the only cue separating a finished chapter from a locked one; a decorative padlock leaves a screen-reader user an undifferentiated list.          |
+
+Two things the layout implies that had to be decided rather than read off it:
+
+- **`Fortbildung pausieren` pauses and saves in place**; it does not leave the
+  screen. Making it navigate would duplicate _Zurück zur Übersicht_ and leave the
+  learner with two controls that do the same thing under different names. Pausing
+  flushes the watched intervals, which is what makes the autosave sentence beside
+  it true rather than aspirational.
+- **The five-state icon set.** The layout names four — completed, in progress,
+  locked, paused. The fifth, _available_, is an item the learner may open but has
+  not; the screenshot happens not to contain one. Giving it the in-progress glyph
+  would tell them they had started something they had not.
+
+The `14:35 / 25:45` total is drawn from the **authored** length, because that is
+what the server computes the watch percentage against. A player reading the media
+element's own duration could print a total that disagreed with the percentage
+next to it.
+
+**§4.2 corrections made at the same time:** the progress ring's arc now comes
+from `moduleCompletion`, the same two numbers as the caption beside it — it was
+being fed the content-weighted `progress.percent` while labelled with the module
+counts, so it drew one story and captioned another. The sticky metadata bar and
+the always-present Ihr Fortschritt card were added, and the Mediathek's locked
+groups now render blurred behind a padlock rather than as a line of text.
+
+---
+
 ## 5. Confirmed values
 
 | Setting                              | Value                                                                          |

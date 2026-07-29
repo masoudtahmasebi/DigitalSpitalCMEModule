@@ -230,20 +230,30 @@ Things that surprise people:
 ### The two hosts
 
 A host adapter is a page that mounts `<ds-lms>` and answers one question: _what
-is the current bearer token?_ That is the whole contract.
+is the current bearer token?_ That is very nearly the whole contract; the other
+half-question is _who owns the URL?_ — see the row on routing below.
 
-|                   | `wordpress/ds-lms`                                                      | `apps/portal`                                                           |
-| ----------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Token comes from  | `/wp-json/ds-lms/v1/token`, nonce-protected, minted from the WP session | Keycloak directly, Authorization Code + PKCE (`@ds/oidc`)               |
-| On a 401          | Re-fetch with `refresh=1`                                               | Back through Keycloak — the portal holds no refresh token, deliberately |
-| Around the widget | The customer's theme                                                    | A catalogue screen, ours                                                |
-| Widget bundle     | Copied into `assets/` by `scripts/bundle-widget.mjs`                    | Copied into `public/` by the same script                                |
+|                   | `wordpress/ds-lms`                                                      | `apps/portal`                                                                                |
+| ----------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Token comes from  | `/wp-json/ds-lms/v1/token`, nonce-protected, minted from the WP session | Keycloak directly, Authorization Code + PKCE (`@ds/oidc`)                                    |
+| On a 401          | Re-fetch with `refresh=1`                                               | Back through Keycloak — the portal holds no refresh token, deliberately                      |
+| Around the widget | The customer's theme                                                    | A sign-in header and a back link, nothing else                                               |
+| Routing           | The widget navigates itself; the page's URL belongs to the theme        | Listens for `ds-lms:course-open` and cancels it, so each course has its own bookmarkable URL |
+| Widget bundle     | Copied into `assets/` by `scripts/bundle-widget.mjs`                    | Copied into `public/` by the same script                                                     |
 
 Both load the **artifact** the widget build produced, never its source. The
 widget's Tailwind is scoped under `.ds-lms-root` and inlined as a string for the
 shadow root; a host that re-compiled it with its own config would style it
 differently in each host, which is precisely what the shadow root exists to
 prevent.
+
+The portal renders **no learner screen of its own** — not even the catalogue,
+which it used to. That was a second React implementation of approved layout
+§4.1, and it had already drifted from the widget's. `ds-lms:course-open`
+(ADR-0007 Contract 3) is what let it go: the widget shows the catalogue when
+given no `course` attribute, and a host that routes cancels the event to say so.
+The portal's job is now exactly authentication, routing and mounting, and it
+makes no API call of its own.
 
 The portal is not privileged for being ours. It appears in
 `CORS_ALLOWED_ORIGINS` like any other origin, its Keycloak client is a separate

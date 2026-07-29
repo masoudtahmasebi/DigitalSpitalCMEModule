@@ -21,43 +21,55 @@
  * pointless: skipping ahead simply leaves a hole and the percentage never
  * reaches the threshold. Disabling the scrub bar would punish the learner who
  * legitimately rewinds while stopping nobody.
+ *
+ * ## Playback state belongs to the player chrome
+ *
+ * The layout puts the timeline reading and the **Fortbildung pausieren**
+ * control outside the video, in the panel above it (§4.3). So playback is
+ * *controlled*: this component reports position and playing/paused up through
+ * `onPlayback`, and takes `paused` back down as a prop. The alternative — the
+ * chrome reaching in through a ref to call `.pause()` — would give the same
+ * fact two owners, and the panel would eventually say "paused" over a video
+ * that was still running.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiClient, LessonContent } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { coalesce, WatchTracker } from "../watch-tracker.js";
-import { Button } from "./primitives.js";
 
 /** How often watched intervals are sent while playing. */
 const FLUSH_INTERVAL_MS = 15_000;
+
+export interface PlaybackState {
+  readonly positionSec: number;
+  /** The media element's own reading; `NaN` until metadata loads. */
+  readonly durationSec: number;
+  readonly playing: boolean;
+}
 
 export function LessonScreen(props: {
   client: ApiClient;
   courseSlug: string;
   lesson: LessonContent;
   onProgress: () => void;
-  onBack: () => void;
+  /** Set true by the chrome's **Fortbildung pausieren**. */
+  paused: boolean;
+  onPlayback: (state: PlaybackState) => void;
 }) {
   const { client, courseSlug, lesson, onProgress } = props;
 
-  return (
-    <div className="space-y-4">
-      {lesson.kind === "video" ? (
-        <VideoLesson
-          client={client}
-          courseSlug={courseSlug}
-          lesson={lesson}
-          onProgress={onProgress}
-        />
-      ) : (
-        <TextLesson lesson={lesson} />
-      )}
-
-      <Button variant="secondary" onClick={props.onBack}>
-        {de.content.back}
-      </Button>
-    </div>
+  return lesson.kind === "video" ? (
+    <VideoLesson
+      client={client}
+      courseSlug={courseSlug}
+      lesson={lesson}
+      onProgress={onProgress}
+      paused={props.paused}
+      onPlayback={props.onPlayback}
+    />
+  ) : (
+    <TextLesson lesson={lesson} />
   );
 }
 
@@ -66,12 +78,14 @@ function VideoLesson(props: {
   courseSlug: string;
   lesson: LessonContent;
   onProgress: () => void;
+  paused: boolean;
+  onPlayback: (state: PlaybackState) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackerRef = useRef(new WatchTracker());
   const [watchedPercent, setWatchedPercent] = useState(props.lesson.watchedPercent);
 
-  const { client, courseSlug, lesson, onProgress } = props;
+  const { client, courseSlug, lesson, onProgress, onPlayback } = props;
 
   const flush = useCallback(async () => {
     const tracker = trackerRef.current;
@@ -135,16 +149,61 @@ function VideoLesson(props: {
     };
   }, [flush]);
 
+  // The chrome's pause button, applied to the element. Only ever pauses:
+  // browsers refuse a `play()` that no user gesture asked for, and a widget
+  // that started a video by itself would be doing something the learner did
+  // not ask for on someone else's page.
+  useEffect(() => {
+    if (props.paused) videoRef.current?.pause();
+  }, [props.paused]);
+
+  // `timeupdate` fires about four times a second and the panel above shows
+  // whole seconds, so anything finer is re-rendering the sidebar for a reading
+  // nobody can see change.
+  const lastReported = useRef(-1);
+  const report = useCallback(
+    (video: HTMLVideoElement, force: boolean) => {
+      const second = Math.floor(video.currentTime);
+      if (!force && second === lastReported.current) return;
+      lastReported.current = second;
+      onPlayback({
+        positionSec: video.currentTime,
+        durationSec: video.duration,
+        playing: !video.paused && !video.ended,
+      });
+    },
+    [onPlayback],
+  );
+
   const handleTimeUpdate = () => {
     const video = videoRef.current;
     if (video === null) return;
     trackerRef.current.observe(video.currentTime, !video.paused && !video.seeking);
+    report(video, false);
   };
 
-  const handleStop = () => trackerRef.current.closeOpen();
+  // Play/pause change the panel's wording, not just its numbers, so they report
+  // unconditionally — the second may not have ticked over.
+  const handlePlay = () => {
+    const video = videoRef.current;
+    if (video !== null) report(video, true);
+  };
+
+  const handlePause = () => {
+    trackerRef.current.closeOpen();
+    const video = videoRef.current;
+    if (video !== null) report(video, true);
+    // Pausing is the learner stopping, and "Ihr Fortschritt wird automatisch
+    // gespeichert" is a promise the screen makes out loud. Seeking is not
+    // flushed — a learner dragging the scrub bar would fire a request per
+    // frame for intervals the next timer flush carries anyway.
+    void flush();
+  };
 
   const handleEnded = () => {
     trackerRef.current.closeOpen();
+    const video = videoRef.current;
+    if (video !== null) report(video, true);
     void flush();
   };
 
@@ -180,8 +239,10 @@ function VideoLesson(props: {
           preload="metadata"
           className="w-full rounded-lg bg-black"
           onTimeUpdate={handleTimeUpdate}
-          onPause={handleStop}
-          onSeeking={handleStop}
+          onLoadedMetadata={handlePlay}
+          onPlay={handlePlay}
+          onPause={handlePause}
+          onSeeking={() => trackerRef.current.closeOpen()}
           onEnded={handleEnded}
         >
           {/*

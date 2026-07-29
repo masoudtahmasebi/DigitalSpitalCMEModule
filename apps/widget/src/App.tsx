@@ -27,22 +27,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { parseBranding, type Branding } from "@ds/domain";
-import type { ContentSummary } from "@ds/sdk";
+import type { ContentSummary, CourseDetail, EnrolmentState } from "@ds/sdk";
 import { createWidgetClient, isConfigured, type WidgetConfig } from "./api.js";
 import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
 import type { TokenProvider } from "./token.js";
 import { CourseList } from "./components/CourseList.js";
 import { CourseOutline } from "./components/CourseOutline.js";
+import { ProgressCard, StickyMetaBar } from "./components/CourseHeader.js";
 import { ExpertsTab } from "./components/ExpertsTab.js";
 import { OverviewTab } from "./components/OverviewTab.js";
-import { LessonScreen } from "./components/LessonScreen.js";
+import { PlayerScreen } from "./components/PlayerScreen.js";
 import { QuizScreen } from "./components/QuizScreen.js";
 import { EvaluationScreen } from "./components/EvaluationScreen.js";
 import { CompletionScreen } from "./components/CompletionScreen.js";
 import { CertificatePanel } from "./components/CertificatePanel.js";
 import { MediathekPanel } from "./components/MediathekPanel.js";
-import { Button, ErrorNotice, ProgressRing, Spinner } from "./components/primitives.js";
+import { Button, ErrorNotice, Spinner } from "./components/primitives.js";
 
 /** The four tabs of the course detail (layout §4.2). */
 const TABS = ["overview", "speakers", "certification", "library"] as const;
@@ -56,6 +57,12 @@ type Screen =
 
 export interface AppProps extends WidgetConfig {
   readonly getToken: TokenProvider | undefined;
+  /**
+   * Announce a catalogue pick to the host page. Returns `false` when the host
+   * has taken over navigation, in which case this widget stays put — see
+   * `element.ts`. Absent in tests and in any host that does not route.
+   */
+  readonly onCourseOpen?: ((slug: string) => boolean) | undefined;
 }
 
 export function App(props: AppProps) {
@@ -75,8 +82,13 @@ export function App(props: AppProps) {
  * configuration, so moving between courses does not rebuild it and lose the
  * token cache with it.
  */
-function Routed(props: WidgetConfig & { getToken: TokenProvider }) {
-  const { apiBase, projectSlug, courseSlug, getToken } = props;
+function Routed(
+  props: WidgetConfig & {
+    getToken: TokenProvider;
+    onCourseOpen?: ((slug: string) => boolean) | undefined;
+  },
+) {
+  const { apiBase, projectSlug, courseSlug, getToken, onCourseOpen } = props;
 
   const client = useMemo(
     () => createWidgetClient({ apiBase, projectSlug, courseSlug }, getToken),
@@ -94,7 +106,16 @@ function Routed(props: WidgetConfig & { getToken: TokenProvider }) {
     return (
       <div className="space-y-6 p-4">
         <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
-        <CourseList client={client} onOpen={setSelected} />
+        <CourseList
+          client={client}
+          onOpen={(slug) => {
+            // A host that routes cancels the event and replaces this element
+            // with one pinned to the course. Switching screens here as well
+            // would render the course twice, briefly.
+            if (onCourseOpen !== undefined && !onCourseOpen(slug)) return;
+            setSelected(slug);
+          }}
+        />
       </div>
     );
   }
@@ -172,57 +193,23 @@ function Loaded(props: {
   const back = () => setScreen({ kind: "outline" });
   const refresh = () => enrolment.reload();
 
+  const resumeId = state.resumeContentId;
+  const resume = resumeId === null ? undefined : () => open(resumeId);
+
   return (
     <div className="space-y-6 p-4">
-      <header className="space-y-3">
-        <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
+      <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
 
-        {props.onBackToCatalogue === undefined ? null : (
-          <button
-            type="button"
-            onClick={props.onBackToCatalogue}
-            className="text-sm font-medium text-brand-700 underline"
-          >
-            {de.catalog.back}
-          </button>
-        )}
-
-        <h1 className="text-xl font-bold text-gray-900">{detail.title}</h1>
-        <p className="text-sm text-gray-600">{de.catalog.cardMeta(detail)}</p>
-
-        <div className="flex items-center gap-4">
-          <ProgressRing
-            percent={state.progress.percent}
-            label={de.overview.moduleProgress(
-              state.moduleCompletion.completed,
-              state.moduleCompletion.total,
-            )}
-          />
-          <div className="space-y-1 text-sm text-gray-700">
-            <p>
-              {de.overview.moduleProgress(
-                state.moduleCompletion.completed,
-                state.moduleCompletion.total,
-              )}
-            </p>
-            <p className="text-gray-600">
-              {de.overview.watchProgress(
-                state.achievedWatchPercent,
-                state.requiredWatchPercent,
-              )}
-            </p>
-            {state.completedAt === null ? null : (
-              <p className="font-medium text-status-completed">{de.overview.complete}</p>
-            )}
-          </div>
-        </div>
-
-        {screen.kind === "outline" && state.resumeContentId !== null ? (
-          <Button onClick={() => open(state.resumeContentId as string)}>
-            {state.progress.completedCount === 0 ? de.overview.start : de.overview.resume}
-          </Button>
-        ) : null}
-      </header>
+      {/*
+        Layout §4.2. The bar stays put so the course's worth and the way back
+        into it survive scrolling past several screens of Beschreibung.
+      */}
+      <StickyMetaBar
+        course={detail}
+        state={state}
+        onBack={props.onBackToCatalogue}
+        onResume={resume}
+      />
 
       <nav
         className="flex flex-wrap gap-1 border-b border-gray-200"
@@ -248,6 +235,15 @@ function Loaded(props: {
         ))}
       </nav>
 
+      {/*
+        The progress card sits on all four tabs (layout §4.2) but not over the
+        player, which has a progress panel of its own — two different readings
+        of the same course on one screen would be one too many.
+      */}
+      {screen.kind === "outline" ? (
+        <ProgressCard state={state} onResume={resume} />
+      ) : null}
+
       {tab === "overview" && screen.kind === "outline" ? (
         <OverviewTab course={detail} state={state} />
       ) : tab === "speakers" && screen.kind === "outline" ? (
@@ -255,13 +251,24 @@ function Loaded(props: {
       ) : tab === "library" ? (
         <Mediathek client={client} courseSlug={courseSlug} key={state.progress.percent} />
       ) : screen.kind === "lesson" ? (
-        <Lesson
+        <Player
           client={client}
           courseSlug={courseSlug}
+          course={detail}
+          state={state}
           contentId={screen.contentId}
           onProgress={refresh}
+          onOpen={(contentId) => {
+            refresh();
+            open(contentId);
+          }}
           onBack={() => {
             refresh();
+            back();
+          }}
+          onReporting={() => {
+            refresh();
+            setTab("certification");
             back();
           }}
         />
@@ -366,12 +373,16 @@ function BrandLogo(props: { apiBase: string; projectSlug: string }) {
   );
 }
 
-function Lesson(props: {
+function Player(props: {
   client: ReturnType<typeof createWidgetClient>;
   courseSlug: string;
+  course: CourseDetail;
+  state: EnrolmentState;
   contentId: string;
   onProgress: () => void;
+  onOpen: (contentId: string) => void;
   onBack: () => void;
+  onReporting: () => void;
 }) {
   const lesson = useAsync(
     () => props.client.getLesson(props.courseSlug, props.contentId),
@@ -384,17 +395,23 @@ function Lesson(props: {
       <ErrorNotice
         title={de.error.title}
         message={describeError(lesson.error, de.error)}
+        retryLabel={de.content.back}
+        onRetry={props.onBack}
       />
     );
   }
 
   return (
-    <LessonScreen
+    <PlayerScreen
       client={props.client}
       courseSlug={props.courseSlug}
+      course={props.course}
+      state={props.state}
       lesson={lesson.data}
       onProgress={props.onProgress}
+      onOpen={props.onOpen}
       onBack={props.onBack}
+      onReporting={props.onReporting}
     />
   );
 }

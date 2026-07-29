@@ -8,7 +8,8 @@ next person be able to change this safely". Findings are ordered by that: dead
 surface first, then duplication, then the one that turned out to matter most —
 a lint warning that had been dismissed on reasoning that had since expired.
 
-**Six findings. All fixed.**
+**Seven findings. All fixed.** B-07 was added on 28.07 during the layout
+alignment pass (P5-11), which is where it surfaced.
 
 ---
 
@@ -127,6 +128,33 @@ Recorded here as well as in the security audit (S-03) because the _practice_
 failure is a best-practices one: the dependency range was written from memory
 rather than from the registry, and admitted a version with six known
 advisories. `pnpm add <pkg>@latest`, then narrow.
+
+### B-07 · Two implementations of one approved layout
+
+**Found by:** developing against the layout rather than against the requirements
+prose, and reading the two catalogue screens side by side.
+
+`apps/portal` had a catalogue of its own — a second React screen calling the same
+`GET /courses` and rendering the same approved layout §4.1. It had already
+drifted from the widget's: chips where the layout specifies dropdowns with
+removable tag chips, and page-at-a-time navigation where the layout specifies
+numbered pagination. Only one of the two had tests, and it was not this one.
+
+The duplication was not the deepest problem. ADR-0007 defines the portal as a
+_host adapter_ — mount the widget, supply a token — and a hand-written screen
+was the one place it stopped being one. The ADR's whole value is that a second
+host proves the core is headless; a second host that reimplements part of the
+product proves less than it appears to.
+
+_Fixed_ by giving the widget the one thing it was missing: a cancelable
+`ds-lms:course-open` event, so a host that owns URLs can say "I am routing"
+(ADR-0007 Contract 3). The portal now mounts the widget for the catalogue too.
+Deleted: `Catalogue.tsx`, `CourseMount.tsx`, `api.ts`, and two thirds of the
+portal's locale file. **The portal now makes no API call of its own.**
+
+Worth noting against B-05 and the duplication findings generally: this one was
+invisible to a duplicate-block scan, because the two screens shared no lines.
+They shared a _design_. That is the kind of duplication only reading finds.
 
 ---
 

@@ -35,6 +35,27 @@
  * state; re-reading them would invite a host page to swap the course slug
  * underneath a learner mid-video, which has no sensible meaning for progress
  * already recorded.
+ *
+ * ## The one event the widget emits
+ *
+ * With no `course` attribute the widget opens the catalogue and handles the
+ * pick itself, which is what a WordPress page wants: one embed, no routing.
+ * A host that *does* route — the portal gives each course its own URL so a
+ * learner can bookmark one — needs to know when a course was chosen, and needs
+ * the widget not to navigate underneath it.
+ *
+ * So picking a course dispatches a **cancelable** `ds-lms:course-open` carrying
+ * `{ slug }`. Calling `preventDefault()` means "the host is handling this", and
+ * the widget stays where it is. A host that does not listen gets the old
+ * behaviour unchanged, which is why this is one event rather than a mode flag:
+ * there is no configuration to get wrong, and no second code path for the
+ * WordPress case.
+ *
+ * `composed: true` is *not* about this element's own shadow root — the event is
+ * dispatched on the host element, which is in the light DOM, so it escapes
+ * either way. It is for the host that puts `<ds-lms>` inside a shadow root of
+ * its own: a block theme, or another web component. Without `composed` the
+ * event would stop at *that* boundary and the host would silently never route.
  */
 
 import { createElement } from "react";
@@ -46,6 +67,13 @@ import { App } from "./App.js";
 import { cachingProvider, resolveTokenProvider, type TokenProvider } from "./token.js";
 
 export const WIDGET_ELEMENT_NAME = "ds-lms";
+
+/** Dispatched when a learner picks a course in the catalogue. See the header. */
+export const COURSE_OPEN_EVENT = "ds-lms:course-open";
+
+export interface CourseOpenDetail {
+  readonly slug: string;
+}
 
 export class DsLmsElement extends HTMLElement {
   #tokenProvider: TokenProvider | undefined;
@@ -114,6 +142,31 @@ export class DsLmsElement extends HTMLElement {
         projectSlug,
         courseSlug: this.getAttribute("course") ?? "",
         getToken: provider === undefined ? undefined : cachingProvider(provider),
+        onCourseOpen: (slug: string) => this.#announceCourseOpen(slug),
+      }),
+    );
+  }
+
+  /**
+   * Tell the host page a course was picked, and report whether it took over.
+   *
+   * `dispatchEvent` returns `false` when a listener called `preventDefault()`,
+   * which is the host saying it is routing to that course itself. In that case
+   * the widget must not also navigate: the host is about to replace this
+   * element, and a widget that had already switched screens would flash the
+   * course twice.
+   */
+  #announceCourseOpen(slug: string): boolean {
+    const detail: CourseOpenDetail = { slug };
+    return this.dispatchEvent(
+      new CustomEvent(COURSE_OPEN_EVENT, {
+        detail,
+        bubbles: true,
+        cancelable: true,
+        // For a host that mounts `<ds-lms>` inside its own shadow root — see
+        // the note in the file header. Verified by probe: this element's own
+        // (closed) root is not what needs it.
+        composed: true,
       }),
     );
   }

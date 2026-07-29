@@ -6,6 +6,11 @@
  * its copy from the widget's own locale file. Two files, because they are two
  * artifacts with two release cycles; a portal string and a widget string that
  * happened to be identical would still be two strings.
+ *
+ * It got much shorter when the portal stopped keeping a catalogue of its own
+ * (see `WidgetMount.tsx`). What is left is sign-in, one back link and two
+ * failures that happen before the widget is mounted — which is the right size
+ * for a host adapter's vocabulary.
  */
 
 export const de = {
@@ -21,51 +26,12 @@ export const de = {
   },
 
   nav: {
-    catalogue: "Fortbildungen",
     back: "Zurück zur Übersicht",
   },
 
-  catalogue: {
-    title: "Fortbildungen",
-    empty: "Zurzeit sind keine Fortbildungen verfügbar.",
-    noMatches: "Keine Fortbildung entspricht dieser Auswahl.",
-    resetFilters: "Filter zurücksetzen",
-
-    filterThema: "Thema",
-    filterAltersgruppe: "Altersgruppe",
-    filterDelivery: "Format",
-    filterAll: "Alle",
-
-    delivery: {
-      on_demand: "on-demand",
-      live: "Live-Webinar",
-      praesenz: "Präsenz",
-    },
-
-    start: "Zur Fortbildung",
-    resume: "Fortbildung fortsetzen",
-    completed: "Abgeschlossen",
-
-    /** "4 CME Punkte" */
-    points: (points: number, category: string | null): string =>
-      category === null
-        ? `${points} CME Punkte`
-        : `${points} CME Punkte (Kategorie ${category})`,
-    modules: (count: number): string => (count === 1 ? "1 Modul" : `${count} Module`),
-
-    page: (page: number, total: number): string => `Seite ${page} von ${total}`,
-    previous: "Vorherige Seite",
-    next: "Nächste Seite",
-  },
-
-  loading: "Wird geladen …",
-
   error: {
     title: "Es ist ein Fehler aufgetreten",
-    retry: "Erneut versuchen",
-    generic: "Bitte versuchen Sie es später erneut.",
     misconfigured:
       "Das Portal ist nicht korrekt konfiguriert. Bitte wenden Sie sich an den Betreiber.",
-    notFound: "Diese Fortbildung ist nicht verfügbar.",
   },
 } as const;

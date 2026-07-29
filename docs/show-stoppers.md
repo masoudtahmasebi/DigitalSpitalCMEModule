@@ -374,9 +374,9 @@ which is in the domain model. The plan assumes **only On Demand is populated for
 launch**. This needs confirming, because it is a much larger feature than the
 other four combined.
 
-Minor, but it is a number learners will trust: the player shows **`63% absolviert`**
-next to `14:35 / 25:45`, which is 56.6 %. The two do not agree, so what the
-percentage measures needs stating.
+One item that started here has been split out, because it is now blocking a
+built screen rather than an estimate: the player's **`63% absolviert`** — see
+**S16**.
 
 ---
 
@@ -504,6 +504,50 @@ Fortbildungsmaßnahme bei Änderungen nicht automatisch bestehen bleibt."_
 Moving this course onto a new platform is plausibly such a change. A proactive
 note to the ÄKWL costs nothing; discovering after launch that the accreditation
 lapsed would be expensive.
+
+---
+
+## S16 · What does the player's `63% absolviert` measure? — **shipped with a stated referent, confirm the wording**
+
+Owner: MEDICE (layout), answer needed before the layout review.
+Blocks: nothing. The screen is built; only its wording is provisional.
+
+The player's progress panel in the approved layout reads:
+
+> `Modul 3 von 5` · `14:35 / 25:45` · **`63% absolviert`**
+
+14:35 of 25:45 is **56.6 %**, so the figure is not the current video's position.
+Nor is it stated what it _is_ a percentage of — module completion, content
+completion, watched time across the course, or something else. Three different
+quantities would all be plausible at 63 %, and they diverge sharply in the
+middle of a course: on a five-module course, a learner two modules in with a
+long video half-watched is at 40 % of modules and some quite different fraction
+of content.
+
+This is a number a physician reads as a statement about whether they are going
+to earn their points. `CLAUDE.md` §7 forbids guessing on that.
+
+**What was built.** The panel renders the server's `progress.percent` — the
+content-weighted course figure, the same one the completion gate reasons about —
+and _names_ it:
+
+> `63 % der Fortbildung absolviert`
+
+The layout's own word is kept; what is added is the noun it applies to. This is
+a deliberate, recorded deviation from the copy, on the grounds that an ambiguous
+number is worse than a slightly longer sentence. It is asserted in
+`PlayerScreen.test.tsx`.
+
+**What is needed.** Confirmation of _which quantity_ the layout intends. If it
+is not content-weighted course progress, the fix is one prop and one locale
+entry — `apps/widget/src/locale/de.ts` (`player.courseProgress`) and the panel
+in `PlayerScreen.tsx`. If MEDICE want the bare `63% absolviert` wording back,
+that is their call to make in writing, and this note records that it was raised.
+
+Related: the same panel's `14:35 / 25:45` is drawn against the **authored**
+video length, because that is what the server computes the watch percentage
+from. A player reading the media element's own duration could show a total that
+disagreed with the percentage next to it.
 
 ---
 

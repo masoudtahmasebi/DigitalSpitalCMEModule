@@ -62,6 +62,24 @@ nonce-protected REST endpoint (P6-02). Another host might use a different
 mechanism. The API neither knows nor cares — it validates the token against
 Keycloak JWKS regardless (ADR-0003).
 
+**Contract 3 — one outbound event, added by P5-11.** Picking a course in the
+catalogue dispatches a cancelable `ds-lms:course-open` carrying `{ slug }`.
+
+It exists because hosts differ on exactly one thing: **who owns the URL.** A
+WordPress page's URL belongs to the theme, so the widget navigates internally
+and the host hears nothing it needs to act on. The portal gives each course an
+address a learner can bookmark, so it listens, calls `preventDefault()` — which
+is the host saying "I am routing" — and pushes a history entry.
+
+The shape is deliberate. It is an event rather than a mode attribute, so there
+is no configuration to set wrong and no second code path: a host that does not
+listen gets the pre-existing behaviour unchanged. And it is _cancelable_ rather
+than notify-only, because both parties navigating would render the course twice.
+
+This is what removed the portal's own catalogue screen — a second React
+implementation of the same approved layout, calling the same endpoint. It was
+the one place the portal was not behaving like a host adapter.
+
 **Rules the core obeys:**
 
 - No `apps/api` module imports anything WordPress-specific, and no API response

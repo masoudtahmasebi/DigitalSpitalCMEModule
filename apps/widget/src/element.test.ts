@@ -240,6 +240,156 @@ describe("white-label branding", () => {
   }
 });
 
+/**
+ * The one event `<ds-lms>` emits, and the whole reason the portal has URLs.
+ *
+ * The protocol is small and every part of it is load-bearing:
+ *
+ * - **It escapes the shadow root.** `composed: false` would leave the event
+ *   trapped and the portal permanently on its catalogue, with no error.
+ * - **`preventDefault()` means "the host is routing".** Without it, both the
+ *   widget and the host navigate and the course renders twice.
+ * - **A host that does not listen is unaffected.** That is the WordPress case,
+ *   and it must not need any configuration to keep working.
+ */
+describe("the ds-lms:course-open event", () => {
+  const summary = {
+    id: "00000000-0000-4000-8000-000000000001",
+    slug: "adhs-akademie-adult",
+    title: "ADHS Akademie adult",
+    description: null,
+    heroImageUrl: null,
+    deliveryType: "on_demand",
+    thema: [],
+    altersgruppe: [],
+    cmePoints: 4,
+    cmeCategory: "D",
+    moduleCount: 5,
+    totalDurationSec: 9000,
+    enrolment: null,
+  };
+
+  /** Enough of a course for the detail screen to render without throwing. */
+  const detail = {
+    ...summary,
+    learningObjectives: [],
+    targetAudience: null,
+    vnr: null,
+    accreditationBody: null,
+    organizer: null,
+    eventLocation: null,
+    validFrom: null,
+    validTo: null,
+    requiredWatchPercent: 80,
+    passThresholdPercent: 70,
+    modules: [],
+    experts: [],
+  };
+
+  const enrolment = {
+    enrolmentId: "00000000-0000-4000-8000-000000000002",
+    courseSlug: summary.slug,
+    requiredWatchPercent: 80,
+    passThresholdPercent: 70,
+    achievedWatchPercent: 0,
+    quizPassed: false,
+    evaluationSubmitted: false,
+    efnPresent: false,
+    complete: false,
+    outstanding: [],
+    completedAt: null,
+    progress: { status: "not_started", completedCount: 0, totalCount: 0, percent: 0 },
+    moduleCompletion: { completed: 0, total: 0 },
+    modules: [],
+    resumeContentId: null,
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const body = url.includes("/enrolment")
+        ? enrolment
+        : url.includes(`/courses/${summary.slug}`)
+          ? detail
+          : url.includes("/courses")
+            ? {
+                items: [summary],
+                total: 1,
+                page: 1,
+                perPage: 10,
+                facets: { thema: [], altersgruppe: [] },
+              }
+            : {};
+      return new Response(JSON.stringify(body), {
+        headers: { "content-type": "application/json" },
+      });
+    });
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** Mounts the catalogue — no `course` attribute — and returns the CTA. */
+  async function catalogue(): Promise<{
+    element: DsLmsElement;
+    open: HTMLButtonElement;
+  }> {
+    const element = new DsLmsElement();
+    element.setAttribute("api-base", "https://api.test");
+    element.setAttribute("project", "medice-adhs");
+    element.tokenProvider = async () => "token";
+    host.append(element);
+
+    // The list is fetched after the first commit.
+    for (let i = 0; i < 5; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    const buttons = [
+      ...(element.shadowRootForTest?.querySelectorAll("button") ?? []),
+    ] as HTMLButtonElement[];
+    const open = buttons.find((button) => button.textContent === "Zur Fortbildung");
+    if (open === undefined) throw new Error("catalogue did not render a course card");
+    return { element, open };
+  }
+
+  it("reaches a listener outside the closed shadow root, carrying the slug", async () => {
+    const { open } = await catalogue();
+
+    const seen: string[] = [];
+    document.addEventListener("ds-lms:course-open", (event) => {
+      seen.push((event as CustomEvent<{ slug: string }>).detail.slug);
+    });
+
+    open.click();
+    expect(seen).toEqual(["adhs-akademie-adult"]);
+  });
+
+  it("stays on the catalogue when the host cancels", async () => {
+    const { element, open } = await catalogue();
+
+    const cancel = (event: Event) => event.preventDefault();
+    document.addEventListener("ds-lms:course-open", cancel);
+
+    open.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    document.removeEventListener("ds-lms:course-open", cancel);
+
+    // Still the list: the host is about to replace this element itself.
+    expect(element.shadowRootForTest?.textContent ?? "").toContain("Zur Fortbildung");
+  });
+
+  it("navigates itself when nothing listens — the WordPress case", async () => {
+    const { element, open } = await catalogue();
+
+    open.click();
+    for (let i = 0; i < 5; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(element.shadowRootForTest?.textContent ?? "").not.toContain("Zur Fortbildung");
+  });
+});
+
 describe("lifecycle", () => {
   it("tears down cleanly when removed", async () => {
     const element = await mount("<ds-lms></ds-lms>");

@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { germanDuration, germanMinutesAndSeconds } from "./duration.js";
+import { clockTime, germanDuration, germanMinutesAndSeconds } from "./duration.js";
 
 describe("germanDuration", () => {
   it("uses the singular for exactly one", () => {
@@ -50,5 +50,40 @@ describe("germanMinutesAndSeconds", () => {
     expect(germanMinutesAndSeconds(1524)).toBe("25:24 Min.");
     expect(germanMinutesAndSeconds(65)).toBe("1:05 Min.");
     expect(germanMinutesAndSeconds(9)).toBe("0:09 Min.");
+  });
+
+  it("stays in minutes past an hour, because it states a length", () => {
+    expect(germanMinutesAndSeconds(5400)).toBe("90:00 Min.");
+  });
+});
+
+describe("clockTime", () => {
+  it("renders the layout's `14:35 / 25:45` positions", () => {
+    expect(clockTime(875)).toBe("14:35");
+    expect(clockTime(1545)).toBe("25:45");
+  });
+
+  it("pads the seconds but not a leading single-digit minute", () => {
+    expect(clockTime(65)).toBe("1:05");
+    expect(clockTime(9)).toBe("0:09");
+    expect(clockTime(0)).toBe("0:00");
+  });
+
+  it("rolls into hours, unlike germanMinutesAndSeconds", () => {
+    // The one behavioural difference between the two, and the reason both
+    // exist: a clock beside a scrub bar reads 1:30:00, a stated length reads
+    // 90:00 Min.
+    expect(clockTime(5400)).toBe("1:30:00");
+    expect(clockTime(3661)).toBe("1:01:01");
+    expect(clockTime(3600)).toBe("1:00:00");
+  });
+
+  it("treats nonsense input as zero rather than rendering NaN", () => {
+    // `video.duration` is NaN until metadata loads, and the player reads it on
+    // the very first render. A "NaN:NaN" beside the scrub bar would be the
+    // first thing every learner saw.
+    expect(clockTime(Number.NaN)).toBe("0:00");
+    expect(clockTime(Number.POSITIVE_INFINITY)).toBe("0:00");
+    expect(clockTime(-5)).toBe("0:00");
   });
 });

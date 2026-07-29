@@ -10,33 +10,18 @@
 
 import type { CourseDetail, EnrolmentState, ModuleState, ChapterState } from "@ds/sdk";
 import { de } from "../locale/de.js";
+import { indexTitles, type ContentMeta } from "../player.js";
 import { GateBadge } from "./primitives.js";
-
-interface ContentMeta {
-  readonly title: string;
-  readonly kind: "video" | "text" | "quiz" | "details" | "material";
-}
 
 export function CourseOutline(props: {
   course: CourseDetail;
   state: EnrolmentState;
   onOpen: (contentId: string) => void;
 }) {
-  // The catalog carries titles and kinds; the enrolment carries gates and
-  // progress. Neither duplicates the other, so the two are zipped by id here.
-  const meta = new Map<string, ContentMeta>();
-  const chapterTitles = new Map<string, string>();
-  const moduleTitles = new Map<string, string>();
-
-  for (const module of props.course.modules) {
-    moduleTitles.set(module.id, module.title);
-    for (const chapter of module.chapters) {
-      chapterTitles.set(chapter.id, chapter.title);
-      for (const content of chapter.contents) {
-        meta.set(content.id, { title: content.title, kind: content.kind });
-      }
-    }
-  }
+  // The catalogue carries titles and kinds; the enrolment carries gates and
+  // progress. Zipping them is `indexTitles`, shared with the player's sidebar
+  // so the two outlines cannot drift apart in what they call the same chapter.
+  const titles = indexTitles(props.course);
 
   return (
     <ol className="space-y-4">
@@ -45,9 +30,9 @@ export function CourseOutline(props: {
           key={module.id}
           module={module}
           ordinal={index + 1}
-          title={moduleTitles.get(module.id) ?? ""}
-          chapterTitles={chapterTitles}
-          meta={meta}
+          title={titles.modules.get(module.id) ?? ""}
+          chapterTitles={titles.chapters}
+          meta={titles.contents}
           onOpen={props.onOpen}
         />
       ))}
@@ -59,8 +44,8 @@ function ModuleRow(props: {
   module: ModuleState;
   ordinal: number;
   title: string;
-  chapterTitles: Map<string, string>;
-  meta: Map<string, ContentMeta>;
+  chapterTitles: ReadonlyMap<string, string>;
+  meta: ReadonlyMap<string, ContentMeta>;
   onOpen: (contentId: string) => void;
 }) {
   return (
@@ -96,8 +81,8 @@ function ModuleRow(props: {
 function ChapterRow(props: {
   chapter: ChapterState;
   title: string;
-  chapterTitles: Map<string, string>;
-  meta: Map<string, ContentMeta>;
+  chapterTitles: ReadonlyMap<string, string>;
+  meta: ReadonlyMap<string, ContentMeta>;
   onOpen: (contentId: string) => void;
 }) {
   const blocker =

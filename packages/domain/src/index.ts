@@ -141,7 +141,7 @@ export type {
   TenantResolutionResult,
 } from "./authorization.js";
 
-export { germanDuration, germanMinutesAndSeconds } from "./duration.js";
+export { clockTime, germanDuration, germanMinutesAndSeconds } from "./duration.js";
 
 export {
   backoffMinutes,

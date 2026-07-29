@@ -170,6 +170,11 @@ portal (`apps/portal`) does the same thing in React, with a token it obtained
 from Keycloak itself. Those two are the whole of what a **host adapter** is
 (ADR-0007): mount the element, hand it a way to get a token.
 
+Omit `course` and the widget opens the catalogue instead. A host that wants each
+course to have its own URL listens for `ds-lms:course-open` and calls
+`preventDefault()` — that is the portal, and it is why the portal has no learner
+screen of its own.
+
 ---
 
 ## Status

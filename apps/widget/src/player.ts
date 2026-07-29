@@ -1,0 +1,198 @@
+/**
+ * The player screen's derivations (layout §4.3).
+ *
+ * Separate from the components because every one of these is a question with a
+ * right answer that a rendering test would not ask: *which* module is "Modul 3
+ * von 5" counting, and which of four icons an item gets. Both are read by a
+ * learner as a statement about their own progress, and both are easy to get
+ * subtly wrong in JSX where nothing checks them.
+ *
+ * Nothing here decides anything. `itemIcon` maps a gate and a status the
+ * **server** produced onto a glyph; it never infers a gate from progress, and a
+ * locked item stays locked whatever else is true. `locateContent` walks the
+ * catalogue tree the browse response already returned. Neither reads a clock,
+ * fetches, or holds state — the same reasons `packages/domain` is pure apply
+ * one layer out, even though this file is allowed to import SDK types.
+ */
+
+import type { ContentKind, CourseDetail, GateStatus, ProgressSummary } from "@ds/sdk";
+
+/**
+ * The five states the sidebar draws.
+ *
+ * The layout names four — completed (check), in progress (play), locked
+ * (padlock), paused. `available` is the fifth because the layout's screenshot
+ * happens not to contain one: an item the learner may reach but has not opened.
+ * Giving it the "in progress" play glyph would tell them they had started
+ * something they had not.
+ */
+export type ItemState = "completed" | "playing" | "paused" | "available" | "locked";
+
+export interface ContentLocation {
+  readonly moduleId: string;
+  /** Zero-based. `moduleIndex + 1` is the "3" in "Modul 3 von 5". */
+  readonly moduleIndex: number;
+  readonly chapterId: string;
+}
+
+/**
+ * Where a content sits in the course tree.
+ *
+ * The player needs this to say "Modul 3 von 5" and to open the sidebar on the
+ * right module. It searches rather than being told, because the screen graph
+ * navigates by content id alone — a module id threaded through every call site
+ * would be a second copy of this fact, free to disagree with the first.
+ *
+ * `undefined` for an unknown id rather than a guess: a caller that cannot place
+ * the content shows no module counter, which is better than showing the wrong
+ * one.
+ */
+export function locateContent(
+  course: Pick<CourseDetail, "modules">,
+  contentId: string,
+): ContentLocation | undefined {
+  for (const [moduleIndex, module] of course.modules.entries()) {
+    for (const chapter of module.chapters) {
+      for (const content of chapter.contents) {
+        if (content.id === contentId) {
+          return { moduleId: module.id, moduleIndex, chapterId: chapter.id };
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Which glyph an outline item gets.
+ *
+ * The order of the tests is the whole content of this function:
+ *
+ * 1. **Locked wins over everything.** A locked item with stale progress on it —
+ *    a chapter reordered behind one the learner has not finished — is locked.
+ *    Drawing a check on it would say the gate had been satisfied.
+ * 2. **Completed beats current.** Re-opening a finished video must not turn its
+ *    check back into a play arrow; the learner would read that as the
+ *    completion having been withdrawn.
+ * 3. **Current is playing, started-but-not-current is paused.** The layout
+ *    distinguishes them, and this is the only reading that makes "paused" mean
+ *    something: it is where the learner stopped, waiting to be resumed.
+ */
+export function itemIcon(input: {
+  gate: GateStatus;
+  progress: Pick<ProgressSummary, "status">;
+  current: boolean;
+}): ItemState {
+  if (input.gate === "locked") return "locked";
+  if (input.gate === "completed" || input.progress.status === "completed") {
+    return "completed";
+  }
+  if (input.current) return "playing";
+  if (input.progress.status === "in_progress") return "paused";
+  return "available";
+}
+
+export interface ContentMeta {
+  readonly title: string;
+  readonly kind: ContentKind;
+}
+
+export interface CourseTitles {
+  readonly modules: ReadonlyMap<string, string>;
+  readonly chapters: ReadonlyMap<string, string>;
+  readonly contents: ReadonlyMap<string, ContentMeta>;
+}
+
+/**
+ * Titles and kinds, by id.
+ *
+ * Two responses describe the same tree and neither duplicates the other: the
+ * catalogue carries titles and kinds, the enrolment carries gates and progress.
+ * Every outline in the widget therefore has to zip them, and this is the one
+ * place that does it — the Zertifizierung tab and the player's sidebar were
+ * otherwise building the same three maps from the same loop.
+ *
+ * The catalogue is deliberately the side without URLs (see `ContentSummary` in
+ * the contract), so nothing reachable through these maps can leak a gated file.
+ */
+export function indexTitles(course: Pick<CourseDetail, "modules">): CourseTitles {
+  const modules = new Map<string, string>();
+  const chapters = new Map<string, string>();
+  const contents = new Map<string, ContentMeta>();
+
+  for (const module of course.modules) {
+    modules.set(module.id, module.title);
+    for (const chapter of module.chapters) {
+      chapters.set(chapter.id, chapter.title);
+      for (const content of chapter.contents) {
+        contents.set(content.id, { title: content.title, kind: content.kind });
+      }
+    }
+  }
+
+  return { modules, chapters, contents };
+}
+
+export interface QuizLocation {
+  readonly id: string;
+  readonly gate: GateStatus;
+}
+
+/**
+ * The course's Lernerfolgskontrolle, if it has one, with the server's gate.
+ *
+ * The player's second content tab is the quiz, and it has to know both where it
+ * is and whether it is open yet. The gate is looked up in `EnrolmentState`
+ * rather than inferred from module completion here — the API decides what is
+ * reachable, and a second rule in the widget would be a client-side gate that
+ * happened to agree until it did not.
+ *
+ * The first quiz wins. A course with per-module Teilprüfungen would need more
+ * than this, and Teilprüfung is explicitly out of scope — see
+ * `docs/requirements/medice-adhs.md` §6.1.
+ */
+export function findQuizContent(
+  course: Pick<CourseDetail, "modules">,
+  state: {
+    modules: readonly {
+      chapters: readonly { contents: readonly { id: string; gate: GateStatus }[] }[];
+    }[];
+  },
+): QuizLocation | undefined {
+  const gates = new Map<string, GateStatus>();
+  for (const module of state.modules) {
+    for (const chapter of module.chapters) {
+      for (const content of chapter.contents) gates.set(content.id, content.gate);
+    }
+  }
+
+  for (const module of course.modules) {
+    for (const chapter of module.chapters) {
+      for (const content of chapter.contents) {
+        if (content.kind !== "quiz") continue;
+        const gate = gates.get(content.id);
+        // No gate means the enrolment does not know this content — treat it as
+        // locked rather than as open.
+        return { id: content.id, gate: gate ?? "locked" };
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The video's length, preferring the authored figure.
+ *
+ * `lesson.durationSec` is what the server computes the watch percentage
+ * against. The media element's own `duration` can differ — a re-encode, a
+ * container reporting a different length — and if the two disagree the learner
+ * must see the one the gate uses, or "25:45" and "80 % angesehen" become two
+ * numbers about different videos.
+ *
+ * The element's duration is the fallback only, for content authored before
+ * lengths were required. `NaN` before metadata loads is handled by `clockTime`.
+ */
+export function playbackDuration(authoredSec: number | null, elementSec: number): number {
+  if (authoredSec !== null && authoredSec > 0) return authoredSec;
+  return Number.isFinite(elementSec) ? elementSec : 0;
+}

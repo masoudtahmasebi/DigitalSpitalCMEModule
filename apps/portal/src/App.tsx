@@ -27,10 +27,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { de } from "./locale/de.js";
 import { readConfig } from "./config.js";
 import { createAuth, tokenProviderFor } from "./auth.js";
-import { createPortalClient } from "./api.js";
 import { parseRoute, routePath, type Route } from "./routes.js";
-import { Alert, Catalogue } from "./components/Catalogue.js";
-import { CourseMount } from "./components/CourseMount.js";
+import { WidgetMount } from "./components/WidgetMount.js";
 
 type AuthState = "checking" | "anonymous" | "signed-in" | "failed";
 
@@ -122,24 +120,9 @@ function Routed(props: {
 
   const tokenProvider = useMemo(() => tokenProviderFor(auth), [auth]);
 
-  const client = useMemo(
-    () =>
-      createPortalClient(
-        config,
-        async () => auth.currentSession()?.accessToken,
-        // No silent refresh: the portal holds no refresh token, deliberately.
-        // `beginLogin` navigates away, so nothing resumes after this.
-        async () => {
-          await auth.beginLogin();
-          return undefined;
-        },
-      ),
-    [config, auth],
-  );
-
-  if (route.kind === "course") {
-    return (
-      <div className="space-y-4">
+  return (
+    <div className="space-y-4">
+      {route.kind === "course" ? (
         <button
           type="button"
           className="ds-button-secondary"
@@ -147,20 +130,34 @@ function Routed(props: {
         >
           {de.nav.back}
         </button>
-        <CourseMount
-          config={config}
-          courseSlug={route.slug}
-          tokenProvider={tokenProvider}
-        />
-      </div>
-    );
-  }
+      ) : null}
 
+      <WidgetMount
+        config={config}
+        courseSlug={route.kind === "course" ? route.slug : undefined}
+        tokenProvider={tokenProvider}
+        onOpenCourse={(slug) => navigate({ kind: "course", slug })}
+      />
+    </div>
+  );
+}
+
+/**
+ * The portal's only error surface.
+ *
+ * Two states reach it — a misconfigured deployment and a failed sign-in — and
+ * both happen before the widget is mounted. Everything after that is the
+ * widget's own, inside its shadow root, with its own copy.
+ */
+function Alert(props: { children: React.ReactNode }) {
   return (
-    <Catalogue
-      client={client}
-      onOpenCourse={(slug) => navigate({ kind: "course", slug })}
-    />
+    <div
+      className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+      role="alert"
+    >
+      <p className="font-semibold">{de.error.title}</p>
+      {props.children}
+    </div>
   );
 }
 

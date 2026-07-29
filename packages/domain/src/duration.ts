@@ -44,3 +44,21 @@ export function germanMinutesAndSeconds(totalSec: number): string {
   const seconds = safe % SECONDS_PER_MINUTE;
   return `${minutes}:${String(seconds).padStart(2, "0")} Min.`;
 }
+
+/**
+ * "14:35" — a media timeline position, as the player shows it (layout §4.3).
+ *
+ * Deliberately not `germanMinutesAndSeconds` without its suffix. That one is a
+ * *length* and stays in minutes however long it gets, because "90:00 Min." is
+ * how a module list states a duration. This one is a *clock reading* beside a
+ * scrub bar, and rolls into hours at 3600 s — a player showing "90:00 / 95:00"
+ * would be the only clock on the page not behaving like one.
+ */
+export function clockTime(totalSec: number): string {
+  const safe = Number.isFinite(totalSec) && totalSec > 0 ? Math.floor(totalSec) : 0;
+  const hours = Math.floor(safe / SECONDS_PER_HOUR);
+  const minutes = Math.floor((safe % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
+  const seconds = safe % SECONDS_PER_MINUTE;
+  const mm = hours === 0 ? String(minutes) : String(minutes).padStart(2, "0");
+  return `${hours === 0 ? "" : `${hours}:`}${mm}:${String(seconds).padStart(2, "0")}`;
+}
