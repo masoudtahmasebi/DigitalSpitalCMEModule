@@ -24,6 +24,7 @@ advertisement.
 | [0008](0008-erasure-is-pseudonymisation.md)     | Erasure means pseudonymisation, not deletion                   | Accepted |
 | [0009](0009-no-third-party-frontend-assets.md)  | No third-party frontend assets; fonts are uploaded             | Accepted |
 | [0010](0010-extension-points.md)                | Extension points, and where they are forbidden                 | Accepted |
+| [0011](0011-in-house-video-player.md)           | The video player is ours, not a library                        | Accepted |
 
 ## Writing a new one
 

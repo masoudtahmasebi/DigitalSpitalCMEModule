@@ -1874,10 +1874,37 @@ components:
       type: string
       enum: [video, text, quiz, details, material]
 
+    MediaSource:
+      type: object
+      description: |
+        One playable rendition. A browser takes the first `<source>` whose
+        `type` it can play and silently skips the rest, so the **order of the
+        list is the format negotiation** — adaptive streams first, so Safari
+        gets HLS and everything else falls through to the progressive file with
+        no user-agent detection anywhere. `orderSources` in `@ds/domain` decides
+        that order; a client renders the list as given.
+      required: [url, mimeType, label]
+      properties:
+        url:
+          type: string
+          description: |
+            Already resolved — signed if it lives in our storage, passed through
+            if the customer serves it. Short-lived, like every other media URL
+            in this contract.
+        mimeType:
+          type: string
+          description: |
+            Validated on write against a closed list. A `type` no browser
+            recognises produces a source that is skipped in silence, which
+            presents as a video that will not play with nothing in the console.
+        label:
+          type: [string, "null"]
+          description: Free text for the quality menu — "720p". Null when unlabelled.
+
     LessonContent:
       type: object
       description: |
-        A lesson's actual payload. The **only** shape carrying `videoUrl` or
+        A lesson's actual payload. The **only** shape carrying media URLs or
         `body`, and reachable only through the sequence gate — see the
         `getLesson` description.
       required:
@@ -1886,18 +1913,33 @@ components:
           kind,
           title,
           durationSec,
-          videoUrl,
+          sources,
+          posterUrl,
           captionsUrl,
           body,
           lastPositionSec,
           watchedPercent,
+          watchedSegments,
         ]
       properties:
         id: { type: string, format: uuid }
         kind: { $ref: "#/components/schemas/ContentKind" }
         title: { type: string }
         durationSec: { type: [integer, "null"] }
-        videoUrl: { type: [string, "null"] }
+        sources:
+          type: array
+          description: |
+            Empty for anything that is not playable media, and for a video whose
+            renditions could not be resolved — an `s3://` key belonging to
+            another customer resolves to nothing rather than to an error, the
+            same degradation the single URL used to have.
+          items: { $ref: "#/components/schemas/MediaSource" }
+        posterUrl:
+          type: [string, "null"]
+          description: |
+            Still frame shown before playback. Without one the element renders a
+            black rectangle until the first frame decodes, and the layout's
+            centred play button sits on nothing.
         captionsUrl:
           type: [string, "null"]
           description: |
@@ -1920,6 +1962,18 @@ components:
           description: |
             The server's figure for this content, so the player shows the same
             number the completion gate uses.
+        watchedSegments:
+          type: array
+          description: |
+            The **merged** intervals this learner has watched, so the scrub bar
+            can shade what has been covered and survive a reload doing it.
+
+            Returned rather than recomputed on the client for the reason the
+            percentage is: these are the very intervals `watchedPercent` was
+            derived from, so the bar and the number cannot tell different
+            stories. They are the caller's own data and disclose nothing — the
+            endpoint is already behind the sequence gate.
+          items: { $ref: "#/components/schemas/WatchedSegment" }
 
     WatchedSegment:
       type: object
@@ -1965,7 +2019,7 @@ components:
     ProgressResult:
       type: object
       description: The server's own recomputed figures, never the client's.
-      required: [contentId, watchedPercent, status, accepted, rejected]
+      required: [contentId, watchedPercent, status, accepted, rejected, watchedSegments]
       properties:
         contentId: { type: string, format: uuid }
         watchedPercent: { type: integer, minimum: 0, maximum: 100 }
@@ -1982,6 +2036,15 @@ components:
             Named rather than silently dropped, so a client bug or a tampering
             attempt is visible.
           items: { $ref: "#/components/schemas/RejectedSegment" }
+        watchedSegments:
+          type: array
+          description: |
+            The merged union after this report, so the player's coverage bar
+            redraws from the server's answer rather than from what it believed
+            it had sent. The difference is visible whenever a segment was
+            rejected: the client's optimistic bar would show credit the gate did
+            not give.
+          items: { $ref: "#/components/schemas/WatchedSegment" }
 
     Material:
       type: object
@@ -2674,7 +2737,8 @@ components:
           kind,
           title,
           body,
-          videoUrl,
+          sources,
+          posterUrl,
           captionsUrl,
           durationSec,
           fileUrl,
@@ -2688,7 +2752,16 @@ components:
         kind: { $ref: "#/components/schemas/ContentKind" }
         title: { type: string }
         body: { type: [string, "null"] }
-        videoUrl: { type: [string, "null"] }
+        sources:
+          type: array
+          description: |
+            The stored list, **unresolved** — an `s3://` reference is returned as
+            written. The console edits what is stored; presigning here would
+            hand an author a URL that expires while they are still looking at
+            the form, and would put a live capability in a response whose whole
+            purpose is editing.
+          items: { $ref: "#/components/schemas/MediaSourceWrite" }
+        posterUrl: { type: [string, "null"] }
         captionsUrl: { type: [string, "null"] }
         durationSec: { type: [integer, "null"] }
         fileUrl: { type: [string, "null"] }
@@ -2786,7 +2859,16 @@ components:
         kind: { $ref: "#/components/schemas/ContentKind" }
         title: { type: string, minLength: 1, maxLength: 300 }
         body: { type: [string, "null"], maxLength: 20000 }
-        videoUrl: { type: [string, "null"], format: uri, maxLength: 2000 }
+        sources:
+          type: array
+          maxItems: 10
+          description: |
+            Playable renditions, in the author's order. Required to be non-empty
+            for a `video`; ignored for every other kind. Capped because a
+            handful of encodings is the real use and an unbounded list is a
+            payload with no reason to be one.
+          items: { $ref: "#/components/schemas/MediaSourceWrite" }
+        posterUrl: { type: [string, "null"], format: uri, maxLength: 2000 }
         captionsUrl:
           type: [string, "null"]
           format: uri
@@ -2800,6 +2882,25 @@ components:
         fileUrl: { type: [string, "null"], format: uri, maxLength: 2000 }
         fileSize: { type: [integer, "null"], minimum: 0 }
         mimeType: { type: [string, "null"], maxLength: 200 }
+
+    MediaSourceWrite:
+      type: object
+      description: |
+        A rendition as an author supplies it. `url` accepts an `s3://` reference
+        as well as an absolute URL, which is why it carries no `format: uri` —
+        the media resolver, not this document, decides what a stored reference
+        may be.
+      required: [url, mimeType]
+      properties:
+        url: { type: string, minLength: 1, maxLength: 2000 }
+        mimeType:
+          type: string
+          maxLength: 100
+          description: |
+            One of the types `@ds/domain` accepts. Refused with a 422 naming the
+            field rather than stored, because a browser skips an unrecognised
+            `type` in silence and the author would ship a video nobody can play.
+        label: { type: [string, "null"], maxLength: 60 }
 
     StructureOrder:
       type: object

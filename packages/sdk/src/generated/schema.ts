@@ -1184,7 +1184,31 @@ export interface components {
         /** @enum {string} */
         ContentKind: "video" | "text" | "quiz" | "details" | "material";
         /**
-         * @description A lesson's actual payload. The **only** shape carrying `videoUrl` or
+         * @description One playable rendition. A browser takes the first `<source>` whose
+         *     `type` it can play and silently skips the rest, so the **order of the
+         *     list is the format negotiation** — adaptive streams first, so Safari
+         *     gets HLS and everything else falls through to the progressive file with
+         *     no user-agent detection anywhere. `orderSources` in `@ds/domain` decides
+         *     that order; a client renders the list as given.
+         */
+        MediaSource: {
+            /**
+             * @description Already resolved — signed if it lives in our storage, passed through
+             *     if the customer serves it. Short-lived, like every other media URL
+             *     in this contract.
+             */
+            url: string;
+            /**
+             * @description Validated on write against a closed list. A `type` no browser
+             *     recognises produces a source that is skipped in silence, which
+             *     presents as a video that will not play with nothing in the console.
+             */
+            mimeType: string;
+            /** @description Free text for the quality menu — "720p". Null when unlabelled. */
+            label: string | null;
+        };
+        /**
+         * @description A lesson's actual payload. The **only** shape carrying media URLs or
          *     `body`, and reachable only through the sequence gate — see the
          *     `getLesson` description.
          */
@@ -1194,7 +1218,19 @@ export interface components {
             kind: components["schemas"]["ContentKind"];
             title: string;
             durationSec: number | null;
-            videoUrl: string | null;
+            /**
+             * @description Empty for anything that is not playable media, and for a video whose
+             *     renditions could not be resolved — an `s3://` key belonging to
+             *     another customer resolves to nothing rather than to an error, the
+             *     same degradation the single URL used to have.
+             */
+            sources: components["schemas"]["MediaSource"][];
+            /**
+             * @description Still frame shown before playback. Without one the element renders a
+             *     black rectangle until the first frame decodes, and the layout's
+             *     centred play button sits on nothing.
+             */
+            posterUrl: string | null;
             /**
              * @description WebVTT captions for the video, signed with the same lifetime as
              *     `videoUrl`. WCAG 1.2.2 (Captions, Prerecorded) is **Level A**, and
@@ -1212,6 +1248,17 @@ export interface components {
              *     number the completion gate uses.
              */
             watchedPercent: number;
+            /**
+             * @description The **merged** intervals this learner has watched, so the scrub bar
+             *     can shade what has been covered and survive a reload doing it.
+             *
+             *     Returned rather than recomputed on the client for the reason the
+             *     percentage is: these are the very intervals `watchedPercent` was
+             *     derived from, so the bar and the number cannot tell different
+             *     stories. They are the caller's own data and disclose nothing — the
+             *     endpoint is already behind the sequence gate.
+             */
+            watchedSegments: components["schemas"]["WatchedSegment"][];
         };
         /** @description One played interval, in seconds from the start of the media. */
         WatchedSegment: {
@@ -1247,6 +1294,14 @@ export interface components {
              *     attempt is visible.
              */
             rejected: components["schemas"]["RejectedSegment"][];
+            /**
+             * @description The merged union after this report, so the player's coverage bar
+             *     redraws from the server's answer rather than from what it believed
+             *     it had sent. The difference is visible whenever a segment was
+             *     rejected: the client's optimistic bar would show credit the gate did
+             *     not give.
+             */
+            watchedSegments: components["schemas"]["WatchedSegment"][];
         };
         /**
          * @description One downloadable item. `fileUrl` is **null while locked** — the gate is
@@ -1700,7 +1755,15 @@ export interface components {
             kind: components["schemas"]["ContentKind"];
             title: string;
             body: string | null;
-            videoUrl: string | null;
+            /**
+             * @description The stored list, **unresolved** — an `s3://` reference is returned as
+             *     written. The console edits what is stored; presigning here would
+             *     hand an author a URL that expires while they are still looking at
+             *     the form, and would put a live capability in a response whose whole
+             *     purpose is editing.
+             */
+            sources: components["schemas"]["MediaSourceWrite"][];
+            posterUrl: string | null;
             captionsUrl: string | null;
             durationSec: number | null;
             fileUrl: string | null;
@@ -1772,8 +1835,15 @@ export interface components {
             kind: components["schemas"]["ContentKind"];
             title: string;
             body?: string | null;
+            /**
+             * @description Playable renditions, in the author's order. Required to be non-empty
+             *     for a `video`; ignored for every other kind. Capped because a
+             *     handful of encodings is the real use and an unbounded list is a
+             *     payload with no reason to be one.
+             */
+            sources?: components["schemas"]["MediaSourceWrite"][];
             /** Format: uri */
-            videoUrl?: string | null;
+            posterUrl?: string | null;
             /**
              * Format: uri
              * @description WebVTT. Owed for every video carrying speech — WCAG 1.2.2 is Level
@@ -1787,6 +1857,22 @@ export interface components {
             fileUrl?: string | null;
             fileSize?: number | null;
             mimeType?: string | null;
+        };
+        /**
+         * @description A rendition as an author supplies it. `url` accepts an `s3://` reference
+         *     as well as an absolute URL, which is why it carries no `format: uri` —
+         *     the media resolver, not this document, decides what a stored reference
+         *     may be.
+         */
+        MediaSourceWrite: {
+            url: string;
+            /**
+             * @description One of the types `@ds/domain` accepts. Refused with a 422 naming the
+             *     field rather than stored, because a browser skips an unrecognised
+             *     `type` in silence and the author would ship a video nobody can play.
+             */
+            mimeType: string;
+            label?: string | null;
         };
         /**
          * @description Ids only — this shape moves things, it never edits them. A chapter

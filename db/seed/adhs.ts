@@ -316,14 +316,30 @@ async function main(): Promise<void> {
           [customerId, moduleId, chapterOrdinal, chapter.title],
         );
 
+        // Two renditions and a poster, so the seeded course exercises the
+        // player's format negotiation rather than the single-source path only.
+        // HLS is listed first: the browser takes the first `type` it can play,
+        // so Safari gets the adaptive stream and everything else falls through
+        // to the MP4 (`orderSources` in @ds/domain).
+        const mediaBase = `https://media.example.org/${COURSE_SLUG}/${moduleOrdinal + 1}`;
         await pool.query(
-          `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, video_url, duration_sec)
-           VALUES ($1,$2,0,'video',$3,$4,$5)`,
+          `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title,
+                                 media_sources, poster_url, duration_sec)
+           VALUES ($1,$2,0,'video',$3,$4::jsonb,$5,$6)`,
           [
             customerId,
             chapterId,
             chapter.videoTitle,
-            `https://media.example.org/${COURSE_SLUG}/${moduleOrdinal + 1}.mp4`,
+            JSON.stringify([
+              {
+                url: `${mediaBase}.m3u8`,
+                mimeType: "application/vnd.apple.mpegurl",
+                label: "Automatisch",
+              },
+              { url: `${mediaBase}-720.mp4`, mimeType: "video/mp4", label: "720p" },
+              { url: `${mediaBase}-360.mp4`, mimeType: "video/mp4", label: "360p" },
+            ]),
+            `${mediaBase}.jpg`,
             chapter.durationSec,
           ],
         );

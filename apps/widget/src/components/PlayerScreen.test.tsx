@@ -159,11 +159,15 @@ function lesson(overrides: Partial<LessonContent> = {}): LessonContent {
     kind: "video",
     title: "Video 3",
     durationSec: 1545,
-    videoUrl: "https://example.invalid/v3.mp4",
+    sources: [
+      { url: "https://example.invalid/v3.mp4", mimeType: "video/mp4", label: null },
+    ],
+    posterUrl: null,
     captionsUrl: null,
     body: "Erste Zusammenfassung.\n\nZweiter Absatz.",
     lastPositionSec: 875,
     watchedPercent: 40,
+    watchedSegments: [],
     ...overrides,
   } as LessonContent;
 }
@@ -220,7 +224,7 @@ describe("the progress panel", () => {
 
   it("omits the timeline for a lesson that has none", () => {
     renderPlayer({
-      lesson: lesson({ kind: "text", videoUrl: null, durationSec: null, id: "v3" }),
+      lesson: lesson({ kind: "text", sources: [], durationSec: null, id: "v3" }),
     });
     expect(screen.queryByText(/\d+:\d\d \/ /)).toBeNull();
     // The module counter and the course figure are not about the media, so
@@ -296,7 +300,7 @@ describe("the content tabs", () => {
   it("does not repeat a text lesson's body under Zusammenfassung", () => {
     // The body is the lesson and is already on screen above; printing it twice
     // would present one thing as two.
-    renderPlayer({ lesson: lesson({ kind: "text", videoUrl: null }) });
+    renderPlayer({ lesson: lesson({ kind: "text", sources: [] }) });
     expect(
       screen.getByText("Für diesen Abschnitt ist keine Zusammenfassung hinterlegt."),
     ).toBeTruthy();
@@ -318,7 +322,7 @@ describe("the controls", () => {
   });
 
   it("has no pause control on a lesson with no timeline", () => {
-    renderPlayer({ lesson: lesson({ kind: "text", videoUrl: null }) });
+    renderPlayer({ lesson: lesson({ kind: "text", sources: [] }) });
     expect(screen.queryByRole("button", { name: "Fortbildung pausieren" })).toBeNull();
   });
 
@@ -334,7 +338,7 @@ describe("the Modul Übersicht sidebar", () => {
   it("opens on the module being watched", () => {
     renderPlayer();
     const toggle = screen.getByRole("button", {
-      name: 'Modul „Modul 3" ein- oder ausklappen',
+      name: "Modul „Modul 3“ ein- oder ausklappen",
     });
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
   });
@@ -345,7 +349,7 @@ describe("the Modul Übersicht sidebar", () => {
     renderPlayer();
     for (const n of [1, 2, 3, 4, 5]) {
       expect(
-        screen.getByRole("button", { name: `Modul „Modul ${n}" ein- oder ausklappen` }),
+        screen.getByRole("button", { name: `Modul „Modul ${n}“ ein- oder ausklappen` }),
       ).toBeTruthy();
     }
   });
@@ -358,7 +362,7 @@ describe("the Modul Übersicht sidebar", () => {
     expect(current.getAttribute("aria-current")).toBe("true");
 
     fireEvent.click(
-      screen.getByRole("button", { name: 'Modul „Modul 5" ein- oder ausklappen' }),
+      screen.getByRole("button", { name: "Modul „Modul 5“ ein- oder ausklappen" }),
     );
     const locked = screen.getByRole("button", { name: /Video 5/ }) as HTMLButtonElement;
     expect(locked.disabled).toBe(true);

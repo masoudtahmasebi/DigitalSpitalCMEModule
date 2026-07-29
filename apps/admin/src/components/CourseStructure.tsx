@@ -40,7 +40,9 @@ import type {
   AuthoringModule,
   CourseStructure as Structure,
   ContentWrite,
+  MediaSourceWrite,
 } from "@ds/sdk";
+import { MEDIA_MIME_TYPES } from "@ds/domain";
 import { de } from "../locale/de.js";
 import { nullable, swap } from "../drafts.js";
 import {
@@ -583,7 +585,10 @@ function ContentForm(props: {
   const [kind, setKind] = useState<ContentKind>(initial?.kind ?? "video");
   const [title, setTitle] = useState(initial?.title ?? "");
   const [body, setBody] = useState(initial?.body ?? "");
-  const [videoUrl, setVideoUrl] = useState(initial?.videoUrl ?? "");
+  const [sources, setSources] = useState<MediaSourceWrite[]>(
+    initial?.sources?.map((source) => ({ ...source })) ?? [],
+  );
+  const [posterUrl, setPosterUrl] = useState(initial?.posterUrl ?? "");
   const [captionsUrl, setCaptionsUrl] = useState(initial?.captionsUrl ?? "");
   const [durationSec, setDurationSec] = useState(
     initial?.durationSec === null || initial?.durationSec === undefined
@@ -607,7 +612,10 @@ function ContentForm(props: {
               kind,
               title: title.trim(),
               body: nullable(body),
-              videoUrl: nullable(videoUrl),
+              // Blank rows are dropped rather than sent: an author who added a
+              // row and changed their mind should not get a 422 about it.
+              sources: sources.filter((source) => source.url.trim() !== ""),
+              posterUrl: nullable(posterUrl),
               captionsUrl: nullable(captionsUrl),
               durationSec: durationSec.trim() === "" ? null : Number(durationSec),
               fileUrl: nullable(fileUrl),
@@ -632,40 +640,52 @@ function ContentForm(props: {
       </div>
 
       {kind === "video" ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={de.structure.videoUrl} htmlFor={id("video")}>
-            <TextInput
-              id={id("video")}
-              value={videoUrl}
-              maxLength={2000}
-              onChange={setVideoUrl}
-            />
-          </Field>
-          <Field
-            label={de.structure.durationSec}
-            hint={de.structure.durationHint}
-            htmlFor={id("duration")}
-          >
-            <TextInput
-              id={id("duration")}
-              value={durationSec}
-              type="number"
-              onChange={setDurationSec}
-            />
-          </Field>
-          <Field
-            label={de.structure.captionsUrl}
-            hint={de.structure.captionsHint}
-            htmlFor={id("captions")}
-          >
-            <TextInput
-              id={id("captions")}
-              value={captionsUrl}
-              maxLength={2000}
-              onChange={setCaptionsUrl}
-            />
-          </Field>
-        </div>
+        <>
+          <SourcesEditor sources={sources} onChange={setSources} idFor={id} />
+
+          {sources.filter((source) => source.url.trim() !== "").length === 0 ? (
+            <Notice tone="warning">{de.structure.sourcesMissing}</Notice>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field
+              label={de.structure.durationSec}
+              hint={de.structure.durationHint}
+              htmlFor={id("duration")}
+            >
+              <TextInput
+                id={id("duration")}
+                value={durationSec}
+                type="number"
+                onChange={setDurationSec}
+              />
+            </Field>
+            <Field
+              label={de.structure.posterUrl}
+              hint={de.structure.posterHint}
+              htmlFor={id("poster")}
+            >
+              <TextInput
+                id={id("poster")}
+                value={posterUrl}
+                maxLength={2000}
+                onChange={setPosterUrl}
+              />
+            </Field>
+            <Field
+              label={de.structure.captionsUrl}
+              hint={de.structure.captionsHint}
+              htmlFor={id("captions")}
+            >
+              <TextInput
+                id={id("captions")}
+                value={captionsUrl}
+                maxLength={2000}
+                onChange={setCaptionsUrl}
+              />
+            </Field>
+          </div>
+        </>
       ) : null}
 
       {/*
@@ -844,3 +864,114 @@ function EditForm(props: {
     </form>
   );
 }
+
+/**
+ * The renditions of one video.
+ *
+ * ## Why the format is a dropdown and not a text field
+ *
+ * The value reaches a browser as a `<source type>` attribute and is matched
+ * *literally*. `mp4`, `video/MP4 ` or a stray space produces a source every
+ * browser silently skips — presenting as a video that will not play, with
+ * nothing in the console to explain it. The server refuses an unknown type with
+ * a 422, but a dropdown means the author never reaches that refusal.
+ *
+ * ## Why the order is editable
+ *
+ * The browser takes the first `type` it can play, so order **is** the format
+ * negotiation: an adaptive stream listed after the MP4 is an adaptive stream
+ * Safari never uses. `orderSources` re-sorts adaptive ahead of progressive when
+ * the lesson is served, so getting this wrong is recoverable — but within a
+ * group the author's order is preserved and is theirs to decide.
+ */
+function SourcesEditor(props: {
+  sources: readonly MediaSourceWrite[];
+  onChange: (next: MediaSourceWrite[]) => void;
+  idFor: (field: string) => string;
+}) {
+  const patch = (index: number, change: Partial<MediaSourceWrite>) =>
+    props.onChange(
+      props.sources.map((source, i) => (i === index ? { ...source, ...change } : source)),
+    );
+
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-sm font-medium text-gray-900">
+        {de.structure.sources}
+      </legend>
+      <p className="text-xs text-gray-500">{de.structure.sourcesHint}</p>
+
+      <ul className="space-y-2">
+        {props.sources.map((source, index) => (
+          // Index-keyed deliberately: a row has no id until it is saved, and
+          // keying on the URL would remount the input on every keystroke and
+          // lose focus after each character.
+          <li key={index} className="grid gap-2 sm:grid-cols-[1fr_11rem_8rem_auto]">
+            <TextInput
+              id={props.idFor(`source-url-${index}`)}
+              aria-label={de.structure.sourceUrl}
+              value={source.url}
+              maxLength={2000}
+              onChange={(url) => patch(index, { url })}
+            />
+            <Select
+              id={props.idFor(`source-type-${index}`)}
+              aria-label={de.structure.sourceType}
+              value={source.mimeType}
+              options={MEDIA_TYPE_OPTIONS}
+              onChange={(mimeType) => patch(index, { mimeType })}
+            />
+            <TextInput
+              id={props.idFor(`source-label-${index}`)}
+              aria-label={de.structure.sourceLabel}
+              value={source.label ?? ""}
+              maxLength={60}
+              onChange={(label) => patch(index, { label })}
+            />
+            <IconButton
+              label={de.structure.removeSource(source.url === "" ? "—" : source.url)}
+              glyph="✕"
+              onClick={() => props.onChange(props.sources.filter((_, i) => i !== index))}
+            />
+          </li>
+        ))}
+      </ul>
+
+      <Button
+        variant="secondary"
+        onClick={() =>
+          props.onChange([
+            ...props.sources,
+            // Defaults to MP4: it is the rendition every course has, and an
+            // author adding a second one changes the dropdown deliberately.
+            { url: "", mimeType: "video/mp4", label: null },
+          ])
+        }
+      >
+        {de.structure.addSource}
+      </Button>
+    </fieldset>
+  );
+}
+
+/**
+ * The formats a source may declare, labelled for an author.
+ *
+ * Derived from `MEDIA_MIME_TYPES` rather than typed out, so the dropdown cannot
+ * offer a type the server would refuse — the list has one home.
+ */
+const MEDIA_TYPE_LABELS: Readonly<Record<string, string>> = {
+  "video/mp4": "MP4 (H.264)",
+  "video/webm": "WebM",
+  "video/ogg": "Ogg",
+  "audio/mpeg": "MP3 (nur Ton)",
+  "audio/mp4": "M4A (nur Ton)",
+  "audio/ogg": "Ogg (nur Ton)",
+  "application/vnd.apple.mpegurl": "HLS (adaptiv)",
+  "application/x-mpegurl": "HLS (adaptiv, alt)",
+  "application/dash+xml": "DASH (adaptiv)",
+};
+
+const MEDIA_TYPE_OPTIONS: ReadonlyArray<readonly [string, string]> = MEDIA_MIME_TYPES.map(
+  (mimeType) => [mimeType, MEDIA_TYPE_LABELS[mimeType] ?? mimeType] as const,
+);

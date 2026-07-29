@@ -72,6 +72,19 @@ export async function renderCertificatePdf(
   pdf.setSubject(`VNR ${data.vnr}`);
   pdf.setProducer("DS Education Platform");
   pdf.setCreationDate(data.completedAt);
+  /*
+   * Pinned to the completion too, and this is a correctness fix rather than
+   * tidiness. pdf-lib defaults `ModDate` to the wall clock at save time, so two
+   * downloads of the *same* certificate produced different bytes as soon as
+   * they fell either side of a second boundary — a physician filing one copy
+   * and their Kammer receiving another, differing in metadata for no reason.
+   *
+   * It surfaced as a flaky "is deterministic for the same input" test, which
+   * passed whenever both renders landed in the same second. Confirmed by
+   * rendering a bare pdf-lib document 200 times: identical up to render 5, then
+   * different from render 6 on — one clock tick.
+   */
+  pdf.setModificationDate(data.completedAt);
 
   const page = pdf.addPage([A4.width, A4.height]);
   const regular = await pdf.embedFont(StandardFonts.Helvetica);

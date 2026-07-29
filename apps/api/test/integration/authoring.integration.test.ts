@@ -275,7 +275,11 @@ describe("building a course from nothing", () => {
     const { status, body } = await asAdmin(
       "POST",
       `/admin/chapters/${chapterIds[0]}/contents`,
-      { kind: "video", title: "Video ohne Länge", videoUrl: "https://cdn/x.mp4" },
+      {
+        kind: "video",
+        title: "Video ohne Länge",
+        sources: [{ url: "https://cdn/x.mp4", mimeType: "video/mp4" }],
+      },
     );
 
     expect(status).toBe(422);
@@ -289,7 +293,7 @@ describe("building a course from nothing", () => {
       {
         kind: "video",
         title: "Grundlagen",
-        videoUrl: "https://cdn/x.mp4",
+        sources: [{ url: "https://cdn/x.mp4", mimeType: "video/mp4" }],
         // Captions supplied here, and asserted to reach the learner further
         // down. WCAG 1.2.2 is Level A; a field the console can store but the
         // player never surfaces would be worse than none, because the console

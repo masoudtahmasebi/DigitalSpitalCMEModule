@@ -170,7 +170,9 @@ export interface ContentValues {
   kind: "video" | "text" | "quiz" | "details" | "material";
   title: string;
   body: string | null;
-  videoUrl: string | null;
+  /** Stored as authored — `s3://` references are not resolved on this path. */
+  sources: ReadonlyArray<{ url: string; mimeType: string; label: string | null }>;
+  posterUrl: string | null;
   captionsUrl: string | null;
   durationSec: number | null;
   fileUrl: string | null;
@@ -195,7 +197,8 @@ export interface StructureRows {
     kind: "video" | "text" | "quiz" | "details" | "material";
     title: string;
     body: string | null;
-    videoUrl: string | null;
+    mediaSources: unknown;
+    posterUrl: string | null;
     captionsUrl: string | null;
     durationSec: number | null;
     fileUrl: string | null;
@@ -461,7 +464,8 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
               kind: contents.kind,
               title: contents.title,
               body: contents.body,
-              videoUrl: contents.videoUrl,
+              mediaSources: contents.mediaSources,
+              posterUrl: contents.posterUrl,
               captionsUrl: contents.captionsUrl,
               durationSec: contents.durationSec,
               fileUrl: contents.fileUrl,
@@ -564,22 +568,26 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
   async createContent(chapterId: string, input: ContentValues): Promise<void> {
     await this.db.execute(sql`
       INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, body,
-                            video_url, captions_url, duration_sec, file_url,
+                            media_sources, poster_url, captions_url, duration_sec, file_url,
                             file_size, mime_type)
       VALUES (
         current_setting('app.customer_id')::uuid, ${chapterId},
         (SELECT coalesce(max(ordinal), -1) + 1 FROM contents WHERE chapter_id = ${chapterId}),
         ${input.kind}::content_kind, ${input.title}, ${input.body},
-        ${input.videoUrl}, ${input.captionsUrl}, ${input.durationSec}, ${input.fileUrl},
+        ${JSON.stringify(input.sources)}::jsonb, ${input.posterUrl}, ${input.captionsUrl}, ${input.durationSec}, ${input.fileUrl},
         ${input.fileSize}, ${input.mimeType}
       )
     `);
   }
 
   async updateContent(id: string, input: ContentValues): Promise<boolean> {
+    const { sources, ...rest } = input;
     const result = await this.db
       .update(contents)
-      .set({ ...input, updatedAt: new Date() })
+      // `sources` is the API's name for the column `media_sources`; spreading
+      // `input` wholesale would silently write nothing, because Drizzle ignores
+      // a key that is not a column.
+      .set({ ...rest, mediaSources: [...sources], updatedAt: new Date() })
       .where(eq(contents.id, id))
       .returning({ id: contents.id });
     return result.length > 0;

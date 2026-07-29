@@ -127,7 +127,7 @@ describe("filters and their chips are one piece of state", () => {
 
     fireEvent.change(screen.getByLabelText("Thema"), { target: { value: "ADHS" } });
 
-    const chip = await screen.findByRole("button", { name: 'Filter „ADHS" entfernen' });
+    const chip = await screen.findByRole("button", { name: "Filter „ADHS“ entfernen" });
     fireEvent.click(chip);
 
     await waitFor(() => expect(queries.at(-1)?.["thema"]).toBeUndefined());

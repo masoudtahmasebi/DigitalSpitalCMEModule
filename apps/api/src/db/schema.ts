@@ -194,7 +194,15 @@ export const contents = pgTable("contents", {
   kind: contentKind("kind").notNull(),
   title: text("title").notNull(),
   body: text("body"),
-  videoUrl: text("video_url"),
+  /**
+   * Ordered playable renditions (migration 0016). Adaptive streams first — a
+   * browser takes the first `type` it can play, which is the whole of the
+   * platform's format negotiation. Shape is validated by `parseMediaSources`
+   * on read, because `jsonb` guarantees nothing.
+   */
+  mediaSources: jsonb("media_sources").notNull().default([]),
+  /** Still frame shown before playback. NULL renders a blank first frame. */
+  posterUrl: text("poster_url"),
   /** WebVTT captions (WCAG 1.2.2 Level A). NULL means none authored. */
   captionsUrl: text("captions_url"),
   durationSec: integer("duration_sec"),

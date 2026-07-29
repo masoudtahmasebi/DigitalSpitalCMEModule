@@ -59,7 +59,9 @@ export interface TreeContentRow {
   title: string;
   /** The lesson payload — only ever served through a gate check. */
   body: string | null;
-  videoUrl: string | null;
+  /** `jsonb` — validated by `parseMediaSources`, never trusted as read. */
+  mediaSources: unknown;
+  posterUrl: string | null;
   captionsUrl: string | null;
   /** Mediathek fields; null for anything that is not a download. */
   fileUrl: string | null;
@@ -239,7 +241,8 @@ export class LearningRepository implements LearningRepositoryPort {
         // because the gate decision needs the whole tree anyway, and a
         // separate read would be a second place that could forget the gate.
         body: contents.body,
-        videoUrl: contents.videoUrl,
+        mediaSources: contents.mediaSources,
+        posterUrl: contents.posterUrl,
         captionsUrl: contents.captionsUrl,
         fileUrl: contents.fileUrl,
         mimeType: contents.mimeType,

@@ -27,6 +27,8 @@
 import {
   canDelete,
   contentProblems,
+  parseMediaSources,
+  type ContentProblem,
   correctOptionCount,
   parseBranding,
   questionProblems,
@@ -91,7 +93,7 @@ export class AuthoringService {
   async createDepartment(input: DepartmentCreate, actor: AuthorContext): Promise<void> {
     await this.guardUnique(
       () => this.repository.findDepartmentId(input.slug),
-      `Eine Abteilung mit dem Kürzel „${input.slug}" existiert bereits.`,
+      `Eine Abteilung mit dem Kürzel „${input.slug}“ existiert bereits.`,
     );
     await this.repository.createDepartment(input);
     await this.audit(actor, "admin.department.create", input.slug, {});
@@ -127,7 +129,7 @@ export class AuthoringService {
 
     await this.guardUnique(
       () => this.repository.findProjectId(input.slug),
-      `Ein Projekt mit dem Kürzel „${input.slug}" existiert bereits.`,
+      `Ein Projekt mit dem Kürzel „${input.slug}“ existiert bereits.`,
     );
 
     await this.repository.createProject({
@@ -193,7 +195,7 @@ export class AuthoringService {
 
     await this.guardUnique(
       () => this.repository.findCourseId(input.slug),
-      `Eine Fortbildung mit dem Kürzel „${input.slug}" existiert bereits.`,
+      `Eine Fortbildung mit dem Kürzel „${input.slug}“ existiert bereits.`,
     );
 
     await this.repository.createCourse({
@@ -227,7 +229,18 @@ export class AuthoringService {
             body: chapter.body,
             contents: rows.contents
               .filter((content) => content.chapterId === chapter.id)
-              .map(({ chapterId: _chapterId, ...content }) => content),
+              // `media_sources` is jsonb, so the row's type is `unknown` and
+              // nothing has checked its shape. Parsing here rather than casting
+              // means a malformed entry becomes one missing rendition in the
+              // form, not an object the console renders as `undefined`.
+              .map(({ chapterId: _chapterId, mediaSources, ...content }) => ({
+                ...content,
+                sources: parseMediaSources(mediaSources).map((source) => ({
+                  url: source.url,
+                  mimeType: source.mimeType,
+                  label: source.label,
+                })),
+              })),
           })),
       })),
       experts: rows.experts,
@@ -611,7 +624,8 @@ export class AuthoringService {
       kind: input.kind,
       title: input.title,
       body: input.body ?? null,
-      videoUrl: input.videoUrl ?? null,
+      sources: input.sources ?? [],
+      posterUrl: input.posterUrl ?? null,
       captionsUrl: input.captionsUrl ?? null,
       durationSec: input.durationSec ?? null,
       fileUrl: input.fileUrl ?? null,
@@ -622,9 +636,7 @@ export class AuthoringService {
       throw new AppError(
         "validation",
         `content invalid: ${problems.join(", ")}`,
-        problems.includes("durationSec")
-          ? "Ein Video braucht eine Länge in Sekunden — ohne sie lässt sich der erforderliche Videoanteil nicht messen."
-          : `Bitte prüfen Sie: ${problems.join(", ")}.`,
+        contentMessage(problems),
       );
     }
 
@@ -632,7 +644,16 @@ export class AuthoringService {
       kind: input.kind,
       title: input.title,
       body: input.body ?? null,
-      videoUrl: input.videoUrl ?? null,
+      // Normalised on the way in so the column holds one spelling of a type.
+      // A browser matches `type` literally; storing "Video/MP4 " would produce
+      // a source every browser skips, and the mistake would only surface as a
+      // video that will not play.
+      sources: (input.sources ?? []).map((source) => ({
+        url: source.url.trim(),
+        mimeType: source.mimeType.trim().toLowerCase(),
+        label: source.label?.trim() === "" ? null : (source.label ?? null),
+      })),
+      posterUrl: input.posterUrl ?? null,
       captionsUrl: input.captionsUrl ?? null,
       durationSec: input.durationSec ?? null,
       fileUrl: input.fileUrl ?? null,
@@ -768,4 +789,26 @@ function germanQuestionProblem(
     default:
       return `Frage ${number} ist unvollständig.`;
   }
+}
+
+/**
+ * A German sentence for a rejected content item.
+ *
+ * Per field rather than one generic line, because each of these has a
+ * different fix and the author is looking at a form with several inputs. The
+ * duration message explains *why* it is required — an author told only "field
+ * missing" reasonably types 1 and moves on, and a video with a made-up length
+ * has a watch gate that means nothing.
+ */
+function contentMessage(problems: readonly ContentProblem[]): string {
+  if (problems.includes("durationSec")) {
+    return "Ein Video braucht eine Länge in Sekunden — ohne sie lässt sich der erforderliche Videoanteil nicht messen.";
+  }
+  if (problems.includes("sources")) {
+    return "Ein Video braucht mindestens eine Videoquelle, und jede Quelle nur einmal.";
+  }
+  if (problems.includes("sourceMimeType")) {
+    return "Bitte wählen Sie für jede Videoquelle ein unterstütztes Format — ein unbekannter Typ wird vom Browser übersprungen.";
+  }
+  return `Bitte prüfen Sie: ${problems.join(", ")}.`;
 }

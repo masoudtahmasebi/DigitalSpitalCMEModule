@@ -166,12 +166,31 @@ export const courseCreateSchema = z.object({
 // The authoring tree
 // ---------------------------------------------------------------------------
 
+/**
+ * A rendition as an author supplies it.
+ *
+ * `url` is a plain bounded string rather than `url` (which requires an
+ * absolute URL): media may be stored as an `s3://<key>` reference, and the
+ * media resolver — not this schema — decides what a stored reference may be.
+ * The same reason `fileUrl` would have if it were not already a CDN URL by the
+ * time it reaches here.
+ *
+ * The MIME type is checked against the closed list by `contentProblems`, not
+ * here, so there is one place that knows what a browser can be offered.
+ */
+export const mediaSourceWriteSchema = z.object({
+  url: z.string().trim().min(1).max(2000),
+  mimeType: z.string().trim().min(1).max(100),
+  label: z.string().trim().max(60).nullable().optional(),
+});
+
 export const authoringContentSchema = z.object({
   id: uuid,
   kind: z.enum(["video", "text", "quiz", "details", "material"]),
   title: z.string(),
   body: z.string().nullable(),
-  videoUrl: z.string().nullable(),
+  sources: z.array(mediaSourceWriteSchema),
+  posterUrl: z.string().nullable(),
   captionsUrl: z.string().nullable(),
   durationSec: z.number().int().nullable(),
   fileUrl: z.string().nullable(),
@@ -244,7 +263,8 @@ export const contentWriteSchema = z.object({
   kind: z.enum(["video", "text", "quiz", "details", "material"]),
   title,
   body: richText.nullable().optional(),
-  videoUrl: url.nullable().optional(),
+  sources: z.array(mediaSourceWriteSchema).max(10).optional(),
+  posterUrl: url.nullable().optional(),
   /** WebVTT. Owed for every video with speech — WCAG 1.2.2 is Level A. */
   captionsUrl: url.nullable().optional(),
   durationSec: z.number().int().positive().max(86_400).nullable().optional(),

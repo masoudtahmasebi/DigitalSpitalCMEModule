@@ -538,10 +538,33 @@ a deliberate, recorded deviation from the copy, on the grounds that an ambiguous
 number is worse than a slightly longer sentence. It is asserted in
 `PlayerScreen.test.tsx`.
 
+**A second finding, 29.07: the figure we are showing does not move while you
+watch.** `progress.percent` counts _content items_, and an item is 0 or 100 —
+`rollupProgress` has no partial credit. So a learner who watches a 25-minute
+video from start to finish sees the number sit at 63 % for twenty-five minutes
+and then jump. The layout prints it directly beside a live `14:35 / 25:45`,
+which implies the opposite.
+
+That makes the current choice defensible but probably not what was meant, and it
+raises a **second candidate the platform already computes**:
+
+| Candidate                          | What it is                                 | Behaviour                                                                                                     |
+| ---------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `progress.percent` _(shown today)_ | finished content items ÷ all content items | Jumps. Ignores length — a one-paragraph text page counts as much as a 25-minute lecture.                      |
+| `achievedWatchPercent`             | union watch coverage ÷ total video seconds | Moves continuously while watching. Duration-weighted. **It is the figure the completion gate actually uses.** |
+| `moduleCompletion`                 | modules finished ÷ modules                 | Already feeds the ring on the course page.                                                                    |
+
+`achievedWatchPercent` fits the layout's placement best — it sits beside a
+timeline because it moves with the timeline — and it has the strong property of
+being the number the gate enforces. It is deliberately **not** being switched to
+unilaterally, because it counts only video: on a course that is half reading, a
+learner reading "100 % absolviert" would still have a quiz and an evaluation
+outstanding.
+
 **What is needed.** Confirmation of _which quantity_ the layout intends. If it
 is not content-weighted course progress, the fix is one prop and one locale
 entry — `apps/widget/src/locale/de.ts` (`player.courseProgress`) and the panel
-in `PlayerScreen.tsx`. If MEDICE want the bare `63% absolviert` wording back,
+in `PlayerScreen.tsx`; every candidate above is already on `EnrolmentState`. If MEDICE want the bare `63% absolviert` wording back,
 that is their call to make in writing, and this note records that it was raised.
 
 Related: the same panel's `14:35 / 25:45` is drawn against the **authored**

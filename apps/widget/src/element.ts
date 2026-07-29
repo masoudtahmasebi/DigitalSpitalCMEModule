@@ -71,8 +71,41 @@ export const WIDGET_ELEMENT_NAME = "ds-lms";
 /** Dispatched when a learner picks a course in the catalogue. See the header. */
 export const COURSE_OPEN_EVENT = "ds-lms:course-open";
 
+/**
+ * Dispatched when the server has recorded watch progress.
+ *
+ * Not on every `timeupdate`: this fires on a **confirmed** report, so the
+ * figures in it are the ones the CME gate will use. A host wiring analytics to
+ * a client-side estimate would be measuring something the platform does not
+ * credit.
+ */
+export const PROGRESS_EVENT = "ds-lms:progress";
+
+/** Dispatched once, when the server marks the course complete. */
+export const COURSE_COMPLETE_EVENT = "ds-lms:course-complete";
+
 export interface CourseOpenDetail {
   readonly slug: string;
+}
+
+export interface ProgressDetail {
+  readonly courseSlug: string;
+  /** Union watch coverage across the whole course, 0–100. */
+  readonly watchedPercent: number;
+  /** Required coverage for this enrolment, 0–100. */
+  readonly requiredWatchPercent: number;
+  /** Content items finished over content items in the course, 0–100. */
+  readonly coursePercent: number;
+  readonly modulesCompleted: number;
+  readonly modulesTotal: number;
+  /** What the learner still owes: watch, quiz, evaluation, efn. */
+  readonly outstanding: readonly string[];
+  readonly complete: boolean;
+}
+
+export interface CourseCompleteDetail {
+  readonly courseSlug: string;
+  readonly completedAt: string;
 }
 
 export class DsLmsElement extends HTMLElement {
@@ -143,6 +176,9 @@ export class DsLmsElement extends HTMLElement {
         courseSlug: this.getAttribute("course") ?? "",
         getToken: provider === undefined ? undefined : cachingProvider(provider),
         onCourseOpen: (slug: string) => this.#announceCourseOpen(slug),
+        onProgress: (detail: ProgressDetail) => this.#announce(PROGRESS_EVENT, detail),
+        onCourseComplete: (detail: CourseCompleteDetail) =>
+          this.#announce(COURSE_COMPLETE_EVENT, detail),
       }),
     );
   }
@@ -156,6 +192,21 @@ export class DsLmsElement extends HTMLElement {
    * element, and a widget that had already switched screens would flash the
    * course twice.
    */
+  /**
+   * Tell the host page something happened, without asking its permission.
+   *
+   * Not cancelable, unlike `ds-lms:course-open`: these are notifications about
+   * a decision the **server** has already made and written down. A host that
+   * called `preventDefault()` on a completion would be cancelling nothing —
+   * the CME point is recorded either way — so offering the handle would be
+   * offering a lie.
+   */
+  #announce(name: string, detail: unknown): void {
+    this.dispatchEvent(
+      new CustomEvent(name, { detail, bubbles: true, cancelable: false, composed: true }),
+    );
+  }
+
   #announceCourseOpen(slug: string): boolean {
     const detail: CourseOpenDetail = { slug };
     return this.dispatchEvent(

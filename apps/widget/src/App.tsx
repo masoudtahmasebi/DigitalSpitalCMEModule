@@ -25,7 +25,7 @@
  * learner would experience as the page vanishing.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { parseBranding, type Branding } from "@ds/domain";
 import type { ContentSummary, CourseDetail, EnrolmentState } from "@ds/sdk";
 import { createWidgetClient, isConfigured, type WidgetConfig } from "./api.js";
@@ -63,6 +63,36 @@ export interface AppProps extends WidgetConfig {
    * `element.ts`. Absent in tests and in any host that does not route.
    */
   readonly onCourseOpen?: ((slug: string) => boolean) | undefined;
+  /** Fired whenever the server returns a fresh `EnrolmentState`. */
+  readonly onProgress?: ((detail: ProgressDetail) => void) | undefined;
+  /** Fired once, the first time the server reports the course complete. */
+  readonly onCourseComplete?: ((detail: CourseCompleteDetail) => void) | undefined;
+}
+
+/**
+ * What a host page is told about progress.
+ *
+ * Deliberately every figure at once rather than a percentage: a host wiring
+ * this to analytics needs to know *which* percentage, and the platform has
+ * three legitimate ones — union watch coverage, content-item completion, and
+ * modules finished. Naming them individually is what stops a host reporting one
+ * and labelling it another, which is the same mistake S16 records on our own
+ * screen.
+ */
+export interface ProgressDetail {
+  readonly courseSlug: string;
+  readonly watchedPercent: number;
+  readonly requiredWatchPercent: number;
+  readonly coursePercent: number;
+  readonly modulesCompleted: number;
+  readonly modulesTotal: number;
+  readonly outstanding: readonly string[];
+  readonly complete: boolean;
+}
+
+export interface CourseCompleteDetail {
+  readonly courseSlug: string;
+  readonly completedAt: string;
 }
 
 export function App(props: AppProps) {
@@ -86,6 +116,8 @@ function Routed(
   props: WidgetConfig & {
     getToken: TokenProvider;
     onCourseOpen?: ((slug: string) => boolean) | undefined;
+    onProgress?: ((detail: ProgressDetail) => void) | undefined;
+    onCourseComplete?: ((detail: CourseCompleteDetail) => void) | undefined;
   },
 ) {
   const { apiBase, projectSlug, courseSlug, getToken, onCourseOpen } = props;
@@ -128,6 +160,8 @@ function Routed(
       client={client}
       // Only offered when the learner arrived through the catalogue.
       onBackToCatalogue={courseSlug === "" ? () => setSelected(undefined) : undefined}
+      onProgress={props.onProgress}
+      onCourseComplete={props.onCourseComplete}
     />
   );
 }
@@ -138,6 +172,8 @@ function Loaded(props: {
   courseSlug: string;
   client: ReturnType<typeof createWidgetClient>;
   onBackToCatalogue: (() => void) | undefined;
+  onProgress: ((detail: ProgressDetail) => void) | undefined;
+  onCourseComplete: ((detail: CourseCompleteDetail) => void) | undefined;
 }) {
   const { apiBase, projectSlug, courseSlug, client } = props;
 
@@ -146,6 +182,8 @@ function Loaded(props: {
 
   const course = useAsync(() => client.getCourseBySlug(courseSlug), [client, courseSlug]);
   const enrolment = useEnrolment(client, courseSlug);
+
+  useAnnouncements(courseSlug, enrolment.data, props.onProgress, props.onCourseComplete);
 
   if (course.loading || enrolment.loading) {
     return <Spinner label={de.loading} />;
@@ -319,6 +357,52 @@ function Loaded(props: {
       )}
     </div>
   );
+}
+
+/**
+ * Tell the host page what the server just said.
+ *
+ * Driven off `EnrolmentState` rather than off the player, and that is the whole
+ * design: `EnrolmentState` only ever arrives from the API, so every figure a
+ * host receives is one the CME gate agrees with. Wiring this to `timeupdate`
+ * would emit a percentage the platform does not credit, and a customer's
+ * dashboard would slowly diverge from their own participation report.
+ *
+ * Completion fires **once**. The state is re-read after every mutation and on
+ * every screen change, so an unguarded effect would announce a finished course
+ * on each one — and a host that sends a congratulations email on it would send
+ * a dozen.
+ */
+function useAnnouncements(
+  courseSlug: string,
+  state: EnrolmentState | undefined,
+  onProgress: ((detail: ProgressDetail) => void) | undefined,
+  onCourseComplete: ((detail: CourseCompleteDetail) => void) | undefined,
+): void {
+  const announcedCompletion = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (state === undefined) return;
+
+    onProgress?.({
+      courseSlug,
+      watchedPercent: state.achievedWatchPercent,
+      requiredWatchPercent: state.requiredWatchPercent,
+      coursePercent: state.progress.percent,
+      modulesCompleted: state.moduleCompletion.completed,
+      modulesTotal: state.moduleCompletion.total,
+      outstanding: state.outstanding,
+      complete: state.complete,
+    });
+
+    if (state.completedAt === null) return;
+    // Keyed by the timestamp, not a boolean: a learner who moves between two
+    // finished courses in one mounted widget should produce one event each.
+    const key = `${courseSlug}:${state.completedAt}`;
+    if (announcedCompletion.current === key) return;
+    announcedCompletion.current = key;
+    onCourseComplete?.({ courseSlug, completedAt: state.completedAt });
+  }, [courseSlug, state, onProgress, onCourseComplete]);
 }
 
 /*

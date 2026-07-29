@@ -249,7 +249,7 @@ function FacetSelect(props: {
  *
  * The whole chip is the button and `aria-label` is its accessible name — the
  * visible text is marked decorative so a screen reader announces "Filter
- * „ADHS" entfernen" once, rather than the value followed by an instruction.
+ * „ADHS“ entfernen" once, rather than the value followed by an instruction.
  * A chip whose name is just the value would tell somebody what is filtered
  * without telling them that activating it undoes that.
  */

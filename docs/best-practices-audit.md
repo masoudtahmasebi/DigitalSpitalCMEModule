@@ -8,8 +8,9 @@ next person be able to change this safely". Findings are ordered by that: dead
 surface first, then duplication, then the one that turned out to matter most —
 a lint warning that had been dismissed on reasoning that had since expired.
 
-**Seven findings. All fixed.** B-07 was added on 28.07 during the layout
-alignment pass (P5-11), which is where it surfaced.
+**Eight findings. All fixed.** B-07 came out of the layout alignment pass
+(P5-11) and B-08 out of the player work (P5-12) — both surfaced while building
+something else, which is where this kind of thing surfaces.
 
 ---
 
@@ -155,6 +156,38 @@ portal's locale file. **The portal now makes no API call of its own.**
 Worth noting against B-05 and the duplication findings generally: this one was
 invisible to a duplicate-block scan, because the two screens shared no lines.
 They shared a _design_. That is the kind of duplication only reading finds.
+
+### B-08 · A flaky test that was reporting a real defect
+
+**Found by:** a certificate-renderer test failing once in a full run and passing
+on three reruns — the shape of thing usually written off as flakiness.
+
+`renderCertificatePdf` was asserted to be deterministic by rendering twice and
+comparing bytes. It was **not** deterministic: pdf-lib stamps `ModDate` with the
+wall clock at save time, and only `CreationDate` was pinned to `completedAt`. Two
+renders in the same second are identical, so the assertion passed almost always
+and failed exactly when the pair straddled a tick.
+
+The consequence is small but real, and it is on a compliance document: two
+downloads of the same certificate differed in metadata for no reason — a
+physician filing one copy and their Ärztekammer receiving another.
+
+_Confirmed_ before fixing, rather than assumed. A bare pdf-lib document with only
+`CreationDate` set was rendered 200 times: identical through render 5, different
+from render 6 on — one clock tick. Pinning `ModDate` made 400 renders identical.
+
+_Fixed_ with `pdf.setModificationDate(data.completedAt)`.
+
+**The second half of this finding is about the test.** The first replacement
+rendered 200 times so it would reliably cross a second — which worked in
+isolation and **timed out** under a parallel run, trading one flake for another.
+The test now moves the system clock between two renders and asserts the bytes are
+unchanged. That states the property directly — _the output does not depend on the
+clock_ — in two renders and 55 ms, and it fails when the fix is removed.
+
+The general lesson is worth keeping: a test that fails one run in twenty is
+either testing something real intermittently or testing nothing reliably, and
+both are worth the twenty minutes to tell apart.
 
 ---
 

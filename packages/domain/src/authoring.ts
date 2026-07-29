@@ -21,6 +21,7 @@
  */
 
 import type { QuestionKind } from "./assessment.js";
+import { mediaSourceProblems, type MediaSourceDraft } from "./media.js";
 
 /** What kind of thing an author is arranging. Used only in messages. */
 export type OrderedKind = "module" | "chapter" | "content" | "question" | "option";
@@ -87,7 +88,15 @@ export interface ContentDraft {
   readonly kind: ContentKind;
   readonly title: string;
   readonly body?: string | null;
-  readonly videoUrl?: string | null;
+  /**
+   * Playable renditions, in the author's order.
+   *
+   * A list rather than a URL because a browser picks the first `<source>` type
+   * it can play — see `media.ts`. A video needs at least one; every other kind
+   * ignores this.
+   */
+  readonly sources?: readonly MediaSourceDraft[];
+  readonly posterUrl?: string | null;
   /**
    * WebVTT captions.
    *
@@ -104,7 +113,8 @@ export interface ContentDraft {
 }
 
 /** Field names, so a form can mark the right input rather than shout globally. */
-export type ContentProblem = "title" | "videoUrl" | "durationSec" | "fileUrl" | "body";
+export type ContentProblem =
+  "title" | "sources" | "sourceMimeType" | "durationSec" | "fileUrl" | "body";
 
 /**
  * What is wrong with a content item, if anything.
@@ -120,8 +130,20 @@ export function contentProblems(draft: ContentDraft): readonly ContentProblem[] 
   if (draft.title.trim() === "") problems.push("title");
 
   switch (draft.kind) {
-    case "video":
-      if (blank(draft.videoUrl)) problems.push("videoUrl");
+    case "video": {
+      // A video with no source is unplayable, and the watch gate would then
+      // record the learner as having watched none of it — a CME failure caused
+      // by an authoring mistake rather than by anything they did.
+      const sourceProblems = mediaSourceProblems(draft.sources ?? []);
+      if (sourceProblems.includes("empty") || sourceProblems.includes("blank_url")) {
+        problems.push("sources");
+      }
+      // A `type` no browser recognises makes the source silently skipped, so
+      // the video refuses to play with nothing in the console to explain it.
+      // Its own problem code, because the fix is a different field.
+      if (sourceProblems.includes("unknown_mime_type")) problems.push("sourceMimeType");
+      if (sourceProblems.includes("duplicate_url")) problems.push("sources");
+
       // The watch gate is a percentage of a known length. Without one there is
       // no percentage to reach, and the content would be skippable while
       // appearing to count toward a CME point.
@@ -134,6 +156,7 @@ export function contentProblems(draft: ContentDraft): readonly ContentProblem[] 
         problems.push("durationSec");
       }
       break;
+    }
 
     case "material":
       if (blank(draft.fileUrl)) problems.push("fileUrl");

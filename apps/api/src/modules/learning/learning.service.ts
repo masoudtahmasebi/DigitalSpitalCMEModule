@@ -17,6 +17,8 @@ import {
   evaluateSequence,
   isCourseComplete,
   mergeWatchedSegments,
+  orderSources,
+  parseMediaSources,
   rollupProgress,
   validateSegments,
   watchedPercent,
@@ -185,7 +187,7 @@ export class LearningService {
       contentId,
       status,
       watchedPercent: percent,
-      watchedSegments: merged,
+      watchedSegments: [...merged],
       lastPositionSec: Math.floor(report.lastPositionSec ?? 0),
     });
 
@@ -198,6 +200,9 @@ export class LearningService {
         segment: entry.segment,
         reason: entry.reason,
       })),
+      // The union that was just stored, so the player's bar redraws from what
+      // the gate credited rather than from what the client believed it sent.
+      watchedSegments: [...merged],
     };
   }
 
@@ -235,8 +240,14 @@ export class LearningService {
       title: content.title,
       durationSec: content.durationSec,
       // Signed here and nowhere else: the gate has already agreed above, and
-      // the URL is short-lived so it cannot outlive that agreement by much.
-      videoUrl: this.media.resolve(content.videoUrl, learner.customerId, now),
+      // the URLs are short-lived so they cannot outlive that agreement by much.
+      //
+      // *Every* rendition goes through the resolver, not merely the first. A
+      // per-source tenant check is the whole point — one unsigned `s3://` URL
+      // in a list of four would be a cross-tenant read that the other three
+      // being correct does nothing to prevent.
+      sources: this.resolveSources(content.mediaSources, learner.customerId, now),
+      posterUrl: this.media.resolve(content.posterUrl, learner.customerId, now),
       // Signed the same way and for the same lifetime as the video. A caption
       // track that expired before the video it belongs to would leave a
       // hard-of-hearing learner watching an uncaptioned recording — the exact
@@ -245,7 +256,36 @@ export class LearningService {
       body: content.body,
       lastPositionSec: progress?.lastPositionSec ?? 0,
       watchedPercent: progress?.watchedPercent ?? 0,
+      // The intervals the percentage above was computed from, so the player's
+      // coverage bar and its number come from one source.
+      watchedSegments: [...readSegments(progress?.watchedSegments)],
     };
+  }
+
+  /**
+   * Resolve every stored rendition, dropping the ones that cannot be served.
+   *
+   * Ordered by `orderSources` here rather than in the client, so all three
+   * frontends and any future host get the same negotiation. A source the
+   * resolver refuses — a key belonging to another customer, or an `s3://`
+   * reference on a deployment with no storage — is dropped rather than emitted
+   * with a null URL: a `<source>` with no `src` is one the browser tries and
+   * fails on, which is worse than one that was never offered.
+   */
+  private resolveSources(
+    stored: unknown,
+    customerId: string,
+    now: Date,
+  ): Array<{ url: string; mimeType: string; label: string | null }> {
+    const resolved: Array<{ url: string; mimeType: string; label: string | null }> = [];
+
+    for (const source of orderSources(parseMediaSources(stored))) {
+      const url = this.media.resolve(source.url, customerId, now);
+      if (url === null) continue;
+      resolved.push({ url, mimeType: source.mimeType, label: source.label });
+    }
+
+    return resolved;
   }
 
   /**

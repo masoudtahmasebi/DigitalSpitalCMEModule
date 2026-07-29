@@ -122,14 +122,34 @@ beforeAll(async () => {
     [customerId, module2, "Kapitel 2"],
   );
   video1Id = await insert(
-    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, duration_sec, video_url)
-     VALUES ($1,$2,0,'video',$3,$4,$5) RETURNING id`,
-    [customerId, chapter1, "Einführung", VIDEO_1_SEC, VIDEO_1_URL],
+    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, duration_sec, media_sources)
+     VALUES ($1,$2,0,'video',$3,$4,$5::jsonb) RETURNING id`,
+    [
+      customerId,
+      chapter1,
+      "Einführung",
+      VIDEO_1_SEC,
+      JSON.stringify([{ url: VIDEO_1_URL, mimeType: "video/mp4", label: null }]),
+    ],
   );
   video2Id = await insert(
-    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, duration_sec, video_url)
-     VALUES ($1,$2,0,'video',$3,$4,$5) RETURNING id`,
-    [customerId, chapter2, "Diagnostik", VIDEO_2_SEC, VIDEO_2_URL],
+    // Two renditions, so the suite covers the ordering the browser relies on.
+    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, duration_sec, media_sources)
+     VALUES ($1,$2,0,'video',$3,$4,$5::jsonb) RETURNING id`,
+    [
+      customerId,
+      chapter2,
+      "Diagnostik",
+      VIDEO_2_SEC,
+      JSON.stringify([
+        {
+          url: `${VIDEO_2_URL}?hls`,
+          mimeType: "application/vnd.apple.mpegurl",
+          label: null,
+        },
+        { url: VIDEO_2_URL, mimeType: "video/mp4", label: "720p" },
+      ]),
+    ],
   );
   quizId = await insert(
     `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title)
@@ -277,16 +297,26 @@ describe("the learner journey", () => {
     expect(body.resumeContentId).toBe(video1Id);
   });
 
-  it("serves the first lesson's video URL, which is reachable", async () => {
+  it("serves the first lesson's sources, which are reachable", async () => {
     const { status, body } = await call(
       "GET",
       `/courses/${courseSlug}/contents/${video1Id}`,
     );
 
     expect(status).toBe(200);
-    expect(body.videoUrl).toBe(VIDEO_1_URL);
+    expect(body.sources).toEqual([
+      { url: VIDEO_1_URL, mimeType: "video/mp4", label: null },
+    ]);
     expect(body.kind).toBe("video");
     expect(body.durationSec).toBe(VIDEO_1_SEC);
+  });
+
+  it("returns the merged coverage the percentage was computed from", async () => {
+    // The player's scrub bar draws these. Sending the number without the
+    // intervals would leave the bar to accumulate its own, and it would then
+    // shade passages the server rejected as implausible.
+    const { body } = await call("GET", `/courses/${courseSlug}/contents/${video1Id}`);
+    expect(Array.isArray(body.watchedSegments)).toBe(true);
   });
 
   it("withholds the locked lesson's video URL entirely", async () => {

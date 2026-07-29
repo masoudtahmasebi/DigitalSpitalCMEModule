@@ -6,6 +6,7 @@ import {
   progressResultSchema,
 } from "./learning.dto.js";
 import { AppError } from "../../shared/problem-details.js";
+import type { MediaResolver } from "../../shared/media-url.js";
 import type {
   CourseComplianceRow,
   CourseTree,
@@ -63,7 +64,8 @@ const tree: CourseTree = {
       durationSec: 600,
       title: "Inhalt",
       body: null,
-      videoUrl: null,
+      mediaSources: [],
+      posterUrl: null,
       captionsUrl: null,
       fileUrl: null,
       mimeType: null,
@@ -77,7 +79,8 @@ const tree: CourseTree = {
       durationSec: 400,
       title: "Inhalt",
       body: null,
-      videoUrl: null,
+      mediaSources: [],
+      posterUrl: null,
       captionsUrl: null,
       fileUrl: null,
       mimeType: null,
@@ -91,7 +94,8 @@ const tree: CourseTree = {
       durationSec: null,
       title: "Lernerfolgskontrolle",
       body: null,
-      videoUrl: null,
+      mediaSources: [],
+      posterUrl: null,
       captionsUrl: null,
       fileUrl: null,
       mimeType: null,
@@ -105,7 +109,8 @@ const tree: CourseTree = {
       durationSec: null,
       title: "Patienteninformation (PDF)",
       body: null,
-      videoUrl: null,
+      mediaSources: [],
+      posterUrl: null,
       captionsUrl: null,
       fileUrl: "https://cdn.example.org/modul-1.pdf",
       mimeType: "application/pdf",
@@ -119,7 +124,8 @@ const tree: CourseTree = {
       durationSec: null,
       title: "Diagnostik-Leitfaden (PDF)",
       body: null,
-      videoUrl: null,
+      mediaSources: [],
+      posterUrl: null,
       captionsUrl: null,
       fileUrl: "https://cdn.example.org/modul-2.pdf",
       mimeType: "application/pdf",
@@ -703,5 +709,178 @@ describe("getMaterials — the Mediathek", () => {
       .catch((e) => e);
 
     expect((error as AppError).kind).toBe("not_found");
+  });
+});
+
+describe("getLesson — the media the player is handed", () => {
+  /**
+   * The security property of `resolveSources`, and the reason it loops.
+   *
+   * The single `video_url` it replaced was resolved once, so the tenant check on
+   * an `s3://` key covered the only URL there was. A list makes it possible to
+   * resolve the first and pass the rest through — which would hand a learner an
+   * unsigned key belonging to another customer, with the three correctly-signed
+   * siblings beside it making the response look right.
+   *
+   * Added after a deliberate probe: replacing the loop body with a
+   * pass-through broke nothing in this suite.
+   */
+  // The first video in the tree — reachable with no prior progress, so these
+  // assertions are about the media and not about the gate.
+  const VIDEO_ID = VIDEO_1;
+
+  function courseWithSources(
+    sources: ReadonlyArray<{ url: string; mimeType: string; label: string | null }>,
+  ): CourseTree {
+    return {
+      ...tree,
+      contents: tree.contents.map((content) =>
+        content.id === VIDEO_ID ? { ...content, mediaSources: sources } : content,
+      ),
+    };
+  }
+
+  /** Signs anything under the learner's own prefix; refuses everything else. */
+  const tenantResolver: MediaResolver = {
+    resolve: (stored) => {
+      if (stored === null || stored === "") return null;
+      if (!stored.startsWith("s3://")) return stored;
+      return stored.startsWith(`s3://${CUSTOMER_ID}/`) ? `${stored}?signed` : null;
+    },
+  };
+
+  it("resolves every rendition, not merely the first", async () => {
+    const { repository } = fakeRepository();
+    const service = new LearningService(
+      {
+        ...repository,
+        findCourseTree: async () =>
+          courseWithSources([
+            { url: `s3://${CUSTOMER_ID}/a.mp4`, mimeType: "video/mp4", label: "720p" },
+            { url: `s3://${CUSTOMER_ID}/b.mp4`, mimeType: "video/mp4", label: "360p" },
+          ]),
+      },
+      tenantResolver,
+    );
+
+    const lesson = await service.getLesson(course.slug, VIDEO_ID, learner, NOW);
+
+    expect(lesson.sources.map((source) => source.url)).toEqual([
+      `s3://${CUSTOMER_ID}/a.mp4?signed`,
+      `s3://${CUSTOMER_ID}/b.mp4?signed`,
+    ]);
+  });
+
+  it("drops a rendition belonging to another customer and keeps the rest", async () => {
+    // The bucket has no RLS to fall back on: this check is the only thing
+    // between a mis-seeded row and a cross-tenant read.
+    const { repository } = fakeRepository();
+    const service = new LearningService(
+      {
+        ...repository,
+        findCourseTree: async () =>
+          courseWithSources([
+            {
+              url: "s3://11111111-1111-4111-8111-111111111111/other.mp4",
+              mimeType: "video/mp4",
+              label: null,
+            },
+            { url: `s3://${CUSTOMER_ID}/mine.mp4`, mimeType: "video/mp4", label: null },
+          ]),
+      },
+      tenantResolver,
+    );
+
+    const lesson = await service.getLesson(course.slug, VIDEO_ID, learner, NOW);
+
+    expect(lesson.sources).toEqual([
+      { url: `s3://${CUSTOMER_ID}/mine.mp4?signed`, mimeType: "video/mp4", label: null },
+    ]);
+  });
+
+  it("emits no source at all rather than one with a null URL", async () => {
+    // A <source> with no `src` is one the browser tries and fails on, which is
+    // worse than one that was never offered.
+    const { repository } = fakeRepository();
+    const service = new LearningService(
+      {
+        ...repository,
+        findCourseTree: async () =>
+          courseWithSources([
+            {
+              url: "s3://11111111-1111-4111-8111-111111111111/other.mp4",
+              mimeType: "video/mp4",
+              label: null,
+            },
+          ]),
+      },
+      tenantResolver,
+    );
+
+    const lesson = await service.getLesson(course.slug, VIDEO_ID, learner, NOW);
+    expect(lesson.sources).toEqual([]);
+  });
+
+  it("orders adaptive streams ahead of progressive files, server-side", async () => {
+    // Done here rather than in the client so every host — widget, portal, and
+    // whatever comes next — negotiates formats the same way.
+    const { repository } = fakeRepository();
+    const service = new LearningService(
+      {
+        ...repository,
+        findCourseTree: async () =>
+          courseWithSources([
+            { url: "https://cdn/x.mp4", mimeType: "video/mp4", label: "720p" },
+            {
+              url: "https://cdn/x.m3u8",
+              mimeType: "application/vnd.apple.mpegurl",
+              label: null,
+            },
+          ]),
+      },
+      tenantResolver,
+    );
+
+    const lesson = await service.getLesson(course.slug, VIDEO_ID, learner, NOW);
+    expect(lesson.sources.map((source) => source.mimeType)).toEqual([
+      "application/vnd.apple.mpegurl",
+      "video/mp4",
+    ]);
+  });
+
+  it("hands back the merged segments the percentage was computed from", async () => {
+    // The player's coverage bar draws these. Sending the number alone would
+    // leave the bar to accumulate its own, and it would then shade passages the
+    // server rejected as implausible.
+    const { repository } = fakeRepository({
+      progress: [
+        progressRow({
+          contentId: VIDEO_ID,
+          status: "in_progress",
+          watchedPercent: 50,
+          watchedSegments: [
+            { startSec: 0, endSec: 100 },
+            { startSec: 50, endSec: 200 },
+          ],
+        }),
+      ],
+    });
+    const service = new LearningService(
+      {
+        ...repository,
+        findCourseTree: async () =>
+          courseWithSources([
+            { url: "https://cdn/x.mp4", mimeType: "video/mp4", label: null },
+          ]),
+      },
+      tenantResolver,
+    );
+
+    const lesson = await service.getLesson(course.slug, VIDEO_ID, learner, NOW);
+    expect(lesson.watchedPercent).toBe(50);
+    expect(lesson.watchedSegments).toEqual([
+      { startSec: 0, endSec: 100 },
+      { startSec: 50, endSec: 200 },
+    ]);
   });
 });

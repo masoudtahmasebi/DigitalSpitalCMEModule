@@ -40,6 +40,38 @@ export { courseWatchCoverage } from "./coverage.js";
 export type { ContentSegments, WatchCoverage } from "./coverage.js";
 
 export {
+  hasAdaptiveSource,
+  MEDIA_MIME_TYPES,
+  mediaSourceProblems,
+  orderSources,
+  parseMediaSources,
+  streamingKindOf,
+} from "./media.js";
+export type {
+  MediaSource,
+  MediaSourceDraft,
+  MediaSourceProblem,
+  StreamingKind,
+} from "./media.js";
+
+export {
+  bufferedBars,
+  clampVolume,
+  coverageBars,
+  nextPlaybackRate,
+  nudgePositionSec,
+  PLAYBACK_RATES,
+  positionFraction,
+  remainingSec,
+  SEEK_JUMP_SEC,
+  SEEK_STEP_SEC,
+  seekFraction,
+  seekPositionSec,
+  VOLUME_STEP,
+} from "./playback.js";
+export type { CoverageBar } from "./playback.js";
+
+export {
   brandingCssVariables,
   fontFaceRule,
   invalidBrandingFields,

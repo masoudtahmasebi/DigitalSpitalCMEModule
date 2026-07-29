@@ -147,9 +147,24 @@ beforeAll(async () => {
     [customerId, moduleId, "Kapitel 1"],
   );
   videoId = await insert(
-    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, duration_sec)
-     VALUES ($1,$2,0,'video',$3,$4) RETURNING id`,
-    [customerId, chapterId, "Lektion", VIDEO_SEC],
+    // A source is required by `contents_video_needs_a_source`: a video with
+    // none is unplayable, and the watch gate would credit the learner nothing
+    // for content they could never have watched.
+    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, duration_sec, media_sources)
+     VALUES ($1,$2,0,'video',$3,$4,$5::jsonb) RETURNING id`,
+    [
+      customerId,
+      chapterId,
+      "Lektion",
+      VIDEO_SEC,
+      JSON.stringify([
+        {
+          url: "https://cdn.example.org/lektion.mp4",
+          mimeType: "video/mp4",
+          label: null,
+        },
+      ]),
+    ],
   );
   quizId = await insert(
     `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title)

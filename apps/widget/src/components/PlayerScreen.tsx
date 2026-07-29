@@ -67,6 +67,11 @@ export function PlayerScreen(props: {
     positionSec: lesson.lastPositionSec,
     durationSec: Number.NaN,
     playing: false,
+    buffering: false,
+    muted: false,
+    volume: 1,
+    rate: 1,
+    ended: false,
   });
   const [paused, setPaused] = useState(false);
   const [tab, setTab] = useState<ContentTab>("summary");

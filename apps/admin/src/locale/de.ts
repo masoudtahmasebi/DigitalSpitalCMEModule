@@ -134,7 +134,20 @@ export const de = {
       details: "Detailinformation",
       material: "Mediathek-Datei",
     },
-    videoUrl: "Video-URL",
+    sources: "Videoquellen",
+    sourcesHint:
+      "Mehrere Fassungen derselben Aufzeichnung. Der Browser nimmt die erste, die er abspielen kann — adaptive Streams (HLS) stehen deshalb vorn.",
+    sourceUrl: "URL",
+    sourceType: "Format",
+    sourceLabel: "Bezeichnung",
+    sourceLabelHint: "Erscheint in der Qualitätsauswahl, z. B. „720p“.",
+    addSource: "Videoquelle hinzufügen",
+    removeSource: (url: string): string => `Videoquelle „${url}“ entfernen`,
+    sourcesMissing:
+      "Ein Video braucht mindestens eine Quelle — ohne sie kann die Fortbildung nicht angesehen werden.",
+    posterUrl: "Vorschaubild",
+    posterHint:
+      "Standbild vor dem Start. Ohne Vorschaubild zeigt der Player bis zum ersten Bild eine schwarze Fläche.",
     durationSec: "Länge in Sekunden",
     durationHint:
       "Pflichtangabe für Videos. Der erforderliche Videoanteil ist ein Prozentsatz dieser Länge — ohne Länge gibt es nichts zu erreichen und der Inhalt wäre überspringbar.",

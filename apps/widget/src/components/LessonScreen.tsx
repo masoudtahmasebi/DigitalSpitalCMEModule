@@ -1,5 +1,11 @@
 /**
- * The lesson screen — video, text or details (P3-03, P5-04).
+ * The lesson screen — video, text or details (P3-03, P5-04, P5-12).
+ *
+ * This is the **reporting** half of watching a video. `VideoPlayer` owns the
+ * media element and the controls; this owns the conversation with the API, and
+ * the two are separate because they fail differently: a bug in the player is a
+ * control that does not respond, a bug here is watch credit a physician earned
+ * and did not receive.
  *
  * ## What it sends and when
  *
@@ -12,10 +18,15 @@
  * ## What it does not do
  *
  * It does not decide whether the video counts as watched, does not unlock
- * anything, and does not display its own computed percentage. The number shown
- * is the one the API returned from the last report — the same figure the
- * completion gate uses, so what the learner reads and what the server enforces
- * cannot disagree.
+ * anything, and does not compute a percentage. Both numbers it shows — the
+ * credited percentage and the shaded passages on the scrub bar — are the
+ * server's answer to the last report, so what the learner sees and what the
+ * completion gate enforces cannot disagree.
+ *
+ * The coverage the bar draws is likewise the server's merged union, replaced
+ * wholesale on every response. Accumulating it locally would show credit for
+ * segments the server rejected as implausible — a bar that disagrees with the
+ * gate it is meant to depict.
  *
  * Seeking is not blocked. The union of watched intervals makes blocking
  * pointless: skipping ahead simply leaves a hole and the percentage never
@@ -26,27 +37,23 @@
  *
  * The layout puts the timeline reading and the **Fortbildung pausieren**
  * control outside the video, in the panel above it (§4.3). So playback is
- * *controlled*: this component reports position and playing/paused up through
- * `onPlayback`, and takes `paused` back down as a prop. The alternative — the
- * chrome reaching in through a ref to call `.pause()` — would give the same
- * fact two owners, and the panel would eventually say "paused" over a video
- * that was still running.
+ * *controlled*: the player reports its real state upward and takes `paused`
+ * back down. The alternative — the chrome reaching in through a ref to call
+ * `.pause()` — would give one fact two owners, and the panel would eventually
+ * say "paused" over a video that was still running.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { WatchedSegment } from "@ds/domain";
 import type { ApiClient, LessonContent } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { coalesce, WatchTracker } from "../watch-tracker.js";
+import { VideoPlayer, type PlaybackState } from "./VideoPlayer.js";
 
 /** How often watched intervals are sent while playing. */
 const FLUSH_INTERVAL_MS = 15_000;
 
-export interface PlaybackState {
-  readonly positionSec: number;
-  /** The media element's own reading; `NaN` until metadata loads. */
-  readonly durationSec: number;
-  readonly playing: boolean;
-}
+export type { PlaybackState } from "./VideoPlayer.js";
 
 export function LessonScreen(props: {
   client: ApiClient;
@@ -81,11 +88,24 @@ function VideoLesson(props: {
   paused: boolean;
   onPlayback: (state: PlaybackState) => void;
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const trackerRef = useRef(new WatchTracker());
-  const [watchedPercent, setWatchedPercent] = useState(props.lesson.watchedPercent);
+  const positionRef = useRef(props.lesson.lastPositionSec);
 
-  const { client, courseSlug, lesson, onProgress, onPlayback } = props;
+  const { client, courseSlug, lesson, onProgress } = props;
+
+  // Both are the server's, replaced on every response — never adjusted locally.
+  const [watchedPercent, setWatchedPercent] = useState(lesson.watchedPercent);
+  const [covered, setCovered] = useState<readonly WatchedSegment[]>(
+    lesson.watchedSegments,
+  );
+
+  // A new lesson in the same mounted component: reset to that lesson's own
+  // figures rather than briefly showing the previous video's coverage.
+  useEffect(() => {
+    setWatchedPercent(lesson.watchedPercent);
+    setCovered(lesson.watchedSegments);
+    positionRef.current = lesson.lastPositionSec;
+  }, [lesson.id, lesson.watchedPercent, lesson.watchedSegments, lesson.lastPositionSec]);
 
   const flush = useCallback(async () => {
     const tracker = trackerRef.current;
@@ -97,9 +117,12 @@ function VideoLesson(props: {
     try {
       const result = await client.recordProgress(courseSlug, lesson.id, {
         segments,
-        lastPositionSec: videoRef.current?.currentTime ?? 0,
+        lastPositionSec: positionRef.current,
       });
       setWatchedPercent(result.watchedPercent);
+      // The union the gate credited, not the intervals we believed we sent.
+      // The difference is visible exactly when something was rejected.
+      setCovered(result.watchedSegments);
       onProgress();
     } catch {
       // Deliberately silent. A failed heartbeat is not something a learner can
@@ -109,14 +132,6 @@ function VideoLesson(props: {
       // learner who keeps watching still converges on the true percentage.
     }
   }, [client, courseSlug, lesson.id, onProgress]);
-
-  // Resume where they left off. `lastPositionSec` is a convenience, never a
-  // gate input — the server ignores it when computing coverage.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (video === null || lesson.lastPositionSec <= 0) return;
-    video.currentTime = lesson.lastPositionSec;
-  }, [lesson.id, lesson.lastPositionSec]);
 
   useEffect(() => {
     const timer = setInterval(() => void flush(), FLUSH_INTERVAL_MS);
@@ -149,64 +164,6 @@ function VideoLesson(props: {
     };
   }, [flush]);
 
-  // The chrome's pause button, applied to the element. Only ever pauses:
-  // browsers refuse a `play()` that no user gesture asked for, and a widget
-  // that started a video by itself would be doing something the learner did
-  // not ask for on someone else's page.
-  useEffect(() => {
-    if (props.paused) videoRef.current?.pause();
-  }, [props.paused]);
-
-  // `timeupdate` fires about four times a second and the panel above shows
-  // whole seconds, so anything finer is re-rendering the sidebar for a reading
-  // nobody can see change.
-  const lastReported = useRef(-1);
-  const report = useCallback(
-    (video: HTMLVideoElement, force: boolean) => {
-      const second = Math.floor(video.currentTime);
-      if (!force && second === lastReported.current) return;
-      lastReported.current = second;
-      onPlayback({
-        positionSec: video.currentTime,
-        durationSec: video.duration,
-        playing: !video.paused && !video.ended,
-      });
-    },
-    [onPlayback],
-  );
-
-  const handleTimeUpdate = () => {
-    const video = videoRef.current;
-    if (video === null) return;
-    trackerRef.current.observe(video.currentTime, !video.paused && !video.seeking);
-    report(video, false);
-  };
-
-  // Play/pause change the panel's wording, not just its numbers, so they report
-  // unconditionally — the second may not have ticked over.
-  const handlePlay = () => {
-    const video = videoRef.current;
-    if (video !== null) report(video, true);
-  };
-
-  const handlePause = () => {
-    trackerRef.current.closeOpen();
-    const video = videoRef.current;
-    if (video !== null) report(video, true);
-    // Pausing is the learner stopping, and "Ihr Fortschritt wird automatisch
-    // gespeichert" is a promise the screen makes out loud. Seeking is not
-    // flushed — a learner dragging the scrub bar would fire a request per
-    // frame for intervals the next timer flush carries anyway.
-    void flush();
-  };
-
-  const handleEnded = () => {
-    trackerRef.current.closeOpen();
-    const video = videoRef.current;
-    if (video !== null) report(video, true);
-    void flush();
-  };
-
   return (
     <>
       <div className="flex items-center justify-between gap-3">
@@ -216,59 +173,32 @@ function VideoLesson(props: {
         </span>
       </div>
 
-      {lesson.videoUrl === null ? (
-        <p className="rounded-md bg-gray-50 p-4 text-sm text-gray-600">
-          {de.content.videoUnsupported}
-        </p>
-      ) : (
-        /*
-          The <track> is rendered below, conditionally on the author having
-          supplied one. `jsx-a11y/media-has-caption` only recognises a static
-          child and cannot see a conditional, so it warns about markup that is
-          in fact present.
-
-          A narrow, single-line disable for exactly that reason: the day the
-          <track> is deleted, the next reviewer finds a disable with no
-          corresponding element.
-        */
-        // eslint-disable-next-line jsx-a11y/media-has-caption
-        <video
-          ref={videoRef}
-          src={lesson.videoUrl}
-          controls
-          preload="metadata"
-          className="w-full rounded-lg bg-black"
-          onTimeUpdate={handleTimeUpdate}
-          onLoadedMetadata={handlePlay}
-          onPlay={handlePlay}
-          onPause={handlePause}
-          onSeeking={() => trackerRef.current.closeOpen()}
-          onEnded={handleEnded}
-        >
-          {/*
-            WCAG 1.2.2 (Captions, Prerecorded) is Level A, and EN 301 549 makes
-            it the reference standard for accessibility in Germany. This is
-            professional education a physician is required to complete: one who
-            cannot hear the video cannot earn the points, and the watch gate
-            records that they did not.
-
-            Rendered only when the author supplied a track. An empty <track>
-            with no `src` is worse than none — the player offers a captions
-            control that produces nothing, which reads as broken captions
-            rather than absent ones.
-          */}
-          {lesson.captionsUrl === null ? null : (
-            <track
-              kind="captions"
-              src={lesson.captionsUrl}
-              srcLang="de"
-              label={de.content.captions}
-              default
-            />
-          )}
-          {de.content.videoUnsupported}
-        </video>
-      )}
+      <VideoPlayer
+        sources={lesson.sources}
+        posterUrl={lesson.posterUrl}
+        captionsUrl={lesson.captionsUrl}
+        title={lesson.title}
+        durationSec={lesson.durationSec}
+        startAtSec={lesson.lastPositionSec}
+        watchedSegments={covered}
+        paused={props.paused}
+        onPlayback={(state) => {
+          positionRef.current = state.positionSec;
+          props.onPlayback(state);
+        }}
+        onTick={(positionSec, playing) => {
+          positionRef.current = positionSec;
+          trackerRef.current.observe(positionSec, playing);
+        }}
+        onStop={(reason) => {
+          trackerRef.current.closeOpen();
+          // Pausing is the learner stopping, and "Ihr Fortschritt wird
+          // automatisch gespeichert" is a promise the screen makes out loud.
+          // A seek is not flushed: dragging the scrub bar would fire a request
+          // per frame for intervals the next timer flush carries anyway.
+          if (reason !== "seek") void flush();
+        }}
+      />
     </>
   );
 }

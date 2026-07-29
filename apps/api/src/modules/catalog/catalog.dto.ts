@@ -57,12 +57,12 @@ export const courseSummarySchema = z.object({
 /**
  * What a course *contains*, for browsing. Never what is inside it.
  *
- * Deliberately carries no `fileUrl`, no `videoUrl` and no `body`. This is an
+ * Deliberately carries no `fileUrl`, no `sources` and no `body`. This is an
  * ungated browse response — anyone holding a token for the tenant can read it,
  * whether or not they have finished module 1. Putting a URL here would make
  * both padlocks in the product decorative at once: the Mediathek's, which
  * withholds `fileUrl` until the module is complete, and the player's, which
- * withholds `videoUrl` until the chapter is reachable.
+ * withholds the media sources until the chapter is reachable.
  *
  * A URL that a client is merely asked not to use is not a gate. The gated
  * shapes are `Material` (via `GET /materials`) and `LessonContent` (via

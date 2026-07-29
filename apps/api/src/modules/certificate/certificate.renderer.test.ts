@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PDFDocument } from "pdf-lib";
 import { buildCertificateData } from "@ds/domain";
 import {
@@ -75,14 +75,35 @@ describe("the rendered PDF", () => {
     expect(images.length).toBeGreaterThanOrEqual(4);
   });
 
-  it("is deterministic for the same input", async () => {
+  it("is deterministic for the same input, whatever the clock says", async () => {
     // Two downloads of the same certificate must be the same document — a
     // physician filing one and their Kammer receiving another would be a
-    // needless discrepancy. (Timestamps come from completedAt, not now.)
-    const a = await renderCertificatePdf(data, assets);
-    const b = await renderCertificatePdf(data, assets);
+    // needless discrepancy. Both PDF timestamps come from `completedAt`, never
+    // from the clock.
+    //
+    // **The clock is moved between the two renders**, and that is the whole
+    // test. It used to render twice back to back, which passed whenever both
+    // landed in the same second — and pdf-lib was stamping `ModDate` with the
+    // wall clock, so the property was false while the assertion held. It failed
+    // only when the pair happened to straddle a tick, which read as flakiness
+    // rather than as the defect it was.
+    //
+    // Rendering hundreds of times until a second elapses would also catch it,
+    // and was tried: it is slow enough to time out under a parallel test run,
+    // which is its own kind of flake. Advancing the clock states the property
+    // directly and costs two renders.
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-07-28T14:35:00Z"));
+      const first = await renderCertificatePdf(data, assets);
 
-    expect(Buffer.from(a).equals(Buffer.from(b))).toBe(true);
+      vi.setSystemTime(new Date("2027-01-01T09:00:00Z"));
+      const later = await renderCertificatePdf(data, assets);
+
+      expect(Buffer.from(first).equals(Buffer.from(later))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -224,6 +224,18 @@ Things that surprise people:
   never loads, and it reads as a broken upload rather than a scoping rule.
 - **Navigation is component state, not the URL.** The page's history belongs to
   the host theme.
+- **The player is ours** (ADR-0011). A `<video>` with its native controls off,
+  custom German controls over it, and a scrub bar with three layers: buffered,
+  **credited coverage**, playhead. The middle one is why it exists — watch
+  credit is the union of intervals played, and no native control bar can show
+  which passages those were. It is drawn from `watchedSegments` the API returns,
+  never from anything the client accumulated, so the bar and the percentage
+  beside it come from one place.
+- **A video has a list of sources, not a URL.** They are rendered as ordered
+  `<source>` children and the browser takes the first `type` it can play, so
+  Safari gets HLS natively and everything else falls through to MP4. There is no
+  user-agent detection in the widget; the ordering _is_ the negotiation
+  (`orderSources`, applied server-side).
 
 ---
 
@@ -239,6 +251,7 @@ half-question is _who owns the URL?_ — see the row on routing below.
 | On a 401          | Re-fetch with `refresh=1`                                               | Back through Keycloak — the portal holds no refresh token, deliberately                      |
 | Around the widget | The customer's theme                                                    | A sign-in header and a back link, nothing else                                               |
 | Routing           | The widget navigates itself; the page's URL belongs to the theme        | Listens for `ds-lms:course-open` and cancels it, so each course has its own bookmarkable URL |
+| Progress events   | Available, unused                                                       | Available, unused                                                                            |
 | Widget bundle     | Copied into `assets/` by `scripts/bundle-widget.mjs`                    | Copied into `public/` by the same script                                                     |
 
 Both load the **artifact** the widget build produced, never its source. The
@@ -246,6 +259,14 @@ widget's Tailwind is scoped under `.ds-lms-root` and inlined as a string for the
 shadow root; a host that re-compiled it with its own config would style it
 differently in each host, which is precisely what the shadow root exists to
 prevent.
+
+Three events leave the widget, and only the first is cancelable:
+`ds-lms:course-open` (the host may take over routing), `ds-lms:progress` and
+`ds-lms:course-complete`. The latter two are notifications about a decision the
+**server** has already recorded, so there is nothing to cancel — and every
+figure in them is a server figure, named individually. A host wiring analytics
+to a client-side estimate would be charting something the platform does not
+credit.
 
 The portal renders **no learner screen of its own** — not even the catalogue,
 which it used to. That was a second React implementation of approved layout

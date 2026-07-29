@@ -31,7 +31,9 @@ import type {
 } from "../../src/modules/catalog/catalog.dto.js";
 import type {
   enrolmentStateSchema,
+  lessonContentSchema,
   materialLibrarySchema,
+  mediaSourceSchema,
   progressReportSchema,
   progressResultSchema,
 } from "../../src/modules/learning/learning.dto.js";
@@ -105,6 +107,16 @@ type _Learning = [
   Expect<
     MutuallyAssignable<z.infer<typeof materialLibrarySchema>, Schemas["MaterialLibrary"]>
   >,
+  /*
+   * `LessonContent` was missing from this list until P5-12, which is the one
+   * shape carrying media URLs and the one the player is built entirely against.
+   * A drift here would have surfaced as a video that does not play rather than
+   * as a failing build.
+   */
+  Expect<
+    MutuallyAssignable<z.infer<typeof lessonContentSchema>, Schemas["LessonContent"]>
+  >,
+  Expect<MutuallyAssignable<z.infer<typeof mediaSourceSchema>, Schemas["MediaSource"]>>,
 ];
 
 type _Assessment = [

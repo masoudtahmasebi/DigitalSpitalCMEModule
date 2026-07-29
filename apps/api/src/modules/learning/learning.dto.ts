@@ -26,12 +26,54 @@ export const contentKindSchema = z.enum(["video", "text", "quiz", "details", "ma
  * `requireReachableContent`, so a locked chapter's video URL is not reachable
  * by reading a catalog response and guessing an id.
  */
+/**
+ * A watched interval, as the client observed it.
+ *
+ * Declared here rather than beside the progress report because `LessonContent`
+ * now returns the merged union too, and a `const` schema referenced before its
+ * own declaration is a temporal-dead-zone crash at module load — not a type
+ * error, so nothing but running it would have caught it.
+ *
+ * Seconds are `number`, not integer, because a media element reports
+ * fractional currentTime; the *derived* percentage is always an integer
+ * (`CLAUDE.md` §5). Bounds are re-checked server-side against the content's
+ * real duration — this schema only rejects the structurally impossible.
+ */
+export const watchedSegmentSchema = z.object({
+  startSec: z.number().nonnegative().finite(),
+  endSec: z.number().nonnegative().finite(),
+});
+
+/**
+ * One playable rendition.
+ *
+ * A list rather than a single URL because a browser takes the first `<source>`
+ * whose `type` it can play and skips the rest — which is the whole of the
+ * platform's format negotiation, and needs an ordered list to express.
+ */
+export const mediaSourceSchema = z.object({
+  url: z.string(),
+  mimeType: z.string(),
+  label: z.string().nullable(),
+});
+
 export const lessonContentSchema = z.object({
   id: z.uuid(),
   kind: contentKindSchema,
   title: z.string(),
   durationSec: z.number().int().positive().nullable(),
-  videoUrl: z.string().nullable(),
+  /**
+   * Already resolved: signed for our storage, passed through for the
+   * customer's own CDN. Empty for anything that is not playable media, and for
+   * a video whose renditions all failed the tenant check — a padlock rather
+   * than an error, the same degradation the single URL used to have.
+   */
+  sources: z.array(mediaSourceSchema),
+  /**
+   * Without a poster the element renders a black rectangle until the first
+   * frame decodes, and the layout's centred play button sits on nothing.
+   */
+  posterUrl: z.string().nullable(),
   /**
    * WebVTT captions, when the author supplied them.
    *
@@ -44,6 +86,16 @@ export const lessonContentSchema = z.object({
   /** Where the learner left off, so the player can resume. */
   lastPositionSec: z.number().int().nonnegative(),
   watchedPercent: z.number().int().min(0).max(100),
+  /**
+   * The merged intervals behind `watchedPercent`, so the scrub bar can shade
+   * what has been covered — and still shade it after a reload.
+   *
+   * Sent rather than left to the client to accumulate for the same reason the
+   * percentage is: these are the exact intervals the figure was derived from,
+   * so the bar and the number cannot tell different stories. The learner's own
+   * data, on an endpoint already behind the sequence gate.
+   */
+  watchedSegments: z.array(watchedSegmentSchema),
 });
 
 export const progressSummarySchema = z.object({
@@ -108,11 +160,6 @@ export const enrolmentStateSchema = z.object({
  * (`CLAUDE.md` §5). Bounds are re-checked server-side against the content's
  * real duration — this schema only rejects the structurally impossible.
  */
-export const watchedSegmentSchema = z.object({
-  startSec: z.number().nonnegative().finite(),
-  endSec: z.number().nonnegative().finite(),
-});
-
 export const progressReportSchema = z.object({
   // Bounded so a client cannot send an unbounded array; a 25-minute video
   // heartbeating every few seconds produces far fewer than this.
@@ -139,6 +186,14 @@ export const progressResultSchema = z.object({
   status: z.enum(["not_started", "in_progress", "completed"]),
   accepted: z.number().int().nonnegative(),
   rejected: z.array(rejectedSegmentSchema),
+  /**
+   * The union after this report.
+   *
+   * The player redraws its coverage bar from this rather than from what it
+   * believed it sent, and the difference shows exactly when a segment was
+   * rejected: an optimistic local bar would display credit the gate withheld.
+   */
+  watchedSegments: z.array(watchedSegmentSchema),
 });
 
 export type EnrolmentState = z.infer<typeof enrolmentStateSchema>;

@@ -75,12 +75,12 @@ describe("contentProblems", () => {
     return { kind: "text", title: "Grundlagen", body: "Inhalt", ...over };
   }
 
+  const mp4 = { url: "https://cdn/x.mp4", mimeType: "video/mp4", label: "720p" };
+
   it("accepts a well-formed item of each kind", () => {
     expect(contentProblems(draft())).toEqual([]);
     expect(
-      contentProblems(
-        draft({ kind: "video", videoUrl: "https://cdn/x.mp4", durationSec: 600 }),
-      ),
+      contentProblems(draft({ kind: "video", sources: [mp4], durationSec: 600 })),
     ).toEqual([]);
     expect(
       contentProblems(draft({ kind: "material", fileUrl: "https://cdn/x.pdf" })),
@@ -94,17 +94,64 @@ describe("contentProblems", () => {
     // skippable while appearing to count toward a CME point.
     for (const durationSec of [undefined, null, 0, -1, 12.5]) {
       expect(
-        contentProblems(
-          draft({ kind: "video", videoUrl: "https://cdn/x.mp4", durationSec }),
-        ),
+        contentProblems(draft({ kind: "video", sources: [mp4], durationSec })),
       ).toContain("durationSec");
     }
   });
 
-  it("refuses a video with no URL", () => {
+  it("refuses a video with no playable source", () => {
+    // Unplayable content whose watch gate would nonetheless record the learner
+    // as having watched none of it — a CME failure caused by an authoring
+    // mistake rather than by anything the physician did.
+    expect(contentProblems(draft({ kind: "video", durationSec: 600 }))).toEqual([
+      "sources",
+    ]);
     expect(
-      contentProblems(draft({ kind: "video", videoUrl: "  ", durationSec: 600 })),
-    ).toEqual(["videoUrl"]);
+      contentProblems(draft({ kind: "video", sources: [], durationSec: 600 })),
+    ).toEqual(["sources"]);
+    expect(
+      contentProblems(
+        draft({
+          kind: "video",
+          sources: [{ url: "  ", mimeType: "video/mp4" }],
+          durationSec: 600,
+        }),
+      ),
+    ).toContain("sources");
+  });
+
+  it("refuses a source type no browser would match, as its own field", () => {
+    // A browser skips an unrecognised `type` in silence, so this presents as a
+    // video that will not play with nothing in the console. Separate from
+    // `sources` because the fix is a different input.
+    expect(
+      contentProblems(
+        draft({
+          kind: "video",
+          sources: [{ url: "https://cdn/x.mp4", mimeType: "mp4" }],
+          durationSec: 600,
+        }),
+      ),
+    ).toEqual(["sourceMimeType"]);
+  });
+
+  it("refuses the same rendition listed twice", () => {
+    expect(
+      contentProblems(
+        draft({
+          kind: "video",
+          sources: [mp4, { ...mp4, label: "1080p" }],
+          durationSec: 600,
+        }),
+      ),
+    ).toContain("sources");
+  });
+
+  it("asks nothing about sources for a kind that has no media", () => {
+    expect(contentProblems(draft({ kind: "text", body: "Inhalt" }))).toEqual([]);
+    expect(
+      contentProblems(draft({ kind: "material", fileUrl: "https://cdn/x.pdf" })),
+    ).toEqual([]);
   });
 
   it("does not demand a duration of anything else", () => {
@@ -121,7 +168,7 @@ describe("contentProblems", () => {
     // one thing per round trip.
     expect(contentProblems(draft({ kind: "video", title: "  " }))).toEqual([
       "title",
-      "videoUrl",
+      "sources",
       "durationSec",
     ]);
   });

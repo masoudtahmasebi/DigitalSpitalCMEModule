@@ -41,7 +41,7 @@ export const de = {
     altersgruppe: "Altersgruppe",
     all: "Alle",
     activeFilters: "Aktive Filter",
-    removeFilter: (value: string): string => `Filter „${value}" entfernen`,
+    removeFilter: (value: string): string => `Filter „${value}“ entfernen`,
 
     pagination: "Seitennavigation",
     previous: "Zurück",
@@ -140,7 +140,7 @@ export const de = {
     back: "Zurück zur Übersicht",
 
     outline: "Modul Übersicht",
-    toggleModule: (title: string): string => `Modul „${title}" ein- oder ausklappen`,
+    toggleModule: (title: string): string => `Modul „${title}“ ein- oder ausklappen`,
 
     /**
      * The accessible name of each sidebar state glyph. Not decorative: in the
@@ -176,6 +176,67 @@ export const de = {
     lockedHint: "Bitte schließen Sie den vorherigen Abschnitt ab.",
     available: "Verfügbar",
     completed: "Abgeschlossen",
+  },
+
+  /**
+   * The player's controls (P5-12).
+   *
+   * Every control has a text label even where the button shows only an icon:
+   * the icon is `aria-hidden` and this is its accessible name, so the player is
+   * operable by a physician using a screen reader. That is a floor here rather
+   * than a nicety — the alternative is a CME course they cannot complete.
+   */
+  media: {
+    play: "Abspielen",
+    pause: "Pause",
+    replay: "Erneut abspielen",
+    mute: "Ton aus",
+    unmute: "Ton ein",
+    volume: "Lautstärke",
+    seek: "Wiedergabeposition",
+    /** Announced for the slider's value: "14:35 von 25:45". */
+    seekValue: (position: string, duration: string): string =>
+      `${position} von ${duration}`,
+    remaining: (clock: string): string => `noch ${clock}`,
+    /** The union the server has credited — not the furthest position reached. */
+    covered: (percent: number): string => `${percent} % angesehen`,
+    speed: "Geschwindigkeit",
+    speedValue: (rate: number): string =>
+      rate === 1 ? "Normal" : `${String(rate).replace(".", ",")}×`,
+    quality: "Qualität",
+    qualityAuto: "Automatisch",
+    captionsOn: "Untertitel einblenden",
+    captionsOff: "Untertitel ausblenden",
+    pictureInPicture: "Bild-in-Bild",
+    fullscreen: "Vollbild",
+    exitFullscreen: "Vollbild beenden",
+    buffering: "Wird geladen …",
+
+    /** Named per failure: "it did not play" is not something a learner can act on. */
+    error: {
+      unsupported:
+        "Dieses Video kann in Ihrem Browser nicht abgespielt werden. Bitte verwenden Sie einen aktuellen Browser.",
+      network:
+        "Das Video konnte nicht geladen werden. Bitte prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+      decode:
+        "Die Videodatei ist beschädigt oder wird nicht unterstützt. Bitte wenden Sie sich an den Betreiber.",
+      aborted: "Die Wiedergabe wurde abgebrochen.",
+      missing: "Für diesen Abschnitt ist kein Video hinterlegt.",
+      retry: "Erneut laden",
+    },
+
+    /** Listed in a details element under the player, so the shortcuts are discoverable. */
+    shortcuts: "Tastaturkürzel",
+    shortcutList: [
+      ["Leertaste / K", "Abspielen oder pausieren"],
+      ["← / →", "5 Sekunden zurück oder vor"],
+      ["J / L", "10 Sekunden zurück oder vor"],
+      ["↑ / ↓", "Lautstärke"],
+      ["M", "Ton aus oder ein"],
+      ["C", "Untertitel"],
+      ["F", "Vollbild"],
+      ["0 – 9", "Zu 0 % … 90 % springen"],
+    ] as ReadonlyArray<readonly [string, string]>,
   },
 
   content: {
@@ -275,7 +336,7 @@ export const de = {
     lockedGroup: "Wird nach Abschluss der Module freigeschaltet",
     /** The padlock is decorative; this is what a screen reader hears instead. */
     lockedGroupLabel: (moduleTitle: string): string =>
-      `Materialien zu „${moduleTitle}" sind gesperrt`,
+      `Materialien zu „${moduleTitle}“ sind gesperrt`,
     download: "Herunterladen",
     /** Byte sizes are shown in German notation: "1,4 MB". */
     size: (bytes: number): string => {

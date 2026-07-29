@@ -311,7 +311,7 @@ describe("the answer key has nowhere to go", () => {
 });
 
 describe("nor does an ungated URL", () => {
-  it("carries no fileUrl, videoUrl or body on any content", async () => {
+  it("carries no media URL, fileUrl or body on any content", async () => {
     // This response is readable by any holder of a tenant token, whether or
     // not they have finished anything. A URL in it has no gate in front of it,
     // whatever the Mediathek and the player do afterwards — which is how the
@@ -330,7 +330,8 @@ describe("nor does an ungated URL", () => {
       for (const chapter of module.chapters) {
         for (const content of chapter.contents) {
           expect(content).not.toHaveProperty("fileUrl");
-          expect(content).not.toHaveProperty("videoUrl");
+          expect(content).not.toHaveProperty("sources");
+          expect(content).not.toHaveProperty("posterUrl");
           expect(content).not.toHaveProperty("body");
         }
       }
