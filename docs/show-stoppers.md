@@ -45,29 +45,37 @@ both arise from the Anerkennungsbescheid. They fit in one email to
 `zertifizierung@aekwl.de`, and S12 is the one worth sending today — it is the
 only item on this list with no engineering workaround at all.
 
+**A live token response arrived on 29.07 and settled S2** — there is a refresh
+token and the access-token lifespan is 600 s. It also surfaced two things that
+matter more than the answer: **S17**, the tokens carry `aud: account` so the API
+refuses every one of them today, and **S18**, the refresh token supplied is an
+_offline_ token that never expires and needs revoking now.
+
 **Two more arrived on 28.07 with the plugin source.** S3 closes — we have the
 code. Reading it closed S2 too, in the worst way: **the plugin stores no token
 at all**, so P6-02's premise is void and MEDICE has a decision to make this
 week. And it surfaced **S15**, a live API key hardcoded in that file, which
 wants action today.
 
-| #       | Item                                                                    | Blocks           | Needed by | Owner              |
-| ------- | ----------------------------------------------------------------------- | ---------------- | --------- | ------------------ |
-| S12     | **"Originalstempel" may invalidate an emailed certificate**             | M3 · 30.08       | **14.08** | ÄKWL               |
-| S15     | **Live API key hardcoded in the MEDICE plugin — rotate it**             | —                | **today** | MEDICE             |
-| S2      | **The WP plugin stores no token.** Decide how it will, + token lifespan | M1 · 09.08       | **31.07** | MEDICE dev         |
-| S4      | Scope decision on 4 layout features not in the 140 h                    | M2 · 23.08       | **06.08** | PM + DigitalSpital |
-| S11     | Confirm `Veranstaltungsende` = the learner's completion date            | M3 · 30.08       | 07.08     | ÄKWL               |
-| S5      | Certificate-after-EIV vs the launch fallback                            | M3 · 30.08       | 14.08     | PM + MEDICE        |
-| S7      | `required_watch_percent`: 80 % or 100 %, in writing                     | M2 · 23.08       | 14.08     | MEDICE             |
-| S8      | ADHS SMTP configuration, and which MEDICE account sends                 | M3 · 30.08       | 21.08     | MEDICE             |
-| S14     | Accreditation expires 12.10.2026; platform change must be notified      | post-launch      | 24.08     | MEDICE             |
-| S9      | Hetzner account ownership and DNS                                       | M4 · 06.09       | 24.08     | DigitalSpital      |
-| S10     | VNR password was shared over chat                                       | —                | now       | DigitalSpital      |
-| ~~S3~~  | ~~WordPress repository access~~                                         | **CLOSED 28.07** | —         | —                  |
-| ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                    | **CLOSED 28.07** | —         | —                  |
-| ~~S6~~  | ~~Signature/stamp asset~~                                               | **CLOSED 28.07** | —         | —                  |
-| ~~S1~~  | ~~Repository write access~~                                             | **CLOSED 27.07** | —         | —                  |
+| #       | Item                                                                               | Blocks           | Needed by | Owner              |
+| ------- | ---------------------------------------------------------------------------------- | ---------------- | --------- | ------------------ |
+| S12     | **"Originalstempel" may invalidate an emailed certificate**                        | M3 · 30.08       | **14.08** | ÄKWL               |
+| S15     | **Live API key hardcoded in the MEDICE plugin — rotate it**                        | —                | **today** | MEDICE             |
+| S18     | **Offline refresh token exposed — revoke, and stop requesting `offline_access`**   | —                | **today** | MEDICE             |
+| S17     | **Token `aud` is `account`; add an audience mapper or no learner can log in**      | M1 · 09.08       | **31.07** | MEDICE dev         |
+| S2      | **The WP plugin stores no token.** Decide how it will — lifespan now known (600 s) | M1 · 09.08       | **31.07** | MEDICE dev         |
+| S4      | Scope decision on 4 layout features not in the 140 h                               | M2 · 23.08       | **06.08** | PM + DigitalSpital |
+| S11     | Confirm `Veranstaltungsende` = the learner's completion date                       | M3 · 30.08       | 07.08     | ÄKWL               |
+| S5      | Certificate-after-EIV vs the launch fallback                                       | M3 · 30.08       | 14.08     | PM + MEDICE        |
+| S7      | `required_watch_percent`: 80 % or 100 %, in writing                                | M2 · 23.08       | 14.08     | MEDICE             |
+| S8      | ADHS SMTP configuration, and which MEDICE account sends                            | M3 · 30.08       | 21.08     | MEDICE             |
+| S14     | Accreditation expires 12.10.2026; platform change must be notified                 | post-launch      | 24.08     | MEDICE             |
+| S9      | Hetzner account ownership and DNS                                                  | M4 · 06.09       | 24.08     | DigitalSpital      |
+| S10     | VNR password was shared over chat                                                  | —                | now       | DigitalSpital      |
+| ~~S3~~  | ~~WordPress repository access~~                                                    | **CLOSED 28.07** | —         | —                  |
+| ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                               | **CLOSED 28.07** | —         | —                  |
+| ~~S6~~  | ~~Signature/stamp asset~~                                                          | **CLOSED 28.07** | —         | —                  |
+| ~~S1~~  | ~~Repository write access~~                                                        | **CLOSED 27.07** | —         | —                  |
 
 S11 drops from first place to fifth: the Muster answers it, and the answer is
 already what the code does. It stays open because confirming a reading is not
@@ -248,12 +256,35 @@ has to decide where:
 **Recommendation: A.** B works and the code exists, but the whole point of the
 WordPress integration is "no second login" — that is M1's demo criterion.
 
-**The remaining unknown is the token lifespan.** The realm's access-token TTL
-still decides whether a 25-minute video outlives it. At the Keycloak default of
-five minutes it does, several times over — and with **no refresh token stored**,
-option A must either re-run the password grant (it cannot; the password is not
-kept) or store the refresh token too. **Ask MEDICE for the realm's
-`Access Token Lifespan` and `SSO Session Idle`.**
+### Answered 29.07: a real token response from the live realm
+
+MEDICE supplied a complete token response from `login.medice.com`. **The raw
+tokens are deliberately not reproduced here or anywhere in this repository** —
+see §7 and S18. What it settles:
+
+| Question                  | Answer                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------- |
+| Is there a refresh token? | **Yes.**                                                                        |
+| Access-token lifespan     | **600 s — ten minutes.**                                                        |
+| Issuer                    | `https://login.medice.com/auth/realms/medicerealm`                              |
+| Client (`azp`)            | `gemeinsam-adhs-begegnen`                                                       |
+| Signing                   | RS256, so our accepted-algorithm list needs no change                           |
+| Profile claims present    | `sub`, `given_name`, `family_name`, `email`, `institution`, `preferredLanguage` |
+
+Ten minutes settles the design question option A raised: a 25-minute video
+outlives an access token roughly 2.5 times, so **the WordPress endpoint must
+refresh**, not merely hand out whatever it stored at login. The widget already
+asks for a fresh token on a 401 (`token.ts`, `refresh: true`), so the work is
+entirely on the WordPress side — and a refresh token now demonstrably exists to
+do it with.
+
+Option **A** therefore stands as the recommendation, with one addition: what is
+stored at login is the **refresh** token, and the endpoint exchanges it for an
+access token on demand.
+
+Two things in that response are more important than the answer, and both have
+their own entry: the audience is wrong for us (**S17**) and the refresh token
+never expires (**S18**).
 
 ### Three defects in the supplied plugin, reported as a courtesy
 
@@ -571,6 +602,118 @@ Related: the same panel's `14:35 / 25:45` is drawn against the **authored**
 video length, because that is what the server computes the watch percentage
 from. A player reading the media element's own duration could show a total that
 disagreed with the percentage next to it.
+
+---
+
+## S17 · MEDICE's tokens carry the wrong audience — **every learner is refused today**
+
+Owner: MEDICE (Keycloak admin). Needed by **31.07**, with S2. Blocks M1.
+
+The access token from `login.medice.com` carries:
+
+```
+aud: "account"          ← Keycloak's default
+azp: "gemeinsam-adhs-begegnen"
+```
+
+`"account"` is Keycloak's own built-in client. It is **not** an audience for
+this API, and nothing in that token says it was minted to be sent to us.
+
+ADR-0003 is the reason that matters: the API validates every bearer token
+against JWKS for signature, issuer, **audience** and expiry, and takes the
+expected issuer and audience from the project's own binding row. A token whose
+audience is `account` fails that check.
+
+**Verified, not inferred.** Running the real `verifyToken` against tokens shaped
+like MEDICE's:
+
+| `aud` on the token                | Result                        |
+| --------------------------------- | ----------------------------- |
+| `"account"`                       | **REJECTED** `wrong_audience` |
+| `"ds-education-api"`              | accepted                      |
+| `["account", "ds-education-api"]` | accepted                      |
+
+So today, with a perfectly valid MEDICE login, **every learner gets a 401 and no
+course opens.**
+
+### The fix is one Keycloak change on MEDICE's side
+
+Add an **Audience mapper** to the `gemeinsam-adhs-begegnen` client — a dedicated
+client scope with a `oidc-audience-mapper` naming this API's audience (the value
+we put in `projects.keycloak_audience`). Keycloak then issues
+`aud: ["account", "<our audience>"]`, which the third row above shows is already
+accepted. **No code change here.**
+
+### Why we should not simply accept `azp` instead
+
+It is one line and it would work, and it is the wrong line. `aud` is the claim
+that says _who this token is for_; `azp` says which client asked for it.
+Accepting a token on `azp` alone means accepting any token that client ever
+minted, for any purpose, at any service — the confused-deputy problem the OAuth
+security BCP is explicit about. Today there is one client and the practical risk
+is small; the point is that the check would no longer mean what ADR-0003 says it
+means, and nobody would notice when a second client appears.
+
+If MEDICE genuinely cannot add the mapper, the fallback is a **per-project
+opt-in** — a column saying "this binding accepts `azp = X` in place of an
+audience" — so the weakening is visible in the data, scoped to one tenant, and
+reviewable. That is auth code and carries the human review gate (CLAUDE.md §2);
+it is **not** being written on spec.
+
+---
+
+## S18 · The supplied refresh token is an **offline** token and never expires — **revoke it today**
+
+Owner: MEDICE. Needed: **now**.
+
+The token response pasted into the project chat on 29.07 contains a refresh
+token with:
+
+```
+typ: "Offline"
+no  exp  claim
+refresh_expires_in: 0
+scope: … offline_access …
+```
+
+An offline token is a **permanent credential**. It does not expire with the
+session, it survives logout, and it can be exchanged for a fresh access token
+for that physician indefinitely. It has now been through a chat log.
+
+**Two actions, and the first is not optional:**
+
+1. **Revoke it.** In Keycloak: that user's _Consents_ / offline sessions for
+   `gemeinsam-adhs-begegnen`, or `POST /revoke` on the realm. This is the same
+   class of incident as S15 and should be treated the same way. The access token
+   beside it has already expired on its own (ten minutes); the refresh token has
+   not and will not.
+2. **Ask whether `offline_access` should be requested at all.** For a browser
+   SSO session it should not be. Requesting it turns every learner login into a
+   permanent credential sitting in whatever storage the WordPress side chooses —
+   which is a much larger exposure than the one token above. A normal refresh
+   token, bounded by `SSO Session Idle` / `Max`, is what this integration needs.
+
+**Nothing from that response is recorded in this repository** — no token, no
+subject, no name, no email, no address. §7's rule covers credentials; this
+extends it to the personal data that came with them.
+
+### Two useful things the same response revealed
+
+Neither is a blocker; both are decisions that just became cheaper.
+
+- **The address is already in the ID token.** `address` carries street, postal
+  code, locality and country. §6.8 records that the certificate Muster has an
+  `Anschrift` field we deliberately do not collect. We would not have to: it is
+  available at login. That does **not** make it automatic — ADR-0004 keeps the
+  personal-data footprint minimal on purpose, and pulling an address in because
+  it happens to be there is exactly the drift GDPR data minimisation forbids. It
+  is now a choice rather than a constraint, and it belongs to the PM with
+  `docs/gdpr.md` §2 updated either way.
+- **There is an empty `medicenumber` claim.** If MEDICE intend that field to
+  hold the EFN, the collection step in §1 could be pre-filled from the token
+  instead of typed — which is the same idea as the Salesforce `vDMC_EFN__c`
+  pre-fill in §6.12. **Ask what `medicenumber` is for.** It is empty for this
+  user, so nothing can be concluded from the value.
 
 ---
 

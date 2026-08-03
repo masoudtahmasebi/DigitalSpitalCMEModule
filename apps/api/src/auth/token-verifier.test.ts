@@ -33,7 +33,7 @@ beforeAll(async () => {
 async function mint(
   overrides: {
     issuer?: string;
-    audience?: string;
+    audience?: string | string[];
     exp?: string | number;
     nbf?: number;
     sub?: string;
@@ -156,6 +156,31 @@ describe("each failure mode is rejected with its own reason", () => {
 });
 
 describe("issuer and audience come from configuration, not the token", () => {
+  it('refuses Keycloak\'s default `aud: "account"` — S17', async () => {
+    // Not a hypothetical. MEDICE's live realm issues exactly this: a valid,
+    // correctly signed token for the right user, whose only audience is
+    // Keycloak's own built-in `account` client. Nothing in it says it was
+    // minted to be sent here, so ADR-0003's audience check refuses it — and
+    // every learner gets a 401 until an audience mapper is added on their side.
+    //
+    // Pinned so the requirement lives in code, and so nobody "fixes" the
+    // lockout by quietly relaxing this check.
+    const token = await mint({ audience: "account" });
+    await expect(verifyToken(token, jwks, OPTIONS)).rejects.toMatchObject({
+      reason: "wrong_audience",
+    });
+  });
+
+  it("accepts our audience alongside `account`, which is what the mapper produces", async () => {
+    // The whole fix, and the reason it needs no code change here: Keycloak's
+    // audience mapper appends rather than replaces, and `aud` is allowed to be
+    // an array.
+    const token = await mint({ audience: ["account", OPTIONS.audience] });
+    await expect(verifyToken(token, jwks, OPTIONS)).resolves.toMatchObject({
+      subject: expect.any(String),
+    });
+  });
+
   it("a token cannot self-declare an audience the verifier does not require", async () => {
     // The token claims aud "ds-education-api" honestly, but the verifier is
     // configured to require a different audience — the token loses.
