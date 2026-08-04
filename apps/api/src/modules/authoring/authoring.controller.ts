@@ -379,7 +379,10 @@ export class AuthoringController {
   }
 
   private service(db: Db): AuthoringService {
-    return AuthoringService.fromDb(db, createSecretCipher(this.config.NODE_ENV));
+    return AuthoringService.fromDb(
+      db,
+      createSecretCipher(this.config.NODE_ENV, this.config.SECRETS_KMS_KEY),
+    );
   }
 }
 

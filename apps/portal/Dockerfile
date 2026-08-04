@@ -22,20 +22,17 @@ FROM node:22-bookworm-slim AS build
 RUN corepack enable
 WORKDIR /repo
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
-COPY apps/api/package.json                 apps/api/
-COPY apps/admin/package.json               apps/admin/
-COPY apps/portal/package.json              apps/portal/
-COPY apps/widget/package.json              apps/widget/
-COPY apps/eiv-harness/package.json         apps/eiv-harness/
-COPY packages/domain/package.json          packages/domain/
-COPY packages/sdk/package.json             packages/sdk/
-COPY packages/eiv-client/package.json      packages/eiv-client/
-COPY packages/oidc/package.json            packages/oidc/
-COPY packages/config/package.json          packages/config/
+# The lockfile alone primes the store: `pnpm fetch` needs nothing else, so a
+# workspace package added later cannot be left out of this layer. The hand-
+# maintained list of manifests that used to live here had already gone stale
+# and made the API image unbuildable — see apps/api/Dockerfile for the full
+# account.
+COPY pnpm-lock.yaml ./
+RUN pnpm fetch
 
-RUN pnpm install --frozen-lockfile
 COPY . .
+
+RUN pnpm install --offline --frozen-lockfile
 
 ARG VITE_API_BASE
 ARG VITE_PROJECT_SLUG

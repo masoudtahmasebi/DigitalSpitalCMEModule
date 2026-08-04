@@ -223,7 +223,10 @@ export class AdminController {
   }
 
   private service(db: Db): AdminService {
-    return AdminService.fromDb(db, createSecretCipher(this.config.NODE_ENV));
+    return AdminService.fromDb(
+      db,
+      createSecretCipher(this.config.NODE_ENV, this.config.SECRETS_KMS_KEY),
+    );
   }
 }
 

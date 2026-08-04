@@ -138,6 +138,78 @@ jobs:
       - name: Integration tests
         run: pnpm test:integration
 
+  # Every image, on every branch — because the alternative was finding out at
+  # deploy time, and that is exactly what happened.
+  #
+  # Images were built only by deploy.yml, which runs on `workflow_run` after CI
+  # succeeds. So a Dockerfile could be broken for as long as nobody deployed,
+  # and two were: the API image failed at install (a hand-maintained list of
+  # workspace manifests had gone stale, so `packages/mail`'s dependencies were
+  # never installed) and then again at the production prune (`pnpm deploy`
+  # cannot take a `...` filter, and pnpm 10 requires `--legacy`). A green CI
+  # meant nothing about whether the thing could be shipped.
+  #
+  # Build only — nothing is pushed. The point is that `docker build` succeeds.
+  images:
+    name: Container images build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      # The three frontends inline their configuration at build time, so they
+      # need the build-args to compile. The values are placeholders — this job
+      # asks whether the image builds, not whether it is configured for an
+      # environment. deploy.yml supplies the real ones.
+      - name: Build the admin console image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/admin/Dockerfile
+          push: false
+          build-args: |
+            VITE_API_BASE=https://api.example.invalid
+            VITE_PROJECT_SLUG=ci
+            VITE_KEYCLOAK_ISSUER=https://keycloak.example.invalid/realms/ci
+            VITE_KEYCLOAK_CLIENT_ID=ci
+            VITE_REDIRECT_URI=https://admin.example.invalid/
+          cache-from: type=gha,scope=admin
+          cache-to: type=gha,scope=admin,mode=max
+
+      - name: Build the portal image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/portal/Dockerfile
+          push: false
+          build-args: |
+            VITE_API_BASE=https://api.example.invalid
+            VITE_PROJECT_SLUG=ci
+            VITE_KEYCLOAK_ISSUER=https://keycloak.example.invalid/realms/ci
+            VITE_KEYCLOAK_CLIENT_ID=ci
+            VITE_REDIRECT_URI=https://portal.example.invalid/
+          cache-from: type=gha,scope=portal
+          cache-to: type=gha,scope=portal,mode=max
+
+      - name: Build the widget image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/widget/Dockerfile
+          push: false
+          cache-from: type=gha,scope=widget
+          cache-to: type=gha,scope=widget,mode=max
+
   security:
     name: Security audit
     runs-on: ubuntu-latest

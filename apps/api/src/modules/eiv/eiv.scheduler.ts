@@ -58,7 +58,10 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
     );
 
     this.service = new EivService(
-      new EivRepository(pool, createSecretCipher(config.NODE_ENV)),
+      new EivRepository(
+        pool,
+        createSecretCipher(config.NODE_ENV, config.SECRETS_KMS_KEY),
+      ),
       pluginRegistry().require("accreditationReporter"),
       new AuditService(pool),
       {

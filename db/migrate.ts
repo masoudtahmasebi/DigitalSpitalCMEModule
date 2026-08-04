@@ -1,73 +1,36 @@
 /**
- * Migration runner (P0-04).
+ * The developer-facing migration entrypoint — `pnpm db:migrate` (P0-04).
  *
- * Applies every `db/migrations/*.sql` file in filename order, exactly once,
- * tracked in `schema_migrations`. Each file is already its own transaction
- * (`BEGIN` … `COMMIT`), so this runner sends the file's text as one
- * multi-statement query rather than wrapping it in a second, redundant
- * transaction.
+ * The algorithm lives in `@ds/migrator`, not here, and not in a second copy in
+ * the API image. See that package's header for why the ledger row is written
+ * inside the migration's own transaction and why an advisory lock is held; both
+ * are properties a deploy depends on, and neither is something a developer
+ * should be able to run a *different* version of.
  *
  * Connects via `MIGRATION_DATABASE_URL` — the `ds_migrator` role, never
  * `ds_app` (ADR-0002). `ds_app` is not the schema owner and cannot create the
  * objects these files define.
  */
 
-import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import pg from "pg";
+import { runMigrations } from "@ds/migrator";
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "migrations");
 
-export async function migrate(connectionString: string): Promise<readonly string[]> {
-  const pool = new pg.Pool({ connectionString });
+const connectionString = process.env["MIGRATION_DATABASE_URL"];
 
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        filename    text PRIMARY KEY,
-        applied_at  timestamptz NOT NULL DEFAULT now()
-      )
-    `);
+if (connectionString === undefined || connectionString === "") {
+  console.error("MIGRATION_DATABASE_URL is not set.");
+  process.exitCode = 1;
+} else {
+  const applied = await runMigrations({
+    connectionString,
+    migrationsDir: MIGRATIONS_DIR,
+    log: (message) => console.warn(message),
+  });
 
-    const files = (await readdir(MIGRATIONS_DIR))
-      .filter((name) => name.endsWith(".sql"))
-      .sort();
-
-    const { rows: appliedRows } = await pool.query<{ filename: string }>(
-      "SELECT filename FROM schema_migrations",
-    );
-    const applied = new Set(appliedRows.map((row) => row.filename));
-
-    const newlyApplied: string[] = [];
-
-    for (const file of files) {
-      if (applied.has(file)) continue;
-
-      // `file` is one of MIGRATIONS_DIR's own readdir() results, not external input.
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      const sql = await readFile(join(MIGRATIONS_DIR, file), "utf8");
-      await pool.query(sql);
-      await pool.query("INSERT INTO schema_migrations (filename) VALUES ($1)", [file]);
-      newlyApplied.push(file);
-    }
-
-    return newlyApplied;
-  } finally {
-    await pool.end();
-  }
-}
-
-// Run standalone: pnpm db:migrate
-if (process.argv[1]?.endsWith("migrate.ts")) {
-  const connectionString = process.env["MIGRATION_DATABASE_URL"];
-  if (connectionString === undefined) {
-    console.error("MIGRATION_DATABASE_URL is not set.");
-    process.exitCode = 1;
-  } else {
-    const applied = await migrate(connectionString);
-    console.warn(
-      applied.length === 0 ? "Already up to date." : `Applied: ${applied.join(", ")}`,
-    );
-  }
+  console.warn(
+    applied.length === 0 ? "Already up to date." : `Applied ${applied.length}.`,
+  );
 }

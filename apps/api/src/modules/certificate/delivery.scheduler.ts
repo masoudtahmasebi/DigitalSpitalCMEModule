@@ -56,7 +56,10 @@ export class CertificateDeliveryScheduler implements OnModuleInit, OnModuleDestr
     }
 
     this.service = new CertificateDeliveryService(
-      new DeliveryRepository(pool, createSecretCipher(config.NODE_ENV)),
+      new DeliveryRepository(
+        pool,
+        createSecretCipher(config.NODE_ENV, config.SECRETS_KMS_KEY),
+      ),
       channel,
       new AuditService(pool),
       {

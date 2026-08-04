@@ -1,0 +1,51 @@
+# What must never enter a build context.
+#
+# There was no .dockerignore, and `COPY . .` in four Dockerfiles took whatever
+# the context held. On a CI runner that is a clean checkout and the result is
+# merely large; on a developer's machine running `docker build` by hand it is
+# their `node_modules` (with host-platform binaries, silently overwriting the
+# image's correctly-installed tree) and, worse, any local `.env`.
+#
+# A `.env` copied into a layer is in the image for good: `docker history` shows
+# it, anyone who can pull the image can read it, and deleting the file in a
+# later layer does not remove it from the earlier one. This file holds the
+# database password, the KMS key and the VNR credentials.
+
+# Dependencies and build output — the image installs and builds its own.
+node_modules
+**/node_modules
+dist
+**/dist
+.turbo
+**/.turbo
+
+# Secrets. `.env.example` is deliberately not excluded: it is documentation and
+# carries no real values.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Version control and CI metadata. `.git` alone is tens of megabytes of history
+# that no build step reads.
+.git
+.github
+.gitignore
+
+# Local state that happens to sit in the repository root.
+dump.rdb
+*.log
+
+# Editor and OS noise.
+.vscode
+.idea
+.DS_Store
+
+# Prose does not affect any image's output, and excluding it keeps an edit in
+# `docs/` from invalidating every build cache.
+#
+# Test files are deliberately *not* excluded. They are cheap, and a build that
+# silently loses a file a tsconfig happens to reference fails in a way that
+# looks like a compiler problem rather than a missing file.
+docs

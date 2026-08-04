@@ -57,6 +57,31 @@ Concretely:
    `BYPASSRLS` role. It is an explicit, audited code path that sets
    `app.customer_id` to the customer being acted upon, one customer at a time.
 
+6. **`users` and `user_roles` are outside this scheme, deliberately.** They are
+   the only tenant-relevant tables without RLS, and the reason is circular:
+   `app.customer_id` is _derived from_ a user's role grants, so a policy keyed
+   on `app.customer_id` could not be satisfied at the moment those rows have to
+   be read. `UserRepository` therefore runs on the raw pool, outside the tenant
+   transaction.
+
+   Two properties replace RLS here, and both are structural rather than
+   conventional:
+
+   - **`users` is not tenant-scoped at all.** One physician may hold enrolments
+     with several customers under one Keycloak identity; splitting the row per
+     customer would make "the same doctor" unrepresentable.
+   - **`user_roles` is only ever read for the authenticated subject.**
+     `rolesFor(userId)` takes the id resolved from the validated token, and no
+     endpoint accepts a user id from a client. The scoping is by identity, not
+     by tenant — which is the correct axis for a table that answers "who is
+     this caller".
+
+   `schema_migrations` also has no RLS: it holds no tenant data.
+
+   This exception is what invariant 3 in `CLAUDE.md` means by _tenant-scoped_.
+   It was recorded here after being found cited in code as "the ADR-0002
+   exception" while the ADR itself did not mention it.
+
 ## Rationale
 
 **The denormalised `customer_id` is the price of a uniform policy.** Without it,

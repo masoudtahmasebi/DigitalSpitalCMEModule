@@ -64,7 +64,27 @@ services:
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
       KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE}
       KEYCLOAK_JWKS_URI: ${KEYCLOAK_JWKS_URI}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      # The variable the API actually reads is ALLOWED_ORIGINS. This line said
+      # CORS_ALLOWED_ORIGINS, which the config schema does not define — so the
+      # allow-list arrived empty and every cross-origin call from the MEDICE
+      # WordPress site was refused. The host-side name is kept as-is so an
+      # existing `.env` on the server still works.
+      ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+
+      # Encryption at rest for the VNR password and SMTP credentials. Without
+      # it the API refuses to start in production, by design — there is no
+      # plaintext fallback (shared/secret-cipher.ts).
+      SECRETS_KMS_KEY: ${SECRETS_KMS_KEY:?SECRETS_KMS_KEY is required — openssl rand -base64 32}
+
+      # Where the download link in a certificate email points. Empty means a
+      # broken link in the one email a learner is told to expect.
+      PORTAL_BASE_URL: ${PORTAL_BASE_URL}
+
+      # An EIV submission approaching its statutory deadline raises an alert
+      # rather than failing silently (CLAUDE.md §4 invariant 8). Unset, the
+      # alert has nowhere to go.
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+
       EIV_BASE_URL: ${EIV_BASE_URL}
       EIV_ALLOW_LIVE: ${EIV_ALLOW_LIVE}
       # Exactly one submitter, whatever the API scales to. Two workers racing
