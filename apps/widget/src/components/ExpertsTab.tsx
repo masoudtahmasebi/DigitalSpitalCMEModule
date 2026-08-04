@@ -17,6 +17,7 @@
 import { useState } from "react";
 import type { CourseExpert } from "@ds/sdk";
 import { de } from "../locale/de.js";
+import { ImagePlaceholder } from "./primitives.js";
 
 export function ExpertsTab(props: { experts: readonly CourseExpert[] }) {
   if (props.experts.length === 0) {
@@ -24,13 +25,16 @@ export function ExpertsTab(props: { experts: readonly CourseExpert[] }) {
   }
 
   return (
-    <ul className="space-y-4">
-      {props.experts.map((expert) => (
-        <li key={expert.id}>
-          <ExpertCard expert={expert} />
-        </li>
-      ))}
-    </ul>
+    <section>
+      <h2 className="text-lg font-bold text-gray-900">{de.experts.heading}</h2>
+      <ul className="mt-4 divide-y divide-gray-200">
+        {props.experts.map((expert) => (
+          <li key={expert.id} className="py-5 first:pt-0">
+            <ExpertCard expert={expert} />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -39,26 +43,29 @@ function ExpertCard(props: { expert: CourseExpert }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <article className="flex gap-4 rounded-[var(--ds-radius)] border border-gray-200 p-4">
-      {expert.photoUrl === null ? null : (
+    <article className="flex gap-5">
+      {expert.photoUrl === null ? (
+        // A placeholder rather than nothing: the layout's rows are a fixed
+        // shape, and a portrait missing for one speaker should not reflow the
+        // list around them.
+        <ImagePlaceholder className="h-24 w-28 shrink-0 rounded-lg" />
+      ) : (
         <img
           src={expert.photoUrl}
           // Decorative: the name is the accessible content and sits beside it.
           // A portrait's alt text that repeats the name makes a screen reader
           // announce the person twice.
           alt=""
-          className="h-20 w-20 shrink-0 rounded-full object-cover"
+          className="h-24 w-28 shrink-0 rounded-lg object-cover"
           referrerPolicy="no-referrer"
         />
       )}
 
-      <div className="min-w-0 space-y-1">
-        <p className="text-xs uppercase tracking-wide text-gray-500">
-          {expert.roleLabel}
-        </p>
-        <p className="text-base font-semibold text-gray-900">{expert.name}</p>
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-brand-600">{expert.roleLabel}</p>
+        <p className="text-base font-bold text-gray-900">{expert.name}</p>
         {expert.institution === null ? null : (
-          <p className="text-sm text-gray-700">{expert.institution}</p>
+          <p className="text-sm text-gray-600">{expert.institution}</p>
         )}
 
         {expert.biography === null ? null : (

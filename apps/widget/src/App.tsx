@@ -43,7 +43,7 @@ import { EvaluationScreen } from "./components/EvaluationScreen.js";
 import { CompletionScreen } from "./components/CompletionScreen.js";
 import { CertificatePanel } from "./components/CertificatePanel.js";
 import { MediathekPanel } from "./components/MediathekPanel.js";
-import { Button, ErrorNotice, Spinner } from "./components/primitives.js";
+import { Button, ErrorNotice, Spinner, TabBar } from "./components/primitives.js";
 
 /** The four tabs of the course detail (layout §4.2). */
 const TABS = ["overview", "speakers", "certification", "library"] as const;
@@ -249,112 +249,118 @@ function Loaded(props: {
         onResume={resume}
       />
 
-      <nav
-        className="flex flex-wrap gap-1 border-b border-gray-200"
-        aria-label={detail.title}
-      >
-        {TABS.map((entry) => (
-          <button
-            key={entry}
-            type="button"
-            aria-current={tab === entry ? "page" : undefined}
-            onClick={() => {
-              setTab(entry);
-              back();
-            }}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
-              tab === entry
-                ? "border-brand-600 text-brand-700"
-                : "border-transparent text-gray-600"
-            }`}
-          >
-            {de.tabs[entry]}
-          </button>
-        ))}
-      </nav>
+      <TabBar
+        tabs={TABS.map((entry) => ({ id: entry, label: de.tabs[entry] }))}
+        active={tab}
+        label={detail.title}
+        onSelect={(entry) => {
+          setTab(entry);
+          back();
+        }}
+      />
 
       {/*
-        The progress card sits on all four tabs (layout §4.2) but not over the
-        player, which has a progress panel of its own — two different readings
-        of the same course on one screen would be one too many.
+        Two columns, as the layout has them: the tab panel, and the progress
+        card that repeats beside all four tabs (§4.2).
+
+        The card is deliberately absent over the player, the quiz and the
+        evaluation — each of those has a progress reading of its own, and two
+        different accounts of the same course on one screen is one too many.
       */}
-      {screen.kind === "outline" ? (
-        <ProgressCard state={state} onResume={resume} />
-      ) : null}
-
-      {tab === "overview" && screen.kind === "outline" ? (
-        <OverviewTab course={detail} state={state} />
-      ) : tab === "speakers" && screen.kind === "outline" ? (
-        <ExpertsTab experts={detail.experts} />
-      ) : tab === "library" ? (
-        <Mediathek client={client} courseSlug={courseSlug} key={state.progress.percent} />
-      ) : screen.kind === "lesson" ? (
-        <Player
-          client={client}
-          courseSlug={courseSlug}
-          course={detail}
-          state={state}
-          contentId={screen.contentId}
-          onProgress={refresh}
-          onOpen={(contentId) => {
-            refresh();
-            open(contentId);
-          }}
-          onBack={() => {
-            refresh();
-            back();
-          }}
-          onReporting={() => {
-            refresh();
-            setTab("certification");
-            back();
-          }}
-        />
-      ) : screen.kind === "quiz" ? (
-        <QuizGate
-          client={client}
-          courseSlug={courseSlug}
-          contentId={screen.contentId}
-          onPassed={refresh}
-          onBack={() => {
-            refresh();
-            back();
-          }}
-        />
-      ) : screen.kind === "evaluation" ? (
-        <EvaluationGate
-          client={client}
-          courseSlug={courseSlug}
-          onSubmitted={() => {
-            refresh();
-            back();
-          }}
-          onBack={back}
-        />
-      ) : (
-        <div className="space-y-8">
-          <CourseOutline course={detail} state={state} onOpen={open} />
-
-          {state.evaluationSubmitted ? null : (
-            <Button variant="secondary" onClick={() => setScreen({ kind: "evaluation" })}>
-              {de.evaluation.title}
-            </Button>
-          )}
-
-          <CompletionScreen
-            client={client}
-            courseSlug={courseSlug}
-            state={state}
-            onCompleted={refresh}
-          />
-
-          {state.completedAt === null ? (
-            <p className="text-sm text-gray-500">{de.certificate.notYet}</p>
+      <div
+        className={
+          screen.kind === "outline"
+            ? "grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]"
+            : ""
+        }
+      >
+        <div className="min-w-0 rounded-2xl rounded-tl-none border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
+          {tab === "overview" && screen.kind === "outline" ? (
+            <OverviewTab course={detail} state={state} />
+          ) : tab === "speakers" && screen.kind === "outline" ? (
+            <ExpertsTab experts={detail.experts} />
+          ) : tab === "library" ? (
+            <Mediathek
+              client={client}
+              courseSlug={courseSlug}
+              key={state.progress.percent}
+            />
+          ) : screen.kind === "lesson" ? (
+            <Player
+              client={client}
+              courseSlug={courseSlug}
+              course={detail}
+              state={state}
+              contentId={screen.contentId}
+              onProgress={refresh}
+              onOpen={(contentId) => {
+                refresh();
+                open(contentId);
+              }}
+              onBack={() => {
+                refresh();
+                back();
+              }}
+              onReporting={() => {
+                refresh();
+                setTab("certification");
+                back();
+              }}
+            />
+          ) : screen.kind === "quiz" ? (
+            <QuizGate
+              client={client}
+              courseSlug={courseSlug}
+              contentId={screen.contentId}
+              onPassed={refresh}
+              onBack={() => {
+                refresh();
+                back();
+              }}
+            />
+          ) : screen.kind === "evaluation" ? (
+            <EvaluationGate
+              client={client}
+              courseSlug={courseSlug}
+              onSubmitted={() => {
+                refresh();
+                back();
+              }}
+              onBack={back}
+            />
           ) : (
-            <CertificateGate client={client} courseSlug={courseSlug} />
+            <div className="space-y-8">
+              <CourseOutline course={detail} state={state} onOpen={open} />
+
+              {state.evaluationSubmitted ? null : (
+                <Button
+                  variant="secondary"
+                  onClick={() => setScreen({ kind: "evaluation" })}
+                >
+                  {de.evaluation.title}
+                </Button>
+              )}
+
+              <CompletionScreen
+                client={client}
+                courseSlug={courseSlug}
+                state={state}
+                onCompleted={refresh}
+              />
+
+              {state.completedAt === null ? (
+                <p className="text-sm text-gray-500">{de.certificate.notYet}</p>
+              ) : (
+                <CertificateGate client={client} courseSlug={courseSlug} />
+              )}
+            </div>
           )}
         </div>
-      )}
+
+        {screen.kind === "outline" ? (
+          <ProgressCard state={state} onResume={resume} />
+        ) : null}
+      </div>
     </div>
   );
 }

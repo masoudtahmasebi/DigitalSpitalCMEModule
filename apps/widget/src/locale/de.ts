@@ -24,7 +24,22 @@ export const de = {
   },
 
   catalog: {
-    title: "Fortbildungsbereich",
+    title: "Fortbildungsbereich für ADHS",
+    /** The hero eyebrow, set above the title in the layout. */
+    eyebrow: "Weiterbildung für Ärzte",
+    /**
+     * The hero paragraph. Deliberately generic: this widget is multi-tenant and
+     * a customer's own wording belongs in their branding, not compiled into the
+     * bundle. It says what the area is, not what the therapeutic area is.
+     */
+    intro: "Hier finden Sie Fortbildungsangebote, im besten Fall mit CME-Zertifizierung.",
+    /** The seal in the hero corner. */
+    sealTop: "Zertifizierte",
+    sealMain: "CME",
+    sealBottom: "Fortbildung",
+    filterHeading: "Fortbildungen filtern",
+    selectThema: "Thema auswählen",
+    selectAltersgruppe: "Altersgruppe auswählen",
     empty: "Für die gewählten Filter stehen derzeit keine Fortbildungen zur Verfügung.",
     open: "Zur Fortbildung",
     /** Already finished — the course stays open for the certificate and the Mediathek. */
@@ -71,6 +86,7 @@ export const de = {
   overviewTab: {
     description: "Beschreibung der Fortbildung",
     objectives: "Lernziele",
+    objectivesLead: "Diese Fortbildung vermittelt Ihnen:",
     audience: "Zielgruppe",
     contents: "Inhalte",
     more: "Mehr lesen …",
@@ -87,6 +103,7 @@ export const de = {
   },
 
   experts: {
+    heading: "Die Experten/Expertinnen aus dieser Fortbildung",
     empty: "Für diese Fortbildung sind keine Referentinnen und Referenten hinterlegt.",
   },
 
@@ -103,10 +120,17 @@ export const de = {
       "Diese Fortbildung ist nicht korrekt eingebunden. Bitte wenden Sie sich an den Betreiber der Seite.",
   },
 
+  /** The meta strip under the course hero. */
+  duration: (seconds: number): string => duration(seconds),
+
   overview: {
     title: "Ihr Fortschritt",
     resume: "Fortbildung fortsetzen",
     start: "Fortbildung starten",
+    /** The word beside the orange points chip in the meta bar. */
+    cmePoints: "CME Punkte",
+    moduleCount: (count: number): string =>
+      `${count} ${count === 1 ? "Modul" : "Module"}`,
     /** The ring's centre reads "2 von 5" — modules, not a percentage. */
     ringValue: (completed: number, total: number): string => `${completed} von ${total}`,
     /** "Sie haben 2 von 5 Modulen abgeschlossen." */
@@ -337,7 +361,27 @@ export const de = {
     /** The padlock is decorative; this is what a screen reader hears instead. */
     lockedGroupLabel: (moduleTitle: string): string =>
       `Materialien zu „${moduleTitle}“ sind gesperrt`,
-    download: "Herunterladen",
+    download: "Download",
+    /** "Materialien zu Modul 1" — the group heading from the layout. */
+    groupHeading: (ordinal: number): string => `Materialien zu Modul ${ordinal}`,
+    /**
+     * The card's secondary line: file type and size, whichever are known.
+     *
+     * Stands in for the layout's description paragraph, which has no field on
+     * `Material` — see MediathekPanel. Saying "PDF · 1,4 MB" is at least true;
+     * a lorem-ipsum sentence in its place would not be.
+     */
+    fileMeta: (material: {
+      mimeType: string | null;
+      fileSize: number | null;
+    }): string => {
+      const kind = material.mimeType === null ? undefined : fileKind(material.mimeType);
+      const size =
+        material.fileSize === null ? undefined : de.library.size(material.fileSize);
+      return [kind, size]
+        .filter((part): part is string => part !== undefined)
+        .join(" · ");
+    },
     /** Byte sizes are shown in German notation: "1,4 MB". */
     size: (bytes: number): string => {
       if (bytes < 1024) return `${bytes} B`;
@@ -356,5 +400,21 @@ export type Locale = typeof de;
  * card metadata line. Two copies would be two sets of pluralisation rules to
  * keep in step, and this file is not the only German the platform renders.
  */
+
+/**
+ * "PDF", "Video", "Dokument" — a human word for a MIME type.
+ *
+ * A closed mapping with a neutral fallback rather than showing the raw type:
+ * "application/vnd.openxmlformats-officedocument.wordprocessingml.document" is
+ * not something to put on a card.
+ */
+function fileKind(mimeType: string): string {
+  if (mimeType === "application/pdf") return "PDF";
+  if (mimeType.startsWith("video/")) return "Video";
+  if (mimeType.startsWith("audio/")) return "Audio";
+  if (mimeType.startsWith("image/")) return "Bild";
+  return "Dokument";
+}
+
 const duration = germanDuration;
 const minutesAndSeconds = germanMinutesAndSeconds;

@@ -29,6 +29,7 @@
 import { useEffect, useState } from "react";
 import type { CourseDetail, EnrolmentState } from "@ds/sdk";
 import { de } from "../locale/de.js";
+import { moduleHeading } from "../module-title.js";
 import { indexTitles, itemIcon, locateContent } from "../player.js";
 import { StateIcon } from "./primitives.js";
 
@@ -77,7 +78,7 @@ export function ModuleSidebar(props: {
                 >
                   <StateIcon state={state} label={de.player.state[state]} />
                   <span className="min-w-0 flex-1 truncate">
-                    {de.overviewTab.moduleLabel(index + 1)} · {title}
+                    {moduleHeading(index + 1, title)}
                   </span>
                   <span className="text-xs tabular-nums text-gray-500">
                     {module.progress.completedCount}/{module.progress.totalCount}

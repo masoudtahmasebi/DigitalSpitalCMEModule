@@ -63,25 +63,125 @@
   --tw-backdrop-sepia: ;
 }
 
-.ds-lms-root *,
-.ds-lms-root *::before,
-.ds-lms-root *::after {
+/*
+ * The rest of preflight, as much of it as Tailwind's utilities depend on.
+ *
+ * Turning preflight off is right (see tailwind.config.js) but it is not free:
+ * the utilities are *designed against* it, and without these the browser's own
+ * defaults win wherever a utility does not explicitly override them. Every rule
+ * below was added because something in the layout was visibly wrong:
+ *
+ *   * `border-width: 0` — `border-brand-600` sets a colour and `rounded-full`
+ *     a radius, but neither sets a width, so a plain `<button>` kept the UA's
+ *     2px grooved border. Every button in the widget rendered as a 1995 form
+ *     control with a pill outline drawn inside it.
+ *   * `list-style: none` and no padding on `ol`/`ul` — the catalogue drew a
+ *     bullet beside each course card and the Inhalte list numbered its modules
+ *     "1. 2. 3.", neither of which is in the layout, both indented by the UA's
+ *     40px padding that no `space-y` could remove.
+ *   * heading and paragraph margins — `text-xl` sets a size, not a margin, so
+ *     `h1`…`h6` kept the UA's em-based margins and fought every `mt-*`/`gap-*`
+ *     the layout uses for spacing.
+ *
+ * Scoped under `.ds-lms-root` throughout, so none of it can reach a node
+ * slotted in from the host page.
+ *
+ * ## Why every selector is wrapped in `:where()`
+ *
+ * Because the first version of this block broke every button in the widget.
+ *
+ * `.ds-lms-root button` has specificity 0-1-1 — one class plus one type — and a
+ * Tailwind utility is a single class, 0-1-0. The reset therefore *beat* the
+ * utilities it exists to support: `background-color: transparent` overrode
+ * `bg-brand-600`, `padding: 0` overrode `px-6 py-2.5`, and `color: inherit`
+ * overrode `text-brand-contrast`. Every pill button rendered as bare dark text
+ * on the page background, and the tab rows lost their fills entirely.
+ *
+ * `:where()` contributes zero specificity, so `:where(.ds-lms-root) button` is
+ * 0-0-1 and `:where(.ds-lms-root) *` is 0-0-0. Both now lose to any utility
+ * class, which is exactly how preflight behaves — real preflight sits in
+ * Tailwind's `base` layer and is outranked by `utilities` by layer order, and
+ * this file has no layers to rely on.
+ *
+ * The scoping is unchanged: `:where(.ds-lms-root) button` still matches only
+ * buttons inside the widget's own wrapper.
+ */
+:where(.ds-lms-root) *,
+:where(.ds-lms-root) *::before,
+:where(.ds-lms-root) *::after {
   box-sizing: border-box;
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
 }
 
-.ds-lms-root button {
+:where(.ds-lms-root) h1,
+:where(.ds-lms-root) h2,
+:where(.ds-lms-root) h3,
+:where(.ds-lms-root) h4,
+:where(.ds-lms-root) h5,
+:where(.ds-lms-root) h6,
+:where(.ds-lms-root) p,
+:where(.ds-lms-root) figure,
+:where(.ds-lms-root) blockquote,
+:where(.ds-lms-root) dl,
+:where(.ds-lms-root) dd {
+  margin: 0;
+}
+
+:where(.ds-lms-root) h1,
+:where(.ds-lms-root) h2,
+:where(.ds-lms-root) h3,
+:where(.ds-lms-root) h4,
+:where(.ds-lms-root) h5,
+:where(.ds-lms-root) h6 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+:where(.ds-lms-root) ol,
+:where(.ds-lms-root) ul,
+:where(.ds-lms-root) menu {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+:where(.ds-lms-root) img,
+:where(.ds-lms-root) svg,
+:where(.ds-lms-root) video,
+:where(.ds-lms-root) canvas {
+  display: block;
+  vertical-align: middle;
+}
+
+:where(.ds-lms-root) img,
+:where(.ds-lms-root) video {
+  max-width: 100%;
+  height: auto;
+}
+
+:where(.ds-lms-root) a {
+  color: inherit;
+  text-decoration: inherit;
+}
+
+:where(.ds-lms-root) button {
   font: inherit;
   color: inherit;
   cursor: pointer;
+  background-color: transparent;
+  background-image: none;
+  padding: 0;
 }
 
-.ds-lms-root button:disabled {
+:where(.ds-lms-root) button:disabled {
   cursor: not-allowed;
 }
 
-.ds-lms-root input,
-.ds-lms-root textarea,
-.ds-lms-root select {
+:where(.ds-lms-root) input,
+:where(.ds-lms-root) textarea,
+:where(.ds-lms-root) select {
   font: inherit;
   color: inherit;
 }

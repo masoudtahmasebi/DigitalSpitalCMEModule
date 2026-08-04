@@ -26,7 +26,8 @@
 
 import type { MaterialLibrary } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { LockIcon } from "./primitives.js";
+import { moduleTopic } from "../module-title.js";
+import { DownloadIcon, ImagePlaceholder, LockIcon } from "./primitives.js";
 
 export function MediathekPanel(props: { library: MaterialLibrary }) {
   if (props.library.groups.length === 0) {
@@ -34,88 +35,100 @@ export function MediathekPanel(props: { library: MaterialLibrary }) {
   }
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-gray-900">{de.library.title}</h2>
+    <div className="space-y-8">
+      <h2 className="text-lg font-bold text-gray-900">{de.library.title}</h2>
 
       {props.library.groups.map((group) => (
         <section
           key={group.moduleId}
-          className="rounded-lg border border-gray-200"
           aria-label={
             group.locked ? de.library.lockedGroupLabel(group.moduleTitle) : undefined
           }
         >
-          <h3 className="border-b border-gray-100 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-900">
-            Materialien zu Modul {group.ordinal + 1}: {group.moduleTitle}
+          <h3 className="border-b border-gray-200 pb-2 text-sm text-gray-700">
+            {de.library.groupHeading(group.ordinal + 1)}{" "}
+            <span className="font-semibold text-gray-900">
+              ({moduleTopic(group.ordinal + 1, group.moduleTitle)})
+            </span>
           </h3>
 
           {group.locked ? (
-            <div className="relative">
-              <ul
-                aria-hidden="true"
-                className="select-none divide-y divide-gray-100 blur-sm"
-              >
-                {group.materials.map((material) => (
-                  <li
-                    key={material.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
-                  >
-                    <span className="text-sm text-gray-800">{material.title}</span>
-                    <span className="text-sm font-semibold text-brand-700">
-                      {de.library.download}
-                    </span>
-                  </li>
-                ))}
+            <div className="relative mt-4">
+              <div aria-hidden="true" className="select-none blur-sm">
+                <MaterialGrid materials={group.materials} />
                 {group.materials.length === 0 ? (
                   // A locked group whose titles the API also withholds still
                   // needs something to blur, or the padlock floats over nothing
                   // and the group reads as empty rather than as locked.
-                  <li className="px-4 py-6" />
+                  <div className="h-40" />
                 ) : null}
-              </ul>
+              </div>
 
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/60 px-4 text-center">
-                <LockIcon className="h-5 w-5 text-status-locked" />
-                <p className="text-sm font-medium text-gray-700">
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
+                <LockIcon className="h-7 w-7 text-gray-900" />
+                <p className="text-sm font-semibold text-gray-900">
                   {de.library.lockedGroup}
                 </p>
               </div>
             </div>
           ) : (
-            <ul className="divide-y divide-gray-100">
-              {group.materials.map((material) => (
-                <li
-                  key={material.id}
-                  className="flex items-center justify-between gap-3 px-4 py-3"
-                >
-                  <span className="text-sm text-gray-800">{material.title}</span>
-                  <span className="flex items-center gap-3">
-                    {material.fileSize === null ? null : (
-                      <span className="text-xs text-gray-500">
-                        {de.library.size(material.fileSize)}
-                      </span>
-                    )}
-                    {material.fileUrl === null ? null : (
-                      <a
-                        href={material.fileUrl}
-                        download
-                        // The file is served from storage we do not control the
-                        // referrer policy of; no reason to leak the widget's
-                        // host page URL to it.
-                        rel="noreferrer noopener"
-                        target="_blank"
-                        className="text-sm font-semibold text-brand-700 underline"
-                      >
-                        {de.library.download}
-                      </a>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="mt-4">
+              <MaterialGrid materials={group.materials} />
+            </div>
           )}
         </section>
       ))}
     </div>
+  );
+}
+
+/**
+ * The layout's two-column card grid.
+ *
+ * The layout draws a thumbnail and a paragraph of description on each card.
+ * Neither exists: `Material` in `contracts/openapi.yaml` carries `title`,
+ * `mimeType` and `fileSize` and nothing else. Rather than invent them — which
+ * would mean a contract change, a column, an admin field and an upload path,
+ * none of which this ticket covers — the card keeps the layout's *shape* and
+ * fills the secondary line with what the platform actually knows about the
+ * file. A placeholder stands where the thumbnail goes so the grid keeps its
+ * proportions.
+ */
+function MaterialGrid(props: {
+  materials: MaterialLibrary["groups"][number]["materials"];
+}) {
+  return (
+    <ul className="grid gap-5 sm:grid-cols-2">
+      {props.materials.map((material) => (
+        <li
+          key={material.id}
+          className="overflow-hidden rounded-xl border border-gray-200 bg-white"
+        >
+          <ImagePlaceholder className="h-32 w-full" />
+          <div className="p-4">
+            <p className="text-sm font-bold leading-snug text-gray-900">
+              {material.title}
+            </p>
+            <p className="mt-1 text-xs text-gray-600">{de.library.fileMeta(material)}</p>
+
+            {material.fileUrl === null ? null : (
+              <a
+                href={material.fileUrl}
+                download
+                // The file is served from storage we do not control the
+                // referrer policy of; no reason to leak the widget's host page
+                // URL to it.
+                rel="noreferrer noopener"
+                target="_blank"
+                className="mt-3 inline-flex items-center gap-2 rounded-full bg-brand-600 px-4 py-1.5 text-xs font-semibold text-brand-contrast hover:bg-brand-700"
+              >
+                {de.library.download}
+                <DownloadIcon className="h-3.5 w-3.5" />
+              </a>
+            )}
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

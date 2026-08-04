@@ -82,10 +82,17 @@ export function PlayerScreen(props: {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[var(--ds-radius)] border border-gray-200 bg-gray-50 p-4">
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+      {/*
+        The layout's progress card (§4.3): where you are, how far in, and a bar
+        for the whole course. The bar is `state.progress.percent` — the
+        server's course figure — and never the video's own position, which is
+        what the "14:35 / 25:45" beside it already says. Drawing the playhead
+        here would put two different quantities on one strip.
+      */}
+      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
           {here === undefined ? null : (
-            <p className="font-semibold text-gray-900">
+            <p className="font-bold text-gray-900">
               {de.player.moduleOf(here.moduleIndex + 1, course.modules.length)}
             </p>
           )}
@@ -96,13 +103,28 @@ export function PlayerScreen(props: {
               {de.player.position(clockTime(playback.positionSec), clockTime(duration))}
             </p>
           )}
-
-          <p className="text-gray-700">
-            {de.player.courseProgress(state.progress.percent)}
-          </p>
         </div>
 
-        <p className="mt-1 text-xs text-gray-500">{de.player.autosave}</p>
+        <div
+          className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-gray-200"
+          role="progressbar"
+          aria-valuenow={state.progress.percent}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={de.player.courseProgress(state.progress.percent)}
+        >
+          <div
+            className="h-full rounded-full bg-brand-600"
+            style={{ width: `${String(state.progress.percent)}%` }}
+          />
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <p className="text-sm font-semibold text-brand-700">
+            {de.player.courseProgress(state.progress.percent)}
+          </p>
+          <p className="text-xs text-gray-500">{de.player.autosave}</p>
+        </div>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
@@ -123,8 +145,11 @@ export function PlayerScreen(props: {
 
           <div className="flex flex-wrap gap-3">
             {lesson.kind !== "video" ? null : (
+              // Orange, as the layout has it: pausing is the action that
+              // belongs to the course the learner is part-way through, which
+              // is what the accent colour marks everywhere else too.
               <Button
-                variant="secondary"
+                variant="cta"
                 disabled={!playback.playing}
                 onClick={() => setPaused(true)}
               >
@@ -178,7 +203,7 @@ function ContentTabs(props: {
       <div
         role="tablist"
         aria-label={de.player.tabsLabel}
-        className="flex flex-wrap gap-1 border-b border-gray-200"
+        className="flex flex-wrap gap-2"
       >
         {CONTENT_TABS.map((entry) => (
           <button
@@ -193,10 +218,10 @@ function ContentTabs(props: {
             // the padlock as the only explanation, and a padlock does not say
             // what to do next.
             onClick={() => props.onTab(entry)}
-            className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium ${
+            className={`flex items-center gap-2 rounded-t-xl px-5 py-2.5 text-sm font-semibold ${
               props.tab === entry
-                ? "border-brand-600 text-brand-700"
-                : "border-transparent text-gray-600"
+                ? "border border-b-0 border-gray-200 bg-white text-brand-700"
+                : "bg-brand-600 text-brand-contrast hover:bg-brand-700"
             }`}
           >
             {locked[entry] ? (
@@ -215,7 +240,7 @@ function ContentTabs(props: {
         id={`ds-player-panel-${props.tab}`}
         aria-labelledby={`ds-player-tab-${props.tab}`}
         tabIndex={0}
-        className="pt-4"
+        className="rounded-2xl rounded-tl-none border border-gray-200 bg-white p-5"
       >
         {props.tab === "summary" ? (
           <Summary lesson={props.lesson} />

@@ -93,7 +93,7 @@ describe("the catalogue asks the server, it does not filter locally", () => {
     render(<CourseList client={client} onOpen={() => {}} />);
     await screen.findByText("Kurs k1");
 
-    fireEvent.click(screen.getByRole("button", { name: "Präsenz" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Präsenz" }));
     await waitFor(() =>
       expect(queries.at(-1)).toMatchObject({ deliveryType: "praesenz" }),
     );

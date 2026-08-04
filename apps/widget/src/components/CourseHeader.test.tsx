@@ -79,9 +79,17 @@ function course(): CourseDetail {
   } as unknown as CourseDetail;
 }
 
-/** The arc's length, in the same units as the circumference. */
+/**
+ * The arc's length, in the same units as the circumference.
+ *
+ * No dashed circle at all counts as zero: the ring omits the arc entirely at
+ * zero progress rather than drawing a zero-length dash, because
+ * `strokeLinecap="round"` renders that as a dot — one unit of progress the
+ * learner has not made.
+ */
 function arcLength(container: HTMLElement): number {
   const circles = container.querySelectorAll("circle[stroke-dasharray]");
+  if (circles.length === 0) return 0;
   const dash = circles[0]?.getAttribute("stroke-dasharray") ?? "";
   return Number.parseFloat(dash.split(" ")[0] ?? "0");
 }
@@ -94,8 +102,14 @@ describe("ProgressCard", () => {
   });
 
   it("puts the same two numbers in the ring and in the sentence", () => {
-    render(<ProgressCard state={state()} onResume={undefined} />);
-    expect(screen.getByText("2 von 5")).toBeTruthy();
+    const { container } = render(<ProgressCard state={state()} onResume={undefined} />);
+
+    // The layout stacks the count over the words, so "2 von 5" is split across
+    // two elements. Read the ring's own subtree rather than the whole card, so
+    // this cannot be satisfied by the sentence underneath it.
+    const ring = container.querySelector('[role="img"]');
+    expect(ring?.textContent).toBe("2von 5");
+
     expect(
       screen.getByRole("img", { name: "Sie haben 2 von 5 Modulen abgeschlossen." }),
     ).toBeTruthy();
@@ -157,7 +171,11 @@ describe("ProgressCard", () => {
 });
 
 describe("StickyMetaBar", () => {
-  it("carries the card metadata line the layout specifies", () => {
+  it("carries every figure of the layout's meta bar", () => {
+    // The layout splits what used to be one "4 CME Punkte | 5 Module | 2
+    // Stunden 30 Minuten" string into three fields with their own icons, so
+    // each is asserted separately. All three still have to be there — the
+    // points are why the learner is on the page at all.
     render(
       <StickyMetaBar
         course={course()}
@@ -166,12 +184,23 @@ describe("StickyMetaBar", () => {
         onResume={undefined}
       />,
     );
-    expect(
-      screen.getByText("4 CME Punkte | 5 Module | 2 Stunden 30 Minuten"),
-    ).toBeTruthy();
+    expect(screen.getByText("4")).toBeTruthy();
+    expect(screen.getByText("CME Punkte")).toBeTruthy();
+    expect(screen.getByText("5 Module")).toBeTruthy();
+    expect(screen.getByText("2 Stunden 30 Minuten")).toBeTruthy();
   });
 
-  it("stays put, because a resume button that scrolls away is not there", () => {
+  it("keeps the resume action beside the course's worth, in the meta bar", () => {
+    // This bar used to be `position: sticky`, so the resume button survived
+    // scrolling past several screens of Beschreibung. The layout does not have
+    // it stick — it sits under the hero and scrolls away — and the sticky
+    // version had a defect of its own: content was legible through it until it
+    // was made fully opaque.
+    //
+    // Following the layout, because the layout is the source of truth here.
+    // What the sticky bar was protecting is protected another way: the teal
+    // progress card beside all four tabs carries the same resume action, and it
+    // is much further down the page.
     const { container } = render(
       <StickyMetaBar
         course={course()}
@@ -180,7 +209,8 @@ describe("StickyMetaBar", () => {
         onResume={vi.fn()}
       />,
     );
-    expect(container.querySelector(".sticky")).toBeTruthy();
+    expect(container.querySelector(".sticky")).toBeNull();
+    expect(screen.getByRole("button", { name: "Fortbildung fortsetzen" })).toBeTruthy();
   });
 
   it("offers the catalogue link only to a learner who came from the catalogue", () => {

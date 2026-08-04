@@ -17,7 +17,8 @@
 import { useState } from "react";
 import type { CourseDetail, EnrolmentState, ModuleSummary } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { Section } from "./primitives.js";
+import { moduleHeading } from "../module-title.js";
+import { CheckBullet, Section } from "./primitives.js";
 
 export function OverviewTab(props: { course: CourseDetail; state: EnrolmentState }) {
   const { course } = props;
@@ -32,14 +33,13 @@ export function OverviewTab(props: { course: CourseDetail; state: EnrolmentState
 
       {course.learningObjectives.length === 0 ? null : (
         <Section title={de.overviewTab.objectives}>
-          <ul className="space-y-2">
+          <p className="text-sm text-gray-700">{de.overviewTab.objectivesLead}</p>
+          <ul className="space-y-3">
             {course.learningObjectives.map((objective) => (
-              <li key={objective} className="flex gap-2 text-sm text-gray-800">
+              <li key={objective} className="flex gap-3 text-sm text-gray-800">
                 {/* The tick is decorative — "Lernziele" is the heading and the
                     list semantics carry the rest. */}
-                <span aria-hidden="true" className="text-status-completed">
-                  ✓
-                </span>
+                <CheckBullet />
                 <span>{objective}</span>
               </li>
             ))}
@@ -58,25 +58,36 @@ export function OverviewTab(props: { course: CourseDetail; state: EnrolmentState
         </Section>
       )}
 
+      {/*
+        The layout's Inhalte list: an arrow, the module title, its chapter
+        topics beneath, and the duration hard right. The row is not a link —
+        opening a module from here would bypass the sequential gate, and the
+        arrow is the layout's own affordance for "this comes next", not for
+        "click me".
+      */}
       <Section title={de.overviewTab.contents}>
-        <ol className="space-y-3">
+        <ol className="divide-y divide-gray-200">
           {course.modules.map((module, index) => (
-            <li
-              key={module.id}
-              className="rounded-[var(--ds-radius)] border border-gray-200 p-3"
-            >
-              <p className="text-sm font-semibold text-gray-900">
-                {de.overviewTab.moduleLabel(index + 1)} · {module.title}
-              </p>
-              <p className="text-xs text-gray-600">
+            <li key={module.id} className="flex items-start gap-3 py-4">
+              <span aria-hidden="true" className="mt-0.5 text-brand-600">
+                →
+              </span>
+
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-gray-900">
+                  {moduleHeading(index + 1, module.title)}
+                </p>
+                {chapterTopics(module) === "" ? null : (
+                  <p className="mt-1 text-xs text-gray-600">{chapterTopics(module)}</p>
+                )}
+              </div>
+
+              <p className="shrink-0 whitespace-nowrap text-sm text-gray-700">
                 {de.overviewTab.moduleMeta(
                   moduleDurationSec(module),
                   module.chapters.length,
                 )}
               </p>
-              {chapterTopics(module) === "" ? null : (
-                <p className="mt-1 text-xs text-gray-500">{chapterTopics(module)}</p>
-              )}
             </li>
           ))}
         </ol>

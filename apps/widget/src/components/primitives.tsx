@@ -8,30 +8,215 @@
 import type { ReactNode } from "react";
 import type { GateStatus } from "@ds/sdk";
 
+/**
+ * The layout's four button skins.
+ *
+ * `cta` is orange and means "continue what you started" — see the `cta` colour
+ * note in the Tailwind preset. It is not a louder primary; using it for a
+ * neutral action is a bug, because the catalogue's whole scanning affordance is
+ * that orange marks the course already in progress.
+ *
+ * Fully rounded, because every button in the layout is a pill. That is not
+ * decoration here: the pill shape is what distinguishes an action from the
+ * square-cornered cards and panels around it.
+ */
 export function Button(props: {
   onClick?: () => void;
   type?: "button" | "submit";
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "cta" | "secondary" | "ghost";
+  size?: "md" | "sm";
   disabled?: boolean;
   children: ReactNode;
 }) {
   const variant = props.variant ?? "primary";
+  const size = props.size ?? "md";
+
   const base =
-    "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50";
-  const skin =
-    variant === "primary"
-      ? "bg-brand-600 text-white hover:bg-brand-700"
-      : "border border-brand-600 text-brand-700 hover:bg-brand-50";
+    "inline-flex items-center justify-center gap-2 rounded-full font-semibold transition-colors " +
+    "disabled:cursor-not-allowed disabled:opacity-60";
+  const metrics = size === "sm" ? "px-4 py-1.5 text-xs" : "px-6 py-2.5 text-sm";
+
+  const skin: Record<NonNullable<typeof props.variant>, string> = {
+    primary: "bg-brand-600 text-brand-contrast hover:bg-brand-700",
+    cta: "bg-cta-500 text-cta-contrast hover:bg-cta-600",
+    secondary: "border border-brand-600 bg-white text-brand-700 hover:bg-brand-50",
+    ghost: "text-brand-700 hover:bg-brand-50",
+  };
 
   return (
     <button
       type={props.type ?? "button"}
-      className={`${base} ${skin}`}
+      className={`${base} ${metrics} ${skin[variant]}`}
       disabled={props.disabled === true}
       onClick={props.onClick}
     >
       {props.children}
     </button>
+  );
+}
+
+/** The white, softly-shadowed panel every screen in the layout is built from. */
+export function Card(props: { className?: string; children: ReactNode }) {
+  return (
+    <div
+      className={`rounded-2xl border border-gray-100 bg-white shadow-sm ${props.className ?? ""}`}
+    >
+      {props.children}
+    </div>
+  );
+}
+
+/**
+ * The layout's pill tab row.
+ *
+ * Rendered as a real tablist so arrow keys work and a screen reader announces
+ * position: the four course tabs are the widget's primary navigation, and a row
+ * of unrelated buttons would leave a keyboard user tabbing through all of them
+ * to reach the panel.
+ */
+export function TabBar<T extends string>(props: {
+  tabs: ReadonlyArray<{ id: T; label: string }>;
+  active: T;
+  onSelect: (id: T) => void;
+  label: string;
+}) {
+  return (
+    <div role="tablist" aria-label={props.label} className="flex flex-wrap gap-2">
+      {props.tabs.map((tab) => {
+        const selected = tab.id === props.active;
+        return (
+          <button
+            key={tab.id}
+            role="tab"
+            type="button"
+            aria-selected={selected}
+            onClick={() => props.onSelect(tab.id)}
+            className={
+              "rounded-t-xl px-6 py-2.5 text-sm font-semibold transition-colors " +
+              (selected
+                ? // The active tab is white and joins the panel below it, which
+                  // is what makes the row read as tabs rather than as buttons.
+                  "border border-b-0 border-gray-100 bg-white text-brand-700"
+                : "bg-brand-600 text-brand-contrast hover:bg-brand-700")
+            }
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The meta strip under the course hero: points, duration, module count, and the
+ * resume action.
+ *
+ * It overlaps the hero by design (`-mt-7`), which is what ties the two together
+ * in the layout. The CME points sit in an orange chip because that number is
+ * the reason the learner is here.
+ */
+export function CourseMetaBar(props: {
+  points: string | null;
+  pointsLabel: string;
+  duration: string | null;
+  modules: string | null;
+  action: ReactNode;
+}) {
+  return (
+    <div className="relative z-10 -mt-7 mx-4 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl bg-white px-5 py-3 shadow-md">
+      {props.points === null ? null : (
+        <span className="flex items-center gap-2">
+          <span className="rounded bg-cta-500 px-2 py-0.5 text-sm font-bold text-cta-contrast">
+            {props.points}
+          </span>
+          <span className="text-sm font-semibold text-gray-900">{props.pointsLabel}</span>
+        </span>
+      )}
+
+      {props.duration === null ? null : (
+        <span className="flex items-center gap-2 border-l border-gray-200 pl-6 text-sm text-gray-700">
+          <ClockIcon />
+          {props.duration}
+        </span>
+      )}
+
+      {props.modules === null ? null : (
+        <span className="flex items-center gap-2 border-l border-gray-200 pl-6 text-sm text-gray-700">
+          <ModulesIcon />
+          {props.modules}
+        </span>
+      )}
+
+      <span className="ml-auto">{props.action}</span>
+    </div>
+  );
+}
+
+export function ClockIcon(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      className={props.className ?? "h-5 w-5 text-brand-600"}
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M10 1a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 2a7 7 0 1 1 0 14A7 7 0 0 1 10 3Zm-.75 2.5v5c0 .27.14.52.37.65l3.5 2 .75-1.3-3.12-1.79V5.5h-1.5Z" />
+    </svg>
+  );
+}
+
+export function ModulesIcon(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      className={props.className ?? "h-5 w-5 text-brand-600"}
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M3 3h6v6H3V3Zm0 8h6v6H3v-6Zm8-8h6v6h-6V3Zm0 8h6v6h-6v-6Z" />
+    </svg>
+  );
+}
+
+export function DownloadIcon(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={props.className ?? "h-4 w-4"}
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M8 1a1 1 0 0 1 1 1v6.6l2.3-2.3 1.4 1.4L8 12.4 3.3 7.7l1.4-1.4L7 8.6V2a1 1 0 0 1 1-1ZM2 13h12v2H2v-2Z" />
+    </svg>
+  );
+}
+
+/** The filled orange tick beside every Lernziel in the layout. */
+export function CheckBullet(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={props.className ?? "mt-0.5 h-4 w-4 shrink-0 text-cta-500"}
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm3.86 5.9-4.5 5a1 1 0 0 1-1.46.04L3.9 8.94a1 1 0 1 1 1.42-1.42l1.25 1.25 3.8-4.22a1 1 0 0 1 1.49 1.34Z" />
+    </svg>
+  );
+}
+
+/** A placeholder where artwork is missing, rather than a collapsed empty box. */
+export function ImagePlaceholder(props: { className?: string }) {
+  return (
+    <div
+      className={`flex items-center justify-center bg-gray-200 ${props.className ?? ""}`}
+      aria-hidden="true"
+    >
+      <svg viewBox="0 0 24 24" className="h-10 w-10 text-gray-400" fill="currentColor">
+        <path d="M21 5H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1Zm-1 12H4v-1.6l4-3.9 3.5 3.4L16 10l4 4.3V17ZM8.5 10.5a1.75 1.75 0 1 1 0-3.5 1.75 1.75 0 0 1 0 3.5Z" />
+      </svg>
+    </div>
   );
 }
 
@@ -62,6 +247,8 @@ export function ProgressRing(props: {
   value: string;
   /** Accessible name — the full sentence, since "2 von 5" alone says nothing. */
   label: string;
+  /** `onBrand` draws white-on-teal for the sidebar card. */
+  tone?: "onBrand" | "onLight";
 }) {
   const radius = 34;
   const circumference = 2 * Math.PI * radius;
@@ -70,28 +257,100 @@ export function ProgressRing(props: {
   // A course with no modules draws an empty ring rather than dividing by zero.
   const fraction = total === 0 ? 0 : completed / total;
   const dash = fraction * circumference;
+  const onBrand = (props.tone ?? "onLight") === "onBrand";
+
+  // The layout stacks the number over the word: a large "2", then "von 5"
+  // small beneath it. `value` arrives as "2 von 5" so the caption beside the
+  // ring and the ring itself can never disagree; splitting it here is
+  // presentation only, and a value that is not in that shape simply renders
+  // whole.
+  const [count, ...rest] = props.value.split(" ");
+  const remainder = rest.join(" ");
 
   return (
     <div
-      className="relative inline-flex h-20 w-20 shrink-0 items-center justify-center"
+      className="relative inline-flex h-24 w-24 shrink-0 items-center justify-center"
       role="img"
       aria-label={props.label}
     >
-      <svg className="h-20 w-20 -rotate-90" viewBox="0 0 80 80" aria-hidden="true">
-        <circle cx="40" cy="40" r={radius} fill="none" stroke="#e5e7eb" strokeWidth="6" />
+      <svg className="h-24 w-24 -rotate-90" viewBox="0 0 80 80" aria-hidden="true">
         <circle
           cx="40"
           cy="40"
           r={radius}
           fill="none"
-          stroke="#255a94"
-          strokeWidth="6"
-          strokeLinecap="round"
-          strokeDasharray={`${dash} ${circumference}`}
+          stroke={onBrand ? "rgba(255,255,255,0.28)" : "#e5e7eb"}
+          strokeWidth="5"
         />
+        {/*
+          Omitted entirely at zero rather than drawn with a zero-length dash.
+          `strokeLinecap="round"` gives a zero-length segment two round caps,
+          which the browser paints as a dot — so a learner who had completed
+          nothing saw a stray mark floating on the ring, reading as one unit of
+          progress they had not made.
+        */}
+        {dash === 0 ? null : (
+          <circle
+            cx="40"
+            cy="40"
+            r={radius}
+            fill="none"
+            stroke={onBrand ? "#ffffff" : "var(--ds-brand-600, #17788d)"}
+            strokeWidth="5"
+            strokeLinecap="round"
+            strokeDasharray={`${dash} ${circumference}`}
+          />
+        )}
       </svg>
-      <span className="absolute text-sm font-semibold text-brand-700">{props.value}</span>
+      <span
+        className={`absolute flex flex-col items-center leading-none ${
+          onBrand ? "text-white" : "text-brand-700"
+        }`}
+      >
+        <span className="text-2xl font-bold">{count}</span>
+        {remainder === "" ? null : (
+          <span className="mt-1 text-xs font-medium">{remainder}</span>
+        )}
+      </span>
     </div>
+  );
+}
+
+/**
+ * The teal "Ihr Fortschritt" card that sits beside every course tab.
+ *
+ * It repeats on all four tabs in the layout, and that repetition is load-
+ * bearing rather than lazy: the Mediathek's padlocks and the Zertifizierung
+ * tab's locked sections are both consequences of module completion, so the
+ * count that explains them has to be visible next to them.
+ */
+export function ProgressPanel(props: {
+  title: string;
+  completed: number;
+  total: number;
+  value: string;
+  sentence: string;
+  action: ReactNode;
+  footnote?: string;
+}) {
+  return (
+    <aside className="rounded-2xl bg-brand-600 p-5 text-center text-brand-contrast shadow-md">
+      <p className="text-base font-bold">{props.title}</p>
+      <div className="mt-3 flex justify-center">
+        <ProgressRing
+          completed={props.completed}
+          total={props.total}
+          value={props.value}
+          label={props.sentence}
+          tone="onBrand"
+        />
+      </div>
+      <p className="mt-3 text-sm leading-snug">{props.sentence}</p>
+      {props.footnote === undefined ? null : (
+        <p className="mt-1 text-xs text-brand-100">{props.footnote}</p>
+      )}
+      <div className="mt-4">{props.action}</div>
+    </aside>
   );
 }
 

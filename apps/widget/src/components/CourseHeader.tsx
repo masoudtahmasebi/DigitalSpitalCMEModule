@@ -1,19 +1,29 @@
 /**
- * The course-detail chrome from layout §4.2 — the sticky metadata bar and the
- * progress card.
+ * The course-detail chrome from layout §4.2 — the hero, the metadata strip
+ * under it, and the progress card.
  *
- * ## Why the bar is sticky
+ * `StickyMetaBar` keeps its name for now because it is imported in several
+ * places and renaming it is churn without a reader on the other side; the
+ * "sticky" is historical, and the section below says why.
  *
- * Opaque, not translucent. It was `bg-white/95` with a `backdrop-blur`, and on
- * a running page the tab row and the progress panel were plainly legible
- * sliding underneath it — five per cent is not much, but it is enough to read,
- * and it looks like a rendering fault rather than a design. A bar that content
- * passes behind has to hide it.
+ * ## The bar is no longer sticky
  *
- * It carries the two things a learner needs from anywhere on a long page: what
- * the course is worth, and the way back into it. The Übersicht tab alone runs
- * to several screens of Beschreibung, Lernziele and a module list, and a resume
- * button that scrolls off the top is a resume button that is not there.
+ * It was, and the reasoning was sound on its own terms: the Übersicht tab runs
+ * to several screens, and a resume button that scrolls off the top is a resume
+ * button that is not there. It also had to be made fully opaque, because at
+ * `bg-white/95` the tab row was legible sliding underneath it.
+ *
+ * The Zeplin layout does not have it stick — the meta strip sits under the hero
+ * and scrolls away with it — and the layout is the source of truth for this
+ * screen. What the sticky version was protecting is protected another way: the
+ * teal "Ihr Fortschritt" card repeats beside all four tabs and carries the same
+ * resume action, much further down the page than the bar ever reached.
+ *
+ * ## The meta strip overlaps the hero
+ *
+ * `-mt-7`, so the white card sits half over the teal block. That is the
+ * layout's own device for tying the two into one masthead rather than stacking
+ * two unrelated bands, and it is why the hero has no bottom padding to spare.
  *
  * ## Why the progress card repeats on every tab
  *
@@ -27,7 +37,7 @@
 
 import type { CourseDetail, EnrolmentState } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { Button, ProgressRing } from "./primitives.js";
+import { Button, CourseMetaBar, ProgressPanel } from "./primitives.js";
 
 export function StickyMetaBar(props: {
   course: CourseDetail;
@@ -36,34 +46,62 @@ export function StickyMetaBar(props: {
   onBack: (() => void) | undefined;
   onResume: (() => void) | undefined;
 }) {
+  const { course } = props;
+  const resumeLabel =
+    props.state.progress.completedCount === 0 ? de.overview.start : de.overview.resume;
+
   return (
-    <div className="sticky top-0 z-10 -mx-4 mb-2 border-b border-gray-200 bg-white px-4 py-3">
+    <div className="mb-4">
+      {/* Two panels side by side: the teal title block and the course artwork.
+          The image is not decorative framing — it is the Titelbild the customer
+          authored, and the layout gives it half the width. */}
+      <div className="overflow-hidden rounded-2xl">
+        <div className="grid sm:grid-cols-2">
+          <div className="flex items-center bg-brand-600 px-6 py-8 sm:px-8 sm:py-12">
+            <h1 className="text-2xl font-bold leading-snug text-brand-contrast sm:text-3xl">
+              {course.title}
+            </h1>
+          </div>
+
+          {course.heroImageUrl === null ? (
+            // No artwork: the teal block spans the full width rather than
+            // sitting next to an empty grey rectangle.
+            <div className="hidden bg-brand-600 sm:block" />
+          ) : (
+            <img
+              src={course.heroImageUrl}
+              alt=""
+              className="h-48 w-full object-cover sm:h-full"
+              referrerPolicy="no-referrer"
+            />
+          )}
+        </div>
+      </div>
+
+      <CourseMetaBar
+        points={course.cmePoints === null ? null : String(course.cmePoints)}
+        pointsLabel={de.overview.cmePoints}
+        duration={
+          course.totalDurationSec === 0 ? null : de.duration(course.totalDurationSec)
+        }
+        modules={de.overview.moduleCount(course.moduleCount)}
+        action={
+          props.onResume === undefined ? null : (
+            <Button onClick={props.onResume}>{resumeLabel}</Button>
+          )
+        }
+      />
+
       {props.onBack === undefined ? null : (
         <button
           type="button"
           onClick={props.onBack}
-          className="text-sm font-medium text-brand-700 underline"
+          className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-brand-700"
         >
+          <span aria-hidden="true">←</span>
           {de.catalog.back}
         </button>
       )}
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold text-gray-900">
-            {props.course.title}
-          </h1>
-          <p className="text-sm text-gray-600">{de.catalog.cardMeta(props.course)}</p>
-        </div>
-
-        {props.onResume === undefined ? null : (
-          <Button onClick={props.onResume}>
-            {props.state.progress.completedCount === 0
-              ? de.overview.start
-              : de.overview.resume}
-          </Button>
-        )}
-      </div>
     </div>
   );
 }
@@ -76,43 +114,38 @@ export function ProgressCard(props: {
   const sentence = de.overview.moduleProgress(completed, total);
 
   return (
-    <section
-      aria-label={de.overview.title}
-      className="flex flex-wrap items-center gap-4 rounded-[var(--ds-radius)] border border-gray-200 bg-gray-50 p-4"
-    >
+    <>
       {/*
         Arc and caption are the same two numbers. Feeding the arc a percentage
         computed elsewhere is what let an earlier version draw a ring that
         disagreed with the sentence printed beside it.
       */}
-      <ProgressRing
+      <ProgressPanel
+        title={de.overview.title}
         completed={completed}
         total={total}
         value={de.overview.ringValue(completed, total)}
-        label={sentence}
+        sentence={sentence}
+        footnote={de.overview.watchProgress(
+          props.state.achievedWatchPercent,
+          props.state.requiredWatchPercent,
+        )}
+        action={
+          props.onResume === undefined ? null : (
+            <Button variant="cta" onClick={props.onResume}>
+              {props.state.progress.completedCount === 0
+                ? de.overview.start
+                : de.overview.resume}
+            </Button>
+          )
+        }
       />
 
-      <div className="min-w-0 flex-1 space-y-1 text-sm text-gray-700">
-        <p className="font-semibold text-gray-900">{de.overview.title}</p>
-        <p>{sentence}</p>
-        <p className="text-gray-600">
-          {de.overview.watchProgress(
-            props.state.achievedWatchPercent,
-            props.state.requiredWatchPercent,
-          )}
+      {props.state.completedAt === null ? null : (
+        <p className="mt-3 rounded-xl bg-green-50 px-4 py-2 text-center text-sm font-medium text-status-completed">
+          {de.overview.complete}
         </p>
-        {props.state.completedAt === null ? null : (
-          <p className="font-medium text-status-completed">{de.overview.complete}</p>
-        )}
-      </div>
-
-      {props.onResume === undefined ? null : (
-        <Button onClick={props.onResume}>
-          {props.state.progress.completedCount === 0
-            ? de.overview.start
-            : de.overview.resume}
-        </Button>
       )}
-    </section>
+    </>
   );
 }
