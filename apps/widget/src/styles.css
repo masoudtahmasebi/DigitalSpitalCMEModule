@@ -14,6 +14,29 @@
  * than nothing. `element.ts` sets the overrides with `setProperty`, which
  * cannot be escaped out of.
  */
+/*
+ * The custom element's own box.
+ *
+ * `<ds-lms>` is an unknown element to the host page's CSS, so it defaults to
+ * `display: inline` — and an inline box does not constrain its children's
+ * width. Everything inside then sizes to **max-content**, with the host page's
+ * viewport playing no part in it.
+ *
+ * On wide screens nothing shows, because max-content happens to fit. At the
+ * 360 px floor the a11y criteria name, the player's control bar and module
+ * sidebar have a combined min-content of ~361 px, so the whole widget grew past
+ * the viewport and the host page scrolled sideways — on a phone, on the one
+ * screen a learner spends half an hour on.
+ *
+ * `display: block` on the host is what ties the widget to the width it was
+ * given. `max-width: 100%` is belt and braces for a host that sets a `width`
+ * on the element itself.
+ */
+:host {
+  display: block;
+  max-width: 100%;
+}
+
 .ds-lms-root {
   font-family: var(--ds-font-family, Inter, system-ui, sans-serif);
   color: #1f2937;

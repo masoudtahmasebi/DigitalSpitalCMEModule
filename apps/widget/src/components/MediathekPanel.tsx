@@ -24,21 +24,71 @@
  * smear would tell a screen-reader user something the screen does not say.
  */
 
+import { useState } from "react";
 import type { MaterialLibrary } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { moduleTopic } from "../module-title.js";
+import { moduleHeading, moduleTopic } from "../module-title.js";
 import { DownloadIcon, ImagePlaceholder, LockIcon } from "./primitives.js";
 
 export function MediathekPanel(props: { library: MaterialLibrary }) {
+  // "" is every module. Held here rather than in the URL: the widget owns no
+  // URL (see App.tsx on navigation), and a filter that survived a reload would
+  // have to.
+  const [selected, setSelected] = useState("");
+
   if (props.library.groups.length === 0) {
     return <p className="text-sm text-gray-600">{de.library.empty}</p>;
   }
 
+  const shown =
+    selected === ""
+      ? props.library.groups
+      : props.library.groups.filter((g) => g.moduleId === selected);
+
   return (
     <div className="space-y-8">
-      <h2 className="text-lg font-bold text-gray-900">{de.library.title}</h2>
+      {/*
+        The layout's module filter. Purely a view over what the server already
+        sent — it does not re-request, because the whole library arrives in one
+        response and filtering it here cannot change what is locked.
+      */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <h2 className="text-lg font-bold text-gray-900">{de.library.title}</h2>
 
-      {props.library.groups.map((group) => (
+        <div className="min-w-[14rem]">
+          <label
+            htmlFor="ds-library-module"
+            className="block text-sm font-medium text-gray-900"
+          >
+            {de.library.moduleFilter}
+          </label>
+          <div className="relative mt-1">
+            <select
+              id="ds-library-module"
+              value={selected}
+              onChange={(event) => setSelected(event.target.value)}
+              className="w-full appearance-none rounded-lg border border-gray-300 bg-white py-2 pl-3 pr-12 text-sm text-gray-800"
+            >
+              <option value="">{de.library.allModules}</option>
+              {props.library.groups.map((group) => (
+                <option key={group.moduleId} value={group.moduleId}>
+                  {moduleHeading(group.ordinal + 1, group.moduleTitle)}
+                </option>
+              ))}
+            </select>
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-lg bg-cta-500 text-cta-contrast"
+            >
+              <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor">
+                <path d="M5.5 7.5 10 12l4.5-4.5H5.5Z" />
+              </svg>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {shown.map((group) => (
         <section
           key={group.moduleId}
           aria-label={

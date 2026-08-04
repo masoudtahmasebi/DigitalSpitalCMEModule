@@ -50,7 +50,19 @@ export function ModuleSidebar(props: {
   useEffect(() => setExpanded(here?.moduleId), [here?.moduleId]);
 
   return (
-    <nav aria-label={de.player.outline} className="space-y-2">
+    /*
+      `min-w-0` because this is a grid item, and a grid item's default
+      `min-width: auto` is its *min-content* width — here about 361 px, set by
+      the longest module title plus its counter and chevron.
+
+      The player's grid has a single column below `lg`, so that min-content
+      became the whole track: at the 360 px floor the track was 361 px, the
+      video column was dragged out with it, and the host page scrolled
+      sideways on the one screen a learner spends half an hour on. The video
+      column already had `min-w-0`; this one did not, and one is enough to do
+      it.
+    */
+    <nav aria-label={de.player.outline} className="min-w-0 space-y-2">
       <h2 className="text-sm font-semibold text-gray-900">{de.player.outline}</h2>
 
       <ol className="space-y-1">

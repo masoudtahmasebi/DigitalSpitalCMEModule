@@ -234,14 +234,54 @@ function Loaded(props: {
   const resumeId = state.resumeContentId;
   const resume = resumeId === null ? undefined : () => open(resumeId);
 
+  /*
+   * The player is its own screen, not a fifth tab (layout §4.3).
+   *
+   * The layout draws it that way and the reason holds up: watching a module is
+   * the only thing on this platform that takes half an hour of a physician's
+   * attention, and the course chrome — hero, meta strip, four tabs — is
+   * navigation *away* from it. Keeping that chrome above a running video puts
+   * three competing progress readings on one screen (the meta bar's, the
+   * progress card's, the player's own) and pushes the video below the fold on
+   * a laptop.
+   *
+   * It renders before the course layout rather than inside it, so none of that
+   * chrome is constructed at all.
+   */
+  if (screen.kind === "lesson") {
+    return (
+      <div className="p-4">
+        <PlayerPage
+          apiBase={apiBase}
+          projectSlug={projectSlug}
+          client={client}
+          courseSlug={courseSlug}
+          course={detail}
+          state={state}
+          contentId={screen.contentId}
+          onProgress={refresh}
+          onOpen={(contentId) => {
+            refresh();
+            open(contentId);
+          }}
+          onBack={() => {
+            refresh();
+            back();
+          }}
+          onReporting={() => {
+            refresh();
+            setTab("certification");
+            back();
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 p-4">
       <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
 
-      {/*
-        Layout §4.2. The bar stays put so the course's worth and the way back
-        into it survive scrolling past several screens of Beschreibung.
-      */}
       <StickyMetaBar
         course={detail}
         state={state}
@@ -284,28 +324,6 @@ function Loaded(props: {
               client={client}
               courseSlug={courseSlug}
               key={state.progress.percent}
-            />
-          ) : screen.kind === "lesson" ? (
-            <Player
-              client={client}
-              courseSlug={courseSlug}
-              course={detail}
-              state={state}
-              contentId={screen.contentId}
-              onProgress={refresh}
-              onOpen={(contentId) => {
-                refresh();
-                open(contentId);
-              }}
-              onBack={() => {
-                refresh();
-                back();
-              }}
-              onReporting={() => {
-                refresh();
-                setTab("certification");
-                back();
-              }}
             />
           ) : screen.kind === "quiz" ? (
             <QuizGate
@@ -460,6 +478,76 @@ function BrandLogo(props: { apiBase: string; projectSlug: string }) {
       // which page a physician is reading.
       referrerPolicy="no-referrer"
     />
+  );
+}
+
+/**
+ * The player's own masthead (layout §4.3).
+ *
+ * A teal band carrying the course title and the way out, with the video card
+ * overlapping its lower edge. Deliberately *not* the course hero: this screen
+ * shows one module, and repeating the course's points, duration and tab row
+ * above a running video is navigation away from the only thing the learner
+ * came here to do.
+ *
+ * "Zurück zur Übersicht" is orange and sits top-right, which is the one place
+ * the layout puts the accent on a *leaving* action — because on this screen
+ * leaving is the resume-adjacent action: it is how the learner parks a module
+ * and comes back to it.
+ */
+function PlayerPage(props: {
+  apiBase: string;
+  projectSlug: string;
+  client: ReturnType<typeof createWidgetClient>;
+  courseSlug: string;
+  course: CourseDetail;
+  state: EnrolmentState;
+  contentId: string;
+  onProgress: () => void;
+  onOpen: (contentId: string) => void;
+  onBack: () => void;
+  onReporting: () => void;
+}) {
+  return (
+    <div>
+      <div className="rounded-2xl bg-brand-600 px-6 pb-16 pt-6 sm:px-8">
+        {/*
+          `ml-auto` on the button rather than `justify-between` on the row:
+          `BrandLogo` renders nothing for a project with no logo configured,
+          and with one child `justify-between` left-aligns it — so the back
+          action drifted to the top *left* on exactly the deployments that have
+          not finished branding yet.
+        */}
+        <div className="flex flex-wrap items-start gap-4">
+          <BrandLogo apiBase={props.apiBase} projectSlug={props.projectSlug} />
+          <div className="ml-auto">
+            <Button variant="cta" onClick={props.onBack}>
+              <span aria-hidden="true">←</span>
+              {de.player.back}
+            </Button>
+          </div>
+        </div>
+
+        <h1 className="mt-6 text-2xl font-bold text-brand-contrast sm:text-3xl">
+          {props.course.title}
+        </h1>
+      </div>
+
+      {/* Pulled up over the band, the same device the course meta strip uses. */}
+      <div className="-mt-10 px-2 sm:px-4">
+        <Player
+          client={props.client}
+          courseSlug={props.courseSlug}
+          course={props.course}
+          state={props.state}
+          contentId={props.contentId}
+          onProgress={props.onProgress}
+          onOpen={props.onOpen}
+          onBack={props.onBack}
+          onReporting={props.onReporting}
+        />
+      </div>
+    </div>
   );
 }
 

@@ -362,6 +362,8 @@ export const de = {
     lockedGroupLabel: (moduleTitle: string): string =>
       `Materialien zu „${moduleTitle}“ sind gesperrt`,
     download: "Download",
+    moduleFilter: "Modul",
+    allModules: "Alle Module",
     /** "Materialien zu Modul 1" — the group heading from the layout. */
     groupHeading: (ordinal: number): string => `Materialien zu Modul ${ordinal}`,
     /**
