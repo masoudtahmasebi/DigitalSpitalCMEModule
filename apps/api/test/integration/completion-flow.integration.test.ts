@@ -499,10 +499,15 @@ describe("the road to a CME point", () => {
   });
 
   it("completes and queues the Punktemeldung", async () => {
-    // The learner confirms the name that will print on the certificate — the
-    // Keycloak profile is pre-filled but editable (requirements §6.5).
+    // The Punktemeldung form as the layout draws it (page 13): title, given
+    // name, family name and the consent, in one request. What gets printed and
+    // reported is the *composed* name — `composeAttestedName` in @ds/domain is
+    // the only place three fields become one string.
     const { status, body } = await call("POST", `/courses/${courseSlug}/completion`, {
-      attestedName: ATTESTED_NAME,
+      attestedTitle: "Dr. med.",
+      attestedGivenName: "Anna",
+      attestedFamilyName: "Müller",
+      consentDocument: "datenschutz-2026-01",
     });
 
     expect(status).toBe(200);
@@ -702,6 +707,46 @@ describe("the admin console sees the same truth the learner does", () => {
     );
     expect(row.participantName).toBe(ATTESTED_NAME);
     expect(JSON.stringify(body)).not.toContain(EFN);
+  });
+
+  it("stores the name in its three parts beside the one that is reported", async () => {
+    // Layout page 13 captures three fields; the certificate and the
+    // Punktemeldung carry one string. Both are stored, and the database
+    // refuses the state where the parts exist and the composed name does not
+    // (`enrolments_attested_name_present`, migration 0024).
+    const { rows } = await seedPool.query<{
+      attested_name: string | null;
+      attested_title: string | null;
+      attested_given_name: string | null;
+      attested_family_name: string | null;
+    }>(
+      `SELECT attested_name, attested_title, attested_given_name, attested_family_name
+         FROM enrolments WHERE id = $1`,
+      [enrolmentId],
+    );
+
+    expect(rows[0]).toEqual({
+      attested_name: ATTESTED_NAME,
+      attested_title: "Dr. med.",
+      attested_given_name: "Anna",
+      attested_family_name: "Müller",
+    });
+  });
+
+  it("records the consent that authorised the Punktemeldung", async () => {
+    // GDPR Art. 7(1). The version matters, not a boolean: consent to the
+    // January wording is not consent to the June wording, and a record that
+    // cannot tell them apart demonstrates only that somebody agreed to
+    // something.
+    const { rows } = await seedPool.query<{
+      consent_given_at: Date | null;
+      consent_document: string | null;
+    }>(`SELECT consent_given_at, consent_document FROM enrolments WHERE id = $1`, [
+      enrolmentId,
+    ]);
+
+    expect(rows[0]?.consent_document).toBe("datenschutz-2026-01");
+    expect(rows[0]?.consent_given_at).toBeInstanceOf(Date);
   });
 
   it("reports the course as ready to issue certificates", async () => {
@@ -1204,12 +1249,18 @@ describe("erasure keeps the participation and removes the person", () => {
       last_name: string | null;
       erased_at: Date | null;
       attested_name: string | null;
+      attested_title: string | null;
+      attested_given_name: string | null;
+      attested_family_name: string | null;
+      consent_document: string | null;
       efn: string;
       participant_name: string;
       efn_profiles: string;
     }>(
       `SELECT u.email, u.first_name, u.last_name, u.erased_at,
-              e.attested_name, s.efn, c.participant_name,
+              e.attested_name, e.attested_title, e.attested_given_name,
+              e.attested_family_name, e.consent_document,
+              s.efn, c.participant_name,
               (SELECT count(*) FROM efn_profiles p WHERE p.user_id = u.id) AS efn_profiles
        FROM users u
        JOIN enrolments e ON e.user_id = u.id
@@ -1225,6 +1276,18 @@ describe("erasure keeps the participation and removes the person", () => {
     expect(row.last_name).toBeNull();
     expect(row.erased_at).not.toBeNull();
     expect(row.attested_name).toBeNull();
+    // The parts too. An erasure routine that clears the composed name and
+    // leaves the three columns it was composed from is the most predictable
+    // failure this schema has, and it fails silently — the request succeeds,
+    // the report says rows were cleared, and the name is still in the row.
+    expect(row.attested_title).toBeNull();
+    expect(row.attested_given_name).toBeNull();
+    expect(row.attested_family_name).toBeNull();
+    // The consent record survives, deliberately: Art. 17(3)(b) and (e), and it
+    // names nobody once the name and the EFN are gone. It is the only answer
+    // to "was this report authorised?" once the report itself is all that is
+    // left.
+    expect(row.consent_document).toBe("datenschutz-2026-01");
     expect(row.participant_name).not.toBe(ATTESTED_NAME);
     expect(Number(row.efn_profiles)).toBe(0);
     // The submission row survives as evidence a report was made; the

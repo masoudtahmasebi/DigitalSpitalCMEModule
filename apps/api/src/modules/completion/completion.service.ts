@@ -20,10 +20,13 @@
  * is a one-line change at this call site.
  */
 
-import { eivDeadlines, isValidEfn } from "@ds/domain";
+import { composeAttestedName, eivDeadlines, isValidEfn } from "@ds/domain";
 import { AppError } from "../../shared/problem-details.js";
 import type { Db } from "../../db/tenant-db.js";
-import { LearningRepository } from "../learning/learning.repository.js";
+import {
+  LearningRepository,
+  type AttestedCompletion,
+} from "../learning/learning.repository.js";
 import { LearningService, type LearnerContext } from "../learning/learning.service.js";
 import type { EnrolmentState } from "../learning/learning.dto.js";
 import {
@@ -165,11 +168,24 @@ export class CompletionService {
   ): Promise<EnrolmentState> {
     const { course, enrolment } = await this.learning.requireEnrolled(slug, learner);
 
+    if (enrolment.completedAt !== null) return this.learning.getState(slug, learner);
+
+    /*
+     * The EFN arrives with the rest of the form (layout page 13) rather than
+     * through a second request, and it is stored **before** the completeness
+     * check rather than after.
+     *
+     * That ordering is the whole point: `efn` is one of the conditions
+     * `isCourseComplete` tests, so a request that supplies it and is then
+     * checked against a state computed a moment earlier would be refused for
+     * missing the very thing it just supplied. Saving first is what lets one
+     * screen and one button do what the layout says they do.
+     */
+    if (input.efn !== undefined) await this.setEfn(input.efn, learner);
+
     // The authority on whether this is allowed — recomputed from stored rows,
     // never taken from the client or from a cached view.
     const state = await this.learning.getState(slug, learner);
-
-    if (enrolment.completedAt !== null) return state;
 
     if (!state.complete) {
       throw new AppError(
@@ -181,7 +197,7 @@ export class CompletionService {
 
     // The name the learner attests to, stamped with the completion it belongs
     // to. Absent means "use my profile name" — see completion.dto.ts.
-    await this.learning.markCompleted(enrolment.id, now, input.attestedName ?? null);
+    await this.learning.markCompleted(enrolment.id, now, attestedFrom(input));
 
     await this.queueSubmission(course.vnr, enrolment.id, learner, now);
 
@@ -252,4 +268,55 @@ function normaliseKind(kind: string): EvaluationKind {
 function readOptions(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+/**
+ * Turn the layout's three name fields into what gets stored.
+ *
+ * The composition itself is `@ds/domain`'s — one composer, so the certificate
+ * and the Punktemeldung cannot end up carrying names that differ by a space.
+ * This function only decides what to do when the parts are absent, which is
+ * nothing: `null` tells the repository to leave the stored name alone, and the
+ * certificate falls back to the profile.
+ *
+ * The DTO has already refused a given name without a family name, so a partial
+ * composition cannot reach here. It is checked again anyway — `composeAttestedName`
+ * returning `ok: false` on input the schema accepted would mean the two
+ * disagree, and silently writing a wrong name is not an acceptable way to find
+ * that out.
+ */
+function attestedFrom(input: CompletionInput): AttestedCompletion {
+  const none: AttestedCompletion = {
+    name: null,
+    title: null,
+    givenName: null,
+    familyName: null,
+    consentDocument: input.consentDocument ?? null,
+  };
+
+  if (input.attestedGivenName === undefined || input.attestedFamilyName === undefined) {
+    return none;
+  }
+
+  const composed = composeAttestedName({
+    title: input.attestedTitle,
+    givenName: input.attestedGivenName,
+    familyName: input.attestedFamilyName,
+  });
+
+  if (!composed.ok) {
+    throw new AppError(
+      "validation",
+      `attested name rejected by the domain: ${composed.problems.join(", ")}`,
+      "Bitte prüfen Sie Vorname und Nachname.",
+    );
+  }
+
+  return {
+    name: composed.name,
+    title: composed.parts.title ?? null,
+    givenName: composed.parts.givenName,
+    familyName: composed.parts.familyName,
+    consentDocument: input.consentDocument ?? null,
+  };
 }

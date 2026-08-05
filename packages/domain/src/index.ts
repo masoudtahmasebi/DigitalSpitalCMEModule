@@ -259,3 +259,10 @@ export type {
   NameCorrectionVerdict,
   SubmissionStage,
 } from "./moderation.js";
+
+export { composeAttestedName, NAME_PART_MAX_LENGTH } from "./attested-name.js";
+export type {
+  AttestedNameParts,
+  AttestedNameProblem,
+  AttestedNameResult,
+} from "./attested-name.js";

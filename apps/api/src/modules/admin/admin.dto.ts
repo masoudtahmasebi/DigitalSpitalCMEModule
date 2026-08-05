@@ -29,6 +29,8 @@ export const adminCourseSummarySchema = z.object({
   altersgruppe: z.array(z.string()),
   learningObjectives: z.array(z.string()),
   targetAudience: z.string().nullable(),
+  /** The "Vorkenntnisse" paragraph (layout page 02). */
+  prerequisites: z.string().nullable(),
   heroImageUrl: z.string().nullable(),
   fortbildungsnummer: z.string().nullable(),
   /** ISO 8601. The accreditation window from the Anerkennungsbescheid. */
@@ -100,6 +102,7 @@ export const adminCourseUpdateSchema = z.object({
   learningObjectives: z.array(z.string().trim().min(1).max(500)).max(30).optional(),
   /** Zielgruppe, including the Vorkenntnisse sentence. Newlines are preserved. */
   targetAudience: z.string().max(5000).nullable().optional(),
+  prerequisites: z.string().max(2000).nullable().optional(),
   /** The image beside the hero and on the catalogue card. */
   heroImageUrl: z.string().url().max(2000).nullable().optional(),
   cmePoints: z.number().int().positive().max(100).nullable().optional(),

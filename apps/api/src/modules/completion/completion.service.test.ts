@@ -8,6 +8,7 @@ import type {
   EvaluationQuestionRow,
 } from "./completion.repository.js";
 import type {
+  AttestedCompletion,
   CourseComplianceRow,
   CourseTree,
   EnrolmentRow,
@@ -144,7 +145,8 @@ function build(
   const queued: Array<Record<string, unknown>> = [];
   const savedEfn: string[] = [];
   const savedResponses: Array<Record<string, unknown>> = [];
-  const completedCalls: Array<{ id: string; at: Date; attestedName: string | null }> = [];
+  const completedCalls: Array<{ id: string; at: Date; attested: AttestedCompletion }> =
+    [];
   const efn = "efn" in options ? options.efn : undefined;
 
   const learningRepo: LearningRepositoryPort = {
@@ -162,8 +164,8 @@ function build(
     upsertProgress: async () => undefined,
     hasEfn: async () => efn !== undefined,
     hasEvaluationResponse: async () => options.evaluationSubmitted ?? false,
-    markCompleted: async (id, at, attestedName) => {
-      completedCalls.push({ id, at, attestedName });
+    markCompleted: async (id, at, attested) => {
+      completedCalls.push({ id, at, attested });
     },
   };
 
@@ -358,7 +360,20 @@ describe("complete", () => {
     const state = await service.complete(course.slug, {}, learner, NOW);
 
     expect(state.completedAt).toBe(NOW.toISOString());
-    expect(completedCalls).toEqual([{ id: ENROLMENT_ID, at: NOW, attestedName: null }]);
+    expect(completedCalls).toEqual([
+      {
+        id: ENROLMENT_ID,
+        at: NOW,
+        // Nothing attested: the certificate falls back to the profile name.
+        attested: {
+          name: null,
+          title: null,
+          givenName: null,
+          familyName: null,
+          consentDocument: null,
+        },
+      },
+    ]);
     expect(queued).toHaveLength(1);
     expect(queued[0]?.["vnr"]).toBe(course.vnr);
     expect(queued[0]?.["efn"]).toBe(EFN);
@@ -410,17 +425,58 @@ describe("complete", () => {
     expect(queued).toEqual([]);
   });
 
-  it("stores the name the learner attested to for the certificate", async () => {
+  it("composes the three fields the layout captures into one reported name", async () => {
+    // Layout page 13 asks for Titel, Vorname and Nachname; the certificate and
+    // the Punktemeldung carry one string. `composeAttestedName` in @ds/domain
+    // is the only composer, and the parts are stored beside what it produced.
     const { service, completedCalls } = build(ready);
 
     await service.complete(
       course.slug,
-      { attestedName: "Dr. med. Anna Müller" },
+      {
+        attestedTitle: "Dr. med.",
+        attestedGivenName: "Anna",
+        attestedFamilyName: "Müller",
+      },
       learner,
       NOW,
     );
 
-    expect(completedCalls[0]?.attestedName).toBe("Dr. med. Anna Müller");
+    expect(completedCalls[0]?.attested).toMatchObject({
+      name: "Dr. med. Anna Müller",
+      title: "Dr. med.",
+      givenName: "Anna",
+      familyName: "Müller",
+    });
+  });
+
+  it("records the consent that authorises the Punktemeldung", async () => {
+    // GDPR Art. 7(1): the controller must be able to demonstrate consent, so
+    // the version agreed to travels with the completion rather than being a
+    // checkbox the browser validated and nobody wrote down.
+    const { service, completedCalls } = build(ready);
+
+    await service.complete(
+      course.slug,
+      { consentDocument: "datenschutz-2026-01" },
+      learner,
+      NOW,
+    );
+
+    expect(completedCalls[0]?.attested.consentDocument).toBe("datenschutz-2026-01");
+  });
+
+  it("stores an EFN that arrives with the form rather than in a second request", async () => {
+    // One screen, one button — see the note on CompletionInput. The EFN is
+    // saved before the completion is stamped, so the Punktemeldung it enables
+    // is queued in the same call.
+    const { service, savedEfn } = build({ ...ready, efn: undefined });
+
+    await service
+      .complete(course.slug, { efn: "123456789012345" }, learner, NOW)
+      .catch(() => undefined);
+
+    expect(savedEfn).toContain("123456789012345");
   });
 
   it("never returns the EFN in the completed state", async () => {

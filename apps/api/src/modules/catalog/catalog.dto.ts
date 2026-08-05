@@ -119,8 +119,20 @@ export const courseDetailSchema = courseSummarySchema.extend({
   learningObjectives: z.array(z.string()),
   /** The "Zielgruppe" section; plain text, newlines are the only formatting. */
   targetAudience: z.string().nullable(),
+  /**
+   * The "Vorkenntnisse" paragraph the layout labels separately under
+   * Zielgruppe (page 02). Its own field so an author does not have to remember
+   * to type the label into `targetAudience`.
+   */
+  prerequisites: z.string().nullable(),
   vnr: z.string().nullable(),
   accreditationBody: z.string().nullable(),
+  /**
+   * Printed on the Zertifizierung tab as "Fortbildungsnummer: …" (layout page
+   * 04). Distinct from the VNR, which is the EIV credential and never leaves
+   * the server.
+   */
+  fortbildungsnummer: z.string().nullable(),
   organizer: z.string().nullable(),
   eventLocation: z.string().nullable(),
   validFrom: z.iso.datetime().nullable(),

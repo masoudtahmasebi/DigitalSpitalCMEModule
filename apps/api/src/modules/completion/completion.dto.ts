@@ -48,25 +48,84 @@ export const evaluationSubmissionSchema = z.object({
 });
 
 /**
- * The completion request body.
+ * The Punktemeldung form (layout page 13).
  *
- * `attestedName` is the name the learner confirms should appear on the
- * Teilnahmebescheinigung and in the Punktemeldung. It is optional: when it is
- * absent the Keycloak profile name is used. It exists because the Keycloak
- * profile may be stale or incomplete and the certificate carries a mandatory
- * "Name des Teilnehmenden" — see docs/requirements/medice-adhs.md §6.5. The
- * token remains the identity authority; this is only what gets printed.
+ * ## Why this is one request and not three
  *
- * Bounded at 200 characters: a name, not a free-text field.
+ * The layout draws one screen with `Titel`, `Vorname`, `Nachname`, `EFN-Nummer`
+ * and a consent checkbox, and one button: **Daten übermitteln**. Splitting that
+ * into "save the EFN", "save the name" and "complete" would give a physician
+ * three ways to end up half-submitted — an EFN stored against a course that was
+ * never completed, or a completion queued before the consent that authorises it.
+ * The four things arrive together because they are one decision.
+ *
+ * `PUT /courses/{slug}/efn` still exists, for correcting an EFN before the
+ * submission window closes (S4). It is not this.
+ *
+ * ## The name
+ *
+ * Three parts, exactly as the layout captures them. What gets printed on the
+ * Teilnahmebescheinigung and reported to the Kammer is one string, composed by
+ * `composeAttestedName` in `@ds/domain` — see the note there for why there is
+ * one composer and not two.
+ *
+ * The parts are optional as a group: a host that is not this widget may still
+ * complete a course and fall back to the profile name. Supplying a given name
+ * without a family name is refused rather than half-accepted.
+ *
+ * ## The consent
+ *
+ * `consentDocument` names the privacy notice version the learner agreed to. It
+ * is required whenever the request would trigger a Punktemeldung, because GDPR
+ * Art. 7(1) puts the burden of demonstrating consent on the controller and a
+ * boolean records only that somebody agreed to something.
  */
-export const completionInputSchema = z.object({
-  attestedName: z.string().trim().min(1).max(200).optional(),
-});
+const namePart = z.string().trim().min(1).max(100);
+
+export const completionInputSchema = z
+  .object({
+    /** "Dr. med.", "Prof. Dr." — the layout's `Titel` select. */
+    attestedTitle: namePart.optional(),
+    attestedGivenName: namePart.optional(),
+    attestedFamilyName: namePart.optional(),
+    /**
+     * 15 digits — see `efnInputSchema`. Optional here because a learner may
+     * have supplied it earlier through the correction endpoint.
+     */
+    efn: z
+      .string()
+      .regex(/^[0-9]{15}$/)
+      .optional(),
+    /**
+     * The privacy notice the consent checkbox referred to, by version.
+     * Free-form so the wording can be versioned however the DPO prefers;
+     * bounded because it is written to a column, not to a log.
+     */
+    consentDocument: z.string().trim().min(1).max(200).optional(),
+  })
+  .refine(
+    (input) =>
+      (input.attestedGivenName === undefined) ===
+      (input.attestedFamilyName === undefined),
+    {
+      message: "Vorname and Nachname are supplied together or not at all",
+      path: ["attestedGivenName"],
+    },
+  )
+  .refine(
+    (input) => input.attestedTitle === undefined || input.attestedGivenName !== undefined,
+    { message: "a title alone is not a name", path: ["attestedTitle"] },
+  );
 
 export const efnInputSchema = z.object({
   /**
    * 15 digits. Validated again by `isValidEfn` in `@ds/domain` before storage —
    * this schema rejects the obviously malformed, the domain owns the rule.
+   *
+   * **The layout says 18.** Page 13's helper text reads "Die 18-stellige EFN"
+   * and its placeholder is eighteen characters. Nothing has been changed here:
+   * see S21 in `docs/show-stoppers.md`. A validator that is wrong in either
+   * direction fails where the learner cannot see it.
    */
   efn: z.string().regex(/^[0-9]{15}$/),
 });

@@ -133,6 +133,8 @@ export const courses = pgTable("courses", {
   heroImageUrl: text("hero_image_url"),
   learningObjectives: text("learning_objectives").array().notNull().default([]),
   targetAudience: text("target_audience"),
+  /** The "Vorkenntnisse" paragraph under Zielgruppe (layout page 02). */
+  prerequisites: text("prerequisites"),
   deliveryType: courseDeliveryType("delivery_type").notNull().default("on_demand"),
   thema: text("thema").array().notNull().default([]),
   altersgruppe: text("altersgruppe").array().notNull().default([]),
@@ -269,7 +271,20 @@ export const enrolments = pgTable("enrolments", {
   vnr: text("vnr"),
   lastContentId: uuid("last_content_id"),
   completedAt: timestamp("completed_at", { withTimezone: true }),
+  /**
+   * The one name that is reported and printed.
+   *
+   * Composed from the three parts below by `composeAttestedName` in
+   * `@ds/domain` — see the note there for why there is exactly one composer.
+   * Rows written before migration 0024 carry a free-text name with no parts.
+   */
   attestedName: text("attested_name"),
+  attestedTitle: text("attested_title"),
+  attestedGivenName: text("attested_given_name"),
+  attestedFamilyName: text("attested_family_name"),
+  /** GDPR Art. 7(1): when the Punktemeldung consent was given, and to what. */
+  consentGivenAt: timestamp("consent_given_at", { withTimezone: true }),
+  consentDocument: text("consent_document"),
   ...timestamps,
 });
 

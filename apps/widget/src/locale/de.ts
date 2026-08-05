@@ -340,21 +340,65 @@ export const de = {
     textPlaceholder: "Ihre Anmerkung (optional)",
   },
 
+  /** The Punktemeldung screen — layout page 13, copied from the render. */
   completion: {
-    title: "Abschluss und Punktemeldung",
+    title: "Herzlichen Glückwunsch!",
+    subtitle: "Sie haben die Fortbildung abgeschlossen.",
     intro:
-      "Zum Abschluss benötigen wir Ihre EFN und den Namen, der auf der Teilnahmebescheinigung erscheinen soll.",
-    nameLabel: "Name auf der Teilnahmebescheinigung",
-    nameHint:
-      "Dieser Name erscheint auf Ihrer Teilnahmebescheinigung. Sie können ihn hier korrigieren.",
-    namePlaceholder: "z. B. Dr. med. Anna Musterfrau",
-    efnLabel: "EFN (Einheitliche Fortbildungsnummer)",
-    efnHint: "15 Ziffern. Ihre EFN wird ausschließlich an die Ärztekammer übermittelt.",
+      "Um Ihre CME-Punkte zu melden und Ihr Zertifikat auszustellen, benötigen wir Ihre Angaben. Die Daten werden direkt und sicher an Ihre zuständige Ärztekammer übermittelt.",
+    /** The grey box with the question-mark icon. */
+    whyEfn:
+      "Warum benötigen wir Ihre EFN? Die Einheitliche Fortbildungsnummer (EFN) ermöglicht die eindeutige Zuordnung Ihrer CME-Punkte. Sie finden die EFN auf Ihrem Arztausweis oder in Ihrem Kammerkonto.",
+
+    titleLabel: "Titel",
+    titlePlaceholder: "Bitte Auswählen",
+    /**
+     * The `Titel` select's options.
+     *
+     * The layout draws the control but not its list, so this one is ours.
+     * **Confirm with MEDICE** — it is the only place in this file where the
+     * copy was not read off a render. "Ohne Titel" exists because the layout
+     * marks the field required and offers no empty choice, which would
+     * otherwise make the form impossible for a physician who has none.
+     */
+    titles: [
+      "Ohne Titel",
+      "Dr. med.",
+      "Dr. med. dent.",
+      "Dr. rer. nat.",
+      "Dr. rer. medic.",
+      "PD Dr. med.",
+      "Prof. Dr. med.",
+      "Prof. Dr.",
+    ],
+
+    givenNameLabel: "Vorname",
+    givenNamePlaceholder: "z.B. Philipp",
+    familyNameLabel: "Nachname",
+    familyNamePlaceholder: "z.B. Mustermann",
+
+    efnLabel: "EFN-Nummer",
+    /**
+     * **The layout says eighteen.** Page 13 reads "Die 18-stellige EFN" and
+     * its placeholder is eighteen characters long; the platform validates
+     * fifteen, which is the number the EIV requirements were written from.
+     * The hint has to agree with the validator or a physician is told to type
+     * a length the field then refuses — so it says fifteen until S21 is
+     * answered. See docs/show-stoppers.md.
+     */
+    efnHint: "Die 15-stellige EFN finden Sie auf Ihrem Arztausweis",
     efnInvalid: "Die EFN muss aus genau 15 Ziffern bestehen.",
     efnSaved: "Ihre EFN ist hinterlegt.",
-    saveEfn: "EFN speichern",
-    submit: "Fortbildung abschließen",
-    submitting: "Wird abgeschlossen …",
+
+    /** Split so the Datenschutzerklärung can be a link, as the layout draws it. */
+    consentBefore:
+      "Ich stimme der Verarbeitung meiner personenbezogenen Daten zur Übermittlung der CME-Punkte an die Ärztekammer gemäß der ",
+    consentLink: "Datenschutzerklärung",
+    consentAfter: " zu.",
+    consentRequired: "Bitte stimmen Sie der Übermittlung zu.",
+
+    submit: "Daten übermitteln",
+    submitting: "Wird übermittelt …",
     done: "Ihre Fortbildung ist abgeschlossen. Die Punkte werden an die Ärztekammer gemeldet.",
     outstanding: "Es fehlt noch:",
     conditions: {

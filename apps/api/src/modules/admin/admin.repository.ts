@@ -42,6 +42,7 @@ export interface AdminCourseRow {
   altersgruppe: string[];
   learningObjectives: string[];
   targetAudience: string | null;
+  prerequisites: string | null;
   heroImageUrl: string | null;
   fortbildungsnummer: string | null;
   validFrom: Date | null;
@@ -172,6 +173,7 @@ export interface CoursePatch {
   altersgruppe?: string[];
   learningObjectives?: string[];
   targetAudience?: string | null;
+  prerequisites?: string | null;
   heroImageUrl?: string | null;
   cmePoints?: number | null;
   cmeCategory?: string | null;
@@ -207,6 +209,7 @@ const COURSE_COLUMNS = {
   altersgruppe: courses.altersgruppe,
   learningObjectives: courses.learningObjectives,
   targetAudience: courses.targetAudience,
+  prerequisites: courses.prerequisites,
   heroImageUrl: courses.heroImageUrl,
   fortbildungsnummer: courses.fortbildungsnummer,
   validFrom: courses.validFrom,

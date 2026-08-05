@@ -85,6 +85,27 @@ export interface ProgressRow {
   updatedAt: Date;
 }
 
+/**
+ * What a completion attests to (layout page 13).
+ *
+ * One shape rather than five parameters, because these five fields are one
+ * decision: the physician ticked a box and pressed *Daten übermitteln*. A
+ * signature that let three of them be passed and two forgotten would eventually
+ * see them forgotten.
+ *
+ * `name` is composed by `composeAttestedName` in `@ds/domain`, never here — the
+ * repository writes rows, it does not decide what a name is (ADR-0006).
+ */
+export interface AttestedCompletion {
+  /** The composed, reported name, or `null` to keep the profile name. */
+  readonly name: string | null;
+  readonly title: string | null;
+  readonly givenName: string | null;
+  readonly familyName: string | null;
+  /** The privacy notice agreed to, or `null` when no consent was captured. */
+  readonly consentDocument: string | null;
+}
+
 export interface LearningRepositoryPort {
   findCourseBySlug(slug: string): Promise<CourseComplianceRow | undefined>;
   findEnrolment(courseId: string, userId: string): Promise<EnrolmentRow | undefined>;
@@ -110,7 +131,7 @@ export interface LearningRepositoryPort {
   markCompleted(
     enrolmentId: string,
     at: Date,
-    attestedName: string | null,
+    attested: AttestedCompletion,
   ): Promise<void>;
 }
 
@@ -339,14 +360,35 @@ export class LearningRepository implements LearningRepositoryPort {
   async markCompleted(
     enrolmentId: string,
     at: Date,
-    attestedName: string | null,
+    attested: AttestedCompletion,
   ): Promise<void> {
     await this.db
       .update(enrolments)
       .set({
         completedAt: at,
         updatedAt: new Date(),
-        ...(attestedName === null ? {} : { attestedName }),
+        /*
+         * The composed name and its parts are written together or not at all.
+         * `enrolments_attested_name_present` (migration 0024) refuses the row
+         * where parts exist and the reported name does not, and the reason it
+         * can is that this is the only statement that sets either.
+         */
+        ...(attested.name === null
+          ? {}
+          : {
+              attestedName: attested.name,
+              attestedTitle: attested.title,
+              attestedGivenName: attested.givenName,
+              attestedFamilyName: attested.familyName,
+            }),
+        /*
+         * GDPR Art. 7(1). Written in the same statement as the completion it
+         * authorises, so there is no window in which a Punktemeldung is queued
+         * against an enrolment whose consent record has not landed yet.
+         */
+        ...(attested.consentDocument === null
+          ? {}
+          : { consentGivenAt: at, consentDocument: attested.consentDocument }),
       })
       .where(eq(enrolments.id, enrolmentId));
   }

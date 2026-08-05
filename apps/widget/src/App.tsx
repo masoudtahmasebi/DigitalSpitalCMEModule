@@ -201,6 +201,9 @@ function Loaded(props: {
 }) {
   const { apiBase, projectSlug, courseSlug, client } = props;
 
+  // De-duplicated with the logo's fetch and the catalogue's — see branding.ts.
+  const branding = useBranding(apiBase, projectSlug);
+
   const [tab, setTab] = useState<Tab>("overview");
   const [screen, setScreen] = useState<Screen>({ kind: "outline" });
 
@@ -387,6 +390,7 @@ function Loaded(props: {
                 client={client}
                 courseSlug={courseSlug}
                 state={state}
+                branding={branding}
                 onCompleted={refresh}
               />
 

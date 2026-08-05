@@ -1352,8 +1352,20 @@ export interface components {
             learningObjectives: string[];
             /** @description The "Zielgruppe" text; newlines are the only formatting. */
             targetAudience: string | null;
+            /**
+             * @description The "Vorkenntnisse" paragraph the layout labels separately under
+             *     Zielgruppe (page 02). Its own field so an author does not have to
+             *     remember to type the label into `targetAudience`.
+             */
+            prerequisites: string | null;
             vnr: string | null;
             accreditationBody: string | null;
+            /**
+             * @description Printed on the Zertifizierung tab as "Fortbildungsnummer: …"
+             *     (layout page 04). Distinct from the VNR, which is the EIV
+             *     credential and never leaves the server.
+             */
+            fortbildungsnummer: string | null;
             organizer: string | null;
             eventLocation: string | null;
             /** Format: date-time */
@@ -1753,16 +1765,57 @@ export interface components {
             scientificLeadName: string;
             creditSentence: string;
         };
+        /**
+         * @description The Punktemeldung form, as one request.
+         *
+         *     Layout page 13 draws one screen — Titel, Vorname, Nachname, EFN and a
+         *     consent checkbox — behind one button, **Daten übermitteln**. Splitting
+         *     that into three calls would give a physician three ways to end up
+         *     half-submitted: an EFN stored against a course never completed, or a
+         *     completion queued before the consent that authorises it.
+         *
+         *     Everything here is optional at the schema level so a host that is not
+         *     this widget can still complete a course on a profile name. What is not
+         *     optional is coherence: Vorname and Nachname are supplied together, and a
+         *     Titel alone is refused.
+         *
+         *     `PUT /courses/{slug}/efn` still exists, for correcting an EFN before the
+         *     submission window closes. It is not this.
+         */
         CompletionInput: {
             /**
-             * @description The name to print as "Name des Teilnehmenden" on the
-             *     Teilnahmebescheinigung and to report to the EIV. Optional: when
-             *     omitted the name from the validated token is used. It exists
-             *     because the Keycloak profile may be stale or carry no name at all,
-             *     and the certificate cannot be issued without one. The token stays
-             *     the identity authority — this only decides what is printed.
+             * @description "Dr. med.", "Prof. Dr." — the layout's `Titel` select. Optional
+             *     even though the layout marks it required, because that select
+             *     offers no empty-but-valid choice and a physician without a title
+             *     still has to be able to finish.
              */
-            attestedName?: string;
+            attestedTitle?: string;
+            /** @description Vorname. Supplied together with `attestedFamilyName`. */
+            attestedGivenName?: string;
+            /** @description Nachname. Supplied together with `attestedGivenName`. */
+            attestedFamilyName?: string;
+            /**
+             * @description The Einheitliche Fortbildungsnummer, arriving with the rest of the
+             *     form rather than through a separate request.
+             *
+             *     **The layout says eighteen digits** ("Die 18-stellige EFN") and its
+             *     placeholder is eighteen characters long. The platform validates
+             *     fifteen, which is what the EIV requirements were written from.
+             *     Unresolved — see S21 in docs/show-stoppers.md. A validator wrong in
+             *     either direction fails where the learner cannot see it.
+             */
+            efn?: string;
+            /**
+             * @description The privacy notice the learner agreed to, by version, when they
+             *     ticked the consent box on layout page 13.
+             *
+             *     Stored with the timestamp of the completion it authorises. GDPR
+             *     Art. 7(1) puts the burden of demonstrating consent on the
+             *     controller, and a boolean would record only that somebody agreed to
+             *     something — consent to the January wording is not consent to the
+             *     June wording.
+             */
+            consentDocument?: string;
         };
         /**
          * @description Every field optional. An absent or invalid value falls back to the
@@ -1862,8 +1915,14 @@ export interface components {
             altersgruppe: string[];
             /** @description The Lernziele checklist, in the order the layout draws it. */
             learningObjectives: string[];
-            /** @description Zielgruppe, including the Vorkenntnisse sentence. Newlines preserved. */
+            /**
+             * @description Zielgruppe. Newlines preserved. The Vorkenntnisse sentence is
+             *     **not** part of this any more — the layout labels it separately, so
+             *     it has its own field.
+             */
             targetAudience: string | null;
+            /** @description The "Vorkenntnisse" paragraph under Zielgruppe (layout page 02). */
+            prerequisites: string | null;
             heroImageUrl: string | null;
             fortbildungsnummer: string | null;
             /** Format: date-time */
@@ -1916,6 +1975,7 @@ export interface components {
             altersgruppe?: string[];
             learningObjectives?: string[];
             targetAudience?: string | null;
+            prerequisites?: string | null;
             /** Format: uri */
             heroImageUrl?: string | null;
             cmePoints?: number | null;

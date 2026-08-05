@@ -181,6 +181,7 @@ export class AdminService {
     assign(patch, "altersgruppe", update.altersgruppe);
     assign(patch, "learningObjectives", update.learningObjectives);
     assign(patch, "targetAudience", update.targetAudience);
+    assign(patch, "prerequisites", update.prerequisites);
     assign(patch, "heroImageUrl", update.heroImageUrl);
     assign(patch, "cmePoints", update.cmePoints);
     assign(patch, "cmeCategory", update.cmeCategory);
@@ -700,6 +701,7 @@ function presentationOf(row: {
   altersgruppe: string[];
   learningObjectives: string[];
   targetAudience: string | null;
+  prerequisites: string | null;
   heroImageUrl: string | null;
   fortbildungsnummer: string | null;
   validFrom: Date | null;
@@ -712,6 +714,7 @@ function presentationOf(row: {
     altersgruppe: row.altersgruppe,
     learningObjectives: row.learningObjectives,
     targetAudience: row.targetAudience,
+    prerequisites: row.prerequisites,
     heroImageUrl: row.heroImageUrl,
     fortbildungsnummer: row.fortbildungsnummer,
     // ISO 8601 on the wire; `timestamptz` in the column. The console renders a

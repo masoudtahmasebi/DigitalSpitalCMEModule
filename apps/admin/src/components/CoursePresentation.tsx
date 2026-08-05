@@ -81,6 +81,7 @@ export function CoursePresentation(props: {
         altersgruppe: lines(form.altersgruppe),
         learningObjectives: lines(form.learningObjectives),
         targetAudience: emptyToNull(form.targetAudience),
+        prerequisites: emptyToNull(form.prerequisites),
         heroImageUrl: emptyToNull(form.heroImageUrl),
         cmePoints: form.cmePoints.trim() === "" ? null : Number(form.cmePoints),
         cmeCategory: emptyToNull(form.cmeCategory),
@@ -205,6 +206,25 @@ export function CoursePresentation(props: {
         />
       </Field>
 
+      {/*
+        Its own field rather than the tail of Zielgruppe. The layout labels it
+        (page 02), and an author who has to remember to type the label is an
+        author who will eventually not.
+      */}
+      <Field
+        label={de.course.prerequisites}
+        htmlFor="course-prerequisites"
+        hint={de.course.prerequisitesHint}
+      >
+        <TextArea
+          id="course-prerequisites"
+          value={form.prerequisites}
+          rows={3}
+          maxLength={2000}
+          onChange={(value) => set("prerequisites", value)}
+        />
+      </Field>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
           label={de.course.cmePoints}
@@ -275,6 +295,7 @@ function initialForm(course: AdminCourseDetail) {
     altersgruppe: course.altersgruppe.join("\n"),
     learningObjectives: course.learningObjectives.join("\n"),
     targetAudience: course.targetAudience ?? "",
+    prerequisites: course.prerequisites ?? "",
     heroImageUrl: course.heroImageUrl ?? "",
     cmePoints: course.cmePoints === null ? "" : String(course.cmePoints),
     cmeCategory: course.cmeCategory ?? "",

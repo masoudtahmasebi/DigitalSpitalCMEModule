@@ -104,6 +104,24 @@ export interface Branding {
   readonly catalogSealImageUrl?: string;
   /** Alternative text for the seal. Required whenever a seal is set. */
   readonly catalogSealAlt?: string;
+
+  /*
+   * The privacy notice behind the Punktemeldung consent (layout page 13).
+   *
+   * The checkbox reads "… gemäß der Datenschutzerklärung zu" with
+   * Datenschutzerklärung as a link, so the widget needs somewhere to point it.
+   * The version is not decoration: it is written to
+   * `enrolments.consent_document`, and it is what makes the stored consent
+   * demonstrable under GDPR Art. 7(1). Consent to the January wording is not
+   * consent to the June wording, and a record that cannot tell them apart
+   * proves only that somebody agreed to something.
+   *
+   * Accepted as a pair. A link with no version produces a consent record that
+   * names nothing; a version with no link asks a physician to agree to a
+   * document they cannot read.
+   */
+  readonly privacyPolicyUrl?: string;
+  readonly privacyPolicyVersion?: string;
 }
 
 /**
@@ -244,6 +262,15 @@ const MAX_CATALOG_TITLE_LENGTH = 120;
 const MAX_CATALOG_INTRO_LENGTH = 400;
 
 /**
+ * A privacy-notice version, e.g. `datenschutz-2026-01` or `v3.2`.
+ *
+ * Narrow because it is stored as evidence and read back by a human answering
+ * "what did this person agree to". A version that can contain arbitrary text is
+ * a version that will eventually contain a sentence.
+ */
+const POLICY_VERSION = /^[A-Za-z0-9._-]{1,64}$/;
+
+/**
  * Read branding from whatever is in the `projects.branding` column.
  *
  * Total: any input produces a `Branding`, because a malformed value must not
@@ -272,6 +299,8 @@ export function parseBranding(value: unknown): Branding {
     catalogHeroImageUrl?: string;
     catalogSealImageUrl?: string;
     catalogSealAlt?: string;
+    privacyPolicyUrl?: string;
+    privacyPolicyVersion?: string;
   } = {};
 
   const logoUrl = assetUrl(raw["logoUrl"]);
@@ -328,6 +357,14 @@ export function parseBranding(value: unknown): Branding {
     branding.catalogSealAlt = sealAlt;
   }
 
+  // Both or neither — see the note on the fields.
+  const policyUrl = assetUrl(raw["privacyPolicyUrl"]);
+  const policyVersion = matching(raw["privacyPolicyVersion"], POLICY_VERSION);
+  if (policyUrl !== undefined && policyVersion !== undefined) {
+    branding.privacyPolicyUrl = policyUrl;
+    branding.privacyPolicyVersion = policyVersion;
+  }
+
   return branding;
 }
 
@@ -374,6 +411,8 @@ export function invalidBrandingFields(value: unknown): readonly string[] {
   check("fontFamily", FONT_STACK);
   checkAssetUrl("catalogHeroImageUrl");
   checkAssetUrl("catalogSealImageUrl");
+  checkAssetUrl("privacyPolicyUrl");
+  check("privacyPolicyVersion", POLICY_VERSION);
 
   /** A trimmed, non-empty string within a bound. */
   const checkText = (key: string, maxLength: number): void => {
@@ -405,6 +444,7 @@ export function invalidBrandingFields(value: unknown): readonly string[] {
 
   missingAlt("logoUrl", "logoAlt");
   missingAlt("catalogSealImageUrl", "catalogSealAlt");
+  missingAlt("privacyPolicyUrl", "privacyPolicyVersion");
 
   const radius = raw["cornerRadiusPx"];
   if (radius !== undefined && radius !== null) {

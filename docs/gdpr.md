@@ -29,18 +29,20 @@ This split is the reason erasure works the way it does — see §5.
 
 Everything in one table, because the honest version of this document is short.
 
-| Data                                    | Where                                               | Why it exists                                                                                                                                                      |
-| --------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Keycloak subject + realm                | `users`                                             | The stable identity. Not a name; an opaque id issued by the customer's own IdP.                                                                                    |
-| Name, e-mail                            | `users`                                             | Written from the token's claims. Name is printed on the Teilnahmebescheinigung; e-mail is for the future certificate delivery.                                     |
-| Attested name                           | `enrolments.attested_name`                          | What the learner confirmed should be printed, which may differ from a stale Keycloak profile.                                                                      |
-| **EFN**                                 | `efn_profiles`                                      | The 15-digit Fortbildungsnummer. The key the Ärztekammer credits points against. **Write-only through the API** — there is no endpoint that returns it (ADR-0004). |
-| Watched intervals, quiz answers, scores | `content_progress`, `quiz_attempts`, `quiz_answers` | The compliance evidence. A CME point is only defensible if what earned it is recorded.                                                                             |
-| Evaluation answers                      | `evaluation_responses`                              | Required for the Anerkennung. Free-text answers are the one place a physician may type something about a patient — treated accordingly in §5.                      |
-| Completion, VNR, points                 | `enrolments`                                        | The participation record.                                                                                                                                          |
-| Punktemeldung state                     | `eiv_submissions`                                   | Including the EFN as submitted, every attempt and every failure. Append-only in effect: the row is the evidence a statutory report was made.                       |
-| Certificate state                       | `certificates`                                      | Status and the name printed. Not the PDF — it is rendered on demand.                                                                                               |
-| Admin actions                           | `audit_log`                                         | Ids, counts and field names. Never a name, an EFN or an answer.                                                                                                    |
+| Data                                    | Where                                                                      | Why it exists                                                                                                                                                                                       |
+| --------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Keycloak subject + realm                | `users`                                                                    | The stable identity. Not a name; an opaque id issued by the customer's own IdP.                                                                                                                     |
+| Name, e-mail                            | `users`                                                                    | Written from the token's claims. Name is printed on the Teilnahmebescheinigung; e-mail is for the future certificate delivery.                                                                      |
+| Attested name                           | `enrolments.attested_name`                                                 | What the learner confirmed should be printed, which may differ from a stale Keycloak profile.                                                                                                       |
+| Attested name, in parts                 | `enrolments.attested_title`, `attested_given_name`, `attested_family_name` | The three fields layout page 13 captures. Composed into `attested_name` by one function in `@ds/domain`; kept apart so a correction does not have to re-parse a string. Cleared by `erase_subject`. |
+| Punktemeldung consent                   | `enrolments.consent_given_at`, `consent_document`                          | When the learner ticked the consent box and which privacy notice they agreed to. Art. 7(1) — see §3. **Survives erasure by design**; it names nobody once the name and EFN are gone.                |
+| **EFN**                                 | `efn_profiles`                                                             | The 15-digit Fortbildungsnummer. The key the Ärztekammer credits points against. **Write-only through the API** — there is no endpoint that returns it (ADR-0004).                                  |
+| Watched intervals, quiz answers, scores | `content_progress`, `quiz_attempts`, `quiz_answers`                        | The compliance evidence. A CME point is only defensible if what earned it is recorded.                                                                                                              |
+| Evaluation answers                      | `evaluation_responses`                                                     | Required for the Anerkennung. Free-text answers are the one place a physician may type something about a patient — treated accordingly in §5.                                                       |
+| Completion, VNR, points                 | `enrolments`                                                               | The participation record.                                                                                                                                                                           |
+| Punktemeldung state                     | `eiv_submissions`                                                          | Including the EFN as submitted, every attempt and every failure. Append-only in effect: the row is the evidence a statutory report was made.                                                        |
+| Certificate state                       | `certificates`                                                             | Status and the name printed. Not the PDF — it is rendered on demand.                                                                                                                                |
+| Admin actions                           | `audit_log`                                                                | Ids, counts and field names. Never a name, an EFN or an answer.                                                                                                                                     |
 
 **What is deliberately not collected:** postal address (on the ÄKWL Muster but
 not in the Bescheid's minimum list — see `docs/show-stoppers.md` S12), date of
@@ -62,13 +64,28 @@ the watch intervals the accreditation requires.
 
 ## 3. Legal bases
 
-| Processing                                           | Basis                                                                                                                                               |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Delivering the Fortbildung to a registered physician | Art. 6(1)(b) — performance of the contract between the physician and the customer                                                                   |
-| Recording watch time, quiz results and evaluation    | Art. 6(1)(c) with the Fortbildungsordnung and the Anerkennungsbescheid — the Kammer's conditions are what make these mandatory rather than optional |
-| Reporting points to the Ärztekammer                  | Art. 6(1)(c). The learner supplies their EFN precisely so that this happens; without the report the participation earns nothing                     |
-| Issuing the Teilnahmebescheinigung                   | Art. 6(1)(b) and (c)                                                                                                                                |
-| Audit log                                            | Art. 6(1)(f) and Art. 32 — accountability for who changed a compliance-relevant setting                                                             |
+| Processing                                           | Basis                                                                                                                                                              |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Delivering the Fortbildung to a registered physician | Art. 6(1)(b) — performance of the contract between the physician and the customer                                                                                  |
+| Recording watch time, quiz results and evaluation    | Art. 6(1)(c) with the Fortbildungsordnung and the Anerkennungsbescheid — the Kammer's conditions are what make these mandatory rather than optional                |
+| Reporting points to the Ärztekammer                  | Art. 6(1)(c). The learner supplies their EFN precisely so that this happens; without the report the participation earns nothing                                    |
+| Issuing the Teilnahmebescheinigung                   | Art. 6(1)(b) and (c)                                                                                                                                               |
+| Audit log                                            | Art. 6(1)(f) and Art. 32 — accountability for who changed a compliance-relevant setting                                                                            |
+| Recording the consent itself                         | Art. 7(1) — the controller must be able to demonstrate that consent was given, which is a duty attached to the consent rather than a processing with its own basis |
+
+**On the consent checkbox (layout page 13).** The transmission to the
+Ärztekammer rests on Art. 6(1)(c): the Fortbildungsordnung is what makes it
+mandatory, and a physician who supplies their EFN is asking for exactly that
+report. The checkbox is therefore **not** the legal basis — withdrawing it would
+not make the statutory report unlawful.
+
+It is still recorded, and recorded properly, for two reasons. The layout shows
+it, so a physician is told their data is transmitted and is given the chance to
+stop before it happens; and if the basis is ever argued to be Art. 6(1)(a)
+instead, Art. 7(1) requires evidence that consent was given — evidence a
+checkbox nobody wrote down cannot provide. Storing the notice **version** rather
+than a boolean is what makes the record mean something: consent to the January
+wording is not consent to the June wording.
 
 **Health data (Art. 9) is not processed.** The subject is a physician's
 professional training, not any patient. The one place that could change is a
@@ -124,8 +141,16 @@ because it has been reported.
 
 ### Löschung (Art. 17) — erasure means pseudonymisation here
 
-`db/migrations/0009_subject_erasure.sql`, invoked through
+`db/migrations/0009_subject_erasure.sql`, last amended by
+`db/migrations/0024_layout_fields.sql`, invoked through
 `apps/api/src/subject-erasure.ts`.
+
+**Every migration that adds a personal-data column has to amend this function.**
+An erasure routine that misses a field added after it was written is this
+schema's most predictable failure, and it fails silently: the request succeeds,
+the report says three tables were cleared, and the name is still in the row.
+0024 is the worked example — three name-part columns, cleared in the same
+statement as the composed name they were derived from.
 
 Art. 17(3)(b) excepts processing necessary for compliance with a legal
 obligation, and a CME participation record is exactly that: the Punktemeldung
@@ -140,13 +165,23 @@ So the fact of participation survives and every identifier is removed:
 | ----------------------------------------------------------- | --------------------------------------------------------------------------- |
 | Name, e-mail                                                | Which course, which VNR                                                     |
 | EFN (row deleted; the reported copy becomes fifteen zeroes) | Points, category, completion date                                           |
-| Attested name                                               | That a Punktemeldung was made, and its outcome                              |
+| Attested name, and its title / Vorname / Nachname parts     | That a Punktemeldung was made, and its outcome                              |
+| —                                                           | **The consent record** — see below                                          |
 | Free-text evaluation answers                                | Scale answers — numbers in an aggregate once the enrolment is pseudonymised |
 | The name printed on the certificate                         | Watch and quiz evidence, now unattributable                                 |
 
 What remains cannot be attributed to a person without the Keycloak account,
 which the customer deletes on their own side. Pseudonymisation in the sense of
 Art. 4(5) becomes anonymisation once the realm entry is gone.
+
+**The consent record is kept, deliberately.** `consent_given_at` and
+`consent_document` survive an erasure. Art. 17(3)(b) and (e) except processing
+necessary for a legal obligation and for the establishment or defence of legal
+claims, and the evidence that a transmission to the Ärztekammer was authorised
+is squarely both. It also names nobody: a timestamp and a document version
+attached to a row whose name and EFN are gone identify no one, and erasing it
+would destroy the one thing that answers "was this report authorised?" while
+leaving the report itself in place.
 
 **Two things the implementation refuses to do:**
 

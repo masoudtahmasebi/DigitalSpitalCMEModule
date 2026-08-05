@@ -32,6 +32,59 @@ instance, where nothing else would draw one.
 
 ---
 
+## The schema, aligned to the layout
+
+The layout is the source of truth for the product, so it is the source of truth for
+the columns too. A screen that asks for four fields against a table with one is not a
+front-end problem — it is a gap that shows up later as an invented UI or a
+concatenated string nobody can take apart again.
+
+Migration `0024_layout_fields.sql` closes the four the layout opened.
+
+| The layout draws                                              | The schema had                                                                  | Now                                                                                                                                                                        |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| p.13 `Titel`, `Vorname`, `Nachname` as three fields           | `enrolments.attested_name`, one free-text column                                | `attested_title`, `attested_given_name`, `attested_family_name`, plus the composed `attested_name` that is still what the certificate prints and the Punktemeldung reports |
+| p.13 a consent checkbox referring to the Datenschutzerklärung | nothing — the box would have been validated by the browser and recorded nowhere | `consent_given_at` and `consent_document`, written in the same statement that stamps the completion                                                                        |
+| p.02 a labelled `Vorkenntnisse:` paragraph                    | the tail of `target_audience`, by convention                                    | `courses.prerequisites`, its own column and its own field in the console                                                                                                   |
+| p.04 `Fortbildungsnummer: 2026-ADHS-12345`                    | the column existed; the detail response did not carry it                        | `CourseDetail.fortbildungsnummer`                                                                                                                                          |
+
+### One composer, not two
+
+Three fields go in and one string comes out, and `composeAttestedName` in
+`packages/domain` is the only place that happens. A second composer would
+eventually disagree with the first about a space, and the two artefacts a
+physician's CME record consists of — the certificate and the report to their Kammer
+— would carry names that no longer match. Nobody would notice until an Ärztekammer
+could not reconcile them.
+
+`enrolments_attested_name_present` refuses the row where the parts exist and the
+composed name does not. It does **not** try to check the composition itself: SQL's
+idea of whitespace and the domain's would drift, and a constraint that is almost
+right is worse than none.
+
+### The consent is recorded, not just required
+
+GDPR Art. 7(1) puts the burden of demonstrating consent on the controller. A
+checkbox the browser validated and nobody wrote down demonstrates nothing, so the
+**version** of the privacy notice is stored rather than a boolean — consent to the
+January wording is not consent to the June wording.
+
+It survives an erasure, deliberately (Art. 17(3)(b) and (e)): once the name and the
+EFN are gone it identifies nobody, and it is the only remaining answer to "was this
+report authorised?" while the report itself is still on file. `docs/gdpr.md` §2, §3
+and §5 carry the reasoning.
+
+### What the schema already had
+
+Everything else the thirteen pages ask for was there: the module subtitle that draws
+the topic line (p.02), the expert's role, institution, biography and photograph
+(p.03), the accreditation body and validity window (p.04), the material description
+and thumbnail (p.05), per-content durations for `14:35 / 25:45` (p.06), the question
+kind for `Antwortformat: Single Choice` (p.08) and the pass threshold behind
+`Mind. 8 von 11 richtig` (p.08, p.11, p.12). None of those needed a migration.
+
+---
+
 ## Page 01 — Fortbildungsbereich (catalogue)
 
 **Built to the layout on 05.08.** Rows that read _was_ record what it looked like

@@ -34,6 +34,7 @@ import { PassthroughMediaResolver, type MediaResolver } from "../../shared/media
 import type { Db } from "../../db/tenant-db.js";
 import {
   LearningRepository,
+  type AttestedCompletion,
   type CourseComplianceRow,
   type CourseTree,
   type EnrolmentRow,
@@ -387,15 +388,17 @@ export class LearningService {
   /**
    * Stamped by the completion service once every condition is satisfied.
    *
-   * `attestedName` is the name the learner confirmed for their certificate, or
-   * `null` to keep whatever is stored.
+   * `attested` carries the name the learner confirmed for their certificate,
+   * its three parts, and the consent that authorises the Punktemeldung — all
+   * written in the one statement that stamps the completion. A `null` name
+   * keeps whatever is stored.
    */
   async markCompleted(
     enrolmentId: string,
     at: Date,
-    attestedName: string | null,
+    attested: AttestedCompletion,
   ): Promise<void> {
-    await this.repository.markCompleted(enrolmentId, at, attestedName);
+    await this.repository.markCompleted(enrolmentId, at, attested);
   }
 
   /**

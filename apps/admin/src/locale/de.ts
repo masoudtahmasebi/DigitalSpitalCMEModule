@@ -451,8 +451,10 @@ export const de = {
     onePerLineOrdered: "Ein Eintrag pro Zeile, in der gewünschten Reihenfolge.",
     learningObjectives: "Lernziele",
     targetAudience: "Zielgruppe",
-    targetAudienceHint:
-      "Inklusive Hinweis auf Vorkenntnisse. Zeilenumbrüche bleiben erhalten.",
+    targetAudienceHint: "Zeilenumbrüche bleiben erhalten.",
+    prerequisites: "Vorkenntnisse",
+    prerequisitesHint:
+      "Erscheint im Layout als eigener Absatz unter der Zielgruppe. Die Beschriftung setzt die Anwendung.",
     cmePoints: "CME-Punkte",
     cmePointsHint: "Laut Anerkennungsbescheid.",
     cmeCategory: "Kategorie",
