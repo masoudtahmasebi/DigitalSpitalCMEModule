@@ -1090,10 +1090,37 @@ describe("erasure keeps the participation and removes the person", () => {
     learnerId = rows[0]!.id;
   });
 
-  it("is not something the API's own database role can do", async () => {
-    // `ds_app` runs every HTTP request. If it could execute this, a bug in any
-    // controller would be an erasure primitive.
-    await expect(eraseAs("app", learnerId)).rejects.toThrow(/permission denied/i);
+  /**
+   * This assertion was the opposite until P12-05, and the reversal is
+   * deliberate rather than a relaxation nobody noticed.
+   *
+   * The original reasoning was good: `ds_app` runs every HTTP request, so
+   * granting it this makes a bug in any controller an erasure primitive. What
+   * it cost was that the only way to honour a GDPR Art. 17 request was for
+   * somebody with migration credentials to run the function by hand — a subject
+   * right that depends on a DBA being available on the day is not much of a
+   * right, and Art. 12(3) puts a month on it.
+   *
+   * What makes the grant defensible is that the dangerous parts are *inside*
+   * the function and are not granted with it. `ds_app` gains no BYPASSRLS and
+   * no privilege on any table the body touches; `SECURITY DEFINER` runs it as
+   * `ds_erasure`, whose grants are narrower than `ds_app`'s own. The function
+   * refuses while a Punktemeldung is open, pseudonymises rather than deleting
+   * so the CME record survives, and writes its own audit row. The blast radius
+   * of the worst case is one subject per call, rate-limited to five per five
+   * minutes, every one of them audited twice.
+   *
+   * **This is a change of security posture and is marked for human review**
+   * (see docs/show-stoppers.md S18).
+   */
+  it("is available to the API's own database role, deliberately (P12-05)", async () => {
+    // The privilege, not the effect. Actually erasing here would consume the
+    // subject the rest of this block is about — and the posture is what
+    // changed, so the posture is what this asserts.
+    const { rows } = await seedPool.query<{ granted: boolean }>(
+      "SELECT has_function_privilege('ds_app', 'erase_subject(uuid,text)', 'EXECUTE') AS granted",
+    );
+    expect(rows[0]?.granted).toBe(true);
   });
 
   /**

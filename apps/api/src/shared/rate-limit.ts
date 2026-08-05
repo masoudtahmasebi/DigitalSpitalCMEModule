@@ -79,6 +79,12 @@ export const RATE_LIMIT_RULES = {
    * seed fifty empty tenants that then have to be found and deleted one by one.
    */
   customerCreate: { limit: 10, windowSec: 60 },
+  /**
+   * Erasing a subject is irreversible, cross-tenant, and something an operator
+   * does a handful of times a year. There is no version of "erase fifty
+   * subjects quickly" that is not either a mistake or an attack.
+   */
+  subjectErasure: { limit: 5, windowSec: 300 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMIT_RULES;

@@ -244,3 +244,18 @@ export {
   TOTP_STEP_SEC,
 } from "./totp.js";
 export type { TotpRejection, TotpVerdict } from "./totp.js";
+
+export {
+  certificateAction,
+  maskEfn,
+  nameCorrection,
+  subjectErasure,
+} from "./moderation.js";
+export type {
+  CertificateAction,
+  CertificateActionVerdict,
+  CertificateStatus,
+  ErasureVerdict,
+  NameCorrectionVerdict,
+  SubmissionStage,
+} from "./moderation.js";

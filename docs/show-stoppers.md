@@ -735,6 +735,39 @@ This should be named explicitly in the P10-07 runbook.
 
 ---
 
+## S19 · `ds_app` may now perform a GDPR erasure — **a reversed security decision, for human sign-off**
+
+**Owner:** DigitalSpital (security) · **Raised:** P12-05 · **Not blocking, but not silent**
+
+Migration 0009 gave `erase_subject` to `ds_migrator` and to nobody else, with an
+explicit rationale: `ds_app` runs every HTTP request, so granting it that
+function makes a bug in any controller an erasure primitive. An integration test
+asserted the refusal.
+
+Migration 0023 grants it to `ds_app`, because the alternative was that the only
+way to honour an Art. 17 request is for somebody with migration credentials to
+run SQL by hand. A subject right that depends on a DBA being reachable is not
+much of a right, and Art. 12(3) puts a month on the response.
+
+**What the grant does not include.** No BYPASSRLS, and no privilege on any table
+the function's body touches — `SECURITY DEFINER` runs it as `ds_erasure`, whose
+grants (enumerated in 0009) are narrower than `ds_app`'s own. Everything that
+makes an erasure safe is inside the function: it refuses while a Punktemeldung
+is open, it pseudonymises rather than deleting so the CME record survives, and
+it writes its own audit row.
+
+**The residual risk.** A controller bug or an injection reaching this could
+erase one subject per call. The API path requires `customer_admin` or above, is
+rate-limited to five per five minutes, and writes a second audit row naming the
+operator. Nothing about it is a mass operation and nothing about it is silent.
+
+**What is wanted:** a security reviewer to agree the trade, or to ask for the
+alternative — the console _requesting_ an erasure and a separate credential
+performing it, which preserves the original property at the cost of a queue and
+a second database role.
+
+---
+
 ## What is not blocked
 
 The API is built and the learner journey runs end to end — catalog, gated
