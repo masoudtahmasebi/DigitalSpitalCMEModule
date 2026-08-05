@@ -5,13 +5,17 @@
  *
  * 1. Filtering and paging are sent to the server as a query. The list never
  *    narrows an array it already holds — with paging that would be wrong, and
- *    the facet counts describe the tenant's whole catalogue rather than the
- *    page in hand.
+ *    the facet counts are computed by the API under the rest of the selection,
+ *    which a client holding one page could not reproduce.
  * 2. Changing a filter resets to page 1. The bug this prevents is silent: a
  *    learner on page 3 narrows a filter, the result set is now one page long,
  *    and they are looking at an empty page 3 being told nothing matches.
- * 3. A chip's ✕ and the dropdown's "Alle" are the same operation, because they
- *    write the same state.
+ * 3. A chip's ✕ and re-selecting the dropdown's placeholder are the same
+ *    operation, because they write the same state.
+ *
+ * And one about the tab row, which the layout and the client's note on it make
+ * a *function* switch rather than a delivery-type switch: `Weitere` asks for
+ * every delivery type that is not on-demand, in one comma-separated parameter.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -74,7 +78,7 @@ function stubClient(total = 1) {
 describe("the catalogue asks the server, it does not filter locally", () => {
   it("sends the delivery type, the filters and the page as a query", async () => {
     const { client, queries } = stubClient(3);
-    render(<CourseList client={client} onOpen={() => {}} />);
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
 
     await screen.findByText("Kurs k1");
 
@@ -88,22 +92,41 @@ describe("the catalogue asks the server, it does not filter locally", () => {
     });
   });
 
-  it("switches delivery type without carrying the old one", async () => {
+  it("asks the Weitere tab for every delivery type that is not on-demand", async () => {
     const { client, queries } = stubClient(1);
-    render(<CourseList client={client} onOpen={() => {}} />);
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
     await screen.findByText("Kurs k1");
 
-    fireEvent.click(screen.getByRole("tab", { name: "Präsenz" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Weitere" }));
     await waitFor(() =>
-      expect(queries.at(-1)).toMatchObject({ deliveryType: "praesenz" }),
+      expect(queries.at(-1)).toMatchObject({ deliveryType: "live,praesenz" }),
     );
+  });
+
+  it("does not carry a filter chosen on one tab into the other", async () => {
+    // The two tabs are different catalogues. A Thema that exists among the
+    // on-demand courses need not exist among the live ones, and silently
+    // applying it there is how a learner lands on an empty tab that looks
+    // broken rather than empty.
+    const { client, queries } = stubClient(1);
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
+    await screen.findByText("Kurs k1");
+
+    fireEvent.change(screen.getByLabelText("Thema"), { target: { value: "Schlaf" } });
+    await waitFor(() => expect(queries.at(-1)).toMatchObject({ thema: "Schlaf" }));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Weitere" }));
+    await waitFor(() =>
+      expect(queries.at(-1)).toMatchObject({ deliveryType: "live,praesenz" }),
+    );
+    expect(queries.at(-1)?.["thema"]).toBeUndefined();
   });
 
   it("returns to page 1 when a filter changes", async () => {
     // 25 items over 10 per page: three pages, so page 3 exists before the
     // filter narrows the set.
     const { client, queries } = stubClient(25);
-    render(<CourseList client={client} onOpen={() => {}} />);
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
     await screen.findByText("Kurs k1");
 
     fireEvent.click(screen.getByRole("button", { name: "Seite 3" }));
@@ -122,7 +145,7 @@ describe("the catalogue asks the server, it does not filter locally", () => {
 describe("filters and their chips are one piece of state", () => {
   it("shows a chip for an active filter and clears it from the chip", async () => {
     const { client, queries } = stubClient(1);
-    render(<CourseList client={client} onOpen={() => {}} />);
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
     await screen.findByText("Kurs k1");
 
     fireEvent.change(screen.getByLabelText("Thema"), { target: { value: "ADHS" } });
@@ -140,7 +163,7 @@ describe("filters and their chips are one piece of state", () => {
 describe("the card carries the metadata line from the layout", () => {
   it("renders points, modules and duration", async () => {
     const { client } = stubClient(1);
-    render(<CourseList client={client} onOpen={() => {}} />);
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
 
     expect(
       await screen.findByText("4 CME Punkte | 5 Module | 2 Stunden 30 Minuten"),
@@ -159,7 +182,11 @@ describe("the card carries the metadata line from the layout", () => {
     }));
 
     render(
-      <CourseList client={{ listCourses } as unknown as ApiClient} onOpen={() => {}} />,
+      <CourseList
+        client={{ listCourses } as unknown as ApiClient}
+        branding={{}}
+        onOpen={() => {}}
+      />,
     );
 
     expect(await screen.findByText("5 Module")).toBeDefined();
@@ -169,7 +196,7 @@ describe("the card carries the metadata line from the layout", () => {
 describe("empty states", () => {
   it("says so rather than rendering an empty list", async () => {
     const { client } = stubClient(0);
-    render(<CourseList client={client} onOpen={() => {}} />);
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
 
     expect(
       await screen.findByText(
@@ -182,7 +209,7 @@ describe("empty states", () => {
 describe("the call to action comes from the server, not from the card", () => {
   it("invites a learner who has not enrolled", async () => {
     const { client } = stubClient(1);
-    render(<CourseList client={client} onOpen={() => {}} />);
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
 
     expect(await screen.findByRole("button", { name: "Zur Fortbildung" })).toBeDefined();
   });
@@ -197,7 +224,11 @@ describe("the call to action comes from the server, not from the card", () => {
     }));
 
     render(
-      <CourseList client={{ listCourses } as unknown as ApiClient} onOpen={() => {}} />,
+      <CourseList
+        client={{ listCourses } as unknown as ApiClient}
+        branding={{}}
+        onOpen={() => {}}
+      />,
     );
 
     expect(
@@ -215,7 +246,11 @@ describe("the call to action comes from the server, not from the card", () => {
     }));
 
     render(
-      <CourseList client={{ listCourses } as unknown as ApiClient} onOpen={() => {}} />,
+      <CourseList
+        client={{ listCourses } as unknown as ApiClient}
+        branding={{}}
+        onOpen={() => {}}
+      />,
     );
 
     expect(

@@ -131,10 +131,36 @@ export const courseDetailSchema = courseSummarySchema.extend({
   experts: z.array(courseExpertSchema),
 });
 
+export const DELIVERY_TYPES = ["on_demand", "live", "praesenz"] as const;
+
+/**
+ * `deliveryType=live,praesenz` — a **set**, not one value.
+ *
+ * The catalogue's tabs are functions rather than delivery types: the layout
+ * draws `On Demand` and `Weitere`, and the client's note on it says the second
+ * one is where live events and whatever follows them will live. So a tab has to
+ * be able to name more than one delivery type, and `Weitere` names every type
+ * that is not on-demand.
+ *
+ * Comma-separated in one parameter rather than the parameter repeated. Repeated
+ * query parameters have three incompatible serialisations across HTTP clients
+ * and the generated SDK would have to pick one; a comma-separated list has
+ * exactly one reading, and none of these values can contain a comma.
+ */
+const deliveryTypeSet = z
+  .string()
+  .transform((value) =>
+    value
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part !== ""),
+  )
+  .pipe(z.array(z.enum(DELIVERY_TYPES)).min(1).max(DELIVERY_TYPES.length));
+
 export const courseListQuerySchema = z.object({
   thema: z.string().optional(),
   altersgruppe: z.string().optional(),
-  deliveryType: z.enum(["on_demand", "live", "praesenz"]).optional(),
+  deliveryType: deliveryTypeSet.optional(),
   page: z.coerce.number().int().positive().default(1),
   perPage: z.coerce.number().int().positive().max(50).default(10),
 });

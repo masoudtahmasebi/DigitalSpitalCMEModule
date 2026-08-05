@@ -350,3 +350,110 @@ describe("fontFaceRule", () => {
     ).toBeUndefined();
   });
 });
+
+/**
+ * The catalogue hero's white-label fields.
+ *
+ * The heading is the one that mattered: "Fortbildungsbereich für ADHS" was
+ * compiled into the widget bundle, so a second customer in a different
+ * therapeutic area would have been reading MEDICE's heading over their own
+ * courses. It is branding, and branding is data on the project row.
+ */
+describe("the catalogue hero", () => {
+  it("accepts a heading, a photograph and a labelled seal", () => {
+    expect(
+      parseBranding({
+        catalogTitle: "Fortbildungsbereich für ADHS",
+        catalogHeroImageUrl: "https://cdn.medice.de/hero.jpg",
+        catalogSealImageUrl: "https://cdn.medice.de/siegel.png",
+        catalogSealAlt: "Zertifizierte CME Fortbildung",
+      }),
+    ).toEqual({
+      catalogTitle: "Fortbildungsbereich für ADHS",
+      catalogHeroImageUrl: "https://cdn.medice.de/hero.jpg",
+      catalogSealImageUrl: "https://cdn.medice.de/siegel.png",
+      catalogSealAlt: "Zertifizierte CME Fortbildung",
+    });
+  });
+
+  it("drops a seal with no alternative text, and the alt with no seal", () => {
+    // Same rule as the logo. A seal is the claim that the course is
+    // accredited, so an unlabelled one is a screen reader saying "image"
+    // where a physician needs the claim itself.
+    expect(
+      parseBranding({ catalogSealImageUrl: "https://cdn.medice.de/siegel.png" }),
+    ).toEqual({});
+    expect(parseBranding({ catalogSealAlt: "Zertifizierte CME Fortbildung" })).toEqual(
+      {},
+    );
+  });
+
+  it("refuses image URLs that are not https", () => {
+    for (const bad of [
+      "http://cdn.medice.de/hero.jpg",
+      "javascript:alert(1)",
+      "data:image/png;base64,AAAA",
+      "//cdn.medice.de/hero.jpg",
+      "/hero.jpg",
+    ]) {
+      expect(parseBranding({ catalogHeroImageUrl: bad })).toEqual({});
+    }
+  });
+
+  it("permits plain HTTP on loopback, as fonts already do", () => {
+    // So a developer running the API on localhost sees the branding they just
+    // configured, instead of debugging a silently dropped field. It widens
+    // nothing in production: an http image on an https page is mixed content
+    // and the browser blocks it outright.
+    expect(
+      parseBranding({ catalogHeroImageUrl: "http://localhost:4411/hero.jpg" }),
+    ).toEqual({ catalogHeroImageUrl: "http://localhost:4411/hero.jpg" });
+    expect(
+      parseBranding({ catalogHeroImageUrl: "http://127.0.0.1:4411/hero.jpg" }),
+    ).toEqual({ catalogHeroImageUrl: "http://127.0.0.1:4411/hero.jpg" });
+    // Not a loopback host, however much it looks like one.
+    expect(
+      parseBranding({ catalogHeroImageUrl: "http://localhost.evil.example/hero.jpg" }),
+    ).toEqual({});
+  });
+
+  it("agrees with the admin form about what a usable image URL is", () => {
+    // The two functions answering differently is the failure worth pinning:
+    // a form that accepts a value the parse then drops reports success and
+    // shows the learner nothing.
+    for (const url of [
+      "ftp://cdn.medice.de/hero.jpg",
+      "javascript:alert(1)",
+      "http://cdn.medice.de/hero.jpg",
+    ]) {
+      expect(parseBranding({ catalogHeroImageUrl: url })).toEqual({});
+      expect(invalidBrandingFields({ catalogHeroImageUrl: url })).toEqual([
+        "catalogHeroImageUrl",
+      ]);
+    }
+  });
+
+  it("refuses a heading that is empty, whitespace or a paragraph", () => {
+    expect(parseBranding({ catalogTitle: "" })).toEqual({});
+    expect(parseBranding({ catalogTitle: "   " })).toEqual({});
+    expect(parseBranding({ catalogTitle: "x".repeat(121) })).toEqual({});
+    // The bound itself is accepted.
+    expect(parseBranding({ catalogTitle: "x".repeat(120) })).toEqual({
+      catalogTitle: "x".repeat(120),
+    });
+  });
+
+  it("reports each rejected catalogue field to an admin form", () => {
+    expect(
+      invalidBrandingFields({
+        catalogTitle: "x".repeat(121),
+        catalogHeroImageUrl: "http://cdn.medice.de/hero.jpg",
+        catalogSealImageUrl: "https://cdn.medice.de/siegel.png",
+      }),
+    ).toEqual(["catalogHeroImageUrl", "catalogTitle", "catalogSealAlt"]);
+  });
+
+  it("says nothing about catalogue fields that are simply absent", () => {
+    expect(invalidBrandingFields({ primaryColor: "#0d6f7a" })).toEqual([]);
+  });
+});

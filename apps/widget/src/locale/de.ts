@@ -24,7 +24,16 @@ export const de = {
   },
 
   catalog: {
-    title: "Fortbildungsbereich für ADHS",
+    /**
+     * The catalogue heading, when the project has not set one.
+     *
+     * The layout says "Fortbildungsbereich für ADHS", and that is MEDICE's
+     * heading, not the platform's — a second customer in a different
+     * therapeutic area would have been reading it over their own courses. It
+     * moved to `Branding.catalogTitle`, and what is left here is the generic
+     * fallback, in the same spirit as `intro` below.
+     */
+    title: "Fortbildungsbereich",
     /** The hero eyebrow, set above the title in the layout. */
     eyebrow: "Weiterbildung für Ärzte",
     /**
@@ -45,6 +54,24 @@ export const de = {
     /** Already finished — the course stays open for the certificate and the Mediathek. */
     review: "Fortbildung ansehen",
     back: "Zurück zur Übersicht",
+
+    /**
+     * The catalogue's tab labels.
+     *
+     * Two, matching the layout, and they name **functions** rather than
+     * delivery types — the client's note on this screen is that the second tab
+     * is where live events (via Zoom) and whatever follows them will live. So
+     * `Weitere` covers every delivery type that is not on-demand rather than
+     * being a `Live` tab and a `Präsenz` tab that both stand empty.
+     *
+     * `deliveryType` below is still the per-value label, used by the admin
+     * console's course form, where the underlying value genuinely is what is
+     * being chosen.
+     */
+    sections: {
+      onDemand: "On Demand",
+      weitere: "Weitere",
+    },
 
     deliveryType: {
       on_demand: "On Demand",

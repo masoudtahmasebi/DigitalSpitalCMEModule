@@ -43,10 +43,14 @@ export class CatalogService {
   }
 
   async listCourses(query: CourseListQuery, userId: string): Promise<CourseListResponse> {
-    const { rows, total, durations } = await this.repository.listCourses({
+    const selection = {
       ...(query.thema === undefined ? {} : { thema: query.thema }),
       ...(query.altersgruppe === undefined ? {} : { altersgruppe: query.altersgruppe }),
       ...(query.deliveryType === undefined ? {} : { deliveryType: query.deliveryType }),
+    };
+
+    const { rows, total, durations } = await this.repository.listCourses({
+      ...selection,
       limit: query.perPage,
       offset: (query.page - 1) * query.perPage,
     });
@@ -68,7 +72,16 @@ export class CatalogService {
       page: query.page,
       perPage: query.perPage,
       total,
-      facets: await this.repository.facets(),
+      /*
+       * Counted under the *rest* of the selection, not over the whole
+       * catalogue. A count next to a filter value is a promise about what
+       * choosing it will show, and unconditional counts break that promise in
+       * the most annoying possible way: `Diagnostik (3)` beside
+       * `Übergang / Transition (1)` while the two together match nothing.
+       * Each facet excludes only its own axis, so the value currently chosen
+       * still appears and can be swapped for a sibling.
+       */
+      facets: await this.repository.facets(selection),
     };
   }
 

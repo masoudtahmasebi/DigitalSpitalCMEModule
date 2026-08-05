@@ -78,10 +78,14 @@ export interface CourseTreeRows {
 export interface CourseListFilter {
   thema?: string;
   altersgruppe?: string;
-  deliveryType?: "on_demand" | "live" | "praesenz";
+  /** A set, because one tab can group several — see `catalog.dto.ts`. */
+  deliveryType?: readonly ("on_demand" | "live" | "praesenz")[];
   limit: number;
   offset: number;
 }
+
+/** What is being asked for, without the page. Facets are counted under this. */
+export type CourseSelection = Omit<CourseListFilter, "limit" | "offset">;
 
 /**
  * The port the service depends on. Declaring it lets the service be unit-tested
@@ -93,7 +97,7 @@ export interface CatalogRepositoryPort {
     total: number;
     durations: Map<string, { moduleCount: number; totalDurationSec: number }>;
   }>;
-  facets(): Promise<{
+  facets(selection: CourseSelection): Promise<{
     thema: Array<{ value: string; count: number }>;
     altersgruppe: Array<{ value: string; count: number }>;
   }>;
@@ -134,20 +138,7 @@ export class CatalogRepository implements CatalogRepositoryPort {
   }
 
   async listCourses(filter: CourseListFilter) {
-    const conditions = [];
-    if (filter.deliveryType !== undefined) {
-      conditions.push(eq(courses.deliveryType, filter.deliveryType));
-    }
-    if (filter.thema !== undefined) {
-      conditions.push(sql`${courses.thema} @> ARRAY[${filter.thema}]::text[]`);
-    }
-    if (filter.altersgruppe !== undefined) {
-      conditions.push(
-        sql`${courses.altersgruppe} @> ARRAY[${filter.altersgruppe}]::text[]`,
-      );
-    }
-
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = whereFor(filter);
 
     const rows = (await this.db
       .select()
@@ -195,24 +186,49 @@ export class CatalogRepository implements CatalogRepositoryPort {
     return result;
   }
 
-  async facets() {
-    const thema = await this.db
-      .select({
-        value: sql<string>`unnest(${courses.thema})`,
-        count: sql<number>`count(*)::int`,
-      })
-      .from(courses)
-      .groupBy(sql`1`);
+  /**
+   * Facet values and their counts, each counted under the *other* filters.
+   *
+   * The `thema` counts apply the delivery-type tab and the chosen
+   * Altersgruppe but not the chosen Thema, and vice versa. That is the
+   * standard faceted-search rule and it exists to stop the control offering
+   * dead ends: without it a learner can pick two values that each report a
+   * non-zero count and land on "keine Fortbildungen".
+   *
+   * Excluding a facet's own axis is what keeps the currently chosen value in
+   * its own list. Counting it under itself would leave the dropdown showing
+   * one option — the one already selected — with no way back to a sibling.
+   */
+  async facets(selection: CourseSelection) {
+    const countOver = async (
+      column: typeof courses.thema | typeof courses.altersgruppe,
+      under: CourseSelection,
+    ) =>
+      this.db
+        .select({
+          value: sql<string>`unnest(${column})`,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(courses)
+        .where(whereFor(under))
+        .groupBy(sql`1`)
+        // Ordered in SQL so the dropdown is stable between requests. Postgres
+        // makes no promise about the order of a grouped result, and a filter
+        // whose options reshuffle on every keystroke is its own bug report.
+        .orderBy(sql`1`);
 
-    const altersgruppe = await this.db
-      .select({
-        value: sql<string>`unnest(${courses.altersgruppe})`,
-        count: sql<number>`count(*)::int`,
-      })
-      .from(courses)
-      .groupBy(sql`1`);
+    const { thema: chosenThema, altersgruppe: chosenAltersgruppe, ...rest } = selection;
 
-    return { thema, altersgruppe };
+    return {
+      thema: await countOver(courses.thema, {
+        ...rest,
+        ...(chosenAltersgruppe === undefined ? {} : { altersgruppe: chosenAltersgruppe }),
+      }),
+      altersgruppe: await countOver(courses.altersgruppe, {
+        ...rest,
+        ...(chosenThema === undefined ? {} : { thema: chosenThema }),
+      }),
+    };
   }
 
   async findCourseTree(slug: string): Promise<CourseTreeRows | undefined> {
@@ -294,4 +310,34 @@ export class CatalogRepository implements CatalogRepositoryPort {
       experts: expertRows,
     };
   }
+}
+
+/**
+ * The `WHERE` a course selection means.
+ *
+ * One function, used by the page query, the total and both facet counts. They
+ * have to agree — a facet counted with a different predicate than the list is
+ * a count that does not describe the list — and the way to make sure of that
+ * is for there to be one predicate.
+ *
+ * `@>` and not `= ANY`: `thema` and `altersgruppe` are arrays, and containment
+ * is what "this course is tagged Diagnostik" means when a course can carry
+ * several tags.
+ */
+function whereFor(selection: CourseSelection) {
+  const conditions = [];
+
+  if (selection.deliveryType !== undefined) {
+    conditions.push(inArray(courses.deliveryType, [...selection.deliveryType]));
+  }
+  if (selection.thema !== undefined) {
+    conditions.push(sql`${courses.thema} @> ARRAY[${selection.thema}]::text[]`);
+  }
+  if (selection.altersgruppe !== undefined) {
+    conditions.push(
+      sql`${courses.altersgruppe} @> ARRAY[${selection.altersgruppe}]::text[]`,
+    );
+  }
+
+  return conditions.length > 0 ? and(...conditions) : undefined;
 }

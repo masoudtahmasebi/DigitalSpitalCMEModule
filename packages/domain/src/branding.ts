@@ -67,6 +67,43 @@ export interface Branding {
   readonly fontVersion?: string;
   /** Radius for buttons and cards, in pixels. 0–24. */
   readonly cornerRadiusPx?: number;
+
+  /*
+   * The catalogue hero (layout §4.1).
+   *
+   * These four are the difference between a white-label product and one with
+   * a first customer compiled into it. "Fortbildungsbereich für ADHS" is
+   * MEDICE's heading, not the platform's — a second customer in a different
+   * therapeutic area would be reading MEDICE's copy — and the photograph and
+   * the accreditation seal behind it are likewise theirs. All four are
+   * optional, and the widget's own generic wording and drawn seal stand in
+   * when they are unset.
+   */
+
+  /** Replaces the catalogue heading. Plain text; it is rendered as text. */
+  readonly catalogTitle?: string;
+  /**
+   * Replaces the catalogue's intro paragraph.
+   *
+   * Same argument as the heading. The widget's own wording says what the area
+   * is without naming a therapeutic area, which is correct for every customer
+   * and specific to none; the layout's copy names ADHS, and that is MEDICE's
+   * to write.
+   */
+  readonly catalogIntro?: string;
+  /** Photograph behind the catalogue hero. Decorative — see `CatalogHero`. */
+  readonly catalogHeroImageUrl?: string;
+  /**
+   * The customer's own accreditation seal.
+   *
+   * A CME seal is an accreditation artefact, not decoration: which body
+   * certified the course, and in what form they permit their mark to be shown,
+   * is the customer's business with their Ärztekammer. The widget draws a
+   * neutral one when this is unset rather than approximating anyone's.
+   */
+  readonly catalogSealImageUrl?: string;
+  /** Alternative text for the seal. Required whenever a seal is set. */
+  readonly catalogSealAlt?: string;
 }
 
 /**
@@ -88,8 +125,15 @@ const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
  */
 const FONT_STACK = /^[A-Za-z0-9À-ɏ ,'"-]{1,200}$/;
 
-/** Logos are fetched by the browser, so the scheme matters. */
-const SAFE_URL = /^https:\/\/[^\s"'<>]{1,500}$/;
+/**
+ * Branding images are fetched by the browser, so the scheme matters.
+ *
+ * The grammar is the shape check; `hasSafeAssetOrigin` below is the scheme and
+ * host check. Both have to pass. Splitting them is deliberate: a regular
+ * expression is the wrong tool for deciding what a host is, and
+ * `http://localhost.evil.example` is what happens when it is used for that.
+ */
+const SAFE_URL = /^[a-z]+:\/\/[^\s"'<>]{1,500}$/i;
 
 /**
  * An uploaded font's family name.
@@ -135,6 +179,39 @@ const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1"]);
  * no environment and no I/O, so it does not breach the purity rule that governs
  * this package.)
  */
+/**
+ * Whether this URL may be used as a branding image — logo, catalogue hero, seal.
+ *
+ * HTTPS anywhere, or plain HTTP on loopback. The loopback exception is the same
+ * one fonts already have and it exists for the same reason: a developer running
+ * the API on `localhost:3000` should see the branding they just configured,
+ * rather than debugging a silently dropped field.
+ *
+ * It widens nothing in production. An `http:` image on an `https:` page is
+ * mixed content, which every supported browser blocks outright — so the value
+ * that this permits is one that cannot load anywhere a physician will ever be.
+ * What it must **not** permit is a scheme that executes: `javascript:` and
+ * `data:` are both absent, and `URL` is what decides that rather than a pattern.
+ */
+function hasSafeAssetOrigin(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol === "https:") return true;
+  return parsed.protocol === "http:" && LOOPBACK_HOSTS.has(parsed.hostname);
+}
+
+/** `SAFE_URL` plus a scheme and host the browser may actually be pointed at. */
+function assetUrl(value: unknown): string | undefined {
+  const candidate = matching(value, SAFE_URL);
+  if (candidate === undefined) return undefined;
+  return hasSafeAssetOrigin(candidate) ? candidate : undefined;
+}
+
 function hasSafeFontOrigin(url: string): boolean {
   let parsed: URL;
   try {
@@ -151,6 +228,20 @@ function hasSafeFontOrigin(url: string): boolean {
 
 const MAX_ALT_LENGTH = 200;
 const MAX_CORNER_RADIUS_PX = 24;
+
+/**
+ * The catalogue heading.
+ *
+ * Long enough for "Fortbildungsbereich für ADHS" and a good deal more, short
+ * enough that it cannot become a paragraph in a slot the layout draws as one
+ * line. It is rendered as React text, so this is a layout bound rather than a
+ * safety one — the safety comes from never putting it in an attribute or a
+ * stylesheet.
+ */
+const MAX_CATALOG_TITLE_LENGTH = 120;
+
+/** The intro paragraph. The layout gives it two lines at 1440 px. */
+const MAX_CATALOG_INTRO_LENGTH = 400;
 
 /**
  * Read branding from whatever is in the `projects.branding` column.
@@ -176,9 +267,14 @@ export function parseBranding(value: unknown): Branding {
     fontFamilyName?: string;
     fontVersion?: string;
     cornerRadiusPx?: number;
+    catalogTitle?: string;
+    catalogIntro?: string;
+    catalogHeroImageUrl?: string;
+    catalogSealImageUrl?: string;
+    catalogSealAlt?: string;
   } = {};
 
-  const logoUrl = matching(raw["logoUrl"], SAFE_URL);
+  const logoUrl = assetUrl(raw["logoUrl"]);
   const logoAlt = text(raw["logoAlt"], MAX_ALT_LENGTH);
 
   // A logo without alternative text is a screen reader announcing "image".
@@ -217,6 +313,21 @@ export function parseBranding(value: unknown): Branding {
     branding.cornerRadiusPx = radius;
   }
 
+  assign(branding, "catalogTitle", text(raw["catalogTitle"], MAX_CATALOG_TITLE_LENGTH));
+  assign(branding, "catalogIntro", text(raw["catalogIntro"], MAX_CATALOG_INTRO_LENGTH));
+  assign(branding, "catalogHeroImageUrl", assetUrl(raw["catalogHeroImageUrl"]));
+
+  // Paired for the same reason the logo is: a seal is meaningful content — it
+  // is the claim that the course is accredited — so an unlabelled one is a
+  // screen reader saying "image" where a physician needs "Zertifizierte CME
+  // Fortbildung".
+  const sealUrl = assetUrl(raw["catalogSealImageUrl"]);
+  const sealAlt = text(raw["catalogSealAlt"], MAX_ALT_LENGTH);
+  if (sealUrl !== undefined && sealAlt !== undefined) {
+    branding.catalogSealImageUrl = sealUrl;
+    branding.catalogSealAlt = sealAlt;
+  }
+
   return branding;
 }
 
@@ -241,25 +352,59 @@ export function invalidBrandingFields(value: unknown): readonly string[] {
     if (typeof candidate !== "string" || !pattern.test(candidate)) invalid.push(key);
   };
 
-  check("logoUrl", SAFE_URL);
+  /**
+   * Reported by exactly the rule `parseBranding` applies.
+   *
+   * Not `check(key, SAFE_URL)`: the grammar alone would accept `ftp://…` and
+   * the parse would then drop it, so the form would report a value as valid
+   * and the learner's screen would show nothing. The two functions have to
+   * agree about what a usable image URL is, and the way to be sure of that is
+   * for both to call the same predicate.
+   */
+  const checkAssetUrl = (key: string): void => {
+    const candidate = raw[key];
+    if (candidate === undefined || candidate === null) return;
+    if (assetUrl(candidate) === undefined) invalid.push(key);
+  };
+
+  checkAssetUrl("logoUrl");
   check("primaryColor", HEX_COLOR);
   check("primaryContrastColor", HEX_COLOR);
   check("accentColor", HEX_COLOR);
   check("fontFamily", FONT_STACK);
+  checkAssetUrl("catalogHeroImageUrl");
+  checkAssetUrl("catalogSealImageUrl");
 
-  const alt = raw["logoAlt"];
-  if (alt !== undefined && alt !== null) {
-    if (typeof alt !== "string" || alt.trim() === "" || alt.length > MAX_ALT_LENGTH) {
-      invalid.push("logoAlt");
+  /** A trimmed, non-empty string within a bound. */
+  const checkText = (key: string, maxLength: number): void => {
+    const candidate = raw[key];
+    if (candidate === undefined || candidate === null) return;
+    if (
+      typeof candidate !== "string" ||
+      candidate.trim() === "" ||
+      candidate.length > maxLength
+    ) {
+      invalid.push(key);
     }
-  }
+  };
+
+  checkText("logoAlt", MAX_ALT_LENGTH);
+  checkText("catalogSealAlt", MAX_ALT_LENGTH);
+  checkText("catalogTitle", MAX_CATALOG_TITLE_LENGTH);
+  checkText("catalogIntro", MAX_CATALOG_INTRO_LENGTH);
 
   // The pairing rule, reported so the form can explain it rather than silently
   // discarding a logo the admin just uploaded.
-  const hasLogo = typeof raw["logoUrl"] === "string" && raw["logoUrl"] !== "";
-  const hasAlt =
-    typeof raw["logoAlt"] === "string" && (raw["logoAlt"] as string).trim() !== "";
-  if (hasLogo && !hasAlt && !invalid.includes("logoAlt")) invalid.push("logoAlt");
+  const missingAlt = (urlKey: string, altKey: string): void => {
+    const url = raw[urlKey];
+    const alt = raw[altKey];
+    const hasUrl = typeof url === "string" && url !== "";
+    const hasAlt = typeof alt === "string" && alt.trim() !== "";
+    if (hasUrl && !hasAlt && !invalid.includes(altKey)) invalid.push(altKey);
+  };
+
+  missingAlt("logoUrl", "logoAlt");
+  missingAlt("catalogSealImageUrl", "catalogSealAlt");
 
   const radius = raw["cornerRadiusPx"];
   if (radius !== undefined && radius !== null) {

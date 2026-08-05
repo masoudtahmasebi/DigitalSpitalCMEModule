@@ -26,9 +26,9 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { parseBranding, type Branding } from "@ds/domain";
 import type { ContentSummary, CourseDetail, EnrolmentState } from "@ds/sdk";
 import { createWidgetClient, isConfigured, type WidgetConfig } from "./api.js";
+import { useBranding } from "./branding.js";
 import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
 import type { TokenProvider } from "./token.js";
@@ -136,19 +136,18 @@ function Routed(
 
   if (selected === undefined) {
     return (
-      <div className="space-y-6 p-4">
-        <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
-        <CourseList
-          client={client}
-          onOpen={(slug) => {
-            // A host that routes cancels the event and replaces this element
-            // with one pinned to the course. Switching screens here as well
-            // would render the course twice, briefly.
-            if (onCourseOpen !== undefined && !onCourseOpen(slug)) return;
-            setSelected(slug);
-          }}
-        />
-      </div>
+      <Catalogue
+        apiBase={apiBase}
+        projectSlug={projectSlug}
+        client={client}
+        onOpen={(slug) => {
+          // A host that routes cancels the event and replaces this element
+          // with one pinned to the course. Switching screens here as well
+          // would render the course twice, briefly.
+          if (onCourseOpen !== undefined && !onCourseOpen(slug)) return;
+          setSelected(slug);
+        }}
+      />
     );
   }
 
@@ -163,6 +162,31 @@ function Routed(
       onProgress={props.onProgress}
       onCourseComplete={props.onCourseComplete}
     />
+  );
+}
+
+/**
+ * The catalogue screen.
+ *
+ * Its own component only so `useBranding` has somewhere to be called from —
+ * `Routed` returns early for the course case, and a hook cannot live behind
+ * that.
+ */
+function Catalogue(props: {
+  apiBase: string;
+  projectSlug: string;
+  client: ReturnType<typeof createWidgetClient>;
+  onOpen: (slug: string) => void;
+}) {
+  const branding = useBranding(props.apiBase, props.projectSlug);
+
+  return (
+    <div className="space-y-6">
+      <div className="px-4 pt-4">
+        <BrandLogo apiBase={props.apiBase} projectSlug={props.projectSlug} />
+      </div>
+      <CourseList client={props.client} branding={branding} onOpen={props.onOpen} />
+    </div>
   );
 }
 
@@ -438,36 +462,19 @@ function useAnnouncements(
 /**
  * The customer's logo, when they have set one.
  *
- * Its own tiny fetch rather than a prop threaded from the element, so a
- * branding failure cannot delay or break the course render — the colours are
- * applied separately by `element.ts` and do not depend on this at all.
+ * Not a prop threaded from the element: a branding failure must not delay or
+ * break the course render, and the colours are applied separately by
+ * `element.ts` and do not depend on this at all. `useBranding` de-duplicates
+ * the request, so the two places this renders and the catalogue hero share one
+ * unauthenticated fetch rather than issuing three.
  *
  * `alt` is never derived: `parseBranding` refuses a logo without one, so if
  * this renders, the text came from the customer.
  */
 function BrandLogo(props: { apiBase: string; projectSlug: string }) {
-  const [branding, setBranding] = useState<Branding | undefined>();
+  const branding = useBranding(props.apiBase, props.projectSlug);
 
-  const { apiBase, projectSlug } = props;
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch(new URL("/branding", apiBase), {
-      headers: { accept: "application/json", "x-ds-project": projectSlug },
-    })
-      .then((response) => (response.ok ? response.json() : {}))
-      .then((body: unknown) => {
-        if (!cancelled) setBranding(parseBranding(body));
-      })
-      .catch(() => {
-        // An unbranded header is not something a learner can act on.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [apiBase, projectSlug]);
-
-  if (branding?.logoUrl === undefined) return null;
+  if (branding.logoUrl === undefined) return null;
 
   return (
     <img

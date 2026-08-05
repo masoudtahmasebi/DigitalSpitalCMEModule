@@ -768,6 +768,65 @@ a second database role.
 
 ---
 
+## S20 · The layout starts a **Teilprüfung** from the Abschlussprüfung screen — **which is it?**
+
+- **Owner:** MEDICE (layout) · **Blocks:** P4 · **Raised:** 05.08 from `260729_MEDICECMEFortbildungMS.pdf` p. 08
+
+Page 08 of the layout is the Lernerfolgskontrolle's start screen. Its eyebrow says
+`Lernerfolgskontrolle`, its heading says **Abschlussprüfung**, its stat cards describe
+the eleven-question course-level test — and its primary button says
+**`Teilprüfung starten`**.
+
+Those are two different assessments. `Teilprüfung` was raised on 27.07 as new scope
+(requirements §6.1, +6–8 h) and was descoped: a per-module test needs its own question
+bank, its own attempt ledger and its own gate, none of which are in the schema.
+
+Two readings, and they cost differently:
+
+- **The label is a slip.** The button should say `Abschlussprüfung starten`, and
+  nothing else changes. Zero hours.
+- **Teilprüfung is back.** Then the screen is right and the rest of the layout is
+  missing it — no per-module result, no per-module retry, and no per-module state in
+  the sidebar on pages 06–07. Roughly +6–8 h, and it moves a compliance gate.
+
+**Built as: `Abschlussprüfung starten`**, matching the heading directly above it and
+the only assessment the platform has. If the second reading is the right one, say so
+and the ticket comes back.
+
+---
+
+## S21 · The layout says the EFN is **18 digits**; the platform validates **15**
+
+- **Owner:** MEDICE / ÄKWL · **Blocks:** P6, P7 · **Raised:** 05.08 from `260729_MEDICECMEFortbildungMS.pdf` p. 13
+
+Page 13 captures the EFN under the helper text:
+
+> _Die 18-stellige EFN finden Sie auf Ihrem Arztausweis_
+
+`packages/domain/src/eiv.ts` accepts `/^[0-9]{15}$/`, which is what the EFN has been
+throughout this project, and the placeholder digits printed on page 13 are eighteen
+characters long, so this is not a typo in the caption alone.
+
+**Nothing has been changed.** This is exactly the case `CLAUDE.md` §7 covers: the EFN
+is the key the Punktemeldung is filed under, and a validator that is wrong in either
+direction fails in a way the learner cannot see.
+
+- Validate 15 and the real number is 18 → every physician is turned away at the last
+  step of a course they have finished.
+- Validate 18 and the real number is 15 → the submission is accepted by us and
+  rejected by EIV-FOBI, after the certificate has already been shown.
+
+**One question, and it is not for MEDICE's designer:** what length does EIV-FOBI
+accept for `efn`? If the answer is 15, page 13's caption needs correcting before it
+goes in front of a physician. If it is 18, `isValidEfn` and its tests change, along
+with the masking rule in `packages/domain/src/moderation.ts`, and every EFN captured
+before the change has to be re-validated.
+
+Until it is answered the field stays at 15, because that is the number the EIV
+requirements document was written from.
+
+---
+
 ## What is not blocked
 
 The API is built and the learner journey runs end to end — catalog, gated

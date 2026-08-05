@@ -181,7 +181,7 @@ describe("listCourses", () => {
         perPage: 10,
         thema: "ADHS",
         altersgruppe: "Erwachsene",
-        deliveryType: "on_demand",
+        deliveryType: ["live", "praesenz"],
       },
       LEARNER,
     );
@@ -189,8 +189,44 @@ describe("listCourses", () => {
     expect(seen).toMatchObject({
       thema: "ADHS",
       altersgruppe: "Erwachsene",
-      deliveryType: "on_demand",
+      // A set, because one catalogue tab can group several delivery types.
+      deliveryType: ["live", "praesenz"],
     });
+  });
+
+  it("counts the facets under the same selection as the list", async () => {
+    // The bug this pins is a dead end rather than a wrong number: with the
+    // facets counted over the whole catalogue, a learner can pick a Thema and
+    // an Altersgruppe that each report a non-zero count and land on "keine
+    // Fortbildungen". The service has to hand the selection down.
+    let seen: Record<string, unknown> | undefined;
+    const repo = fakeRepository({
+      facets: async (selection) => {
+        seen = { ...selection };
+        return { thema: [], altersgruppe: [] };
+      },
+    });
+
+    await new CatalogService(repo).listCourses(
+      {
+        page: 2,
+        perPage: 10,
+        thema: "ADHS",
+        altersgruppe: "Erwachsene",
+        deliveryType: ["on_demand"],
+      },
+      LEARNER,
+    );
+
+    expect(seen).toEqual({
+      thema: "ADHS",
+      altersgruppe: "Erwachsene",
+      deliveryType: ["on_demand"],
+    });
+    // And without the page: a facet count describes the whole result set, not
+    // the ten rows currently on screen.
+    expect(seen).not.toHaveProperty("limit");
+    expect(seen).not.toHaveProperty("offset");
   });
 
   it("reports zero duration for a course with no content rather than NaN", async () => {

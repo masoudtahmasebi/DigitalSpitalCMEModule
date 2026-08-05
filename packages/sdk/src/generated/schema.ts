@@ -2653,7 +2653,20 @@ export interface operations {
             query?: {
                 thema?: string;
                 altersgruppe?: string;
-                deliveryType?: components["schemas"]["DeliveryType"];
+                /**
+                 * @description A comma-separated **set** of delivery types, e.g. `live,praesenz`.
+                 *
+                 *     The catalogue's tabs are functions rather than delivery types — the
+                 *     layout draws `On Demand` and `Weitere` — so one tab has to be able
+                 *     to name several. Comma-separated in a single parameter rather than
+                 *     the parameter repeated, because repeated query parameters have
+                 *     several incompatible serialisations and none of these values can
+                 *     contain a comma.
+                 *
+                 *     Omitted means every delivery type.
+                 * @example live,praesenz
+                 */
+                deliveryType?: string;
                 page?: number;
                 perPage?: number;
             };
