@@ -28,16 +28,18 @@ COPY . .
 
 RUN pnpm install --offline --frozen-lockfile
 
+# Two, and only two.
+#
+# There were five: three named a Keycloak issuer, client and redirect URI, and
+# the console stopped reading any of them when P12-06 moved staff sign-in to
+# the platform's own identity plane (ADR-0012). Build arguments that nothing
+# consumes are worse than absent ones — somebody setting up a deployment fills
+# them in carefully, gets no error, and is left believing the console
+# authenticates against Keycloak. `apps/admin/src/config.ts` reads these two.
 ARG VITE_API_BASE
 ARG VITE_PROJECT_SLUG
-ARG VITE_KEYCLOAK_ISSUER
-ARG VITE_KEYCLOAK_CLIENT_ID
-ARG VITE_REDIRECT_URI
 ENV VITE_API_BASE=$VITE_API_BASE \
-    VITE_PROJECT_SLUG=$VITE_PROJECT_SLUG \
-    VITE_KEYCLOAK_ISSUER=$VITE_KEYCLOAK_ISSUER \
-    VITE_KEYCLOAK_CLIENT_ID=$VITE_KEYCLOAK_CLIENT_ID \
-    VITE_REDIRECT_URI=$VITE_REDIRECT_URI
+    VITE_PROJECT_SLUG=$VITE_PROJECT_SLUG
 
 RUN pnpm --filter @ds/admin... build
 

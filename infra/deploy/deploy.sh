@@ -8,6 +8,7 @@
 # nobody can debug at 22:00.
 #
 #   ./deploy.sh                 pull, migrate, restart, verify
+#   ./deploy.sh --check         run the preflight only, change nothing
 #   ./deploy.sh --no-migrate    skip migrations (rolling back to an older image)
 #   ./deploy.sh --rollback TAG  redeploy a previous tag
 #
@@ -35,6 +36,7 @@ readonly BACKUP_DIR="${DS_BACKUP_DIR:-/var/backups/ds-education}"
 
 RUN_MIGRATIONS=1
 ROLLBACK_TAG=""
+DRY_RUN=0
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; exit 1; }
@@ -45,6 +47,10 @@ trap 'die "failed at line ${LINENO}. The previous version is still running."' ER
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-migrate) RUN_MIGRATIONS=0; shift ;;
+    # Everything up to and including the preflight, then stop. For checking a
+    # freshly written .env.production before the first real deploy, when the
+    # alternative is finding out halfway through.
+    --check)      DRY_RUN=1; shift ;;
     --rollback)   ROLLBACK_TAG="${2:-}"; [[ -n "$ROLLBACK_TAG" ]] || die "--rollback needs a tag"; shift 2 ;;
     -h|--help)    sed -n '2,30p' "$0"; exit 0 ;;
     *)            die "unknown option: $1" ;;
@@ -70,14 +76,58 @@ set -a
 source "$ENV_FILE"
 set +a
 
+# Everything the stack cannot start without, checked here rather than
+# discovered later. The cost of the long list is nothing; the cost of a short
+# one is a deploy that gets as far as taking a backup and restarting containers
+# before failing on a variable nobody set.
+#
+# Three of these were missing and each had a distinct failure:
+#
+#   PORTAL_DOMAIN        Caddy parses a site block with an empty address.
+#   API_DOMAIN_URL       lands in a CSP connect-src; unset, the console cannot
+#                        reach the API and it looks like the API is down.
+#   STAFF_COOKIE_DOMAIN  the staff session cookie is scoped to the parent
+#                        domain so verwaltung.… and api.… are same-site. Unset,
+#                        every staff sign-in succeeds and then reports the
+#                        session expired.
 for required in \
-  API_DOMAIN ADMIN_DOMAIN WIDGET_DOMAIN ACME_EMAIL \
+  API_DOMAIN ADMIN_DOMAIN PORTAL_DOMAIN WIDGET_DOMAIN ACME_EMAIL \
+  API_DOMAIN_URL \
   POSTGRES_DB POSTGRES_SUPERUSER POSTGRES_SUPERUSER_PASSWORD \
   DS_MIGRATOR_PASSWORD DS_APP_PASSWORD \
   KEYCLOAK_ISSUER KEYCLOAK_AUDIENCE KEYCLOAK_JWKS_URI \
-  IMAGE_API IMAGE_ADMIN IMAGE_WIDGET
+  CORS_ALLOWED_ORIGINS STAFF_COOKIE_DOMAIN SECRETS_KMS_KEY \
+  IMAGE_API IMAGE_ADMIN IMAGE_PORTAL IMAGE_WIDGET
 do
   [[ -n "${!required:-}" ]] || die "missing required variable: ${required}"
+done
+
+# 32 bytes, base64. The API refuses to start without it and there is no
+# plaintext fallback, so checking the *length* here turns "container exits on
+# boot" into a sentence naming the variable and how to generate one.
+kms_bytes="$(printf '%s' "$SECRETS_KMS_KEY" | base64 -d 2>/dev/null | wc -c || true)"
+[[ "$kms_bytes" == "32" ]] || die \
+  "SECRETS_KMS_KEY must be 32 bytes base64-encoded (got ${kms_bytes}) — openssl rand -base64 32"
+
+# The cookie domain has to be the parent of both the console and the API, with
+# a leading dot. ".cme.example.de" works for verwaltung.cme.example.de and
+# api.cme.example.de; "cme.example.de" is a host-only cookie for a host nothing
+# is served from, and "verwaltung.cme.example.de" is one the API cannot set.
+case "$STAFF_COOKIE_DOMAIN" in
+  .*) ;;
+  *) die "STAFF_COOKIE_DOMAIN must start with a dot, e.g. .cme.example.de" ;;
+esac
+for host in "$ADMIN_DOMAIN" "$API_DOMAIN"; do
+  [[ "$host" == *"${STAFF_COOKIE_DOMAIN}" ]] || die \
+    "STAFF_COOKIE_DOMAIN (${STAFF_COOKIE_DOMAIN}) is not a parent of ${host}"
+done
+
+# The console and the portal call the API from a browser, so both origins have
+# to be in the allow-list or the console loads and every request is refused by
+# CORS — which presents as a blank screen with a console full of red.
+for origin in "https://${ADMIN_DOMAIN}" "https://${PORTAL_DOMAIN}"; do
+  [[ ",${CORS_ALLOWED_ORIGINS}," == *",${origin},"* ]] || die \
+    "CORS_ALLOWED_ORIGINS does not contain ${origin}"
 done
 
 # The EIV live guard, at deploy time rather than at submission time. A
@@ -91,8 +141,12 @@ if [[ -n "$ROLLBACK_TAG" ]]; then
   log "Rolling back to ${ROLLBACK_TAG}"
   IMAGE_API="${IMAGE_API%:*}:${ROLLBACK_TAG}"
   IMAGE_ADMIN="${IMAGE_ADMIN%:*}:${ROLLBACK_TAG}"
+  # The portal was missing here, so a rollback left it on the *new* tag while
+  # everything else went back — a version skew between a frontend and the API
+  # it calls, which is the one thing a rollback exists to avoid.
+  IMAGE_PORTAL="${IMAGE_PORTAL%:*}:${ROLLBACK_TAG}"
   IMAGE_WIDGET="${IMAGE_WIDGET%:*}:${ROLLBACK_TAG}"
-  export IMAGE_API IMAGE_ADMIN IMAGE_WIDGET
+  export IMAGE_API IMAGE_ADMIN IMAGE_PORTAL IMAGE_WIDGET
   # A rollback to an older image against a newer schema is why migrations are
   # additive. Running them again would be pointless; running them *backwards*
   # is not something this script will ever do.
@@ -100,6 +154,16 @@ if [[ -n "$ROLLBACK_TAG" ]]; then
 fi
 
 compose() { docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
+
+# The compose file itself has to interpolate cleanly. `config -q` catches a
+# variable this script does not know to require, which is how the list above
+# stays honest as the stack grows.
+compose config --quiet || die "docker-compose.prod.yml does not interpolate against this .env.production"
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  log "Preflight passed. Nothing was changed (--check)."
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # 2. Pull

@@ -82,10 +82,15 @@
 	header X-Frame-Options "DENY"
 
 	# A strict CSP is affordable here because this app loads nothing from
-	# anywhere else: its own bundle, its own styles, and XHR to the API and
-	# Keycloak. `unsafe-inline` for styles is Vite's injected critical CSS; the
-	# script policy has no such escape.
-	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' {$API_DOMAIN_URL} {$KEYCLOAK_ORIGIN}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+	# anywhere else: its own bundle, its own styles, and XHR to the API.
+	# `unsafe-inline` for styles is Vite's injected critical CSS; the script
+	# policy has no such escape.
+	#
+	# `connect-src` no longer names Keycloak. The console authenticates on the
+	# platform's own staff plane (ADR-0012, P12-06) and never calls a realm, so
+	# listing one would be a permission granted to a request that is not made —
+	# and the first person to reuse this policy elsewhere would inherit it.
+	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' {$API_DOMAIN_URL}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 	reverse_proxy admin:80
 }

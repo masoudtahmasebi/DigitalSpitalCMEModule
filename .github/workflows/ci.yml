@@ -164,8 +164,36 @@ jobs:
           context: .
           file: apps/api/Dockerfile
           push: false
+          load: true
+          tags: ds-api:ci
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max
+
+      # Three entrypoints ship in this image and only one of them is the
+      # default. `dist/db-migrate.js` runs on every deploy and would be noticed;
+      # `dist/bootstrap-admin.js` runs **once**, on the first deploy of a new
+      # environment, which is the worst possible moment to discover it was not
+      # compiled into the image.
+      #
+      # Each is invoked in the way that makes it refuse: no environment, no
+      # arguments. What is being asserted is that the file exists and is the
+      # program it claims to be — a missing one exits with a module-resolution
+      # error instead.
+      - name: The image carries its operational entrypoints
+        run: |
+          for entry in dist/main.js dist/db-migrate.js dist/bootstrap-admin.js; do
+            docker run --rm --entrypoint node ds-api:ci -e \
+              "import('node:fs').then(fs => process.exit(fs.existsSync('/app/${entry}') ? 0 : 1))" \
+              || { echo "::error::${entry} is missing from the API image"; exit 1; }
+          done
+
+          # And that the bootstrap refuses rather than doing something on no
+          # arguments — it is the one command that creates an account which can
+          # do everything.
+          if docker run --rm --entrypoint node ds-api:ci dist/bootstrap-admin.js 2>/dev/null; then
+            echo "::error::bootstrap-admin.js succeeded with no arguments"
+            exit 1
+          fi
 
       # The three frontends inline their configuration at build time, so they
       # need the build-args to compile. The values are placeholders — this job
@@ -180,9 +208,6 @@ jobs:
           build-args: |
             VITE_API_BASE=https://api.example.invalid
             VITE_PROJECT_SLUG=ci
-            VITE_KEYCLOAK_ISSUER=https://keycloak.example.invalid/realms/ci
-            VITE_KEYCLOAK_CLIENT_ID=ci
-            VITE_REDIRECT_URI=https://admin.example.invalid/
           cache-from: type=gha,scope=admin
           cache-to: type=gha,scope=admin,mode=max
 

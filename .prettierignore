@@ -5,3 +5,10 @@ coverage/
 .turbo/
 packages/sdk/src/generated/
 infra/keycloak/realm-export.json
+
+# Generated bundles copied in at build time. `prettier --check .` tripped on
+# the portal's copy locally while CI never saw it — the file is gitignored —
+# which is the worst shape for a lint rule: it fails only for the person who
+# just built.
+wordpress/*/assets/ds-lms.js
+apps/portal/public/ds-lms.js

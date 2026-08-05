@@ -131,6 +131,7 @@ erasure, which is cross-tenant by nature. See
 | What personal data exists and what happens on an erasure request? | [`docs/gdpr.md`](docs/gdpr.md)                                                  |
 | What is still unanswered and blocking?                            | [`docs/show-stoppers.md`](docs/show-stoppers.md)                                |
 | How do I add a module without breaking the layering?              | [`CONTRIBUTING.md`](CONTRIBUTING.md)                                            |
+| How do I put this on a server the first time?                     | [`docs/deployment.md`](docs/deployment.md)                                      |
 | How is this deployed, and how do I roll it back?                  | [`infra/deploy/README.md`](infra/deploy/README.md)                              |
 | How does the WordPress side work?                                 | [`wordpress/ds-lms/README.md`](wordpress/ds-lms/README.md)                      |
 | How do I extend it — and what may I not extend?                   | [`docs/adr/0010-extension-points.md`](docs/adr/0010-extension-points.md)        |

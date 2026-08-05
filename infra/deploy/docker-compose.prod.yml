@@ -46,8 +46,17 @@ services:
     environment:
       API_DOMAIN: ${API_DOMAIN}
       ADMIN_DOMAIN: ${ADMIN_DOMAIN}
+      # The portal's own hostname. Absent, Caddy parses a site block with an
+      # empty address — which is not a warning, it is a different site.
+      PORTAL_DOMAIN: ${PORTAL_DOMAIN}
       WIDGET_DOMAIN: ${WIDGET_DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL}
+      # Both of these land inside a Content-Security-Policy `connect-src`.
+      # Unset, the directive collapses to `'self'` and the console can no
+      # longer reach the API at all — a failure that looks like the API being
+      # down and is actually a header.
+      API_DOMAIN_URL: ${API_DOMAIN_URL}
+      KEYCLOAK_ORIGIN: ${KEYCLOAK_ORIGIN}
     depends_on:
       api:
         condition: service_healthy
@@ -70,6 +79,30 @@ services:
       # WordPress site was refused. The host-side name is kept as-is so an
       # existing `.env` on the server still works.
       ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+
+      # The parent domain the staff session cookie is scoped to — ".cme.example.de"
+      # — so the console at verwaltung.… and the API at api.… are same-site and
+      # the browser attaches it (ADR-0012).
+      #
+      # **Required in production and easy to miss**, because development has
+      # both on localhost where the value must be empty. Unset here, the API
+      # sets a host-only cookie on api.…, the console never receives it, and
+      # every staff sign-in appears to succeed and then immediately reports the
+      # session as expired.
+      STAFF_COOKIE_DOMAIN: ${STAFF_COOKIE_DOMAIN}
+
+      # Two limits, because the font upload is genuinely different — see the
+      # note in the Caddyfile. Caddy refuses an oversized body before it is
+      # buffered; these are the API's own enforcement of the same rule.
+      MAX_REQUEST_BODY_SIZE: ${MAX_REQUEST_BODY_SIZE:-1mb}
+      MAX_FONT_BODY_SIZE: ${MAX_FONT_BODY_SIZE:-3mb}
+
+      # Certificate delivery (P8-03). These were configurable in the example
+      # env and read by the API, and were not passed here — so the worker ran
+      # on its defaults whatever the deployment said.
+      CERTIFICATE_DELIVERY_ENABLED: ${CERTIFICATE_DELIVERY_ENABLED:-yes}
+      CERTIFICATE_DELIVERY_INTERVAL_SEC: ${CERTIFICATE_DELIVERY_INTERVAL_SEC:-300}
+      CERTIFICATE_DELIVERY_BATCH_SIZE: ${CERTIFICATE_DELIVERY_BATCH_SIZE:-25}
 
       # Encryption at rest for the VNR password and SMTP credentials. Without
       # it the API refuses to start in production, by design — there is no

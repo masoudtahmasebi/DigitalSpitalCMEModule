@@ -13,72 +13,16 @@ infra/deploy/
 
 ---
 
-## First-time host setup
+## Setting this up for the first time
 
-Once, on a fresh Hetzner box. Debian 12 or Ubuntu 24.04.
+**[`docs/deployment.md`](../../docs/deployment.md) is the runbook** — the
+server, DNS, the SSH key, the GitHub secrets and variables, the first deploy
+and the first administrator, in order.
 
-```bash
-# 1. Docker, from Docker's own repository — the distro package lags.
-curl -fsSL https://get.docker.com | sh
-
-# 2. A deploy user that is not root. It needs docker, and nothing else.
-adduser --disabled-password --gecos "" deploy
-usermod -aG docker deploy
-
-# 3. The CI key. Generate the pair locally; only the public half goes here.
-mkdir -p /home/deploy/.ssh && chmod 700 /home/deploy/.ssh
-echo "<the public key>" >> /home/deploy/.ssh/authorized_keys
-chmod 600 /home/deploy/.ssh/authorized_keys
-chown -R deploy:deploy /home/deploy/.ssh
-
-# 4. Firewall. 80 and 443 for Caddy, 22 for deployment. Nothing else — in
-#    particular not 5432: the database is on an internal Docker network and
-#    publishing it "just for migrations" is how a database ends up on Shodan.
-ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw --force enable
-
-# 5. Unattended security updates. A host nobody logs into still needs patching.
-apt-get install -y unattended-upgrades && dpkg-reconfigure -plow unattended-upgrades
-```
-
-**DNS before the first deploy.** `API_DOMAIN`, `ADMIN_DOMAIN` and
-`WIDGET_DOMAIN` each need an A (and ideally AAAA) record pointing at this host
-**before** Caddy starts. Certificates are issued via an HTTP-01 challenge that
-Caddy answers on port 80; a domain that does not resolve here never gets one.
-
-Let's Encrypt rate-limits duplicate certificates to five per week, so while DNS
-is still settling, uncomment `acme_ca` in the `Caddyfile` to use the staging CA.
-Staging certificates are untrusted by browsers — that is expected, and it means
-a typo costs nothing instead of a seven-day wait.
-
----
-
-## GitHub configuration
-
-**Secrets** (Settings → Secrets and variables → Actions):
-
-| Secret               | What it is                                       |
-| -------------------- | ------------------------------------------------ |
-| `DEPLOY_HOST`        | Hostname or IP                                   |
-| `DEPLOY_USER`        | `deploy`                                         |
-| `DEPLOY_SSH_KEY`     | The **private** key matching `authorized_keys`   |
-| `DEPLOY_KNOWN_HOSTS` | Output of `ssh-keyscan <host>`                   |
-| `PRODUCTION_ENV`     | The whole of `env.production.example`, filled in |
-
-`DEPLOY_KNOWN_HOSTS` is not optional and is not a formality. Without a pinned
-host key the deploy would accept whatever answers on port 22 and hand it
-`PRODUCTION_ENV` — every credential the platform has.
-
-**Variables** (not secrets; these are public and are inlined into the admin
-bundle at build time):
-
-| Variable                   | Example                                        |
-| -------------------------- | ---------------------------------------------- |
-| `API_DOMAIN`               | `api.cme.example.de`                           |
-| `ADMIN_API_BASE`           | `https://api.cme.example.de`                   |
-| `ADMIN_PROJECT_SLUG`       | `medice-adhs`                                  |
-| `ADMIN_KEYCLOAK_ISSUER`    | `https://login.example.de/realms/ds-education` |
-| `ADMIN_KEYCLOAK_CLIENT_ID` | `ds-admin-console`                             |
-| `ADMIN_REDIRECT_URI`       | `https://verwaltung.cme.example.de/`           |
+It is not repeated here. Two documents describing the same procedure drift, and
+the one that drifts is always the one somebody is following at the time. This
+file is the reference for what is _in this directory_ and what to do when a
+deployment misbehaves.
 
 ---
 
@@ -124,6 +68,34 @@ PRIVILEGES FOR ROLE ds_migrator` only grants `ds_app` on objects
 
 Any failure exits non-zero with the previous version still running.
 
+### Checking the configuration without deploying
+
+```bash
+./deploy.sh --check
+```
+
+Runs the whole preflight and stops. Nothing is pulled, migrated or restarted —
+for a freshly edited `.env.production`, when the alternative is finding out
+halfway through.
+
+### The first administrator, once
+
+A freshly deployed platform has an empty `admin_users` table and no way into
+the console: accounts are created by invitation, and there is nobody to issue
+one. This closes that, exactly once:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml \
+  run --rm --entrypoint node api dist/bootstrap-admin.js \
+  --email technik@digitalspital.de --name "Technik"
+```
+
+It prints a generated password once and stores it nowhere; the row holds an
+Argon2id hash. It refuses to run again while any staff account exists, because
+a bootstrap that stayed available would be a second way to mint a super
+administrator, reachable by anyone who can start a container here. `--force`
+exists for a genuine lockout and records itself in `admin_audit_log`.
+
 ---
 
 ## Rolling back
@@ -165,15 +137,19 @@ docker compose -f docker-compose.prod.yml --env-file .env.production logs -f api
 docker compose -f docker-compose.prod.yml --env-file .env.production logs caddy | grep -i "certificate\|acme"
 ```
 
-| Symptom                       | Usually                                                                |
-| ----------------------------- | ---------------------------------------------------------------------- |
-| Browser TLS warning           | DNS does not point here yet, or `acme_ca` staging is still uncommented |
-| API healthy, site unreachable | Caddy could not get a certificate — check the ACME lines in its log    |
-| Every request 401s            | `KEYCLOAK_ISSUER` / `KEYCLOAK_AUDIENCE` do not match the realm         |
-| Widget blocked in the browser | The WordPress origin is missing from `CORS_ALLOWED_ORIGINS`            |
-| Videos 403 after a while      | `S3_URL_TTL_SEC` shorter than a lesson; presigned URLs expire          |
-| Submissions stuck queued      | `EIV_ALLOW_LIVE` unset while `EIV_BASE_URL` points live — by design    |
-| API cannot authenticate to PG | `DS_APP_PASSWORD` changed in the env file but the deploy was skipped   |
+| Symptom                                        | Usually                                                                       |
+| ---------------------------------------------- | ----------------------------------------------------------------------------- |
+| Browser TLS warning                            | DNS does not point here yet, or `acme_ca` staging is still uncommented        |
+| API healthy, site unreachable                  | Caddy could not get a certificate — check the ACME lines in its log           |
+| Every request 401s                             | `KEYCLOAK_ISSUER` / `KEYCLOAK_AUDIENCE` do not match the realm                |
+| Widget blocked in the browser                  | The WordPress origin is missing from `CORS_ALLOWED_ORIGINS`                   |
+| Videos 403 after a while                       | `S3_URL_TTL_SEC` shorter than a lesson; presigned URLs expire                 |
+| Submissions stuck queued                       | `EIV_ALLOW_LIVE` unset while `EIV_BASE_URL` points live — by design           |
+| API cannot authenticate to PG                  | `DS_APP_PASSWORD` changed in the env file but the deploy was skipped          |
+| Staff sign-in succeeds, then "session expired" | `STAFF_COOKIE_DOMAIN` missing or not a parent of both the console and the API |
+| Console loads, every request fails             | `API_DOMAIN_URL` unset, so the CSP's `connect-src` is `'self'` only           |
+| Console loads, requests are CORS-refused       | `https://verwaltung.…` missing from `CORS_ALLOWED_ORIGINS`                    |
+| Portal has no certificate                      | `PORTAL_DOMAIN` unset, so Caddy has a site block with an empty address        |
 
 ---
 

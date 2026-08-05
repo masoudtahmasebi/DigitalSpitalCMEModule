@@ -49,13 +49,97 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  build:
-    name: Build and publish images
-    # `workflow_run` fires for failures too, so the conclusion is checked
-    # explicitly — this is the gate that stops a red build reaching production.
+  # Everything that can be wrong before a single byte reaches the server.
+  #
+  # A deploy that fails halfway is recoverable — deploy.sh leaves the previous
+  # version running — but it is still twenty minutes and a fright. Most first
+  # deployments fail on a missing secret, and a missing secret is knowable
+  # here, in eight seconds, without SSH.
+  preflight:
+    name: Check the deployment configuration
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Required secrets and variables are set
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+          ADMIN_API_BASE: ${{ vars.ADMIN_API_BASE }}
+          ADMIN_PROJECT_SLUG: ${{ vars.ADMIN_PROJECT_SLUG }}
+          PORTAL_API_BASE: ${{ vars.PORTAL_API_BASE }}
+          PORTAL_PROJECT_SLUG: ${{ vars.PORTAL_PROJECT_SLUG }}
+          PORTAL_KEYCLOAK_ISSUER: ${{ vars.PORTAL_KEYCLOAK_ISSUER }}
+          PORTAL_KEYCLOAK_CLIENT_ID: ${{ vars.PORTAL_KEYCLOAK_CLIENT_ID }}
+          PORTAL_REDIRECT_URI: ${{ vars.PORTAL_REDIRECT_URI }}
+          API_DOMAIN: ${{ vars.API_DOMAIN }}
+        run: |
+          missing=0
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS \
+                      PRODUCTION_ENV ADMIN_API_BASE ADMIN_PROJECT_SLUG \
+                      PORTAL_API_BASE PORTAL_PROJECT_SLUG PORTAL_KEYCLOAK_ISSUER \
+                      PORTAL_KEYCLOAK_CLIENT_ID PORTAL_REDIRECT_URI API_DOMAIN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::${name} is not set — see docs/deployment.md §4"
+              missing=1
+            fi
+          done
+          [ "$missing" = "0" ] || exit 1
+
+      - name: PRODUCTION_ENV declares everything the stack reads
+        env:
+          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+        run: |
+          # The same list deploy.sh enforces on the host, checked here so the
+          # failure arrives before the backup and the container restart rather
+          # than after them. Values are never printed — only whether a line
+          # exists and is non-empty.
+          missing=0
+          for key in API_DOMAIN ADMIN_DOMAIN PORTAL_DOMAIN WIDGET_DOMAIN \
+                     ACME_EMAIL API_DOMAIN_URL \
+                     POSTGRES_DB POSTGRES_SUPERUSER POSTGRES_SUPERUSER_PASSWORD \
+                     DS_MIGRATOR_PASSWORD DS_APP_PASSWORD \
+                     KEYCLOAK_ISSUER KEYCLOAK_AUDIENCE KEYCLOAK_JWKS_URI \
+                     CORS_ALLOWED_ORIGINS STAFF_COOKIE_DOMAIN SECRETS_KMS_KEY; do
+            if ! printf '%s\n' "$PRODUCTION_ENV" | grep -qE "^${key}=.+"; then
+              echo "::error::PRODUCTION_ENV has no non-empty ${key}"
+              missing=1
+            fi
+          done
+          [ "$missing" = "0" ] || exit 1
+
+          # 32 bytes base64. The API refuses to start without it and there is
+          # no plaintext fallback, so a wrong length here is a container that
+          # exits on boot.
+          kms=$(printf '%s\n' "$PRODUCTION_ENV" | sed -n 's/^SECRETS_KMS_KEY=//p' | head -1)
+          bytes=$(printf '%s' "$kms" | base64 -d 2>/dev/null | wc -c || true)
+          if [ "$bytes" != "32" ]; then
+            echo "::error::SECRETS_KMS_KEY must be 32 bytes base64 (got ${bytes}) — openssl rand -base64 32"
+            exit 1
+          fi
+
+          # The staff session cookie is scoped to the parent of the console and
+          # the API. Get this wrong and every staff sign-in succeeds and then
+          # reports the session expired — see ADR-0012.
+          cookie=$(printf '%s\n' "$PRODUCTION_ENV" | sed -n 's/^STAFF_COOKIE_DOMAIN=//p' | head -1)
+          case "$cookie" in
+            .*) ;;
+            *) echo "::error::STAFF_COOKIE_DOMAIN must start with a dot, e.g. .cme.example.de"; exit 1 ;;
+          esac
+
+          echo "Configuration looks complete."
+
+  build:
+    name: Build and publish images
+    # `workflow_run` fires for failures too, and `preflight` carries the same
+    # condition — depending on it is what stops a red build reaching
+    # production, and what stops a green one reaching a misconfigured server.
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -94,8 +178,13 @@ jobs:
           cache-to: type=gha,scope=api,mode=max
 
       # The console's configuration is inlined at build time (Vite), so the
-      # image is environment-specific. None of these is secret — see
-      # apps/admin/src/config.ts — but they do have to be right.
+      # image is environment-specific. Neither value is secret — see
+      # apps/admin/src/config.ts — but both have to be right.
+      #
+      # Three Keycloak variables used to be passed here and were dropped: the
+      # console authenticates on the platform's own staff plane since P12-06
+      # (ADR-0012) and reads none of them. A build argument nothing consumes is
+      # worse than an absent one, because somebody fills it in and believes it.
       - name: Build and push the admin console
         uses: docker/build-push-action@v6
         with:
@@ -105,9 +194,6 @@ jobs:
           build-args: |
             VITE_API_BASE=${{ vars.ADMIN_API_BASE }}
             VITE_PROJECT_SLUG=${{ vars.ADMIN_PROJECT_SLUG }}
-            VITE_KEYCLOAK_ISSUER=${{ vars.ADMIN_KEYCLOAK_ISSUER }}
-            VITE_KEYCLOAK_CLIENT_ID=${{ vars.ADMIN_KEYCLOAK_CLIENT_ID }}
-            VITE_REDIRECT_URI=${{ vars.ADMIN_REDIRECT_URI }}
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository }}/admin:${{ steps.meta.outputs.tag }}
             ${{ env.REGISTRY }}/${{ github.repository }}/admin:latest

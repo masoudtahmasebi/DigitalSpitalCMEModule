@@ -31,6 +31,10 @@ dump.rdb
 
 # Built widget bundle copied into the WordPress plugin by `pnpm wp:bundle`.
 wordpress/*/assets/ds-lms.js
+# The portal serves its own copy of the widget bundle rather than pointing at
+# the widget domain (see apps/portal/vite.config.ts). Same generated file, same
+# reason not to track it.
+apps/portal/public/ds-lms.js
 
 # Production environment file, written on the host by the deploy workflow.
 infra/deploy/.env.production
