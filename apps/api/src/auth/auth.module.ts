@@ -28,8 +28,11 @@ import { RolesGuard } from "./roles.guard.js";
 import { JwksRegistry } from "./jwks-registry.js";
 import { RedisJwksCache } from "./jwks-cache.redis.js";
 import { RateLimitGuard } from "../shared/rate-limit.guard.js";
+import { StaffModule } from "../modules/staff/staff.module.js";
+import { StaffService } from "../modules/staff/staff.service.js";
 
 @Module({
+  imports: [StaffModule],
   providers: [
     {
       provide: JwksRegistry,
@@ -68,6 +71,7 @@ import { RateLimitGuard } from "../shared/rate-limit.guard.js";
         userService: UserService,
         audit: AuditService,
         config: AppConfig,
+        staffService: StaffService,
       ) =>
         new AuthGuard({
           reflector,
@@ -76,6 +80,7 @@ import { RateLimitGuard } from "../shared/rate-limit.guard.js";
           userService,
           audit,
           clockToleranceSec: config.AUTH_CLOCK_TOLERANCE_SEC,
+          staffService,
         }),
       inject: [
         Reflector,
@@ -84,6 +89,7 @@ import { RateLimitGuard } from "../shared/rate-limit.guard.js";
         UserService,
         AuditService,
         APP_CONFIG,
+        StaffService,
       ],
     },
     RolesGuard,

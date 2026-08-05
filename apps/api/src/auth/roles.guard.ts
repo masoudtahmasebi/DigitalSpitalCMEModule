@@ -20,6 +20,7 @@ import type { AppRole } from "@ds/domain";
 import { AppError } from "../shared/problem-details.js";
 import { IS_PUBLIC_KEY } from "./public.decorator.js";
 import { ROLES_KEY } from "./roles.decorator.js";
+import { STAFF_ONLY_KEY } from "./staff-only.decorator.js";
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -38,6 +39,22 @@ export class RolesGuard implements CanActivate {
     ]);
     if (isPublic === true) return true;
 
+    const request = context.switchToHttp().getRequest<Request>();
+
+    // Above the tenant: a valid staff session is the whole requirement, because
+    // there is no customer to resolve a role within. AuthGuard has already
+    // established the session; without one there is no `staffProfile`.
+    const staffOnly = this.reflector.getAllAndOverride<boolean>(STAFF_ONLY_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (staffOnly === true) {
+      if (request.staffProfile === undefined) {
+        throw AppError.unauthenticated("no staff session");
+      }
+      return true;
+    }
+
     const required = this.reflector.getAllAndOverride<readonly AppRole[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -51,7 +68,6 @@ export class RolesGuard implements CanActivate {
       );
     }
 
-    const request = context.switchToHttp().getRequest<Request>();
     const principal = request.principal;
 
     if (principal === undefined) {

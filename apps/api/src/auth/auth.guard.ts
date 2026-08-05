@@ -37,6 +37,9 @@ import type { UserService } from "../modules/users/user.service.js";
 import type { ProjectBindingRepositoryPort } from "../modules/projects/project-binding.repository.js";
 import { AppError } from "../shared/problem-details.js";
 import { IS_PUBLIC_KEY } from "./public.decorator.js";
+import { authenticateStaff, CSRF_HEADER } from "./staff-session.js";
+import type { StaffService } from "../modules/staff/staff.service.js";
+import { staffTenantContext } from "../modules/staff/staff.service.js";
 import { TokenInvalidError, verifyToken } from "./token-verifier.js";
 import type { JwksRegistry } from "./jwks-registry.js";
 
@@ -49,6 +52,11 @@ export interface AuthGuardDeps {
   readonly userService: UserService;
   readonly audit: AuditServicePort;
   readonly clockToleranceSec: number;
+  /**
+   * The staff plane (ADR-0012). Optional so a deployment that runs only the
+   * learner API — or a test that only exercises it — needs no staff wiring.
+   */
+  readonly staffService?: StaffService | undefined;
 }
 
 @Injectable()
@@ -63,6 +71,19 @@ export class AuthGuard implements CanActivate {
     if (isPublic === true) return true;
 
     const request = context.switchToHttp().getRequest<Request>();
+
+    /*
+     * The staff plane is tried first, and only when a cookie is actually
+     * present.
+     *
+     * Order matters and so does the "actually present" part. A staff member's
+     * browser may carry both credentials — the console and the portal can share
+     * a parent domain — and the cookie is the one that names *them* rather than
+     * a learner. But a request with no cookie must fall straight through: were
+     * an absent cookie treated as a failed staff attempt, every learner request
+     * would 401 the moment this was wired in.
+     */
+    if (await authenticateStaffPlane(this.deps, request)) return true;
 
     const token = extractBearer(request.headers.authorization);
     if (token === undefined) {
@@ -144,6 +165,109 @@ export class AuthGuard implements CanActivate {
 
     return true;
   }
+}
+
+/**
+ * Resolve a staff session onto `request.principal`, or report that this was not
+ * a staff request.
+ *
+ * Ends at the same `resolveTenantContext` the learner path uses, so the two
+ * authentication paths cannot diverge on *authorization* even though they are
+ * deliberately separate on authentication.
+ */
+async function authenticateStaffPlane(
+  deps: AuthGuardDeps,
+  request: Request,
+): Promise<boolean> {
+  const service = deps.staffService;
+  if (service === undefined) return false;
+
+  const result = await authenticateStaff({
+    method: request.method,
+    cookieHeader: request.headers.cookie,
+    csrfHeader: headerValue(request, CSRF_HEADER),
+    resolve: (value) => service.resolveSession(value),
+  });
+
+  if (result.kind === "none") return false;
+
+  if (result.kind === "rejected") {
+    await deps.audit.recordSystem({
+      action: "staff.request_rejected",
+      detail: { reason: result.reason },
+    });
+    throw result.reason === "csrf"
+      ? AppError.forbidden("missing or invalid CSRF token")
+      : AppError.unauthenticated(`staff session ${result.reason}`);
+  }
+
+  const { session } = result;
+  request.staffSessionId = session.sessionId;
+
+  /*
+   * Which customer this request acts within.
+   *
+   * A staff request names it with the same `X-DS-Project` header a learner
+   * uses, so one endpoint serves both. A super admin with no project header is
+   * the one exception — the console's own screens (the customer list, their own
+   * profile) are above any single tenant — and those endpoints resolve their
+   * own scope rather than relying on `principal.customerId`.
+   */
+  const projectSlug = request.headers[PROJECT_HEADER];
+  if (typeof projectSlug !== "string" || projectSlug === "") {
+    request.staffProfile = {
+      id: session.account.id,
+      email: session.account.email,
+      displayName: session.account.displayName,
+      grants: session.grants,
+    };
+    // No tenant context, so no `principal`. Endpoints needing one refuse via
+    // RolesGuard; endpoints above the tenant read `staffProfile`.
+    return true;
+  }
+
+  const binding = await deps.projectBindings.resolve(projectSlug);
+  if (binding === undefined) {
+    throw AppError.unauthenticated(`unknown or unbound project slug=${projectSlug}`);
+  }
+
+  const resolution = staffTenantContext(session.grants, binding.customerId);
+  if (!resolution.ok) {
+    await deps.audit.recordForCustomer(binding.customerId, {
+      action: "staff.no_grant_for_customer",
+      detail: { reason: resolution.reason, projectSlug },
+    });
+    throw AppError.forbidden(
+      `staff=${session.account.id} holds no grant reaching customer=${binding.customerId}`,
+    );
+  }
+
+  request.staffProfile = {
+    id: session.account.id,
+    email: session.account.email,
+    displayName: session.account.displayName,
+    grants: session.grants,
+  };
+
+  request.principal = {
+    // The staff account id, not a learner `users` row — they are separate
+    // populations (ADR-0012) and an audit entry has to say which.
+    userId: session.account.id,
+    keycloakSub: `staff:${session.account.id}`,
+    email: session.account.email,
+    customerId: resolution.context.customerId,
+    ...(resolution.context.departmentId === undefined
+      ? {}
+      : { departmentId: resolution.context.departmentId }),
+    role: resolution.context.role,
+  };
+
+  return true;
+}
+
+function headerValue(request: Request, name: string): string | undefined {
+  const value = request.headers[name];
+  return typeof value === "string" ? value : undefined;
 }
 
 function extractBearer(header: string | undefined): string | undefined {

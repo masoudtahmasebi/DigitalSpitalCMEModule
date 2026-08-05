@@ -166,6 +166,12 @@ const schema = z
     // after this object turns that into a refusal to start.
     SECRETS_KMS_KEY: z.string().default(""),
 
+    // The parent domain the staff session cookie is scoped to — ".cme.example.de",
+    // so the console at verwaltung.… and the API at api.… are same-site and the
+    // browser attaches it (ADR-0012). Empty in development, where both are on
+    // localhost and a Domain attribute would stop the cookie being stored at all.
+    STAFF_COOKIE_DOMAIN: z.string().default(""),
+
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   })
   // Boot-time, not first-use. The schedulers build a cipher during startup, so

@@ -36,13 +36,14 @@
  * locked account with no idea why it fails.
  */
 
-import { Body, Controller, Get, Post, Req, Res } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Post, Req, Res } from "@nestjs/common";
 import type { CookieOptions, Request, Response } from "express";
 import { z } from "zod";
 import { checkPassword } from "@ds/domain";
 import { Public } from "../../auth/public.decorator.js";
+import { StaffOnly } from "../../auth/staff-only.decorator.js";
 import { AppError } from "../../shared/problem-details.js";
-import type { StaffService } from "./staff.service.js";
+import { StaffService } from "./staff.service.js";
 
 export const SESSION_COOKIE = "ds_staff_session";
 export const CSRF_HEADER = "x-ds-csrf";
@@ -63,11 +64,19 @@ export interface StaffAuthConfig {
   readonly secureCookies: boolean;
 }
 
+/**
+ * Nest constructs controllers itself, so its configuration cannot be supplied
+ * by a provider factory over the controller class — that provider is simply
+ * ignored, and the controller is built with an unresolvable first argument.
+ * A token is the way in.
+ */
+export const STAFF_AUTH_CONFIG = Symbol("STAFF_AUTH_CONFIG");
+
 @Controller("admin/auth")
 export class StaffAuthController {
   constructor(
     private readonly service: StaffService,
-    private readonly config: StaffAuthConfig,
+    @Inject(STAFF_AUTH_CONFIG) private readonly config: StaffAuthConfig,
   ) {}
 
   @Public()
@@ -113,6 +122,7 @@ export class StaffAuthController {
     }
   }
 
+  @StaffOnly()
   @Post("logout")
   async logout(
     @Req() request: Request,
@@ -132,6 +142,7 @@ export class StaffAuthController {
    * Who am I — the call the console makes on load to decide whether to show
    * the login form or the application.
    */
+  @StaffOnly()
   @Get("session")
   session(@Req() request: Request): unknown {
     const profile = request.staffProfile;
