@@ -29,15 +29,15 @@ Every level below `Customer` carries `customer_id` and is isolated by RLS
 (ADR-0002). `ordinal` gives explicit order at every level — never `created_at`,
 because reordering must not rewrite history.
 
-| Level         | Key fields                                                             | Status                       |
-| ------------- | ---------------------------------------------------------------------- | ---------------------------- |
-| `customers`   | `id`, `slug`, `name`                                                   | 🟡 no CRUD endpoint — P12-04 |
-| `departments` | `id`, `customer_id`, `slug`, `name`                                    | ✅                           |
-| `projects`    | `id`, `customer_id`, `department_id`, `slug`, `name`, identity binding | ✅                           |
-| `courses`     | see §2                                                                 | ✅                           |
-| `modules`     | `id`, `course_id`, `ordinal`, `title`, `subtitle`                      | ✅                           |
-| `chapters`    | `id`, `module_id`, `ordinal`, `title`, `body`                          | ✅                           |
-| `contents`    | see §4                                                                 | mostly ✅                    |
+| Level         | Key fields                                                             | Status    |
+| ------------- | ---------------------------------------------------------------------- | --------- |
+| `customers`   | `id`, `slug`, `name`                                                   | ✅        |
+| `departments` | `id`, `customer_id`, `slug`, `name`                                    | ✅        |
+| `projects`    | `id`, `customer_id`, `department_id`, `slug`, `name`, identity binding | ✅        |
+| `courses`     | see §2                                                                 | ✅        |
+| `modules`     | `id`, `course_id`, `ordinal`, `title`, `subtitle`                      | ✅        |
+| `chapters`    | `id`, `module_id`, `ordinal`, `title`, `body`                          | ✅        |
+| `contents`    | see §4                                                                 | mostly ✅ |
 
 **`modules.subtitle`** is the dot-separated topic line under each module in the
 Übersicht → Inhalte list ("ADHS-Definition · Epidemiologie · Neurobiologie").
@@ -179,17 +179,17 @@ the learner is entitled to see.
 
 What the admin panel shows per learner, and what the widget renders.
 
-| Concept                                  | Source                                               | Status    |
-| ---------------------------------------- | ---------------------------------------------------- | --------- |
-| Watch coverage                           | `content_progress` segments → `courseWatchCoverage`  | ✅        |
-| Module completion                        | `rollupProgress` — the **one** rollup path           | ✅        |
-| Quiz score / attempts                    | `quiz_attempts`                                      | ✅        |
-| Evaluation submitted                     | `evaluation_responses`                               | ✅        |
-| EFN                                      | `efn_profiles` — one per person, never per enrolment | ✅        |
-| Completion                               | `enrolments.completed_at`, server-decided            | ✅        |
-| EIV submission state                     | `eiv_submissions` + append-only attempt log          | ✅        |
-| Certificate                              | `certificates`                                       | ✅        |
-| Per-learner progress detail in the panel | —                                                    | 🔴 P12-05 |
+| Concept                                  | Source                                               | Status                         |
+| ---------------------------------------- | ---------------------------------------------------- | ------------------------------ |
+| Watch coverage                           | `content_progress` segments → `courseWatchCoverage`  | ✅                             |
+| Module completion                        | `rollupProgress` — the **one** rollup path           | ✅                             |
+| Quiz score / attempts                    | `quiz_attempts`                                      | ✅                             |
+| Evaluation submitted                     | `evaluation_responses`                               | ✅                             |
+| EFN                                      | `efn_profiles` — one per person, never per enrolment | ✅                             |
+| Completion                               | `enrolments.completed_at`, server-decided            | ✅                             |
+| EIV submission state                     | `eiv_submissions` + append-only attempt log          | ✅                             |
+| Certificate                              | `certificates`                                       | ✅                             |
+| Per-learner progress detail in the panel | `GET /admin/learners`                                | ✅ API; console screen pending |
 
 Learner progress and admin reporting read the same rollup over the same
 repository method (CLAUDE.md §4 invariant 6). Two implementations would
@@ -265,3 +265,30 @@ Answers change the schema, so they are listed here as well as in
 | S13 | Both VNR barcodes on the certificate                  | rendering only                |
 | S16 | What does `63% absolviert` measure?                   | which rollup the widget shows |
 | S11 | What is `Veranstaltungsende` for an on-demand course? | the EIV deadline input        |
+
+---
+
+## 8. Who can change what a physician sees (P13-01)
+
+Every field in §2 that the layout draws is editable from the admin console's
+**Inhalte & Darstellung** tab: title, description, hero image, format, Thema,
+Altersgruppe, Lernziele, Zielgruppe, CME points and category, Fortbildungsnummer
+and the accreditation window.
+
+They were stored, carried by the API and rendered from the first day, and
+settable only by `db/seed/adhs.ts` — so a customer could not change the title of
+their own course without a developer. That is what this ticket fixed.
+
+Two fields deliberately stay out of that form:
+
+- **`slug`** — the course's identity in every URL, bookmark and WordPress
+  shortcode. Re-slugging through the form that fixes a typo in a title breaks
+  them all silently, so it is not a form field at all.
+- **`passThresholdPercent`** — a condition of the Anerkennungsbescheid rather
+  than a presentation choice. It lives on the settings tab behind an explicit
+  acknowledgement, and the server refuses the change without one.
+
+**A field that renders is a field that must be authorable.** The check when
+adding one is: does a physician see it? If so it belongs in this form and in
+the round-trip test in `moderation.integration.test.ts`, which asserts an edit
+made through the console arrives at the learner-facing `GET /courses/{slug}`.

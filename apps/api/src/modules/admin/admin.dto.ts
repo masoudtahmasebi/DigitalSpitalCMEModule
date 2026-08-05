@@ -23,6 +23,17 @@ const percent = z.number().int().min(0).max(100);
 export const adminCourseSummarySchema = z.object({
   slug: z.string(),
   title: z.string(),
+  description: z.string().nullable(),
+  deliveryType: z.enum(["on_demand", "live", "praesenz"]),
+  thema: z.array(z.string()),
+  altersgruppe: z.array(z.string()),
+  learningObjectives: z.array(z.string()),
+  targetAudience: z.string().nullable(),
+  heroImageUrl: z.string().nullable(),
+  fortbildungsnummer: z.string().nullable(),
+  /** ISO 8601. The accreditation window from the Anerkennungsbescheid. */
+  validFrom: z.string().nullable(),
+  validTo: z.string().nullable(),
   vnr: z.string().nullable(),
   cmePoints: z.number().int().nullable(),
   cmeCategory: z.string().nullable(),
@@ -61,7 +72,46 @@ export const adminCourseDetailSchema = adminCourseSummarySchema.extend({
  * must not have to resend the VNR password to avoid clearing it. `undefined`
  * means "leave alone"; `null` means "clear" for the nullable text fields.
  */
+/**
+ * The presentation fields (P13-01).
+ *
+ * Everything the learner-facing layout draws — the catalogue card, the course
+ * hero, the Übersicht tab — as opposed to the accreditation fields below, which
+ * exist because the certificate and the Punktemeldung need them.
+ *
+ * They were stored and rendered from the first day and settable only by the
+ * seed script, which meant a customer could not change the title of their own
+ * course without a developer. Every field a physician can see is now a field an
+ * operator can edit.
+ */
 export const adminCourseUpdateSchema = z.object({
+  title: z.string().trim().min(1).max(300).optional(),
+  description: z.string().max(5000).nullable().optional(),
+  /** Which catalogue tab the course appears under. */
+  deliveryType: z.enum(["on_demand", "live", "praesenz"]).optional(),
+  /**
+   * Filter facets. Free text rather than a fixed taxonomy: the set differs per
+   * customer — a dermatology customer's Themen are not MEDICE's — and a shared
+   * enum would have to be migrated every time somebody adds one.
+   */
+  thema: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
+  altersgruppe: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
+  /** The Lernziele checklist. Ordered, because the layout numbers them visually. */
+  learningObjectives: z.array(z.string().trim().min(1).max(500)).max(30).optional(),
+  /** Zielgruppe, including the Vorkenntnisse sentence. Newlines are preserved. */
+  targetAudience: z.string().max(5000).nullable().optional(),
+  /** The image beside the hero and on the catalogue card. */
+  heroImageUrl: z.string().url().max(2000).nullable().optional(),
+  cmePoints: z.number().int().positive().max(100).nullable().optional(),
+  cmeCategory: z.string().max(50).nullable().optional(),
+  fortbildungsnummer: z.string().max(100).nullable().optional(),
+  /**
+   * The accreditation window from the Anerkennungsbescheid. ISO 8601, and
+   * `nullable` because a course may be authored before the Bescheid arrives.
+   */
+  validFrom: z.string().datetime().nullable().optional(),
+  validTo: z.string().datetime().nullable().optional(),
+
   requiredWatchPercent: percent.optional(),
   passThresholdPercent: percent.optional(),
   organizer: z.string().max(300).nullable().optional(),

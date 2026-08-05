@@ -456,3 +456,85 @@ async function submissionSnapshot(): Promise<unknown[]> {
   );
   return rows;
 }
+
+describe("course presentation is authorable (P13-01)", () => {
+  /**
+   * The gap this closes: every field the Zeplin layout draws — the title, the
+   * Lernziele checklist, the Zielgruppe block, the catalogue facets — was
+   * stored and rendered from the first day and settable only by the seed
+   * script. A customer could not change the title of their own course without
+   * a developer.
+   *
+   * The assertion that matters is the last one: the edit has to arrive at the
+   * *learner* endpoint, because a value the console can write and the widget
+   * cannot read is not authorable in any useful sense.
+   */
+  it("saves every presentation field", async () => {
+    const { status, body } = await asAdmin("PATCH", `/admin/courses/${courseSlug}`, {
+      title: "ADHS Akademie adult – überarbeitet",
+      description: "Eine neue Beschreibung.",
+      deliveryType: "live",
+      thema: ["ADHS", "Schlaf"],
+      altersgruppe: ["Erwachsene"],
+      learningObjectives: ["Sichere Diagnosestellung", "Evidenzbasierte Therapie"],
+      targetAudience: "Fachärzte für Psychiatrie.\nVorkenntnisse sind von Vorteil.",
+      heroImageUrl: "https://cdn.example.de/adhs.png",
+      cmePoints: 6,
+      cmeCategory: "D",
+      fortbildungsnummer: "FB-2026-01",
+      validFrom: "2026-01-01T00:00:00.000Z",
+      validTo: "2026-12-31T00:00:00.000Z",
+    });
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      title: "ADHS Akademie adult – überarbeitet",
+      deliveryType: "live",
+      thema: ["ADHS", "Schlaf"],
+      learningObjectives: ["Sichere Diagnosestellung", "Evidenzbasierte Therapie"],
+      cmePoints: 6,
+      heroImageUrl: "https://cdn.example.de/adhs.png",
+    });
+  });
+
+  it("keeps the newlines in Zielgruppe, which the layout renders as lines", async () => {
+    const { body } = await asAdmin("GET", `/admin/courses/${courseSlug}`);
+    expect(body.targetAudience).toContain("\n");
+  });
+
+  it("returns the accreditation window as an instant, not a date", async () => {
+    const { body } = await asAdmin("GET", `/admin/courses/${courseSlug}`);
+    expect(body.validFrom).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("leaves an absent field alone rather than clearing it", async () => {
+    // A PATCH that mentions only the title must not blank the Lernziele — the
+    // failure mode of a form that sends its whole state every time.
+    await asAdmin("PATCH", `/admin/courses/${courseSlug}`, { title: "Nur der Titel" });
+
+    const { body } = await asAdmin("GET", `/admin/courses/${courseSlug}`);
+    expect(body.title).toBe("Nur der Titel");
+    expect(body.learningObjectives).toHaveLength(2);
+  });
+
+  it("refuses a title that is only whitespace", async () => {
+    const { status } = await asAdmin("PATCH", `/admin/courses/${courseSlug}`, {
+      title: "   ",
+    });
+    expect(status).toBe(422);
+  });
+
+  it("reaches the learner-facing course endpoint", async () => {
+    // The point of the whole ticket. The widget reads this shape to draw the
+    // hero, the Lernziele and the Zielgruppe.
+    const { status, body } = await asAdmin("GET", `/courses/${courseSlug}`);
+
+    expect(status).toBe(200);
+    expect(body.title).toBe("Nur der Titel");
+    expect(body.learningObjectives).toEqual([
+      "Sichere Diagnosestellung",
+      "Evidenzbasierte Therapie",
+    ]);
+    expect(body.cmePoints).toBe(6);
+  });
+});

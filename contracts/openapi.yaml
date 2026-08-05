@@ -2571,6 +2571,16 @@ components:
         [
           slug,
           title,
+          description,
+          deliveryType,
+          thema,
+          altersgruppe,
+          learningObjectives,
+          targetAudience,
+          heroImageUrl,
+          fortbildungsnummer,
+          validFrom,
+          validTo,
           vnr,
           cmePoints,
           cmeCategory,
@@ -2584,6 +2594,32 @@ components:
       properties:
         slug: { type: string }
         title: { type: string }
+        description: { type: [string, "null"] }
+        deliveryType:
+          type: string
+          enum: [on_demand, live, praesenz]
+          description: Which catalogue tab the course appears under.
+        thema:
+          type: array
+          items: { type: string }
+          description: |
+            Filter facets, free text rather than a fixed taxonomy — the set
+            differs per customer and a shared enum would need migrating every
+            time somebody added one.
+        altersgruppe:
+          type: array
+          items: { type: string }
+        learningObjectives:
+          type: array
+          items: { type: string }
+          description: The Lernziele checklist, in the order the layout draws it.
+        targetAudience:
+          type: [string, "null"]
+          description: Zielgruppe, including the Vorkenntnisse sentence. Newlines preserved.
+        heroImageUrl: { type: [string, "null"] }
+        fortbildungsnummer: { type: [string, "null"] }
+        validFrom: { type: [string, "null"], format: date-time }
+        validTo: { type: [string, "null"], format: date-time }
         vnr: { type: [string, "null"] }
         cmePoints: { type: [integer, "null"] }
         cmeCategory: { type: [string, "null"] }
@@ -2644,6 +2680,28 @@ components:
         A PATCH: every field optional, an absent field means "leave alone".
         `null` clears a nullable text field.
       properties:
+        title: { type: string, minLength: 1, maxLength: 300 }
+        description: { type: [string, "null"], maxLength: 5000 }
+        deliveryType: { type: string, enum: [on_demand, live, praesenz] }
+        thema:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 100 }
+        altersgruppe:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 100 }
+        learningObjectives:
+          type: array
+          maxItems: 30
+          items: { type: string, minLength: 1, maxLength: 500 }
+        targetAudience: { type: [string, "null"], maxLength: 5000 }
+        heroImageUrl: { type: [string, "null"], format: uri, maxLength: 2000 }
+        cmePoints: { type: [integer, "null"], minimum: 1, maximum: 100 }
+        cmeCategory: { type: [string, "null"], maxLength: 50 }
+        fortbildungsnummer: { type: [string, "null"], maxLength: 100 }
+        validFrom: { type: [string, "null"], format: date-time }
+        validTo: { type: [string, "null"], format: date-time }
         requiredWatchPercent: { type: integer, minimum: 0, maximum: 100 }
         passThresholdPercent: { type: integer, minimum: 0, maximum: 100 }
         organizer: { type: [string, "null"], maxLength: 300 }

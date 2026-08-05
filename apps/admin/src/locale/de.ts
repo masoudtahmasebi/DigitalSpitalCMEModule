@@ -335,6 +335,36 @@ export const de = {
   },
 
   course: {
+    // Presentation — what a physician sees (P13-01).
+    presentation: "Inhalte & Darstellung",
+    presentationIntro:
+      "Diese Angaben erscheinen in der Fortbildungsübersicht und auf der Kursseite.",
+    title: "Titel der Fortbildung",
+    description: "Beschreibung",
+    descriptionHint:
+      "Erscheint auf der Kursseite unter „Beschreibung der Fortbildung“ und gekürzt auf der Übersichtskarte.",
+    heroImageUrl: "Titelbild (URL)",
+    heroImageHint: "Wird neben dem Titel und auf der Übersichtskarte angezeigt.",
+    deliveryType: "Format",
+    deliveryOnDemand: "On Demand",
+    deliveryLive: "Live",
+    deliveryPraesenz: "Präsenz",
+    thema: "Thema",
+    altersgruppe: "Altersgruppe",
+    onePerLine: "Ein Eintrag pro Zeile.",
+    onePerLineOrdered: "Ein Eintrag pro Zeile, in der gewünschten Reihenfolge.",
+    learningObjectives: "Lernziele",
+    targetAudience: "Zielgruppe",
+    targetAudienceHint:
+      "Inklusive Hinweis auf Vorkenntnisse. Zeilenumbrüche bleiben erhalten.",
+    cmePoints: "CME-Punkte",
+    cmePointsHint: "Laut Anerkennungsbescheid.",
+    cmeCategory: "Kategorie",
+    fortbildungsnummer: "Fortbildungsnummer",
+    validFrom: "Anerkennung gültig ab",
+    validTo: "Anerkennung gültig bis",
+    validityHint: "Aus dem Anerkennungsbescheid der Ärztekammer.",
+
     settings: "Einstellungen",
     compliance: "Nachweisregeln",
     certificate: "Teilnahmebescheinigung",

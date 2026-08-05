@@ -105,6 +105,7 @@ export class AdminService {
       return {
         slug: row.slug,
         title: row.title,
+        ...presentationOf(row),
         vnr: row.vnr,
         cmePoints: row.cmePoints,
         cmeCategory: row.cmeCategory,
@@ -127,6 +128,7 @@ export class AdminService {
     return {
       slug: row.slug,
       title: row.title,
+      ...presentationOf(row),
       vnr: row.vnr,
       cmePoints: row.cmePoints,
       cmeCategory: row.cmeCategory,
@@ -170,6 +172,32 @@ export class AdminService {
     }
 
     const patch: CoursePatch = {};
+
+    // Presentation — everything the learner-facing layout draws (P13-01).
+    assign(patch, "title", update.title);
+    assign(patch, "description", update.description);
+    assign(patch, "deliveryType", update.deliveryType);
+    assign(patch, "thema", update.thema);
+    assign(patch, "altersgruppe", update.altersgruppe);
+    assign(patch, "learningObjectives", update.learningObjectives);
+    assign(patch, "targetAudience", update.targetAudience);
+    assign(patch, "heroImageUrl", update.heroImageUrl);
+    assign(patch, "cmePoints", update.cmePoints);
+    assign(patch, "cmeCategory", update.cmeCategory);
+    assign(patch, "fortbildungsnummer", update.fortbildungsnummer);
+
+    // Dates arrive as ISO strings and are stored as `timestamptz`. Parsed here
+    // rather than in the repository, which has no business knowing the wire
+    // format, and `null` is passed through as "clear it" rather than becoming
+    // an Invalid Date.
+    if (update.validFrom !== undefined) {
+      patch.validFrom = update.validFrom === null ? null : new Date(update.validFrom);
+    }
+    if (update.validTo !== undefined) {
+      patch.validTo = update.validTo === null ? null : new Date(update.validTo);
+    }
+
+    // Accreditation and gating.
     assign(patch, "requiredWatchPercent", update.requiredWatchPercent);
     assign(patch, "passThresholdPercent", update.passThresholdPercent);
     assign(patch, "organizer", update.organizer);
@@ -655,4 +683,40 @@ function decodeImage(
   }
 
   return { buffer, mime: sniffed };
+}
+
+/**
+ * The presentation half of a course row, shared by the list and the detail
+ * projections (P13-01).
+ *
+ * One function rather than two copies: the list and the detail differ only in
+ * the accreditation fields, and a field added to one and forgotten in the other
+ * shows up as a form input that silently resets on save.
+ */
+function presentationOf(row: {
+  description: string | null;
+  deliveryType: "on_demand" | "live" | "praesenz";
+  thema: string[];
+  altersgruppe: string[];
+  learningObjectives: string[];
+  targetAudience: string | null;
+  heroImageUrl: string | null;
+  fortbildungsnummer: string | null;
+  validFrom: Date | null;
+  validTo: Date | null;
+}) {
+  return {
+    description: row.description,
+    deliveryType: row.deliveryType,
+    thema: row.thema,
+    altersgruppe: row.altersgruppe,
+    learningObjectives: row.learningObjectives,
+    targetAudience: row.targetAudience,
+    heroImageUrl: row.heroImageUrl,
+    fortbildungsnummer: row.fortbildungsnummer,
+    // ISO 8601 on the wire; `timestamptz` in the column. The console renders a
+    // date input from it, which needs a string it can slice.
+    validFrom: row.validFrom?.toISOString() ?? null,
+    validTo: row.validTo?.toISOString() ?? null,
+  };
 }

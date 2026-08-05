@@ -35,6 +35,17 @@ export interface AdminCourseRow {
   id: string;
   slug: string;
   title: string;
+  // Presentation — what the learner-facing layout draws (P13-01).
+  description: string | null;
+  deliveryType: "on_demand" | "live" | "praesenz";
+  thema: string[];
+  altersgruppe: string[];
+  learningObjectives: string[];
+  targetAudience: string | null;
+  heroImageUrl: string | null;
+  fortbildungsnummer: string | null;
+  validFrom: Date | null;
+  validTo: Date | null;
   vnr: string | null;
   cmePoints: number | null;
   cmeCategory: string | null;
@@ -154,6 +165,19 @@ export interface AdminRepositoryPort {
 }
 
 export interface CoursePatch {
+  title?: string;
+  description?: string | null;
+  deliveryType?: "on_demand" | "live" | "praesenz";
+  thema?: string[];
+  altersgruppe?: string[];
+  learningObjectives?: string[];
+  targetAudience?: string | null;
+  heroImageUrl?: string | null;
+  cmePoints?: number | null;
+  cmeCategory?: string | null;
+  fortbildungsnummer?: string | null;
+  validFrom?: Date | null;
+  validTo?: Date | null;
   requiredWatchPercent?: number;
   passThresholdPercent?: number;
   organizer?: string | null;
@@ -177,6 +201,16 @@ const COURSE_COLUMNS = {
   id: courses.id,
   slug: courses.slug,
   title: courses.title,
+  description: courses.description,
+  deliveryType: courses.deliveryType,
+  thema: courses.thema,
+  altersgruppe: courses.altersgruppe,
+  learningObjectives: courses.learningObjectives,
+  targetAudience: courses.targetAudience,
+  heroImageUrl: courses.heroImageUrl,
+  fortbildungsnummer: courses.fortbildungsnummer,
+  validFrom: courses.validFrom,
+  validTo: courses.validTo,
   vnr: courses.vnr,
   cmePoints: courses.cmePoints,
   cmeCategory: courses.cmeCategory,

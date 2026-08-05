@@ -133,7 +133,23 @@ function moduleDurationSec(module: ModuleSummary): number {
     .reduce((total, content) => total + (content.durationSec ?? 0), 0);
 }
 
-/** "Grundlagen · Epidemiologie · Diagnostik" — the chapter titles, in order. */
+/**
+ * The topic line under a module: "ADHS-Definition · Epidemiologie · Neurobiologie".
+ *
+ * `modules.subtitle` is the authored value and is what the layout draws — it is
+ * the module's *topics*, which are not the same as its chapter titles and are
+ * usually more numerous. This ignored it entirely and joined the chapter titles
+ * instead, so a course with one long chapter per module (which the MEDICE
+ * course is) showed "Kapitel 1 – Definition und Epidemiologie" where the design
+ * shows four topics. The value was authored, stored, carried by the API and
+ * dropped at the last step.
+ *
+ * The chapter-title join stays as the fallback, for a course whose author has
+ * not written a subtitle: some topic line is better than a blank space, and it
+ * is the same shape.
+ */
 function chapterTopics(module: ModuleSummary): string {
+  const subtitle = module.subtitle?.trim() ?? "";
+  if (subtitle !== "") return subtitle;
   return module.chapters.map((chapter) => chapter.title).join(" · ");
 }

@@ -45,6 +45,7 @@ import { de } from "./locale/de.js";
 import { Badge, Button, Notice, Spinner, Table } from "./components/ui.js";
 import { BrandingSettings } from "./components/BrandingSettings.js";
 import { CourseSettings } from "./components/CourseSettings.js";
+import { CoursePresentation } from "./components/CoursePresentation.js";
 import { Participants } from "./components/Participants.js";
 import { Organisation } from "./components/Organisation.js";
 import { NewCourse } from "./components/NewCourse.js";
@@ -162,10 +163,14 @@ function Shell(props: {
  * created course lands on — settings would open on a form asking for a VNR
  * before there is anything to accredit.
  */
-type CourseTab = "settings" | "structure" | "experts" | "evaluation" | "participants";
+type CourseTab =
+  "settings" | "presentation" | "structure" | "experts" | "evaluation" | "participants";
 
 const COURSE_TABS: ReadonlyArray<readonly [CourseTab, string]> = [
   ["structure", de.structure.title],
+  // Before `settings`: editing a title is the routine act, and the settings tab
+  // holds the controls that can void an accreditation.
+  ["presentation", de.course.presentation],
   ["settings", de.course.settings],
   ["experts", de.experts.title],
   ["evaluation", de.evaluation.title],
@@ -577,6 +582,17 @@ function CourseTabContent(props: {
 
     case "evaluation":
       return <EvaluationEditor client={client} courseSlug={slug} />;
+
+    case "presentation":
+      return props.course === undefined ? (
+        <Spinner label={de.loading} />
+      ) : (
+        <CoursePresentation
+          client={client}
+          course={props.course}
+          onSaved={props.onCourseSaved}
+        />
+      );
 
     case "settings":
       return props.course === undefined ? (

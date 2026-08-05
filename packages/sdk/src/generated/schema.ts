@@ -1614,6 +1614,29 @@ export interface components {
         AdminCourseSummary: {
             slug: string;
             title: string;
+            description: string | null;
+            /**
+             * @description Which catalogue tab the course appears under.
+             * @enum {string}
+             */
+            deliveryType: "on_demand" | "live" | "praesenz";
+            /**
+             * @description Filter facets, free text rather than a fixed taxonomy — the set
+             *     differs per customer and a shared enum would need migrating every
+             *     time somebody added one.
+             */
+            thema: string[];
+            altersgruppe: string[];
+            /** @description The Lernziele checklist, in the order the layout draws it. */
+            learningObjectives: string[];
+            /** @description Zielgruppe, including the Vorkenntnisse sentence. Newlines preserved. */
+            targetAudience: string | null;
+            heroImageUrl: string | null;
+            fortbildungsnummer: string | null;
+            /** Format: date-time */
+            validFrom: string | null;
+            /** Format: date-time */
+            validTo: string | null;
             vnr: string | null;
             cmePoints: number | null;
             cmeCategory: string | null;
@@ -1652,6 +1675,23 @@ export interface components {
          *     `null` clears a nullable text field.
          */
         AdminCourseUpdate: {
+            title?: string;
+            description?: string | null;
+            /** @enum {string} */
+            deliveryType?: "on_demand" | "live" | "praesenz";
+            thema?: string[];
+            altersgruppe?: string[];
+            learningObjectives?: string[];
+            targetAudience?: string | null;
+            /** Format: uri */
+            heroImageUrl?: string | null;
+            cmePoints?: number | null;
+            cmeCategory?: string | null;
+            fortbildungsnummer?: string | null;
+            /** Format: date-time */
+            validFrom?: string | null;
+            /** Format: date-time */
+            validTo?: string | null;
             requiredWatchPercent?: number;
             passThresholdPercent?: number;
             organizer?: string | null;

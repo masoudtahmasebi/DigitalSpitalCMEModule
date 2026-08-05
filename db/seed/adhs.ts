@@ -73,6 +73,40 @@ interface ModuleSeed {
  * The five modules from the layout's Inhalte list, with the durations shown
  * there. Placeholder video URLs — real media is supplied by MEDICE.
  */
+
+/**
+ * The Experten/Referenten tab.
+ *
+ * Placeholder people, deliberately: the real panel is MEDICE's to supply and a
+ * seed that invented plausible names for a course carrying a real VNR would be
+ * a document nobody could tell apart from the truth. What the seed is for is
+ * making the tab render its layout — a role label, a name, an institution and a
+ * biography — so the shape is verifiable before the content arrives.
+ */
+interface ExpertSeed {
+  readonly roleLabel: string;
+  readonly name: string;
+  readonly institution: string;
+  readonly biography: string;
+}
+
+const EXPERTS: readonly ExpertSeed[] = [
+  {
+    roleLabel: "Wissenschaftliche Leitung",
+    name: "Prof. Dr. med. Muster-Leitung",
+    institution: "Universitätsklinikum Heidelberg",
+    biography:
+      "Platzhalter. Die wissenschaftliche Leitung dieser Fortbildung wird von MEDICE benannt und ist vor Veröffentlichung zu ersetzen.",
+  },
+  {
+    roleLabel: "Referent/Referentin",
+    name: "Dr. med. Muster-Referenz",
+    institution: "Charité – Universitätsmedizin Berlin",
+    biography:
+      "Platzhalter. Referentinnen und Referenten werden von MEDICE benannt und sind vor Veröffentlichung zu ersetzen.",
+  },
+];
+
 const MODULES: readonly ModuleSeed[] = [
   {
     title: "Modul 1 – Grundlagen",
@@ -296,6 +330,26 @@ async function main(): Promise<void> {
       `DELETE FROM modules WHERE course_id = $1`,
     ]) {
       await pool.query(statement, [courseId]);
+    }
+
+    // Replaced wholesale like the modules: a seed that appended would add a
+    // second copy of every expert on each run.
+    await pool.query("DELETE FROM course_experts WHERE course_id = $1", [courseId]);
+    for (const [ordinal, expert] of EXPERTS.entries()) {
+      await pool.query(
+        `INSERT INTO course_experts
+           (customer_id, course_id, ordinal, role_label, name, institution, biography)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          customerId,
+          courseId,
+          ordinal,
+          expert.roleLabel,
+          expert.name,
+          expert.institution,
+          expert.biography,
+        ],
+      );
     }
 
     let quizContentId: string | undefined;
