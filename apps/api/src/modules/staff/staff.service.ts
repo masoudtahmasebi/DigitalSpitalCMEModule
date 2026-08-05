@@ -27,9 +27,11 @@ import {
   lockoutStatus,
   resolveTenantContext,
   secondFactorStep,
+  canGrant,
   sessionStatus,
   verifyTotp,
   type AppRole,
+  type StaffScope,
   type RoleGrant,
   type StaffRole,
 } from "@ds/domain";
@@ -45,6 +47,7 @@ import { generateTotpSecret, otpauthUri, totpCode } from "./totp.js";
 import type { SecretCipher } from "../../shared/secret-cipher.js";
 import type {
   StaffAccount,
+  StaffAccountSummary,
   StaffGrant,
   StaffRepositoryPort,
 } from "./staff.repository.js";
@@ -272,6 +275,187 @@ export class StaffService {
    * the token the server hands you for not having passed it. See migration
    * 0022.
    */
+
+  // -------------------------------------------------------------------------
+  // Operator accounts (P12-05)
+  // -------------------------------------------------------------------------
+
+  /**
+   * The accounts this operator may see.
+   *
+   * Narrowed by `canGrant`: an operator who may not grant to a scope has no
+   * business reading the accounts in it either. A `customer_admin` therefore
+   * sees their own customer's operators and not another customer's, and not
+   * the super administrators above them.
+   *
+   * The narrowing is the *authorisation* here, because `admin_users` is not
+   * tenant-scoped — a super admin belongs to no customer, so there is no RLS
+   * policy that could express this.
+   */
+  async listAccounts(actor: StaffScope): Promise<readonly StaffAccountSummary[]> {
+    const accounts = await this.deps.repository.listAccounts();
+    return accounts.filter((account) =>
+      account.grants.some((grant) => canGrant(actor, scopeOf(grant)).ok),
+    );
+  }
+
+  /**
+   * Invite somebody, returning the single-use token.
+   *
+   * The token is returned to the caller rather than emailed. That is a
+   * deliberate stopping point, not an oversight: sending it needs a sender
+   * address per customer and a template, and a half-built mail path that
+   * silently drops an invitation is worse than handing the operator a link to
+   * pass on themselves. The token is single-use and the account has no password
+   * until it is redeemed.
+   */
+  async inviteAccount(
+    input: {
+      email: string;
+      displayName: string;
+      role: StaffRole;
+      customerId: string | null;
+      departmentId: string | null;
+    },
+    actor: StaffScope & { readonly id: string },
+  ): Promise<{ kind: "invited"; token: string } | { kind: "refused"; reason: string }> {
+    const target: StaffScope = {
+      role: input.role,
+      customerId: input.customerId,
+      departmentId: input.departmentId,
+    };
+
+    // The whole authorisation, in one pure call: capability, then rank, then
+    // self-escalation, then scope (P12-01b).
+    const check = canGrant(actor, target);
+    if (!check.ok) return { kind: "refused", reason: check.reason };
+
+    const adminUserId = await this.deps.repository.createAccount({
+      email: input.email,
+      displayName: input.displayName,
+    });
+    await this.deps.repository.replaceGrants(adminUserId, [
+      {
+        role: input.role,
+        customerId: input.customerId,
+        departmentId: input.departmentId,
+      },
+    ]);
+
+    const token = generateToken();
+    await this.deps.repository.issueCredentialToken({
+      adminUserId,
+      kind: "invite",
+      tokenHash: hashToken(token),
+      issuedBy: actor.id,
+    });
+
+    await this.deps.audit.recordSystem({
+      actor: { identity: "staff", id: actor.id },
+      action: "staff.invited",
+      subject: adminUserId,
+      // The role and scope, never the address — it is personal data and the
+      // account id is enough to find the row.
+      detail: { role: input.role, scoped: input.customerId !== null },
+    });
+
+    return { kind: "invited", token };
+  }
+
+  /**
+   * Change what an account may reach.
+   *
+   * Checked twice: the actor must be able to grant the *new* scope, and must
+   * already have been able to grant the *old* one. Only checking the new scope
+   * would let a customer administrator narrow a super administrator into their
+   * own customer and then manage them.
+   */
+  async setScope(
+    adminUserId: string,
+    target: StaffScope,
+    actor: StaffScope & { readonly id: string },
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const accounts = await this.deps.repository.listAccounts();
+    const account = accounts.find((candidate) => candidate.id === adminUserId);
+    if (account === undefined) return { ok: false, reason: "not_found" };
+
+    const isSelf = account.id === actor.id;
+    for (const existing of account.grants) {
+      const check = canGrant(actor, scopeOf(existing), { targetIsSelf: isSelf });
+      if (!check.ok) return { ok: false, reason: check.reason };
+    }
+
+    const check = canGrant(actor, target, { targetIsSelf: isSelf });
+    if (!check.ok) return { ok: false, reason: check.reason };
+
+    await this.deps.repository.replaceGrants(adminUserId, [
+      {
+        role: target.role,
+        customerId: target.customerId,
+        departmentId: target.departmentId,
+      },
+    ]);
+    await this.deps.audit.recordSystem({
+      actor: { identity: "staff", id: actor.id },
+      action: "staff.scope_changed",
+      subject: adminUserId,
+      detail: { role: target.role },
+    });
+    return { ok: true };
+  }
+
+  /**
+   * Disable an account, or re-enable it.
+   *
+   * Disabling revokes every session in the same statement — "disabled but still
+   * signed in somewhere" is the state a two-step version leaves behind when the
+   * second step fails.
+   */
+  async setAccountDisabled(
+    adminUserId: string,
+    disabled: boolean,
+    actor: StaffScope & { readonly id: string },
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    if (adminUserId === actor.id) {
+      // Locking yourself out of the console is not a thing to allow by
+      // accident, and there is no legitimate reason to do it deliberately.
+      return { ok: false, reason: "cannot_disable_self" };
+    }
+
+    const accounts = await this.deps.repository.listAccounts();
+    const account = accounts.find((candidate) => candidate.id === adminUserId);
+    if (account === undefined) return { ok: false, reason: "not_found" };
+
+    for (const existing of account.grants) {
+      const check = canGrant(actor, scopeOf(existing));
+      if (!check.ok) return { ok: false, reason: check.reason };
+    }
+
+    await this.deps.repository.setDisabled(
+      adminUserId,
+      disabled ? this.deps.now() : null,
+    );
+    await this.deps.audit.recordSystem({
+      actor: { identity: "staff", id: actor.id },
+      action: disabled ? "staff.disabled" : "staff.enabled",
+      subject: adminUserId,
+    });
+    return { ok: true };
+  }
+
+  /** Sign an account out of every browser it is signed in on. */
+  async signOutEverywhere(
+    adminUserId: string,
+    actor: StaffScope & { readonly id: string },
+  ): Promise<void> {
+    await this.deps.repository.revokeAllSessions(adminUserId, this.deps.now());
+    await this.deps.audit.recordSystem({
+      actor: { identity: "staff", id: actor.id },
+      action: "staff.sessions_revoked",
+      subject: adminUserId,
+    });
+  }
+
   private async issueChallenge(
     account: StaffAccount,
     input: { userAgent: string | null; ip: string | null },
@@ -570,4 +754,13 @@ export function staffTenantContext(
     departmentId: grant.departmentId,
   }));
   return resolveTenantContext(asRoleGrants, customerId);
+}
+
+/** A grant as the pure rules see it. */
+function scopeOf(grant: StaffGrant): StaffScope {
+  return {
+    role: grant.role,
+    customerId: grant.customerId,
+    departmentId: grant.departmentId,
+  };
 }

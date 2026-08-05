@@ -19,6 +19,7 @@ import { AuditService } from "../../audit/audit.service.js";
 import { createSecretCipher } from "../../shared/secret-cipher.js";
 import { StaffRepository } from "./staff.repository.js";
 import { StaffService } from "./staff.service.js";
+import { StaffAccountsController } from "./staff-accounts.controller.js";
 import {
   StaffAuthController,
   STAFF_AUTH_CONFIG,
@@ -26,7 +27,7 @@ import {
 } from "./staff-auth.controller.js";
 
 @Module({
-  controllers: [StaffAuthController],
+  controllers: [StaffAuthController, StaffAccountsController],
   providers: [
     {
       provide: StaffRepository,

@@ -132,7 +132,7 @@ beforeAll(async () => {
   );
 
   app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    logger: ["error"],
+    logger: false,
     bodyParser: false,
   });
   await configureApp(app, loadConfig());

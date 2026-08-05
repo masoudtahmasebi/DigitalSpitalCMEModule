@@ -545,3 +545,102 @@ describe("the second factor cannot be stepped around", () => {
     expect(stored?.includes(secret)).toBe(false);
   });
 });
+
+describe("operator accounts", () => {
+  /**
+   * The check that matters. A `customer_admin` legitimately manages operators
+   * *in their own customer*; `canGrant` is what keeps them away from a super
+   * administrator, whose account is above them and whose scope they cannot
+   * reach. Capability alone would not — both roles hold `staff_user`.
+   */
+  it("lets a super admin invite a customer administrator", async () => {
+    const { status, body } = await asStaff(superSession, "POST", "/admin/staff", {
+      email: `invited-${RUN}@ds.test`,
+      displayName: "Eingeladene Person",
+      role: "customer_admin",
+      customerId: existingCustomerId,
+      departmentId: null,
+    });
+
+    expect(status).toBe(201);
+    expect(body.token).toEqual(expect.any(String));
+  });
+
+  it("creates the account without a password, so the invitation is not a credential", async () => {
+    const { rows } = await seedPool.query<{ password_hash: string | null }>(
+      "SELECT password_hash FROM admin_users WHERE email = $1",
+      [`invited-${RUN}@ds.test`],
+    );
+    expect(rows[0]?.password_hash).toBeNull();
+  });
+
+  it("refuses a customer administrator inviting a super administrator", async () => {
+    // Upward. `canGrant` refuses on rank before it ever looks at scope.
+    const { status } = await asStaff(tenantSession, "POST", "/admin/staff", {
+      email: `eskalation-${RUN}@ds.test`,
+      displayName: "Zu weit",
+      role: "super_admin",
+      customerId: null,
+      departmentId: null,
+    });
+
+    expect(status).toBe(403);
+  });
+
+  it("refuses a customer administrator disabling a super administrator", async () => {
+    const { rows } = await seedPool.query<{ id: string }>(
+      `SELECT u.id FROM admin_users u
+         JOIN admin_user_roles r ON r.admin_user_id = u.id
+        WHERE r.role = 'super_admin' LIMIT 1`,
+    );
+    const superAdminId = rows[0]?.id ?? "";
+
+    const { status } = await asStaff(
+      tenantSession,
+      "POST",
+      `/admin/staff/${superAdminId}/disabled`,
+      { disabled: true },
+    );
+
+    expect(status).toBe(403);
+  });
+
+  it("does not show a customer administrator the accounts above them", async () => {
+    const { status, body } = await asStaff(tenantSession, "GET", "/admin/staff");
+
+    expect(status).toBe(200);
+    const roles = body.flatMap((account: { grants: { role: string }[] }) =>
+      account.grants.map((grant) => grant.role),
+    );
+    expect(roles).not.toContain("super_admin");
+  });
+
+  it("refuses to let an operator disable themselves", async () => {
+    // Not a permission question — a footgun. There is no legitimate reason to
+    // lock yourself out of the console.
+    const { body: profile } = await asStaff(superSession, "GET", "/admin/auth/session");
+    const { status } = await asStaff(
+      superSession,
+      "POST",
+      `/admin/staff/${profile.profile.id}/disabled`,
+      { disabled: true },
+    );
+
+    expect(status).toBe(403);
+  });
+
+  it("signs an account out of every browser at once", async () => {
+    const { rows } = await seedPool.query<{ id: string }>(
+      "SELECT id FROM admin_users WHERE email = $1",
+      [`invited-${RUN}@ds.test`],
+    );
+    const invitedId = rows[0]?.id ?? "";
+
+    const { status } = await asStaff(
+      superSession,
+      "POST",
+      `/admin/staff/${invitedId}/sign-out-everywhere`,
+    );
+    expect(status).toBe(204);
+  });
+});

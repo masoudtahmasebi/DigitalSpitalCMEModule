@@ -56,6 +56,16 @@ export interface CredentialTokenRow {
   readonly revokedAt: Date | null;
 }
 
+export interface StaffAccountSummary {
+  readonly id: string;
+  readonly email: string;
+  readonly displayName: string;
+  readonly disabledAt: Date | null;
+  readonly lastLoginAt: Date | null;
+  readonly totpEnrolled: boolean;
+  readonly grants: readonly StaffGrant[];
+}
+
 export interface StaffRepositoryPort {
   findByEmail(email: string): Promise<StaffAccount | undefined>;
   findById(id: string): Promise<StaffAccount | undefined>;
@@ -86,6 +96,24 @@ export interface StaffRepositoryPort {
   /** Marks the staged secret confirmed, and records the counter it was confirmed with. */
   completeTotpEnrolment(adminUserId: string, at: Date, counter: number): Promise<void>;
   recordTotpCounter(adminUserId: string, counter: number): Promise<void>;
+
+  listAccounts(): Promise<readonly StaffAccountSummary[]>;
+  createAccount(input: { email: string; displayName: string }): Promise<string>;
+  issueCredentialToken(input: {
+    adminUserId: string;
+    kind: "invite" | "reset";
+    tokenHash: Buffer;
+    issuedBy: string;
+  }): Promise<void>;
+  replaceGrants(
+    adminUserId: string,
+    grants: readonly {
+      role: StaffRole;
+      customerId: string | null;
+      departmentId: string | null;
+    }[],
+  ): Promise<void>;
+  setDisabled(adminUserId: string, at: Date | null): Promise<boolean>;
 
   findCredentialToken(tokenHash: Buffer): Promise<CredentialTokenRow | undefined>;
   acceptCredentialToken(id: string, at: Date): Promise<void>;
@@ -337,6 +365,156 @@ export class StaffRepository implements StaffRepositoryPort {
       `UPDATE admin_sessions SET revoked_at = $2 WHERE admin_user_id = $1 AND revoked_at IS NULL`,
       [adminUserId, at],
     );
+  }
+
+  /**
+   * Every operator account, with its grants.
+   *
+   * `admin_users` is not tenant-scoped — a super admin belongs to no customer —
+   * so this is not an RLS query and the *authorisation* is entirely the
+   * application's: `StaffService.listAccounts` narrows the result to what the
+   * caller may see before it is returned.
+   */
+  async listAccounts(): Promise<readonly StaffAccountSummary[]> {
+    const { rows } = await this.pool.query<{
+      id: string;
+      email: string;
+      display_name: string;
+      disabled_at: Date | null;
+      last_login_at: Date | null;
+      totp_enrolled_at: Date | null;
+    }>(
+      `SELECT id, email, display_name, disabled_at, last_login_at, totp_enrolled_at
+         FROM admin_users ORDER BY display_name`,
+    );
+
+    const grants = await this.pool.query<{
+      admin_user_id: string;
+      role: StaffRole;
+      customer_id: string | null;
+      department_id: string | null;
+    }>("SELECT admin_user_id, role, customer_id, department_id FROM admin_user_roles");
+
+    return rows.map((row) => ({
+      id: row.id,
+      email: row.email,
+      displayName: row.display_name,
+      disabledAt: row.disabled_at,
+      lastLoginAt: row.last_login_at,
+      // A boolean, not the timestamp: when somebody enrolled their
+      // authenticator is nobody's business but theirs.
+      totpEnrolled: row.totp_enrolled_at !== null,
+      grants: grants.rows
+        .filter((grant) => grant.admin_user_id === row.id)
+        .map((grant) => ({
+          role: grant.role,
+          customerId: grant.customer_id,
+          departmentId: grant.department_id,
+        })),
+    }));
+  }
+
+  /**
+   * Create an account with **no password**.
+   *
+   * `password_hash` stays null until an invitation is redeemed, which is what
+   * makes an un-redeemed invitation harmless: there is no credential to guess,
+   * and `login` refuses the account because `verifyPassword(null, …)` burns a
+   * decoy and returns false.
+   */
+  async createAccount(input: { email: string; displayName: string }): Promise<string> {
+    const { rows } = await this.pool.query<{ id: string }>(
+      `INSERT INTO admin_users (email, display_name) VALUES ($1, $2) RETURNING id`,
+      [input.email, input.displayName],
+    );
+    const id = rows[0]?.id;
+    if (id === undefined) throw new Error("admin_users insert returned no row");
+    return id;
+  }
+
+  async issueCredentialToken(input: {
+    adminUserId: string;
+    kind: "invite" | "reset";
+    tokenHash: Buffer;
+    issuedBy: string;
+  }): Promise<void> {
+    // Any outstanding token of the same kind is revoked first. Two live
+    // invitations for one account means the older one — possibly forwarded,
+    // possibly in a mailbox somebody else can read — still works.
+    await this.pool.query(
+      `UPDATE admin_credential_tokens SET revoked_at = now()
+        WHERE admin_user_id = $1 AND kind = $2 AND accepted_at IS NULL AND revoked_at IS NULL`,
+      [input.adminUserId, input.kind],
+    );
+    await this.pool.query(
+      `INSERT INTO admin_credential_tokens (admin_user_id, kind, token_hash, issued_by)
+       VALUES ($1, $2, $3, $4)`,
+      [input.adminUserId, input.kind, input.tokenHash, input.issuedBy],
+    );
+  }
+
+  /**
+   * Replace an account's grants wholesale, in one transaction.
+   *
+   * Delete-then-insert rather than a diff: a diff has an ordering in which the
+   * account briefly holds neither the old grant nor the new one, and a request
+   * arriving in that window would be refused for reasons nobody could
+   * reconstruct afterwards.
+   */
+  async replaceGrants(
+    adminUserId: string,
+    grants: readonly {
+      role: StaffRole;
+      customerId: string | null;
+      departmentId: string | null;
+    }[],
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("DELETE FROM admin_user_roles WHERE admin_user_id = $1", [
+        adminUserId,
+      ]);
+      for (const grant of grants) {
+        await client.query(
+          `INSERT INTO admin_user_roles (admin_user_id, role, customer_id, department_id)
+           VALUES ($1, $2, $3, $4)`,
+          [adminUserId, grant.role, grant.customerId, grant.departmentId],
+        );
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Disable or re-enable an account, revoking its sessions in the same
+   * statement when disabling.
+   *
+   * One statement, because "disabled but still signed in somewhere" is the
+   * state a two-step version leaves behind if the second step fails.
+   */
+  async setDisabled(adminUserId: string, at: Date | null): Promise<boolean> {
+    const { rowCount } = await this.pool.query(
+      `WITH updated AS (
+         UPDATE admin_users SET disabled_at = $2, updated_at = now()
+          WHERE id = $1 RETURNING id
+       )
+       UPDATE admin_sessions SET revoked_at = COALESCE($2, revoked_at)
+        WHERE admin_user_id = (SELECT id FROM updated) AND revoked_at IS NULL`,
+      [adminUserId, at],
+    );
+    // The session update may legitimately touch zero rows (nobody signed in),
+    // so success is decided by whether the account exists.
+    const { rows } = await this.pool.query("SELECT 1 FROM admin_users WHERE id = $1", [
+      adminUserId,
+    ]);
+    void rowCount;
+    return rows.length > 0;
   }
 
   async findCredentialToken(tokenHash: Buffer): Promise<CredentialTokenRow | undefined> {
