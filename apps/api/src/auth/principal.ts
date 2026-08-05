@@ -20,7 +20,23 @@ import type { AppRole } from "@ds/domain";
 
 export interface Principal {
   readonly userId: string;
-  readonly keycloakSub: string;
+  /**
+   * Which population `userId` names (ADR-0012).
+   *
+   * `userId` is a uuid from one of two disjoint tables — `users` for learners,
+   * `admin_users` for operators — and nothing about the value says which. Every
+   * audit entry needs the answer, so it is carried rather than inferred.
+   */
+  readonly identity: "learner" | "staff";
+  /**
+   * The identity provider's own subject claim.
+   *
+   * Called `keycloakSub` until P12-02, which was wrong in two directions: the
+   * learner plane is no longer necessarily Keycloak (see `IdentityProvider`),
+   * and the staff plane never was — it was filling the field with a synthesised
+   * `staff:<uuid>` string to satisfy the type.
+   */
+  readonly subject: string;
   readonly email?: string;
   readonly firstName?: string;
   readonly lastName?: string;

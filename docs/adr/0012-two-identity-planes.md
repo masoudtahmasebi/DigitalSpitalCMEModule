@@ -85,6 +85,19 @@ read the same fields as before — but a record of _which plane_ authenticated i
 what lets the EIV audit log say whether a submission was triggered by a
 physician or by an operator.
 
+That record is a stored column, `audit_log.actor_identity` (migration 0020), and
+not a lookup against the two tables. Both populations are erasable — learners by
+`erase_subject`, operators under the same subject-rights obligation — so a
+lookup performed years later answers "neither", which is the one answer that is
+certainly wrong. An append-only log has to be readable without the system that
+produced it.
+
+In application code the pair is a single discriminated union, `AuditActor`, so
+an id without a population and a population without an id are both
+unrepresentable; `audit_log_actor_identity_agrees` enforces the same rule at the
+database. The duplication is deliberate — one of the two catches the mistake
+before it is written, the other catches it if the first is ever bypassed.
+
 ## Consequences
 
 **Good.**

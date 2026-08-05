@@ -17,6 +17,8 @@ export interface ProjectBinding {
   readonly customerId: string;
   readonly keycloakIssuer: string;
   readonly keycloakAudience: string;
+  /** Which `IdentityProvider` verifies this project's learner tokens. */
+  readonly identityProvider: string;
 }
 
 export interface ProjectBindingRepositoryPort {
@@ -28,6 +30,7 @@ interface BindingRow {
   customer_id: string;
   keycloak_issuer: string | null;
   keycloak_audience: string | null;
+  identity_provider: string;
 }
 
 export class ProjectBindingRepository implements ProjectBindingRepositoryPort {
@@ -54,6 +57,7 @@ export class ProjectBindingRepository implements ProjectBindingRepositoryPort {
       customerId: row.customer_id,
       keycloakIssuer: row.keycloak_issuer,
       keycloakAudience: row.keycloak_audience,
+      identityProvider: row.identity_provider,
     };
   }
 }

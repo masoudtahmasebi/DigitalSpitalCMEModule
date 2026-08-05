@@ -145,6 +145,8 @@ export interface AdminRepositoryPort {
   audit(entry: {
     customerId: string;
     actorId: string;
+    /** Which population `actorId` names (ADR-0012). Never `system` here. */
+    actorIdentity: "learner" | "staff";
     action: string;
     subject: string;
     detail: Record<string, unknown>;
@@ -411,6 +413,11 @@ export class AdminRepository implements AdminRepositoryPort {
   async audit(entry: {
     customerId: string;
     actorId: string;
+    /**
+     * Which population `actorId` names (ADR-0012). Never `system` here: this
+     * path only runs for a request that already has a principal.
+     */
+    actorIdentity: "learner" | "staff";
     action: string;
     subject: string;
     detail: Record<string, unknown>;

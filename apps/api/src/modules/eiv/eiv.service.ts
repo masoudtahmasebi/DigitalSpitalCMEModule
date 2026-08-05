@@ -20,7 +20,7 @@
 import { EivError, EIV_PASSWORD_KEY, type EivFailureKind } from "@ds/eiv-client";
 import type { AccreditationReporter } from "@ds/plugin-api";
 import { planEivAttempt, type EivAttemptFailure } from "@ds/domain";
-import type { AuditServicePort } from "../../audit/audit.service.js";
+import { SYSTEM_ACTOR, type AuditServicePort } from "../../audit/audit.service.js";
 import type {
   ClaimedSubmission,
   DueSubmission,
@@ -178,6 +178,10 @@ export class EivService {
       });
 
       await this.audit.recordForCustomer(row.customerId, {
+        // The worker drained the queue; no human pressed anything for this
+        // attempt. When P12-05 adds an operator-triggered resubmit, that path
+        // passes a staff actor — the union makes forgetting a compile error.
+        actor: SYSTEM_ACTOR,
         action: "eiv.submitted",
         subject: row.enrolmentId,
         // Reference and attempt only. No EFN, no VNR password, no payload.
@@ -226,6 +230,7 @@ export class EivService {
     });
 
     await this.audit.recordForCustomer(row.customerId, {
+      actor: SYSTEM_ACTOR,
       action: "eiv.attempt_failed",
       subject: row.enrolmentId,
       detail: { attemptCount, failure },
@@ -259,6 +264,7 @@ export class EivService {
     });
 
     await this.audit.recordForCustomer(row.customerId, {
+      actor: SYSTEM_ACTOR,
       action: "eiv.abandoned",
       subject: row.enrolmentId,
       detail: { reason, attemptCount, windowClosed },

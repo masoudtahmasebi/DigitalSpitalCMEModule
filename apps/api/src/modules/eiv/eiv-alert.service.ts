@@ -45,7 +45,7 @@
  */
 
 import { dueAlerts, type EivAlert, type EivAlertLevel } from "@ds/domain";
-import type { AuditServicePort } from "../../audit/audit.service.js";
+import { SYSTEM_ACTOR, type AuditServicePort } from "../../audit/audit.service.js";
 
 /** The action recorded once per submission per level. */
 export const EIV_ALERT_ACTION = "eiv.deadline_alert";
@@ -116,6 +116,7 @@ export class EivAlertService {
       // alert is a nuisance; a *missing* audit row would let the same level
       // fire on every sweep for the rest of the window.
       await this.audit.recordForCustomer(submission.customerId, {
+        actor: SYSTEM_ACTOR,
         action: EIV_ALERT_ACTION,
         subject: alert.enrolmentId,
         detail: {

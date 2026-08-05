@@ -387,7 +387,11 @@ export class AuthoringController {
 }
 
 function context(principal: Principal) {
-  return { customerId: principal.customerId, userId: principal.userId };
+  return {
+    customerId: principal.customerId,
+    userId: principal.userId,
+    identity: principal.identity,
+  };
 }
 
 /**

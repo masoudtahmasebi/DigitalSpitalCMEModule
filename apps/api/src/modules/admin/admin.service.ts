@@ -77,6 +77,11 @@ export const ACCREDITED_MIN_PASS_PERCENT = 70;
 export interface AdminContext {
   readonly customerId: string;
   readonly userId: string;
+  /**
+   * Which population `userId` names (ADR-0012). Carried so every audit row this
+   * service writes says whether a physician or an operator did it.
+   */
+  readonly identity: "learner" | "staff";
 }
 
 export class AdminService {
@@ -185,6 +190,7 @@ export class AdminService {
     await this.repository.audit({
       customerId: actor.customerId,
       actorId: actor.userId,
+      actorIdentity: actor.identity,
       action: "admin.course.update",
       subject: row.id,
       detail: {
@@ -251,6 +257,7 @@ export class AdminService {
     await this.repository.audit({
       customerId: actor.customerId,
       actorId: actor.userId,
+      actorIdentity: actor.identity,
       action: "admin.course.certificate_assets",
       subject: row.id,
       detail: {
@@ -336,6 +343,7 @@ export class AdminService {
     await this.repository.audit({
       customerId: actor.customerId,
       actorId: actor.userId,
+      actorIdentity: actor.identity,
       action: "admin.project.font.set",
       subject: projectSlug,
       // Size and format, never the file. An audit row is not a blob store.
@@ -361,6 +369,7 @@ export class AdminService {
     await this.repository.audit({
       customerId: actor.customerId,
       actorId: actor.userId,
+      actorIdentity: actor.identity,
       action: "admin.project.font.clear",
       subject: projectSlug,
       detail: {},
@@ -448,6 +457,7 @@ export class AdminService {
     await this.repository.audit({
       customerId: actor.customerId,
       actorId: actor.userId,
+      actorIdentity: actor.identity,
       action: "admin.participants.export",
       subject: course.id,
       detail: { format: "csv", rowCount },

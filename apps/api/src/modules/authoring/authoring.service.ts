@@ -70,6 +70,11 @@ import type {
 export interface AuthorContext {
   readonly customerId: string;
   readonly userId: string;
+  /**
+   * Which population `userId` names (ADR-0012). Carried so every audit row this
+   * service writes says whether a physician or an operator did it.
+   */
+  readonly identity: "learner" | "staff";
 }
 
 export class AuthoringService {
@@ -739,6 +744,7 @@ export class AuthoringService {
     await this.repository.audit({
       customerId: actor.customerId,
       actorId: actor.userId,
+      actorIdentity: actor.identity,
       action,
       subject,
       detail,

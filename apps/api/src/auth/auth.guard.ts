@@ -32,7 +32,7 @@ import { Injectable, type CanActivate, type ExecutionContext } from "@nestjs/com
 import type { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { resolveTenantContext } from "@ds/domain";
-import type { AuditServicePort } from "../audit/audit.service.js";
+import { SYSTEM_ACTOR, type AuditServicePort } from "../audit/audit.service.js";
 import type { UserService } from "../modules/users/user.service.js";
 import type { ProjectBindingRepositoryPort } from "../modules/projects/project-binding.repository.js";
 import { AppError } from "../shared/problem-details.js";
@@ -40,14 +40,17 @@ import { IS_PUBLIC_KEY } from "./public.decorator.js";
 import { authenticateStaff, CSRF_HEADER } from "./staff-session.js";
 import type { StaffService } from "../modules/staff/staff.service.js";
 import { staffTenantContext } from "../modules/staff/staff.service.js";
-import { TokenInvalidError, verifyToken } from "./token-verifier.js";
-import type { JwksRegistry } from "./jwks-registry.js";
+import { TokenInvalidError } from "./token-verifier.js";
+import {
+  IdentityProviderRegistry,
+  UnknownIdentityProviderError,
+} from "./identity-provider.js";
 
 const PROJECT_HEADER = "x-ds-project";
 
 export interface AuthGuardDeps {
   readonly reflector: Reflector;
-  readonly jwksRegistry: JwksRegistry;
+  readonly identityProviders: IdentityProviderRegistry;
   readonly projectBindings: ProjectBindingRepositoryPort;
   readonly userService: UserService;
   readonly audit: AuditServicePort;
@@ -98,24 +101,32 @@ export class AuthGuard implements CanActivate {
     const binding = await this.deps.projectBindings.resolve(projectSlug);
     if (binding === undefined) {
       await this.deps.audit.recordSystem({
+        actor: SYSTEM_ACTOR,
         action: "auth.unknown_project",
         subject: projectSlug,
       });
       throw AppError.unauthenticated(`unknown or unbound project slug=${projectSlug}`);
     }
 
-    const jwks = this.deps.jwksRegistry.forIssuer(binding.keycloakIssuer);
-
     let identity;
     try {
-      identity = await verifyToken(token, await jwks.resolver(), {
-        issuer: binding.keycloakIssuer,
-        audience: binding.keycloakAudience,
-        clockToleranceSec: this.deps.clockToleranceSec,
-      });
+      // Which implementation verifies this project's tokens is the project's
+      // own configuration (ADR-0012). An unknown name is a refusal, never a
+      // fallback: falling back to Keycloak would let a typo in one row
+      // authenticate learners against the wrong realm, which is
+      // indistinguishable from working until somebody audits who signed in.
+      identity = await this.deps.identityProviders
+        .forBinding(binding)
+        .verify(token, binding);
     } catch (error) {
-      const reason = error instanceof TokenInvalidError ? error.reason : "unknown";
+      const reason =
+        error instanceof TokenInvalidError
+          ? error.reason
+          : error instanceof UnknownIdentityProviderError
+            ? "unknown_identity_provider"
+            : "unknown";
       await this.deps.audit.recordForCustomer(binding.customerId, {
+        actor: SYSTEM_ACTOR,
         action: "auth.token_rejected",
         detail: { reason, projectSlug },
       });
@@ -131,7 +142,7 @@ export class AuthGuard implements CanActivate {
     const resolution = resolveTenantContext(grants, binding.customerId);
     if (!resolution.ok) {
       await this.deps.audit.recordForCustomer(binding.customerId, {
-        actorId: user.id,
+        actor: { identity: "learner", id: user.id },
         action: "auth.no_grant_for_customer",
         detail: { reason: resolution.reason, projectSlug },
       });
@@ -144,7 +155,7 @@ export class AuthGuard implements CanActivate {
     // is deliberately not a silent bypass.
     if (resolution.context.role === "super_admin") {
       await this.deps.audit.recordForCustomer(binding.customerId, {
-        actorId: user.id,
+        actor: { identity: "learner", id: user.id },
         action: "auth.super_admin_acted_as_customer",
         detail: { projectSlug },
       });
@@ -152,7 +163,8 @@ export class AuthGuard implements CanActivate {
 
     request.principal = {
       userId: user.id,
-      keycloakSub: user.keycloakSub,
+      identity: "learner",
+      subject: user.keycloakSub,
       ...(user.email === null ? {} : { email: user.email }),
       ...(user.firstName === null ? {} : { firstName: user.firstName }),
       ...(user.lastName === null ? {} : { lastName: user.lastName }),
@@ -193,6 +205,7 @@ async function authenticateStaffPlane(
 
   if (result.kind === "rejected") {
     await deps.audit.recordSystem({
+      actor: SYSTEM_ACTOR,
       action: "staff.request_rejected",
       detail: { reason: result.reason },
     });
@@ -234,6 +247,7 @@ async function authenticateStaffPlane(
   const resolution = staffTenantContext(session.grants, binding.customerId);
   if (!resolution.ok) {
     await deps.audit.recordForCustomer(binding.customerId, {
+      actor: { identity: "staff", id: session.account.id },
       action: "staff.no_grant_for_customer",
       detail: { reason: resolution.reason, projectSlug },
     });
@@ -251,9 +265,13 @@ async function authenticateStaffPlane(
 
   request.principal = {
     // The staff account id, not a learner `users` row — they are separate
-    // populations (ADR-0012) and an audit entry has to say which.
+    // populations (ADR-0012), which is exactly what `identity` records.
     userId: session.account.id,
-    keycloakSub: `staff:${session.account.id}`,
+    identity: "staff",
+    // The staff plane has no external IdP: the account *is* the subject. This
+    // used to synthesise `staff:<uuid>` to fill a field named `keycloakSub`,
+    // which was a lie dressed as a value.
+    subject: session.account.id,
     email: session.account.email,
     customerId: resolution.context.customerId,
     ...(resolution.context.departmentId === undefined

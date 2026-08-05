@@ -28,7 +28,11 @@ const VIDEO = "cccccccc-0000-4000-8000-000000000001";
 
 const NOW = new Date("2026-07-28T10:00:00Z");
 const PROJECT_SLUG = "medice-adhs";
-const actor = { customerId: CUSTOMER_ID, userId: USER_ID };
+const actor = {
+  customerId: CUSTOMER_ID,
+  userId: USER_ID,
+  identity: "staff",
+} as const;
 
 /** 1×1 opaque PNG. */
 const PNG = Buffer.from(

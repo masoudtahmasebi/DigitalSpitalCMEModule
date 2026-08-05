@@ -34,7 +34,7 @@
 
 import { planDeliveryAttempt } from "@ds/domain";
 import type { DeliveryChannel, OutboundMessage } from "@ds/plugin-api";
-import type { AuditServicePort } from "../../audit/audit.service.js";
+import { SYSTEM_ACTOR, type AuditServicePort } from "../../audit/audit.service.js";
 import type {
   ClaimedDelivery,
   DeliveryRepositoryPort,
@@ -143,6 +143,10 @@ export class CertificateDeliveryService {
         at: now,
       });
       await this.audit.recordForCustomer(claim.customerId, {
+        // The worker drained the queue; no human pressed anything for this
+        // attempt. When P12-05 adds an operator-triggered resubmit, that path
+        // passes a staff actor — the union makes forgetting a compile error.
+        actor: SYSTEM_ACTOR,
         action: "certificate.delivered",
         subject: claim.certificateId,
         // A count and a channel id. Not the address — that is the physician.
@@ -196,6 +200,7 @@ export class CertificateDeliveryService {
       error: override?.error ?? null,
     });
     await this.audit.recordForCustomer(claim.customerId, {
+      actor: SYSTEM_ACTOR,
       action: "certificate.delivery_abandoned",
       subject: claim.certificateId,
       detail: { reason, attemptCount, channel: this.channel.id },

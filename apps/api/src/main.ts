@@ -39,5 +39,24 @@ bootstrap().catch((error: unknown) => {
   // no-console is a warning, not an error, here: process is exiting and
   // Nest's own logger is not guaranteed to have flushed.
   console.error("Fatal error during bootstrap:", error);
+
+  /*
+   * `process.exitCode` alone is not enough here, and the difference matters.
+   *
+   * It takes effect only when the event loop drains — and by the time a
+   * bootstrap failure is thrown, the Postgres pool and the Redis client are
+   * already open and keeping the loop alive forever. The process would sit
+   * there having logged a fatal error, never exiting and never listening,
+   * which to an orchestrator is indistinguishable from a slow start rather
+   * than the crash it is. A rolling deploy would wait on it instead of
+   * rolling back.
+   *
+   * So: set the code for the case where the loop *does* drain, and force the
+   * exit shortly after for the case where it does not. The timer is `unref`ed
+   * so it never delays an otherwise-clean exit, and the delay gives `stderr` —
+   * asynchronous when it is a pipe — a tick to flush the message above, which
+   * is the only thing anybody will have to debug from.
+   */
   process.exitCode = 1;
+  setTimeout(() => process.exit(1), 100).unref();
 });

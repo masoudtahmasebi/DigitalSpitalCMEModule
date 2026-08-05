@@ -32,7 +32,7 @@ import {
   type RoleGrant,
   type StaffRole,
 } from "@ds/domain";
-import type { AuditServicePort } from "../../audit/audit.service.js";
+import { SYSTEM_ACTOR, type AuditServicePort } from "../../audit/audit.service.js";
 import {
   generateToken,
   hashIp,
@@ -106,6 +106,10 @@ export class StaffService {
     if (account === undefined || account.disabledAt !== null) {
       await verifyPassword(null, input.password);
       await this.deps.audit.recordSystem({
+        // No actor: on the unknown-account branch there is no id to name, and
+        // naming one on the disabled branch would make the two distinguishable
+        // in the log's shape.
+        actor: SYSTEM_ACTOR,
         action: "staff.login_failed",
         // The address is recorded because the security log needs to show
         // credential stuffing against addresses that do not exist here.
@@ -121,7 +125,7 @@ export class StaffService {
     if (lock.locked) {
       await verifyPassword(null, input.password);
       await this.deps.audit.recordSystem({
-        actorId: account.id,
+        actor: { identity: "staff", id: account.id },
         action: "staff.login_blocked_lockout",
       });
       return { kind: "locked", until: lock.until };
@@ -131,7 +135,7 @@ export class StaffService {
     if (!ok) {
       await this.deps.repository.recordFailure(account.id, now);
       await this.deps.audit.recordSystem({
-        actorId: account.id,
+        actor: { identity: "staff", id: account.id },
         action: "staff.login_failed",
         detail: { reason: "bad_password" },
       });
@@ -144,7 +148,7 @@ export class StaffService {
       // Authenticated but holds no grant. Not a credential problem, and not
       // something to let through: there is nothing this person may do.
       await this.deps.audit.recordSystem({
-        actorId: account.id,
+        actor: { identity: "staff", id: account.id },
         action: "staff.login_no_grants",
       });
       return { kind: "invalid_credentials" };
@@ -235,7 +239,7 @@ export class StaffService {
     await this.deps.repository.revokeAllSessions(row.adminUserId, now);
 
     await this.deps.audit.recordSystem({
-      actorId: row.adminUserId,
+      actor: { identity: "staff", id: row.adminUserId },
       action: row.kind === "invite" ? "staff.invite_accepted" : "staff.password_reset",
     });
     return true;
@@ -265,7 +269,7 @@ export class StaffService {
       ipHash: input.ip === null ? null : hashIp(input.ip, this.deps.ipSalt),
     });
     await this.deps.audit.recordSystem({
-      actorId: account.id,
+      actor: { identity: "staff", id: account.id },
       action: "staff.totp_challenged",
     });
     void now;
@@ -291,7 +295,7 @@ export class StaffService {
     });
     await this.deps.repository.clearFailures(account.id, now);
     await this.deps.audit.recordSystem({
-      actorId: account.id,
+      actor: { identity: "staff", id: account.id },
       action: "staff.login_succeeded",
       detail: { role },
     });

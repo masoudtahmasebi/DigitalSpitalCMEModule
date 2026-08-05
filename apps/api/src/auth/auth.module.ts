@@ -26,6 +26,11 @@ import { UserService } from "../modules/users/user.service.js";
 import { AuthGuard } from "./auth.guard.js";
 import { RolesGuard } from "./roles.guard.js";
 import { JwksRegistry } from "./jwks-registry.js";
+import {
+  IdentityProviderRegistry,
+  KeycloakIdentityProvider,
+} from "./identity-provider.js";
+import { IdentityProviderBootCheck } from "./identity-provider.boot-check.js";
 import { RedisJwksCache } from "./jwks-cache.redis.js";
 import { RateLimitGuard } from "../shared/rate-limit.guard.js";
 import { StaffModule } from "../modules/staff/staff.module.js";
@@ -41,6 +46,16 @@ import { StaffService } from "../modules/staff/staff.service.js";
           cacheTtlSec: config.JWKS_CACHE_TTL_SEC,
         }),
       inject: [REDIS_CLIENT, APP_CONFIG],
+    },
+    {
+      provide: IdentityProviderRegistry,
+      useFactory: (jwksRegistry: JwksRegistry, config: AppConfig) =>
+        // One entry today. A second customer's provider is registered here and
+        // named in `projects.identity_provider` — no change to the guard.
+        new IdentityProviderRegistry([
+          new KeycloakIdentityProvider(jwksRegistry, config.AUTH_CLOCK_TOLERANCE_SEC),
+        ]),
+      inject: [JwksRegistry, APP_CONFIG],
     },
     {
       provide: ProjectBindingRepository,
@@ -66,7 +81,7 @@ import { StaffService } from "../modules/staff/staff.service.js";
       provide: AuthGuard,
       useFactory: (
         reflector: Reflector,
-        jwksRegistry: JwksRegistry,
+        identityProviders: IdentityProviderRegistry,
         projectBindings: ProjectBindingRepository,
         userService: UserService,
         audit: AuditService,
@@ -75,7 +90,7 @@ import { StaffService } from "../modules/staff/staff.service.js";
       ) =>
         new AuthGuard({
           reflector,
-          jwksRegistry,
+          identityProviders,
           projectBindings,
           userService,
           audit,
@@ -84,13 +99,22 @@ import { StaffService } from "../modules/staff/staff.service.js";
         }),
       inject: [
         Reflector,
-        JwksRegistry,
+        IdentityProviderRegistry,
         ProjectBindingRepository,
         UserService,
         AuditService,
         APP_CONFIG,
         StaffService,
       ],
+    },
+    {
+      // Refuses the boot when the schema permits a provider no class
+      // implements. `inject` rather than type-based injection — see the note in
+      // identity-provider.boot-check.ts about esbuild and decorator metadata.
+      provide: IdentityProviderBootCheck,
+      useFactory: (registry: IdentityProviderRegistry, pool: Pool) =>
+        new IdentityProviderBootCheck(registry, pool),
+      inject: [IdentityProviderRegistry, PG_POOL],
     },
     RolesGuard,
     RateLimitGuard,

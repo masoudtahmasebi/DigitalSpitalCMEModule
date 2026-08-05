@@ -391,6 +391,12 @@ export const auditLog = pgTable("audit_log", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   customerId: uuid("customer_id"),
   actorId: uuid("actor_id"),
+  /**
+   * Which population `actorId` names: `learner`, `staff` or `system`
+   * (ADR-0012). Constrained in migration 0020 to agree with `actorId` — one is
+   * null exactly when the other is `system`.
+   */
+  actorIdentity: text("actor_identity").notNull(),
   action: text("action").notNull(),
   subject: text("subject"),
   detail: jsonb("detail").notNull().default({}),

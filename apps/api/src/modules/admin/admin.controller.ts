@@ -231,7 +231,11 @@ export class AdminController {
 }
 
 function context(principal: Principal) {
-  return { customerId: principal.customerId, userId: principal.userId };
+  return {
+    customerId: principal.customerId,
+    userId: principal.userId,
+    identity: principal.identity,
+  };
 }
 
 /** Slugs are already tame, but a filename must never carry a quote or CRLF. */

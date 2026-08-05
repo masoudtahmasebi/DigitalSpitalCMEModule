@@ -75,7 +75,13 @@ export const STAFF_AUTH_CONFIG = Symbol("STAFF_AUTH_CONFIG");
 @Controller("admin/auth")
 export class StaffAuthController {
   constructor(
-    private readonly service: StaffService,
+    // `@Inject` even though the type alone would do under `tsc`.
+    // `emitDecoratorMetadata` is a TypeScript-compiler feature that esbuild does
+    // not implement, and `pnpm dev` runs this app through `tsx`, which is
+    // esbuild — so type-based injection resolves to `undefined` there and the
+    // process will not start. Every other controller in this codebase names its
+    // token explicitly for the same reason; this one was the exception.
+    @Inject(StaffService) private readonly service: StaffService,
     @Inject(STAFF_AUTH_CONFIG) private readonly config: StaffAuthConfig,
   ) {}
 
