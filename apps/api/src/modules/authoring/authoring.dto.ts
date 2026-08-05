@@ -52,13 +52,12 @@ const richText = z.string().max(20_000);
 const url = z.string().url().max(2000);
 
 // ---------------------------------------------------------------------------
-// Structure: customers, departments, projects
+// Structure: departments and projects
 // ---------------------------------------------------------------------------
 
-export const customerCreateSchema = z.object({
-  slug,
-  name: title,
-});
+// A customer is created only by a platform operator, never by an author, so its
+// schema lives with the customer registry (modules/customers/customer.dto.ts).
+// It sat here unreferenced, with no endpoint behind it, until P12-04.
 
 export const departmentCreateSchema = z.object({
   slug,
@@ -405,7 +404,6 @@ export const evaluationWriteSchema = z.object({
     .max(50),
 });
 
-export type CustomerCreate = z.infer<typeof customerCreateSchema>;
 export type DepartmentCreate = z.infer<typeof departmentCreateSchema>;
 export type DepartmentUpdate = z.infer<typeof departmentUpdateSchema>;
 export type DepartmentSummary = z.infer<typeof departmentSummarySchema>;

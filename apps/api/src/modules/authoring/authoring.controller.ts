@@ -26,6 +26,7 @@ import {
   Body,
   Controller,
   Delete,
+  HttpCode,
   Get,
   Inject,
   Param,
@@ -101,6 +102,24 @@ export class AuthoringController {
     return this.service(db).listDepartments();
   }
 
+  /**
+   * Delete a department (P12-04).
+   *
+   * `AUTHOR_ROLES` and not `department_admin`: a department administrator's
+   * scope *is* the department, so letting them delete it would let them delete
+   * the thing that bounds them.
+   */
+  @Delete("departments/:slug")
+  @Roles(...AUTHOR_ROLES)
+  async deleteDepartment(
+    @Param("slug") slug: string,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    await this.service(db).deleteDepartment(slug, context(principal));
+    return this.service(db).listDepartments();
+  }
+
   @Get("projects")
   @Roles(...AUTHOR_ROLES)
   async listProjects(@TenantDb() db: Db) {
@@ -146,6 +165,17 @@ export class AuthoringController {
   // Courses and structure (P9-04)
   // -------------------------------------------------------------------------
 
+  @Delete("projects/:slug")
+  @Roles(...AUTHOR_ROLES)
+  async deleteProject(
+    @Param("slug") slug: string,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    await this.service(db).deleteProject(slug, context(principal));
+    return this.service(db).listProjects();
+  }
+
   @Post("courses")
   @Roles(...AUTHOR_ROLES)
   async createCourse(
@@ -156,6 +186,24 @@ export class AuthoringController {
     const input = parse(courseCreateSchema, body, "course");
     await this.service(db).createCourse(input, context(principal));
     return this.service(db).getStructure(input.slug);
+  }
+
+  /**
+   * Delete a course (P12-04).
+   *
+   * Returns 204 rather than a refreshed list: the course list lives on the
+   * admin controller, and having this one reach across to rebuild it would tie
+   * two modules together for the sake of saving the console one request.
+   */
+  @Delete("courses/:slug")
+  @Roles(...AUTHOR_ROLES)
+  @HttpCode(204)
+  async deleteCourse(
+    @Param("slug") slug: string,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ): Promise<void> {
+    await this.service(db).deleteCourse(slug, context(principal));
   }
 
   @Get("courses/:slug/structure")

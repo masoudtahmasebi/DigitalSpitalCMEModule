@@ -26,6 +26,7 @@
 
 import {
   canDelete,
+  deletionVerdict,
   contentProblems,
   parseMediaSources,
   type ContentProblem,
@@ -34,6 +35,8 @@ import {
   questionProblems,
   validateReorder,
   MIN_QUIZ_OPTIONS,
+  type ChildCensus,
+  type HierarchyLevel,
   type QuestionProblem,
 } from "@ds/domain";
 import { AppError } from "../../shared/problem-details.js";
@@ -66,6 +69,17 @@ import type {
   QuizWrite,
   StructureOrder,
 } from "./authoring.dto.js";
+
+/** German labels for a deletion refusal. Plural, because a refusal counts. */
+const LEVEL_LABEL: Readonly<Record<HierarchyLevel, string>> = {
+  customer: "Kunden",
+  department: "Abteilungen",
+  project: "Projekte",
+  course: "Kurse",
+  module: "Module",
+  chapter: "Kapitel",
+  content: "Inhalte",
+};
 
 export interface AuthorContext {
   readonly customerId: string;
@@ -186,6 +200,50 @@ export class AuthoringService {
       // Field names, never values: one of them is an SMTP credential.
       fields: Object.keys(patch),
     });
+  }
+
+  /**
+   * Delete a department (P12-04).
+   *
+   * Refused while anything is inside it, and permanently refused once a learner
+   * has enrolled anywhere beneath it. The refusal names the counts, because
+   * "cannot delete" on its own sends somebody hunting through the tree for the
+   * one project they forgot.
+   */
+  async deleteDepartment(slug: string, actor: AuthorContext): Promise<void> {
+    const id = await this.requireDepartment(slug);
+    this.assertRemovable(
+      await this.repository.countDepartmentRecords(id),
+      await this.repository.censusOfDepartment(id),
+      "Abteilung",
+    );
+
+    await this.repository.deleteDepartment(id);
+    await this.audit(actor, "admin.department.delete", slug, {});
+  }
+
+  async deleteProject(slug: string, actor: AuthorContext): Promise<void> {
+    const id = await this.requireProject(slug);
+    this.assertRemovable(
+      await this.repository.countProjectRecords(id),
+      await this.repository.censusOfProject(id),
+      "Projekt",
+    );
+
+    await this.repository.deleteProject(id);
+    await this.audit(actor, "admin.project.delete", slug, {});
+  }
+
+  async deleteCourse(slug: string, actor: AuthorContext): Promise<void> {
+    const id = await this.requireCourse(slug);
+    this.assertRemovable(
+      await this.repository.countCourseRecords(id),
+      await this.repository.censusOfCourse(id),
+      "Kurs",
+    );
+
+    await this.repository.deleteCourse(id);
+    await this.audit(actor, "admin.course.delete", slug, {});
   }
 
   // -------------------------------------------------------------------------
@@ -688,6 +746,49 @@ export class AuthoringService {
       `reorder rejected: ${reason} ${ids.join(",")}`,
       detail,
     );
+  }
+
+  /**
+   * The refusal for a level that can contain other levels.
+   *
+   * `assertDeletable` below is the leaf version, where the only question is
+   * whether learners have touched it. Both delegate the decision to
+   * `deletionVerdict`; neither decides anything itself.
+   */
+  private assertRemovable(records: number, children: ChildCensus, label: string): void {
+    const verdict = deletionVerdict({ learnerRecords: records, children });
+    if (verdict.ok) return;
+
+    if (verdict.reason === "learner_records") {
+      this.assertDeletable(verdict.learnerRecords, label);
+      return;
+    }
+
+    const listed = verdict.children
+      .map((child) => `${child.count} ${LEVEL_LABEL[child.level]}`)
+      .join(", ");
+
+    throw new AppError(
+      "conflict",
+      `refused: ${label} still contains ${listed}`,
+      `Dieses ${label} enthält noch ${listed}. Diese müssen zuerst gelöscht werden.`,
+    );
+  }
+
+  private async requireDepartment(slug: string): Promise<string> {
+    const id = await this.repository.findDepartmentId(slug);
+    if (id === undefined) {
+      throw AppError.notFound(`department slug=${slug} not visible in this tenant`);
+    }
+    return id;
+  }
+
+  private async requireProject(slug: string): Promise<string> {
+    const id = await this.repository.findProjectId(slug);
+    if (id === undefined) {
+      throw AppError.notFound(`project slug=${slug} not visible in this tenant`);
+    }
+    return id;
   }
 
   private assertDeletable(records: number, label: string): void {

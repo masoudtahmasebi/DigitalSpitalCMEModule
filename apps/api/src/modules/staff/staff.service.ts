@@ -28,6 +28,7 @@ import {
   resolveTenantContext,
   secondFactorStep,
   sessionStatus,
+  verifyTotp,
   type AppRole,
   type RoleGrant,
   type StaffRole,
@@ -40,6 +41,8 @@ import {
   hashToken,
   verifyPassword,
 } from "./credentials.js";
+import { generateTotpSecret, otpauthUri, totpCode } from "./totp.js";
+import type { SecretCipher } from "../../shared/secret-cipher.js";
 import type {
   StaffAccount,
   StaffGrant,
@@ -86,6 +89,10 @@ export interface StaffServiceDeps {
   readonly audit: AuditServicePort;
   /** Salts the IP hash so it is not reversible by enumerating IPv4. */
   readonly ipSalt: string;
+  /** Encrypts the TOTP secret at rest (CLAUDE.md §4 invariant 7). */
+  readonly cipher: SecretCipher;
+  /** What an authenticator app shows beside the code. */
+  readonly totpIssuer: string;
   readonly now: () => Date;
 }
 
@@ -159,7 +166,7 @@ export class StaffService {
       // The password is spent; the challenge carries the account forward
       // without the caller having to send it again. Short-lived and single-use
       // — issued as a session row that is not yet usable for anything else.
-      const challenge = await this.issueChallenge(account, input, now);
+      const challenge = await this.issueChallenge(account, input);
       return step === "must_enrol"
         ? { kind: "totp_enrolment_required", challenge }
         : { kind: "totp_required", challenge };
@@ -250,16 +257,25 @@ export class StaffService {
     return hashPassword(password);
   }
 
+  /**
+   * Carry a half-finished login from the password step to the TOTP step.
+   *
+   * Reuses the session table deliberately: a challenge has the same lifetime
+   * rules and the same revocation needs as a session, and a second table would
+   * be the same expiry logic written twice.
+   *
+   * `purpose: "totp_challenge"` is what keeps it from *being* a session, and it
+   * is not decoration. The first version of this relied on the client never
+   * learning the row's CSRF token — which is no protection at all, because CSRF
+   * is only checked on unsafe methods, so the challenge token authenticated
+   * every `GET` in the admin API. The second factor could be skipped by using
+   * the token the server hands you for not having passed it. See migration
+   * 0022.
+   */
   private async issueChallenge(
     account: StaffAccount,
     input: { userAgent: string | null; ip: string | null },
-    now: Date,
   ): Promise<string> {
-    // Reuses the session table deliberately: a challenge has the same
-    // lifetime rules and the same revocation needs as a session, and a second
-    // table would be the same expiry logic written twice. It is distinguished
-    // by carrying no CSRF token the client ever learns — `verifyTotp` is the
-    // only thing that will accept it.
     const token = generateToken();
     await this.deps.repository.createSession({
       adminUserId: account.id,
@@ -267,13 +283,187 @@ export class StaffService {
       csrfTokenHash: hashToken(generateToken()),
       userAgent: input.userAgent,
       ipHash: input.ip === null ? null : hashIp(input.ip, this.deps.ipSalt),
+      purpose: "totp_challenge",
     });
     await this.deps.audit.recordSystem({
       actor: { identity: "staff", id: account.id },
       action: "staff.totp_challenged",
     });
-    void now;
     return token;
+  }
+
+  // -------------------------------------------------------------------------
+  // Second factor (P12-03)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Begin enrolment: mint a secret and return it once, as an `otpauth://` URI.
+   *
+   * Reached with a *challenge* token, not a session — the account has proved
+   * its password and nothing else, and until `verifyTotp` succeeds it can do
+   * nothing but this.
+   *
+   * The secret is staged, not enrolled. `totp_enrolled_at` stays null until a
+   * code proves the authenticator app actually holds it; enrolling at the
+   * moment the QR code is displayed would lock out anybody whose scan failed,
+   * with no way back that does not involve database access.
+   *
+   * Calling this twice replaces the staged secret, which is what somebody who
+   * closed the page before scanning needs. It cannot be used to replace an
+   * *enrolled* secret: an enrolled account never reaches the enrolment branch
+   * of `login`.
+   */
+  async beginTotpEnrolment(
+    challengeToken: string,
+  ): Promise<{ kind: "enrolling"; otpauthUri: string } | { kind: "rejected" }> {
+    const account = await this.accountForChallenge(challengeToken);
+    if (account === undefined) return { kind: "rejected" };
+
+    // Refuse to re-issue for an already enrolled account even though `login`
+    // should never route one here. A second factor that can be reset by
+    // replaying an old challenge is not a second factor.
+    if (account.totpEnrolledAt !== null) return { kind: "rejected" };
+
+    const secret = generateTotpSecret();
+    await this.deps.repository.stageTotpSecret(
+      account.id,
+      this.deps.cipher.encrypt(secret.toString("base64")),
+    );
+    await this.deps.audit.recordSystem({
+      actor: { identity: "staff", id: account.id },
+      action: "staff.totp_enrolment_started",
+    });
+
+    return {
+      kind: "enrolling",
+      otpauthUri: otpauthUri({
+        secret,
+        account: account.email,
+        issuer: this.deps.totpIssuer,
+      }),
+    };
+  }
+
+  /**
+   * Finish a login by presenting a code.
+   *
+   * Serves both paths — confirming a new enrolment and satisfying an existing
+   * one — because they differ only in whether `totp_enrolled_at` gets set. A
+   * separate "confirm enrolment" endpoint would be the same verification
+   * written twice, and the second copy is where the replay check would be
+   * forgotten.
+   *
+   * The challenge is spent whatever the outcome: a wrong code sends the
+   * operator back to the password form. That is deliberately unforgiving —
+   * allowing retries against a live challenge turns a 30-second window into an
+   * unbounded one, and the cost of getting it wrong is retyping a password.
+   */
+  async verifyTotp(input: {
+    challengeToken: string;
+    code: string;
+    userAgent: string | null;
+    ip: string | null;
+  }): Promise<LoginOutcome> {
+    const now = this.deps.now();
+    const challenge = await this.deps.repository.findChallengeByToken(
+      hashToken(input.challengeToken),
+    );
+    if (challenge === undefined) return { kind: "invalid_credentials" };
+
+    // A challenge ages out on the same rules as a session, which is far more
+    // time than anyone needs to read six digits off a phone.
+    const status = sessionStatus(
+      {
+        createdAt: challenge.createdAt,
+        lastSeenAt: challenge.lastSeenAt,
+        revokedAt: challenge.revokedAt,
+      },
+      now,
+    );
+
+    // Single-use, before anything is decided: a challenge that survived a wrong
+    // guess would let an attacker walk the code space at leisure.
+    await this.deps.repository.revokeSession(challenge.id, now);
+    if (!status.valid) return { kind: "invalid_credentials" };
+
+    const account = await this.deps.repository.findById(challenge.adminUserId);
+    if (account === undefined || account.disabledAt !== null) {
+      return { kind: "invalid_credentials" };
+    }
+
+    const secret = this.totpSecretOf(account);
+    if (secret === undefined) return { kind: "invalid_credentials" };
+
+    const verdict = verifyTotp({
+      code: input.code,
+      now,
+      lastUsedCounter: account.totpLastCounter,
+      codeFor: (counter) => totpCode(secret, counter),
+    });
+
+    if (!verdict.ok) {
+      // Counted against the lockout, like a wrong password: without it the
+      // second factor is six digits with unlimited attempts.
+      await this.deps.repository.recordFailure(account.id, now);
+      await this.deps.audit.recordSystem({
+        actor: { identity: "staff", id: account.id },
+        action: "staff.totp_failed",
+        detail: { reason: verdict.reason },
+      });
+      return { kind: "invalid_credentials" };
+    }
+
+    const grants = await this.deps.repository.grantsFor(account.id);
+    const role = broadestRole(grants);
+    if (role === undefined) return { kind: "invalid_credentials" };
+
+    if (account.totpEnrolledAt === null) {
+      await this.deps.repository.completeTotpEnrolment(account.id, now, verdict.counter);
+      await this.deps.audit.recordSystem({
+        actor: { identity: "staff", id: account.id },
+        action: "staff.totp_enrolled",
+      });
+    } else {
+      await this.deps.repository.recordTotpCounter(account.id, verdict.counter);
+    }
+
+    return this.establishSession(account, grants, role, input, now);
+  }
+
+  private async accountForChallenge(token: string): Promise<StaffAccount | undefined> {
+    const challenge = await this.deps.repository.findChallengeByToken(hashToken(token));
+    if (challenge === undefined) return undefined;
+
+    const status = sessionStatus(
+      {
+        createdAt: challenge.createdAt,
+        lastSeenAt: challenge.lastSeenAt,
+        revokedAt: challenge.revokedAt,
+      },
+      this.deps.now(),
+    );
+    if (!status.valid) return undefined;
+
+    const account = await this.deps.repository.findById(challenge.adminUserId);
+    return account === undefined || account.disabledAt !== null ? undefined : account;
+  }
+
+  /**
+   * Decrypt the stored secret.
+   *
+   * A failure here means the stored ciphertext cannot be read with the current
+   * KMS key — a key rotation that lost the old key, or a corrupted row. Either
+   * way the honest answer is "this account has no usable second factor", not a
+   * 500 that says the database is broken.
+   */
+  private totpSecretOf(account: StaffAccount): Buffer | undefined {
+    if (account.totpSecretEnc === null) return undefined;
+    try {
+      const plaintext = this.deps.cipher.decrypt(account.totpSecretEnc);
+      return plaintext === null ? undefined : Buffer.from(plaintext, "base64");
+    } catch {
+      return undefined;
+    }
   }
 
   private async establishSession(
@@ -292,6 +482,7 @@ export class StaffService {
       csrfTokenHash: hashToken(csrfToken),
       userAgent: input.userAgent,
       ipHash: input.ip === null ? null : hashIp(input.ip, this.deps.ipSalt),
+      purpose: "session",
     });
     await this.deps.repository.clearFailures(account.id, now);
     await this.deps.audit.recordSystem({

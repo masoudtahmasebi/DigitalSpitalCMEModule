@@ -33,6 +33,7 @@
  */
 
 import { and, eq, inArray, sql } from "drizzle-orm";
+import type { ChildCensus } from "@ds/domain";
 import type { Db } from "../../db/tenant-db.js";
 import {
   auditLog,
@@ -42,6 +43,7 @@ import {
   courseExperts,
   courses,
   departments,
+  enrolments,
   evaluations,
   modules,
   projects,
@@ -101,6 +103,15 @@ export interface AuthoringRepositoryPort {
   courseIdOfContent(id: string): Promise<string | undefined>;
 
   countModuleRecords(id: string): Promise<number>;
+  censusOfDepartment(id: string): Promise<ChildCensus>;
+  censusOfProject(id: string): Promise<ChildCensus>;
+  censusOfCourse(id: string): Promise<ChildCensus>;
+  countDepartmentRecords(id: string): Promise<number>;
+  countProjectRecords(id: string): Promise<number>;
+  countCourseRecords(id: string): Promise<number>;
+  deleteDepartment(id: string): Promise<void>;
+  deleteProject(id: string): Promise<void>;
+  deleteCourse(id: string): Promise<void>;
   countChapterRecords(id: string): Promise<number>;
   countContentRecords(id: string): Promise<number>;
   deleteModule(id: string): Promise<void>;
@@ -687,6 +698,105 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
       .from(contentProgress)
       .where(eq(contentProgress.contentId, id));
     return row?.count ?? 0;
+  }
+
+  // -------------------------------------------------------------------------
+  // Deleting the upper levels (P12-04)
+  // -------------------------------------------------------------------------
+  //
+  // Two questions per level, matching `deletionVerdict`: is anything inside it,
+  // and has any learner touched anything inside it. Both are answered by
+  // counting, and neither decides anything — the decision is a pure function.
+  //
+  // Every query here is tenant-scoped by RLS, so none carries a
+  // `customer_id` predicate. A caller naming another customer's slug does not
+  // get zero counts and a successful delete; the slug does not resolve at all.
+
+  async censusOfDepartment(id: string): Promise<ChildCensus> {
+    const [row] = await this.db
+      .select({
+        projects: sql<number>`(SELECT count(*)::int FROM projects p WHERE p.department_id = ${id})`,
+        courses: sql<number>`(
+          SELECT count(*)::int FROM courses k
+            JOIN projects p ON p.id = k.project_id
+           WHERE p.department_id = ${id}
+        )`,
+      })
+      .from(departments)
+      .where(eq(departments.id, id));
+    return { project: row?.projects ?? 0, course: row?.courses ?? 0 };
+  }
+
+  async censusOfProject(id: string): Promise<ChildCensus> {
+    const [row] = await this.db
+      .select({
+        courses: sql<number>`(SELECT count(*)::int FROM courses k WHERE k.project_id = ${id})`,
+      })
+      .from(projects)
+      .where(eq(projects.id, id));
+    return { course: row?.courses ?? 0 };
+  }
+
+  async censusOfCourse(id: string): Promise<ChildCensus> {
+    const [row] = await this.db
+      .select({
+        modules: sql<number>`(SELECT count(*)::int FROM modules m WHERE m.course_id = ${id})`,
+      })
+      .from(courses)
+      .where(eq(courses.id, id));
+    return { module: row?.modules ?? 0 };
+  }
+
+  /**
+   * Enrolments are the right measure at course level and above.
+   *
+   * `content_progress` — what the module, chapter and content counts use — is
+   * empty for a learner who enrolled and never pressed play, and deleting the
+   * course out from under them would still destroy an enrolment row that a
+   * Punktemeldung may reference.
+   */
+  async countCourseRecords(id: string): Promise<number> {
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(enrolments)
+      .where(eq(enrolments.courseId, id));
+    return row?.count ?? 0;
+  }
+
+  async countProjectRecords(id: string): Promise<number> {
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(enrolments)
+      .where(
+        sql`${enrolments.courseId} IN (SELECT k.id FROM courses k WHERE k.project_id = ${id})`,
+      );
+    return row?.count ?? 0;
+  }
+
+  async countDepartmentRecords(id: string): Promise<number> {
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(enrolments)
+      .where(
+        sql`${enrolments.courseId} IN (
+          SELECT k.id FROM courses k
+            JOIN projects p ON p.id = k.project_id
+           WHERE p.department_id = ${id}
+        )`,
+      );
+    return row?.count ?? 0;
+  }
+
+  async deleteDepartment(id: string): Promise<void> {
+    await this.db.delete(departments).where(eq(departments.id, id));
+  }
+
+  async deleteProject(id: string): Promise<void> {
+    await this.db.delete(projects).where(eq(projects.id, id));
+  }
+
+  async deleteCourse(id: string): Promise<void> {
+    await this.db.delete(courses).where(eq(courses.id, id));
   }
 
   async deleteModule(id: string): Promise<void> {

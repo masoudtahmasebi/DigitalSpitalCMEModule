@@ -16,6 +16,7 @@ import type { Pool } from "pg";
 import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { AuditService } from "../../audit/audit.service.js";
+import { createSecretCipher } from "../../shared/secret-cipher.js";
 import { StaffRepository } from "./staff.repository.js";
 import { StaffService } from "./staff.service.js";
 import {
@@ -48,6 +49,14 @@ import {
           // the whole space in seconds, and a second secret to provision would
           // be one more thing to get wrong for no additional protection.
           ipSalt: config.SECRETS_KMS_KEY,
+          // The same cipher the rest of the application uses for secrets at
+          // rest: a TOTP secret is one (CLAUDE.md §4 invariant 7).
+          cipher: createSecretCipher(config.NODE_ENV, config.SECRETS_KMS_KEY),
+          // What an authenticator app shows beside the code. Fixed rather than
+          // per-customer: the account is a DigitalSpital operator account, and
+          // labelling it with a customer's name would misdescribe who it
+          // belongs to.
+          totpIssuer: "DigitalSpital",
           now: () => new Date(),
         }),
       inject: [StaffRepository, AuditService, APP_CONFIG],

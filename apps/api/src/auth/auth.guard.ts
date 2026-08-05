@@ -31,15 +31,19 @@
 import { Injectable, type CanActivate, type ExecutionContext } from "@nestjs/common";
 import type { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import { resolveTenantContext } from "@ds/domain";
+import { capabilitiesOf, resolveTenantContext } from "@ds/domain";
 import { SYSTEM_ACTOR, type AuditServicePort } from "../audit/audit.service.js";
 import type { UserService } from "../modules/users/user.service.js";
 import type { ProjectBindingRepositoryPort } from "../modules/projects/project-binding.repository.js";
 import { AppError } from "../shared/problem-details.js";
+import type { StaffProfile } from "./principal.js";
 import { IS_PUBLIC_KEY } from "./public.decorator.js";
 import { authenticateStaff, CSRF_HEADER } from "./staff-session.js";
-import type { StaffService } from "../modules/staff/staff.service.js";
-import { staffTenantContext } from "../modules/staff/staff.service.js";
+import type {
+  ResolvedStaffSession,
+  StaffService,
+} from "../modules/staff/staff.service.js";
+import { broadestRole, staffTenantContext } from "../modules/staff/staff.service.js";
 import { TokenInvalidError } from "./token-verifier.js";
 import {
   IdentityProviderRegistry,
@@ -226,14 +230,12 @@ async function authenticateStaffPlane(
    * profile) are above any single tenant — and those endpoints resolve their
    * own scope rather than relying on `principal.customerId`.
    */
+  // Built once, before the two exits below, because the two used to build it
+  // separately and a field added to one would have been missing from the other.
+  request.staffProfile = staffProfileOf(session);
+
   const projectSlug = request.headers[PROJECT_HEADER];
   if (typeof projectSlug !== "string" || projectSlug === "") {
-    request.staffProfile = {
-      id: session.account.id,
-      email: session.account.email,
-      displayName: session.account.displayName,
-      grants: session.grants,
-    };
     // No tenant context, so no `principal`. Endpoints needing one refuse via
     // RolesGuard; endpoints above the tenant read `staffProfile`.
     return true;
@@ -256,13 +258,6 @@ async function authenticateStaffPlane(
     );
   }
 
-  request.staffProfile = {
-    id: session.account.id,
-    email: session.account.email,
-    displayName: session.account.displayName,
-    grants: session.grants,
-  };
-
   request.principal = {
     // The staff account id, not a learner `users` row — they are separate
     // populations (ADR-0012), which is exactly what `identity` records.
@@ -281,6 +276,31 @@ async function authenticateStaffPlane(
   };
 
   return true;
+}
+
+/**
+ * The staff identity a request carries above any tenant.
+ *
+ * `role` is the broadest grant held. It is resolved here rather than at each
+ * call site because `RolesGuard` reads it to decide whether the operator holds
+ * the capability a route requires, and a route's reachability must not depend
+ * on which handler happens to recompute it.
+ *
+ * `broadestRole` returning `undefined` cannot reach here: an account with no
+ * grants is refused at login (`staff.login_no_grants`) and disabling an account
+ * revokes its sessions. The fallback exists so a race between the two produces
+ * the narrowest role rather than a crash — failing closed, not open.
+ */
+function staffProfileOf(session: ResolvedStaffSession): StaffProfile {
+  const role = broadestRole(session.grants) ?? "course_editor";
+  return {
+    id: session.account.id,
+    email: session.account.email,
+    displayName: session.account.displayName,
+    role,
+    capabilities: capabilitiesOf(role),
+    grants: session.grants,
+  };
 }
 
 function headerValue(request: Request, name: string): string | undefined {

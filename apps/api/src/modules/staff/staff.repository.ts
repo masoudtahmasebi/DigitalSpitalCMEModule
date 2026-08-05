@@ -23,6 +23,7 @@ export interface StaffAccount {
   readonly passwordHash: string | null;
   readonly totpSecretEnc: Buffer | null;
   readonly totpEnrolledAt: Date | null;
+  readonly totpLastCounter: number | null;
   readonly failedAttempts: number;
   readonly lastFailureAt: Date | null;
   readonly disabledAt: Date | null;
@@ -33,6 +34,9 @@ export interface StaffGrant {
   readonly customerId: string | null;
   readonly departmentId: string | null;
 }
+
+/** What an `admin_sessions` row is for (migration 0022). */
+export type SessionPurpose = "session" | "totp_challenge";
 
 export interface StaffSessionRow {
   readonly id: string;
@@ -66,11 +70,22 @@ export interface StaffRepositoryPort {
     csrfTokenHash: Buffer;
     userAgent: string | null;
     ipHash: Buffer | null;
+    /** `session` authenticates requests; `totp_challenge` never does. */
+    purpose: SessionPurpose;
   }): Promise<StaffSessionRow>;
+  /** Only ever returns `purpose = 'session'` rows — see migration 0022. */
   findSessionByToken(tokenHash: Buffer): Promise<StaffSessionRow | undefined>;
+  /** Only ever returns `purpose = 'totp_challenge'` rows. */
+  findChallengeByToken(tokenHash: Buffer): Promise<StaffSessionRow | undefined>;
   touchSession(sessionId: string, at: Date): Promise<void>;
   revokeSession(sessionId: string, at: Date): Promise<void>;
   revokeAllSessions(adminUserId: string, at: Date): Promise<void>;
+
+  /** Stores an encrypted secret before it is confirmed. Does not enrol. */
+  stageTotpSecret(adminUserId: string, secretEnc: Buffer): Promise<void>;
+  /** Marks the staged secret confirmed, and records the counter it was confirmed with. */
+  completeTotpEnrolment(adminUserId: string, at: Date, counter: number): Promise<void>;
+  recordTotpCounter(adminUserId: string, counter: number): Promise<void>;
 
   findCredentialToken(tokenHash: Buffer): Promise<CredentialTokenRow | undefined>;
   acceptCredentialToken(id: string, at: Date): Promise<void>;
@@ -84,6 +99,7 @@ interface AccountRow {
   password_hash: string | null;
   totp_secret_enc: Buffer | null;
   totp_enrolled_at: Date | null;
+  totp_last_counter: string | null;
   failed_attempts: number;
   last_failure_at: Date | null;
   disabled_at: Date | null;
@@ -91,7 +107,7 @@ interface AccountRow {
 
 const ACCOUNT_COLUMNS = `
   id, email, display_name, password_hash, totp_secret_enc, totp_enrolled_at,
-  failed_attempts, last_failure_at, disabled_at
+  totp_last_counter, failed_attempts, last_failure_at, disabled_at
 `;
 
 function toAccount(row: AccountRow): StaffAccount {
@@ -102,6 +118,10 @@ function toAccount(row: AccountRow): StaffAccount {
     passwordHash: row.password_hash,
     totpSecretEnc: row.totp_secret_enc,
     totpEnrolledAt: row.totp_enrolled_at,
+    // bigint arrives as a string from node-postgres; a counter is well inside
+    // Number's exact range (it is seconds/30 since 1970) so this is lossless.
+    totpLastCounter:
+      row.totp_last_counter === null ? null : Number(row.totp_last_counter),
     failedAttempts: row.failed_attempts,
     lastFailureAt: row.last_failure_at,
     disabledAt: row.disabled_at,
@@ -176,6 +196,7 @@ export class StaffRepository implements StaffRepositoryPort {
     csrfTokenHash: Buffer;
     userAgent: string | null;
     ipHash: Buffer | null;
+    purpose: SessionPurpose;
   }): Promise<StaffSessionRow> {
     const { rows } = await this.pool.query<{
       id: string;
@@ -185,8 +206,8 @@ export class StaffRepository implements StaffRepositoryPort {
       last_seen_at: Date;
       revoked_at: Date | null;
     }>(
-      `INSERT INTO admin_sessions (admin_user_id, token_hash, csrf_token_hash, user_agent, ip_hash)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO admin_sessions (admin_user_id, token_hash, csrf_token_hash, user_agent, ip_hash, purpose)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, admin_user_id, csrf_token_hash, created_at, last_seen_at, revoked_at`,
       [
         input.adminUserId,
@@ -194,6 +215,7 @@ export class StaffRepository implements StaffRepositoryPort {
         input.csrfTokenHash,
         input.userAgent,
         input.ipHash,
+        input.purpose,
       ],
     );
     const row = rows[0];
@@ -208,7 +230,25 @@ export class StaffRepository implements StaffRepositoryPort {
     };
   }
 
-  async findSessionByToken(tokenHash: Buffer): Promise<StaffSessionRow | undefined> {
+  /**
+   * Resolve a session cookie.
+   *
+   * The `purpose` predicate is the whole point of migration 0022 and must not
+   * be dropped: without it, the token handed to a caller who has *not yet*
+   * passed the second factor authenticates them for every safe method.
+   */
+  findSessionByToken(tokenHash: Buffer): Promise<StaffSessionRow | undefined> {
+    return this.findByToken(tokenHash, "session");
+  }
+
+  findChallengeByToken(tokenHash: Buffer): Promise<StaffSessionRow | undefined> {
+    return this.findByToken(tokenHash, "totp_challenge");
+  }
+
+  private async findByToken(
+    tokenHash: Buffer,
+    purpose: SessionPurpose,
+  ): Promise<StaffSessionRow | undefined> {
     const { rows } = await this.pool.query<{
       id: string;
       admin_user_id: string;
@@ -218,8 +258,8 @@ export class StaffRepository implements StaffRepositoryPort {
       revoked_at: Date | null;
     }>(
       `SELECT id, admin_user_id, csrf_token_hash, created_at, last_seen_at, revoked_at
-         FROM admin_sessions WHERE token_hash = $1`,
-      [tokenHash],
+         FROM admin_sessions WHERE token_hash = $1 AND purpose = $2`,
+      [tokenHash, purpose],
     );
     const row = rows[0];
     return row === undefined
@@ -232,6 +272,50 @@ export class StaffRepository implements StaffRepositoryPort {
           lastSeenAt: row.last_seen_at,
           revokedAt: row.revoked_at,
         };
+  }
+
+  /**
+   * Store the encrypted secret without enrolling.
+   *
+   * Two steps rather than one because a secret written at the moment it is
+   * shown would enrol an account whose owner never managed to scan the code,
+   * and the only way out of that is an administrator with database access.
+   * `totp_enrolled_at` stays null until a code proves the app has it.
+   */
+  async stageTotpSecret(adminUserId: string, secretEnc: Buffer): Promise<void> {
+    await this.pool.query(
+      `UPDATE admin_users
+          SET totp_secret_enc = $2, totp_enrolled_at = NULL, updated_at = now()
+        WHERE id = $1`,
+      [adminUserId, secretEnc],
+    );
+  }
+
+  async completeTotpEnrolment(
+    adminUserId: string,
+    at: Date,
+    counter: number,
+  ): Promise<void> {
+    await this.pool.query(
+      `UPDATE admin_users
+          SET totp_enrolled_at = $2, totp_last_counter = $3, updated_at = now()
+        WHERE id = $1`,
+      [adminUserId, at, counter],
+    );
+  }
+
+  /**
+   * `GREATEST` rather than a plain assignment: two requests racing with codes
+   * from adjacent steps must not let the lower one move the marker backwards
+   * and re-open the replay window it exists to close.
+   */
+  async recordTotpCounter(adminUserId: string, counter: number): Promise<void> {
+    await this.pool.query(
+      `UPDATE admin_users
+          SET totp_last_counter = GREATEST(COALESCE(totp_last_counter, $2), $2)
+        WHERE id = $1`,
+      [adminUserId, counter],
+    );
   }
 
   async touchSession(sessionId: string, at: Date): Promise<void> {

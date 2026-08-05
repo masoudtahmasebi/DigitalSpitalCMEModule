@@ -81,6 +81,7 @@ export type { Branding } from "./branding.js";
 
 export {
   canDelete,
+  deletionVerdict,
   contentProblems,
   correctOptionCount,
   questionProblems,
@@ -88,8 +89,11 @@ export {
   MIN_QUIZ_OPTIONS,
 } from "./authoring.js";
 export type {
+  ChildCensus,
   ContentDraft,
   ContentProblem,
+  DeletionVerdict,
+  HierarchyLevel,
   OrderedKind,
   QuestionDraft,
   QuestionProblem,
@@ -231,3 +235,12 @@ export type {
   StaffRole,
   StaffScope,
 } from "./staff-identity.js";
+
+export {
+  totpCounters,
+  verifyTotp,
+  TOTP_DIGITS,
+  TOTP_DRIFT_STEPS,
+  TOTP_STEP_SEC,
+} from "./totp.js";
+export type { TotpRejection, TotpVerdict } from "./totp.js";

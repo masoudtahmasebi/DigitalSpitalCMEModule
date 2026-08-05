@@ -1,6 +1,6 @@
 -- Database roles (P0-03), implementing ADR-0002.
 --
--- Four roles:
+-- Five roles:
 --
 --   ds_migrator        owns the schema and runs migrations. The application
 --                       never connects as this role.
@@ -10,6 +10,9 @@
 --                       0007, 0008) and nothing else. NOLOGIN.
 --   ds_erasure          owns exactly one function, `erase_subject` (migration
 --                       0009), and nothing else. NOLOGIN.
+--   ds_customer_registry owns exactly one function,
+--                       `list_customer_registry` (migration 0021), and
+--                       nothing else. NOLOGIN.
 --
 -- The ds_app point is the one that is easy to get wrong. A table owner
 -- bypasses row-level security by default, so if the application role ever
@@ -17,7 +20,7 @@
 -- ROW LEVEL SECURITY` in the migration closes that door, and keeping
 -- ownership with ds_migrator means the door was never open.
 --
--- BYPASSRLS appears exactly twice, and both are deliberate. FORCE ROW LEVEL
+-- BYPASSRLS appears exactly three times, and each is deliberate. FORCE ROW LEVEL
 -- SECURITY applies to every owner, ds_migrator included, so a SECURITY DEFINER
 -- function that has to act outside a tenant context needs an owner that can
 -- see the rows at all.
@@ -29,9 +32,20 @@
 --                        cross-tenant: one physician has one EFN and may hold
 --                        enrolments at several customers. Blast radius
 --                        documented in migration 0009.
+--   ds_customer_registry lists the customers a super administrator may act on.
+--                        `customers` is RLS-scoped to one tenant, so no
+--                        tenant-scoped role can enumerate it — and a platform
+--                        operator's first screen is that list. Returns registry
+--                        metadata and child counts only, never tenant content.
+--                        Blast radius documented in migration 0021.
 --
--- Neither can be connected as, neither is granted to ds_app, and each owns one
--- fixed function whose whole body is in a reviewed migration. `GRANT ... TO
+-- Note what is NOT on this list: creating, renaming and deleting a customer.
+-- Those name a single customer, so they run as ds_app inside that customer's
+-- own tenant context and pay full RLS like any other write. Only the
+-- enumeration is inherently cross-tenant, so only the enumeration is exempt.
+--
+-- None can be connected as, none is granted to ds_app, and each owns one fixed
+-- function whose whole body is in a reviewed migration. `GRANT ... TO
 -- ds_migrator` lets migrations reassign ownership without needing superuser
 -- for that one ALTER.
 
@@ -51,6 +65,10 @@ BEGIN
 
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'ds_erasure') THEN
     CREATE ROLE ds_erasure NOLOGIN BYPASSRLS;
+  END IF;
+
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'ds_customer_registry') THEN
+    CREATE ROLE ds_customer_registry NOLOGIN BYPASSRLS;
   END IF;
 END
 $$;
@@ -91,6 +109,7 @@ ALTER ROLE ds_app PASSWORD :'ds_app_password';
 
 GRANT ds_binding_resolver TO ds_migrator;
 GRANT ds_erasure TO ds_migrator;
+GRANT ds_customer_registry TO ds_migrator;
 
 -- Postgres requires the TARGET of "ALTER ... OWNER TO" to hold CREATE on the
 -- containing schema, independent of role membership -- membership alone is not
@@ -99,6 +118,7 @@ GRANT ds_erasure TO ds_migrator;
 -- permits adding new objects, not reading existing tenant data.
 GRANT CREATE ON SCHEMA public TO ds_binding_resolver;
 GRANT CREATE ON SCHEMA public TO ds_erasure;
+GRANT CREATE ON SCHEMA public TO ds_customer_registry;
 
 GRANT ALL ON DATABASE ds_education TO ds_migrator;
 GRANT CONNECT ON DATABASE ds_education TO ds_app;

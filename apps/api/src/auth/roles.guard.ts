@@ -16,11 +16,11 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import type { AppRole } from "@ds/domain";
+import { canManage, type AppRole, type ManagedEntity } from "@ds/domain";
 import { AppError } from "../shared/problem-details.js";
 import { IS_PUBLIC_KEY } from "./public.decorator.js";
 import { ROLES_KEY } from "./roles.decorator.js";
-import { STAFF_ONLY_KEY } from "./staff-only.decorator.js";
+import { STAFF_CAPABILITY_KEY, STAFF_ONLY_KEY } from "./staff-only.decorator.js";
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -41,16 +41,32 @@ export class RolesGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<Request>();
 
-    // Above the tenant: a valid staff session is the whole requirement, because
-    // there is no customer to resolve a role within. AuthGuard has already
+    // Above the tenant: there is no customer to resolve a role within, so the
+    // requirement is a valid staff session plus — where the route declares one
+    // — the capability to manage that kind of thing. AuthGuard has already
     // established the session; without one there is no `staffProfile`.
     const staffOnly = this.reflector.getAllAndOverride<boolean>(STAFF_ONLY_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
     if (staffOnly === true) {
-      if (request.staffProfile === undefined) {
+      const profile = request.staffProfile;
+      if (profile === undefined) {
         throw AppError.unauthenticated("no staff session");
+      }
+
+      const capability = this.reflector.getAllAndOverride<ManagedEntity>(
+        STAFF_CAPABILITY_KEY,
+        [context.getHandler(), context.getClass()],
+      );
+
+      // No capability declared means "any operator", which is deliberate for
+      // the session lookup and sign-out and is the reason `@StaffOnly()` still
+      // exists separately from `@StaffCapability()`.
+      if (capability !== undefined && !canManage(profile.role, capability)) {
+        throw AppError.forbidden(
+          `staff role=${profile.role} may not manage ${capability}`,
+        );
       }
       return true;
     }

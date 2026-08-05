@@ -45,7 +45,11 @@ import {
 } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
-import { AppError, toProblemDetails } from "./problem-details.js";
+import {
+  AppError,
+  schemaRejectionAsAppError,
+  toProblemDetails,
+} from "./problem-details.js";
 
 @Catch()
 export class ProblemDetailsFilter implements ExceptionFilter {
@@ -59,9 +63,22 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 
     const path = safePath(request);
 
-    if (exception instanceof AppError) {
-      const problem = toProblemDetails(exception, path);
-      this.logAppError(exception, correlationId, request, path);
+    /*
+     * A schema rejection is normalised into an `AppError` here rather than
+     * falling through to the 500 branch.
+     *
+     * Most controllers wrap `safeParse` in a local helper that already
+     * produces one. Some call `schema.parse` directly, and a `ZodError`
+     * reaching this filter used to be reported as "Internal server error" —
+     * telling a caller who sent a malformed body that the server is broken,
+     * and burying a client-fixable mistake in the 500 rate.
+     */
+    const appError =
+      exception instanceof AppError ? exception : schemaRejectionAsAppError(exception);
+
+    if (appError !== undefined) {
+      const problem = toProblemDetails(appError, path);
+      this.logAppError(appError, correlationId, request, path);
       response.status(problem.status).json({ ...problem, correlationId });
       return;
     }

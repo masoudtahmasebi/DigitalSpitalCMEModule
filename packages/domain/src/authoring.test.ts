@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canDelete,
+  deletionVerdict,
   contentProblems,
   correctOptionCount,
   questionProblems,
@@ -190,6 +191,81 @@ describe("canDelete", () => {
     // the record of what earned it gone.
     expect(canDelete(1)).toBe(false);
     expect(canDelete(4000)).toBe(false);
+  });
+});
+
+describe("deletionVerdict", () => {
+  it("allows an empty level nobody has touched", () => {
+    expect(deletionVerdict({ learnerRecords: 0, children: {} })).toEqual({ ok: true });
+  });
+
+  it("refuses a non-empty level and names what is inside it", () => {
+    const verdict = deletionVerdict({
+      learnerRecords: 0,
+      children: { project: 2, course: 5 },
+    });
+
+    expect(verdict).toEqual({
+      ok: false,
+      reason: "has_children",
+      children: [
+        { level: "project", count: 2 },
+        { level: "course", count: 5 },
+      ],
+    });
+  });
+
+  it("reports children outermost first, whatever order they were counted in", () => {
+    // The refusal should read down the hierarchy the way the console draws it.
+    const verdict = deletionVerdict({
+      learnerRecords: 0,
+      children: { content: 9, module: 1, chapter: 3 },
+    });
+
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok || verdict.reason !== "has_children")
+      throw new Error("expected children");
+    expect(verdict.children.map((c) => c.level)).toEqual([
+      "module",
+      "chapter",
+      "content",
+    ]);
+  });
+
+  it("does not report a level that has no children", () => {
+    // "0 Kapitel" in a message whose job is to say what is in the way is noise.
+    const verdict = deletionVerdict({
+      learnerRecords: 0,
+      children: { chapter: 0, content: 2 },
+    });
+
+    if (verdict.ok || verdict.reason !== "has_children")
+      throw new Error("expected children");
+    expect(verdict.children).toEqual([{ level: "content", count: 2 }]);
+  });
+
+  it("reports learner records ahead of children, because only one is permanent", () => {
+    // Emptying the level would not make it deletable, so sending somebody to do
+    // that wastes the trip — and walks them into deleting the evidence itself.
+    const verdict = deletionVerdict({
+      learnerRecords: 3,
+      children: { course: 1 },
+    });
+
+    expect(verdict).toEqual({
+      ok: false,
+      reason: "learner_records",
+      learnerRecords: 3,
+    });
+  });
+
+  it("refuses on learner records even when the level is empty", () => {
+    // A course whose content was already removed still holds the enrolments.
+    expect(deletionVerdict({ learnerRecords: 1, children: {} })).toEqual({
+      ok: false,
+      reason: "learner_records",
+      learnerRecords: 1,
+    });
   });
 });
 

@@ -73,6 +73,12 @@ export const RATE_LIMIT_RULES = {
    * keeps that audit trail a record of deliberate acts rather than of a script.
    */
   adminExport: { limit: 10, windowSec: 60 },
+  /**
+   * Creating a customer mints a tenant boundary. Nobody legitimately does it in
+   * bulk, and an accidental loop in a console script should stop rather than
+   * seed fifty empty tenants that then have to be found and deleted one by one.
+   */
+  customerCreate: { limit: 10, windowSec: 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMIT_RULES;

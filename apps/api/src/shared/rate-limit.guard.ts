@@ -45,7 +45,19 @@ export class RateLimitGuard implements CanActivate {
     if (name === undefined) return true;
 
     const request = context.switchToHttp().getRequest<Request>();
-    const subject = request.principal?.userId ?? request.ip ?? "unknown";
+
+    /*
+     * `staffProfile` is consulted because staff routes above the tenant have no
+     * `principal` at all — there is no customer to resolve a role within
+     * (ADR-0012). Without it every such route would key on the client IP, and
+     * two operators sharing an office NAT would share a quota: one of them
+     * creating customers would throttle the other's session lookups.
+     *
+     * Both ids name the same account when both are present, so the order is
+     * arbitrary; what matters is that neither is skipped.
+     */
+    const subject =
+      request.principal?.userId ?? request.staffProfile?.id ?? request.ip ?? "unknown";
 
     const decision = await this.limiter.check(name, subject, new Date());
 

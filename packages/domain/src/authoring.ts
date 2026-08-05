@@ -277,6 +277,96 @@ export function canDelete(learnerRecords: number): boolean {
   return learnerRecords === 0;
 }
 
+/** A level of `Customer → Department → Project → Course → Modul → Kapitel → Inhalt`. */
+export type HierarchyLevel =
+  "customer" | "department" | "project" | "course" | "module" | "chapter" | "content";
+
+/** How many of each level sit beneath the thing somebody wants to delete. */
+export type ChildCensus = Partial<Readonly<Record<HierarchyLevel, number>>>;
+
+export type DeletionVerdict =
+  | { readonly ok: true }
+  /** Evidence behind a CME point points at this. Never deletable. */
+  | {
+      readonly ok: false;
+      readonly reason: "learner_records";
+      readonly learnerRecords: number;
+    }
+  /** Structurally non-empty. Deletable once emptied, so the counts are named. */
+  | {
+      readonly ok: false;
+      readonly reason: "has_children";
+      readonly children: readonly {
+        readonly level: HierarchyLevel;
+        readonly count: number;
+      }[];
+    };
+
+/**
+ * Whether a level of the hierarchy may be deleted, and if not, precisely why.
+ *
+ * `canDelete` above answers this for a leaf, where the only question is whether
+ * learners have touched it. Every level above a leaf has a second question: is
+ * anything still inside it?
+ *
+ * ## Why a non-empty parent is refused rather than cascaded
+ *
+ * A cascade from a customer would remove that customer's departments, projects,
+ * courses, every learner's progress and every certificate, from one click,
+ * transactionally, with no way back. The database already refuses it —
+ * `ON DELETE RESTRICT` on every `customer_id` foreign key — so a cascade here
+ * would additionally mean fighting the schema to do the more dangerous thing.
+ *
+ * The refusal names the counts because "cannot delete" without them sends
+ * somebody hunting through seven levels for the one course they forgot. The
+ * counts are what turn a refusal into an instruction.
+ *
+ * ## Why learner records outrank children
+ *
+ * They are different kinds of "no". A non-empty parent becomes deletable once
+ * emptied; a parent holding learner evidence does not, and telling somebody to
+ * go and empty it would send them to delete the evidence one level down —
+ * where they would be refused again, having wasted the trip. The permanent
+ * reason is the more useful one, so it is reported first.
+ */
+export function deletionVerdict(input: {
+  readonly learnerRecords: number;
+  readonly children: ChildCensus;
+}): DeletionVerdict {
+  if (!canDelete(input.learnerRecords)) {
+    return {
+      ok: false,
+      reason: "learner_records",
+      learnerRecords: input.learnerRecords,
+    };
+  }
+
+  const children = HIERARCHY_ORDER.flatMap((level) => {
+    const count = input.children[level] ?? 0;
+    // A zero is an absent child, not a reportable one. Reporting it would put
+    // "0 Kapitel" in a message whose whole job is to say what is in the way.
+    return count > 0 ? [{ level, count }] : [];
+  });
+
+  return children.length === 0
+    ? { ok: true }
+    : { ok: false, reason: "has_children", children };
+}
+
+/**
+ * Outermost first, so a refusal reads down the hierarchy the way the console
+ * draws it rather than in whatever order the counts were gathered.
+ */
+const HIERARCHY_ORDER: readonly HierarchyLevel[] = [
+  "customer",
+  "department",
+  "project",
+  "course",
+  "module",
+  "chapter",
+  "content",
+];
+
 function blank(value: string | null | undefined): boolean {
   return value === undefined || value === null || value.trim() === "";
 }

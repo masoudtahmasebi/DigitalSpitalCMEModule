@@ -95,7 +95,7 @@ export class AppError extends Error {
  * message is, by definition, not something we have decided is safe to disclose.
  */
 export function toProblemDetails(error: unknown, instance?: string): ProblemDetails {
-  const app = error instanceof AppError ? error : undefined;
+  const app = error instanceof AppError ? error : schemaRejectionAsAppError(error);
   const kind: AppErrorKind = app?.kind ?? "internal";
 
   return {
@@ -105,4 +105,51 @@ export function toProblemDetails(error: unknown, instance?: string): ProblemDeta
     ...(app?.clientDetail === undefined ? {} : { detail: app.clientDetail }),
     ...(instance === undefined ? {} : { instance }),
   };
+}
+
+/**
+ * A schema rejection is a 422, not a 500.
+ *
+ * Most controllers wrap `safeParse` in a local helper that produces a proper
+ * `AppError`. Some call `schema.parse` directly, and a `ZodError` escaping to
+ * the filter used to become a bare "Internal server error" — telling a caller
+ * who sent a malformed body that the server is broken, and burying a
+ * client-fixable mistake in the 500 rate.
+ *
+ * This is the safety net rather than the intended path: the local helpers say
+ * *which* field is wrong, which is more useful. What matters is that missing
+ * one is no longer a 500.
+ *
+ * Detected structurally rather than with `instanceof ZodError`. Two copies of
+ * zod in a workspace — an easy state to reach with hoisting — makes
+ * `instanceof` silently false, and the failure would be invisible: the code
+ * would look right and produce 500s in production.
+ */
+export function schemaRejectionAsAppError(error: unknown): AppError | undefined {
+  if (!isZodError(error)) return undefined;
+
+  const fields = error.issues
+    .map((issue) => issue.path.join("."))
+    .filter((path) => path !== "")
+    .join(", ");
+
+  return new AppError(
+    "validation",
+    `schema rejected the request body${fields === "" ? "" : `: ${fields}`}`,
+    // No issue messages: they are written for a developer and can quote the
+    // rejected value, which for this API includes an EFN and a password.
+    "Die Eingaben sind nicht gültig. Bitte prüfen Sie die markierten Felder.",
+  );
+}
+
+function isZodError(
+  error: unknown,
+): error is { issues: { path: (string | number)[] }[] } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "issues" in error &&
+    Array.isArray((error as { issues: unknown }).issues) &&
+    (error as { name?: unknown }).name === "ZodError"
+  );
 }

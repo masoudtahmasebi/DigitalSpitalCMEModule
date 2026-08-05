@@ -16,7 +16,32 @@
  * this is a footnote rather than a role silently failing every check.
  */
 export type { AppRole } from "@ds/domain";
-import type { AppRole } from "@ds/domain";
+import type { AppRole, ManagedEntity, StaffRole } from "@ds/domain";
+
+/**
+ * Who a staff request is, above and beyond any one tenant (ADR-0012).
+ *
+ * Separate from `Principal` because it exists on requests that have no tenant
+ * at all — the customer list, the operator's own profile — where a
+ * `customerId` would have to be invented. `role` is the broadest grant held,
+ * which is what capability checks and the console's menu both read.
+ *
+ * Typed rather than `unknown`: it was `unknown`, and the cost was that
+ * `RolesGuard` could only ask whether it existed, which made every staff route
+ * equally reachable by every operator.
+ */
+export interface StaffProfile {
+  readonly id: string;
+  readonly email: string;
+  readonly displayName: string;
+  readonly role: StaffRole;
+  readonly capabilities: readonly ManagedEntity[];
+  readonly grants: readonly {
+    readonly role: StaffRole;
+    readonly customerId: string | null;
+    readonly departmentId: string | null;
+  }[];
+}
 
 export interface Principal {
   readonly userId: string;
@@ -51,6 +76,6 @@ declare module "express-serve-static-core" {
     principal?: Principal;
     /** Set when the request arrived on the staff plane (ADR-0012). */
     staffSessionId?: string;
-    staffProfile?: unknown;
+    staffProfile?: StaffProfile;
   }
 }

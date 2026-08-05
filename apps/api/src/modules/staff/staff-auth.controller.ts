@@ -53,6 +53,18 @@ const LoginBody = z.object({
   password: z.string().min(1).max(512),
 });
 
+const TotpEnrolBody = z.object({
+  challenge: z.string().min(1).max(512),
+});
+
+const TotpVerifyBody = z.object({
+  challenge: z.string().min(1).max(512),
+  // Exactly six digits. A looser schema would send whitespace and dashes — both
+  // of which authenticator apps display — into the comparison, where they
+  // would fail with no indication why.
+  code: z.string().regex(/^\d{6}$/, "six digits"),
+});
+
 const RedeemBody = z.object({
   token: z.string().min(1).max(512),
   password: z.string().min(1).max(512),
@@ -154,6 +166,66 @@ export class StaffAuthController {
     const profile = request.staffProfile;
     if (profile === undefined) throw AppError.unauthenticated("no staff session");
     return { profile };
+  }
+
+  /**
+   * Show the operator a secret to scan (P12-03).
+   *
+   * Public because the caller has no session yet — the challenge from `login`
+   * is the credential, and it authorises nothing except this and
+   * `/totp/verify`. The secret is returned exactly once; there is no endpoint
+   * that can produce it again, so an operator who loses it re-enrols.
+   */
+  @Public()
+  @Post("totp/enrol")
+  async enrolTotp(@Body() body: unknown): Promise<{ otpauthUri: string }> {
+    const input = TotpEnrolBody.parse(body);
+    const outcome = await this.service.beginTotpEnrolment(input.challenge);
+
+    // One answer for an expired challenge, an unknown one and an account that
+    // is already enrolled. Distinguishing them would tell somebody holding a
+    // stale challenge which of those it was.
+    if (outcome.kind === "rejected") {
+      throw AppError.unauthenticated("this sign-in attempt is no longer valid");
+    }
+    return { otpauthUri: outcome.otpauthUri };
+  }
+
+  /**
+   * Finish a sign-in by presenting a code (P12-03).
+   *
+   * Serves both the first code after enrolment and every code after that. On
+   * success this is where the real session cookie is issued — the challenge
+   * never was one (migration 0022).
+   */
+  @Public()
+  @Post("totp/verify")
+  async verifyTotp(
+    @Body() body: unknown,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<unknown> {
+    const input = TotpVerifyBody.parse(body);
+
+    const outcome = await this.service.verifyTotp({
+      challengeToken: input.challenge,
+      code: input.code,
+      userAgent: headerOrNull(request, "user-agent"),
+      ip: request.ip ?? null,
+    });
+
+    if (outcome.kind !== "signed_in") {
+      // A wrong code, a spent challenge and a disabled account are one answer.
+      // The audit log records which.
+      throw AppError.unauthenticated("invalid credentials");
+    }
+
+    response.cookie(SESSION_COOKIE, outcome.sessionToken, this.cookieOptions());
+    return {
+      status: "signed_in",
+      csrfToken: outcome.csrfToken,
+      profile: outcome.profile,
+    };
   }
 
   /**
