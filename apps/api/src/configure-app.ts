@@ -42,12 +42,42 @@ export async function configureApp(
 
   app.use(helmet());
 
-  // A wildcard here would defeat the point of restricting who may call the
-  // API — ADR-0007 keeps the API host-ignorant, but "ignorant of which host"
-  // is not the same as "reachable by any origin".
+  /*
+   * A wildcard here would defeat the point of restricting who may call the
+   * API — ADR-0007 keeps the API host-ignorant, but "ignorant of which host"
+   * is not the same as "reachable by any origin".
+   *
+   * ## Why credentials are now allowed
+   *
+   * The admin console authenticates with an httpOnly session cookie
+   * (ADR-0012), and it is served from a different origin than the API —
+   * `verwaltung.…` and `api.…` are the same *site* but not the same origin.
+   * With `credentials: false` the browser neither stores the cookie the login
+   * response sets nor attaches it to anything afterwards, so the console
+   * cannot work at all.
+   *
+   * This is safe **only because the origin list is an explicit allowlist**.
+   * `Access-Control-Allow-Credentials: true` with a wildcard origin is
+   * forbidden by the fetch specification precisely because it would let any
+   * page on the web make authenticated requests; the two settings are only
+   * ever correct together in this direction. An empty `ALLOWED_ORIGINS`
+   * resolves to `false` — no origin, rather than every origin — so a
+   * misconfigured deployment fails closed.
+   *
+   * CORS is not the CSRF defence either way: `SameSite=Lax` plus the
+   * double-submit token in `X-DS-CSRF` is (see `staff-auth.controller.ts`),
+   * which is why that header has to be allowed through the preflight.
+   */
   app.enableCors({
     origin: config.ALLOWED_ORIGINS.length > 0 ? config.ALLOWED_ORIGINS : false,
-    credentials: false,
+    credentials: true,
+    allowedHeaders: [
+      "authorization",
+      "content-type",
+      "accept",
+      "x-ds-project",
+      "x-ds-csrf",
+    ],
   });
 
   const { json } = await import("express");

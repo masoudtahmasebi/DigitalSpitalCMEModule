@@ -409,7 +409,18 @@ export interface paths {
         get: operations["adminGetCourse"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete an empty course
+         * @description Refused with 409 while it still contains modules, and permanently
+         *     refused once anybody has enrolled — an enrolment is the record behind a
+         *     CME point that may already have been reported to an Ärztekammer, and
+         *     removing it would leave the point credited with nothing to show what
+         *     earned it.
+         *
+         *     Enrolments and not watch progress: a learner who enrolled and never
+         *     pressed play has no progress rows and still has a record worth keeping.
+         */
+        delete: operations["adminDeleteCourse"];
         options?: never;
         head?: never;
         /**
@@ -516,6 +527,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/customers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every customer on the platform
+         * @description Above any tenant, and therefore authenticated by a **staff session
+         *     cookie** rather than a learner bearer token — there is no
+         *     `X-DS-Project` header on these requests because the list spans
+         *     projects (ADR-0012).
+         *
+         *     Requires the `customer` capability, which only `super_admin` holds: a
+         *     customer is the tenant boundary itself, so nobody inside one may see or
+         *     mint another. A customer administrator receives 403.
+         */
+        get: operations["adminListCustomers"];
+        put?: never;
+        /**
+         * Create a customer
+         * @description The API generates the id and opens an RLS tenant context on it before
+         *     inserting, so the new row satisfies the `customers` policy rather than
+         *     bypassing it (ADR-0002).
+         */
+        post: operations["adminCreateCustomer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/customers/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The customer's slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        /** One customer */
+        get: operations["adminGetCustomer"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete an empty customer
+         * @description Refused with 409 while anything is inside it, and permanently refused
+         *     once any learner record exists anywhere beneath it. The `detail` names
+         *     the counts, so the refusal is an instruction rather than a dead end.
+         *     Never a cascade.
+         */
+        delete: operations["adminDeleteCustomer"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a customer
+         * @description The slug cannot be changed here. It is what links, bookmarks and
+         *     runbooks refer to, and re-slugging through the same call that fixes a
+         *     typo in a company name breaks them with nothing in the audit trail to
+         *     explain it.
+         */
+        patch: operations["adminUpdateCustomer"];
+        trace?: never;
+    };
     "/admin/departments": {
         parameters: {
             query?: never;
@@ -549,7 +627,13 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete an empty department
+         * @description Refused with 409 while it still contains projects or courses, and
+         *     permanently refused once a learner has enrolled anywhere beneath it.
+         *     The `detail` names the counts.
+         */
+        delete: operations["adminDeleteDepartment"];
         options?: never;
         head?: never;
         /** Rename a department */
@@ -589,7 +673,13 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete an empty project
+         * @description Refused with 409 while it still contains courses, and permanently
+         *     refused once a learner has enrolled in any of them. The `detail` names
+         *     the counts.
+         */
+        delete: operations["adminDeleteProject"];
         options?: never;
         head?: never;
         /**
@@ -1653,6 +1743,33 @@ export interface components {
             name: string;
             /** @description Projects under this department, in this tenant. */
             projectCount: number;
+        };
+        /**
+         * @description A customer plus how much is inside it. The counts come back with the
+         *     list because the console shows them on the same screen and because a
+         *     follow-up query would be tenant-scoped — counting another customer's
+         *     courses means opening a tenant context on that customer, which is
+         *     precisely what the caller has not been authorised to do.
+         */
+        CustomerSummary: {
+            slug: components["schemas"]["Slug"];
+            name: string;
+            /** Format: date-time */
+            createdAt: string;
+            departmentCount: number;
+            projectCount: number;
+            courseCount: number;
+        };
+        CustomerCreate: {
+            slug: components["schemas"]["Slug"];
+            name: string;
+        };
+        /**
+         * @description No slug. See `adminUpdateCustomer` — re-slugging is a rename of the
+         *     thing itself, not a display change.
+         */
+        CustomerUpdate: {
+            name: string;
         };
         /**
          * @description Names no customer. `customer_id` comes from the RLS session variable, so
@@ -2786,6 +2903,38 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    adminDeleteCourse: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     adminUpdateCourse: {
         parameters: {
             query?: never;
@@ -2972,6 +3121,151 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    adminListCustomers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The customers, by name. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerSummary"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminCreateCustomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerCreate"];
+            };
+        };
+        responses: {
+            /** @description The new customer. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerSummary"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            /**
+             * @description Too many customers created too quickly. A customer is a tenant
+             *     boundary; nobody creates them in bulk, and an accidental loop in a
+             *     console script should stop rather than seed empty tenants.
+             */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    adminGetCustomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The customer's slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The customer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerSummary"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminDeleteCustomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The customer's slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    adminUpdateCustomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The customer's slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerUpdate"];
+            };
+        };
+        responses: {
+            /** @description The renamed customer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerSummary"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
     adminListDepartments: {
         parameters: {
             query?: never;
@@ -3036,6 +3330,41 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminDeleteDepartment: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /** @description The department's slug. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The remaining departments. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentSummary"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     adminUpdateDepartment: {
@@ -3140,6 +3469,41 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminDeleteProject: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /** @description The project being deleted, not the one in `X-DS-Project`. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The remaining projects. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectSummary"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     adminUpdateProject: {

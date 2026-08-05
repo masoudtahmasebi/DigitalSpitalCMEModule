@@ -19,6 +19,45 @@ export const de = {
     expired: "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
     forbidden:
       "Ihr Konto hat keine Berechtigung für die Verwaltung. Bitte wenden Sie sich an Ihre Administration.",
+
+    // Staff sign-in (P12-06). The console has its own accounts, independent of
+    // any customer's Keycloak — see ADR-0012.
+    email: "E-Mail-Adresse",
+    password: "Passwort",
+    invalid: "E-Mail-Adresse oder Passwort ist nicht korrekt.",
+    codeLabel: "Sechsstelliger Code",
+    codePrompt: "Bitte geben Sie den Code aus Ihrer Authenticator-App ein.",
+    codeSubmit: "Bestätigen",
+    codeInvalid: "Der Code ist nicht korrekt oder nicht mehr gültig.",
+    enrolTitle: "Zwei-Faktor-Authentifizierung einrichten",
+    enrolPrompt:
+      "Scannen Sie diesen Code mit Ihrer Authenticator-App und geben Sie anschließend den angezeigten sechsstelligen Code ein.",
+    enrolManual:
+      "Falls Sie nicht scannen können, geben Sie diesen Schlüssel manuell ein:",
+    enrolFailed:
+      "Die Einrichtung konnte nicht gestartet werden. Bitte melden Sie sich erneut an.",
+  },
+
+  customers: {
+    title: "Kunden",
+    intro: "Alle Kunden der Plattform. Nur Super-Administratoren sehen diese Übersicht.",
+    name: "Name",
+    slug: "Kürzel",
+    departments: "Abteilungen",
+    projects: "Projekte",
+    courses: "Fortbildungen",
+    created: "Angelegt",
+    create: "Kunde anlegen",
+    creating: "Wird angelegt …",
+    rename: "Umbenennen",
+    remove: "Löschen",
+    removeConfirm: "Diesen Kunden endgültig löschen?",
+    empty: "Es sind noch keine Kunden angelegt.",
+    slugHint:
+      "Kleinbuchstaben, Ziffern und Bindestriche. Kann später nicht geändert werden.",
+    contains: "Enthält noch",
+    loadFailed: "Die Kundenliste konnte nicht geladen werden.",
+    saveFailed: "Der Kunde konnte nicht gespeichert werden.",
   },
 
   nav: {

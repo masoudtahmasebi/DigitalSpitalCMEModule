@@ -646,6 +646,29 @@ paths:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+    delete:
+      tags: [admin]
+      operationId: adminDeleteCourse
+      summary: Delete an empty course
+      description: |
+        Refused with 409 while it still contains modules, and permanently
+        refused once anybody has enrolled — an enrolment is the record behind a
+        CME point that may already have been reported to an Ärztekammer, and
+        removing it would leave the point credited with nothing to show what
+        earned it.
+
+        Enrolments and not watch progress: a learner who enrolled and never
+        pressed play has no progress rows and still has a record worth keeping.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /admin/courses/{slug}/certificate-assets:
     put:
       tags: [admin]
@@ -779,6 +802,122 @@ paths:
   # server's answer rather than a local edit that has to agree with it.
   # ---------------------------------------------------------------------------
 
+  /admin/customers:
+    get:
+      tags: [admin]
+      operationId: adminListCustomers
+      summary: Every customer on the platform
+      description: |
+        Above any tenant, and therefore authenticated by a **staff session
+        cookie** rather than a learner bearer token — there is no
+        `X-DS-Project` header on these requests because the list spans
+        projects (ADR-0012).
+
+        Requires the `customer` capability, which only `super_admin` holds: a
+        customer is the tenant boundary itself, so nobody inside one may see or
+        mint another. A customer administrator receives 403.
+      responses:
+        "200":
+          description: The customers, by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CustomerSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin]
+      operationId: adminCreateCustomer
+      summary: Create a customer
+      description: |
+        The API generates the id and opens an RLS tenant context on it before
+        inserting, so the new row satisfies the `customers` policy rather than
+        bypassing it (ADR-0002).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomerCreate" }
+      responses:
+        "201":
+          description: The new customer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429":
+          description: |
+            Too many customers created too quickly. A customer is a tenant
+            boundary; nobody creates them in bulk, and an accidental loop in a
+            console script should stop rather than seed empty tenants.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /admin/customers/{slug}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        description: The customer's slug.
+        schema: { type: string }
+    get:
+      tags: [admin]
+      operationId: adminGetCustomer
+      summary: One customer
+      responses:
+        "200":
+          description: The customer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [admin]
+      operationId: adminUpdateCustomer
+      summary: Rename a customer
+      description: |
+        The slug cannot be changed here. It is what links, bookmarks and
+        runbooks refer to, and re-slugging through the same call that fixes a
+        typo in a company name breaks them with nothing in the audit trail to
+        explain it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomerUpdate" }
+      responses:
+        "200":
+          description: The renamed customer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [admin]
+      operationId: adminDeleteCustomer
+      summary: Delete an empty customer
+      description: |
+        Refused with 409 while anything is inside it, and permanently refused
+        once any learner record exists anywhere beneath it. The `detail` names
+        the counts, so the refusal is an instruction rather than a dead end.
+        Never a cascade.
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /admin/departments:
     get:
       tags: [admin]
@@ -850,6 +989,33 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [admin]
+      operationId: adminDeleteDepartment
+      summary: Delete an empty department
+      description: |
+        Refused with 409 while it still contains projects or courses, and
+        permanently refused once a learner has enrolled anywhere beneath it.
+        The `detail` names the counts.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: slug
+          in: path
+          required: true
+          description: The department's slug.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The remaining departments.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DepartmentSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /admin/projects:
     get:
@@ -938,6 +1104,33 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [admin]
+      operationId: adminDeleteProject
+      summary: Delete an empty project
+      description: |
+        Refused with 409 while it still contains courses, and permanently
+        refused once a learner has enrolled in any of them. The `detail` names
+        the counts.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: slug
+          in: path
+          required: true
+          description: The project being deleted, not the one in `X-DS-Project`.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The remaining projects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ProjectSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /admin/courses/{slug}/structure:
     get:
@@ -2604,6 +2797,39 @@ components:
           type: integer
           minimum: 0
           description: Projects under this department, in this tenant.
+
+    CustomerSummary:
+      type: object
+      required: [slug, name, createdAt, departmentCount, projectCount, courseCount]
+      description: |
+        A customer plus how much is inside it. The counts come back with the
+        list because the console shows them on the same screen and because a
+        follow-up query would be tenant-scoped — counting another customer's
+        courses means opening a tenant context on that customer, which is
+        precisely what the caller has not been authorised to do.
+      properties:
+        slug: { $ref: "#/components/schemas/Slug" }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+        departmentCount: { type: integer, minimum: 0 }
+        projectCount: { type: integer, minimum: 0 }
+        courseCount: { type: integer, minimum: 0 }
+
+    CustomerCreate:
+      type: object
+      required: [slug, name]
+      properties:
+        slug: { $ref: "#/components/schemas/Slug" }
+        name: { type: string, minLength: 1, maxLength: 200 }
+
+    CustomerUpdate:
+      type: object
+      required: [name]
+      description: |
+        No slug. See `adminUpdateCustomer` — re-slugging is a rename of the
+        thing itself, not a display change.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
 
     DepartmentCreate:
       type: object

@@ -64,6 +64,12 @@ export function TextInput(props: {
   type?: string | undefined;
   maxLength?: number | undefined;
   autoComplete?: string | undefined;
+  /**
+   * `numeric` for the TOTP code, so a phone offers a digit pad rather than a
+   * full keyboard for six digits. Not `type="number"`, which strips leading
+   * zeros — and a one-in-ten TOTP code starts with one.
+   */
+  inputMode?: "numeric" | "text" | undefined;
   onChange: (value: string) => void;
 }) {
   return (
@@ -73,6 +79,7 @@ export function TextInput(props: {
       value={props.value}
       maxLength={props.maxLength}
       autoComplete={props.autoComplete}
+      inputMode={props.inputMode}
       onChange={(event) => props.onChange(event.target.value)}
       className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
     />

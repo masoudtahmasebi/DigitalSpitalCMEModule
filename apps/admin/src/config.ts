@@ -1,19 +1,31 @@
 /**
  * Runtime configuration for the admin console.
  *
- * Read from Vite's `import.meta.env` at build time. There is nothing secret
- * here — a client id, an issuer URL and an API base are all public by
- * construction in a browser app, and the console holds no credential of its
- * own. The bearer token comes from Keycloak at runtime and never leaves memory
- * (see `auth.ts`).
+ * Read from Vite's `import.meta.env` at build time. Nothing secret is here and
+ * nothing can be: this is a browser bundle, and a value shipped to a browser is
+ * public whatever it is called.
+ *
+ * ## What used to be here
+ *
+ * A Keycloak issuer, client id and redirect URI. All three are gone with
+ * P12-06: the console authenticates against its own staff plane (ADR-0012), so
+ * there is no OIDC flow to configure and no customer realm the console depends
+ * on being reachable. What is left is where the API is, and which project a
+ * tenant-scoped screen acts within.
+ *
+ * The credential is an httpOnly cookie the API sets. It is not configured here
+ * and cannot be read by anything here, which is the point of it.
  */
 
 export interface AdminConfig {
   readonly apiBase: string;
+  /**
+   * Which project tenant-scoped screens act within, sent as `X-DS-Project`.
+   *
+   * The customer registry is above any tenant and deliberately does *not* send
+   * it — see `createPlatformClient` in `api.ts`.
+   */
   readonly projectSlug: string;
-  readonly issuer: string;
-  readonly clientId: string;
-  readonly redirectUri: string;
 }
 
 export function readConfig(): AdminConfig | undefined {
@@ -22,11 +34,6 @@ export function readConfig(): AdminConfig | undefined {
   const config: AdminConfig = {
     apiBase: env.VITE_API_BASE ?? "",
     projectSlug: env.VITE_PROJECT_SLUG ?? "",
-    issuer: env.VITE_KEYCLOAK_ISSUER ?? "",
-    clientId: env.VITE_KEYCLOAK_CLIENT_ID ?? "",
-    // Defaults to wherever the console is served from, which is what a
-    // single-page app registered as one redirect URI wants.
-    redirectUri: env.VITE_REDIRECT_URI ?? window.location.origin + "/",
   };
 
   // A missing value is a deployment mistake, and the console says so rather

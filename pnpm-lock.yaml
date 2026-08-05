@@ -6,7 +6,7 @@ settings:
 
 overrides:
   qs@>=6.11.1 <=6.15.1: '>=6.15.2'
-  js-yaml@>=4.0.0 <4.3.0: '>=4.3.0'
+  js-yaml@>=4.0.0 <4.3.0: ^4.3.0
   brace-expansion@1: ^1.1.16
   brace-expansion@2: ^2.1.2
   brace-expansion@5: ^5.0.8
@@ -79,12 +79,12 @@ importers:
       '@ds/domain':
         specifier: workspace:*
         version: link:../../packages/domain
-      '@ds/oidc':
-        specifier: workspace:*
-        version: link:../../packages/oidc
       '@ds/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+      bwip-js:
+        specifier: ^4.11.2
+        version: 4.11.2
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -3985,7 +3985,7 @@ snapshots:
       colorette: 1.4.0
       https-proxy-agent: 7.0.6(supports-color@10.2.2)
       js-levenshtein: 1.1.6
-      js-yaml: 5.2.2
+      js-yaml: 4.3.0
       minimatch: 5.1.9
       pluralize: 8.0.0
       yaml-ast-parser: 0.0.43

@@ -121,9 +121,15 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
   adminClearFont: (c) => c.adminClearFont(),
   adminListParticipants: (c) => c.adminListParticipants("adhs"),
   adminExportParticipants: (c) => c.adminExportParticipants("adhs"),
+  adminListCustomers: (c) => c.adminListCustomers(),
+  adminGetCustomer: (c) => c.adminGetCustomer("medice"),
+  adminCreateCustomer: (c) => c.adminCreateCustomer({ slug: "medice", name: "MEDICE" }),
+  adminUpdateCustomer: (c) => c.adminUpdateCustomer("medice", { name: "MEDICE" }),
+  adminDeleteCustomer: (c) => c.adminDeleteCustomer("medice"),
   adminListDepartments: (c) => c.adminListDepartments(),
   adminCreateDepartment: (c) => c.adminCreateDepartment({ slug: "d", name: "D" }),
   adminUpdateDepartment: (c) => c.adminUpdateDepartment("d", {}),
+  adminDeleteDepartment: (c) => c.adminDeleteDepartment("d"),
   adminListProjects: (c) => c.adminListProjects(),
   adminCreateProject: (c) =>
     c.adminCreateProject({
@@ -134,6 +140,7 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
       keycloakAudience: "a",
     }),
   adminUpdateProject: (c) => c.adminUpdateProject("p", {}),
+  adminDeleteProject: (c) => c.adminDeleteProject("p"),
   adminCreateCourse: (c) =>
     c.adminCreateCourse({
       slug: "s",
@@ -144,6 +151,7 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
   adminGetStructure: (c) => c.adminGetStructure("adhs"),
   adminCreateModule: (c) => c.adminCreateModule("adhs", { title: "M" }),
   adminUpdateModule: (c) => c.adminUpdateModule(ID, { title: "M" }),
+  adminDeleteCourse: (c) => c.adminDeleteCourse("adhs"),
   adminDeleteModule: (c) => c.adminDeleteModule(ID),
   adminCreateChapter: (c) => c.adminCreateChapter(ID, { title: "K" }),
   adminUpdateChapter: (c) => c.adminUpdateChapter(ID, { title: "K" }),

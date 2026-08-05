@@ -1,28 +1,57 @@
 /**
- * The console's API client.
+ * The console's API clients.
  *
  * Everything network-facing goes through `@ds/sdk`, whose types come from
  * `contracts/openapi.yaml` — no component here calls `fetch`.
  *
- * The token comes from `auth.ts` and is held only in memory. On a 401 the
- * console does not attempt a silent refresh: it sends the user back through
- * Keycloak, which is both simpler and the honest behaviour for an admin
- * session that has genuinely expired.
+ * ## Two clients, because there are two kinds of screen
+ *
+ * Since ADR-0012 the console authenticates with a staff session cookie rather
+ * than a Keycloak bearer token. The cookie is httpOnly, so nothing here reads
+ * it; what the client does carry is `credentials: "include"` and the CSRF
+ * token, which is the half of the double-submit check the page is allowed to
+ * know.
+ *
+ * The two differ in one header. Tenant screens send `X-DS-Project`, which pins
+ * which customer the request acts within. **Platform screens must not**: the
+ * customer registry spans customers, and creating the first one has to work
+ * before any project exists — which is exactly the state a fresh installation
+ * is in. A client that always sent the slug would 401 the one operator able to
+ * fix that.
+ *
+ * On a 401 there is no silent refresh. An opaque server-side session either
+ * exists or does not; there is nothing to refresh with, and the honest
+ * behaviour for an expired admin session is the login form.
  */
 
 import { createClient, isForbidden, problemDetail, type ApiClient } from "@ds/sdk";
-import { currentSession } from "./auth.js";
+import { currentCsrfToken } from "./staff-auth.js";
 import type { AdminConfig } from "./config.js";
 
 export function createAdminClient(config: AdminConfig, onExpired: () => void): ApiClient {
+  return staffClient(config.apiBase, config.projectSlug, onExpired);
+}
+
+/** For screens above any tenant — the customer registry (P12-04). */
+export function createPlatformClient(
+  config: AdminConfig,
+  onExpired: () => void,
+): ApiClient {
+  return staffClient(config.apiBase, undefined, onExpired);
+}
+
+function staffClient(
+  baseUrl: string,
+  projectSlug: string | undefined,
+  onExpired: () => void,
+): ApiClient {
   return createClient({
-    baseUrl: config.apiBase,
-    projectSlug: config.projectSlug,
-    getToken: async () => currentSession()?.accessToken,
+    baseUrl,
+    projectSlug,
+    credentials: "include",
+    getCsrfToken: currentCsrfToken,
     onUnauthorized: async () => {
       onExpired();
-      // No refreshed token, so the SDK does not retry — the user is being sent
-      // to the login screen instead.
       return undefined;
     },
   });

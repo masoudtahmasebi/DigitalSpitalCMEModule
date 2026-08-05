@@ -1,5 +1,5 @@
 /**
- * The admin console shell (P9-01).
+ * The admin console shell (P9-01, re-authenticated in P12-06).
  *
  * ## Navigation shows only what the role may reach — and that is not the gate
  *
@@ -9,11 +9,20 @@
  * what the client chose to draw. Any screen here could be reached by typing a
  * URL, and none of them would work.
  *
- * The console cannot read roles out of the token, and deliberately does not
- * try: parsing a JWT client-side to decide what to show is one small step from
- * parsing it to decide what to allow. Instead it asks the API and adapts to
- * what comes back — a 403 on the course list means "not an admin", and that is
- * the API's answer, not a guess.
+ * The console does not read roles out of a token, and deliberately does not
+ * try. Since ADR-0012 it does not have one: the session is an httpOnly cookie
+ * no script here can read, and the profile — including `capabilities` — comes
+ * from `/admin/auth/session`, which is the server's answer rather than the
+ * page's guess. That is what decides which sections are drawn; the API decides
+ * which ones work.
+ *
+ * ## Why the staff plane and not Keycloak
+ *
+ * The console is DigitalSpital's own tool and its operators are DigitalSpital's
+ * own people. Authenticating them against a customer's realm meant that
+ * customer's realm administrators could mint platform super administrators, and
+ * that one missing audience mapper in one customer's client took the console
+ * down along with every learner. Learners stay federated; operators do not.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -25,8 +34,13 @@ import type {
   ProjectSummary,
 } from "@ds/sdk";
 import { readConfig } from "./config.js";
-import { beginLogin, completeLogin, currentSession, logout } from "./auth.js";
-import { createAdminClient, describeError, isForbidden } from "./api.js";
+import { currentStaff, signOut, type StaffProfile } from "./staff-auth.js";
+import {
+  createAdminClient,
+  createPlatformClient,
+  describeError,
+  isForbidden,
+} from "./api.js";
 import { de } from "./locale/de.js";
 import { Badge, Button, Notice, Spinner, Table } from "./components/ui.js";
 import { BrandingSettings } from "./components/BrandingSettings.js";
@@ -38,25 +52,39 @@ import { CourseStructureEditor } from "./components/CourseStructure.js";
 import { QuizEditor } from "./components/QuizEditor.js";
 import { EvaluationEditor } from "./components/EvaluationEditor.js";
 import { ExpertsEditor } from "./components/ExpertsEditor.js";
-
-type AuthState = "checking" | "anonymous" | "signed-in" | "failed";
+import { Customers } from "./components/Customers.js";
+import { SignIn } from "./components/SignIn.js";
 
 export function App() {
   const config = useMemo(() => readConfig(), []);
-  const [auth, setAuth] = useState<AuthState>("checking");
+  const [profile, setProfile] = useState<StaffProfile | undefined>();
+  const [checking, setChecking] = useState(true);
 
+  /*
+   * Ask the API who is signed in.
+   *
+   * The console cannot tell from the cookie — it is httpOnly, which is the
+   * point — so this is not an optimisation over reading local state, it is the
+   * only way to answer the question. It also survives a reload, which a token
+   * held in memory would not.
+   */
   useEffect(() => {
     if (config === undefined) return;
 
-    completeLogin(config)
-      .then((session) => {
-        setAuth(
-          session === undefined && currentSession() === undefined
-            ? "anonymous"
-            : "signed-in",
-        );
+    let cancelled = false;
+    currentStaff(config.apiBase)
+      .then((found) => {
+        if (cancelled) return;
+        setProfile(found);
+        setChecking(false);
       })
-      .catch(() => setAuth("failed"));
+      .catch(() => {
+        if (!cancelled) setChecking(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [config]);
 
   if (config === undefined) {
@@ -69,7 +97,7 @@ export function App() {
     );
   }
 
-  if (auth === "checking") {
+  if (checking) {
     return (
       <Shell>
         <Spinner label={de.auth.signingIn} />
@@ -77,39 +105,49 @@ export function App() {
     );
   }
 
-  if (auth !== "signed-in") {
+  if (profile === undefined) {
     return (
       <Shell>
-        <div className="space-y-4">
-          {auth === "failed" ? (
-            <Notice tone="error" title={de.error.title}>
-              {de.auth.failed}
-            </Notice>
-          ) : (
-            <p className="text-sm text-gray-700">{de.auth.required}</p>
-          )}
-          <Button onClick={() => void beginLogin(config)}>{de.auth.signIn}</Button>
-        </div>
+        <SignIn apiBase={config.apiBase} onSignedIn={setProfile} />
       </Shell>
     );
   }
 
   return (
-    <Shell onSignOut={() => logout(config)}>
-      <Console config={config} onExpired={() => setAuth("anonymous")} />
+    <Shell
+      operator={profile.displayName}
+      onSignOut={() => {
+        void signOut(config.apiBase).then(() => setProfile(undefined));
+      }}
+    >
+      <Console
+        config={config}
+        profile={profile}
+        onExpired={() => setProfile(undefined)}
+      />
     </Shell>
   );
 }
 
-function Shell(props: { children: React.ReactNode; onSignOut?: () => void }) {
+function Shell(props: {
+  children: React.ReactNode;
+  operator?: string;
+  onSignOut?: () => void;
+}) {
   return (
     <div className="mx-auto max-w-6xl p-6">
       <header className="mb-6 flex items-center justify-between border-b border-gray-200 pb-4">
         <h1 className="text-lg font-bold text-gray-900">{de.appTitle}</h1>
         {props.onSignOut === undefined ? null : (
-          <Button variant="secondary" onClick={props.onSignOut}>
-            {de.auth.signOut}
-          </Button>
+          <div className="flex items-center gap-3">
+            {/* Whose session this is. An operator with two accounts — their own
+                and a super admin one — otherwise has no way to tell which they
+                are acting as, and the two differ in what they can destroy. */}
+            <span className="text-sm text-gray-600">{props.operator}</span>
+            <Button variant="secondary" onClick={props.onSignOut}>
+              {de.auth.signOut}
+            </Button>
+          </div>
         )}
       </header>
       {props.children}
@@ -139,20 +177,47 @@ type View =
   | { kind: "new-course" }
   | { kind: "organisation" }
   | { kind: "branding" }
+  | { kind: "customers" }
   | { kind: "course"; slug: string; tab: CourseTab };
 
-const SECTIONS: ReadonlyArray<readonly [View["kind"], string]> = [
-  ["courses", de.nav.courses],
-  ["organisation", de.nav.organisation],
-  ["branding", de.nav.branding],
+/**
+ * The sections, and the capability each one needs.
+ *
+ * `undefined` means every operator. `customer` is held only by `super_admin`
+ * (P12-01b) — a customer is the tenant boundary itself, so nobody inside one
+ * may see or mint another.
+ *
+ * This hides a tab; it does not protect anything. The API 403s the endpoints
+ * behind it regardless of what was drawn, and `Customers` handles that 403
+ * because a URL can be typed.
+ */
+const SECTIONS: ReadonlyArray<readonly [View["kind"], string, string | undefined]> = [
+  ["courses", de.nav.courses, undefined],
+  ["organisation", de.nav.organisation, undefined],
+  ["branding", de.nav.branding, undefined],
+  ["customers", de.customers.title, "customer"],
 ];
 
 function Console(props: {
   config: ReturnType<typeof readConfig> & object;
+  profile: StaffProfile;
   onExpired: () => void;
 }) {
   const client = useMemo(
     () => createAdminClient(props.config, props.onExpired),
+    [props.config, props.onExpired],
+  );
+
+  /*
+   * A second client, without the `X-DS-Project` header.
+   *
+   * The customer registry is above any tenant, and creating the first customer
+   * has to work before any project exists — the state a fresh installation is
+   * in. A client that always sent the slug would 401 the one operator able to
+   * fix that.
+   */
+  const platformClient = useMemo(
+    () => createPlatformClient(props.config, props.onExpired),
     [props.config, props.onExpired],
   );
 
@@ -227,13 +292,17 @@ function Console(props: {
     );
   }
 
-  // Three top-level sections. Branding and organisation are project-wide rather
-  // than per course — a typeface and a Keycloak realm are properties of the
-  // customer, not of one Fortbildung — so they sit beside the course list
-  // rather than inside a course.
+  // Top-level sections. Branding and organisation are project-wide rather than
+  // per course — a typeface and an identity-provider binding are properties of
+  // the customer, not of one Fortbildung — so they sit beside the course list
+  // rather than inside a course. Kunden sits above all of them and appears only
+  // for an operator who holds the capability.
   const sections = (
     <nav className="flex gap-1 border-b border-gray-200">
-      {SECTIONS.map(([value, label]) => (
+      {SECTIONS.filter(
+        ([, , capability]) =>
+          capability === undefined || props.profile.capabilities.includes(capability),
+      ).map(([value, label]) => (
         <button
           key={value}
           type="button"
@@ -250,6 +319,17 @@ function Console(props: {
       ))}
     </nav>
   );
+
+  if (view.kind === "customers") {
+    return (
+      <div className="space-y-5">
+        {sections}
+        {/* The platform client: no `X-DS-Project` header, because this list
+            spans customers and has to work before any project exists. */}
+        <Customers client={platformClient} />
+      </div>
+    );
+  }
 
   if (view.kind === "branding") {
     return (

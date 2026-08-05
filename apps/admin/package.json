@@ -12,10 +12,10 @@
   },
   "dependencies": {
     "@ds/domain": "workspace:*",
-    "@ds/oidc": "workspace:*",
     "@ds/sdk": "workspace:*",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "bwip-js": "^4.11.2"
   },
   "devDependencies": {
     "@ds/config": "workspace:*",

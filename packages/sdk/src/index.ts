@@ -69,6 +69,9 @@ export type FontState = components["schemas"]["FontState"];
 // so the console can disable a delete *and say why* before it is clicked; the
 // write shapes carry no ordinal anywhere, because position is position in an
 // array.
+export type CustomerSummary = components["schemas"]["CustomerSummary"];
+export type CustomerCreate = components["schemas"]["CustomerCreate"];
+export type CustomerUpdate = components["schemas"]["CustomerUpdate"];
 export type DepartmentSummary = components["schemas"]["DepartmentSummary"];
 export type DepartmentCreate = components["schemas"]["DepartmentCreate"];
 export type DepartmentUpdate = components["schemas"]["DepartmentUpdate"];
@@ -119,17 +122,47 @@ export interface ClientOptions {
   /**
    * The project slug sent as X-DS-Project on every request (ADR-0007). This is
    * what tells the API which host surface is calling — it resolves the
-   * Keycloak realm to validate the token against and pins the tenant.
+   * identity provider to validate the token against and pins the tenant.
+   *
+   * Optional, and omitted rather than sent empty when absent. The admin
+   * console's platform screens — the customer registry above all — are above
+   * any tenant and must work before any project exists, which is exactly the
+   * state a fresh installation is in. Sending a slug that resolves to nothing
+   * would 401 the one operator who could fix it.
    */
-  readonly projectSlug: string;
+  readonly projectSlug?: string | undefined;
   /**
    * Resolves the current bearer token. Async because the widget fetches it from
    * the WordPress endpoint and may need to refresh first (ADR-0003).
+   *
+   * Optional because the staff plane does not use one: it authenticates with an
+   * httpOnly cookie the client cannot read, which is the whole point of it
+   * being httpOnly (ADR-0012).
    */
-  readonly getToken: () => Promise<string | undefined>;
+  readonly getToken?: () => Promise<string | undefined>;
   /** Called on a 401 so the caller can refresh exactly once, never in a loop. */
   readonly onUnauthorized?: () => Promise<string | undefined>;
+  /**
+   * `"include"` for the staff plane, so the session cookie is attached on
+   * cross-origin requests from the console to the API.
+   *
+   * Left unset for the learner plane. A widget embedded in WordPress has no
+   * cookie to send, and asking for credentials it does not have would only
+   * tighten what CORS must allow.
+   */
+  readonly credentials?: RequestCredentials | undefined;
+  /**
+   * The double-submit CSRF token, echoed as `X-DS-CSRF` on state-changing
+   * requests.
+   *
+   * A function rather than a value because it changes on every sign-in, and a
+   * client built once per tab would otherwise hold the first one forever.
+   */
+  readonly getCsrfToken?: () => string | undefined;
 }
+
+/** Methods the API requires a CSRF token on — the same set the guard checks. */
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 export function createClient(options: ClientOptions) {
   async function request<T>(
@@ -137,15 +170,23 @@ export function createClient(options: ClientOptions) {
     init: RequestInit = {},
     isRetry = false,
   ): Promise<T> {
-    const token = await options.getToken();
+    const token = await options.getToken?.();
     const headers = new Headers(init.headers);
     headers.set("accept", "application/json");
-    headers.set("x-ds-project", options.projectSlug);
+    if (options.projectSlug !== undefined && options.projectSlug !== "") {
+      headers.set("x-ds-project", options.projectSlug);
+    }
     if (token !== undefined) headers.set("authorization", `Bearer ${token}`);
+
+    const csrf = options.getCsrfToken?.();
+    if (csrf !== undefined && UNSAFE_METHODS.has((init.method ?? "GET").toUpperCase())) {
+      headers.set("x-ds-csrf", csrf);
+    }
 
     const response = await fetch(new URL(path, options.baseUrl), {
       ...init,
       headers,
+      ...(options.credentials === undefined ? {} : { credentials: options.credentials }),
     });
 
     // P5-02: a 401 triggers exactly one refresh attempt, never a loop.
@@ -175,12 +216,17 @@ export function createClient(options: ClientOptions) {
    * `content-disposition`.
    */
   async function requestBlob(path: string, isRetry = false): Promise<Response> {
-    const token = await options.getToken();
+    const token = await options.getToken?.();
     const headers = new Headers();
-    headers.set("x-ds-project", options.projectSlug);
+    if (options.projectSlug !== undefined && options.projectSlug !== "") {
+      headers.set("x-ds-project", options.projectSlug);
+    }
     if (token !== undefined) headers.set("authorization", `Bearer ${token}`);
 
-    const response = await fetch(new URL(path, options.baseUrl), { headers });
+    const response = await fetch(new URL(path, options.baseUrl), {
+      headers,
+      ...(options.credentials === undefined ? {} : { credentials: options.credentials }),
+    });
 
     if (response.status === 401 && !isRetry && options.onUnauthorized) {
       const refreshed = await options.onUnauthorized();
@@ -234,7 +280,7 @@ export function createClient(options: ClientOptions) {
       // rule sends no custom headers, and there is no hook to add one. The
       // route accepts both for exactly this reason.
       const url = new URL("/branding/font", options.baseUrl);
-      url.searchParams.set("project", options.projectSlug);
+      url.searchParams.set("project", options.projectSlug ?? "");
       url.searchParams.set("v", version);
       return url.toString();
     },
@@ -392,6 +438,38 @@ export function createClient(options: ClientOptions) {
     // the widget renders the server's watched percentage instead of its own.
     // ----------------------------------------------------------------
 
+    // ----------------------------------------------------------------
+    // The customer registry (P12-04)
+    //
+    // Authenticated by the staff session cookie, not a bearer token, and
+    // carrying no `X-DS-Project` header — these routes are above any tenant
+    // (ADR-0012). Only `super_admin` holds the `customer` capability; every
+    // other operator gets 403.
+    // ----------------------------------------------------------------
+
+    adminListCustomers: (): Promise<CustomerSummary[]> => request("/admin/customers"),
+
+    adminGetCustomer: (slug: string): Promise<CustomerSummary> =>
+      request(`/admin/customers/${seg(slug)}`),
+
+    adminCreateCustomer: (input: CustomerCreate): Promise<CustomerSummary> =>
+      request("/admin/customers", json(input)),
+
+    /** Renames only. The slug is what links and runbooks refer to. */
+    adminUpdateCustomer: (
+      slug: string,
+      update: CustomerUpdate,
+    ): Promise<CustomerSummary> =>
+      request(`/admin/customers/${seg(slug)}`, json(update, "PATCH")),
+
+    /**
+     * Refused with 409 while anything is inside it, and permanently once any
+     * learner record exists beneath it. The problem document's `detail` names
+     * the counts, so it can be shown to the operator as-is.
+     */
+    adminDeleteCustomer: (slug: string): Promise<void> =>
+      request(`/admin/customers/${seg(slug)}`, { method: "DELETE" }),
+
     adminListDepartments: (): Promise<DepartmentSummary[]> =>
       request("/admin/departments"),
 
@@ -403,6 +481,10 @@ export function createClient(options: ClientOptions) {
       update: DepartmentUpdate,
     ): Promise<DepartmentSummary[]> =>
       request(`/admin/departments/${seg(slug)}`, json(update, "PATCH")),
+
+    /** Refused with 409 while it still contains projects or courses. */
+    adminDeleteDepartment: (slug: string): Promise<DepartmentSummary[]> =>
+      request(`/admin/departments/${seg(slug)}`, { method: "DELETE" }),
 
     adminListProjects: (): Promise<ProjectSummary[]> => request("/admin/projects"),
 
@@ -419,8 +501,19 @@ export function createClient(options: ClientOptions) {
     ): Promise<ProjectSummary[]> =>
       request(`/admin/projects/${seg(slug)}`, json(update, "PATCH")),
 
+    /** Refused with 409 while it still contains courses. */
+    adminDeleteProject: (slug: string): Promise<ProjectSummary[]> =>
+      request(`/admin/projects/${seg(slug)}`, { method: "DELETE" }),
+
     adminCreateCourse: (input: CourseCreate): Promise<CourseStructure> =>
       request("/admin/courses", json(input)),
+
+    /**
+     * Refused with 409 while it still contains modules, and permanently once
+     * anybody has enrolled — an enrolment is the record behind a CME point.
+     */
+    adminDeleteCourse: (slug: string): Promise<void> =>
+      request(adminCourse(slug), { method: "DELETE" }),
 
     adminGetStructure: (slug: string): Promise<CourseStructure> =>
       request(`${adminCourse(slug)}/structure`),
