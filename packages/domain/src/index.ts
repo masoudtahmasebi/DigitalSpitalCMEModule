@@ -188,3 +188,43 @@ export type {
   DeliveryFailure,
   DeliveryPlan,
 } from "./delivery-retry.js";
+
+/**
+ * Staff identity (ADR-0012). The rules deciding who may sign in to the admin
+ * console, stay signed in, and create other accounts.
+ */
+export {
+  canGrant,
+  checkPassword,
+  INVITE_VALID_DAYS,
+  inviteStatus,
+  LOCKOUT_MINUTES,
+  lockoutStatus,
+  MAX_FAILED_ATTEMPTS,
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  requiresSecondFactor,
+  RESET_VALID_MINUTES,
+  resetStatus,
+  secondFactorStep,
+  SESSION_ABSOLUTE_HOURS,
+  SESSION_IDLE_MINUTES,
+  sessionStatus,
+} from "./staff-identity.js";
+export type {
+  GrantCheck,
+  GrantDenial,
+  InviteState,
+  InviteVerdict,
+  LockoutState,
+  LockoutVerdict,
+  PasswordCheck,
+  PasswordContext,
+  PasswordRejection,
+  SecondFactorOutcome,
+  SessionInvalidReason,
+  SessionState,
+  SessionVerdict,
+  StaffRole,
+  StaffScope,
+} from "./staff-identity.js";
