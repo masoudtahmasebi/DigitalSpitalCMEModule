@@ -13,7 +13,8 @@
  * claim unable to escalate privilege.
  */
 
-export type AppRole = "super_admin" | "customer_admin" | "department_admin" | "learner";
+export type AppRole =
+  "super_admin" | "customer_admin" | "department_admin" | "course_editor" | "learner";
 
 export interface RoleGrant {
   readonly role: AppRole;
@@ -38,11 +39,19 @@ export type TenantResolutionResult =
   | { readonly ok: true; readonly context: TenantResolution }
   | { readonly ok: false; readonly reason: TenantDenialReason };
 
+/**
+ * Rank orders *breadth of tenant access*, which is not the same thing as
+ * capability — a `course_editor` outranks a learner here because it reaches
+ * authoring data at all, while managing far less than a `department_admin`.
+ * What each role may *do* is `CAPABILITIES` in `staff-identity.ts`; this rank
+ * only decides which grant wins when somebody holds several for one customer.
+ */
 const ROLE_RANK: Readonly<Record<AppRole, number>> = {
   learner: 0,
-  department_admin: 1,
-  customer_admin: 2,
-  super_admin: 3,
+  course_editor: 1,
+  department_admin: 2,
+  customer_admin: 3,
+  super_admin: 4,
 };
 
 /**

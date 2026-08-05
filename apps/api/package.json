@@ -21,6 +21,7 @@
     "@nestjs/common": "^11.1.28",
     "@nestjs/core": "^11.1.28",
     "@nestjs/platform-express": "^11.1.28",
+    "@node-rs/argon2": "^2.0.2",
     "bwip-js": "^4.11.2",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",

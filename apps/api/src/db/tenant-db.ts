@@ -14,6 +14,7 @@
  * customer id (super admin included — it acts as one customer at a time, ADR-0002).
  */
 
+import type { AppRole } from "@ds/domain";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { schema } from "./schema.js";
 
@@ -39,8 +40,7 @@ export interface TenantContext {
    * apart from "the submission queue did this" — which are very different
    * things to find in a compliance log.
    */
-  readonly role:
-    "super_admin" | "customer_admin" | "department_admin" | "learner" | "system";
+  readonly role: AppRole | "system";
   readonly userId?: string;
 }
 

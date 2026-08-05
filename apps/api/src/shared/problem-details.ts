@@ -74,6 +74,18 @@ export class AppError extends Error {
   static unauthenticated(reason: string): AppError {
     return new AppError("unauthenticated", reason);
   }
+
+  /**
+   * A refusal the caller can act on, and which is therefore safe to echo.
+   *
+   * `clientDetail` is set to the same string on purpose — unlike the other
+   * three, a bad-request reason is about what the caller sent, not about what
+   * exists on the server, so telling them is not a disclosure. Callers that
+   * would leak something must not use this helper.
+   */
+  static badRequest(reason: string): AppError {
+    return new AppError("validation", reason, reason);
+  }
 }
 
 /**

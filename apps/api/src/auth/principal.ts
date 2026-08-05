@@ -8,7 +8,15 @@
  * entire point of ADR-0002 — the client's word about who it is is never trusted.
  */
 
-export type AppRole = "super_admin" | "customer_admin" | "department_admin" | "learner";
+/**
+ * Re-exported from `@ds/domain` rather than restated.
+ *
+ * It was a second declaration of the same union, and the two drifted the moment
+ * `course_editor` was added — the compiler caught it, which is the only reason
+ * this is a footnote rather than a role silently failing every check.
+ */
+export type { AppRole } from "@ds/domain";
+import type { AppRole } from "@ds/domain";
 
 export interface Principal {
   readonly userId: string;
@@ -25,5 +33,8 @@ export interface Principal {
 declare module "express-serve-static-core" {
   interface Request {
     principal?: Principal;
+    /** Set when the request arrived on the staff plane (ADR-0012). */
+    staffSessionId?: string;
+    staffProfile?: unknown;
   }
 }
