@@ -1,0 +1,248 @@
+/**
+ * Per-learner progress, and the two things an operator may do to a record
+ * (P12-05).
+ *
+ * ## What this screen is for
+ *
+ * "How is each user progressing?" — watch percentage, best quiz score, whether
+ * the Punktemeldung has gone, whether a certificate exists. One row per
+ * enrolment, because a physician taking two courses has two independent
+ * records and merging them would hide which one is stuck.
+ *
+ * ## The two writes, and why each is guarded
+ *
+ * **Correcting a name** is refused by the API once the Punktemeldung has been
+ * accepted — the name is on the Ärztekammer's record by then. The console
+ * disables the control at that point rather than letting the operator type a
+ * correction and discover the refusal afterwards.
+ *
+ * **Erasing a subject** is irreversible, crosses tenants, and asks for a
+ * reason that goes into the audit trail. It is behind a two-step confirm and a
+ * required reason for that reason.
+ *
+ * ## The EFN
+ *
+ * Masked by the API before it is serialised — last four digits. This component
+ * could not show more if it wanted to, which is the point (ADR-0004).
+ */
+
+import { useCallback, useEffect, useState } from "react";
+import type { ApiClient, LearnerRecord } from "@ds/sdk";
+import { de } from "../locale/de.js";
+import { describeError, isForbidden } from "../api.js";
+import {
+  Badge,
+  Button,
+  Field,
+  LoadFailure,
+  Notice,
+  Spinner,
+  Table,
+  TextInput,
+} from "./ui.js";
+
+export function Learners(props: { client: ApiClient; courseSlug?: string }) {
+  const { client, courseSlug } = props;
+  const [rows, setRows] = useState<LearnerRecord[] | undefined>();
+  const [problem, setProblem] = useState<string | undefined>();
+  const [forbidden, setForbidden] = useState(false);
+  const [editing, setEditing] = useState<string | undefined>();
+  const [name, setName] = useState("");
+  const [erasing, setErasing] = useState<string | undefined>();
+  const [reason, setReason] = useState("");
+
+  const load = useCallback(async () => {
+    setProblem(undefined);
+    try {
+      setRows(await client.adminListLearners(courseSlug));
+    } catch (error) {
+      if (isForbidden(error)) setForbidden(true);
+      else setProblem(describeError(error, de.learners.loadFailed));
+    }
+  }, [client, courseSlug]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function correct(row: LearnerRecord): Promise<void> {
+    setProblem(undefined);
+    try {
+      await client.adminCorrectLearnerName(row.enrolmentId, name.trim());
+      setEditing(undefined);
+      setName("");
+      await load();
+    } catch (error) {
+      // A 409 explains that the Punktemeldung has gone and what to do instead.
+      // Shown verbatim: paraphrasing it would drop the instruction.
+      setProblem(describeError(error, de.learners.saveFailed));
+    }
+  }
+
+  async function erase(row: LearnerRecord): Promise<void> {
+    setProblem(undefined);
+    try {
+      await client.adminEraseSubject(row.enrolmentId, reason.trim());
+      setErasing(undefined);
+      setReason("");
+      await load();
+    } catch (error) {
+      setProblem(describeError(error, de.learners.saveFailed));
+    }
+  }
+
+  if (forbidden) {
+    return (
+      <Notice tone="warning" title={de.error.title}>
+        {de.auth.forbidden}
+      </Notice>
+    );
+  }
+
+  if (rows === undefined) {
+    return problem === undefined ? (
+      <Spinner label={de.loading} />
+    ) : (
+      <LoadFailure
+        title={de.error.title}
+        retryLabel={de.error.retry}
+        problem={problem}
+        onRetry={() => void load()}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <p className="text-sm text-gray-700">{de.learners.intro}</p>
+
+      {problem === undefined ? null : (
+        <Notice tone="error" title={de.error.title}>
+          {problem}
+        </Notice>
+      )}
+
+      {rows.length === 0 ? (
+        <p className="text-sm text-gray-600">{de.learners.empty}</p>
+      ) : (
+        <Table
+          headers={[
+            de.learners.name,
+            de.learners.efn,
+            de.learners.course,
+            de.learners.watched,
+            de.learners.quiz,
+            de.learners.submission,
+            de.learners.certificate,
+            "",
+          ]}
+        >
+          {rows.map((row) => (
+            <tr key={row.enrolmentId} className="border-t border-gray-100 align-top">
+              <td className="px-3 py-2 text-sm">
+                {editing === row.enrolmentId ? (
+                  <div className="space-y-2">
+                    <Field label={de.learners.name} htmlFor={`name-${row.enrolmentId}`}>
+                      <TextInput
+                        id={`name-${row.enrolmentId}`}
+                        value={name}
+                        maxLength={300}
+                        onChange={setName}
+                      />
+                    </Field>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => void correct(row)}
+                        disabled={name.trim() === ""}
+                      >
+                        {de.common.save}
+                      </Button>
+                      <Button variant="secondary" onClick={() => setEditing(undefined)}>
+                        {de.common.cancel}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  (row.attestedName ?? "—")
+                )}
+              </td>
+              <td className="px-3 py-2 font-mono text-xs text-gray-600">
+                {row.maskedEfn ?? "—"}
+              </td>
+              <td className="px-3 py-2 text-sm">{row.courseTitle}</td>
+              <td className="px-3 py-2 text-sm tabular-nums">{row.watchedPercent} %</td>
+              <td className="px-3 py-2 text-sm tabular-nums">
+                {row.quizBestPercent === null ? "—" : `${row.quizBestPercent} %`}
+              </td>
+              <td className="px-3 py-2 text-sm">
+                <Badge tone={row.submissionStage === "submitted" ? "ok" : "muted"}>
+                  {de.learners.stage[row.submissionStage]}
+                </Badge>
+              </td>
+              <td className="px-3 py-2 text-sm">{row.certificateStatus ?? "—"}</td>
+              <td className="px-3 py-2 text-right">
+                {erasing === row.enrolmentId ? (
+                  <div className="space-y-2">
+                    <Field
+                      label={de.learners.reason}
+                      htmlFor={`reason-${row.enrolmentId}`}
+                      hint={de.learners.reasonHint}
+                    >
+                      <TextInput
+                        id={`reason-${row.enrolmentId}`}
+                        value={reason}
+                        maxLength={200}
+                        onChange={setReason}
+                      />
+                    </Field>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="danger"
+                        onClick={() => void erase(row)}
+                        disabled={reason.trim() === ""}
+                      >
+                        {de.learners.eraseConfirm}
+                      </Button>
+                      <Button variant="secondary" onClick={() => setErasing(undefined)}>
+                        {de.common.cancel}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-end gap-2">
+                    {/* Disabled once reported: the API refuses it and the
+                        operator should know before typing, not after. */}
+                    {row.submissionStage === "submitted" ? (
+                      <span
+                        className="text-xs text-gray-500"
+                        title={de.learners.nameLockedHint}
+                      >
+                        {de.learners.nameLocked}
+                      </span>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setEditing(row.enrolmentId);
+                          setName(row.attestedName ?? "");
+                        }}
+                      >
+                        {de.learners.correctName}
+                      </Button>
+                    )}
+                    <Button
+                      variant="secondary"
+                      onClick={() => setErasing(row.enrolmentId)}
+                    >
+                      {de.learners.erase}
+                    </Button>
+                  </div>
+                )}
+              </td>
+            </tr>
+          ))}
+        </Table>
+      )}
+    </div>
+  );
+}

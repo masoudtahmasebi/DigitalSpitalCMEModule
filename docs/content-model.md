@@ -179,17 +179,17 @@ the learner is entitled to see.
 
 What the admin panel shows per learner, and what the widget renders.
 
-| Concept                                  | Source                                               | Status                         |
-| ---------------------------------------- | ---------------------------------------------------- | ------------------------------ |
-| Watch coverage                           | `content_progress` segments → `courseWatchCoverage`  | ✅                             |
-| Module completion                        | `rollupProgress` — the **one** rollup path           | ✅                             |
-| Quiz score / attempts                    | `quiz_attempts`                                      | ✅                             |
-| Evaluation submitted                     | `evaluation_responses`                               | ✅                             |
-| EFN                                      | `efn_profiles` — one per person, never per enrolment | ✅                             |
-| Completion                               | `enrolments.completed_at`, server-decided            | ✅                             |
-| EIV submission state                     | `eiv_submissions` + append-only attempt log          | ✅                             |
-| Certificate                              | `certificates`                                       | ✅                             |
-| Per-learner progress detail in the panel | `GET /admin/learners`                                | ✅ API; console screen pending |
+| Concept                                  | Source                                               | Status |
+| ---------------------------------------- | ---------------------------------------------------- | ------ |
+| Watch coverage                           | `content_progress` segments → `courseWatchCoverage`  | ✅     |
+| Module completion                        | `rollupProgress` — the **one** rollup path           | ✅     |
+| Quiz score / attempts                    | `quiz_attempts`                                      | ✅     |
+| Evaluation submitted                     | `evaluation_responses`                               | ✅     |
+| EFN                                      | `efn_profiles` — one per person, never per enrolment | ✅     |
+| Completion                               | `enrolments.completed_at`, server-decided            | ✅     |
+| EIV submission state                     | `eiv_submissions` + append-only attempt log          | ✅     |
+| Certificate                              | `certificates`                                       | ✅     |
+| Per-learner progress detail in the panel | `GET /admin/learners`                                | ✅     |
 
 Learner progress and admin reporting read the same rollup over the same
 repository method (CLAUDE.md §4 invariant 6). Two implementations would

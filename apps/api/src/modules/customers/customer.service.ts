@@ -170,6 +170,7 @@ function refusal(
 }
 
 function toSummary(entry: {
+  id: string;
   slug: string;
   name: string;
   createdAt: Date;
@@ -178,6 +179,7 @@ function toSummary(entry: {
   courseCount: number;
 }): CustomerSummary {
   return {
+    id: entry.id,
     slug: entry.slug,
     name: entry.name,
     createdAt: entry.createdAt.toISOString(),

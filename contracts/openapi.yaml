@@ -802,6 +802,289 @@ paths:
   # server's answer rather than a local edit that has to agree with it.
   # ---------------------------------------------------------------------------
 
+  /admin/learners:
+    get:
+      tags: [admin]
+      operationId: adminListLearners
+      summary: Every enrolment in this tenant, with its progress
+      description: |
+        The per-learner progress view. Carries a **masked** EFN — the last four
+        digits — and never the whole value: an operator confirming they have the
+        right person needs to recognise it, not to read it (ADR-0004).
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: course
+          in: query
+          required: false
+          description: Restrict to one course's slug. Absent means all courses.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The enrolments.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/LearnerRecord" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/learners/{enrolmentId}/name:
+    patch:
+      tags: [admin]
+      operationId: adminCorrectLearnerName
+      summary: Correct the name a certificate will carry
+      description: |
+        Allowed until the Punktemeldung is accepted, and refused with 409 after
+        it — the name is on the Ärztekammer's record by then, and a silent edit
+        would make the two disagree. The correction path after that point is a
+        written one inside the seven-day window.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: enrolmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 300 }
+      responses:
+        "204": { description: Corrected. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/learners/{enrolmentId}:
+    delete:
+      tags: [admin]
+      operationId: adminEraseSubject
+      summary: Erase a subject (GDPR Art. 17)
+      description: |
+        Performed by `erase_subject`, which pseudonymises rather than deleting
+        so the CME record survives, refuses while a Punktemeldung is open, and
+        writes its own audit row. Irreversible and cross-tenant — a physician
+        may hold enrolments at several customers and all of them are erased.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: enrolmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  description: |
+                    For the audit trail. About the *process* — "Löschantrag vom
+                    12.03." — never about the person.
+      responses:
+        "200":
+          description: What was erased.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enrolments, responses, submissions]
+                properties:
+                  enrolments: { type: integer, minimum: 0 }
+                  responses: { type: integer, minimum: 0 }
+                  submissions: { type: integer, minimum: 0 }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/certificates:
+    get:
+      tags: [admin]
+      operationId: adminListCertificates
+      summary: Certificates in this tenant
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: course
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: The certificates.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CertificateRecord" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/certificates/{id}/regenerate:
+    post:
+      tags: [admin]
+      operationId: adminRegenerateCertificate
+      summary: Re-render a certificate
+      description: |
+        Re-renders from the enrolment, picking up a corrected name. **Reports
+        nothing to EIV** — the certificate and submission pipelines share no
+        code path, so a regeneration cannot trigger one.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CertificateId"
+      responses:
+        "204": { description: Queued for re-rendering. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/certificates/{id}/resend:
+    post:
+      tags: [admin]
+      operationId: adminResendCertificate
+      summary: Put an issued certificate back in the delivery queue
+      description: The same document, sent again. Not a reissue.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CertificateId"
+      responses:
+        "204": { description: Queued for delivery. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/certificates/{id}/revoke:
+    post:
+      tags: [admin]
+      operationId: adminRevokeCertificate
+      summary: Withdraw a certificate
+      description: |
+        Withdraws the document and keeps the record. The enrolment, the
+        progress and any Punktemeldung stay exactly where they were — what the
+        physician earned, they earned.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CertificateId"
+      responses:
+        "204": { description: Revoked. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/staff:
+    get:
+      tags: [admin]
+      operationId: adminListStaff
+      summary: Operator accounts this caller may manage
+      description: |
+        Above any tenant — no `X-DS-Project` — and narrowed by `canGrant`: an
+        operator who may not grant to a scope has no business reading the
+        accounts in it, so a customer administrator does not see the super
+        administrators above them.
+      responses:
+        "200":
+          description: The accounts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StaffAccount" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin]
+      operationId: adminInviteStaff
+      summary: Invite an operator
+      description: |
+        Creates the account with **no password** and returns a single-use token.
+        The token is returned rather than emailed; the operator passes the link
+        on. Until it is redeemed the account cannot sign in, so an un-redeemed
+        invitation is not a credential.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StaffInvitation" }
+      responses:
+        "201":
+          description: The invitation.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, token]
+                properties:
+                  status: { type: string }
+                  token: { type: string }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/staff/{id}/scope:
+    post:
+      tags: [admin]
+      operationId: adminSetStaffScope
+      summary: Change what an account may reach
+      parameters: [{ $ref: "#/components/parameters/StaffId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StaffScope" }
+      responses:
+        "204": { description: Changed. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/staff/{id}/disabled:
+    post:
+      tags: [admin]
+      operationId: adminSetStaffDisabled
+      summary: Disable or re-enable an account
+      description: Disabling revokes every session in the same statement.
+      parameters: [{ $ref: "#/components/parameters/StaffId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [disabled]
+              properties:
+                disabled: { type: boolean }
+      responses:
+        "204": { description: Changed. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/staff/{id}/sign-out-everywhere:
+    post:
+      tags: [admin]
+      operationId: adminSignOutStaffEverywhere
+      summary: Revoke every session an account holds
+      parameters: [{ $ref: "#/components/parameters/StaffId" }]
+      responses:
+        "204": { description: Signed out. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /admin/customers:
     get:
       tags: [admin]
@@ -1674,6 +1957,20 @@ components:
         The id of the module, chapter or content item being addressed. Always a
         uuid, and always resolved under RLS: an id belonging to another tenant
         is a 404, indistinguishable from one that does not exist.
+      schema: { type: string, format: uuid }
+
+    CertificateId:
+      name: id
+      in: path
+      required: true
+      description: The certificate's id.
+      schema: { type: string, format: uuid }
+
+    StaffId:
+      name: id
+      in: path
+      required: true
+      description: The operator account's id.
       schema: { type: string, format: uuid }
 
     ProjectHeader:
@@ -2856,9 +3153,103 @@ components:
           minimum: 0
           description: Projects under this department, in this tenant.
 
+    LearnerRecord:
+      type: object
+      required:
+        [
+          userId,
+          enrolmentId,
+          courseSlug,
+          courseTitle,
+          attestedName,
+          maskedEfn,
+          watchedPercent,
+          quizBestPercent,
+          completedAt,
+          submissionStage,
+          certificateStatus,
+        ]
+      properties:
+        userId: { type: string, format: uuid }
+        enrolmentId: { type: string, format: uuid }
+        courseSlug: { type: string }
+        courseTitle: { type: string }
+        attestedName:
+          type: [string, "null"]
+          description: The name the physician attested for their certificate.
+        maskedEfn:
+          type: [string, "null"]
+          description: |
+            Last four digits only, the rest replaced with bullets. The whole
+            value is never returned to any staff role (ADR-0004).
+        watchedPercent: { type: integer, minimum: 0, maximum: 100 }
+        quizBestPercent: { type: [integer, "null"], minimum: 0, maximum: 100 }
+        completedAt: { type: [string, "null"], format: date-time }
+        submissionStage:
+          type: string
+          enum: [none, pending, submitted, abandoned]
+          description: |
+            How far the Punktemeldung has got. `submitted` is what makes a name
+            correction refusable.
+        certificateStatus: { type: [string, "null"] }
+
+    CertificateRecord:
+      type: object
+      required: [id, enrolmentId, participantName, status, issuedAt, deliveredAt]
+      properties:
+        id: { type: string, format: uuid }
+        enrolmentId: { type: string, format: uuid }
+        participantName: { type: string }
+        status:
+          type: string
+          enum: [pending, issued, delivered, bounced, revoked]
+        issuedAt: { type: [string, "null"], format: date-time }
+        deliveredAt: { type: [string, "null"], format: date-time }
+
+    StaffScope:
+      type: object
+      required: [role, customerId, departmentId]
+      description: |
+        What an operator may reach. `customerId` is null only for `super_admin`
+        — a customer is the tenant boundary, and the database CHECK enforces
+        the pairing.
+      properties:
+        role:
+          type: string
+          enum: [course_editor, department_admin, customer_admin, super_admin]
+        customerId: { type: [string, "null"], format: uuid }
+        departmentId: { type: [string, "null"], format: uuid }
+
+    StaffInvitation:
+      allOf:
+        - $ref: "#/components/schemas/StaffScope"
+        - type: object
+          required: [email, displayName]
+          properties:
+            email: { type: string, format: email, maxLength: 320 }
+            displayName: { type: string, minLength: 1, maxLength: 200 }
+
+    StaffAccount:
+      type: object
+      required: [id, email, displayName, disabledAt, lastLoginAt, totpEnrolled, grants]
+      description: |
+        Carries no password hash and no TOTP secret — only whether a second
+        factor is enrolled. When somebody enrolled their authenticator is
+        nobody's business but theirs.
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        displayName: { type: string }
+        disabledAt: { type: [string, "null"], format: date-time }
+        lastLoginAt: { type: [string, "null"], format: date-time }
+        totpEnrolled: { type: boolean }
+        grants:
+          type: array
+          items: { $ref: "#/components/schemas/StaffScope" }
+
     CustomerSummary:
       type: object
-      required: [slug, name, createdAt, departmentCount, projectCount, courseCount]
+      required: [id, slug, name, createdAt, departmentCount, projectCount, courseCount]
       description: |
         A customer plus how much is inside it. The counts come back with the
         list because the console shows them on the same screen and because a
@@ -2866,6 +3257,13 @@ components:
         courses means opening a tenant context on that customer, which is
         precisely what the caller has not been authorised to do.
       properties:
+        id:
+          type: string
+          format: uuid
+          description: |
+            The customer's own id. Exposed because a grant references it —
+            scoping an operator account to a customer needs this value, and
+            only a super admin can reach this endpoint at all.
         slug: { $ref: "#/components/schemas/Slug" }
         name: { type: string }
         createdAt: { type: string, format: date-time }

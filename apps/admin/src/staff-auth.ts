@@ -38,6 +38,16 @@ export interface StaffProfile {
   readonly displayName: string;
   readonly role: string;
   readonly capabilities: readonly string[];
+  /**
+   * The grants this operator holds. The console reads the customer id off the
+   * first one when inviting somebody — a new account is scoped to the customer
+   * the inviter is acting within, and the API refuses anything wider anyway.
+   */
+  readonly grants: readonly {
+    readonly role: string;
+    readonly customerId: string | null;
+    readonly departmentId: string | null;
+  }[];
 }
 
 export type SignInResult =

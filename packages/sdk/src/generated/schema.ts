@@ -527,6 +527,239 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/learners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every enrolment in this tenant, with its progress
+         * @description The per-learner progress view. Carries a **masked** EFN — the last four
+         *     digits — and never the whole value: an operator confirming they have the
+         *     right person needs to recognise it, not to read it (ADR-0004).
+         */
+        get: operations["adminListLearners"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/learners/{enrolmentId}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Correct the name a certificate will carry
+         * @description Allowed until the Punktemeldung is accepted, and refused with 409 after
+         *     it — the name is on the Ärztekammer's record by then, and a silent edit
+         *     would make the two disagree. The correction path after that point is a
+         *     written one inside the seven-day window.
+         */
+        patch: operations["adminCorrectLearnerName"];
+        trace?: never;
+    };
+    "/admin/learners/{enrolmentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Erase a subject (GDPR Art. 17)
+         * @description Performed by `erase_subject`, which pseudonymises rather than deleting
+         *     so the CME record survives, refuses while a Punktemeldung is open, and
+         *     writes its own audit row. Irreversible and cross-tenant — a physician
+         *     may hold enrolments at several customers and all of them are erased.
+         */
+        delete: operations["adminEraseSubject"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/certificates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Certificates in this tenant */
+        get: operations["adminListCertificates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/certificates/{id}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-render a certificate
+         * @description Re-renders from the enrolment, picking up a corrected name. **Reports
+         *     nothing to EIV** — the certificate and submission pipelines share no
+         *     code path, so a regeneration cannot trigger one.
+         */
+        post: operations["adminRegenerateCertificate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/certificates/{id}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Put an issued certificate back in the delivery queue
+         * @description The same document, sent again. Not a reissue.
+         */
+        post: operations["adminResendCertificate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/certificates/{id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw a certificate
+         * @description Withdraws the document and keeps the record. The enrolment, the
+         *     progress and any Punktemeldung stay exactly where they were — what the
+         *     physician earned, they earned.
+         */
+        post: operations["adminRevokeCertificate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/staff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operator accounts this caller may manage
+         * @description Above any tenant — no `X-DS-Project` — and narrowed by `canGrant`: an
+         *     operator who may not grant to a scope has no business reading the
+         *     accounts in it, so a customer administrator does not see the super
+         *     administrators above them.
+         */
+        get: operations["adminListStaff"];
+        put?: never;
+        /**
+         * Invite an operator
+         * @description Creates the account with **no password** and returns a single-use token.
+         *     The token is returned rather than emailed; the operator passes the link
+         *     on. Until it is redeemed the account cannot sign in, so an un-redeemed
+         *     invitation is not a credential.
+         */
+        post: operations["adminInviteStaff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/staff/{id}/scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change what an account may reach */
+        post: operations["adminSetStaffScope"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/staff/{id}/disabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable or re-enable an account
+         * @description Disabling revokes every session in the same statement.
+         */
+        post: operations["adminSetStaffDisabled"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/staff/{id}/sign-out-everywhere": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke every session an account holds */
+        post: operations["adminSignOutStaffEverywhere"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/customers": {
         parameters: {
             query?: never;
@@ -1784,6 +2017,80 @@ export interface components {
             /** @description Projects under this department, in this tenant. */
             projectCount: number;
         };
+        LearnerRecord: {
+            /** Format: uuid */
+            userId: string;
+            /** Format: uuid */
+            enrolmentId: string;
+            courseSlug: string;
+            courseTitle: string;
+            /** @description The name the physician attested for their certificate. */
+            attestedName: string | null;
+            /**
+             * @description Last four digits only, the rest replaced with bullets. The whole
+             *     value is never returned to any staff role (ADR-0004).
+             */
+            maskedEfn: string | null;
+            watchedPercent: number;
+            quizBestPercent: number | null;
+            /** Format: date-time */
+            completedAt: string | null;
+            /**
+             * @description How far the Punktemeldung has got. `submitted` is what makes a name
+             *     correction refusable.
+             * @enum {string}
+             */
+            submissionStage: "none" | "pending" | "submitted" | "abandoned";
+            certificateStatus: string | null;
+        };
+        CertificateRecord: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            enrolmentId: string;
+            participantName: string;
+            /** @enum {string} */
+            status: "pending" | "issued" | "delivered" | "bounced" | "revoked";
+            /** Format: date-time */
+            issuedAt: string | null;
+            /** Format: date-time */
+            deliveredAt: string | null;
+        };
+        /**
+         * @description What an operator may reach. `customerId` is null only for `super_admin`
+         *     — a customer is the tenant boundary, and the database CHECK enforces
+         *     the pairing.
+         */
+        StaffScope: {
+            /** @enum {string} */
+            role: "course_editor" | "department_admin" | "customer_admin" | "super_admin";
+            /** Format: uuid */
+            customerId: string | null;
+            /** Format: uuid */
+            departmentId: string | null;
+        };
+        StaffInvitation: components["schemas"]["StaffScope"] & {
+            /** Format: email */
+            email: string;
+            displayName: string;
+        };
+        /**
+         * @description Carries no password hash and no TOTP secret — only whether a second
+         *     factor is enrolled. When somebody enrolled their authenticator is
+         *     nobody's business but theirs.
+         */
+        StaffAccount: {
+            /** Format: uuid */
+            id: string;
+            email: string;
+            displayName: string;
+            /** Format: date-time */
+            disabledAt: string | null;
+            /** Format: date-time */
+            lastLoginAt: string | null;
+            totpEnrolled: boolean;
+            grants: components["schemas"]["StaffScope"][];
+        };
         /**
          * @description A customer plus how much is inside it. The counts come back with the
          *     list because the console shows them on the same screen and because a
@@ -1792,6 +2099,13 @@ export interface components {
          *     precisely what the caller has not been authorised to do.
          */
         CustomerSummary: {
+            /**
+             * Format: uuid
+             * @description The customer's own id. Exposed because a grant references it —
+             *     scoping an operator account to a customer needs this value, and
+             *     only a super admin can reach this endpoint at all.
+             */
+            id: string;
             slug: components["schemas"]["Slug"];
             name: string;
             /** Format: date-time */
@@ -2228,6 +2542,10 @@ export interface components {
          *     is a 404, indistinguishable from one that does not exist.
          */
         ResourceId: string;
+        /** @description The certificate's id. */
+        CertificateId: string;
+        /** @description The operator account's id. */
+        StaffId: string;
         /**
          * @description Project slug identifying the calling host surface (ADR-0007). Resolves
          *     the Keycloak realm to validate against and pins the tenant. Unknown or
@@ -3159,6 +3477,390 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    adminListLearners: {
+        parameters: {
+            query?: {
+                /** @description Restrict to one course's slug. Absent means all courses. */
+                course?: string;
+            };
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The enrolments. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearnerRecord"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminCorrectLearnerName: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                enrolmentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Corrected. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminEraseSubject: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                enrolmentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description For the audit trail. About the *process* — "Löschantrag vom
+                     *     12.03." — never about the person.
+                     */
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description What was erased. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enrolments: number;
+                        responses: number;
+                        submissions: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    adminListCertificates: {
+        parameters: {
+            query?: {
+                course?: string;
+            };
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The certificates. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CertificateRecord"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminRegenerateCertificate: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /** @description The certificate's id. */
+                id: components["parameters"]["CertificateId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Queued for re-rendering. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    adminResendCertificate: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /** @description The certificate's id. */
+                id: components["parameters"]["CertificateId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Queued for delivery. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    adminRevokeCertificate: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Resolves
+                 *     the Keycloak realm to validate against and pins the tenant. Unknown or
+                 *     unbound slugs are a generic 401 — never a 404 that would confirm or
+                 *     deny a project's existence.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /** @description The certificate's id. */
+                id: components["parameters"]["CertificateId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    adminListStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The accounts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffAccount"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminInviteStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffInvitation"];
+            };
+        };
+        responses: {
+            /** @description The invitation. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                        token: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminSetStaffScope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The operator account's id. */
+                id: components["parameters"]["StaffId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffScope"];
+            };
+        };
+        responses: {
+            /** @description Changed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminSetStaffDisabled: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The operator account's id. */
+                id: components["parameters"]["StaffId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    disabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Changed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminSignOutStaffEverywhere: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The operator account's id. */
+                id: components["parameters"]["StaffId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed out. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
         };
     };
     adminListCustomers: {

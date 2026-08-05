@@ -69,6 +69,11 @@ export type FontState = components["schemas"]["FontState"];
 // so the console can disable a delete *and say why* before it is clicked; the
 // write shapes carry no ordinal anywhere, because position is position in an
 // array.
+export type LearnerRecord = components["schemas"]["LearnerRecord"];
+export type CertificateRecord = components["schemas"]["CertificateRecord"];
+export type StaffAccount = components["schemas"]["StaffAccount"];
+export type StaffScope = components["schemas"]["StaffScope"];
+export type StaffInvitation = components["schemas"]["StaffInvitation"];
 export type CustomerSummary = components["schemas"]["CustomerSummary"];
 export type CustomerCreate = components["schemas"]["CustomerCreate"];
 export type CustomerUpdate = components["schemas"]["CustomerUpdate"];
@@ -240,7 +245,16 @@ export function createClient(options: ClientOptions) {
     return response;
   }
 
-  function json(body: unknown, method: "POST" | "PUT" | "PATCH" = "POST"): RequestInit {
+  /**
+   * `DELETE` is in the list because subject erasure is one and still needs a
+   * body: the reason is written to the audit trail, and putting it in a query
+   * string would place an operator's free text in every access log between the
+   * browser and the API.
+   */
+  function json(
+    body: unknown,
+    method: "POST" | "PUT" | "PATCH" | "DELETE" = "POST",
+  ): RequestInit {
     return {
       method,
       headers: { "content-type": "application/json" },
@@ -251,6 +265,16 @@ export function createClient(options: ClientOptions) {
   const course = (slug: string) => `/courses/${encodeURIComponent(slug)}`;
   const adminCourse = (slug: string) => `/admin/courses/${encodeURIComponent(slug)}`;
   const seg = (value: string) => encodeURIComponent(value);
+
+  /**
+   * `?course=…`, or nothing.
+   *
+   * An empty query string rather than `?course=` when the filter is absent:
+   * the API reads a blank value as "all courses" too, but sending one makes
+   * every unfiltered request look filtered in an access log.
+   */
+  const courseQuery = (slug: string | undefined) =>
+    slug === undefined || slug === "" ? "" : `?course=${encodeURIComponent(slug)}`;
 
   return {
     request,
@@ -446,6 +470,69 @@ export function createClient(options: ClientOptions) {
     // (ADR-0012). Only `super_admin` holds the `customer` capability; every
     // other operator gets 403.
     // ----------------------------------------------------------------
+
+    // ----------------------------------------------------------------
+    // Learner records and certificates (P12-05)
+    //
+    // Tenant-scoped: an enrolment belongs to a customer, so these carry
+    // `X-DS-Project` like the rest of the authoring surface.
+    // ----------------------------------------------------------------
+
+    /** Masked EFN only — the whole value never crosses this boundary. */
+    adminListLearners: (courseSlug?: string): Promise<LearnerRecord[]> =>
+      request(`/admin/learners${courseQuery(courseSlug)}`),
+
+    /** Refused with 409 once the Punktemeldung has been accepted. */
+    adminCorrectLearnerName: (enrolmentId: string, name: string): Promise<void> =>
+      request(`/admin/learners/${seg(enrolmentId)}/name`, json({ name }, "PATCH")),
+
+    /**
+     * GDPR Art. 17. Irreversible and cross-tenant — a physician may hold
+     * enrolments at several customers and all of them are erased.
+     */
+    adminEraseSubject: (
+      enrolmentId: string,
+      reason: string,
+    ): Promise<{ enrolments: number; responses: number; submissions: number }> =>
+      request(`/admin/learners/${seg(enrolmentId)}`, json({ reason }, "DELETE")),
+
+    adminListCertificates: (courseSlug?: string): Promise<CertificateRecord[]> =>
+      request(`/admin/certificates${courseQuery(courseSlug)}`),
+
+    /** Re-renders the document. Reports nothing to EIV. */
+    adminRegenerateCertificate: (id: string): Promise<void> =>
+      request(`/admin/certificates/${seg(id)}/regenerate`, { method: "POST" }),
+
+    adminResendCertificate: (id: string): Promise<void> =>
+      request(`/admin/certificates/${seg(id)}/resend`, { method: "POST" }),
+
+    /** Withdraws the document and keeps the record. */
+    adminRevokeCertificate: (id: string): Promise<void> =>
+      request(`/admin/certificates/${seg(id)}/revoke`, { method: "POST" }),
+
+    // ----------------------------------------------------------------
+    // Operator accounts (P12-05)
+    //
+    // Above any tenant — no `X-DS-Project` — so the console calls these
+    // through its platform client.
+    // ----------------------------------------------------------------
+
+    adminListStaff: (): Promise<StaffAccount[]> => request("/admin/staff"),
+
+    /** Returns a single-use token; it is not emailed. */
+    adminInviteStaff: (
+      input: StaffInvitation,
+    ): Promise<{ status: string; token: string }> => request("/admin/staff", json(input)),
+
+    adminSetStaffScope: (id: string, scope: StaffScope): Promise<void> =>
+      request(`/admin/staff/${seg(id)}/scope`, json(scope)),
+
+    /** Disabling revokes every session in the same statement. */
+    adminSetStaffDisabled: (id: string, disabled: boolean): Promise<void> =>
+      request(`/admin/staff/${seg(id)}/disabled`, json({ disabled })),
+
+    adminSignOutStaffEverywhere: (id: string): Promise<void> =>
+      request(`/admin/staff/${seg(id)}/sign-out-everywhere`, { method: "POST" }),
 
     adminListCustomers: (): Promise<CustomerSummary[]> => request("/admin/customers"),
 

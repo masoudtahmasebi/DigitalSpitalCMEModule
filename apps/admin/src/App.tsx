@@ -54,6 +54,9 @@ import { QuizEditor } from "./components/QuizEditor.js";
 import { EvaluationEditor } from "./components/EvaluationEditor.js";
 import { ExpertsEditor } from "./components/ExpertsEditor.js";
 import { Customers } from "./components/Customers.js";
+import { Learners } from "./components/Learners.js";
+import { Certificates } from "./components/Certificates.js";
+import { StaffAccounts } from "./components/StaffAccounts.js";
 import { SignIn } from "./components/SignIn.js";
 
 export function App() {
@@ -183,6 +186,9 @@ type View =
   | { kind: "organisation" }
   | { kind: "branding" }
   | { kind: "customers" }
+  | { kind: "learners" }
+  | { kind: "certificates" }
+  | { kind: "staff" }
   | { kind: "course"; slug: string; tab: CourseTab };
 
 /**
@@ -200,6 +206,12 @@ const SECTIONS: ReadonlyArray<readonly [View["kind"], string, string | undefined
   ["courses", de.nav.courses, undefined],
   ["organisation", de.nav.organisation, undefined],
   ["branding", de.nav.branding, undefined],
+  // Learner records and certificates need `learner_record` / `certificate`,
+  // which a department admin and a course editor do not hold: neither has
+  // business correcting a physician's name or withdrawing a document.
+  ["learners", de.learners.title, "learner_record"],
+  ["certificates", de.certificates.title, "certificate"],
+  ["staff", de.staff.title, "staff_user"],
   ["customers", de.customers.title, "customer"],
 ];
 
@@ -227,6 +239,17 @@ function Console(props: {
   );
 
   const [view, setView] = useState<View>({ kind: "courses" });
+
+  /*
+   * The customer registry, for the one place the console needs it beyond the
+   * Kunden screen: a super admin inviting a customer-scoped operator has to
+   * say which customer, and they belong to none themselves.
+   *
+   * Only fetched for an operator who holds the capability — everybody else
+   * gets a 403, and an invitation they send is scoped to their own customer
+   * anyway, so there is nothing to choose.
+   */
+  const [customers, setCustomers] = useState<readonly { id: string; name: string }[]>([]);
   const [courses, setCourses] = useState<AdminCourseSummary[] | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
   const [forbidden, setForbidden] = useState(false);
@@ -245,6 +268,16 @@ function Console(props: {
   useEffect(() => {
     void loadCourses();
   }, [loadCourses]);
+
+  useEffect(() => {
+    if (!props.profile.capabilities.includes("customer")) return;
+    platformClient
+      .adminListCustomers()
+      // Ignored on failure: this list is a convenience on one form, and a
+      // console that refused to open because of it would be worse.
+      .then((rows) => setCustomers(rows.map((row) => ({ id: row.id, name: row.name }))))
+      .catch(() => undefined);
+  }, [platformClient, props.profile.capabilities]);
 
   if (forbidden) {
     return (
@@ -324,6 +357,39 @@ function Console(props: {
       ))}
     </nav>
   );
+
+  if (view.kind === "learners") {
+    return (
+      <div className="space-y-5">
+        {sections}
+        <Learners client={client} />
+      </div>
+    );
+  }
+
+  if (view.kind === "certificates") {
+    return (
+      <div className="space-y-5">
+        {sections}
+        <Certificates client={client} />
+      </div>
+    );
+  }
+
+  if (view.kind === "staff") {
+    return (
+      <div className="space-y-5">
+        {sections}
+        {/* The platform client: operator accounts sit above any tenant, so the
+            request must not carry `X-DS-Project`. */}
+        <StaffAccounts
+          client={platformClient}
+          customerId={props.profile.grants[0]?.customerId ?? null}
+          customers={customers}
+        />
+      </div>
+    );
+  }
 
   if (view.kind === "customers") {
     return (

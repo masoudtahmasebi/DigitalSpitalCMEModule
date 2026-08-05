@@ -48,6 +48,7 @@ export const customerCreateSchema = z.object({ slug, name });
 export const customerUpdateSchema = z.object({ name });
 
 export const customerSummarySchema = z.object({
+  id: z.string(),
   slug: z.string(),
   name: z.string(),
   createdAt: z.string(),
