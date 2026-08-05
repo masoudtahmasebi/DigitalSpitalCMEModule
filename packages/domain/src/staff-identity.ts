@@ -23,14 +23,90 @@
  * which is the pair that actually correlates with resistance to guessing.
  */
 
-export type StaffRole = "super_admin" | "customer_admin" | "department_admin";
+export type StaffRole =
+  "super_admin" | "customer_admin" | "department_admin" | "course_editor";
 
 /** Ordered by breadth of access. The index is the comparison, nothing else. */
 const ROLE_RANK: readonly StaffRole[] = [
+  "course_editor",
   "department_admin",
   "customer_admin",
   "super_admin",
 ];
+
+/**
+ * What a role may *do*, as distinct from where it may do it.
+ *
+ * Scope and capability are different axes and conflating them is what made the
+ * first cut of this model wrong. A `course_editor` and a `department_admin` can
+ * both be confined to one department — same scope — but only one of them may
+ * create a project inside it. Ranking alone cannot express that: it says who
+ * outranks whom, not who may create what.
+ *
+ * So capability is a table, and it is exhaustive by construction — a new role
+ * without an entry here fails to compile rather than silently inheriting
+ * somebody else's permissions.
+ */
+export type ManagedEntity =
+  | "customer"
+  | "department"
+  | "project"
+  | "course"
+  | "content"
+  | "staff_user"
+  | "learner_record"
+  | "certificate";
+
+const CAPABILITIES: Readonly<Record<StaffRole, readonly ManagedEntity[]>> = {
+  // Everything, everywhere. The only role that may create a customer, because
+  // a customer is the tenant boundary itself — nobody inside one may mint
+  // another.
+  super_admin: [
+    "customer",
+    "department",
+    "project",
+    "course",
+    "content",
+    "staff_user",
+    "learner_record",
+    "certificate",
+  ],
+
+  // The customer's own administrator: builds out their organisation and
+  // everything under it, and manages their own staff. Cannot create customers.
+  customer_admin: [
+    "department",
+    "project",
+    "course",
+    "content",
+    "staff_user",
+    "learner_record",
+    "certificate",
+  ],
+
+  // Runs one department: projects and courses within it, and the people who
+  // take them. Not staff management — inviting colleagues is the customer
+  // administrator's job, and a department admin who could invite could invite
+  // themselves into a second department.
+  department_admin: ["project", "course", "content", "learner_record", "certificate"],
+
+  // Authors. The role the specification asks for in as many words: "customer
+  // users who can create only courses, so they have limited access". They make
+  // courses and the content inside them and nothing else — no structure above,
+  // no people, no certificates. An agency writing content for a customer gets
+  // this and cannot reorganise the customer around it.
+  course_editor: ["course", "content"],
+};
+
+/** Whether this role may create, edit or delete entities of this kind at all. */
+export function canManage(role: StaffRole, entity: ManagedEntity): boolean {
+  return CAPABILITIES[role].includes(entity);
+}
+
+/** Every entity this role may manage — what the console builds its menu from. */
+export function capabilitiesOf(role: StaffRole): readonly ManagedEntity[] {
+  return CAPABILITIES[role];
+}
 
 function rank(role: StaffRole): number {
   return ROLE_RANK.indexOf(role);
@@ -249,7 +325,12 @@ export interface StaffScope {
 }
 
 export type GrantDenial =
-  "outside_customer" | "outside_department" | "role_too_broad" | "self_escalation";
+  /** The actor's role does not manage staff accounts at all. */
+  | "not_permitted"
+  | "outside_customer"
+  | "outside_department"
+  | "role_too_broad"
+  | "self_escalation";
 
 export type GrantCheck =
   { readonly ok: true } | { readonly ok: false; readonly reason: GrantDenial };
@@ -257,21 +338,30 @@ export type GrantCheck =
 /**
  * Whether `actor` may create or modify an account with `target`'s scope.
  *
- * Three rules, and the third is the one that is easy to leave out:
+ * Four rules, checked in this order, because the earlier ones are more
+ * fundamental and a caller reading the reason should get the most basic one:
  *
- * 1. You cannot reach outside your own customer (or department).
+ * 1. Your role manages staff accounts at all. A `department_admin` and a
+ *    `course_editor` do not — inviting colleagues is the customer
+ *    administrator's job, and a department admin who could invite could invite
+ *    themselves into a second department.
  * 2. You cannot grant a role broader than your own — otherwise a customer
  *    administrator mints a super administrator and the hierarchy is decoration.
  * 3. You cannot grant a role **equal** to your own to yourself, which is the
  *    same rule stated for the case people forget: privilege escalation by
  *    self-edit. Editing one's own account is allowed; changing one's own scope
  *    is not.
+ * 4. You cannot reach outside your own customer (or department).
  */
 export function canGrant(
   actor: StaffScope,
   target: StaffScope,
   options: { readonly targetIsSelf: boolean } = { targetIsSelf: false },
 ): GrantCheck {
+  if (!canManage(actor.role, "staff_user")) {
+    return { ok: false, reason: "not_permitted" };
+  }
+
   if (rank(target.role) > rank(actor.role)) {
     return { ok: false, reason: "role_too_broad" };
   }

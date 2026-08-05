@@ -195,6 +195,8 @@ export type {
  */
 export {
   canGrant,
+  canManage,
+  capabilitiesOf,
   checkPassword,
   INVITE_VALID_DAYS,
   inviteStatus,
@@ -214,6 +216,7 @@ export {
 export type {
   GrantCheck,
   GrantDenial,
+  ManagedEntity,
   InviteState,
   InviteVerdict,
   LockoutState,

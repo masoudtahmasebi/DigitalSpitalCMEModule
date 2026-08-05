@@ -10,6 +10,8 @@
 import { describe, expect, it } from "vitest";
 import {
   canGrant,
+  canManage,
+  capabilitiesOf,
   checkPassword,
   inviteStatus,
   INVITE_VALID_DAYS,
@@ -251,6 +253,11 @@ describe("canGrant", () => {
     customerId: "c-medice",
     departmentId: "d-adhs",
   };
+  const editor: StaffScope = {
+    role: "course_editor",
+    customerId: "c-medice",
+    departmentId: "d-adhs",
+  };
 
   it("lets a super admin create anyone", () => {
     expect(canGrant(superAdmin, medice)).toEqual({ ok: true });
@@ -260,7 +267,9 @@ describe("canGrant", () => {
   it("refuses to mint a role broader than the actor's", () => {
     // The rule that makes the hierarchy real rather than decorative.
     expect(canGrant(medice, superAdmin)).toEqual({ ok: false, reason: "role_too_broad" });
-    expect(canGrant(adhs, medice)).toEqual({ ok: false, reason: "role_too_broad" });
+    // A department admin is refused earlier, on capability: it manages no
+    // staff at all, which is the more fundamental reason and the one to report.
+    expect(canGrant(adhs, medice)).toEqual({ ok: false, reason: "not_permitted" });
   });
 
   it("confines a customer admin to their own customer", () => {
@@ -272,11 +281,18 @@ describe("canGrant", () => {
     expect(canGrant(medice, other)).toEqual({ ok: false, reason: "outside_customer" });
   });
 
-  it("confines a department admin to their own department", () => {
-    expect(canGrant(adhs, adhs)).toEqual({ ok: true });
-    expect(canGrant(adhs, { ...adhs, departmentId: "d-other" })).toEqual({
+  it("refuses a role that does not manage staff at all", () => {
+    // A department admin who could invite could invite themselves into a
+    // second department; a course editor has no business with people.
+    expect(canGrant(adhs, adhs)).toEqual({ ok: false, reason: "not_permitted" });
+    expect(canGrant(editor, editor)).toEqual({ ok: false, reason: "not_permitted" });
+  });
+
+  it("confines a customer admin creating a department admin to their department", () => {
+    expect(canGrant(medice, adhs)).toEqual({ ok: true });
+    expect(canGrant(medice, { ...adhs, customerId: "c-other" })).toEqual({
       ok: false,
-      reason: "outside_department",
+      reason: "outside_customer",
     });
   });
 
@@ -285,10 +301,10 @@ describe("canGrant", () => {
       ok: false,
       reason: "self_escalation",
     });
-    expect(canGrant(adhs, medice, { targetIsSelf: true })).toEqual({
-      ok: false,
-      reason: "role_too_broad",
-    });
+  });
+
+  it("lets a customer admin create a course editor, the limited-access role", () => {
+    expect(canGrant(medice, editor)).toEqual({ ok: true });
   });
 
   it("lets somebody narrow their own scope", () => {
@@ -316,22 +332,21 @@ describe("canGrant", () => {
     // other way round — which reads more naturally — inverts the comparison
     // below and asserts the exact opposite of the rule.
     const roles: readonly StaffRole[] = [
+      "course_editor",
       "department_admin",
       "customer_admin",
       "super_admin",
     ];
     for (const actorRole of roles) {
       for (const targetRole of roles) {
-        const actor: StaffScope = {
-          role: actorRole,
-          customerId: actorRole === "super_admin" ? null : "c-medice",
-          departmentId: actorRole === "department_admin" ? "d-adhs" : null,
-        };
-        const target: StaffScope = {
-          role: targetRole,
-          customerId: targetRole === "super_admin" ? null : "c-medice",
-          departmentId: targetRole === "department_admin" ? "d-adhs" : null,
-        };
+        const scoped = (role: StaffRole): StaffScope => ({
+          role,
+          customerId: role === "super_admin" ? null : "c-medice",
+          departmentId:
+            role === "department_admin" || role === "course_editor" ? "d-adhs" : null,
+        });
+        const actor = scoped(actorRole);
+        const target = scoped(targetRole);
         const result = canGrant(actor, target);
         // The only universal law: never upward.
         if (roles.indexOf(targetRole) > roles.indexOf(actorRole)) {
@@ -380,5 +395,54 @@ describe("resetStatus", () => {
 
   it("is single use", () => {
     expect(resetStatus({ ...open, acceptedAt: T0 }, T0)).toBe("already_accepted");
+  });
+});
+
+describe("capabilities", () => {
+  it("gives only the super admin the power to create a customer", () => {
+    // A customer is the tenant boundary; nobody inside one may mint another.
+    expect(canManage("super_admin", "customer")).toBe(true);
+    expect(canManage("customer_admin", "customer")).toBe(false);
+    expect(canManage("department_admin", "customer")).toBe(false);
+    expect(canManage("course_editor", "customer")).toBe(false);
+  });
+
+  it("gives the course editor courses and content and nothing else", () => {
+    // "customer users who can create only courses, so they have limited
+    // access" — the requirement, stated as a test.
+    expect([...capabilitiesOf("course_editor")].sort()).toEqual(["content", "course"]);
+  });
+
+  it("lets a customer admin build their whole organisation but not another", () => {
+    const caps = capabilitiesOf("customer_admin");
+    expect(caps).toContain("department");
+    expect(caps).toContain("project");
+    expect(caps).toContain("staff_user");
+    expect(caps).not.toContain("customer");
+  });
+
+  it("keeps staff management away from department admins and editors", () => {
+    expect(canManage("department_admin", "staff_user")).toBe(false);
+    expect(canManage("course_editor", "staff_user")).toBe(false);
+  });
+
+  it("never widens as the role narrows", () => {
+    // Every capability of a narrower role must be held by every broader one,
+    // or the hierarchy means nothing.
+    const ordered: readonly StaffRole[] = [
+      "course_editor",
+      "department_admin",
+      "customer_admin",
+      "super_admin",
+    ];
+    for (let i = 0; i < ordered.length - 1; i += 1) {
+      const narrower = capabilitiesOf(ordered[i] as StaffRole);
+      const broader = capabilitiesOf(ordered[i + 1] as StaffRole);
+      for (const entity of narrower) {
+        expect(broader, `${String(ordered[i])} → ${String(ordered[i + 1])}`).toContain(
+          entity,
+        );
+      }
+    }
   });
 });
