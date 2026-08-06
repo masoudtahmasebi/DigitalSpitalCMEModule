@@ -22,6 +22,7 @@ import { EivService } from "../../src/modules/eiv/eiv.service.js";
 import { EivAccreditationReporter } from "@ds/eiv-client";
 import { EivAlertRepository } from "../../src/modules/eiv/eiv-alert.repository.js";
 import { EivAlertService } from "../../src/modules/eiv/eiv-alert.service.js";
+import { seedLearner } from "./support/seed-learner.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -80,10 +81,12 @@ beforeAll(async () => {
       cipher.encrypt(VNR_PASSWORD),
     ],
   );
-  userId = await insert(
-    `INSERT INTO users (keycloak_realm, keycloak_sub) VALUES ($1,$2) RETURNING id`,
-    [`http://127.0.0.1/realms/eiv-${suffix}`, `eiv-sub-${suffix}`],
-  );
+  userId = (
+    await seedLearner(seedPool, {
+      realm: `http://127.0.0.1/realms/eiv-${suffix}`,
+      subject: `eiv-sub-${suffix}`,
+    })
+  ).id;
 
   // The sweep is global by design — it drains every tenant's queue. Other
   // suites (and earlier runs against this database) leave their own rows
@@ -147,10 +150,12 @@ async function queueSubmission(
 /** Each enrolment needs its own user, so mint one per scenario. */
 async function freshUser(): Promise<void> {
   const suffix = randomUUID().slice(0, 8);
-  userId = await insert(
-    `INSERT INTO users (keycloak_realm, keycloak_sub) VALUES ($1,$2) RETURNING id`,
-    [`http://127.0.0.1/realms/eiv-${suffix}`, `eiv-sub-${suffix}`],
-  );
+  userId = (
+    await seedLearner(seedPool, {
+      realm: `http://127.0.0.1/realms/eiv-${suffix}`,
+      subject: `eiv-sub-${suffix}`,
+    })
+  ).id;
 }
 
 function buildService(allowLive = false): EivService {

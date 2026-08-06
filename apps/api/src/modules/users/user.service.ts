@@ -4,21 +4,36 @@
 
 import type { VerifiedIdentity } from "../../auth/token-verifier.js";
 import type { RoleGrant } from "@ds/domain";
-import type { UserRepositoryPort, UserRow } from "./user.repository.js";
+import type {
+  CredentialProvider,
+  UserRepositoryPort,
+  UserRow,
+} from "./user.repository.js";
 
 export class UserService {
   constructor(private readonly repository: UserRepositoryPort) {}
 
   /**
-   * Resolve the local user for a validated identity, provisioning on first
+   * Resolve the local person for a validated identity, provisioning on first
    * sight and refreshing profile fields on every later request (ADR-0003: no
    * separate profile maintenance — the token is the source, refreshed live).
    *
-   * `ON CONFLICT` in the repository makes this safe under concurrent first
-   * requests for the same `sub`: exactly one user is created, never two.
+   * The repository resolves concurrent first requests for the same credential
+   * to exactly one person, never two — and, since P21-01, never to a person
+   * with no credential either. See `provision_learner` in migration 0025.
+   *
+   * `provider` is carried rather than assumed: `(realm, sub)` alone is not a
+   * key across identity providers, and a `local` participant whose subject
+   * happened to collide with a Keycloak `sub` would otherwise resolve to
+   * somebody else's CME record.
    */
-  async syncFromToken(realm: string, identity: VerifiedIdentity): Promise<UserRow> {
+  async syncFromToken(
+    provider: CredentialProvider,
+    realm: string,
+    identity: VerifiedIdentity,
+  ): Promise<UserRow> {
     return this.repository.provisionOrUpdate({
+      provider,
       realm,
       sub: identity.subject,
       ...(identity.email === undefined ? {} : { email: identity.email }),

@@ -22,6 +22,7 @@ import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "j
 import { AppModule } from "../../src/app.module.js";
 import { configureApp } from "../../src/configure-app.js";
 import { loadConfig } from "../../src/config/config.js";
+import { seedLearner } from "./support/seed-learner.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -45,7 +46,7 @@ process.env["EIV_WORKER_ENABLED"] = "no";
 const KID = "learning-flow-key";
 const AUDIENCE = "ds-education-api";
 /**
- * Unique per run. `users` is keyed on `(keycloak_realm, keycloak_sub)` and the
+ * Unique per run. A credential is keyed on `(provider, realm, subject)` and the
  * realm here is this run's ephemeral JWKS URL — which the OS will happily hand
  * back to a later run on the same port. A fixed subject then collides with the
  * previous run's row and the whole suite fails in `beforeAll`, which only
@@ -209,11 +210,13 @@ beforeAll(async () => {
     ],
   );
 
-  const userId = await insert(
-    `INSERT INTO users (keycloak_realm, keycloak_sub, email, first_name, last_name)
-     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-    [issuer, SUB, "learner@example.org", "Anna", "Müller"],
-  );
+  const { id: userId } = await seedLearner(seedPool, {
+    realm: issuer,
+    subject: SUB,
+    email: "learner@example.org",
+    firstName: "Anna",
+    lastName: "Müller",
+  });
   await seedPool.query(
     "INSERT INTO user_roles (user_id, role, customer_id) VALUES ($1,'learner',$2)",
     [userId, customerId],

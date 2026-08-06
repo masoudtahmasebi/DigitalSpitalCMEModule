@@ -48,6 +48,7 @@ import { TokenInvalidError } from "./token-verifier.js";
 import {
   IdentityProviderRegistry,
   UnknownIdentityProviderError,
+  type IdentityProviderName,
 } from "./identity-provider.js";
 
 const PROJECT_HEADER = "x-ds-project";
@@ -113,15 +114,21 @@ export class AuthGuard implements CanActivate {
     }
 
     let identity;
+    // Which implementation verifies this project's tokens is the project's own
+    // configuration (ADR-0012). An unknown name is a refusal, never a fallback:
+    // falling back to Keycloak would let a typo in one row authenticate
+    // learners against the wrong realm, which is indistinguishable from working
+    // until somebody audits who signed in.
+    //
+    // The provider's *own* `name` — not `binding.identityProvider`, which is an
+    // unvalidated column value — is what the credential is then stored under.
+    // The registry has already refused anything it does not implement, so this
+    // is the one spelling that is known to be real (P21-01).
+    let provider: IdentityProviderName;
     try {
-      // Which implementation verifies this project's tokens is the project's
-      // own configuration (ADR-0012). An unknown name is a refusal, never a
-      // fallback: falling back to Keycloak would let a typo in one row
-      // authenticate learners against the wrong realm, which is
-      // indistinguishable from working until somebody audits who signed in.
-      identity = await this.deps.identityProviders
-        .forBinding(binding)
-        .verify(token, binding);
+      const implementation = this.deps.identityProviders.forBinding(binding);
+      provider = implementation.name;
+      identity = await implementation.verify(token, binding);
     } catch (error) {
       const reason =
         error instanceof TokenInvalidError
@@ -138,6 +145,7 @@ export class AuthGuard implements CanActivate {
     }
 
     const user = await this.deps.userService.syncFromToken(
+      provider,
       binding.keycloakIssuer,
       identity,
     );
@@ -168,7 +176,7 @@ export class AuthGuard implements CanActivate {
     request.principal = {
       userId: user.id,
       identity: "learner",
-      subject: user.keycloakSub,
+      subject: identity.subject,
       ...(user.email === null ? {} : { email: user.email }),
       ...(user.firstName === null ? {} : { firstName: user.firstName }),
       ...(user.lastName === null ? {} : { lastName: user.lastName }),

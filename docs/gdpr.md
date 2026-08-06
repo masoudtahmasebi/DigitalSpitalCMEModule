@@ -31,8 +31,9 @@ Everything in one table, because the honest version of this document is short.
 
 | Data                                    | Where                                                                      | Why it exists                                                                                                                                                                                       |
 | --------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Keycloak subject + realm                | `users`                                                                    | The stable identity. Not a name; an opaque id issued by the customer's own IdP.                                                                                                                     |
+| Identity-provider subject + realm       | `user_identities`                                                          | The stable identity. Not a name; an opaque id issued by the customer's own IdP. Moved out of `users` by P21-01 so one physician learning with two customers is one person, not two (§2.1).          |
 | Name, e-mail                            | `users`                                                                    | Written from the token's claims. Name is printed on the Teilnahmebescheinigung; e-mail is for the future certificate delivery.                                                                      |
+| Which customers a person learns with    | `user_customers`                                                           | A membership, and the only tenant-scoped part of a person. A customer admin sees that someone learns with them and learns nothing about where else they learn.                                      |
 | Attested name                           | `enrolments.attested_name`                                                 | What the learner confirmed should be printed, which may differ from a stale Keycloak profile.                                                                                                       |
 | Attested name, in parts                 | `enrolments.attested_title`, `attested_given_name`, `attested_family_name` | The three fields layout page 13 captures. Composed into `attested_name` by one function in `@ds/domain`; kept apart so a correction does not have to re-parse a string. Cleared by `erase_subject`. |
 | Punktemeldung consent                   | `enrolments.consent_given_at`, `consent_document`                          | When the learner ticked the consent box and which privacy notice they agreed to. Art. 7(1) — see §3. **Survives erasure by design**; it names nobody once the name and EFN are gone.                |
@@ -43,6 +44,27 @@ Everything in one table, because the honest version of this document is short.
 | Punktemeldung state                     | `eiv_submissions`                                                          | Including the EFN as submitted, every attempt and every failure. Append-only in effect: the row is the evidence a statutory report was made.                                                        |
 | Certificate state                       | `certificates`                                                             | Status and the name printed. Not the PDF — it is rendered on demand.                                                                                                                                |
 | Admin actions                           | `audit_log`                                                                | Ids, counts and field names. Never a name, an EFN or an answer.                                                                                                                                     |
+
+### 2.1 One person, many customers
+
+Until P21-01 a person _was_ their credential: `users` was keyed
+`(keycloak_realm, keycloak_sub)`, so a physician who appeared in two customers'
+Keycloak realms was two rows, two `user.id`s — and therefore two EFN slots,
+because `efn_profiles` is keyed on `user_id`. Divergent EFNs are the failure
+ADR-0004 exists to prevent: a Punktemeldung credits the wrong physician's
+Punktekonto, and it looks exactly like success.
+
+So identity is now three things. The **person** (`users`) is global; their
+**credentials** (`user_identities`) are global, because the auth guard resolves
+one before any tenant context exists; their **memberships** (`user_customers`)
+are tenant-scoped and carry the RLS policy.
+
+The data-protection consequence worth naming: two credentials are linked to one
+person **only by an explicit, verified act** (P21-05), never automatically
+because two identity providers reported the same e-mail address. A provider
+that does not verify e-mail could otherwise assert its way into an existing
+physician's CME history and EFN, and the platform cannot tell which providers
+verify. A credential the platform has not seen creates a new person, always.
 
 **What is deliberately not collected:** postal address (on the ÄKWL Muster but
 not in the Bescheid's minimum list — see `docs/show-stoppers.md` S12), date of
@@ -174,6 +196,14 @@ What remains cannot be attributed to a person without the Keycloak account,
 which the customer deletes on their own side. Pseudonymisation in the sense of
 Art. 4(5) becomes anonymisation once the realm entry is gone.
 
+**The credential rows survive the erasure, and that is deliberate.** A
+`user_identities` row holds an opaque subject issued by the customer's IdP and
+nothing else — no name, no address, no e-mail. Keeping it is what makes an
+erased physician who signs in again resolve to the same, still-erased person
+rather than to a fresh one with their name written straight back from the
+token; see the second refusal below. Delete the credential and the erasure
+becomes undoable by the subject themselves.
+
 **The consent record is kept, deliberately.** `consent_given_at` and
 `consent_document` survive an erasure. Art. 17(3)(b) and (e) except processing
 necessary for a legal obligation and for the establishment or defence of legal
@@ -194,8 +224,9 @@ leaving the report itself in place.
    profile from the token on every request, so an erased subject signing in
    again would have their name written straight back — silently, as a side
    effect of a normal request. A database trigger blanks the columns on every
-   update once `erased_at` is set. There is an integration test that fails when
-   the trigger is removed.
+   update once `erased_at` is set. It still fires through `provision_learner`
+   (migration 0025), which is the only writer on that path. There is an
+   integration test that fails when the trigger is removed.
 
 The erasure is recorded in `audit_log` with the user id, the stated reason and
 counts — never the erased values, which would make the audit row the one place
@@ -305,10 +336,10 @@ difference between an omission and a decision.
 # On the host, in the API container. Dry run first — this is irreversible.
 docker compose -f docker-compose.prod.yml --env-file .env.production \
   exec -e MIGRATION_DATABASE_URL="$MIGRATION_DATABASE_URL" api \
-  node dist/subject-erasure.js --subject <keycloak-sub> --reason "Antrag vom 2026-07-28"
+  node dist/subject-erasure.js --subject <idp-sub> --reason "Antrag vom 2026-07-28"
 
 # Then, once the printed plan is the right person:
-… --subject <keycloak-sub> --reason "Antrag vom 2026-07-28" --confirm
+… --subject <idp-sub> --reason "Antrag vom 2026-07-28" --confirm
 ```
 
 It reports what it will remove — counts only, never names — refuses while a

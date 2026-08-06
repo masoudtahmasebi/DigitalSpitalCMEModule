@@ -23,6 +23,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Pool, type PoolClient } from "pg";
 import { runInTenant, TenantResolutionError } from "../../src/db/tenant-db.js";
 import { courses } from "../../src/db/schema.js";
+import { addCredential, seedLearner } from "./support/seed-learner.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -242,23 +243,21 @@ describe("EFN rows are scoped by the database, not by a WHERE clause", () => {
 
   async function seedLearnerWithEfn(tenant: SeededTenant, efn: string): Promise<string> {
     const unique = randomUUID().slice(0, 8);
-    const {
-      rows: [user],
-    } = await seedPool.query<{ id: string }>(
-      `INSERT INTO users (keycloak_realm, keycloak_sub) VALUES ($1,$2) RETURNING id`,
-      [`http://127.0.0.1/realms/efn-${unique}`, `efn-sub-${unique}`],
-    );
+    const user = await seedLearner(seedPool, {
+      realm: `http://127.0.0.1/realms/efn-${unique}`,
+      subject: `efn-sub-${unique}`,
+    });
     await seedPool.query(
       `INSERT INTO enrolments (customer_id, course_id, user_id,
                                required_watch_percent, pass_threshold_percent)
        VALUES ($1,$2,$3,100,70)`,
-      [tenant.customerId, tenant.courseId, user!.id],
+      [tenant.customerId, tenant.courseId, user.id],
     );
     await seedPool.query("INSERT INTO efn_profiles (user_id, efn) VALUES ($1,$2)", [
-      user!.id,
+      user.id,
       efn,
     ]);
-    return user!.id;
+    return user.id;
   }
 
   /** One transaction with the given context, so the policy is what decides. */
@@ -366,5 +365,141 @@ describe("EFN rows are scoped by the database, not by a WHERE clause", () => {
         ]),
       ),
     ).resolves.toMatchObject({ rowCount: 0 });
+  });
+});
+
+/**
+ * One person across two customers (P21-01).
+ *
+ * The acceptance criteria this covers are the two halves of the same decision.
+ * A physician who learns with MEDICE *and* with DS is **one** `users` row — one
+ * `user.id`, one EFN, one certificate history — because the EFN belongs to the
+ * physician and not to the customer (ADR-0004). If they were two rows, they
+ * would be two EFNs on file and a Punktemeldung could credit the wrong
+ * Punktekonto, which looks exactly like success.
+ *
+ * The membership, on the other hand, is *not* shared. `user_customers` carries
+ * a `customer_id` and an RLS policy, so a customer admin sees that the person
+ * learns with them and learns nothing about anywhere else the person learns.
+ *
+ * These two facts pull in opposite directions, which is why both are asserted
+ * against the same seeded person rather than against convenient separate ones.
+ */
+describe("one person, many customers (P21-01)", () => {
+  let personId: string;
+
+  beforeAll(async () => {
+    const unique = randomUUID().slice(0, 8);
+    const person = await seedLearner(seedPool, {
+      realm: `http://127.0.0.1/realms/both-${unique}`,
+      subject: `both-sub-${unique}`,
+      firstName: "Beate",
+      lastName: "Beispiel",
+    });
+    personId = person.id;
+
+    // A second credential, as P21-05 will one day create. Only a test may do
+    // this directly — no authentication path links a credential to a person who
+    // already has one, which is what stops an unverified email claim becoming
+    // account takeover.
+    await addCredential(seedPool, personId, {
+      provider: "keycloak",
+      realm: `http://127.0.0.1/realms/other-${unique}`,
+      subject: `other-sub-${unique}`,
+    });
+
+    for (const tenant of [tenantA, tenantB]) {
+      await seedPool.query(
+        `INSERT INTO enrolments (customer_id, course_id, user_id,
+                                 required_watch_percent, pass_threshold_percent)
+         VALUES ($1,$2,$3,100,70)`,
+        [tenant.customerId, tenant.courseId, personId],
+      );
+      await seedPool.query(
+        "INSERT INTO user_customers (user_id, customer_id) VALUES ($1,$2)",
+        [personId, tenant.customerId],
+      );
+    }
+  });
+
+  it("resolves both credentials to exactly one person", async () => {
+    const { rows } = await seedPool.query<{ n: string }>(
+      "SELECT count(DISTINCT user_id) AS n FROM user_identities WHERE user_id = $1",
+      [personId],
+    );
+    expect(rows[0]?.n).toBe("1");
+
+    // And the person carries one EFN slot, not one per customer — the primary
+    // key on efn_profiles is what makes that structural rather than hoped for.
+    await seedPool.query("INSERT INTO efn_profiles (user_id, efn) VALUES ($1,$2)", [
+      personId,
+      "333333333333333",
+    ]);
+    await expect(
+      seedPool.query("INSERT INTO efn_profiles (user_id, efn) VALUES ($1,$2)", [
+        personId,
+        "444444444444444",
+      ]),
+    ).rejects.toThrow(/duplicate key/i);
+  });
+
+  it("keeps one enrolment per customer, both pointing at that one person", async () => {
+    const { rows } = await seedPool.query<{ customer_id: string }>(
+      "SELECT customer_id FROM enrolments WHERE user_id = $1",
+      [personId],
+    );
+    const customers = rows.map((row) => row.customer_id).sort();
+    expect(customers).toEqual([tenantA.customerId, tenantB.customerId].sort());
+  });
+
+  it("does not let a membership in one customer reveal the person in another", async () => {
+    const client = await appPool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.customer_id', $1, true)", [
+        tenantA.customerId,
+      ]);
+
+      const visible = await client.query<{ customer_id: string }>(
+        "SELECT customer_id FROM user_customers WHERE user_id = $1",
+        [personId],
+      );
+
+      // The membership in tenant A is visible; the one in tenant B is not —
+      // even though the query named neither and the person is the same row.
+      expect(visible.rows).toEqual([{ customer_id: tenantA.customerId }]);
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+  });
+
+  it("returns no memberships at all with no tenant context", async () => {
+    const client = await appPool.connect();
+    try {
+      const result = await client.query("SELECT * FROM user_customers");
+      expect(result.rows).toEqual([]);
+    } finally {
+      client.release();
+    }
+  });
+
+  it("refuses to write a membership into a customer the context does not name", async () => {
+    const client = await appPool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.customer_id', $1, true)", [
+        tenantA.customerId,
+      ]);
+      await expect(
+        client.query("INSERT INTO user_customers (user_id, customer_id) VALUES ($1,$2)", [
+          personId,
+          tenantB.customerId,
+        ]),
+      ).rejects.toThrow(/row-level security/i);
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
   });
 });

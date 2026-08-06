@@ -25,6 +25,7 @@ import {
   enrolments,
   evaluationResponses,
   modules,
+  userCustomers,
 } from "../../db/schema.js";
 
 /** The course settings snapshotted onto an enrolment at creation. */
@@ -197,6 +198,12 @@ export class LearningRepository implements LearningRepositoryPort {
    * `onConflictDoNothing` on (course_id, user_id) makes concurrent first
    * requests resolve to one row rather than racing; the caller re-reads when
    * nothing came back.
+   *
+   * Also records the membership this enrolment implies (P21-01). Migration 0025
+   * backfilled `user_customers` by deriving exactly this from `enrolments`, so
+   * writing it here is what keeps the derived table and the fact it records
+   * from drifting apart — rather than leaving a second place that has to be
+   * remembered.
    */
   async createEnrolment(input: {
     customerId: string;
@@ -204,6 +211,17 @@ export class LearningRepository implements LearningRepositoryPort {
     userId: string;
     course: CourseComplianceRow;
   }): Promise<EnrolmentRow> {
+    // Before the enrolment, not after: this runs inside the tenant transaction
+    // and `user_customers` is RLS-scoped on the same `app.customer_id`, so a
+    // failure here rolls the enrolment back with it. An enrolment without the
+    // membership it implies is the drift this exists to prevent.
+    await this.db
+      .insert(userCustomers)
+      .values({ userId: input.userId, customerId: input.customerId })
+      .onConflictDoNothing({
+        target: [userCustomers.userId, userCustomers.customerId],
+      });
+
     const [row] = await this.db
       .insert(enrolments)
       .values({

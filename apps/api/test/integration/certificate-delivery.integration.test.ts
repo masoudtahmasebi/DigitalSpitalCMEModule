@@ -24,6 +24,7 @@ import { AuditService } from "../../src/audit/audit.service.js";
 import { PlaintextSecretCipher } from "../../src/shared/secret-cipher.js";
 import { DeliveryRepository } from "../../src/modules/certificate/delivery.repository.js";
 import { CertificateDeliveryService } from "../../src/modules/certificate/delivery.service.js";
+import { seedLearner } from "./support/seed-learner.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -114,17 +115,13 @@ async function queueCertificate(
 ): Promise<{ certificateId: string; userId: string }> {
   const unique = randomUUID().slice(0, 8);
 
-  const userId = await insert(
-    `INSERT INTO users (keycloak_realm, keycloak_sub, email, first_name, last_name)
-     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-    [
-      `http://127.0.0.1/realms/cert-${suffix}`,
-      `cert-sub-${unique}`,
-      over.email === undefined ? `learner-${unique}@example.de` : over.email,
-      "Hans",
-      "Mustermann",
-    ],
-  );
+  const { id: userId } = await seedLearner(seedPool, {
+    realm: `http://127.0.0.1/realms/cert-${suffix}`,
+    subject: `cert-sub-${unique}`,
+    email: over.email === undefined ? `learner-${unique}@example.de` : over.email,
+    firstName: "Hans",
+    lastName: "Mustermann",
+  });
 
   const enrolmentId = await insert(
     `INSERT INTO enrolments (customer_id, course_id, user_id, required_watch_percent,

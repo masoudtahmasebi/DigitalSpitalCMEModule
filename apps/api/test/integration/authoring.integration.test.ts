@@ -27,6 +27,7 @@ import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "j
 import { AppModule } from "../../src/app.module.js";
 import { configureApp } from "../../src/configure-app.js";
 import { loadConfig } from "../../src/config/config.js";
+import { seedLearner } from "./support/seed-learner.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -99,19 +100,19 @@ beforeAll(async () => {
     [customerId, departmentId, projectSlug, "Projekt", issuer, AUDIENCE],
   );
 
-  const adminId = await insert(
-    "INSERT INTO users (keycloak_realm, keycloak_sub) VALUES ($1,$2) RETURNING id",
-    [issuer, ADMIN_SUB],
-  );
+  const { id: adminId } = await seedLearner(seedPool, {
+    realm: issuer,
+    subject: ADMIN_SUB,
+  });
   await seedPool.query(
     "INSERT INTO user_roles (user_id, role, customer_id) VALUES ($1,'customer_admin',$2)",
     [adminId, customerId],
   );
 
-  const learnerId = await insert(
-    "INSERT INTO users (keycloak_realm, keycloak_sub) VALUES ($1,$2) RETURNING id",
-    [issuer, LEARNER_SUB],
-  );
+  const { id: learnerId } = await seedLearner(seedPool, {
+    realm: issuer,
+    subject: LEARNER_SUB,
+  });
   await seedPool.query(
     "INSERT INTO user_roles (user_id, role, customer_id) VALUES ($1,'learner',$2)",
     [learnerId, customerId],

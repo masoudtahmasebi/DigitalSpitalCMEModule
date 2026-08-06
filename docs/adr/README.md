@@ -25,6 +25,8 @@ advertisement.
 | [0009](0009-no-third-party-frontend-assets.md)  | No third-party frontend assets; fonts are uploaded             | Accepted |
 | [0010](0010-extension-points.md)                | Extension points, and where they are forbidden                 | Accepted |
 | [0011](0011-in-house-video-player.md)           | The video player is ours, not a library                        | Accepted |
+| [0012](0012-two-identity-planes.md)             | Two identity planes: local staff, federated learners           | Accepted |
+| [0013](0013-person-credentials-memberships.md)  | A person is not their credential                               | Accepted |
 
 ## Writing a new one
 

@@ -26,6 +26,7 @@ import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "j
 import { AppModule } from "../../src/app.module.js";
 import { configureApp } from "../../src/configure-app.js";
 import { loadConfig } from "../../src/config/config.js";
+import { seedLearner } from "./support/seed-learner.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -49,8 +50,8 @@ process.env["EIV_WORKER_ENABLED"] = "no";
 const KID = "completion-flow-key";
 const AUDIENCE = "ds-education-api";
 /**
- * Unique per run. The suite seeds its users under `(keycloak_realm,
- * keycloak_sub)`, and the realm is the JWKS server's ephemeral URL — which the
+ * Unique per run. The suite seeds its users under `(realm, subject)` in
+ * `user_identities`, and the realm is the JWKS server's ephemeral URL — which the
  * OS will happily hand back to a later run. A fixed subject then collides with
  * the previous run's row, and the collision only appears when a port is
  * reused, which is exactly the kind of failure nobody can reproduce.
@@ -206,22 +207,26 @@ beforeAll(async () => {
     ],
   );
 
-  const userId = await insert(
-    `INSERT INTO users (keycloak_realm, keycloak_sub, email, first_name, last_name)
-     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-    [issuer, SUB, "learner@example.org", "Anna", "Müller"],
-  );
+  const { id: userId } = await seedLearner(seedPool, {
+    realm: issuer,
+    subject: SUB,
+    email: "learner@example.org",
+    firstName: "Anna",
+    lastName: "Müller",
+  });
   await seedPool.query(
     "INSERT INTO user_roles (user_id, role, customer_id) VALUES ($1,'learner',$2)",
     [userId, customerId],
   );
 
   // A customer admin in the same tenant, for the console's own assertions.
-  const adminId = await insert(
-    `INSERT INTO users (keycloak_realm, keycloak_sub, email, first_name, last_name)
-     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-    [issuer, ADMIN_SUB, "admin@example.org", "Admin", "Person"],
-  );
+  const { id: adminId } = await seedLearner(seedPool, {
+    realm: issuer,
+    subject: ADMIN_SUB,
+    email: "admin@example.org",
+    firstName: "Admin",
+    lastName: "Person",
+  });
   await seedPool.query(
     "INSERT INTO user_roles (user_id, role, customer_id) VALUES ($1,'customer_admin',$2)",
     [adminId, customerId],
@@ -1128,11 +1133,11 @@ describe("erasure keeps the participation and removes the person", () => {
     // accumulates one `completion-learner` per run. Taking the first match
     // would pick an arbitrary previous run's user — one this suite has
     // already erased.
-    const { rows } = await seedPool.query<{ id: string }>(
-      "SELECT id FROM users WHERE keycloak_sub = $1 AND keycloak_realm = $2",
+    const { rows } = await seedPool.query<{ user_id: string }>(
+      "SELECT user_id FROM user_identities WHERE subject = $1 AND realm = $2",
       [SUB, issuer],
     );
-    learnerId = rows[0]!.id;
+    learnerId = rows[0]!.user_id;
   });
 
   /**

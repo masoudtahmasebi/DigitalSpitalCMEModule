@@ -227,10 +227,13 @@ export const courseExperts = pgTable("course_experts", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * The person. Deliberately global — not tenant-scoped — because a physician's
+ * EFN, certificates and name belong to them across every customer they learn
+ * with (migration 0001, and P21-01 for why that survived the identity split).
+ */
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
-  keycloakRealm: text("keycloak_realm").notNull(),
-  keycloakSub: text("keycloak_sub").notNull(),
   email: text("email"),
   firstName: text("first_name"),
   lastName: text("last_name"),
@@ -241,6 +244,40 @@ export const users = pgTable("users", {
    */
   erasedAt: timestamp("erased_at", { withTimezone: true }),
   ...timestamps,
+});
+
+/**
+ * A way to sign in as a person (P21-01). Global for the same reason `users` is,
+ * and for one more: the auth guard resolves a credential *before* a tenant
+ * context exists, so a tenant-scoped policy here would fail closed on every
+ * request.
+ *
+ * Two credentials are linked to one person only by an explicit, verified act
+ * (P21-05) — never automatically because two providers reported the same email,
+ * which is account takeover against any provider that does not verify.
+ */
+export const userIdentities = pgTable("user_identities", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  provider: text("provider").notNull(),
+  realm: text("realm").notNull(),
+  subject: text("subject").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Which customers a person learns with (P21-01). Tenant-scoped, unlike the
+ * person themselves — this is the row a customer admin may see.
+ *
+ * Derived, not declared: an enrolment in a customer's course *is* a membership,
+ * and `createEnrolment` keeps that true so the table cannot drift from the fact
+ * it records.
+ */
+export const userCustomers = pgTable("user_customers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  customerId: uuid("customer_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const efnProfiles = pgTable("efn_profiles", {
@@ -428,6 +465,8 @@ export const schema = {
   contents,
   courseExperts,
   users,
+  userIdentities,
+  userCustomers,
   efnProfiles,
   userRoles,
   enrolments,

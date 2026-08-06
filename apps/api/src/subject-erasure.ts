@@ -134,23 +134,28 @@ async function preview(pool: pg.Pool, userId: string): Promise<Preview> {
 async function resolveUserId(pool: pg.Pool, args: Args): Promise<string> {
   if (args.userId !== undefined) return args.userId;
 
-  const { rows } = await pool.query<{ id: string }>(
+  // Through `user_identities` since P21-01: a person may hold more than one
+  // credential, and `users` no longer carries any of them. `DISTINCT user_id`
+  // rather than a plain select, because two credentials belonging to the same
+  // person are one answer, not an ambiguity — the ambiguity this refuses is two
+  // *different people*.
+  const { rows } = await pool.query<{ user_id: string }>(
     args.realm === undefined
-      ? "SELECT id FROM users WHERE keycloak_sub = $1"
-      : "SELECT id FROM users WHERE keycloak_sub = $1 AND keycloak_realm = $2",
+      ? "SELECT DISTINCT user_id FROM user_identities WHERE subject = $1"
+      : "SELECT DISTINCT user_id FROM user_identities WHERE subject = $1 AND realm = $2",
     args.realm === undefined ? [args.subject] : [args.subject, args.realm],
   );
 
-  if (rows.length === 0) throw new Error("no user matches that Keycloak subject");
+  if (rows.length === 0) throw new Error("no user matches that subject");
   if (rows.length > 1) {
     // The same `sub` in two realms is possible; erasing the wrong one would be
     // irreversible, so this stops rather than guessing.
     throw new Error(
-      "that Keycloak subject exists in more than one realm — pass --realm to disambiguate",
+      "that subject exists in more than one realm — pass --realm to disambiguate",
     );
   }
 
-  return rows[0]!.id;
+  return rows[0]!.user_id;
 }
 
 async function main(): Promise<void> {

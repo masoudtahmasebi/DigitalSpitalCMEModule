@@ -27,6 +27,7 @@ import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "j
 import { AppModule } from "../../src/app.module.js";
 import { configureApp } from "../../src/configure-app.js";
 import { loadConfig } from "../../src/config/config.js";
+import { seedLearner } from "./support/seed-learner.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -113,17 +114,17 @@ beforeAll(async () => {
     [customerId, projectId, courseSlug, "ADHS Akademie adult"],
   );
 
-  const adminId = await insert(
-    "INSERT INTO users (keycloak_realm, keycloak_sub) VALUES ($1,$2) RETURNING id",
-    [issuer, ADMIN_SUB],
-  );
+  const { id: adminId } = await seedLearner(seedPool, {
+    realm: issuer,
+    subject: ADMIN_SUB,
+  });
   await seedPool.query(
     "INSERT INTO user_roles (user_id, role, customer_id) VALUES ($1,'customer_admin',$2)",
     [adminId, customerId],
   );
 
-  openEnrolmentId = await seedLearner(courseId, "offen", null);
-  submittedEnrolmentId = await seedLearner(courseId, "gemeldet", "submitted");
+  openEnrolmentId = await seedEnrolledLearner(courseId, "offen", null);
+  submittedEnrolmentId = await seedEnrolledLearner(courseId, "gemeldet", "submitted");
 
   certificateId = await insert(
     `INSERT INTO certificates (customer_id, enrolment_id, participant_name, status, issued_at)
@@ -152,15 +153,15 @@ afterAll(async () => {
 });
 
 /** A learner, an enrolment, an EFN, and optionally a Punktemeldung. */
-async function seedLearner(
+async function seedEnrolledLearner(
   courseId: string,
   label: string,
   submissionStatus: string | null,
 ): Promise<string> {
-  const userId = await insert(
-    "INSERT INTO users (keycloak_realm, keycloak_sub) VALUES ($1,$2) RETURNING id",
-    [issuer, `learner-${label}-${RUN}`],
-  );
+  const { id: userId } = await seedLearner(seedPool, {
+    realm: issuer,
+    subject: `learner-${label}-${RUN}`,
+  });
   await seedPool.query(
     "INSERT INTO user_roles (user_id, role, customer_id) VALUES ($1,'learner',$2)",
     [userId, customerId],
@@ -398,7 +399,7 @@ describe("certificate moderation", () => {
 
 describe("erasing a subject", () => {
   it("waits while a Punktemeldung is queued", async () => {
-    const queued = await seedLearner(
+    const queued = await seedEnrolledLearner(
       await scalar("SELECT id FROM courses WHERE slug = $1", [courseSlug]),
       "wartend",
       "queued",

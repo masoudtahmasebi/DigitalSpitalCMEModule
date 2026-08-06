@@ -24,6 +24,7 @@ import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "j
 import { AppModule } from "../../src/app.module.js";
 import { configureApp } from "../../src/configure-app.js";
 import { loadConfig } from "../../src/config/config.js";
+import { seedLearner } from "./support/seed-learner.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -64,7 +65,7 @@ let seedPool: Pool;
 
 /** The realm/issuer this run's fake JWKS endpoint serves. Unique per run so
  * parallel test runs (or a re-run without a fresh database) never collide on
- * `(keycloak_realm, keycloak_sub)`. */
+ * `(provider, realm, subject)` in `user_identities`. */
 let issuer: string;
 const AUDIENCE = "ds-education-api";
 
@@ -123,18 +124,18 @@ beforeAll(async () => {
   );
 
   // Pre-provision the "granted" learner and their role — `provisionOrUpdate`
-  // upserts on (keycloak_realm, keycloak_sub), so the auth guard's first-sight
+  // resolves on (provider, realm, subject), so the auth guard's first-sight
   // sync finds and reuses this row rather than creating a second one.
-  const {
-    rows: [grantedUser],
-  } = await seedPool.query<{ id: string }>(
-    `INSERT INTO users (keycloak_realm, keycloak_sub, email, first_name, last_name)
-     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [issuer, GRANTED_SUB, "learner@example.org", "Anna", "Müller"],
-  );
+  const grantedUser = await seedLearner(seedPool, {
+    realm: issuer,
+    subject: GRANTED_SUB,
+    email: "learner@example.org",
+    firstName: "Anna",
+    lastName: "Müller",
+  });
   await seedPool.query(
     "INSERT INTO user_roles (user_id, role, customer_id) VALUES ($1, 'learner', $2)",
-    [grantedUser!.id, customerId],
+    [grantedUser.id, customerId],
   );
   // UNGRANTED_SUB is deliberately never provisioned: the guard provisions it
   // on first sight, with zero roles, so resolveTenantContext denies it.
@@ -281,7 +282,10 @@ describe("first-sight provisioning", () => {
     });
 
     const { rows } = await seedPool.query<{ first_name: string; last_name: string }>(
-      "SELECT first_name, last_name FROM users WHERE keycloak_realm = $1 AND keycloak_sub = $2",
+      `SELECT u.first_name, u.last_name
+         FROM users u
+         JOIN user_identities i ON i.user_id = u.id
+        WHERE i.realm = $1 AND i.subject = $2`,
       [issuer, GRANTED_SUB],
     );
 
