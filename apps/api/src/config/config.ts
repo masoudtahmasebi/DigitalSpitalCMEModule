@@ -17,12 +17,22 @@ const schema = z
 
     REDIS_URL: z.string().url(),
 
-    // The API validates every token against these independently — issuer and
-    // audience, not just the signature, so a token minted for another client or
-    // realm is rejected (ADR-0003).
-    KEYCLOAK_ISSUER: z.string().url(),
-    KEYCLOAK_AUDIENCE: z.string().min(1),
-    KEYCLOAK_JWKS_URI: z.string().url(),
+    /*
+     * There is deliberately no KEYCLOAK_ISSUER here (P17-02).
+     *
+     * The API validates every token against an issuer and an audience, not just
+     * a signature (ADR-0003) — but *which* issuer is a property of the project
+     * the request names, not of the deployment. It is read from
+     * `projects.keycloak_issuer` by `ProjectBindingRepository` and handed to
+     * the guard per request, which is what lets one installation serve several
+     * customers with separate realms.
+     *
+     * Three variables — `KEYCLOAK_ISSUER`, `KEYCLOAK_AUDIENCE`,
+     * `KEYCLOAK_JWKS_URI` — used to be declared here and validated at boot.
+     * Nothing read any of them. They were a deployment-wide answer to a
+     * per-tenant question, and their only effect was to make a deployment
+     * name one customer's realm in a file that is not about any customer.
+     */
 
     // Allowed clock skew when checking exp/nbf, in seconds.
     AUTH_CLOCK_TOLERANCE_SEC: z.coerce.number().int().nonnegative().default(5),

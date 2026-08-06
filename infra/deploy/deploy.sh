@@ -1,11 +1,28 @@
 #!/usr/bin/env bash
 #
-# Deploy the DS Education Platform (P10-04).
+# Deploy the DS Education Platform (P10-04, P17-01).
 #
-# Runs **on the target host**. GitHub Actions copies this directory over and
-# invokes it; a human can run exactly the same command over SSH, which is the
-# point — a deployment path that only CI can execute is a deployment path
-# nobody can debug at 22:00.
+# Runs **on the target host**, from the repository's own checkout. GitHub
+# Actions fetches the commit and invokes this; a human can run exactly the same
+# command over SSH, which is the point — a deployment path that only CI can
+# execute is a deployment path nobody can debug at 22:00.
+#
+# ## Where things live
+#
+#   ~/Repositories/DigitalSpitalCMEModule   the git clone. Disposable: `git
+#                                           fetch && git checkout` is the whole
+#                                           of what a deploy changes here.
+#   ~/ds-education/config.env               written once by a human, never by a
+#                                           deploy. The answers no default can
+#                                           be right about.
+#   ~/ds-education/secrets.env              generated on first deploy, mode 600,
+#                                           never regenerated. See secrets.sh.
+#   ~/ds-education/sites/                   Caddy blocks this script generates.
+#
+# State is outside the clone deliberately: a `git checkout` must never be able
+# to touch a credential, and `git status` on the server should be clean.
+#
+# `DS_STATE_DIR` overrides the state location, which is what the tests use.
 #
 #   ./deploy.sh                 pull, migrate, restart, verify
 #   ./deploy.sh --check         run the preflight only, change nothing
@@ -30,9 +47,10 @@ set -Eeuo pipefail
 # declaration's own exit status (SC2155).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
-readonly ENV_FILE="${SCRIPT_DIR}/.env.production"
 readonly COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.prod.yml"
 readonly BACKUP_DIR="${DS_BACKUP_DIR:-/var/backups/ds-education}"
+readonly STATE_DIR="${DS_STATE_DIR:-${HOME}/ds-education}"
+readonly CONFIG_FILE="${STATE_DIR}/config.env"
 
 RUN_MIGRATIONS=1
 ROLLBACK_TAG=""
@@ -64,17 +82,50 @@ log "Preflight"
 
 command -v docker >/dev/null || die "docker is not installed"
 docker compose version >/dev/null 2>&1 || die "docker compose v2 is not available"
-[[ -f "$ENV_FILE" ]] || die "missing ${ENV_FILE} — the deploy workflow writes it from GitHub secrets"
+command -v openssl >/dev/null || die "openssl is not installed (needed to generate credentials)"
 
-# Refuse a world-readable secrets file rather than silently accepting one.
-# Every credential the platform has is in there.
-perms="$(stat -c '%a' "$ENV_FILE")"
-[[ "$perms" == "600" || "$perms" == "400" ]] || die "${ENV_FILE} has mode ${perms}; expected 600"
+# The operator's file. Never written by a deploy — if it is missing, that is a
+# server that has not been set up, and creating a default would be guessing at
+# a domain.
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  mkdir -p "$STATE_DIR"
+  die "missing ${CONFIG_FILE}
+   Copy the template and fill it in, once:
+     install -m 600 ${SCRIPT_DIR}/config.env.example ${CONFIG_FILE}
+     \$EDITOR ${CONFIG_FILE}"
+fi
+
+perms="$(stat -c '%a' "$CONFIG_FILE")"
+[[ "$perms" == "600" || "$perms" == "400" ]] || die "${CONFIG_FILE} has mode ${perms}; expected 600"
 
 set -a
 # shellcheck disable=SC1090 # runtime path, deliberately not resolvable at lint time
-source "$ENV_FILE"
+source "$CONFIG_FILE"
 set +a
+
+# Credentials the machine owns. Generated on first run, loaded on every run,
+# never regenerated — see secrets.sh for why that last part is not a nicety.
+log "Credentials"
+# shellcheck source=./secrets.sh
+source "${SCRIPT_DIR}/secrets.sh"
+ds_ensure_secrets "$STATE_DIR" || die "could not prepare ${STATE_DIR}/secrets.env"
+ds_check_secrets || die "the generated credentials are not usable (see above)"
+
+# Which images to run.
+#
+# The workflow passes IMAGE_* in the environment; a human re-running this by
+# hand passes nothing and gets whatever was deployed last. Persisting them is
+# what makes `./dsc logs -f api` work afterwards without the operator knowing a
+# commit SHA — and what makes a re-run after a reboot deploy the same thing
+# rather than nothing.
+readonly IMAGES_FILE="${STATE_DIR}/images.env"
+if [[ -z "${IMAGE_API:-}" && -f "$IMAGES_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090 # runtime path
+  source "$IMAGES_FILE"
+  set +a
+  log "Reusing the images from the last deploy"
+fi
 
 # One BASE_DOMAIN, every hostname derived from it (P16-01). Sourced rather than
 # run: it exports into this shell, and this shell is what `docker compose`
@@ -84,7 +135,7 @@ set +a
 # this and names every hostname by hand still deploys unchanged.
 # shellcheck source=./domains.sh
 source "${SCRIPT_DIR}/domains.sh"
-ds_derive_domains || die "BASE_DOMAIN is missing or malformed — see env.production.example"
+ds_derive_domains || die "BASE_DOMAIN is missing or malformed — see config.env.example"
 ds_check_domains || die "the derived configuration is inconsistent (see above)"
 
 # Everything the stack cannot start without and cannot derive, checked here
@@ -96,24 +147,24 @@ ds_check_domains || die "the derived configuration is inconsistent (see above)"
 # **not** in this list any more: `ds_derive_domains` produced them from
 # BASE_DOMAIN a few lines above, and `ds_check_domains` has already asserted
 # they are mutually consistent — which is more than "non-empty" ever proved.
+# The credentials are not in this list: `ds_check_secrets` has already asserted
+# them, and they come from a file no human edits.
 for required in \
   BASE_DOMAIN ACME_EMAIL PROJECT_SLUG \
-  POSTGRES_DB POSTGRES_SUPERUSER POSTGRES_SUPERUSER_PASSWORD \
-  DS_MIGRATOR_PASSWORD DS_APP_PASSWORD \
-  KEYCLOAK_ISSUER KEYCLOAK_AUDIENCE KEYCLOAK_JWKS_URI \
-  PORTAL_KEYCLOAK_CLIENT_ID \
-  SECRETS_KMS_KEY \
-  IMAGE_API IMAGE_ADMIN IMAGE_PORTAL IMAGE_WIDGET
+  POSTGRES_DB POSTGRES_SUPERUSER \
+  PORTAL_KEYCLOAK_ISSUER PORTAL_KEYCLOAK_CLIENT_ID
 do
-  [[ -n "${!required:-}" ]] || die "missing required variable: ${required}"
+  [[ -n "${!required:-}" ]] || die "missing required variable: ${required} (set it in ${CONFIG_FILE})"
 done
 
-# 32 bytes, base64. The API refuses to start without it and there is no
-# plaintext fallback, so checking the *length* here turns "container exits on
-# boot" into a sentence naming the variable and how to generate one.
-kms_bytes="$(printf '%s' "$SECRETS_KMS_KEY" | base64 -d 2>/dev/null | wc -c || true)"
-[[ "$kms_bytes" == "32" ]] || die \
-  "SECRETS_KMS_KEY must be 32 bytes base64-encoded (got ${kms_bytes}) — openssl rand -base64 32"
+# The image tags are not configuration and do not belong in config.env — they
+# come from the deploy workflow, or from what the last deploy recorded. Said
+# separately so the message points at the right thing.
+for required in IMAGE_API IMAGE_ADMIN IMAGE_PORTAL IMAGE_WIDGET; do
+  [[ -n "${!required:-}" ]] || die "no ${required}, and none recorded in ${IMAGES_FILE}
+   The deploy workflow passes these. To run by hand, name them:
+     IMAGE_API=ghcr.io/<owner>/<repo>/api:<tag> … ./deploy.sh"
+done
 
 # The cookie scope, the CORS list and the CSP origin are checked by
 # `ds_check_domains`, which ran above — against the derived *result*, so a
@@ -142,6 +193,21 @@ if [[ -n "$ROLLBACK_TAG" ]]; then
   RUN_MIGRATIONS=0
 fi
 
+# Recorded after the rollback rewrite, so what is written is what will run.
+# Only on a real deploy: `--check` promises to change nothing.
+if [[ "$DRY_RUN" != "1" ]]; then
+  (
+    umask 077
+    {
+      echo "# Written by deploy.sh. The images this host is running."
+      printf 'IMAGE_API=%s\n' "$IMAGE_API"
+      printf 'IMAGE_ADMIN=%s\n' "$IMAGE_ADMIN"
+      printf 'IMAGE_PORTAL=%s\n' "$IMAGE_PORTAL"
+      printf 'IMAGE_WIDGET=%s\n' "$IMAGE_WIDGET"
+    } > "$IMAGES_FILE"
+  )
+fi
+
 # The bare domain, which is nobody's service hostname.
 #
 # Only *checked* here. Writing the file is a change, and `--check` promises not
@@ -151,7 +217,10 @@ if [[ -n "${APEX_REDIRECT_URL:-}" ]]; then
     "APEX_REDIRECT_URL must be a full URL, e.g. https://${PORTAL_DOMAIN}"
 fi
 
-compose() { docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
+# No `--env-file`: everything above was sourced with `set -a`, so compose
+# interpolates from this shell's environment. One source of values rather than
+# two, and the two files behind it need no ordering rule inside compose.
+compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
 
 # The compose file itself has to interpolate cleanly. `config -q` catches a
 # variable this script does not know to require, which is how the list above
@@ -174,7 +243,7 @@ fi
 # Removed, not merely skipped, when the value is empty: a stale block from an
 # earlier deploy would keep redirecting a domain the client has since pointed at
 # a marketing site.
-readonly SITES_DIR="${SCRIPT_DIR}/sites"
+readonly SITES_DIR="${STATE_DIR}/sites"
 readonly APEX_BLOCK="${SITES_DIR}/apex.caddy"
 mkdir -p "$SITES_DIR"
 if [[ -n "${APEX_REDIRECT_URL:-}" ]]; then
@@ -249,6 +318,36 @@ if [[ "$RUN_MIGRATIONS" == "1" ]]; then
   compose run --rm \
     -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD}@postgres:5432/${POSTGRES_DB}" \
     --entrypoint node api dist/db-migrate.js
+fi
+
+# ---------------------------------------------------------------------------
+# 4b. The portal's realm and the project's realm are the same realm
+# ---------------------------------------------------------------------------
+# The API validates a learner's token against `projects.keycloak_issuer`; the
+# portal sends the learner to `PORTAL_KEYCLOAK_ISSUER`. Nothing structural keeps
+# those two the same, and when they differ the learner signs in perfectly well
+# and then has every request rejected with a 401 that names nothing.
+#
+# A warning rather than a refusal, and only when the project row exists: on a
+# first deploy it does not, and refusing would make the platform impossible to
+# install. `|| true` throughout — a check that can fail the deploy on a psql
+# quirk is worse than no check.
+if [[ "$RUN_MIGRATIONS" == "1" ]]; then
+  project_issuer="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
+    psql -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
+    -c "SELECT coalesce(keycloak_issuer, '') FROM projects WHERE slug = '${PROJECT_SLUG}'" \
+    2>/dev/null | tr -d '[:space:]' || true)"
+
+  if [[ -z "$project_issuer" ]]; then
+    log "Project '${PROJECT_SLUG}' has no Keycloak issuer yet — set it in the console"
+  elif [[ "$project_issuer" != "$PORTAL_KEYCLOAK_ISSUER" ]]; then
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "PORTAL_KEYCLOAK_ISSUER (${PORTAL_KEYCLOAK_ISSUER}) is not the issuer on project '${PROJECT_SLUG}' (${project_issuer})." >&2
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "A learner will sign in successfully and then have every request refused. Fix one of the two." >&2
+  else
+    log "Portal and project agree on the Keycloak realm"
+  fi
 fi
 
 # ---------------------------------------------------------------------------

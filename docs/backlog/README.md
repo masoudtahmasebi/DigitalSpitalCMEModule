@@ -1,28 +1,29 @@
-# Backlog — work orders P0–P16
+# Backlog — work orders P0–P17
 
 One file per phase. Each file is an **Epic**; each entry inside it is a **Task**
 written so it can be handed to Claude Code verbatim.
 
-| Phase                                    | File             | Budget    | Weeks |
-| ---------------------------------------- | ---------------- | --------- | ----- |
-| P0 · Foundations & AI-first setup        | [P0.md](P0.md)   | 10 h      | 1     |
-| P1 · Auth & user profile                 | [P1.md](P1.md)   | 10 h      | 1–2   |
-| P2 · Backend core: hierarchy & catalog   | [P2.md](P2.md)   | 16 h      | 2     |
-| P3 · Learning engine                     | [P3.md](P3.md)   | 14 h      | 3     |
-| P4 · Assessment & evaluation             | [P4.md](P4.md)   | 10 h      | 4     |
-| P5 · Learner frontend widget             | [P5.md](P5.md)   | 28 h      | 1–5   |
-| P6 · WordPress integration               | [P6.md](P6.md)   | 5 h       | 2     |
-| P7 · EIV-FOBI & EFN                      | [P7.md](P7.md)   | 12 h      | 1, 5  |
-| P8 · Certificates & email                | [P8.md](P8.md)   | 7 h       | 5     |
-| P9 · Admin console                       | [P9.md](P9.md)   | 18 h      | 5–6   |
-| P10 · Hardening, Hetzner deploy & launch | [P10.md](P10.md) | 10 h      | 6     |
-| **Total (the plan)**                     |                  | **140 h** |       |
-| P11 · Second host and extension points   | [P11.md](P11.md) | 12 h ⚠    | —     |
-| P12 · Two identity planes, full admin    | [P12.md](P12.md) | 30 h ⚠    | —     |
-| P15 · Course behaviour: length, resuming | [P15.md](P15.md) | 11 h ⚠    | —     |
-| P16 · One base domain, runtime config    | [P16.md](P16.md) | 11 h ⚠    | —     |
+| Phase                                       | File             | Budget    | Weeks |
+| ------------------------------------------- | ---------------- | --------- | ----- |
+| P0 · Foundations & AI-first setup           | [P0.md](P0.md)   | 10 h      | 1     |
+| P1 · Auth & user profile                    | [P1.md](P1.md)   | 10 h      | 1–2   |
+| P2 · Backend core: hierarchy & catalog      | [P2.md](P2.md)   | 16 h      | 2     |
+| P3 · Learning engine                        | [P3.md](P3.md)   | 14 h      | 3     |
+| P4 · Assessment & evaluation                | [P4.md](P4.md)   | 10 h      | 4     |
+| P5 · Learner frontend widget                | [P5.md](P5.md)   | 28 h      | 1–5   |
+| P6 · WordPress integration                  | [P6.md](P6.md)   | 5 h       | 2     |
+| P7 · EIV-FOBI & EFN                         | [P7.md](P7.md)   | 12 h      | 1, 5  |
+| P8 · Certificates & email                   | [P8.md](P8.md)   | 7 h       | 5     |
+| P9 · Admin console                          | [P9.md](P9.md)   | 18 h      | 5–6   |
+| P10 · Hardening, Hetzner deploy & launch    | [P10.md](P10.md) | 10 h      | 6     |
+| **Total (the plan)**                        |                  | **140 h** |       |
+| P11 · Second host and extension points      | [P11.md](P11.md) | 12 h ⚠    | —     |
+| P12 · Two identity planes, full admin       | [P12.md](P12.md) | 30 h ⚠    | —     |
+| P15 · Course behaviour: length, resuming    | [P15.md](P15.md) | 11 h ⚠    | —     |
+| P16 · One base domain, runtime config       | [P16.md](P16.md) | 11 h ⚠    | —     |
+| P17 · Server-owned secrets, per-project IdP | [P17.md](P17.md) | 5 h ⚠     | —     |
 
-⚠ **P11, P12, P15 and P16 are outside the 140 h plan.** Each was built on an explicit
+⚠ **P11, P12, P15, P16 and P17 are outside the 140 h plan.** Each was built on an explicit
 instruction and is recorded rather than absorbed: `CLAUDE.md` §3 says the rest of
 the plan is not negotiable, so those hours came from somewhere. See the header of
 [P11.md](P11.md), which also states that its work orders were written after the

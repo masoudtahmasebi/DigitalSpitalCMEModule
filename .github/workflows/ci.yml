@@ -58,8 +58,8 @@ jobs:
       - name: Shell scripts
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
-          shellcheck infra/deploy/domains.sh infra/deploy/domains.test.sh infra/nginx/ds-runtime-config.sh
-          (cd infra/deploy && shellcheck -x deploy.sh)
+          shellcheck infra/nginx/ds-runtime-config.sh
+          (cd infra/deploy && shellcheck -x deploy.sh domains.sh domains.test.sh secrets.sh dsc)
           ./infra/deploy/domains.test.sh
 
       - name: Build

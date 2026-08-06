@@ -11,6 +11,30 @@
 # certbot on a host nobody logs into is an expired certificate at 03:00 on a
 # Sunday; the failure mode here is a container restart.
 #
+# ## Why not Traefik
+#
+# Traefik's distinguishing feature is *dynamic* discovery: containers announce
+# their own routes through labels, and the proxy reconfigures itself as they
+# come and go. That is worth a great deal when the set of services changes
+# without anybody editing a file — autoscaling, ephemeral preview environments,
+# a platform team that does not own the app.
+#
+# None of that describes this. There are four services, their names are fixed,
+# and the routing table changes when somebody edits this repository. Against
+# that, dynamic discovery is a cost rather than a benefit:
+#
+#   * the routes move from one reviewable file into labels spread across the
+#     service definitions, where "what is exposed publicly?" stops being a
+#     question you can answer by reading one thing;
+#   * a mislabelled container publishes itself, so the failure mode of a typo
+#     changes from "this service is unreachable" to "this service is reachable";
+#   * the CSP and the body-size rules in the Caddyfile — which are compliance
+#     surface, not plumbing — become label strings.
+#
+# The Caddyfile is four site blocks and reads top to bottom. If this ever grows
+# containers that appear without a commit, revisit it; until then, swapping
+# would be work with a security cost and no functional gain.
+#
 # ## What is and is not exposed
 #
 # Only Caddy publishes ports. Postgres, Redis and the API are reachable on the
@@ -38,11 +62,12 @@ services:
       - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      # Optional extra site blocks, written by deploy.sh. Today that is only
-      # the bare domain's redirect; the directory is mounted either way,
-      # because Caddy's `import` of a glob matching nothing is fine but a bind
-      # mount of a directory that does not exist is not.
-      - ./sites:/etc/caddy/sites:ro
+      # Optional extra site blocks, written by deploy.sh into the state
+      # directory — outside the git clone, so a `git checkout` cannot touch
+      # them. Mounted whether or not a block exists: Caddy's `import` of a glob
+      # matching nothing is fine, but a bind mount of a missing directory is
+      # created root-owned by Docker and then cannot be written by `deploy`.
+      - ${DS_SITES_DIR}:/etc/caddy/sites:ro
       # The certificate store. Losing this volume means re-issuing every
       # certificate, and Let's Encrypt rate-limits that — so it is named, not
       # anonymous.
@@ -78,9 +103,10 @@ services:
       API_PORT: 3000
       DATABASE_URL: postgres://ds_app:${DS_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
-      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
-      KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE}
-      KEYCLOAK_JWKS_URI: ${KEYCLOAK_JWKS_URI}
+      # No Keycloak configuration. Which realm a learner's token is validated
+      # against is a property of the project the request names, read from
+      # `projects.keycloak_issuer` per request — which is what lets one
+      # installation serve several customers with separate realms (P17-02).
       # The variable the API actually reads is ALLOWED_ORIGINS. This line said
       # CORS_ALLOWED_ORIGINS, which the config schema does not define — so the
       # allow-list arrived empty and every cross-origin call from the MEDICE
@@ -188,7 +214,7 @@ services:
       # The portal's own Keycloak client — a learner-facing public client, not
       # the console's. The console has not spoken to Keycloak since P12-06
       # (ADR-0012), which is why only this service gets these three.
-      DS_KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
+      DS_KEYCLOAK_ISSUER: ${PORTAL_KEYCLOAK_ISSUER}
       DS_KEYCLOAK_CLIENT_ID: ${PORTAL_KEYCLOAK_CLIENT_ID}
       DS_REDIRECT_URI: ${DS_PORTAL_REDIRECT_URI}
     networks: [internal]

@@ -12,7 +12,11 @@
 # Every `source ./domains.sh` below is inside a subshell shellcheck cannot
 # follow (SC1091), and the variables those subshells assign are read by the
 # sourced function rather than by this file (SC2034, SC2209).
-# shellcheck disable=SC1091,SC2034,SC2209
+#
+# SC2030/SC2031 warn that those assignments are local to their subshell. They
+# are, deliberately: it is what stops one case's exports leaking into the next,
+# which is the whole risk with a function that mutates its caller.
+# shellcheck disable=SC1091,SC2030,SC2031,SC2034,SC2209
 
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -38,7 +42,7 @@ check() {
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
   PROJECT_SLUG=medice-adhs
-  KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
+  PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
   ds_derive_domains
 
   printf '%s\n' \
@@ -64,7 +68,7 @@ check "DS_PORTAL_API_BASE"   "https://api.digitalspital.com"            "${got[1
 check "DS_PORTAL_REDIRECT_URI" "https://fortbildung.digitalspital.com/" "${got[11]}"
 
 # --- the derived set passes its own checks ---------------------------------
-if ( source ./domains.sh; BASE_DOMAIN=digitalspital.com; PROJECT_SLUG=medice-adhs; KEYCLOAK_ISSUER=https://login.medice.de/realms/medice; ds_derive_domains; ds_check_domains ) 2>/dev/null; then
+if ( source ./domains.sh; BASE_DOMAIN=digitalspital.com; PROJECT_SLUG=medice-adhs; PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice; ds_derive_domains; ds_check_domains ) 2>/dev/null; then
   passed=$((passed + 1))
 else
   failed=$((failed + 1))
@@ -113,7 +117,7 @@ actual=$(
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
   PROJECT_SLUG=medice-adhs
-  KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
+  PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
   ds_derive_domains
   ds_derive_domains
   printf '%s' "$CORS_ALLOWED_ORIGINS"
@@ -146,7 +150,7 @@ refuses "an empty value"             eval 'BASE_DOMAIN='
 # --- the checks catch what a derivation cannot ------------------------------
 rejects_check() {
   local what="$1"; shift
-  if ( source ./domains.sh; BASE_DOMAIN=digitalspital.com; PROJECT_SLUG=medice-adhs; KEYCLOAK_ISSUER=https://login.medice.de/realms/medice; "$@"; ds_derive_domains; ds_check_domains ) >/dev/null 2>&1; then
+  if ( source ./domains.sh; BASE_DOMAIN=digitalspital.com; PROJECT_SLUG=medice-adhs; PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice; "$@"; ds_derive_domains; ds_check_domains ) >/dev/null 2>&1; then
     failed=$((failed + 1))
     echo "xx ds_check_domains should have rejected: ${what}" >&2
   else
@@ -180,7 +184,7 @@ actual=$(
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
   PROJECT_SLUG=medice-adhs
-  KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
+  PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
   DS_PORTAL_PROJECT_SLUG=another-project
   ds_derive_domains
   printf '%s|%s' "$DS_ADMIN_PROJECT_SLUG" "$DS_PORTAL_PROJECT_SLUG"
@@ -195,17 +199,17 @@ actual=$(
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
   PROJECT_SLUG=medice-adhs
-  KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
+  PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
   ds_derive_domains
   printf '%s' "$KEYCLOAK_ORIGIN"
 )
-check "KEYCLOAK_ORIGIN is the issuer's origin" "https://login.medice.de" "$actual"
+check "KEYCLOAK_ORIGIN is the portal issuer's origin" "https://login.medice.de" "$actual"
 
 actual=$(
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
   PROJECT_SLUG=medice-adhs
-  KEYCLOAK_ISSUER=http://127.0.0.1:8080/realms/ds-education
+  PORTAL_KEYCLOAK_ISSUER=http://127.0.0.1:8080/realms/ds-education
   ds_derive_domains
   printf '%s' "$KEYCLOAK_ORIGIN"
 )
@@ -215,7 +219,7 @@ actual=$(
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
   PROJECT_SLUG=medice-adhs
-  KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
+  PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
   KEYCLOAK_ORIGIN=https://sso.example.net
   ds_derive_domains
   printf '%s' "$KEYCLOAK_ORIGIN"
@@ -223,7 +227,7 @@ actual=$(
 check "an explicit KEYCLOAK_ORIGIN survives" "https://sso.example.net" "$actual"
 
 rejects_check "an issuer that yields no origin" \
-  eval 'KEYCLOAK_ISSUER=login.medice.de/realms/medice'
+  eval 'PORTAL_KEYCLOAK_ISSUER=login.medice.de/realms/medice'
 
 rm -f /tmp/ds-domains-happy.txt
 

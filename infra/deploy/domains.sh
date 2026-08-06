@@ -40,7 +40,7 @@
 ds_derive_domains() {
   if [[ -z "${BASE_DOMAIN:-}" ]]; then
     echo "BASE_DOMAIN is not set. It is the one domain everything else derives from," >&2
-    echo "e.g. BASE_DOMAIN=digitalspital.com — see infra/deploy/env.production.example." >&2
+    echo "e.g. BASE_DOMAIN=digitalspital.com — see infra/deploy/config.env.example." >&2
     return 1
   fi
 
@@ -113,15 +113,24 @@ ds_derive_domains() {
 
   # The portal's CSP names the realm's *origin* — scheme, host, optional port —
   # so that the browser will let it redirect a learner to Keycloak. Cut from the
-  # issuer rather than written again: two spellings of the same host is how one
-  # of them ends up with a `/realms/...` path in a `connect-src`, where it is
-  # silently ignored and the sign-in fails with nothing in any log.
-  if [[ -z "${KEYCLOAK_ORIGIN:-}" && -n "${KEYCLOAK_ISSUER:-}" ]]; then
-    if [[ "$KEYCLOAK_ISSUER" =~ ^(https?://[^/]+) ]]; then
+  # portal's issuer rather than written again: two spellings of the same host is
+  # how one of them ends up with a `/realms/...` path in a `connect-src`, where
+  # it is silently ignored and the sign-in fails with nothing in any log.
+  #
+  # The *portal's* issuer, not a deployment-wide one: the API has no Keycloak
+  # configuration at all and reads the realm off the project row (P17-02).
+  if [[ -z "${KEYCLOAK_ORIGIN:-}" && -n "${PORTAL_KEYCLOAK_ISSUER:-}" ]]; then
+    if [[ "$PORTAL_KEYCLOAK_ISSUER" =~ ^(https?://[^/]+) ]]; then
       KEYCLOAK_ORIGIN="${BASH_REMATCH[1]}"
     fi
   fi
   : "${KEYCLOAK_ORIGIN:=}"
+
+  # Where the generated Caddy site blocks live — outside the git clone, so a
+  # `git checkout` can never touch them and `git status` on the server stays
+  # clean. Absolute, because compose resolves a relative bind mount against the
+  # compose file's directory rather than the caller's.
+  : "${DS_SITES_DIR:=${DS_STATE_DIR:-${HOME}/ds-education}/sites}"
 
   export BASE_DOMAIN API_LABEL ADMIN_LABEL PORTAL_LABEL WIDGET_LABEL
   export API_DOMAIN ADMIN_DOMAIN PORTAL_DOMAIN WIDGET_DOMAIN
@@ -129,7 +138,7 @@ ds_derive_domains() {
   export STAFF_COOKIE_DOMAIN CORS_ALLOWED_ORIGINS
   export DS_ADMIN_API_BASE DS_PORTAL_API_BASE DS_PORTAL_REDIRECT_URI
   export DS_ADMIN_PROJECT_SLUG DS_PORTAL_PROJECT_SLUG
-  export KEYCLOAK_ORIGIN
+  export KEYCLOAK_ORIGIN DS_SITES_DIR
 }
 
 # Check the parts a derivation cannot: values a human still has to supply, and
@@ -178,7 +187,7 @@ ds_check_domains() {
   # origin. Empty, the redirect is blocked by the browser and sign-in fails
   # with nothing server-side to look at.
   [[ -n "${KEYCLOAK_ORIGIN:-}" ]] || complain \
-    "KEYCLOAK_ORIGIN is empty — it is cut from KEYCLOAK_ISSUER, so check that"
+    "KEYCLOAK_ORIGIN is empty — it is cut from PORTAL_KEYCLOAK_ISSUER, so check that"
 
   # All four hostnames distinct: two services on one name means Caddy serves
   # whichever block it parsed last, and the other is simply gone.

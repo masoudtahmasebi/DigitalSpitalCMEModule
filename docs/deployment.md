@@ -64,6 +64,10 @@ usermod -aG docker deploy
 # The backup directory deploy.sh writes to, before it needs to exist.
 install -d -m 700 -o deploy -g deploy /var/backups/ds-education
 
+# git, to fetch the repository the deploy runs from, and openssl, to generate
+# the credentials it owns.
+apt-get -y install git openssl
+
 # Only 22, 80 and 443. Postgres is not published by the compose file, and this
 # is the second reason it is not reachable.
 ufw allow OpenSSH && ufw allow 80 && ufw allow 443 && ufw --force enable
@@ -82,6 +86,22 @@ PasswordAuthentication no
 
 and `systemctl restart ssh`. Do this **after** you have confirmed you can log
 in as `deploy` with your key, not before.
+
+### Then, as `deploy`: the clone and the state directory
+
+```bash
+mkdir -p ~/Repositories && cd ~/Repositories
+git clone git@github.com:masoudtahmasebi/DigitalSpitalCMEModule.git
+
+# Everything that is not in git: the configuration, the generated credentials,
+# the Caddy blocks the deploy writes. Deliberately outside the clone, so a
+# `git checkout` can never touch a credential.
+install -d -m 700 ~/ds-education
+```
+
+The clone needs a read-only deploy key on the repository (`Settings → Deploy
+keys`) or the account's own key — whichever, `git fetch` must work
+non-interactively as `deploy`, because that is what a deployment does.
 
 ---
 
@@ -168,44 +188,23 @@ GitHub next.
 
 ---
 
-## 4. GitHub secrets and variables
+## 4. Configuration
 
-`Settings → Secrets and variables → Actions`.
+Two files on the server, and four secrets in GitHub. Nothing that unlocks the
+platform is in GitHub.
 
-### Secrets (encrypted, never shown again)
+### On the server: `~/ds-education/config.env`
 
-| Name                 | Value                                                         |
-| -------------------- | ------------------------------------------------------------- |
-| `DEPLOY_HOST`        | `78.47.178.65`                                                |
-| `DEPLOY_USER`        | `deploy`                                                      |
-| `DEPLOY_SSH_KEY`     | the whole of `~/.ssh/ds-deploy`, `BEGIN`/`END` lines included |
-| `DEPLOY_KNOWN_HOSTS` | the `ssh-keyscan` output from §3                              |
-| `PRODUCTION_ENV`     | the whole of `infra/deploy/env.production.example`, filled in |
+The answers no default can be right about. Written once, never touched by a
+deploy.
 
-`PRODUCTION_ENV` being one blob rather than twenty secrets is deliberate.
-Twenty secrets drift from twenty variable names, and the failure is a container
-that starts with an empty password.
+```bash
+cd ~/Repositories/DigitalSpitalCMEModule
+install -m 600 infra/deploy/config.env.example ~/ds-education/config.env
+$EDITOR ~/ds-education/config.env
+```
 
-### Variables (plain, visible)
-
-| Name          | Value               |
-| ------------- | ------------------- |
-| `BASE_DOMAIN` | `digitalspital.com` |
-
-One. It used to be eight, five of which were Vite build arguments inlined into
-the frontend bundles — which made every image environment-specific and put the
-API's URL in a _variable_ while the API's hostname lived in a line of a
-_secret_, with nothing checking that the two agreed. When they disagreed, the
-console loaded and every request failed CORS: a browser-side failure with no
-server-side trace. The frontends now read `/config.js`, written when their
-container starts from values derived out of `BASE_DOMAIN`.
-
-This one exists only so the workflow can name the deployment before it has read
-the secret. It has to match the `BASE_DOMAIN` inside `PRODUCTION_ENV`.
-
-### Filling in `PRODUCTION_ENV`
-
-Start from `infra/deploy/env.production.example`. For this deployment:
+For this deployment, the four lines that matter:
 
 ```
 BASE_DOMAIN=digitalspital.com
@@ -214,39 +213,76 @@ ACME_EMAIL=technik@digitalspital.de
 EXTRA_CORS_ORIGINS=https://www.medice.de
 ```
 
-Then the four credentials, generated with real randomness:
-
-```bash
-openssl rand -base64 32   # POSTGRES_SUPERUSER_PASSWORD
-openssl rand -base64 32   # DS_MIGRATOR_PASSWORD
-openssl rand -base64 32   # DS_APP_PASSWORD
-openssl rand -base64 32   # SECRETS_KMS_KEY  — must decode to exactly 32 bytes
-```
-
-And MEDICE's Keycloak realm, which is the customer's, not ours:
+Plus the portal's Keycloak client — **per project, not per platform**:
 
 ```
-KEYCLOAK_ISSUER=https://<their-keycloak>/realms/<their-realm>
-KEYCLOAK_AUDIENCE=ds-education-api
-KEYCLOAK_JWKS_URI=https://<their-keycloak>/realms/<their-realm>/protocol/openid-connect/certs
+PORTAL_KEYCLOAK_ISSUER=https://<their-keycloak>/realms/<their-realm>
 PORTAL_KEYCLOAK_CLIENT_ID=ds-portal
 ```
 
-The admin console uses **none** of those: staff sign in on the platform's own
-identity plane (ADR-0012), so a Keycloak outage cannot lock out an administrator.
+The API has no Keycloak configuration at all. It validates each learner's token
+against the issuer on the **project row** (`projects.keycloak_issuer`), read per
+request — which is what lets one installation serve several customers with
+separate realms, and what makes the console immune to a customer's Keycloak
+being down (ADR-0012). Three deployment-wide Keycloak variables used to exist
+here and were read by nothing; they are gone (P17-02).
+
+What remains is the portal's own OIDC client, because a browser app has to know
+where to send a learner before it has spoken to any API. It must name the same
+realm as the project above — `deploy.sh` warns when the two disagree, which is
+otherwise a learner signing in successfully and then having every request
+refused.
+
+### On the server: `~/ds-education/secrets.env`
+
+You do not write this one. On the first deploy, `deploy.sh` generates:
+
+| Variable                      | What it protects                              |
+| ----------------------------- | --------------------------------------------- |
+| `POSTGRES_SUPERUSER_PASSWORD` | the database's superuser                      |
+| `DS_MIGRATOR_PASSWORD`        | the role that owns the schema                 |
+| `DS_APP_PASSWORD`             | the role the API connects as                  |
+| `SECRETS_KMS_KEY`             | the VNR password and SMTP credentials at rest |
+
+Each is `openssl rand -base64 32`, written mode 600, and **generated only if
+absent**. Nobody reads them, nobody types them, and no decision is encoded in 32
+random bytes — so no human ever needs to see one.
+
+> **`secrets.env` is part of the backup.** A database dump without the KMS key
+> restores rows whose encrypted columns can never be read again. There is no
+> plaintext fallback; that is the design. §6 says where the copies go.
+
+### In GitHub: four secrets
+
+`Settings → Secrets and variables → Actions`.
+
+| Name                 | Value                                                         |
+| -------------------- | ------------------------------------------------------------- |
+| `DEPLOY_HOST`        | `78.47.178.65`                                                |
+| `DEPLOY_USER`        | `deploy`                                                      |
+| `DEPLOY_SSH_KEY`     | the whole of `~/.ssh/ds-deploy`, `BEGIN`/`END` lines included |
+| `DEPLOY_KNOWN_HOSTS` | the `ssh-keyscan` output from §3                              |
+
+And optionally one _variable_, `DEPLOY_REPO_DIR`, if the clone is not at
+`~/Repositories/DigitalSpitalCMEModule`.
+
+That is the whole list. `PRODUCTION_ENV` — the entire production environment,
+database passwords and encryption key included — used to be a repository secret
+this workflow wrote to the host on every deploy. It made GitHub a credential
+store for the database, put the configuration a browser tab away from the thing
+it configures, and rotated nothing. The server owns both halves now (P17-01).
 
 ### What the preflight checks, so you do not have to
 
-Everything a domain implies is derived and then asserted — in the workflow,
-before a byte reaches the server, and again on the host:
+`deploy.sh --check` runs on the host before any image is built, and asserts:
 
-- the staff cookie's scope is a parent of both the console and the API;
-- the CORS list contains the console and the portal;
-- the CSP's `connect-src` origin matches the API's hostname;
-- no two services share a hostname;
+- every hostname a domain implies, and that they are mutually consistent — the
+  staff cookie's scope is a parent of the console and the API, the CORS list
+  contains both, the CSP origin matches the API's hostname, no two services
+  share a name;
 - `SECRETS_KMS_KEY` decodes to exactly 32 bytes;
 - the EIV endpoint is not the live one without `EIV_ALLOW_LIVE=yes`;
-- the environment file on the host is mode 600.
+- `config.env` is mode 600.
 
 Each of these was a value somebody used to type twice. They are checks now
 because the failures are quiet: a wrong cookie scope means every staff sign-in
@@ -263,21 +299,30 @@ repository's timeline.
 
 Push to `main`, or run **Actions → Deploy → Run workflow**. In order, it:
 
-1. **Preflight** — every secret present, `PRODUCTION_ENV` complete, the KMS key
-   the right length, and the derived domains mutually consistent. Nothing has
-   been touched at this point, and this is where most first deployments stop.
+1. **Preflight** — SSHes in and runs `./deploy.sh --check` on the host: the
+   generated credentials, the derived domains and their mutual consistency,
+   against the configuration that is actually there. Nothing has been touched at
+   this point, and this is where most first deployments stop. It then asks the
+   host what it believes its own API hostname is, rather than rebuilding the
+   derivation from a copy of the configuration the workflow no longer holds.
 2. **Build** — four images, pushed to `ghcr.io`, tagged with the short SHA and
    `latest`. Built here, never on the host: a failed build on the target takes
    the site with it, and a rollback should be a tag change rather than a
    rebuild. None of the four carries a hostname, so the same image is
    deployable to any environment.
-3. **Deploy** — copies `infra/deploy/` over, writes `.env.production` with mode
-   600, and runs `deploy.sh`, which derives the domains, backs up the database,
-   migrates as `ds_migrator`, starts the stack and waits for the API to report
-   healthy.
+3. **Deploy** — `git fetch && git checkout <sha>` in the host's clone, then
+   `deploy.sh` with the four image tags in its environment. The script generates
+   any missing credential, derives the domains, backs up the database, migrates
+   as `ds_migrator`, starts the stack and waits for the API to report healthy.
 4. **Smoke test** — `GET /health` from GitHub's runner, over public DNS and
    real TLS. The deploy script already checked it from the host; this checks
    that the internet agrees.
+
+The commit is checked out **detached at an exact SHA**, not pulled to a branch
+tip: `main` may have moved in the twenty minutes since CI went green, and a
+deploy of a commit nothing tested is the thing this whole workflow exists to
+prevent. `git rev-parse HEAD` on the server answers "what is running?" without
+trusting the workflow's memory of it.
 
 The first run takes about ten minutes, most of it building. Certificates arrive
 within a minute of Caddy starting.
@@ -290,9 +335,8 @@ no such account yet. One command closes that, once:
 
 ```bash
 ssh -i ~/.ssh/ds-deploy deploy@78.47.178.65 \
-  'cd ~/ds-education/infra/deploy && \
-   docker compose --env-file .env.production -f docker-compose.prod.yml \
-     run --rm --entrypoint node api dist/bootstrap-admin.js \
+  'cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy && \
+   ./dsc run --rm --entrypoint node api dist/bootstrap-admin.js \
      --email technik@digitalspital.de --name "Technik"'
 ```
 
@@ -332,12 +376,34 @@ redeploying a plugin.
 
 Merge to `main`. CI runs; if it is green, Deploy runs. That is the whole loop.
 
-### Moving a domain
+### Changing the configuration
 
-Change `BASE_DOMAIN` in `PRODUCTION_ENV` (and the `BASE_DOMAIN` variable), point
-the DNS, and redeploy. No image is rebuilt: the frontends read their
+Edit `~/ds-education/config.env` on the server and redeploy — from GitHub, or
+directly:
+
+```bash
+ssh deploy@78.47.178.65
+cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
+./deploy.sh --check     # confirm it is still consistent
+./deploy.sh             # apply it
+```
+
+Nothing is rebuilt for a configuration change. Moving a domain is the same
+thing: change `BASE_DOMAIN`, point the DNS, redeploy. The frontends read their
 configuration at container start, so the running containers pick up the new
-value on restart.
+value on restart rather than needing a new image.
+
+### Looking at the running stack
+
+```bash
+cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
+./dsc ps
+./dsc logs -f api
+```
+
+`dsc` is `docker compose` with the two configuration files already loaded. A
+bare `docker compose ps` here interpolates an empty `${IMAGE_API}` and reports
+on a stack that does not exist, which reads as "everything is down".
 
 ### Rolling back
 
@@ -349,7 +415,8 @@ backwards.
 ### Checking a configuration change before applying it
 
 ```bash
-ssh deploy@78.47.178.65 'cd ~/ds-education/infra/deploy && ./deploy.sh --check'
+ssh deploy@78.47.178.65 \
+  'cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy && ./deploy.sh --check'
 ```
 
 Runs the whole preflight and stops. Nothing is pulled, migrated, restarted or
@@ -362,6 +429,10 @@ deploy.
 keeping fourteen. That covers "a migration went wrong"; it does **not** cover
 "the server is gone", because the backups are on the server.
 
+**`~/ds-education/secrets.env` belongs in the same backup as the dump.** The
+KMS key in it decrypts the VNR password and the SMTP credentials; a restore
+without it brings back rows whose `_enc` columns are permanently unreadable.
+
 **Before go-live, add off-host copies.** A CME participation record is the
 counterpart of a report already filed with an Ärztekammer under somebody's
 name — see `docs/gdpr.md` §5 for why deleting it is not an option and therefore
@@ -373,16 +444,19 @@ Restoring one:
 
 ```bash
 gunzip -c /var/backups/ds-education/<timestamp>.sql.gz | \
-  docker compose --env-file .env.production -f docker-compose.prod.yml \
-    exec -T postgres psql -U postgres -d ds_education
+  ./dsc exec -T postgres psql -U postgres -d ds_education
 ```
 
 ### Watching it
 
 ```bash
-cd ~/ds-education/infra/deploy
-docker compose --env-file .env.production -f docker-compose.prod.yml logs -f api
-docker compose --env-file .env.production -f docker-compose.prod.yml ps
+cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
+./dsc logs -f api
+./dsc ps
+
+# What is actually deployed, according to the server rather than a workflow log.
+git -C ~/Repositories/DigitalSpitalCMEModule rev-parse --short HEAD
+cat ~/ds-education/images.env
 
 # What the browser bundles were told at container start.
 curl -s https://verwaltung.digitalspital.com/config.js

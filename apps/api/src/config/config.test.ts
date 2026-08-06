@@ -14,13 +14,16 @@ import { loadConfig } from "./config.js";
 
 const KEY = randomBytes(32).toString("base64");
 
-/** The smallest environment that is otherwise valid. */
+/**
+ * The smallest environment that is otherwise valid.
+ *
+ * Two lines. It was five: a Keycloak issuer, audience and JWKS URI used to be
+ * required here and were read by nothing — the realm a token is validated
+ * against comes from the project row, per request (P17-02).
+ */
 const BASE = {
   DATABASE_URL: "postgres://ds_app:pw@db:5432/ds_education",
   REDIS_URL: "redis://redis:6379",
-  KEYCLOAK_ISSUER: "https://login.example.org/realms/r",
-  KEYCLOAK_AUDIENCE: "ds-education-api",
-  KEYCLOAK_JWKS_URI: "https://login.example.org/realms/r/protocol/openid-connect/certs",
 } as const;
 
 describe("SECRETS_KMS_KEY", () => {

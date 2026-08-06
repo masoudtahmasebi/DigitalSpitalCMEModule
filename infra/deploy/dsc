@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#
+# `docker compose` for this deployment, with the environment already loaded.
+#
+# The stack's configuration lives in two files outside the git clone, and
+# `deploy.sh` sources both before it calls compose. Without that, a bare
+# `docker compose ps` interpolates an empty `${IMAGE_API}` and reports on a
+# stack that does not exist — which reads as "everything is down".
+#
+#   ./dsc ps
+#   ./dsc logs -f api
+#   ./dsc exec -T postgres psql -U postgres -d ds_education
+#
+# It deliberately does *not* deploy. `deploy.sh` is that, and a wrapper that
+# could also restart things is a wrapper somebody restarts things with by
+# accident.
+
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+readonly STATE_DIR="${DS_STATE_DIR:-${HOME}/ds-education}"
+
+[[ -f "${STATE_DIR}/config.env" ]] || {
+  echo "missing ${STATE_DIR}/config.env — see infra/deploy/config.env.example" >&2
+  exit 1
+}
+
+# The two files are generated or hand-written on the host; shellcheck cannot
+# follow either, and should not try.
+set -a
+# shellcheck disable=SC1090,SC1091
+source "${STATE_DIR}/config.env"
+if [[ -f "${STATE_DIR}/secrets.env" ]]; then
+  # shellcheck disable=SC1090,SC1091
+  source "${STATE_DIR}/secrets.env"
+fi
+set +a
+
+# shellcheck source=./domains.sh
+source "${SCRIPT_DIR}/domains.sh"
+ds_derive_domains
+
+# The image tags the last deploy pinned, recorded by deploy.sh.
+#
+# Absent before the first deploy, and not an error here — but compose will then
+# refuse, because `${IMAGE_API}` has no value and no default. That is the right
+# answer: there is nothing deployed to inspect, and a default of `:latest`
+# would quietly describe an image this host has never run.
+if [[ -f "${STATE_DIR}/images.env" ]]; then
+  set -a
+  # shellcheck disable=SC1090,SC1091
+  source "${STATE_DIR}/images.env"
+  set +a
+fi
+
+exec docker compose -f "${SCRIPT_DIR}/docker-compose.prod.yml" "$@"
