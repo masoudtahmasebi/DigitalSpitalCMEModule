@@ -51,6 +51,17 @@ jobs:
       - name: WordPress plugin security tests
         run: pnpm test:wp
 
+      # The deploy scripts run on the production host, so they are tested and
+      # linted like anything else. `domains.sh` in particular decides the staff
+      # cookie's scope and the CORS allow-list — a TypeScript reimplementation
+      # tested in vitest would leave the version that actually runs untested.
+      - name: Shell scripts
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck infra/deploy/domains.sh infra/deploy/domains.test.sh infra/nginx/ds-runtime-config.sh
+          (cd infra/deploy && shellcheck -x deploy.sh)
+          ./infra/deploy/domains.test.sh
+
       - name: Build
         run: pnpm build
 
@@ -195,19 +206,17 @@ jobs:
             exit 1
           fi
 
-      # The three frontends inline their configuration at build time, so they
-      # need the build-args to compile. The values are placeholders — this job
-      # asks whether the image builds, not whether it is configured for an
-      # environment. deploy.yml supplies the real ones.
+      # No build arguments: the frontends read their configuration from
+      # /config.js at container start (P16-02), so these images carry no
+      # hostname at all and are deployable to any environment.
       - name: Build the admin console image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/admin/Dockerfile
           push: false
-          build-args: |
-            VITE_API_BASE=https://api.example.invalid
-            VITE_PROJECT_SLUG=ci
+          load: true
+          tags: ds-admin:ci
           cache-from: type=gha,scope=admin
           cache-to: type=gha,scope=admin,mode=max
 
@@ -217,14 +226,44 @@ jobs:
           context: .
           file: apps/portal/Dockerfile
           push: false
-          build-args: |
-            VITE_API_BASE=https://api.example.invalid
-            VITE_PROJECT_SLUG=ci
-            VITE_KEYCLOAK_ISSUER=https://keycloak.example.invalid/realms/ci
-            VITE_KEYCLOAK_CLIENT_ID=ci
-            VITE_REDIRECT_URI=https://portal.example.invalid/
           cache-from: type=gha,scope=portal
           cache-to: type=gha,scope=portal,mode=max
+
+      # The runtime config is the thing that replaced five build arguments, and
+      # it fails in a browser rather than in a build — so it is exercised here.
+      - name: The console's runtime config is generated, and refuses bad input
+        run: |
+          out=$(docker run --rm \
+            -e DS_API_BASE=https://api.example.invalid \
+            -e DS_PROJECT_SLUG=ci \
+            --entrypoint /docker-entrypoint.d/20-ds-runtime-config.sh \
+            -e DS_CONFIG_PATH=/tmp/config.js \
+            ds-admin:ci >/dev/null && echo written)
+          [ "$out" = "written" ] || { echo "::error::config generation failed"; exit 1; }
+
+          # A value that could end the JavaScript string it is written into.
+          # Refused rather than escaped: these are origins and slugs, and
+          # anything outside that character set is a typo worth stopping for.
+          if docker run --rm \
+            -e DS_API_BASE='https://x";alert(1);//' \
+            -e DS_PROJECT_SLUG=ci \
+            -e DS_CONFIG_PATH=/tmp/config.js \
+            --entrypoint /docker-entrypoint.d/20-ds-runtime-config.sh \
+            ds-admin:ci 2>/dev/null; then
+            echo "::error::runtime config accepted a value containing a quote"
+            exit 1
+          fi
+
+          # And a missing one stops the container rather than producing a
+          # console that loads and then fails every request.
+          if docker run --rm \
+            -e DS_PROJECT_SLUG=ci \
+            -e DS_CONFIG_PATH=/tmp/config.js \
+            --entrypoint /docker-entrypoint.d/20-ds-runtime-config.sh \
+            ds-admin:ci 2>/dev/null; then
+            echo "::error::runtime config accepted a missing DS_API_BASE"
+            exit 1
+          fi
 
       - name: Build the widget image
         uses: docker/build-push-action@v6

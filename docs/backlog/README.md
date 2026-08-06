@@ -1,4 +1,4 @@
-# Backlog — work orders P0–P15
+# Backlog — work orders P0–P16
 
 One file per phase. Each file is an **Epic**; each entry inside it is a **Task**
 written so it can be handed to Claude Code verbatim.
@@ -20,8 +20,9 @@ written so it can be handed to Claude Code verbatim.
 | P11 · Second host and extension points   | [P11.md](P11.md) | 12 h ⚠    | —     |
 | P12 · Two identity planes, full admin    | [P12.md](P12.md) | 30 h ⚠    | —     |
 | P15 · Course behaviour: length, resuming | [P15.md](P15.md) | 11 h ⚠    | —     |
+| P16 · One base domain, runtime config    | [P16.md](P16.md) | 11 h ⚠    | —     |
 
-⚠ **P11, P12 and P15 are outside the 140 h plan.** Each was built on an explicit
+⚠ **P11, P12, P15 and P16 are outside the 140 h plan.** Each was built on an explicit
 instruction and is recorded rather than absorbed: `CLAUDE.md` §3 says the rest of
 the plan is not negotiable, so those hours came from somewhere. See the header of
 [P11.md](P11.md), which also states that its work orders were written after the

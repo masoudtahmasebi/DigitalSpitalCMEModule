@@ -34,6 +34,15 @@
 	}
 }
 
+# The bare domain, when there is anything to say there.
+#
+# `digitalspital.com` is not one of the four service hostnames — it is free for
+# a promotional site. `deploy.sh` writes `sites/apex.caddy` when
+# APEX_REDIRECT_URL is set and removes it when it is not, so this import is a
+# glob: Caddy accepts a glob matching nothing, and there is no way to write "an
+# optional site block" in the Caddyfile itself.
+import /etc/caddy/sites/*.caddy
+
 # ---------------------------------------------------------------------------
 # The API
 # ---------------------------------------------------------------------------

@@ -21,9 +21,31 @@
 #   DEPLOY_KNOWN_HOSTS     output of `ssh-keyscan <host>` — pinning, not TOFU
 #   PRODUCTION_ENV         the entire .env.production, as one secret
 #
+# And one repository *variable*, which is not a secret:
+#
+#   BASE_DOMAIN            e.g. digitalspital.com — used for the deployment
+#                          URL shown in the GitHub environment and for the
+#                          post-deploy smoke test
+#
 # `PRODUCTION_ENV` being one blob is deliberate. Twenty individual secrets
 # drift from twenty variable names, and the failure is a container that starts
 # with an empty password. One file is reviewed once and copied verbatim.
+#
+# ## What used to be here, and why it is not (P16-01, P16-02)
+#
+# Five more repository variables: `ADMIN_API_BASE`, `ADMIN_PROJECT_SLUG`,
+# `PORTAL_API_BASE`, `PORTAL_PROJECT_SLUG`, `PORTAL_REDIRECT_URI`, plus
+# `API_DOMAIN`. They were passed to `docker build` as `VITE_*` and inlined into
+# the frontend bundles, which made every image environment-specific — and put
+# the API's URL in a *variable* while the API's hostname lived in a line of a
+# *secret*, with nothing checking that the two agreed. When they disagreed, the
+# console loaded and every request failed CORS: a browser-side failure with no
+# server-side trace.
+#
+# The frontends now read `/config.js`, written when their container starts from
+# values `infra/deploy/domains.sh` derives out of the single `BASE_DOMAIN` in
+# `PRODUCTION_ENV`. The images are environment-independent and there is one
+# place a domain is written down.
 
 name: Deploy
 
@@ -62,6 +84,12 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      # The derived hostname, published so the deploy job's smoke test and the
+      # GitHub environment URL use the *same* value the host will serve — rather
+      # than a second guess at "api." + the base domain, which would be wrong
+      # for any deployment that overrode API_LABEL.
+      api_domain: ${{ steps.derive.outputs.api_domain }}
     steps:
       - name: Required secrets and variables are set
         env:
@@ -70,20 +98,11 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
           PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
-          ADMIN_API_BASE: ${{ vars.ADMIN_API_BASE }}
-          ADMIN_PROJECT_SLUG: ${{ vars.ADMIN_PROJECT_SLUG }}
-          PORTAL_API_BASE: ${{ vars.PORTAL_API_BASE }}
-          PORTAL_PROJECT_SLUG: ${{ vars.PORTAL_PROJECT_SLUG }}
-          PORTAL_KEYCLOAK_ISSUER: ${{ vars.PORTAL_KEYCLOAK_ISSUER }}
-          PORTAL_KEYCLOAK_CLIENT_ID: ${{ vars.PORTAL_KEYCLOAK_CLIENT_ID }}
-          PORTAL_REDIRECT_URI: ${{ vars.PORTAL_REDIRECT_URI }}
-          API_DOMAIN: ${{ vars.API_DOMAIN }}
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
         run: |
           missing=0
           for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS \
-                      PRODUCTION_ENV ADMIN_API_BASE ADMIN_PROJECT_SLUG \
-                      PORTAL_API_BASE PORTAL_PROJECT_SLUG PORTAL_KEYCLOAK_ISSUER \
-                      PORTAL_KEYCLOAK_CLIENT_ID PORTAL_REDIRECT_URI API_DOMAIN; do
+                      PRODUCTION_ENV BASE_DOMAIN; do
             if [ -z "${!name}" ]; then
               echo "::error::${name} is not set — see docs/deployment.md §4"
               missing=1
@@ -100,12 +119,11 @@ jobs:
           # than after them. Values are never printed — only whether a line
           # exists and is non-empty.
           missing=0
-          for key in API_DOMAIN ADMIN_DOMAIN PORTAL_DOMAIN WIDGET_DOMAIN \
-                     ACME_EMAIL API_DOMAIN_URL \
+          for key in BASE_DOMAIN PROJECT_SLUG ACME_EMAIL \
                      POSTGRES_DB POSTGRES_SUPERUSER POSTGRES_SUPERUSER_PASSWORD \
                      DS_MIGRATOR_PASSWORD DS_APP_PASSWORD \
                      KEYCLOAK_ISSUER KEYCLOAK_AUDIENCE KEYCLOAK_JWKS_URI \
-                     CORS_ALLOWED_ORIGINS STAFF_COOKIE_DOMAIN SECRETS_KMS_KEY; do
+                     PORTAL_KEYCLOAK_CLIENT_ID SECRETS_KMS_KEY; do
             if ! printf '%s\n' "$PRODUCTION_ENV" | grep -qE "^${key}=.+"; then
               echo "::error::PRODUCTION_ENV has no non-empty ${key}"
               missing=1
@@ -123,16 +141,42 @@ jobs:
             exit 1
           fi
 
-          # The staff session cookie is scoped to the parent of the console and
-          # the API. Get this wrong and every staff sign-in succeeds and then
-          # reports the session expired — see ADR-0012.
-          cookie=$(printf '%s\n' "$PRODUCTION_ENV" | sed -n 's/^STAFF_COOKIE_DOMAIN=//p' | head -1)
-          case "$cookie" in
-            .*) ;;
-            *) echo "::error::STAFF_COOKIE_DOMAIN must start with a dot, e.g. .cme.example.de"; exit 1 ;;
-          esac
-
           echo "Configuration looks complete."
+
+      # The same derivation the host runs, against the same values, before a
+      # byte reaches the server. Everything the hostnames imply — the cookie
+      # scope, the CORS list, the CSP origin, no two services sharing a name —
+      # is asserted here, in seconds, without SSH.
+      - uses: actions/checkout@v4
+      - id: derive
+        name: The derived domains are consistent
+        env:
+          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+        run: |
+          set -a
+          # Written to a file rather than eval'd: the values include passwords,
+          # and `eval` on a secret is one stray backtick away from a shell
+          # injection into a runner that holds every credential the platform has.
+          umask 077
+          printf '%s\n' "$PRODUCTION_ENV" > /tmp/env.production
+          # shellcheck disable=SC1091
+          . /tmp/env.production
+          set +a
+          rm -f /tmp/env.production
+
+          . infra/deploy/domains.sh
+          ds_derive_domains
+          ds_check_domains
+
+          # Names, not values. Nothing here is secret, but a workflow log is
+          # about the least private place a deployment's shape can be written.
+          echo "API      ${API_DOMAIN}"
+          echo "Admin    ${ADMIN_DOMAIN}"
+          echo "Portal   ${PORTAL_DOMAIN}"
+          echo "Widget   ${WIDGET_DOMAIN}"
+          echo "Cookie   ${STAFF_COOKIE_DOMAIN}"
+
+          echo "api_domain=${API_DOMAIN}" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build and publish images
@@ -177,45 +221,30 @@ jobs:
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max
 
-      # The console's configuration is inlined at build time (Vite), so the
-      # image is environment-specific. Neither value is secret — see
-      # apps/admin/src/config.ts — but both have to be right.
-      #
-      # Three Keycloak variables used to be passed here and were dropped: the
-      # console authenticates on the platform's own staff plane since P12-06
-      # (ADR-0012) and reads none of them. A build argument nothing consumes is
-      # worse than an absent one, because somebody fills it in and believes it.
+      # No build arguments. The console reads its API base and project slug from
+      # /config.js at container start (P16-02), so this image is the same
+      # artifact whatever environment it lands in — and a rollback is a tag
+      # change rather than a hunt for the build that had the right domain in it.
       - name: Build and push the admin console
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/admin/Dockerfile
           push: true
-          build-args: |
-            VITE_API_BASE=${{ vars.ADMIN_API_BASE }}
-            VITE_PROJECT_SLUG=${{ vars.ADMIN_PROJECT_SLUG }}
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository }}/admin:${{ steps.meta.outputs.tag }}
             ${{ env.REGISTRY }}/${{ github.repository }}/admin:latest
           cache-from: type=gha,scope=admin
           cache-to: type=gha,scope=admin,mode=max
 
-      # The portal's configuration is inlined at build time too, and points at
-      # its own Keycloak client — a learner-facing public client, not the
-      # console's. Same realm, different client id, because the two have
-      # different redirect URIs and should be revocable independently.
+      # Likewise. The portal's Keycloak client — a learner-facing public client,
+      # not the console's — is configured at runtime with everything else.
       - name: Build and push the portal
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/portal/Dockerfile
           push: true
-          build-args: |
-            VITE_API_BASE=${{ vars.PORTAL_API_BASE }}
-            VITE_PROJECT_SLUG=${{ vars.PORTAL_PROJECT_SLUG }}
-            VITE_KEYCLOAK_ISSUER=${{ vars.PORTAL_KEYCLOAK_ISSUER }}
-            VITE_KEYCLOAK_CLIENT_ID=${{ vars.PORTAL_KEYCLOAK_CLIENT_ID }}
-            VITE_REDIRECT_URI=${{ vars.PORTAL_REDIRECT_URI }}
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository }}/portal:${{ steps.meta.outputs.tag }}
             ${{ env.REGISTRY }}/${{ github.repository }}/portal:latest
@@ -250,14 +279,14 @@ jobs:
 
   deploy:
     name: Deploy to production
-    needs: build
+    needs: [preflight, build]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # A GitHub environment, so production can require a manual approval and so
     # the deployment shows up in the repository's timeline.
     environment:
       name: production
-      url: https://${{ vars.API_DOMAIN }}
+      url: https://${{ needs.preflight.outputs.api_domain }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -319,7 +348,7 @@ jobs:
           # deploy script already checked this from the host; this checks that
           # the internet agrees.
           curl --fail --silent --show-error --max-time 20 \
-            "https://${{ vars.API_DOMAIN }}/health" | tee /dev/stderr | grep -q '"status"'
+            "https://${{ needs.preflight.outputs.api_domain }}/health" | tee /dev/stderr | grep -q '"status"'
 
       - name: Report failure
         if: failure()

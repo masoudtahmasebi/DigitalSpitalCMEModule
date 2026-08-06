@@ -76,27 +76,33 @@ set -a
 source "$ENV_FILE"
 set +a
 
-# Everything the stack cannot start without, checked here rather than
-# discovered later. The cost of the long list is nothing; the cost of a short
-# one is a deploy that gets as far as taking a backup and restarting containers
-# before failing on a variable nobody set.
+# One BASE_DOMAIN, every hostname derived from it (P16-01). Sourced rather than
+# run: it exports into this shell, and this shell is what `docker compose`
+# inherits — the compose file interpolates the derived names.
 #
-# Three of these were missing and each had a distinct failure:
+# Anything the env file set explicitly survives, so a deployment that predates
+# this and names every hostname by hand still deploys unchanged.
+# shellcheck source=./domains.sh
+source "${SCRIPT_DIR}/domains.sh"
+ds_derive_domains || die "BASE_DOMAIN is missing or malformed — see env.production.example"
+ds_check_domains || die "the derived configuration is inconsistent (see above)"
+
+# Everything the stack cannot start without and cannot derive, checked here
+# rather than discovered later. The cost of the long list is nothing; the cost
+# of a short one is a deploy that gets as far as taking a backup and restarting
+# containers before failing on a variable nobody set.
 #
-#   PORTAL_DOMAIN        Caddy parses a site block with an empty address.
-#   API_DOMAIN_URL       lands in a CSP connect-src; unset, the console cannot
-#                        reach the API and it looks like the API is down.
-#   STAFF_COOKIE_DOMAIN  the staff session cookie is scoped to the parent
-#                        domain so verwaltung.… and api.… are same-site. Unset,
-#                        every staff sign-in succeeds and then reports the
-#                        session expired.
+# The four hostnames, the API origin, the cookie domain and the CORS list are
+# **not** in this list any more: `ds_derive_domains` produced them from
+# BASE_DOMAIN a few lines above, and `ds_check_domains` has already asserted
+# they are mutually consistent — which is more than "non-empty" ever proved.
 for required in \
-  API_DOMAIN ADMIN_DOMAIN PORTAL_DOMAIN WIDGET_DOMAIN ACME_EMAIL \
-  API_DOMAIN_URL \
+  BASE_DOMAIN ACME_EMAIL PROJECT_SLUG \
   POSTGRES_DB POSTGRES_SUPERUSER POSTGRES_SUPERUSER_PASSWORD \
   DS_MIGRATOR_PASSWORD DS_APP_PASSWORD \
   KEYCLOAK_ISSUER KEYCLOAK_AUDIENCE KEYCLOAK_JWKS_URI \
-  CORS_ALLOWED_ORIGINS STAFF_COOKIE_DOMAIN SECRETS_KMS_KEY \
+  PORTAL_KEYCLOAK_CLIENT_ID \
+  SECRETS_KMS_KEY \
   IMAGE_API IMAGE_ADMIN IMAGE_PORTAL IMAGE_WIDGET
 do
   [[ -n "${!required:-}" ]] || die "missing required variable: ${required}"
@@ -109,26 +115,9 @@ kms_bytes="$(printf '%s' "$SECRETS_KMS_KEY" | base64 -d 2>/dev/null | wc -c || t
 [[ "$kms_bytes" == "32" ]] || die \
   "SECRETS_KMS_KEY must be 32 bytes base64-encoded (got ${kms_bytes}) — openssl rand -base64 32"
 
-# The cookie domain has to be the parent of both the console and the API, with
-# a leading dot. ".cme.example.de" works for verwaltung.cme.example.de and
-# api.cme.example.de; "cme.example.de" is a host-only cookie for a host nothing
-# is served from, and "verwaltung.cme.example.de" is one the API cannot set.
-case "$STAFF_COOKIE_DOMAIN" in
-  .*) ;;
-  *) die "STAFF_COOKIE_DOMAIN must start with a dot, e.g. .cme.example.de" ;;
-esac
-for host in "$ADMIN_DOMAIN" "$API_DOMAIN"; do
-  [[ "$host" == *"${STAFF_COOKIE_DOMAIN}" ]] || die \
-    "STAFF_COOKIE_DOMAIN (${STAFF_COOKIE_DOMAIN}) is not a parent of ${host}"
-done
-
-# The console and the portal call the API from a browser, so both origins have
-# to be in the allow-list or the console loads and every request is refused by
-# CORS — which presents as a blank screen with a console full of red.
-for origin in "https://${ADMIN_DOMAIN}" "https://${PORTAL_DOMAIN}"; do
-  [[ ",${CORS_ALLOWED_ORIGINS}," == *",${origin},"* ]] || die \
-    "CORS_ALLOWED_ORIGINS does not contain ${origin}"
-done
+# The cookie scope, the CORS list and the CSP origin are checked by
+# `ds_check_domains`, which ran above — against the derived *result*, so a
+# deployment that overrides a hostname by hand is held to the same invariants.
 
 # The EIV live guard, at deploy time rather than at submission time. A
 # Punktemeldung cannot be withdrawn once the correction window closes, so
@@ -153,6 +142,15 @@ if [[ -n "$ROLLBACK_TAG" ]]; then
   RUN_MIGRATIONS=0
 fi
 
+# The bare domain, which is nobody's service hostname.
+#
+# Only *checked* here. Writing the file is a change, and `--check` promises not
+# to make any — see the block after the dry-run exit.
+if [[ -n "${APEX_REDIRECT_URL:-}" ]]; then
+  [[ "$APEX_REDIRECT_URL" =~ ^https?:// ]] || die \
+    "APEX_REDIRECT_URL must be a full URL, e.g. https://${PORTAL_DOMAIN}"
+fi
+
 compose() { docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
 
 # The compose file itself has to interpolate cleanly. `config -q` catches a
@@ -163,6 +161,35 @@ compose config --quiet || die "docker-compose.prod.yml does not interpolate agai
 if [[ "$DRY_RUN" == "1" ]]; then
   log "Preflight passed. Nothing was changed (--check)."
   exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# 1b. The bare domain's redirect, if there is one
+# ---------------------------------------------------------------------------
+# Written as a file rather than an `if` in the Caddyfile, because the Caddyfile
+# has no conditionals: an unset APEX_REDIRECT_URL would otherwise leave a site
+# block with an empty address, which Caddy reads as a *different site* — the
+# catch-all — and it would answer for every hostname that reached it.
+#
+# Removed, not merely skipped, when the value is empty: a stale block from an
+# earlier deploy would keep redirecting a domain the client has since pointed at
+# a marketing site.
+readonly SITES_DIR="${SCRIPT_DIR}/sites"
+readonly APEX_BLOCK="${SITES_DIR}/apex.caddy"
+mkdir -p "$SITES_DIR"
+if [[ -n "${APEX_REDIRECT_URL:-}" ]]; then
+  log "Bare domain ${BASE_DOMAIN} redirects to ${APEX_REDIRECT_URL}"
+  cat > "$APEX_BLOCK" <<EOF
+# Generated by deploy.sh from APEX_REDIRECT_URL. Do not edit.
+${BASE_DOMAIN} {
+	import baseline
+	# 308, not 302: the method and body are preserved and the answer is
+	# cacheable, which is what a permanent home-page move is.
+	redir ${APEX_REDIRECT_URL}{uri} 308
+}
+EOF
+else
+  rm -f "$APEX_BLOCK"
 fi
 
 # ---------------------------------------------------------------------------
@@ -276,4 +303,5 @@ docker image prune --force --filter "until=168h" >/dev/null
 log "Deployed."
 log "  API     https://${API_DOMAIN}"
 log "  Admin   https://${ADMIN_DOMAIN}"
-log "  Widget  https://${WIDGET_DOMAIN}/ds-lms.js"
+log "  Portal  https://${PORTAL_DOMAIN}"
+log "  Widget  ${WIDGET_URL}"

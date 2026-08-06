@@ -399,6 +399,25 @@ certificate is broken is a deploy that looks green and serves nothing.
 Migrations are additive by convention and are **never** rolled back. That is
 what makes rolling an image back safe.
 
+### One domain, and images that do not know where they run
+
+`BASE_DOMAIN` is the only hostname anybody sets. `infra/deploy/domains.sh`
+derives the four service names from it, plus the API origin the console's CSP
+references, the staff session cookie's scope, the CORS allow-list and the
+certificate email's link target — then asserts the result is mutually
+consistent, in CI before anything is copied and again on the host.
+
+The frontends read their configuration from a `/config.js` written when their
+container starts, not from values Vite inlined at build time. Two consequences
+worth having: the images are environment-independent, so a rollback is a tag
+change rather than a hunt for the build with the right domain in it; and moving
+a domain is a restart rather than a CI run.
+
+Both changes are the same fix. Twelve places said the same domain, and every
+disagreement between them failed _in the browser_ — a blocked CSP, a refused
+CORS preflight, a session cookie the console never receives — where no server
+log records anything at all.
+
 ---
 
 ## 10. What is deliberately not here

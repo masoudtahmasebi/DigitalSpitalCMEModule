@@ -267,6 +267,9 @@ export type {
   AttestedNameResult,
 } from "./attested-name.js";
 
+export { configValue } from "./runtime-config.js";
+export type { RuntimeConfig } from "./runtime-config.js";
+
 export {
   clampSeek,
   clampSeekToLimit,

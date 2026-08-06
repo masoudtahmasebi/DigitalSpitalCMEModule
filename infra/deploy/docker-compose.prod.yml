@@ -38,6 +38,11 @@ services:
       - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Optional extra site blocks, written by deploy.sh. Today that is only
+      # the bare domain's redirect; the directory is mounted either way,
+      # because Caddy's `import` of a glob matching nothing is fine but a bind
+      # mount of a directory that does not exist is not.
+      - ./sites:/etc/caddy/sites:ro
       # The certificate store. Losing this volume means re-issuing every
       # certificate, and Let's Encrypt rate-limits that — so it is named, not
       # anonymous.
@@ -56,6 +61,9 @@ services:
       # longer reach the API at all — a failure that looks like the API being
       # down and is actually a header.
       API_DOMAIN_URL: ${API_DOMAIN_URL}
+      # The portal's CSP connect-src. Derived from KEYCLOAK_ISSUER by
+      # domains.sh — the origin of the realm the portal signs learners in
+      # against — rather than being a second place to write the same host.
       KEYCLOAK_ORIGIN: ${KEYCLOAK_ORIGIN}
     depends_on:
       api:
@@ -151,9 +159,20 @@ services:
       start_period: 20s
     networks: [internal]
 
+  # The console and the portal are configured at **runtime**, not at build time
+  # (P16-02). Their entrypoint writes /config.js from these before nginx starts,
+  # so one image runs in any environment and the API base can never drift from
+  # the API_DOMAIN Caddy is actually serving — deploy.sh derives both from the
+  # same BASE_DOMAIN.
+  #
+  # A missing DS_API_BASE stops the container rather than producing a console
+  # that loads and then fails every request.
   admin:
     image: ${IMAGE_ADMIN}
     restart: unless-stopped
+    environment:
+      DS_API_BASE: ${DS_ADMIN_API_BASE}
+      DS_PROJECT_SLUG: ${DS_ADMIN_PROJECT_SLUG}
     networks: [internal]
 
   # The platform's own learner frontend. A host adapter like the WordPress
@@ -163,6 +182,15 @@ services:
   portal:
     image: ${IMAGE_PORTAL}
     restart: unless-stopped
+    environment:
+      DS_API_BASE: ${DS_PORTAL_API_BASE}
+      DS_PROJECT_SLUG: ${DS_PORTAL_PROJECT_SLUG}
+      # The portal's own Keycloak client — a learner-facing public client, not
+      # the console's. The console has not spoken to Keycloak since P12-06
+      # (ADR-0012), which is why only this service gets these three.
+      DS_KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
+      DS_KEYCLOAK_CLIENT_ID: ${PORTAL_KEYCLOAK_CLIENT_ID}
+      DS_REDIRECT_URI: ${DS_PORTAL_REDIRECT_URI}
     networks: [internal]
 
   widget:

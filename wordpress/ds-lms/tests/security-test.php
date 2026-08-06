@@ -333,6 +333,96 @@ check(
 );
 
 // ---------------------------------------------------------------------------
+echo "\nOne base domain, the API address derived from it (P16-03)\n";
+// ---------------------------------------------------------------------------
+
+check(
+	'a bare domain derives the API address',
+	'https://api.digitalspital.com' === DS_LMS_Settings::derive_api_base( 'digitalspital.com' )
+);
+
+// The mistake everybody makes. Left alone it would derive
+// `https://api.https://digitalspital.com`, which fails in a browser far from
+// the field that caused it.
+foreach (
+	array(
+		'https://digitalspital.com'      => 'digitalspital.com',
+		'http://digitalspital.com/'      => 'digitalspital.com',
+		'  DigitalSpital.com  '          => 'digitalspital.com',
+		'digitalspital.com.'             => 'digitalspital.com',
+		'digitalspital.com/cme'          => 'digitalspital.com',
+		'https://digitalspital.com/a?b=c' => 'digitalspital.com',
+	) as $input => $expected
+) {
+	check(
+		"a pasted '$input' becomes '$expected'",
+		$expected === DS_LMS_Settings::sanitize_domain( $input )
+	);
+}
+
+// Anything still not domain-shaped becomes empty, which the settings page
+// reports and the renderer treats as "not configured".
+foreach ( array( 'localhost', 'digitalspital.com:8443', 'not a domain', '', '<script>' ) as $bad ) {
+	check(
+		"'$bad' is not accepted as a base domain",
+		'' === DS_LMS_Settings::sanitize_domain( $bad )
+	);
+}
+
+ds_test_reset();
+update_option(
+	DS_LMS_Settings::OPTION,
+	array( 'base_domain' => 'digitalspital.com', 'project_slug' => 'medice-adhs' )
+);
+$derived = DS_LMS_Settings::all();
+check(
+	'the derived address is what the element carries',
+	'https://api.digitalspital.com' === $derived['api_base']
+);
+check(
+	'and it reaches the rendered markup',
+	str_contains(
+		DS_LMS_Renderer::shortcode( array() ),
+		'api-base="https://api.digitalspital.com"'
+	)
+);
+
+// A derivation that cannot be overridden is one you eventually delete: a
+// staging API on a hostname following no convention has to remain reachable.
+ds_test_reset();
+update_option(
+	DS_LMS_Settings::OPTION,
+	array(
+		'base_domain'  => 'digitalspital.com',
+		'api_base'     => 'https://staging-api.example.org',
+		'project_slug' => 'medice-adhs',
+	)
+);
+check(
+	'an explicit API base still wins',
+	'https://staging-api.example.org' === DS_LMS_Settings::all()['api_base']
+);
+
+// A base domain alone is not enough — the project slug still has to be set, and
+// an editor is told rather than a visitor being shown a broken widget.
+ds_test_reset();
+update_option( DS_LMS_Settings::OPTION, array( 'base_domain' => 'digitalspital.com' ) );
+$GLOBALS['ds_test']['capabilities'] = array( 'edit_posts' );
+check(
+	'a base domain without a project slug is still incomplete',
+	str_contains( DS_LMS_Renderer::shortcode( array() ), 'Einstellungen' )
+);
+
+// The sanitiser is what the settings form runs, so the stored value is already
+// domain-shaped and `derive_api_base` never sees a scheme.
+check(
+	'the form sanitises the domain before it is stored',
+	'digitalspital.com' === DS_LMS_Settings::sanitize(
+		array( 'base_domain' => 'https://digitalspital.com/' )
+	)['base_domain']
+);
+
+// ---------------------------------------------------------------------------
 
 echo "\n$checks checks, $failures failed\n";
 exit( $failures === 0 ? 0 : 1 );

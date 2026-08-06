@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DS Education — Verwaltung</title>
+    <!--
+      Runtime configuration: which API to call, which project, and (in the
+      portal) which Keycloak client. Written when the container starts by
+      infra/nginx/ds-runtime-config.sh, so one image runs in any environment —
+      see apps/admin/src/config.ts. Classic script, not a module: it must have
+      executed before the app's module runs, and `type="module"` is deferred.
+    -->
+    <script src="/config.js"></script>
   </head>
   <body>
     <div id="root"></div>

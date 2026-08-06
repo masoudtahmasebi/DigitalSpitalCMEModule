@@ -9,14 +9,14 @@
 # into `public/`. One widget artifact, built once, shared with the WordPress
 # plugin — see scripts/bundle-widget.mjs for why it must not be re-bundled.
 #
-# ## Build-time configuration, and what that means for deployment
+# ## The image knows nothing about where it will run (P16-02)
 #
-# Vite inlines `VITE_*` at build time, so the API base, the Keycloak issuer and
-# the client id are baked into the bundle. That is fine — none is secret (see
-# `src/config.ts`) — but it does mean **the image is environment-specific**.
-# Staging and production are two builds, not one image with two configs. The
-# deploy script passes them as build arguments so that is explicit rather than
-# discovered.
+# It used to: Vite inlines `VITE_*` at build time, so the API base, the Keycloak
+# issuer and the client id were baked in and the image was environment-specific.
+# Now `/config.js` is written when the container starts, from `DS_*` environment
+# variables the deploy derives from `BASE_DOMAIN` — one image, any environment.
+# See `infra/nginx/ds-runtime-config.sh` and `apps/admin/Dockerfile` for the
+# full account of what that fixed.
 
 FROM node:22-bookworm-slim AS build
 RUN corepack enable
@@ -34,20 +34,15 @@ COPY . .
 
 RUN pnpm install --offline --frozen-lockfile
 
-ARG VITE_API_BASE
-ARG VITE_PROJECT_SLUG
-ARG VITE_KEYCLOAK_ISSUER
-ARG VITE_KEYCLOAK_CLIENT_ID
-ARG VITE_REDIRECT_URI
-ENV VITE_API_BASE=$VITE_API_BASE \
-    VITE_PROJECT_SLUG=$VITE_PROJECT_SLUG \
-    VITE_KEYCLOAK_ISSUER=$VITE_KEYCLOAK_ISSUER \
-    VITE_KEYCLOAK_CLIENT_ID=$VITE_KEYCLOAK_CLIENT_ID \
-    VITE_REDIRECT_URI=$VITE_REDIRECT_URI
-
+# No build arguments at all — see the note above.
 RUN pnpm --filter @ds/portal... build
 
 FROM nginx:1.27-alpine AS runtime
 COPY --from=build /repo/apps/portal/dist /usr/share/nginx/html
 COPY infra/nginx/portal.conf /etc/nginx/conf.d/default.conf
+
+# Runs before nginx starts, so /config.js exists before the first request.
+COPY infra/nginx/ds-runtime-config.sh /docker-entrypoint.d/20-ds-runtime-config.sh
+RUN chmod +x /docker-entrypoint.d/20-ds-runtime-config.sh
+
 EXPOSE 80

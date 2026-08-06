@@ -32,7 +32,12 @@ export default [
       // `scripts/bundle-widget.mjs`. It is a build artefact of apps/widget —
       // linting it lints React, twice.
       "wordpress/*/assets/**",
-      "apps/portal/public/**",
+      // Vite's `public/` is copied to the output byte for byte and is never
+      // part of a module graph, so nothing in it is the TypeScript this config
+      // describes. Two things live there: the widget bundle (above) and
+      // `config.js`, a plain-browser stub the container overwrites at start-up
+      // (infra/nginx/ds-runtime-config.sh).
+      "apps/*/public/**",
       // WordPress block editor script: plain browser ES for wp-admin, with no
       // build step by design (see block/index.js). It is not part of any
       // TypeScript project and the layer rules do not apply to it.

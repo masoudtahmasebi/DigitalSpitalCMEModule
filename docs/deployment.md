@@ -4,23 +4,42 @@ One host, in Germany, everything in containers, deployed by GitHub Actions on
 every green build of `main`. This is the whole runbook: follow it top to bottom
 once, and afterwards a deploy is `git push`.
 
-It assumes you have already ordered the server. Everything else is here.
+It assumes the server is ordered and the DNS is pointed at it. Everything else
+is here.
+
+**This deployment:** `78.47.178.65`, `digitalspital.com`.
 
 ---
 
 ## 0. What you are building
 
-| Host                         | Serves                                            | Container |
-| ---------------------------- | ------------------------------------------------- | --------- |
-| `api.cme.example.de`         | the API — the only thing that decides a CME point | `api`     |
-| `verwaltung.cme.example.de`  | the admin console                                 | `admin`   |
-| `fortbildung.cme.example.de` | the standalone learner portal                     | `portal`  |
-| `widget.cme.example.de`      | `ds-lms.js` for the WordPress plugin              | `widget`  |
+| Host                            | Serves                                            | Container |
+| ------------------------------- | ------------------------------------------------- | --------- |
+| `api.digitalspital.com`         | the API — the only thing that decides a CME point | `api`     |
+| `verwaltung.digitalspital.com`  | the admin console                                 | `admin`   |
+| `fortbildung.digitalspital.com` | the standalone learner portal                     | `portal`  |
+| `widget.digitalspital.com`      | `ds-lms.js` for the WordPress plugin              | `widget`  |
 
 Behind them, reachable from nothing outside the host: PostgreSQL, Redis, and
-Caddy terminating TLS. Substitute your real domain for `cme.example.de`
-throughout — the names of the four subdomains are yours to choose, but the
-**relationship** between them matters, and §4 says where.
+Caddy terminating TLS.
+
+The bare `digitalspital.com` is **not** one of these. It is free for a
+promotional site; until there is one, `APEX_REDIRECT_URL` in the environment
+file makes Caddy redirect it somewhere useful, and leaving that empty means the
+bare domain has no site block at all.
+
+### You configure one thing
+
+`BASE_DOMAIN=digitalspital.com`. Everything above is derived from it, along with
+the API origin the console's CSP names, the staff cookie's scope, the CORS
+allow-list, the certificate email's link target, and what the two browser
+bundles are told at container start — twelve values that all say the same
+domain, written once.
+
+`infra/deploy/domains.sh` does the derivation, `infra/deploy/domains.test.sh`
+tests it, and the deploy refuses to proceed if the result is inconsistent. You
+can still set any individual hostname explicitly and it wins; you should not
+need to.
 
 ---
 
@@ -68,26 +87,29 @@ in as `deploy` with your key, not before.
 
 ## 2. DNS
 
-Four A records, all pointing at the server's IPv4 address. Add AAAA records too
-if you took the IPv6 — Hetzner always gives you one.
+Already done for this deployment: an A record on the apex and a wildcard, both
+to `78.47.178.65`.
 
-| Type | Name              | Value           |
-| ---- | ----------------- | --------------- |
-| A    | `api.cme`         | `<server IPv4>` |
-| A    | `verwaltung.cme`  | `<server IPv4>` |
-| A    | `fortbildung.cme` | `<server IPv4>` |
-| A    | `widget.cme`      | `<server IPv4>` |
+| Type | Name | Value          |
+| ---- | ---- | -------------- |
+| A    | `@`  | `78.47.178.65` |
+| A    | `*`  | `78.47.178.65` |
 
-**All four must resolve before the first deploy.** Caddy proves control of each
-name over an HTTP-01 challenge on port 80; a name that does not resolve here
+The wildcard covers all four service hostnames, so no per-service record is
+needed. Add AAAA records too if you took the IPv6 — Hetzner always gives you
+one, and a learner on a v6-only mobile network will otherwise not reach the
+site at all.
+
+**Every name must resolve before the first deploy.** Caddy proves control of
+each over an HTTP-01 challenge on port 80; a name that does not resolve here
 simply never gets a certificate. It does not take the others down, but that
-subdomain serves nothing until you fix it and restart Caddy.
+subdomain serves nothing until it is fixed and Caddy restarts.
 
-Check from anywhere before continuing:
+Check before continuing:
 
 ```bash
 for h in api verwaltung fortbildung widget; do
-  echo "$h → $(dig +short "$h.cme.example.de")"
+  echo "$h → $(dig +short "$h.digitalspital.com")"
 done
 ```
 
@@ -95,6 +117,26 @@ done
 > expect to iterate on DNS, uncomment `acme_ca` in `infra/deploy/Caddyfile`
 > first to use the staging CA, and comment it out again when the names are
 > settled. Burning the limit on a typo means waiting seven days.
+
+### One thing the wildcard costs you
+
+The staff session cookie is scoped to `.digitalspital.com`, because that is the
+nearest common parent of the console and the API and the browser will only
+attach it to both if it is (ADR-0012). So **every** host under
+`digitalspital.com` — present and future, including a marketing site an agency
+runs — receives that cookie on every request.
+
+It is `httpOnly`, so no script can read it, and `Secure`, so it never crosses
+plain HTTP. What a subdomain operator would see is the cookie in their access
+logs, which is a session token in a place it has no business being.
+
+Putting the platform under its own second-level name —
+`BASE_DOMAIN=cme.digitalspital.com`, cookie scope `.cme.digitalspital.com` —
+narrows that to the platform's own hosts. It needs a second wildcard,
+`*.cme.digitalspital.com`, because a DNS wildcard matches exactly one label.
+Nothing in the code changes: one line of the environment file.
+
+Worth doing before anything else is hosted under the bare domain.
 
 ---
 
@@ -108,17 +150,17 @@ should match the number of places it exists.
 ssh-keygen -t ed25519 -C "github-actions@ds-education" -f ~/.ssh/ds-deploy -N ""
 
 # Install the public half on the server.
-ssh-copy-id -i ~/.ssh/ds-deploy.pub deploy@<server IPv4>
+ssh-copy-id -i ~/.ssh/ds-deploy.pub deploy@78.47.178.65
 
 # Confirm it works and that the password path is closed.
-ssh -i ~/.ssh/ds-deploy deploy@<server IPv4> 'docker version --format "{{.Server.Version}}"'
+ssh -i ~/.ssh/ds-deploy deploy@78.47.178.65 'docker version --format "{{.Server.Version}}"'
 ```
 
 Then take the host's own key, which is what stops a deploy being
 man-in-the-middled into handing over every credential the platform has:
 
 ```bash
-ssh-keyscan -t ed25519 <server IPv4>
+ssh-keyscan -t ed25519 78.47.178.65
 ```
 
 Keep both outputs — the **private** key file and the keyscan line. They go into
@@ -134,7 +176,7 @@ GitHub next.
 
 | Name                 | Value                                                         |
 | -------------------- | ------------------------------------------------------------- |
-| `DEPLOY_HOST`        | the server's IPv4 address, or a hostname that resolves to it  |
+| `DEPLOY_HOST`        | `78.47.178.65`                                                |
 | `DEPLOY_USER`        | `deploy`                                                      |
 | `DEPLOY_SSH_KEY`     | the whole of `~/.ssh/ds-deploy`, `BEGIN`/`END` lines included |
 | `DEPLOY_KNOWN_HOSTS` | the `ssh-keyscan` output from §3                              |
@@ -144,7 +186,35 @@ GitHub next.
 Twenty secrets drift from twenty variable names, and the failure is a container
 that starts with an empty password.
 
-**Generate the four credentials it needs with real randomness:**
+### Variables (plain, visible)
+
+| Name          | Value               |
+| ------------- | ------------------- |
+| `BASE_DOMAIN` | `digitalspital.com` |
+
+One. It used to be eight, five of which were Vite build arguments inlined into
+the frontend bundles — which made every image environment-specific and put the
+API's URL in a _variable_ while the API's hostname lived in a line of a
+_secret_, with nothing checking that the two agreed. When they disagreed, the
+console loaded and every request failed CORS: a browser-side failure with no
+server-side trace. The frontends now read `/config.js`, written when their
+container starts from values derived out of `BASE_DOMAIN`.
+
+This one exists only so the workflow can name the deployment before it has read
+the secret. It has to match the `BASE_DOMAIN` inside `PRODUCTION_ENV`.
+
+### Filling in `PRODUCTION_ENV`
+
+Start from `infra/deploy/env.production.example`. For this deployment:
+
+```
+BASE_DOMAIN=digitalspital.com
+PROJECT_SLUG=medice-adhs
+ACME_EMAIL=technik@digitalspital.de
+EXTRA_CORS_ORIGINS=https://www.medice.de
+```
+
+Then the four credentials, generated with real randomness:
 
 ```bash
 openssl rand -base64 32   # POSTGRES_SUPERUSER_PASSWORD
@@ -153,43 +223,34 @@ openssl rand -base64 32   # DS_APP_PASSWORD
 openssl rand -base64 32   # SECRETS_KMS_KEY  — must decode to exactly 32 bytes
 ```
 
-### The three that are easy to get wrong
+And MEDICE's Keycloak realm, which is the customer's, not ours:
 
-Everything else in the template is a domain or a knob. These three are
-relationships, and the preflight checks all of them so you find out in eight
-seconds rather than twenty minutes:
+```
+KEYCLOAK_ISSUER=https://<their-keycloak>/realms/<their-realm>
+KEYCLOAK_AUDIENCE=ds-education-api
+KEYCLOAK_JWKS_URI=https://<their-keycloak>/realms/<their-realm>/protocol/openid-connect/certs
+PORTAL_KEYCLOAK_CLIENT_ID=ds-portal
+```
 
-- **`STAFF_COOKIE_DOMAIN`** — the parent of both the console and the API, with a
-  leading dot: `.cme.example.de`. It is what makes `verwaltung.…` and `api.…`
-  same-site so the browser attaches the staff session cookie. Wrong, and every
-  sign-in succeeds and is then reported as an expired session, with nothing in
-  any log to say why. Empty is correct in development and wrong here.
-- **`CORS_ALLOWED_ORIGINS`** — must contain `https://verwaltung.…` and
-  `https://fortbildung.…` as well as the customer's WordPress origin. The API
-  cannot tell which host a request came from, and that is the point (ADR-0007).
-- **`API_DOMAIN_URL`** — lands inside a `connect-src`. Unset, the console loads
-  and cannot reach the API, which looks exactly like the API being down.
+The admin console uses **none** of those: staff sign in on the platform's own
+identity plane (ADR-0012), so a Keycloak outage cannot lock out an administrator.
 
-### Variables (plain, visible)
+### What the preflight checks, so you do not have to
 
-| Name                        | Example                                        |
-| --------------------------- | ---------------------------------------------- |
-| `API_DOMAIN`                | `api.cme.example.de`                           |
-| `ADMIN_API_BASE`            | `https://api.cme.example.de`                   |
-| `ADMIN_PROJECT_SLUG`        | `medice-adhs`                                  |
-| `PORTAL_API_BASE`           | `https://api.cme.example.de`                   |
-| `PORTAL_PROJECT_SLUG`       | `medice-adhs`                                  |
-| `PORTAL_KEYCLOAK_ISSUER`    | `https://login.example.de/realms/ds-education` |
-| `PORTAL_KEYCLOAK_CLIENT_ID` | `ds-portal`                                    |
-| `PORTAL_REDIRECT_URI`       | `https://fortbildung.cme.example.de/callback`  |
+Everything a domain implies is derived and then asserted — in the workflow,
+before a byte reaches the server, and again on the host:
 
-These are Vite build arguments, inlined into the frontend bundles, which is why
-they are variables and not secrets — they are in the JavaScript a browser
-downloads either way.
+- the staff cookie's scope is a parent of both the console and the API;
+- the CORS list contains the console and the portal;
+- the CSP's `connect-src` origin matches the API's hostname;
+- no two services share a hostname;
+- `SECRETS_KMS_KEY` decodes to exactly 32 bytes;
+- the EIV endpoint is not the live one without `EIV_ALLOW_LIVE=yes`;
+- the environment file on the host is mode 600.
 
-The **admin console has no Keycloak variables**. It authenticates on the
-platform's own staff plane (ADR-0012); only the learner-facing portal uses a
-realm.
+Each of these was a value somebody used to type twice. They are checks now
+because the failures are quiet: a wrong cookie scope means every staff sign-in
+succeeds and is then reported as an expired session, with nothing in any log.
 
 Finally, create a GitHub **environment** called `production`
 (`Settings → Environments`). The deploy job targets it, so you can require a
@@ -202,16 +263,18 @@ repository's timeline.
 
 Push to `main`, or run **Actions → Deploy → Run workflow**. In order, it:
 
-1. **Preflight** — checks every secret and variable is present, that
-   `SECRETS_KMS_KEY` decodes to 32 bytes, and that `STAFF_COOKIE_DOMAIN` is
-   shaped like a parent domain. Nothing has been touched at this point.
+1. **Preflight** — every secret present, `PRODUCTION_ENV` complete, the KMS key
+   the right length, and the derived domains mutually consistent. Nothing has
+   been touched at this point, and this is where most first deployments stop.
 2. **Build** — four images, pushed to `ghcr.io`, tagged with the short SHA and
    `latest`. Built here, never on the host: a failed build on the target takes
    the site with it, and a rollback should be a tag change rather than a
-   rebuild.
+   rebuild. None of the four carries a hostname, so the same image is
+   deployable to any environment.
 3. **Deploy** — copies `infra/deploy/` over, writes `.env.production` with mode
-   600, and runs `deploy.sh`, which backs up the database, migrates as
-   `ds_migrator`, starts the stack and waits for the API to report healthy.
+   600, and runs `deploy.sh`, which derives the domains, backs up the database,
+   migrates as `ds_migrator`, starts the stack and waits for the API to report
+   healthy.
 4. **Smoke test** — `GET /health` from GitHub's runner, over public DNS and
    real TLS. The deploy script already checked it from the host; this checks
    that the internet agrees.
@@ -226,7 +289,7 @@ invitation, invitations are issued by an account that may invite, and there is
 no such account yet. One command closes that, once:
 
 ```bash
-ssh -i ~/.ssh/ds-deploy deploy@<server> \
+ssh -i ~/.ssh/ds-deploy deploy@78.47.178.65 \
   'cd ~/ds-education/infra/deploy && \
    docker compose --env-file .env.production -f docker-compose.prod.yml \
      run --rm --entrypoint node api dist/bootstrap-admin.js \
@@ -234,12 +297,32 @@ ssh -i ~/.ssh/ds-deploy deploy@<server> \
 ```
 
 It prints a generated password **once** and stores it nowhere. Sign in at
-`https://verwaltung.cme.example.de` immediately; the first sign-in enrols the
+`https://verwaltung.digitalspital.com` immediately; the first sign-in enrols the
 second factor, which `super_admin` requires.
 
 It refuses to run again while any staff account exists — after that the ordinary
 invitation flow is the only way to add one. `--force` exists for a genuine
 lockout and records itself in `admin_audit_log`.
+
+### Then point the WordPress plugin at it
+
+In `wp-admin → Einstellungen → DS Education`:
+
+| Field                    | Value               |
+| ------------------------ | ------------------- |
+| Basis-Domain             | `digitalspital.com` |
+| Projekt-Slug             | `medice-adhs`       |
+| Standard-Fortbildung     | the course slug     |
+| API-Basis-URL (optional) | leave empty         |
+
+The API address is derived from the base domain by the same rule the server
+uses, so the two cannot disagree by being typed twice. The optional field is
+for a staging API on a hostname that follows no convention; filled in, it wins.
+
+The plugin ships its own copy of `ds-lms.js`, so `widget.digitalspital.com` is
+not on the critical path for MEDICE. It is there for a customer who would rather
+load the bundle from a URL we control, so a fix reaches them without their
+redeploying a plugin.
 
 ---
 
@@ -248,6 +331,13 @@ lockout and records itself in `admin_audit_log`.
 ### Every deploy
 
 Merge to `main`. CI runs; if it is green, Deploy runs. That is the whole loop.
+
+### Moving a domain
+
+Change `BASE_DOMAIN` in `PRODUCTION_ENV` (and the `BASE_DOMAIN` variable), point
+the DNS, and redeploy. No image is rebuilt: the frontends read their
+configuration at container start, so the running containers pick up the new
+value on restart.
 
 ### Rolling back
 
@@ -259,10 +349,12 @@ backwards.
 ### Checking a configuration change before applying it
 
 ```bash
-ssh deploy@<server> 'cd ~/ds-education/infra/deploy && ./deploy.sh --check'
+ssh deploy@78.47.178.65 'cd ~/ds-education/infra/deploy && ./deploy.sh --check'
 ```
 
-Runs the whole preflight and stops. Nothing is pulled, migrated or restarted.
+Runs the whole preflight and stops. Nothing is pulled, migrated, restarted or
+written — including the apex redirect block, which is generated only on a real
+deploy.
 
 ### Backups
 
@@ -291,7 +383,14 @@ gunzip -c /var/backups/ds-education/<timestamp>.sql.gz | \
 cd ~/ds-education/infra/deploy
 docker compose --env-file .env.production -f docker-compose.prod.yml logs -f api
 docker compose --env-file .env.production -f docker-compose.prod.yml ps
+
+# What the browser bundles were told at container start.
+curl -s https://verwaltung.digitalspital.com/config.js
+curl -s https://fortbildung.digitalspital.com/config.js
 ```
+
+That last pair is the fastest way to diagnose "the console loads but nothing
+works": it shows exactly which API the running container is pointing at.
 
 ---
 
@@ -308,6 +407,8 @@ succeeding will not tell you about any of them.
 - **S21 — the EFN length.** The layout says eighteen digits; the platform
   validates fifteen. Unresolved, and it is the field the whole Punktemeldung is
   keyed on.
+- **The cookie scope**, per §2. One line, and best changed before anything else
+  is hosted under `digitalspital.com`.
 - **Off-host backups**, per §6.
 - **`ALERT_WEBHOOK_URL` is optional and should not be.** Every alert is logged
   at `error` regardless, but a log nobody reads on a Saturday is not an alert,
