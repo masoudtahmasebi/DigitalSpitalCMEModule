@@ -51,6 +51,7 @@ apps/portal              our own learner frontend — a host adapter, like the p
 apps/eiv-harness         EIV-FOBI contract test CLI and mock server
 packages/domain          pure compliance logic — no I/O, no clock, no framework
 packages/sdk             API client, generated from the contract
+packages/seed            the DS test tenant, runnable from a checkout or the image
 packages/oidc            Keycloak login (PKCE), shared by the console and the portal
 packages/plugin-api      the extension contracts — and what may not be extended
 packages/eiv-client      the EIV-FOBI protocol client, and its reporter plugin

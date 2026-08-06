@@ -176,6 +176,7 @@ apps/admin               admin console SPA
 apps/eiv-harness         EIV-FOBI contract test CLI + mock server
 packages/domain          pure compliance logic
 packages/sdk             generated API client
+packages/seed            seeds that must run from a checkout and from the image
 packages/eiv-client      EIV-FOBI protocol client
 packages/config          shared eslint / tsconfig / tailwind presets
 wordpress/ds-lms         thin WordPress plugin
