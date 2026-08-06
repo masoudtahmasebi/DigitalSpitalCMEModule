@@ -124,6 +124,39 @@ export class StaffAccountsController {
     if (!result.ok) throw refusal(result.reason);
   }
 
+  /**
+   * Clear an operator's second factor so they can enrol a new device (P22-02).
+   *
+   * The lost-phone button, and until now there was none: an enrolled operator
+   * whose authenticator was gone was locked out permanently, with no reset
+   * anywhere in the product. For a super administrator — the one role that was
+   * *forced* to enrol — a lost device could end the platform's only
+   * unrestricted account.
+   *
+   * It does not sign them in and does not relax their policy: under a
+   * `required` policy their next sign-in goes to enrolment. Every session they
+   * hold is revoked at the same time, because an account whose second factor
+   * just became recoverable should not carry a session minted under the old
+   * one.
+   */
+  @Post(":id/second-factor/reset")
+  @HttpCode(204)
+  async resetSecondFactor(
+    @Param("id") id: string,
+    @Req() request: Request,
+  ): Promise<void> {
+    const profile = request.staffProfile;
+    if (profile === undefined) {
+      throw AppError.unauthenticated("no staff session on a staff-account route");
+    }
+
+    const result = await this.service.resetSecondFactorOf({
+      actor: profile,
+      targetId: id,
+    });
+    if (!result.ok) throw refusal(result.reason ?? "refused");
+  }
+
   /** Revoke every session an account holds — the "somebody lost a laptop" button. */
   @Post(":id/sign-out-everywhere")
   @HttpCode(204)

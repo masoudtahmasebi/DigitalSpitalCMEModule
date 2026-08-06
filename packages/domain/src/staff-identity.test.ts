@@ -20,10 +20,15 @@ import {
   MAX_FAILED_ATTEMPTS,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
-  requiresSecondFactor,
   RESET_VALID_MINUTES,
   resetStatus,
   secondFactorStep,
+  applicableSecondFactorPolicy,
+  canRemoveOwnSecondFactor,
+  canResetSecondFactorOf,
+  DEFAULT_CUSTOMER_SECOND_FACTOR,
+  DEFAULT_PLATFORM_SECOND_FACTOR,
+  type SecondFactorPolicy,
   SESSION_ABSOLUTE_HOURS,
   SESSION_IDLE_MINUTES,
   sessionStatus,
@@ -210,25 +215,228 @@ describe("sessionStatus", () => {
 });
 
 describe("second factor", () => {
-  it("is required for a super admin and optional below", () => {
-    expect(requiresSecondFactor("super_admin")).toBe(true);
-    expect(requiresSecondFactor("customer_admin")).toBe(false);
-    expect(requiresSecondFactor("department_admin")).toBe(false);
+  // Six combinations, all of them, because this decides whether a password
+  // alone opens the console.
+  it("covers every policy against every enrolment state", () => {
+    expect(secondFactorStep("disabled", false)).toBe("not_required");
+    expect(secondFactorStep("disabled", true)).toBe("not_required");
+    expect(secondFactorStep("optional", false)).toBe("not_required");
+    expect(secondFactorStep("optional", true)).toBe("required");
+    expect(secondFactorStep("required", false)).toBe("must_enrol");
+    expect(secondFactorStep("required", true)).toBe("required");
   });
 
-  it("asks an enrolled account for its code whatever the role", () => {
-    expect(secondFactorStep("department_admin", true)).toBe("required");
-    expect(secondFactorStep("super_admin", true)).toBe("required");
+  it("asks an enrolled account for its code even when the policy is only optional", () => {
+    // Relaxing the policy must never make a stolen password sufficient for
+    // somebody who had already protected themselves. Turning it off for such an
+    // account is `disabled`, which is a different and deliberate choice.
+    expect(secondFactorStep("optional", true)).toBe("required");
   });
 
-  it("sends an unenrolled super admin to enrolment rather than refusing them", () => {
+  it("lets `disabled` override an enrolment that is still on the row", () => {
+    // This asymmetry is the lost-device path: the stored secret survives, and
+    // the policy is what stops it being demanded.
+    expect(secondFactorStep("disabled", true)).toBe("not_required");
+  });
+
+  it("sends an unenrolled account under `required` to enrolment, not to a refusal", () => {
     // Refusing would make the account unrecoverable; letting them in would make
     // the requirement decorative.
-    expect(secondFactorStep("super_admin", false)).toBe("must_enrol");
+    expect(secondFactorStep("required", false)).toBe("must_enrol");
   });
 
-  it("lets an unenrolled lesser admin straight in", () => {
-    expect(secondFactorStep("customer_admin", false)).toBe("not_required");
+  it("still requires one of a super admin by default", () => {
+    // ADR-0012's reasoning is unchanged; what changed is that it is now a
+    // default rather than a law.
+    expect(DEFAULT_PLATFORM_SECOND_FACTOR).toBe("required");
+    expect(secondFactorStep(DEFAULT_PLATFORM_SECOND_FACTOR, false)).toBe("must_enrol");
+  });
+});
+
+describe("applicableSecondFactorPolicy", () => {
+  const platform: SecondFactorPolicy = "optional";
+
+  it("uses the platform policy for a grant with no customer", () => {
+    expect(
+      applicableSecondFactorPolicy([{ customerId: null }], "required", new Map()),
+    ).toBe("required");
+  });
+
+  it("uses a customer's own policy for a grant inside it", () => {
+    const per = new Map<string, SecondFactorPolicy>([["c1", "required"]]);
+    expect(applicableSecondFactorPolicy([{ customerId: "c1" }], platform, per)).toBe(
+      "required",
+    );
+  });
+
+  it("falls back to the customer default for a customer that has set none", () => {
+    expect(
+      applicableSecondFactorPolicy([{ customerId: "c9" }], "disabled", new Map()),
+    ).toBe(DEFAULT_CUSTOMER_SECOND_FACTOR);
+  });
+
+  it("takes the strictest of several scopes, never the most convenient", () => {
+    // The direction is the whole point. If the loosest won, a customer's
+    // `required` would be worth nothing the moment somebody also held a grant
+    // somewhere relaxed — and finding that somewhere would be an attacker's
+    // first move.
+    const per = new Map<string, SecondFactorPolicy>([
+      ["strict", "required"],
+      ["loose", "disabled"],
+    ]);
+    expect(
+      applicableSecondFactorPolicy(
+        [{ customerId: "loose" }, { customerId: "strict" }],
+        "disabled",
+        per,
+      ),
+    ).toBe("required");
+  });
+
+  it("does not depend on the order the grants arrive in", () => {
+    const per = new Map<string, SecondFactorPolicy>([
+      ["strict", "required"],
+      ["loose", "disabled"],
+    ]);
+    const forwards = applicableSecondFactorPolicy(
+      [{ customerId: "loose" }, { customerId: "strict" }],
+      "disabled",
+      per,
+    );
+    const backwards = applicableSecondFactorPolicy(
+      [{ customerId: "strict" }, { customerId: "loose" }],
+      "disabled",
+      per,
+    );
+    expect(forwards).toBe(backwards);
+  });
+
+  it("lets the platform policy win when it is the strictest scope reached", () => {
+    const per = new Map<string, SecondFactorPolicy>([["c1", "disabled"]]);
+    expect(
+      applicableSecondFactorPolicy(
+        [{ customerId: null }, { customerId: "c1" }],
+        "required",
+        per,
+      ),
+    ).toBe("required");
+  });
+
+  it("gives an account with no grants the platform policy", () => {
+    // They can reach nothing, so the value hardly matters — but the strictest
+    // thing available is the right way to be wrong.
+    expect(applicableSecondFactorPolicy([], "required", new Map())).toBe("required");
+  });
+
+  it("returns `disabled` only when every scope reached is disabled", () => {
+    const per = new Map<string, SecondFactorPolicy>([
+      ["a", "disabled"],
+      ["b", "disabled"],
+    ]);
+    expect(
+      applicableSecondFactorPolicy(
+        [{ customerId: "a" }, { customerId: "b" }],
+        "optional",
+        per,
+      ),
+    ).toBe("disabled");
+  });
+});
+
+describe("removing and resetting a second factor", () => {
+  it("refuses an operator removing their own under a required policy", () => {
+    // Otherwise the policy is advisory.
+    expect(canRemoveOwnSecondFactor("required")).toBe(false);
+  });
+
+  it("allows it under optional and disabled", () => {
+    expect(canRemoveOwnSecondFactor("optional")).toBe(true);
+    expect(canRemoveOwnSecondFactor("disabled")).toBe(true);
+  });
+
+  it("lets a customer admin reset one of their own operators", () => {
+    // The lost-device path. Before P22-02 there was none at all, and an
+    // enrolled operator whose phone was gone was locked out permanently.
+    const actor = {
+      accountId: "a",
+      role: "customer_admin",
+      customerId: "c1",
+      departmentId: null,
+    } as const;
+    const target = {
+      accountId: "b",
+      role: "department_admin",
+      customerId: "c1",
+      departmentId: null,
+    } as const;
+    expect(canResetSecondFactorOf(actor, target)).toEqual({ ok: true });
+  });
+
+  it("refuses across customers, exactly as canGrant does", () => {
+    const actor = {
+      accountId: "a",
+      role: "customer_admin",
+      customerId: "c1",
+      departmentId: null,
+    } as const;
+    const target = {
+      accountId: "b",
+      role: "customer_admin",
+      customerId: "c2",
+      departmentId: null,
+    } as const;
+    expect(canResetSecondFactorOf(actor, target).ok).toBe(false);
+  });
+
+  it("refuses a role broader than the actor's, exactly as canGrant does", () => {
+    const actor = {
+      accountId: "a",
+      role: "customer_admin",
+      customerId: "c1",
+      departmentId: null,
+    } as const;
+    const target = {
+      accountId: "b",
+      role: "super_admin",
+      customerId: null,
+      departmentId: null,
+    } as const;
+    expect(canResetSecondFactorOf(actor, target).ok).toBe(false);
+  });
+
+  it("refuses resetting oneself, whatever the role", () => {
+    // Self-reset would turn a stolen *session* into a permanently weakened
+    // account, and it would step around the `required` policy that
+    // `canRemoveOwnSecondFactor` enforces.
+    const self = {
+      accountId: "same",
+      role: "super_admin",
+      customerId: null,
+      departmentId: null,
+    } as const;
+    expect(canResetSecondFactorOf(self, self)).toEqual({
+      ok: false,
+      reason: "self_escalation",
+    });
+  });
+
+  it("refuses a role that does not manage staff at all", () => {
+    const actor = {
+      accountId: "a",
+      role: "department_admin",
+      customerId: "c1",
+      departmentId: "d1",
+    } as const;
+    const target = {
+      accountId: "b",
+      role: "course_editor",
+      customerId: "c1",
+      departmentId: "d1",
+    } as const;
+    expect(canResetSecondFactorOf(actor, target)).toEqual({
+      ok: false,
+      reason: "not_permitted",
+    });
   });
 });
 

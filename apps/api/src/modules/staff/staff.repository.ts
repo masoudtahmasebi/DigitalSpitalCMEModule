@@ -14,7 +14,8 @@
  */
 
 import type { Pool } from "pg";
-import type { StaffRole } from "@ds/domain";
+import { DEFAULT_PLATFORM_SECOND_FACTOR } from "@ds/domain";
+import type { SecondFactorPolicy, StaffRole } from "@ds/domain";
 
 export interface StaffAccount {
   readonly id: string;
@@ -118,6 +119,41 @@ export interface StaffRepositoryPort {
   findCredentialToken(tokenHash: Buffer): Promise<CredentialTokenRow | undefined>;
   acceptCredentialToken(id: string, at: Date): Promise<void>;
   setPassword(adminUserId: string, passwordHash: string): Promise<void>;
+
+  // --- second-factor policy (P22-02) ---------------------------------------
+
+  /**
+   * Every policy row: the platform's, keyed `null`, and one per customer that
+   * has set one.
+   *
+   * All of them in one query rather than one lookup per grant, because this
+   * runs on the sign-in path and the table has one row per customer — a
+   * handful, not a scale problem. Reading them together also means the
+   * strictest-wins rule sees a consistent snapshot rather than a sequence of
+   * reads a policy change could interleave with.
+   */
+  secondFactorPolicies(): Promise<{
+    readonly platform: SecondFactorPolicy;
+    readonly perCustomer: ReadonlyMap<string, SecondFactorPolicy>;
+  }>;
+
+  setSecondFactorPolicy(input: {
+    customerId: string | null;
+    policy: SecondFactorPolicy;
+    updatedBy: string;
+    at: Date;
+  }): Promise<void>;
+
+  /**
+   * Forget an account's second factor entirely.
+   *
+   * The secret *and* the replay counter. Leaving the counter would carry a high
+   * mark from a device that no longer exists onto whatever replaces it, and
+   * `totp_enrolled_at` going NULL is what sends the next sign-in to enrolment
+   * rather than to a code prompt — so this restores access without lowering the
+   * bar under a `required` policy.
+   */
+  clearSecondFactor(adminUserId: string): Promise<void>;
 }
 
 interface AccountRow {
@@ -554,6 +590,76 @@ export class StaffRepository implements StaffRepositoryPort {
     await this.pool.query(
       `UPDATE admin_users SET password_hash = $2, updated_at = now() WHERE id = $1`,
       [adminUserId, passwordHash],
+    );
+  }
+
+  // --- second-factor policy (P22-02) ---------------------------------------
+
+  async secondFactorPolicies(): Promise<{
+    platform: SecondFactorPolicy;
+    perCustomer: ReadonlyMap<string, SecondFactorPolicy>;
+  }> {
+    const { rows } = await this.pool.query<{
+      customer_id: string | null;
+      policy: SecondFactorPolicy;
+    }>("SELECT customer_id, policy FROM admin_2fa_policy");
+
+    const perCustomer = new Map<string, SecondFactorPolicy>();
+    let platform: SecondFactorPolicy | undefined;
+
+    for (const row of rows) {
+      if (row.customer_id === null) platform = row.policy;
+      else perCustomer.set(row.customer_id, row.policy);
+    }
+
+    // Migration 0027 seeds the platform row and a partial unique index keeps
+    // there being exactly one, so an absent one means somebody deleted it.
+    // Falling back to the strict default rather than throwing: a missing policy
+    // row must not be a way to take the console down, and it must certainly not
+    // be a way to make sign-in easier.
+    return { platform: platform ?? DEFAULT_PLATFORM_SECOND_FACTOR, perCustomer };
+  }
+
+  async setSecondFactorPolicy(input: {
+    customerId: string | null;
+    policy: SecondFactorPolicy;
+    updatedBy: string;
+    at: Date;
+  }): Promise<void> {
+    // Two statements rather than one `ON CONFLICT`, because the platform row's
+    // key is NULL and the two unique indexes that enforce "one per customer,
+    // one for the platform" are partial — neither is an inferable conflict
+    // target for the other's rows.
+    if (input.customerId === null) {
+      await this.pool.query(
+        `UPDATE admin_2fa_policy
+            SET policy = $1, updated_by = $2, updated_at = $3
+          WHERE customer_id IS NULL`,
+        [input.policy, input.updatedBy, input.at],
+      );
+      return;
+    }
+
+    await this.pool.query(
+      `INSERT INTO admin_2fa_policy (customer_id, policy, updated_by, updated_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (customer_id) WHERE customer_id IS NOT NULL
+       DO UPDATE SET policy = excluded.policy,
+                     updated_by = excluded.updated_by,
+                     updated_at = excluded.updated_at`,
+      [input.customerId, input.policy, input.updatedBy, input.at],
+    );
+  }
+
+  async clearSecondFactor(adminUserId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE admin_users
+          SET totp_secret_enc = NULL,
+              totp_enrolled_at = NULL,
+              totp_last_counter = NULL,
+              updated_at = now()
+        WHERE id = $1`,
+      [adminUserId],
     );
   }
 }

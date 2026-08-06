@@ -284,15 +284,80 @@ export function sessionStatus(state: SessionState, now: Date): SessionVerdict {
 // ---------------------------------------------------------------------------
 
 /**
- * Whether this role must present a second factor.
+ * What an operator's scope says about the second factor (P22-02).
  *
- * Required for `super_admin` and optional below (ADR-0012). A super
- * administrator can act inside any customer, so their credential is the one
- * whose theft is worth the most — and unlike a customer administrator's, there
- * is nobody above them to notice.
+ * Configurable, where it used to be `role === "super_admin"` and nothing else.
+ * The three values are genuinely three, not a boolean with a maybe:
+ *
+ * | `disabled` | Not offered, and an already-enrolled secret is not asked for. |
+ * | `optional` | Enrol if you want to; if you have, you must use it.          |
+ * | `required` | Everyone enrols, and is sent to enrolment if they have not.  |
+ *
+ * `optional` is not "off". An account that *has* a factor is always asked for
+ * it, because a policy change must never make a stolen password sufficient for
+ * somebody who had already protected themselves. Turning it off for such an
+ * account is `disabled`, which is a deliberate, audited, different choice.
  */
-export function requiresSecondFactor(role: StaffRole): boolean {
-  return role === "super_admin";
+export type SecondFactorPolicy = "disabled" | "optional" | "required";
+
+/**
+ * The policy a `super_admin` gets unless somebody deliberately changes it.
+ *
+ * ADR-0012's reasoning has not stopped being true: a super administrator can
+ * act inside any customer, so their credential is the one whose theft is worth
+ * the most, and unlike a customer administrator's there is nobody above them to
+ * notice. What changed is that this is now a *default* rather than a law —
+ * the request was for it to be configurable, and a policy nobody can change is
+ * not a policy.
+ *
+ * It is still the strictest default in the platform, and weakening it is a
+ * super administrator's own decision, recorded in `admin_audit_log`.
+ */
+export const DEFAULT_PLATFORM_SECOND_FACTOR: SecondFactorPolicy = "required";
+
+/** What a customer's operators get until that customer's policy is set. */
+export const DEFAULT_CUSTOMER_SECOND_FACTOR: SecondFactorPolicy = "optional";
+
+const STRICTNESS: Record<SecondFactorPolicy, number> = {
+  disabled: 0,
+  optional: 1,
+  required: 2,
+};
+
+/**
+ * The policy that applies to an account holding these grants.
+ *
+ * **The strictest of the scopes they can reach**, and that direction is the
+ * whole point. An operator who can act inside a customer that requires a second
+ * factor must present one — otherwise the customer's policy would be worth
+ * nothing the moment somebody held a grant somewhere more relaxed as well, and
+ * an attacker's first move would be to find that somewhere.
+ *
+ * A grant with no customer is a `super_admin`: they belong to no customer, so
+ * the *platform* policy is their scope. It is passed separately rather than
+ * looked up under a null key, because "the platform's own setting" and "some
+ * customer's setting" are different things that happen to be the same shape.
+ *
+ * An account with no grants at all gets the platform policy. They can reach
+ * nothing, so the value hardly matters — but defaulting to the strictest thing
+ * available is the right way to be wrong.
+ */
+export function applicableSecondFactorPolicy(
+  grants: readonly { readonly customerId: string | null }[],
+  platform: SecondFactorPolicy,
+  perCustomer: ReadonlyMap<string, SecondFactorPolicy>,
+): SecondFactorPolicy {
+  if (grants.length === 0) return platform;
+
+  let strictest: SecondFactorPolicy = "disabled";
+  for (const grant of grants) {
+    const policy =
+      grant.customerId === null
+        ? platform
+        : (perCustomer.get(grant.customerId) ?? DEFAULT_CUSTOMER_SECOND_FACTOR);
+    if (STRICTNESS[policy] > STRICTNESS[strictest]) strictest = policy;
+  }
+  return strictest;
 }
 
 /**
@@ -302,15 +367,68 @@ export function requiresSecondFactor(role: StaffRole): boolean {
  * a second factor but has not set one up yet cannot simply be let in, and
  * cannot simply be refused either — it would be unrecoverable. It is sent to
  * enrolment, which is a third outcome and needs its own name.
+ *
+ * Note the order of the two checks. Under `optional`, being enrolled wins:
+ * having a factor means being asked for it. Under `disabled` it does not, and
+ * that asymmetry is deliberate — `disabled` is how an operator whose device is
+ * gone is let back in, so it has to override an enrolment that still exists in
+ * the row.
  */
 export type SecondFactorOutcome = "not_required" | "required" | "must_enrol";
 
 export function secondFactorStep(
-  role: StaffRole,
+  policy: SecondFactorPolicy,
   enrolled: boolean,
 ): SecondFactorOutcome {
+  if (policy === "disabled") return "not_required";
   if (enrolled) return "required";
-  return requiresSecondFactor(role) ? "must_enrol" : "not_required";
+  return policy === "required" ? "must_enrol" : "not_required";
+}
+
+/**
+ * Whether an operator may take their own second factor off.
+ *
+ * Not under `required`, for the obvious reason: it would make the policy
+ * advisory. Under `optional` it is their own call — they chose to enrol and may
+ * choose otherwise — and under `disabled` the factor is already not being used,
+ * so removing the stored secret is tidying up rather than a security decision.
+ *
+ * An *administrator* resetting somebody else's factor is a different question
+ * with a different answer, because the case it exists for is a lost device: see
+ * `canResetSecondFactorOf`.
+ */
+export function canRemoveOwnSecondFactor(policy: SecondFactorPolicy): boolean {
+  return policy !== "required";
+}
+
+/**
+ * Whether `actor` may clear the second factor on `target`'s account.
+ *
+ * This is the lost-device path, and before P22-02 the platform had none: an
+ * enrolled operator who lost their phone was locked out permanently, with no
+ * recovery anywhere in the product. That is a worse failure than the one strict
+ * 2FA prevents, because it has no workaround at all.
+ *
+ * The rules are `canGrant`'s, not new ones — whoever may create and re-scope an
+ * account may restore its access, and nobody who may not. Two additions:
+ *
+ * 1. **Not yourself.** Self-reset would let anyone holding a live session strip
+ *    their own second factor, which turns a stolen *session* into a permanently
+ *    weakened account. Removing your own is `canRemoveOwnSecondFactor`, which
+ *    refuses under `required`; this path does not, so it must not be reachable
+ *    for oneself.
+ * 2. It leaves the account **unenrolled**, not signed in. Under a `required`
+ *    policy their next sign-in goes to enrolment, so a reset restores access
+ *    without lowering the bar.
+ */
+export function canResetSecondFactorOf(
+  actor: StaffScope & { readonly accountId: string },
+  target: StaffScope & { readonly accountId: string },
+): GrantCheck {
+  if (actor.accountId === target.accountId) {
+    return { ok: false, reason: "self_escalation" };
+  }
+  return canGrant(actor, target);
 }
 
 // ---------------------------------------------------------------------------

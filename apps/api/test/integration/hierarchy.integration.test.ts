@@ -139,7 +139,7 @@ async function seedStaff(role: string, customerId: string | null): Promise<strin
  * can manage customers cannot log in at all, and every test below would be
  * asserting against a 401.
  */
-async function signIn(email: string): Promise<StaffSession> {
+async function signIn(email: string, knownSecret?: Buffer): Promise<StaffSession> {
   const first = await post("/admin/auth/login", { email, password: PASSWORD });
   const body = first.body as {
     status: string;
@@ -153,11 +153,16 @@ async function signIn(email: string): Promise<StaffSession> {
     throw new Error(`sign-in failed for ${email}: ${JSON.stringify(body)}`);
   }
 
-  // Enrol if this is the first sign-in, then present a code either way.
+  // Enrol if this is the first sign-in, then present a code either way. An
+  // account that is *already* enrolled needs the secret it enrolled with, which
+  // only the caller knows — so `knownSecret` is how the P22-02 tests sign the
+  // same account in twice under changing policy.
   let secret: Buffer;
   if (body.status === "totp_enrolment_required") {
     const enrol = await post("/admin/auth/totp/enrol", { challenge: body.challenge });
     secret = secretFromUri((enrol.body as { otpauthUri: string }).otpauthUri);
+  } else if (body.status === "totp_required" && knownSecret !== undefined) {
+    secret = knownSecret;
   } else {
     throw new Error(`unexpected second-factor state: ${body.status}`);
   }
@@ -799,5 +804,307 @@ describe("a project with no Keycloak binding is still a project (P22-01)", () =>
     // add a status to the contract to say something 422 already says.
     expect(result.status).toBe(422);
     expect(result.body.detail).toBeDefined();
+  });
+});
+
+/**
+ * The second factor as a policy, and the lost-device path (P22-02).
+ *
+ * Two requests behind these cases:
+ *
+ * 1. *"it should be possible to turn off or on 2fa or make it mandatory or not
+ *    mandatory"* — `requiresSecondFactor(role)` was a constant, `super_admin`
+ *    always and everybody else never.
+ * 2. The gap that request uncovered, which is the more urgent half: there was
+ *    **no way to remove or reset an enrolled second factor at all**. An
+ *    operator who lost their phone was locked out permanently, and for a super
+ *    administrator — the one role forced to enrol — a lost device could end the
+ *    platform's only unrestricted account.
+ *
+ * The tests are here rather than in the pure suite because what they check is
+ * that the policy is read *on the sign-in path*, against a real row. The
+ * decision itself is exhaustively covered in `@ds/domain`.
+ */
+describe("the second factor is a policy, not a constant (P22-02)", () => {
+  let policyCustomerId: string;
+
+  beforeAll(async () => {
+    policyCustomerId = await insert(
+      "INSERT INTO customers (slug, name) VALUES ($1,$2) RETURNING id",
+      [`policy-${RUN}`, "Policy GmbH"],
+    );
+  });
+
+  /** Put a scope's policy back, so one case cannot decide the next one's. */
+  async function setPolicy(
+    customerId: string | null,
+    policy: "disabled" | "optional" | "required",
+  ): Promise<void> {
+    if (customerId === null) {
+      await seedPool.query(
+        "UPDATE admin_2fa_policy SET policy = $1 WHERE customer_id IS NULL",
+        [policy],
+      );
+      return;
+    }
+    await seedPool.query(
+      `INSERT INTO admin_2fa_policy (customer_id, policy) VALUES ($1,$2)
+       ON CONFLICT (customer_id) WHERE customer_id IS NOT NULL
+       DO UPDATE SET policy = excluded.policy`,
+      [customerId, policy],
+    );
+  }
+
+  it("starts the platform strict, which is ADR-0012's rule kept as a default", async () => {
+    const { rows } = await seedPool.query<{ policy: string }>(
+      "SELECT policy FROM admin_2fa_policy WHERE customer_id IS NULL",
+    );
+    expect(rows[0]?.policy).toBe("required");
+  });
+
+  it("keeps exactly one platform row, however hard a caller tries", async () => {
+    // Two rows would disagree about the strictest policy in the system and the
+    // reader would take whichever the planner returned first.
+    await expect(
+      seedPool.query(
+        "INSERT INTO admin_2fa_policy (customer_id, policy) VALUES (NULL, 'disabled')",
+      ),
+    ).rejects.toThrow(/duplicate key|unique/i);
+  });
+
+  it("sends a customer operator to enrolment when their customer requires one", async () => {
+    await setPolicy(policyCustomerId, "required");
+    const email = await seedStaff("customer_admin", policyCustomerId);
+
+    const first = await post("/admin/auth/login", { email, password: PASSWORD });
+    expect((first.body as { status: string }).status).toBe("totp_enrolment_required");
+  });
+
+  it("lets the same kind of operator straight in when it is optional", async () => {
+    await setPolicy(policyCustomerId, "optional");
+    const email = await seedStaff("customer_admin", policyCustomerId);
+
+    const first = await post("/admin/auth/login", { email, password: PASSWORD });
+    expect((first.body as { status: string }).status).toBe("signed_in");
+  });
+
+  it("still asks an enrolled operator for a code under an optional policy", async () => {
+    // The load-bearing case. Relaxing a policy must never make a stolen
+    // password sufficient for somebody who had already protected themselves.
+    await setPolicy(policyCustomerId, "required");
+    const email = await seedStaff("customer_admin", policyCustomerId);
+    await signIn(email); // enrols
+
+    await setPolicy(policyCustomerId, "optional");
+    const again = await post("/admin/auth/login", { email, password: PASSWORD });
+    expect((again.body as { status: string }).status).toBe("totp_required");
+  });
+
+  it("stops asking once the policy is disabled, even though the secret is still on the row", async () => {
+    // This asymmetry is what lets an operator whose device is gone back in.
+    await setPolicy(policyCustomerId, "required");
+    const email = await seedStaff("customer_admin", policyCustomerId);
+    await signIn(email);
+
+    await setPolicy(policyCustomerId, "disabled");
+    const again = await post("/admin/auth/login", { email, password: PASSWORD });
+    expect((again.body as { status: string }).status).toBe("signed_in");
+  });
+
+  it("takes the strictest of the scopes an operator can reach", async () => {
+    // A grant somewhere relaxed must not be a way around a customer's
+    // `required` — otherwise finding that somewhere is an attacker's first
+    // move.
+    const strict = await insert(
+      "INSERT INTO customers (slug, name) VALUES ($1,$2) RETURNING id",
+      [`strict-${RUN}`, "Streng GmbH"],
+    );
+    await setPolicy(strict, "required");
+    await setPolicy(policyCustomerId, "disabled");
+
+    const email = await seedStaff("customer_admin", policyCustomerId);
+    const { rows } = await seedPool.query<{ id: string }>(
+      "SELECT id FROM admin_users WHERE email = $1",
+      [email],
+    );
+    await seedPool.query(
+      "INSERT INTO admin_user_roles (admin_user_id, role, customer_id) VALUES ($1,'customer_admin',$2)",
+      [rows[0]!.id, strict],
+    );
+
+    const first = await post("/admin/auth/login", { email, password: PASSWORD });
+    expect((first.body as { status: string }).status).toBe("totp_enrolment_required");
+  });
+
+  it("refuses an operator removing their own factor while it is mandatory", async () => {
+    // Otherwise "mandatory" is a suggestion.
+    const result = await asStaff(superSession, "DELETE", "/admin/auth/second-factor");
+    expect(result.status).toBe(403);
+  });
+
+  it("lets a super admin read the policies", async () => {
+    const result = await asStaff(superSession, "GET", "/admin/auth/second-factor/policy");
+    expect(result.status).toBe(200);
+    expect(result.body.platform).toBe("required");
+  });
+
+  it("refuses a customer admin setting the platform policy", async () => {
+    // They would be deciding, from inside one customer, how strictly the
+    // platform's unrestricted accounts are protected.
+    const result = await asStaff(
+      tenantSession,
+      "PUT",
+      "/admin/auth/second-factor/policy",
+      { customerId: null, policy: "disabled" },
+    );
+    expect(result.status).toBe(403);
+  });
+
+  it("refuses a customer admin setting another customer's policy", async () => {
+    const result = await asStaff(
+      tenantSession,
+      "PUT",
+      "/admin/auth/second-factor/policy",
+      { customerId: policyCustomerId, policy: "disabled" },
+    );
+    expect(result.status).toBe(403);
+  });
+
+  it("lets a customer admin set their own, and records which direction it went", async () => {
+    const result = await asStaff(
+      tenantSession,
+      "PUT",
+      "/admin/auth/second-factor/policy",
+      { customerId: existingCustomerId, policy: "required" },
+    );
+    expect(result.status).toBe(200);
+
+    // `recordSystem` writes to `audit_log` with a NULL customer_id — the
+    // event belongs to the platform, not to the tenant whose policy changed.
+    const { rows } = await seedPool.query<{ detail: { weakened: boolean; to: string } }>(
+      `SELECT detail FROM audit_log
+        WHERE action = 'staff.second_factor_policy_changed'
+        ORDER BY id DESC LIMIT 1`,
+    );
+    // `optional` → `required` is a tightening, and the entry says so without a
+    // reader having to diff two rows to work it out.
+    expect(rows[0]?.detail.to).toBe("required");
+    expect(rows[0]?.detail.weakened).toBe(false);
+  });
+});
+
+describe("recovering an operator whose device is gone (P22-02)", () => {
+  let targetId: string;
+  let targetEmail: string;
+
+  beforeAll(async () => {
+    targetEmail = await seedStaff("customer_admin", existingCustomerId);
+    const { rows } = await seedPool.query<{ id: string }>(
+      "SELECT id FROM admin_users WHERE email = $1",
+      [targetEmail],
+    );
+    targetId = rows[0]!.id;
+
+    // Enrol them, so there is something to lose.
+    await seedPool.query(
+      `INSERT INTO admin_2fa_policy (customer_id, policy) VALUES ($1,'required')
+       ON CONFLICT (customer_id) WHERE customer_id IS NOT NULL
+       DO UPDATE SET policy = 'required'`,
+      [existingCustomerId],
+    );
+    await signIn(targetEmail);
+  });
+
+  it("clears the secret, the enrolment and the replay counter", async () => {
+    const before = await seedPool.query<{ enrolled: Date | null }>(
+      "SELECT totp_enrolled_at AS enrolled FROM admin_users WHERE id = $1",
+      [targetId],
+    );
+    expect(before.rows[0]?.enrolled).not.toBeNull();
+
+    const result = await asStaff(
+      superSession,
+      "POST",
+      `/admin/staff/${targetId}/second-factor/reset`,
+    );
+    expect(result.status).toBe(204);
+
+    const after = await seedPool.query<{
+      secret: Buffer | null;
+      enrolled: Date | null;
+      counter: string | null;
+    }>(
+      `SELECT totp_secret_enc AS secret, totp_enrolled_at AS enrolled,
+              totp_last_counter AS counter
+         FROM admin_users WHERE id = $1`,
+      [targetId],
+    );
+    expect(after.rows[0]?.secret).toBeNull();
+    expect(after.rows[0]?.enrolled).toBeNull();
+    // The counter goes too: a high-water mark from a device that no longer
+    // exists is not a fact about the device replacing it.
+    expect(after.rows[0]?.counter).toBeNull();
+  });
+
+  it("sends their next sign-in to enrolment, not straight in", async () => {
+    // A reset restores access without lowering the bar. The policy is still
+    // `required`, so they must set up a new device before they get in.
+    const first = await post("/admin/auth/login", {
+      email: targetEmail,
+      password: PASSWORD,
+    });
+    expect((first.body as { status: string }).status).toBe("totp_enrolment_required");
+  });
+
+  it("refuses an operator resetting their own", async () => {
+    // Self-reset would turn a stolen *session* into a permanently weakened
+    // account, and would step around the `required` policy that
+    // `DELETE /admin/auth/second-factor` enforces.
+    //
+    // The id comes from the session itself, not from "the newest super admin":
+    // other cases in this file seed more of those, and asking the database for
+    // the latest one would test a different account than the one holding the
+    // cookie — which is how a self-reset check quietly becomes an
+    // other-account check that passes for the wrong reason.
+    const me = await asStaff(superSession, "GET", "/admin/auth/session");
+    const ownId = me.body.profile.id as string;
+
+    const result = await asStaff(
+      superSession,
+      "POST",
+      `/admin/staff/${ownId}/second-factor/reset`,
+    );
+    expect(result.status).toBe(403);
+  });
+
+  it("refuses a customer admin resetting a super admin", async () => {
+    const superAdmin = await asStaff(superSession, "GET", "/admin/auth/session");
+
+    const result = await asStaff(
+      tenantSession,
+      "POST",
+      `/admin/staff/${superAdmin.body.profile.id}/second-factor/reset`,
+    );
+    expect(result.status).toBe(403);
+  });
+
+  it("404s an account that does not exist", async () => {
+    const result = await asStaff(
+      superSession,
+      "POST",
+      `/admin/staff/${randomUUID()}/second-factor/reset`,
+    );
+    expect(result.status).toBe(404);
+  });
+
+  it("revoked every session the reset account held", async () => {
+    const { rows } = await seedPool.query<{ live: string }>(
+      `SELECT count(*)::text AS live FROM admin_sessions
+        WHERE admin_user_id = $1 AND revoked_at IS NULL AND purpose = 'session'`,
+      [targetId],
+    );
+    // An account whose second factor just became recoverable must not carry a
+    // session minted under the old one.
+    expect(rows[0]?.live).toBe("0");
   });
 });

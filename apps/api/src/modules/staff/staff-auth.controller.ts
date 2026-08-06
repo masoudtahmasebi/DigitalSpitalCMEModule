@@ -36,7 +36,17 @@
  * locked account with no idea why it fails.
  */
 
-import { Body, Controller, Get, Inject, Post, Req, Res } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Post,
+  Put,
+  Req,
+  Res,
+} from "@nestjs/common";
 import type { CookieOptions, Request, Response } from "express";
 import { z } from "zod";
 import { checkPassword } from "@ds/domain";
@@ -68,6 +78,17 @@ const TotpVerifyBody = z.object({
 const RedeemBody = z.object({
   token: z.string().min(1).max(512),
   password: z.string().min(1).max(512),
+});
+
+const SecondFactorPolicyBody = z.object({
+  /**
+   * `null` names the platform itself — the scope a super administrator belongs
+   * to. It is spelled as an explicit null rather than an absent field so that
+   * "set the platform policy" cannot be what a malformed request accidentally
+   * means (P22-02).
+   */
+  customerId: z.string().uuid().nullable(),
+  policy: z.enum(["disabled", "optional", "required"]),
 });
 
 export interface StaffAuthConfig {
@@ -258,6 +279,83 @@ export class StaffAuthController {
     // holding a forwarded invitation that it was real.
     if (!ok) throw AppError.badRequest("this link is no longer valid");
     return { status: "password_set" };
+  }
+
+  // --- the second factor, as a policy (P22-02) -----------------------------
+
+  /**
+   * The policies in force, for the console's security screen.
+   *
+   * `@StaffOnly()` without a capability: every operator may see the rules they
+   * are subject to. Which of them they may *change* is `setSecondFactorPolicy`'s
+   * business, and it is checked there rather than by hiding the screen — a
+   * hidden control is a convenience, and the refusal is the security boundary.
+   */
+  @StaffOnly()
+  @Get("second-factor/policy")
+  async secondFactorPolicy(@Req() request: Request): Promise<unknown> {
+    const profile = request.staffProfile;
+    if (profile === undefined) throw AppError.unauthenticated("no staff session");
+
+    const { platform, perCustomer } = await this.service.readSecondFactorPolicies();
+    return {
+      platform,
+      customers: [...perCustomer].map(([customerId, policy]) => ({
+        customerId,
+        policy,
+      })),
+    };
+  }
+
+  /**
+   * Turn the second factor off, make it optional, or make it mandatory.
+   *
+   * The scope check is the service's, not a decorator's, because it depends on
+   * *which* scope the body names: only a super administrator may set the
+   * platform's, and a customer administrator may set their own customer's and
+   * no other. A capability decorator cannot see the body.
+   */
+  @StaffOnly()
+  @Put("second-factor/policy")
+  async setSecondFactorPolicy(
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<{ status: string }> {
+    const profile = request.staffProfile;
+    if (profile === undefined) throw AppError.unauthenticated("no staff session");
+
+    const input = SecondFactorPolicyBody.parse(body);
+    const outcome = await this.service.setSecondFactorPolicy({
+      actor: profile,
+      customerId: input.customerId,
+      policy: input.policy,
+    });
+
+    if (!outcome.ok) throw AppError.forbidden(outcome.reason ?? "refused");
+    return { status: "saved" };
+  }
+
+  /**
+   * Take your own second factor off.
+   *
+   * Refused when the policy governing your account is `required`, which is what
+   * makes "mandatory" mean something. An administrator clearing *somebody
+   * else's* is a different operation with different rules — see
+   * `POST /admin/staff/:id/second-factor/reset`.
+   */
+  @StaffOnly()
+  @Delete("second-factor")
+  async removeOwnSecondFactor(@Req() request: Request): Promise<{ status: string }> {
+    const profile = request.staffProfile;
+    if (profile === undefined) throw AppError.unauthenticated("no staff session");
+
+    const outcome = await this.service.removeOwnSecondFactor({
+      accountId: profile.id,
+      grants: profile.grants,
+    });
+
+    if (!outcome.ok) throw AppError.forbidden(outcome.reason ?? "refused");
+    return { status: "removed" };
   }
 
   private cookieOptions(): CookieOptions {

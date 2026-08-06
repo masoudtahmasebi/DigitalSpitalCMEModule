@@ -27,6 +27,10 @@ import {
   lockoutStatus,
   resolveTenantContext,
   secondFactorStep,
+  applicableSecondFactorPolicy,
+  canRemoveOwnSecondFactor,
+  canResetSecondFactorOf,
+  DEFAULT_CUSTOMER_SECOND_FACTOR,
   canGrant,
   sessionStatus,
   verifyTotp,
@@ -34,6 +38,7 @@ import {
   type StaffScope,
   type RoleGrant,
   type StaffRole,
+  type SecondFactorPolicy,
 } from "@ds/domain";
 import { SYSTEM_ACTOR, type AuditServicePort } from "../../audit/audit.service.js";
 import {
@@ -164,7 +169,13 @@ export class StaffService {
       return { kind: "invalid_credentials" };
     }
 
-    const step = secondFactorStep(role, account.totpEnrolledAt !== null);
+    // Which policy applies is the account's *scope*, not its role (P22-02).
+    // `applicableSecondFactorPolicy` takes the strictest of the scopes these
+    // grants reach, so an operator who can act inside a customer that requires
+    // a second factor presents one — holding a relaxed grant elsewhere is not
+    // a way around it.
+    const policy = await this.policyFor(grants);
+    const step = secondFactorStep(policy, account.totpEnrolledAt !== null);
     if (step !== "not_required") {
       // The password is spent; the challenge carries the account forward
       // without the caller having to send it again. Short-lived and single-use
@@ -682,6 +693,172 @@ export class StaffService {
       profile: profileOf(account, grants, role),
     };
   }
+
+  /**
+   * The second-factor policy governing an account with these grants.
+   *
+   * One read of the whole table rather than a lookup per grant — see the port.
+   */
+  private async policyFor(grants: readonly StaffGrant[]): Promise<SecondFactorPolicy> {
+    const { platform, perCustomer } = await this.deps.repository.secondFactorPolicies();
+    return applicableSecondFactorPolicy(grants, platform, perCustomer);
+  }
+
+  /** What the console shows on its security screen (P22-02). */
+  async readSecondFactorPolicies(): Promise<{
+    platform: SecondFactorPolicy;
+    perCustomer: ReadonlyMap<string, SecondFactorPolicy>;
+  }> {
+    return this.deps.repository.secondFactorPolicies();
+  }
+
+  /**
+   * Change the policy for one scope (P22-02).
+   *
+   * `customerId: null` is the platform's own — the scope a super administrator
+   * belongs to — and only a super administrator may set it. Anyone else would
+   * be deciding, from inside a customer, how strictly the platform's
+   * unrestricted accounts are protected.
+   *
+   * Audited unconditionally, and `weakened` is carried in the entry rather than
+   * left to be reconstructed: "somebody relaxed a security policy" is the fact
+   * an auditor scans for, and making them diff two rows to find it is how it
+   * gets missed.
+   */
+  async setSecondFactorPolicy(input: {
+    actor: StaffProfile;
+    customerId: string | null;
+    policy: SecondFactorPolicy;
+  }): Promise<{ readonly ok: boolean; readonly reason?: string }> {
+    if (input.customerId === null && input.actor.role !== "super_admin") {
+      return {
+        ok: false,
+        reason: "only a super administrator may set the platform policy",
+      };
+    }
+
+    if (input.customerId !== null) {
+      if (!canManage(input.actor.role, "staff_user")) {
+        return { ok: false, reason: "your role does not manage staff accounts" };
+      }
+      const reaches =
+        input.actor.role === "super_admin" ||
+        input.actor.grants.some((grant) => grant.customerId === input.customerId);
+      if (!reaches) {
+        return { ok: false, reason: "you hold no grant reaching that customer" };
+      }
+    }
+
+    const before = await this.deps.repository.secondFactorPolicies();
+    const previous =
+      input.customerId === null
+        ? before.platform
+        : (before.perCustomer.get(input.customerId) ?? DEFAULT_CUSTOMER_SECOND_FACTOR);
+
+    await this.deps.repository.setSecondFactorPolicy({
+      customerId: input.customerId,
+      policy: input.policy,
+      updatedBy: input.actor.id,
+      at: this.deps.now(),
+    });
+
+    await this.deps.audit.recordSystem({
+      actor: { identity: "staff", id: input.actor.id },
+      action: "staff.second_factor_policy_changed",
+      ...(input.customerId === null ? {} : { subject: input.customerId }),
+      detail: {
+        scope: input.customerId === null ? "platform" : "customer",
+        from: previous,
+        to: input.policy,
+        weakened: strictness(input.policy) < strictness(previous),
+      },
+    });
+
+    return { ok: true };
+  }
+
+  /**
+   * An operator takes their own second factor off (P22-02).
+   *
+   * Refused under a `required` policy — otherwise the policy is advisory rather
+   * than a policy.
+   */
+  async removeOwnSecondFactor(input: {
+    accountId: string;
+    grants: readonly StaffGrant[];
+  }): Promise<{ readonly ok: boolean; readonly reason?: string }> {
+    const policy = await this.policyFor(input.grants);
+    if (!canRemoveOwnSecondFactor(policy)) {
+      return { ok: false, reason: "the second factor is mandatory for your account" };
+    }
+
+    await this.deps.repository.clearSecondFactor(input.accountId);
+    await this.deps.audit.recordSystem({
+      actor: { identity: "staff", id: input.accountId },
+      action: "staff.second_factor_removed",
+      detail: { policy, by: "self" },
+    });
+    return { ok: true };
+  }
+
+  /**
+   * An administrator clears somebody else's second factor (P22-02).
+   *
+   * The lost-device path, which the platform had none of: an enrolled operator
+   * whose phone was gone was locked out permanently, with no reset anywhere in
+   * the product. For a super administrator — the one role that was *forced* to
+   * enrol — that meant a lost device could end the platform's only unrestricted
+   * account.
+   *
+   * It does **not** sign the target in and does not relax their policy. Under
+   * `required` their next sign-in goes to enrolment, so access is restored
+   * without the bar moving. Every session they hold is revoked: an account
+   * whose second factor just became recoverable should not carry a session
+   * minted under the old one.
+   */
+  async resetSecondFactorOf(input: {
+    actor: StaffProfile;
+    targetId: string;
+  }): Promise<{ readonly ok: boolean; readonly reason?: string }> {
+    const target = await this.deps.repository.findById(input.targetId);
+    if (target === undefined) return { ok: false, reason: "not_found" };
+
+    const targetGrants = await this.deps.repository.grantsFor(target.id);
+    const targetRole = broadestRole(targetGrants);
+    // No grants means nothing to restore access *to*, and it is also how a
+    // caller would probe for the existence of an account they may not manage —
+    // so it answers the same way an unknown id does.
+    if (targetRole === undefined) return { ok: false, reason: "not_found" };
+
+    const verdict = canResetSecondFactorOf(
+      {
+        accountId: input.actor.id,
+        role: input.actor.role,
+        customerId: input.actor.grants[0]?.customerId ?? null,
+        departmentId: input.actor.grants[0]?.departmentId ?? null,
+      },
+      {
+        accountId: target.id,
+        role: targetRole,
+        customerId: targetGrants[0]?.customerId ?? null,
+        departmentId: targetGrants[0]?.departmentId ?? null,
+      },
+    );
+    if (!verdict.ok) return { ok: false, reason: verdict.reason };
+
+    const now = this.deps.now();
+    await this.deps.repository.clearSecondFactor(target.id);
+    await this.deps.repository.revokeAllSessions(target.id, now);
+
+    await this.deps.audit.recordSystem({
+      actor: { identity: "staff", id: input.actor.id },
+      action: "staff.second_factor_reset",
+      subject: target.id,
+      detail: { targetRole },
+    });
+
+    return { ok: true };
+  }
 }
 
 /**
@@ -763,4 +940,23 @@ function scopeOf(grant: StaffGrant): StaffScope {
     customerId: grant.customerId,
     departmentId: grant.departmentId,
   };
+}
+
+/**
+ * How strict a policy is, for reporting *which direction* a change went.
+ *
+ * The ordering that decides which policy applies lives in `@ds/domain`; this is
+ * only used to label an audit entry `weakened: true`. Duplicating three numbers
+ * is cheaper than exporting an implementation detail of the pure rule and then
+ * having two places that must agree on what it means.
+ */
+function strictness(policy: SecondFactorPolicy): number {
+  switch (policy) {
+    case "disabled":
+      return 0;
+    case "optional":
+      return 1;
+    case "required":
+      return 2;
+  }
 }

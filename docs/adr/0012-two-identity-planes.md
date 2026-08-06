@@ -53,6 +53,15 @@ Administrators authenticate against this platform's own account store.
 - TOTP second factor is **required for `super_admin`** and optional below it. A
   super administrator can read the participation records of every physician on
   the platform; a password alone is not a proportionate control for that.
+
+  _Amended by P22-02:_ this is now the **default** rather than a constant. The
+  reasoning above is unchanged and the platform still ships `required` for
+  accounts belonging to no customer, but the value is a row in
+  `admin_2fa_policy` that a super administrator may change, per customer and for
+  the platform, with every change audited. A policy nobody can change is not a
+  policy — and the same ticket added the reset path this ADR left out, without
+  which a lost authenticator locked an enrolled operator out permanently.
+
 - No self-registration. Accounts are created by invitation from an existing
   administrator at or above the invitee's scope.
 

@@ -1099,6 +1099,121 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /admin/staff/{id}/second-factor/reset:
+    post:
+      tags: [admin]
+      operationId: adminResetStaffSecondFactor
+      summary: Clear an operator's second factor so they can enrol a new device
+      description: |
+        The lost-device path (P22-02). Before it existed, an enrolled operator
+        whose authenticator was gone was locked out permanently — there was no
+        reset anywhere in the product, and for a `super_admin`, the one role
+        that was forced to enrol, a lost phone could end the platform's only
+        unrestricted account.
+
+        It does **not** sign the target in and does **not** relax their policy:
+        under a `required` policy their next sign-in goes to enrolment, so
+        access is restored without the bar moving. Every session they hold is
+        revoked at the same time.
+
+        Same authorization as re-scoping the account, plus one rule: **nobody
+        may reset their own**. Self-reset would turn a stolen session into a
+        permanently weakened account, and would step around the `required`
+        policy that `DELETE /admin/auth/second-factor` enforces.
+      parameters: [{ $ref: "#/components/parameters/StaffId" }]
+      responses:
+        "204":
+          {
+            description: Cleared. The account must enrol again if its policy requires one.,
+          }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/auth/second-factor/policy:
+    get:
+      tags: [admin]
+      operationId: adminGetSecondFactorPolicy
+      summary: The second-factor policies in force
+      description: |
+        Every operator may read the rules they are subject to. Which of them
+        they may change is enforced on the `PUT`, not by hiding this — a hidden
+        control is a convenience and the refusal is the boundary.
+      responses:
+        "200":
+          description: The platform policy, and one entry per customer that has set its own.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SecondFactorPolicies" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+    put:
+      tags: [admin]
+      operationId: adminSetSecondFactorPolicy
+      summary: Turn the second factor off, make it optional, or make it mandatory
+      description: |
+        Three values, and they are genuinely three (P22-02):
+
+        - `disabled` — not offered, and an already-enrolled secret is not asked
+          for. This is what lets an operator whose device is gone back in.
+        - `optional` — enrol if you want to; **if you have, you must use it**.
+          Relaxing a policy must never make a stolen password sufficient for
+          somebody who had already protected themselves.
+        - `required` — everybody enrols, and an account that has not is sent to
+          enrolment rather than refused, which would make it unrecoverable.
+
+        `customerId: null` names the platform itself — the scope a `super_admin`
+        belongs to, since they belong to no customer — and **only a
+        `super_admin` may set it**. Anyone else would be deciding, from inside
+        one customer, how strictly the platform's unrestricted accounts are
+        protected. A customer administrator may set their own customer's policy
+        and no other.
+
+        The platform default is `required`, which is ADR-0012's original rule
+        kept as a default rather than a law. Every change is written to
+        `admin_audit_log` carrying `weakened: true|false`, because "somebody
+        relaxed a security policy" is the fact an auditor scans for.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SecondFactorPolicyUpdate" }
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties: { status: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/auth/second-factor:
+    delete:
+      tags: [admin]
+      operationId: adminRemoveOwnSecondFactor
+      summary: Take your own second factor off
+      description: |
+        Refused with 403 when the policy governing your account is `required` —
+        which is what makes "mandatory" mean something rather than being a
+        suggestion. Under `optional` it is your own call, and under `disabled`
+        the factor is not being used anyway.
+
+        Clearing **somebody else's** is a different operation with different
+        rules: `POST /admin/staff/{id}/second-factor/reset`.
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties: { status: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /admin/customers:
     get:
       tags: [admin]
@@ -2056,6 +2171,49 @@ components:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
 
   schemas:
+    SecondFactorPolicy:
+      type: string
+      enum: [disabled, optional, required]
+      description: |
+        `disabled` — not offered, and an already-enrolled secret is not asked
+        for. `optional` — enrol if you want to, but if you have you must use it.
+        `required` — everybody enrols. See `PUT
+        /admin/auth/second-factor/policy` for why `optional` is deliberately not
+        the same as off.
+
+    SecondFactorPolicies:
+      type: object
+      required: [platform, customers]
+      properties:
+        platform:
+          allOf: [{ $ref: "#/components/schemas/SecondFactorPolicy" }]
+          description: |
+            The policy for accounts belonging to no customer — which is every
+            `super_admin`. Defaults to `required`.
+        customers:
+          type: array
+          description: One entry per customer that has set its own; the rest use `optional`.
+          items:
+            type: object
+            required: [customerId, policy]
+            properties:
+              customerId: { type: string, format: uuid }
+              policy: { $ref: "#/components/schemas/SecondFactorPolicy" }
+
+    SecondFactorPolicyUpdate:
+      type: object
+      required: [customerId, policy]
+      properties:
+        customerId:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            `null` names the platform itself. Spelled as an explicit null rather
+            than an absent field, so "set the platform policy" cannot be what a
+            malformed request accidentally means.
+        policy: { $ref: "#/components/schemas/SecondFactorPolicy" }
+
     ProblemDetails:
       type: object
       description: RFC 7807. No stack traces, no internal identifiers.
