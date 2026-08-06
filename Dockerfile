@@ -48,7 +48,7 @@
 # `--offline` afterwards proves the fetch was complete rather than silently
 # reaching for the network.
 #
-# ## Why `pnpm-workspace.yaml` is copied beside the lockfile
+# ## Why `package.json` and `pnpm-workspace.yaml` are copied beside the lockfile
 #
 # Because without it `pnpm fetch` fetches **nothing**, and says "Already up to
 # date" while doing it.
@@ -64,6 +64,14 @@
 #     cannot download it in offline mode … helmet-8.3.0.tgz
 #
 # — which reads as a broken lockfile or a network problem, and is neither.
+#
+# `package.json` is copied for a different reason and is just as load-bearing:
+# it carries `packageManager`, and **corepack reads it to decide which pnpm to
+# use**. Without it corepack has nothing to pin to and downloads whatever is
+# latest — which is how one build got pnpm 10.33 and another, from the same
+# commit, got pnpm 11.20 with a differently laid-out store. The comment on
+# `corepack enable` below claims the image cannot drift; only this makes it
+# true.
 
 # ---------------------------------------------------------------------------
 # deps — the workspace, installed once
@@ -92,10 +100,11 @@ ENV CI=true
 
 WORKDIR /repo
 
-# Both files, for the reason in the header: the lockfile carries the packages,
-# `pnpm-workspace.yaml` is what makes pnpm look for importers at all. Only these
-# two, so a source-only change still reuses this layer.
-COPY pnpm-lock.yaml pnpm-workspace.yaml ./
+# Three files, each for its own reason (see the header): the lockfile carries
+# the packages, `pnpm-workspace.yaml` makes pnpm look for importers at all, and
+# `package.json` pins the pnpm version corepack fetches. Only these three, so a
+# source-only change still reuses this layer.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 
 # Fetch, then prove it fetched something.
 #
@@ -105,17 +114,24 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml ./
 # layer before failing with a message about one missing tarball, which points
 # at the package rather than at the fetch.
 #
-# The threshold is 100 against a real count of ~600. Deliberately nowhere near
-# the true figure: the failure this catches produces **zero**, so the check only
-# has to tell "empty" from "populated". A threshold close to the real number
-# would need raising every time a dependency was removed, and a guard that
-# fails for the wrong reason is a guard somebody deletes.
+# A plain file count over the whole store, not a count of a particular path
+# inside it. The first version of this guard looked for `*/index/*.json`, which
+# is the v10 store's layout — and promptly failed a build whose corepack had
+# picked pnpm 11, whose store is laid out differently. It reported "0 packages"
+# about a store holding 597 of them.
+#
+# That is the exact failure mode the guard exists to prevent, produced by the
+# guard. So it now asserts the only thing it actually needs to know — that the
+# store is not empty — in terms no store version can change: a real fetch leaves
+# ~21,000 files, an empty one leaves 0, and 100 sits between them with room for
+# either to move a long way.
 RUN pnpm fetch && \
-    packages="$(find "$(pnpm store path)" -name '*.json' -path '*/index/*' | wc -l)" && \
-    if [ "$packages" -lt 100 ]; then \
-      echo "pnpm fetch populated only ${packages} packages — the store is empty." >&2; \
-      echo "pnpm-workspace.yaml must be copied before this runs, or fetch has" >&2; \
-      echo "no importers to resolve and reports success having done nothing." >&2; \
+    files="$(find "$(pnpm store path)" -type f | wc -l)" && \
+    if [ "$files" -lt 100 ]; then \
+      echo "pnpm fetch left ${files} files in the store — it fetched nothing." >&2; \
+      echo "pnpm-lock.yaml, pnpm-workspace.yaml and package.json must all be" >&2; \
+      echo "copied before this runs; without the workspace file fetch has no" >&2; \
+      echo "importers to resolve and reports success having done nothing." >&2; \
       exit 1; \
     fi
 

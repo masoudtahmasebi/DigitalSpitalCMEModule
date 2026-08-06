@@ -144,6 +144,18 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d ds_education \
             -f infra/postgres/init-roles.sql
+      # `db/migrate.ts` imports `@ds/migrator`, and a workspace package resolves
+      # to its `dist/`. `pnpm db:migrate` is a plain script rather than a turbo
+      # task, so nothing builds that for it — the job failed with
+      # `ERR_MODULE_NOT_FOUND … @ds/migrator/dist/index.js`, which reads as a
+      # missing dependency and is a missing build.
+      #
+      # The integration tests themselves never hit this: `test:integration`
+      # declares `dependsOn: ["^build"]`, so turbo builds their dependencies
+      # first. The migrate step ran before them and had no such protection.
+      - name: Build what the migrator needs
+        run: pnpm --filter @ds/migrator... build
+
       - name: Migrate
         run: pnpm db:migrate
       - name: Integration tests

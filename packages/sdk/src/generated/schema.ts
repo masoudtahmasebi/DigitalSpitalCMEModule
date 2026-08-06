@@ -1585,6 +1585,9 @@ export interface components {
              * @description Where playback should start — `lastPositionSec` rewound to the
              *     containing minute. A learner who left at 14:35 resumes at 14:00.
              *
+             *     Never greater than `seekCeilingSec`: the position playback opens at
+             *     is always one seeking is allowed to reach.
+             *
              *     Decided by the server rather than the player, so every host rewinds
              *     by the same amount. The replay costs the compliance record nothing:
              *     coverage is a union of intervals, so re-watching the same seconds
