@@ -43,11 +43,27 @@
 # later as `error TS2307: Cannot find module 'nodemailer'`, which reads as a
 # source problem rather than a Dockerfile one.
 #
-# `pnpm fetch` needs only the lockfile. It populates the store with everything
-# the lockfile names, so the layer is primed without knowing which projects
-# exist, and a new workspace package can never again be forgotten here.
+# `pnpm fetch` reads the lockfile, so the layer is primed without knowing which
+# projects exist and a new workspace package can never again be forgotten here.
 # `--offline` afterwards proves the fetch was complete rather than silently
 # reaching for the network.
+#
+# ## Why `pnpm-workspace.yaml` is copied beside the lockfile
+#
+# Because without it `pnpm fetch` fetches **nothing**, and says "Already up to
+# date" while doing it.
+#
+# The lockfile's packages hang off its `importers` — one per workspace project.
+# `pnpm-workspace.yaml` is what tells pnpm this directory *is* a workspace root
+# and which projects to expect; absent, pnpm sees a lone lockfile with no
+# projects to satisfy, concludes there is nothing to do, and exits 0 with a
+# 2 MB store instead of a 339 MB one. The failure lands one layer later, on the
+# first package the install wants:
+#
+#     ERR_PNPM_NO_OFFLINE_TARBALL  A package is missing from the store but
+#     cannot download it in offline mode … helmet-8.3.0.tgz
+#
+# — which reads as a broken lockfile or a network problem, and is neither.
 
 # ---------------------------------------------------------------------------
 # deps — the workspace, installed once
@@ -76,10 +92,32 @@ ENV CI=true
 
 WORKDIR /repo
 
-# The lockfile alone primes the store, so a source-only change reuses this
-# layer and no workspace project can be left out of it.
-COPY pnpm-lock.yaml ./
-RUN pnpm fetch
+# Both files, for the reason in the header: the lockfile carries the packages,
+# `pnpm-workspace.yaml` is what makes pnpm look for importers at all. Only these
+# two, so a source-only change still reuses this layer.
+COPY pnpm-lock.yaml pnpm-workspace.yaml ./
+
+# Fetch, then prove it fetched something.
+#
+# The guard exists because the failure it catches is *silent*: `pnpm fetch` with
+# no workspace file prints "Already up to date", exits 0, and leaves a store
+# with a few megabytes of nothing in it. The build then runs on for another
+# layer before failing with a message about one missing tarball, which points
+# at the package rather than at the fetch.
+#
+# The threshold is 100 against a real count of ~600. Deliberately nowhere near
+# the true figure: the failure this catches produces **zero**, so the check only
+# has to tell "empty" from "populated". A threshold close to the real number
+# would need raising every time a dependency was removed, and a guard that
+# fails for the wrong reason is a guard somebody deletes.
+RUN pnpm fetch && \
+    packages="$(find "$(pnpm store path)" -name '*.json' -path '*/index/*' | wc -l)" && \
+    if [ "$packages" -lt 100 ]; then \
+      echo "pnpm fetch populated only ${packages} packages — the store is empty." >&2; \
+      echo "pnpm-workspace.yaml must be copied before this runs, or fetch has" >&2; \
+      echo "no importers to resolve and reports success having done nothing." >&2; \
+      exit 1; \
+    fi
 
 COPY . .
 
