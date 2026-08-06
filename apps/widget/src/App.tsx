@@ -35,6 +35,7 @@ import type { TokenProvider } from "./token.js";
 import { CourseList } from "./components/CourseList.js";
 import { CourseOutline } from "./components/CourseOutline.js";
 import { ProgressCard, StickyMetaBar } from "./components/CourseHeader.js";
+import { StickyProgress } from "./components/StickyProgress.js";
 import { ExpertsTab } from "./components/ExpertsTab.js";
 import { OverviewTab } from "./components/OverviewTab.js";
 import { PlayerScreen } from "./components/PlayerScreen.js";
@@ -476,9 +477,25 @@ function Loaded(props: {
           )}
         </div>
 
+        {/*
+          The inline card is the wide layout's (P19-01). Below `sm` the
+          floating module below replaces it — two progress panels on one
+          430 px screen would be two places to read the same number, which is
+          how they end up disagreeing.
+        */}
         {screen.kind === "outline" ? (
-          <ProgressCard state={state} onResume={resume} />
+          <div className="max-sm:hidden">
+            <ProgressCard state={state} onResume={resume} />
+          </div>
         ) : null}
+
+        {/*
+          The same two numbers, floating, below `sm` (P19-01). Not restricted
+          to the outline screen: its whole reason for existing is being the
+          resume affordance *while a video is playing*, which is the one screen
+          the inline card is not on.
+        */}
+        <StickyProgress state={state} onResume={resume} />
       </div>
     </div>
   );
