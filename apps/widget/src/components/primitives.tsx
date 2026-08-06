@@ -189,16 +189,23 @@ export function CourseMetaBar(props: {
     <div className="relative z-10 mx-4 -mt-7 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl bg-white px-5 py-3 shadow-md max-sm:flex-col max-sm:gap-y-4 max-sm:px-5 max-sm:py-6">
       {props.points === null ? null : (
         /*
-         * One pill with an internal rule, not an orange square beside grey
-         * text. The export draws the number and the words as a single orange
-         * object divided by a hairline — which is why the divider is a border
-         * on the label rather than a gap.
+         * **One orange pill with an internal hairline**, at every width — not
+         * an orange square beside grey text, which is what this was.
+         *
+         * Both exports draw it the same way and they agree: the number and the
+         * words are one object, divided by a white rule, both in white on
+         * orange. The earlier reading came from the PDF's softer edges, where
+         * the hairline is hard to see and the pill reads as two elements.
+         *
+         * `overflow-hidden` on the pill and square corners on the halves: the
+         * outer radius is the pill's, and letting each half round its own end
+         * would put a notch where the hairline is.
          */
-        <span className="flex items-center gap-2 max-sm:gap-0 max-sm:overflow-hidden max-sm:rounded-md">
-          <span className="rounded bg-cta-500 px-2 py-0.5 text-sm font-bold text-cta-contrast max-sm:rounded-none max-sm:px-4 max-sm:py-2 max-sm:text-lg">
+        <span className="flex items-center overflow-hidden rounded-full bg-cta-500 text-cta-contrast">
+          <span className="px-4 py-1.5 text-base font-bold max-sm:py-2 max-sm:text-lg">
             {props.points}
           </span>
-          <span className="text-sm font-semibold text-gray-900 max-sm:border-l max-sm:border-white/50 max-sm:bg-cta-500 max-sm:px-4 max-sm:py-2 max-sm:text-base max-sm:text-cta-contrast">
+          <span className="border-l border-white/60 px-4 py-1.5 text-base font-semibold max-sm:py-2">
             {props.pointsLabel}
           </span>
         </span>
@@ -210,22 +217,19 @@ export function CourseMetaBar(props: {
         centred text.
       */}
       {props.duration === null ? null : (
-        <span className="flex items-center gap-2 border-l border-gray-200 pl-6 text-sm text-gray-700 max-sm:border-l-0 max-sm:pl-0 max-sm:text-base max-sm:font-semibold">
+        <span className="flex items-center gap-2 border-l border-gray-200 pl-6 text-sm text-gray-800 max-sm:border-l-0 max-sm:pl-0 max-sm:text-base max-sm:font-semibold">
           <ClockIcon />
           {props.duration}
         </span>
       )}
 
       {props.modules === null ? null : (
-        <span className="flex items-center gap-2 border-l border-gray-200 pl-6 text-sm text-gray-700 max-sm:border-l-0 max-sm:pl-0 max-sm:text-base max-sm:font-semibold">
+        <span className="flex items-center gap-2 border-l border-gray-200 pl-6 text-sm text-gray-800 max-sm:border-l-0 max-sm:pl-0 max-sm:text-base max-sm:font-semibold">
           <ModulesIcon />
           {props.modules}
         </span>
       )}
 
-      {/* `ml-auto` pushes it to the row's end; in a column it would push it
-          nowhere and the `w-full` is what makes it the drawing's full-width
-          button. */}
       <span className="ml-auto max-sm:ml-0 max-sm:w-full max-sm:[&>button]:w-full">
         {props.action}
       </span>
@@ -237,7 +241,9 @@ export function ClockIcon(props: { className?: string }) {
   return (
     <svg
       viewBox="0 0 20 20"
-      className={props.className ?? "h-5 w-5 text-brand-600"}
+      // Orange, not teal. Both exports draw the meta strip's glyphs in the
+      // accent colour beside the points pill — they are one group.
+      className={props.className ?? "h-5 w-5 text-cta-500"}
       fill="currentColor"
       aria-hidden="true"
     >
@@ -250,7 +256,8 @@ export function ModulesIcon(props: { className?: string }) {
   return (
     <svg
       viewBox="0 0 20 20"
-      className={props.className ?? "h-5 w-5 text-brand-600"}
+      // Orange, for the reason on ClockIcon.
+      className={props.className ?? "h-5 w-5 text-cta-500"}
       fill="currentColor"
       aria-hidden="true"
     >
