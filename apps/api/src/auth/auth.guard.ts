@@ -249,20 +249,45 @@ async function authenticateStaffPlane(
     return true;
   }
 
-  const binding = await deps.projectBindings.resolve(projectSlug);
-  if (binding === undefined) {
-    throw AppError.unauthenticated(`unknown or unbound project slug=${projectSlug}`);
+  /*
+   * `resolveTenant`, not `resolve` (P22-01).
+   *
+   * `resolve` treats a project whose `keycloak_issuer` or `keycloak_audience`
+   * is NULL as "not found" — which is right, because such a project cannot
+   * authenticate a learner. It is wrong here: a staff session is local to the
+   * platform and never touches an identity provider (ADR-0012), so the only
+   * field this needs is the customer id.
+   *
+   * Sharing the lookup turned "Keycloak is not configured for this project"
+   * into a 401 on every tenant-scoped console screen, for an operator whose
+   * session was fine. Both ways of getting there are ordinary: a project
+   * created through the console starts without a binding, and a fresh
+   * installation has no project at all until somebody makes one — through the
+   * screens that were refusing.
+   */
+  const tenant = await deps.projectBindings.resolveTenant(projectSlug);
+  if (tenant === undefined) {
+    // 404 rather than 401. The caller is authenticated and the platform knows
+    // it, so "no such project" is both the honest answer and a safe one — it
+    // is only on the learner plane that whether a slug exists is a fact an
+    // anonymous caller should not learn. Answering 401 sent the console to its
+    // login form, which is how a configuration problem came to look like a
+    // broken sign-in.
+    throw AppError.notFound(
+      `no project with slug=${projectSlug}`,
+      "Dieses Projekt existiert nicht. Bitte wählen Sie ein anderes aus.",
+    );
   }
 
-  const resolution = staffTenantContext(session.grants, binding.customerId);
+  const resolution = staffTenantContext(session.grants, tenant.customerId);
   if (!resolution.ok) {
-    await deps.audit.recordForCustomer(binding.customerId, {
+    await deps.audit.recordForCustomer(tenant.customerId, {
       actor: { identity: "staff", id: session.account.id },
       action: "staff.no_grant_for_customer",
       detail: { reason: resolution.reason, projectSlug },
     });
     throw AppError.forbidden(
-      `staff=${session.account.id} holds no grant reaching customer=${binding.customerId}`,
+      `staff=${session.account.id} holds no grant reaching customer=${tenant.customerId}`,
     );
   }
 

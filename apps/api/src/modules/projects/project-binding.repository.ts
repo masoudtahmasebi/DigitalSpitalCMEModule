@@ -21,8 +21,34 @@ export interface ProjectBinding {
   readonly identityProvider: string;
 }
 
+/**
+ * Which customer a project belongs to, and nothing else (P22-01).
+ *
+ * Deliberately not a `ProjectBinding` with the Keycloak fields made optional.
+ * A caller holding this type *cannot* validate a token, because the type does
+ * not carry what token validation needs — which is the property that keeps the
+ * staff plane from accidentally growing a learner-plane code path.
+ */
+export interface ProjectTenant {
+  readonly projectId: string;
+  readonly customerId: string;
+}
+
 export interface ProjectBindingRepositoryPort {
   resolve(slug: string): Promise<ProjectBinding | undefined>;
+  /**
+   * For callers that authenticate without an identity provider — the staff
+   * plane (ADR-0012).
+   *
+   * `resolve` answers `undefined` for a project whose `keycloak_issuer` or
+   * `keycloak_audience` is NULL, which is right for a learner and was wrong for
+   * an operator: it made "this project has no Keycloak yet" refuse every
+   * tenant-scoped console screen with a 401. A project created through the
+   * console has no binding until somebody adds one, and a fresh installation
+   * has no project at all — so the screens an operator needs in order to fix
+   * that were among the screens refusing.
+   */
+  resolveTenant(slug: string): Promise<ProjectTenant | undefined>;
 }
 
 interface BindingRow {
@@ -59,6 +85,21 @@ export class ProjectBindingRepository implements ProjectBindingRepositoryPort {
       keycloakAudience: row.keycloak_audience,
       identityProvider: row.identity_provider,
     };
+  }
+
+  async resolveTenant(slug: string): Promise<ProjectTenant | undefined> {
+    // A different function, not this one with the Keycloak checks skipped —
+    // `resolve_project_tenant` (migration 0026) returns two ids and no issuer,
+    // so there is nothing here that could be mistaken for a binding.
+    const result = await this.pool.query<{ project_id: string; customer_id: string }>(
+      "SELECT * FROM resolve_project_tenant($1)",
+      [slug],
+    );
+
+    const row = result.rows[0];
+    if (row === undefined) return undefined;
+
+    return { projectId: row.project_id, customerId: row.customer_id };
   }
 }
 

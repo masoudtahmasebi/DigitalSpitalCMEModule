@@ -87,8 +87,24 @@ export class RolesGuard implements CanActivate {
     const principal = request.principal;
 
     if (principal === undefined) {
-      // AuthGuard runs first; reaching here without a principal means the
-      // guard order was misconfigured. Fail closed rather than assume public.
+      // Two very different situations used to share one message and one 401,
+      // and the message named the rarer of the two (P22-01).
+      //
+      // A valid staff session with no `X-DS-Project` header is by far the
+      // common case: this route is tenant-scoped and the console has not told
+      // the API which customer to act within. That is a missing *selection*,
+      // not a missing *credential*, and answering 401 sent the console to its
+      // login form — so "pick a customer" presented as "you have been logged
+      // out", which is exactly how it was reported.
+      if (request.staffProfile !== undefined) {
+        throw AppError.badRequest(
+          "this route is tenant-scoped and no X-DS-Project header was sent",
+        );
+      }
+
+      // No staff profile either, so nothing established an identity: AuthGuard
+      // runs first, and reaching here means the guard order was misconfigured.
+      // Fail closed rather than assume public.
       throw AppError.unauthenticated("no principal resolved before RolesGuard");
     }
 

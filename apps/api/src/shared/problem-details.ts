@@ -63,8 +63,8 @@ export class AppError extends Error {
     this.name = "AppError";
   }
 
-  static notFound(reason: string): AppError {
-    return new AppError("not_found", reason);
+  static notFound(reason: string, clientDetail?: string): AppError {
+    return new AppError("not_found", reason, clientDetail);
   }
 
   static forbidden(reason: string): AppError {

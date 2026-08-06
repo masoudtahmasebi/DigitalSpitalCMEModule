@@ -221,11 +221,26 @@ async function asStaff(
   path: string,
   body?: unknown,
 ): Promise<{ status: number; body: any }> {
+  return asStaffIn(session, undefined, method, path, body);
+}
+
+/**
+ * The same, naming a project — which is what every tenant-scoped console screen
+ * does, and what `asStaff` deliberately does not.
+ */
+async function asStaffIn(
+  session: StaffSession,
+  projectSlug: string | undefined,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; body: any }> {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers: {
       cookie: session.cookie,
       "x-ds-csrf": session.csrf,
+      ...(projectSlug === undefined ? {} : { "x-ds-project": projectSlug }),
       ...(body === undefined ? {} : { "content-type": "application/json" }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -642,5 +657,147 @@ describe("operator accounts", () => {
       `/admin/staff/${invitedId}/sign-out-everywhere`,
     );
     expect(status).toBe(204);
+  });
+});
+
+/**
+ * The console's tenant screens, on a project that has no Keycloak binding
+ * (P22-01).
+ *
+ * ## What this reproduces
+ *
+ * A super administrator signs in, `GET /admin/customers` succeeds — and
+ * `GET /admin/courses` answers **401 Unauthenticated**. Reported from a live
+ * deployment, and it reads as "the login did not work" when the session is
+ * perfectly fine.
+ *
+ * The cause is that `authenticateStaffPlane` resolved the project through
+ * `resolve_project_binding`, which returns nothing when `keycloak_issuer` or
+ * `keycloak_audience` is NULL — deliberately, because a project with no binding
+ * cannot authenticate a *learner*. But the staff plane needs exactly one field
+ * out of that lookup, `customer_id`, and needs none of the Keycloak ones: a
+ * staff session is local to the platform and never touches an IdP (ADR-0012).
+ *
+ * So a project created through the console — where the Keycloak fields are
+ * optional, because they belong to the learner plane and may legitimately be
+ * filled in later — locked every operator out of every tenant screen for it.
+ * A fresh installation is the same case: it has no project at all until an
+ * operator makes one, and the screens they need in order to make one were the
+ * screens that refused.
+ *
+ * ## And the refusals had to become distinguishable
+ *
+ * Three unrelated failures all produced a bare 401 with no `detail`: an expired
+ * session, a project slug that does not exist, and a tenant screen reached with
+ * no project named at all. The console treats 401 as "session gone" and bounces
+ * to the login form, so a *configuration* problem presented as a *logout* —
+ * which is precisely why this was hard to see from the browser.
+ */
+describe("a project with no Keycloak binding is still a project (P22-01)", () => {
+  let unboundSlug: string;
+  let boundSlug: string;
+
+  beforeAll(async () => {
+    const departmentId = await insert(
+      "INSERT INTO departments (customer_id, slug, name) VALUES ($1,$2,$3) RETURNING id",
+      [existingCustomerId, `unbound-dept-${RUN}`, "Abteilung"],
+    );
+
+    // Exactly what the console's own "create project" produces: no issuer, no
+    // audience. Those are learner-plane configuration and are filled in later,
+    // or never, for a customer that only ever uses the standalone portal.
+    unboundSlug = `unbound-${RUN}`;
+    await insert(
+      `INSERT INTO projects (customer_id, department_id, slug, name)
+       VALUES ($1,$2,$3,$4) RETURNING id`,
+      [existingCustomerId, departmentId, unboundSlug, "Ohne Keycloak"],
+    );
+
+    boundSlug = `bound-${RUN}`;
+    await insert(
+      `INSERT INTO projects (customer_id, department_id, slug, name,
+                             keycloak_issuer, keycloak_audience)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [
+        existingCustomerId,
+        departmentId,
+        boundSlug,
+        "Mit Keycloak",
+        "https://kc.example.test/realms/x",
+        "ds-widget",
+      ],
+    );
+  });
+
+  it("lets an operator reach a tenant screen for it", async () => {
+    const result = await asStaffIn(superSession, unboundSlug, "GET", "/admin/courses");
+    expect(result.status).toBe(200);
+  });
+
+  it("still works for a project that does have a binding", async () => {
+    const result = await asStaffIn(superSession, boundSlug, "GET", "/admin/courses");
+    expect(result.status).toBe(200);
+  });
+
+  it("scopes it to that project's customer, not to every customer", async () => {
+    // The customer administrator's grant is on `existingCustomerId`, which both
+    // projects belong to — so this proves the customer was resolved rather than
+    // the check skipped. The refusal case is the next test.
+    const result = await asStaffIn(tenantSession, unboundSlug, "GET", "/admin/courses");
+    expect(result.status).toBe(200);
+  });
+
+  it("refuses an operator with no grant reaching that customer, as a 403", async () => {
+    const otherCustomerId = await insert(
+      "INSERT INTO customers (slug, name) VALUES ($1,$2) RETURNING id",
+      [`elsewhere-${RUN}`, "Woanders GmbH"],
+    );
+    const otherDept = await insert(
+      "INSERT INTO departments (customer_id, slug, name) VALUES ($1,$2,$3) RETURNING id",
+      [otherCustomerId, `elsewhere-dept-${RUN}`, "Abteilung"],
+    );
+    const elsewhere = `elsewhere-project-${RUN}`;
+    await insert(
+      `INSERT INTO projects (customer_id, department_id, slug, name)
+       VALUES ($1,$2,$3,$4) RETURNING id`,
+      [otherCustomerId, otherDept, elsewhere, "Woanders"],
+    );
+
+    const result = await asStaffIn(tenantSession, elsewhere, "GET", "/admin/courses");
+    // 403, not 401: they are authenticated and the platform says so. Answering
+    // 401 would send the console to the login form for an authorization
+    // failure, which is how a permissions problem gets misread as a broken
+    // login.
+    expect(result.status).toBe(403);
+  });
+
+  it("says which project it could not find, rather than a bare 401", async () => {
+    const result = await asStaffIn(
+      superSession,
+      `does-not-exist-${RUN}`,
+      "GET",
+      "/admin/courses",
+    );
+
+    // 404: the caller is authenticated, so "no such project" is the honest
+    // answer and is safe to give — unlike the learner plane, where whether a
+    // slug exists is not a fact an anonymous caller should learn.
+    expect(result.status).toBe(404);
+    expect(result.body.detail).toBeDefined();
+  });
+
+  it("tells an operator who named no project that a project is needed", async () => {
+    const result = await asStaff(superSession, "GET", "/admin/courses");
+
+    // Not 401. The session is valid; what is missing is a selection the console
+    // has to make. Reporting it as unauthenticated is what turned "pick a
+    // customer" into "you have been logged out".
+    //
+    // 422 rather than 400 because that is what this API calls a refusal about
+    // what the caller sent — `AppError.badRequest`, whose whole contract is
+    // that the reason is safe to echo back. Inventing a 400 for one case would
+    // add a status to the contract to say something 422 already says.
+    expect(result.status).toBe(422);
+    expect(result.body.detail).toBeDefined();
   });
 });
