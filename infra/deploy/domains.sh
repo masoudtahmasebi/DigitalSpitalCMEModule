@@ -103,13 +103,23 @@ ds_derive_domains() {
   : "${DS_PORTAL_API_BASE:=${API_DOMAIN_URL}}"
   : "${DS_PORTAL_REDIRECT_URI:=${PORTAL_BASE_URL}/}"
 
-  # Which project the two frontends act within, sent as `X-DS-Project`. Not
-  # derivable from a domain — it names a row in the database — so `PROJECT_SLUG`
-  # is a value somebody sets. The per-app spellings exist because a deployment
-  # may eventually point the console at one project and the portal at another;
-  # until then, one value covers both.
-  : "${DS_ADMIN_PROJECT_SLUG:=${PROJECT_SLUG:-}}"
-  : "${DS_PORTAL_PROJECT_SLUG:=${PROJECT_SLUG:-}}"
+  # Which project each frontend acts within, sent as `X-DS-Project`.
+  #
+  # **Per surface, not per platform.** There was one `PROJECT_SLUG` and it named
+  # a customer — `medice-adhs` — in a file that describes an installation which
+  # is supposed to serve many. The two are genuinely different questions:
+  #
+  #   * The **portal** is a customer's front door. `fortbildung.…` shows one
+  #     project's catalogue, so a project is what that hostname *is*. A second
+  #     customer gets a second portal hostname, or the portal learns to pick
+  #     from the host header — either way it is a property of the surface.
+  #   * The **console** spans customers: a super administrator's first screen is
+  #     the customer registry, which deliberately sends no project header at
+  #     all. What it needs is a *default* for the tenant-scoped screens until
+  #     the operator has chosen one — see P18-03, which makes that a choice in
+  #     the interface rather than a line in a file.
+  : "${DS_ADMIN_PROJECT_SLUG:=${ADMIN_DEFAULT_PROJECT_SLUG:-}}"
+  : "${DS_PORTAL_PROJECT_SLUG:=${PORTAL_PROJECT_SLUG:-}}"
 
   # The portal's CSP names the realm's *origin* — scheme, host, optional port —
   # so that the browser will let it redirect a learner to Keycloak. Cut from the
@@ -179,9 +189,9 @@ ds_check_domains() {
   # The frontends' containers refuse to start without a project slug, which is
   # a container restart loop rather than a message. Said here instead.
   [[ -n "${DS_ADMIN_PROJECT_SLUG:-}" ]] || complain \
-    "PROJECT_SLUG is not set — the admin console needs one to send as X-DS-Project"
+    "ADMIN_DEFAULT_PROJECT_SLUG is not set — the console needs a default project"
   [[ -n "${DS_PORTAL_PROJECT_SLUG:-}" ]] || complain \
-    "PROJECT_SLUG is not set — the portal needs one to send as X-DS-Project"
+    "PORTAL_PROJECT_SLUG is not set — the portal serves one project's catalogue"
 
   # The portal redirects learners to Keycloak, and its CSP has to allow that
   # origin. Empty, the redirect is blocked by the browser and sign-in fails

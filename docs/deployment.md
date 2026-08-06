@@ -87,17 +87,17 @@ PasswordAuthentication no
 and `systemctl restart ssh`. Do this **after** you have confirmed you can log
 in as `deploy` with your key, not before.
 
-### Then, as `deploy`: the clone and the state directory
+### Then, as `deploy`: the clone
 
 ```bash
 mkdir -p ~/Repositories && cd ~/Repositories
 git clone git@github.com:masoudtahmasebi/DigitalSpitalCMEModule.git
-
-# Everything that is not in git: the configuration, the generated credentials,
-# the Caddy blocks the deploy writes. Deliberately outside the clone, so a
-# `git checkout` can never touch a credential.
-install -d -m 700 ~/ds-education
 ```
+
+`~/ds-education/` — the configuration, the generated credentials, the Caddy
+blocks the deploy writes — is created by `deploy.sh` on its first run. It is
+deliberately outside the clone, so a `git checkout` can never touch a
+credential.
 
 The clone needs a read-only deploy key on the repository (`Settings → Deploy
 keys`) or the account's own key — whichever, `git fetch` must work
@@ -198,44 +198,57 @@ platform is in GitHub.
 The answers no default can be right about. Written once, never touched by a
 deploy.
 
+Run the deploy once and it creates the file from the template, then stops:
+
 ```bash
-cd ~/Repositories/DigitalSpitalCMEModule
-install -m 600 infra/deploy/config.env.example ~/ds-education/config.env
-$EDITOR ~/ds-education/config.env
+cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
+./deploy.sh                       # creates ~/ds-education/config.env, then stops
+nano ~/ds-education/config.env
 ```
 
-For this deployment, the four lines that matter:
+The platform-level lines — nothing here names a customer:
 
 ```
 BASE_DOMAIN=digitalspital.com
-PROJECT_SLUG=medice-adhs
 ACME_EMAIL=technik@digitalspital.de
+```
+
+Then the per-surface block, which does. It is separate, and labelled, because
+these are properties of a _browser app that must know them before it has spoken
+to any API_ — not of the installation:
+
+```
+PORTAL_PROJECT_SLUG=medice-adhs
+PORTAL_KEYCLOAK_ISSUER=https://<their-keycloak>/realms/<their-realm>
+PORTAL_KEYCLOAK_CLIENT_ID=ds-portal
+ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
 EXTRA_CORS_ORIGINS=https://www.medice.de
 ```
 
-Plus the portal's Keycloak client — **per project, not per platform**:
-
-```
-PORTAL_KEYCLOAK_ISSUER=https://<their-keycloak>/realms/<their-realm>
-PORTAL_KEYCLOAK_CLIENT_ID=ds-portal
-```
-
-The API has no Keycloak configuration at all. It validates each learner's token
-against the issuer on the **project row** (`projects.keycloak_issuer`), read per
-request — which is what lets one installation serve several customers with
-separate realms, and what makes the console immune to a customer's Keycloak
+**The API has no Keycloak configuration at all.** It validates each learner's
+token against the issuer on the **project row** (`projects.keycloak_issuer`),
+read per request — which is what lets one installation serve several customers
+with separate realms, and what makes the console immune to a customer's Keycloak
 being down (ADR-0012). Three deployment-wide Keycloak variables used to exist
 here and were read by nothing; they are gone (P17-02).
 
-What remains is the portal's own OIDC client, because a browser app has to know
-where to send a learner before it has spoken to any API. It must name the same
-realm as the project above — `deploy.sh` warns when the two disagree, which is
-otherwise a learner signing in successfully and then having every request
-refused.
+The portal keeps an issuer because a browser app has to know where to send a
+learner before it has spoken to any API. It must name the same realm as
+`PORTAL_PROJECT_SLUG` — `deploy.sh` warns when they disagree, which is otherwise
+a learner signing in successfully and then having every request refused.
+
+`ADMIN_DEFAULT_PROJECT_SLUG` is a _default_, not an identity: a super
+administrator spans customers and their first screen is the customer registry,
+which sends no project header at all. `EXTRA_CORS_ORIGINS` is the union across
+every customer on the installation, which is wider than any one of them needs.
+Both are tracked as P18-03 and P18-04 — the console should let an operator pick
+the project, and CORS should be per project. The obstacle for CORS is not
+storage: a preflight `OPTIONS` carries no custom header, so the API cannot know
+which project is being asked about at the moment it must answer.
 
 ### On the server: `~/ds-education/secrets.env`
 
-You do not write this one. On the first deploy, `deploy.sh` generates:
+You do not write this one. On the next run, `deploy.sh` generates:
 
 | Variable                      | What it protects                              |
 | ----------------------------- | --------------------------------------------- |
@@ -274,7 +287,7 @@ it configures, and rotated nothing. The server owns both halves now (P17-01).
 
 ### What the preflight checks, so you do not have to
 
-`deploy.sh --check` runs on the host before any image is built, and asserts:
+`deploy.sh --check` runs on the host before anything is built, and asserts:
 
 - every hostname a domain implies, and that they are mutually consistent — the
   staff cookie's scope is a parent of the console and the API, the CORS list
@@ -305,18 +318,22 @@ Push to `main`, or run **Actions → Deploy → Run workflow**. In order, it:
    this point, and this is where most first deployments stop. It then asks the
    host what it believes its own API hostname is, rather than rebuilding the
    derivation from a copy of the configuration the workflow no longer holds.
-2. **Build** — four images, pushed to `ghcr.io`, tagged with the short SHA and
-   `latest`. Built here, never on the host: a failed build on the target takes
-   the site with it, and a rollback should be a tag change rather than a
-   rebuild. None of the four carries a hostname, so the same image is
-   deployable to any environment.
-3. **Deploy** — `git fetch && git checkout <sha>` in the host's clone, then
-   `deploy.sh` with the four image tags in its environment. The script generates
-   any missing credential, derives the domains, backs up the database, migrates
-   as `ds_migrator`, starts the stack and waits for the API to report healthy.
-4. **Smoke test** — `GET /health` from GitHub's runner, over public DNS and
+2. **Deploy** — `git fetch && git checkout <sha>` in the host's clone, then
+   `deploy.sh`. The script generates any missing credential, derives the
+   domains, **builds the four images**, backs up the database, migrates as
+   `ds_migrator`, starts the stack and waits for the API to report healthy.
+3. **Smoke test** — `GET /health` from GitHub's runner, over public DNS and
    real TLS. The deploy script already checked it from the host; this checks
    that the internet agrees.
+
+There is no registry. The host builds from its own checkout and tags each image
+with the commit, so `docker images` is a deployment history and a rollback is an
+image already on the disk (ADR-0013). A failed build cannot take the site down:
+nothing is swapped until the build has succeeded.
+
+The first build takes ten to fifteen minutes; later ones are two to four,
+because all four images share one `deps` layer and Docker caches it. The
+workspace is installed **once** however many images change.
 
 The commit is checked out **detached at an exact SHA**, not pulled to a branch
 tip: `main` may have moved in the twenty minutes since CI went green, and a
@@ -324,8 +341,14 @@ deploy of a commit nothing tested is the thing this whole workflow exists to
 prevent. `git rev-parse HEAD` on the server answers "what is running?" without
 trusting the workflow's memory of it.
 
-The first run takes about ten minutes, most of it building. Certificates arrive
-within a minute of Caddy starting.
+Certificates arrive within a minute of Caddy starting.
+
+### If the deploy never runs
+
+The automatic trigger is `workflow_run` on **CI passing on `main`**. Work on a
+feature branch never deploys, however green it is — that is the gate, not a
+fault. Until something is merged to `main`, use **Actions → Deploy → Run
+workflow** and pick the branch; that deploys that branch's head.
 
 ### Then create the first administrator (P14-01)
 
@@ -388,9 +411,10 @@ cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
 ./deploy.sh             # apply it
 ```
 
-Nothing is rebuilt for a configuration change. Moving a domain is the same
-thing: change `BASE_DOMAIN`, point the DNS, redeploy. The frontends read their
-configuration at container start, so the running containers pick up the new
+For a configuration change nothing needs rebuilding at all — add `--no-build`
+and it restarts against the images already there. Moving a domain is the same:
+change `BASE_DOMAIN`, point the DNS, `./deploy.sh --no-build`. The frontends
+read their configuration at container start, so the containers pick up the new
 value on restart rather than needing a new image.
 
 ### Looking at the running stack
@@ -408,8 +432,20 @@ on a stack that does not exist, which reads as "everything is down".
 ### Rolling back
 
 **Actions → Deploy → Run workflow**, with `rollback_tag` set to a previous short
-SHA. Migrations are **not** re-run — they are additive by convention, so an
-older image works against a newer schema, and this script will never run one
+SHA — or on the server:
+
+```bash
+cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
+./deploy.sh --rollback 1a2b3c4
+```
+
+Nothing is rebuilt: every image is tagged with its commit and the old ones are
+still on the disk, which is the whole reason the tag is the commit. Images are
+pruned after a week, so a rollback further back than that means checking the
+commit out and building it again.
+
+Migrations are **not** re-run — they are additive by convention, so an older
+image works against a newer schema, and this script will never run one
 backwards.
 
 ### Checking a configuration change before applying it
@@ -456,7 +492,7 @@ cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
 
 # What is actually deployed, according to the server rather than a workflow log.
 git -C ~/Repositories/DigitalSpitalCMEModule rev-parse --short HEAD
-cat ~/ds-education/images.env
+docker images ds-education/api
 
 # What the browser bundles were told at container start.
 curl -s https://verwaltung.digitalspital.com/config.js

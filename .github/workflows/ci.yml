@@ -173,7 +173,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/api/Dockerfile
+          file: Dockerfile
+          target: api
           push: false
           load: true
           tags: ds-api:ci
@@ -209,11 +210,18 @@ jobs:
       # No build arguments: the frontends read their configuration from
       # /config.js at container start (P16-02), so these images carry no
       # hostname at all and are deployable to any environment.
+      #
+      # All four targets come from the one root Dockerfile and share its `deps`
+      # stage, so the workspace is installed once for all of them — here and,
+      # more importantly, on the deployment host, which builds them now
+      # (ADR-0013). This job is what verifies that file before a server ever
+      # runs it.
       - name: Build the admin console image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/admin/Dockerfile
+          file: Dockerfile
+          target: admin
           push: false
           load: true
           tags: ds-admin:ci
@@ -224,7 +232,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/portal/Dockerfile
+          file: Dockerfile
+          target: portal
           push: false
           cache-from: type=gha,scope=portal
           cache-to: type=gha,scope=portal,mode=max
@@ -269,7 +278,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/widget/Dockerfile
+          file: Dockerfile
+          target: widget
           push: false
           cache-from: type=gha,scope=widget
           cache-to: type=gha,scope=widget,mode=max

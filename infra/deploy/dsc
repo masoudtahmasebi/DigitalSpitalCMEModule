@@ -4,7 +4,7 @@
 #
 # The stack's configuration lives in two files outside the git clone, and
 # `deploy.sh` sources both before it calls compose. Without that, a bare
-# `docker compose ps` interpolates an empty `${IMAGE_API}` and reports on a
+# `docker compose ps` interpolates an empty `${DS_COMMIT}` and reports on a
 # stack that does not exist — which reads as "everything is down".
 #
 #   ./dsc ps
@@ -41,17 +41,10 @@ set +a
 source "${SCRIPT_DIR}/domains.sh"
 ds_derive_domains
 
-# The image tags the last deploy pinned, recorded by deploy.sh.
-#
-# Absent before the first deploy, and not an error here — but compose will then
-# refuse, because `${IMAGE_API}` has no value and no default. That is the right
-# answer: there is nothing deployed to inspect, and a default of `:latest`
-# would quietly describe an image this host has never run.
-if [[ -f "${STATE_DIR}/images.env" ]]; then
-  set -a
-  # shellcheck disable=SC1090,SC1091
-  source "${STATE_DIR}/images.env"
-  set +a
-fi
+# The image tag is the commit this clone is on, exactly as deploy.sh computes
+# it. So `./dsc` describes the checkout you are standing in — which is the
+# right answer, and the reason a rollback is `git checkout` plus a redeploy.
+DS_COMMIT="$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+export DS_COMMIT
 
 exec docker compose -f "${SCRIPT_DIR}/docker-compose.prod.yml" "$@"

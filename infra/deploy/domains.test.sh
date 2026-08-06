@@ -41,7 +41,8 @@ check() {
   # shellcheck source=./domains.sh
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
-  PROJECT_SLUG=medice-adhs
+  PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
   PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
   ds_derive_domains
 
@@ -68,7 +69,8 @@ check "DS_PORTAL_API_BASE"   "https://api.digitalspital.com"            "${got[1
 check "DS_PORTAL_REDIRECT_URI" "https://fortbildung.digitalspital.com/" "${got[11]}"
 
 # --- the derived set passes its own checks ---------------------------------
-if ( source ./domains.sh; BASE_DOMAIN=digitalspital.com; PROJECT_SLUG=medice-adhs; PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice; ds_derive_domains; ds_check_domains ) 2>/dev/null; then
+if ( source ./domains.sh; BASE_DOMAIN=digitalspital.com; PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs; PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice; ds_derive_domains; ds_check_domains ) 2>/dev/null; then
   passed=$((passed + 1))
 else
   failed=$((failed + 1))
@@ -80,7 +82,8 @@ fi
 actual=$(
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
-  PROJECT_SLUG=medice-adhs
+  PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
   API_DOMAIN=legacy-api.example.org
   ds_derive_domains
   printf '%s|%s' "$API_DOMAIN" "$API_DOMAIN_URL"
@@ -92,7 +95,8 @@ check "an explicit API_DOMAIN survives" \
 actual=$(
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
-  PROJECT_SLUG=medice-adhs
+  PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
   EXTRA_CORS_ORIGINS="https://www.medice.de"
   ds_derive_domains
   printf '%s' "$CORS_ALLOWED_ORIGINS"
@@ -116,7 +120,8 @@ check "ADMIN_LABEL is honoured" "admin.example.org|.example.org" "$actual"
 actual=$(
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
-  PROJECT_SLUG=medice-adhs
+  PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
   PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
   ds_derive_domains
   ds_derive_domains
@@ -150,7 +155,8 @@ refuses "an empty value"             eval 'BASE_DOMAIN='
 # --- the checks catch what a derivation cannot ------------------------------
 rejects_check() {
   local what="$1"; shift
-  if ( source ./domains.sh; BASE_DOMAIN=digitalspital.com; PROJECT_SLUG=medice-adhs; PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice; "$@"; ds_derive_domains; ds_check_domains ) >/dev/null 2>&1; then
+  if ( source ./domains.sh; BASE_DOMAIN=digitalspital.com; PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs; PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice; "$@"; ds_derive_domains; ds_check_domains ) >/dev/null 2>&1; then
     failed=$((failed + 1))
     echo "xx ds_check_domains should have rejected: ${what}" >&2
   else
@@ -176,20 +182,21 @@ rejects_check "two services on one hostname" \
 # A slug names a row in the database and cannot be derived from a domain. The
 # frontends' containers refuse to start without one, which is a restart loop
 # rather than a message — so it is said here instead.
-rejects_check "a missing PROJECT_SLUG" \
-  eval 'PROJECT_SLUG='
+rejects_check "a missing PORTAL_PROJECT_SLUG" \
+  eval 'PORTAL_PROJECT_SLUG='
 
 # One PROJECT_SLUG covers both frontends, and a per-app value still wins.
 actual=$(
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
-  PROJECT_SLUG=medice-adhs
+  PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
   PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
   DS_PORTAL_PROJECT_SLUG=another-project
   ds_derive_domains
   printf '%s|%s' "$DS_ADMIN_PROJECT_SLUG" "$DS_PORTAL_PROJECT_SLUG"
 )
-check "PROJECT_SLUG covers both, per-app wins" "medice-adhs|another-project" "$actual"
+check "each surface names its own project" "medice-adhs|another-project" "$actual"
 
 # --- the Keycloak origin is cut from the issuer -----------------------------
 # The portal's CSP names an origin; the issuer is an origin plus a realm path.
@@ -198,7 +205,8 @@ check "PROJECT_SLUG covers both, per-app wins" "medice-adhs|another-project" "$a
 actual=$(
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
-  PROJECT_SLUG=medice-adhs
+  PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
   PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
   ds_derive_domains
   printf '%s' "$KEYCLOAK_ORIGIN"
@@ -208,7 +216,8 @@ check "KEYCLOAK_ORIGIN is the portal issuer's origin" "https://login.medice.de" 
 actual=$(
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
-  PROJECT_SLUG=medice-adhs
+  PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
   PORTAL_KEYCLOAK_ISSUER=http://127.0.0.1:8080/realms/ds-education
   ds_derive_domains
   printf '%s' "$KEYCLOAK_ORIGIN"
@@ -218,7 +227,8 @@ check "a port survives the cut" "http://127.0.0.1:8080" "$actual"
 actual=$(
   source ./domains.sh
   BASE_DOMAIN=digitalspital.com
-  PROJECT_SLUG=medice-adhs
+  PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
   PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
   KEYCLOAK_ORIGIN=https://sso.example.net
   ds_derive_domains

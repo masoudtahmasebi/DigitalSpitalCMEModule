@@ -24,15 +24,17 @@
 #
 # `DS_STATE_DIR` overrides the state location, which is what the tests use.
 #
-#   ./deploy.sh                 pull, migrate, restart, verify
+#   ./deploy.sh                 build, migrate, restart, verify
 #   ./deploy.sh --check         run the preflight only, change nothing
-#   ./deploy.sh --no-migrate    skip migrations (rolling back to an older image)
-#   ./deploy.sh --rollback TAG  redeploy a previous tag
+#   ./deploy.sh --no-build      restart without rebuilding (config change only)
+#   ./deploy.sh --no-migrate    skip migrations
+#   ./deploy.sh --rollback SHA  run images already built from an older commit
 #
 # ## The order, and why it is that order
 #
 # 1. Preflight: refuse early on anything missing, rather than half-deploying.
-# 2. Pull images. A registry hiccup must not stop the running site.
+# 2. Build the images. A failed build must not stop the running site — and it
+#    does not, because nothing is swapped until step 5.
 # 3. Back up the database, before any migration touches it.
 # 4. Migrate, as ds_migrator. Migrations here are additive by convention, so
 #    the old container keeps working against the new schema during the swap.
@@ -53,6 +55,7 @@ readonly STATE_DIR="${DS_STATE_DIR:-${HOME}/ds-education}"
 readonly CONFIG_FILE="${STATE_DIR}/config.env"
 
 RUN_MIGRATIONS=1
+RUN_BUILD=1
 ROLLBACK_TAG=""
 DRY_RUN=0
 
@@ -65,11 +68,14 @@ trap 'die "failed at line ${LINENO}. The previous version is still running."' ER
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-migrate) RUN_MIGRATIONS=0; shift ;;
+    # For a configuration change: the images are already right, only the
+    # environment they start with has moved.
+    --no-build)   RUN_BUILD=0; shift ;;
     # Everything up to and including the preflight, then stop. For checking a
     # freshly written .env.production before the first real deploy, when the
     # alternative is finding out halfway through.
     --check)      DRY_RUN=1; shift ;;
-    --rollback)   ROLLBACK_TAG="${2:-}"; [[ -n "$ROLLBACK_TAG" ]] || die "--rollback needs a tag"; shift 2 ;;
+    --rollback)   ROLLBACK_TAG="${2:-}"; [[ -n "$ROLLBACK_TAG" ]] || die "--rollback needs a commit"; shift 2 ;;
     -h|--help)    sed -n '2,30p' "$0"; exit 0 ;;
     *)            die "unknown option: $1" ;;
   esac
@@ -84,15 +90,27 @@ command -v docker >/dev/null || die "docker is not installed"
 docker compose version >/dev/null 2>&1 || die "docker compose v2 is not available"
 command -v openssl >/dev/null || die "openssl is not installed (needed to generate credentials)"
 
-# The operator's file. Never written by a deploy — if it is missing, that is a
-# server that has not been set up, and creating a default would be guessing at
-# a domain.
+# The state directory, before anything needs it. Created here rather than left
+# to a documented `install -d` step, because the documented step is the one
+# somebody skips — and the error it produces then is `install: invalid target`,
+# which is about the wrong thing entirely.
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR"
+
+# The operator's file. Seeded from the template rather than merely demanded:
+# the copy is mechanical, the *filling in* is the part that needs a person, and
+# a script that stops with "now edit this file" wastes nobody's time on the
+# half it could have done itself.
 if [[ ! -f "$CONFIG_FILE" ]]; then
-  mkdir -p "$STATE_DIR"
-  die "missing ${CONFIG_FILE}
-   Copy the template and fill it in, once:
-     install -m 600 ${SCRIPT_DIR}/config.env.example ${CONFIG_FILE}
-     \$EDITOR ${CONFIG_FILE}"
+  (umask 077 && cp "${SCRIPT_DIR}/config.env.example" "$CONFIG_FILE")
+  printf '\033[1;33m!!\033[0m %s\n' "Created ${CONFIG_FILE} from the template." >&2
+  die "Fill it in before deploying — at least BASE_DOMAIN, ACME_EMAIL,
+   PORTAL_PROJECT_SLUG, ADMIN_DEFAULT_PROJECT_SLUG and the two
+   PORTAL_KEYCLOAK_* values:
+
+     nano ${CONFIG_FILE}
+
+   Then run this again."
 fi
 
 perms="$(stat -c '%a' "$CONFIG_FILE")"
@@ -111,20 +129,16 @@ source "${SCRIPT_DIR}/secrets.sh"
 ds_ensure_secrets "$STATE_DIR" || die "could not prepare ${STATE_DIR}/secrets.env"
 ds_check_secrets || die "the generated credentials are not usable (see above)"
 
-# Which images to run.
+# Which commit this is. The image tag, so `docker images` is a deployment
+# history and a rollback is an image that is already on the disk.
 #
-# The workflow passes IMAGE_* in the environment; a human re-running this by
-# hand passes nothing and gets whatever was deployed last. Persisting them is
-# what makes `./dsc logs -f api` work afterwards without the operator knowing a
-# commit SHA — and what makes a re-run after a reboot deploy the same thing
-# rather than nothing.
-readonly IMAGES_FILE="${STATE_DIR}/images.env"
-if [[ -z "${IMAGE_API:-}" && -f "$IMAGES_FILE" ]]; then
-  set -a
-  # shellcheck disable=SC1090 # runtime path
-  source "$IMAGES_FILE"
-  set +a
-  log "Reusing the images from the last deploy"
+# From git rather than from an argument: the checkout *is* the version, and a
+# tag passed separately is a tag that can disagree with the code beside it.
+if DS_COMMIT="$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null)"; then
+  export DS_COMMIT
+else
+  die "not a git checkout: ${SCRIPT_DIR}
+   The deployment runs from a clone — see docs/deployment.md §1."
 fi
 
 # One BASE_DOMAIN, every hostname derived from it (P16-01). Sourced rather than
@@ -150,20 +164,12 @@ ds_check_domains || die "the derived configuration is inconsistent (see above)"
 # The credentials are not in this list: `ds_check_secrets` has already asserted
 # them, and they come from a file no human edits.
 for required in \
-  BASE_DOMAIN ACME_EMAIL PROJECT_SLUG \
+  BASE_DOMAIN ACME_EMAIL \
   POSTGRES_DB POSTGRES_SUPERUSER \
+  PORTAL_PROJECT_SLUG ADMIN_DEFAULT_PROJECT_SLUG \
   PORTAL_KEYCLOAK_ISSUER PORTAL_KEYCLOAK_CLIENT_ID
 do
   [[ -n "${!required:-}" ]] || die "missing required variable: ${required} (set it in ${CONFIG_FILE})"
-done
-
-# The image tags are not configuration and do not belong in config.env — they
-# come from the deploy workflow, or from what the last deploy recorded. Said
-# separately so the message points at the right thing.
-for required in IMAGE_API IMAGE_ADMIN IMAGE_PORTAL IMAGE_WIDGET; do
-  [[ -n "${!required:-}" ]] || die "no ${required}, and none recorded in ${IMAGES_FILE}
-   The deploy workflow passes these. To run by hand, name them:
-     IMAGE_API=ghcr.io/<owner>/<repo>/api:<tag> … ./deploy.sh"
 done
 
 # The cookie scope, the CORS list and the CSP origin are checked by
@@ -179,34 +185,21 @@ fi
 
 if [[ -n "$ROLLBACK_TAG" ]]; then
   log "Rolling back to ${ROLLBACK_TAG}"
-  IMAGE_API="${IMAGE_API%:*}:${ROLLBACK_TAG}"
-  IMAGE_ADMIN="${IMAGE_ADMIN%:*}:${ROLLBACK_TAG}"
-  # The portal was missing here, so a rollback left it on the *new* tag while
-  # everything else went back — a version skew between a frontend and the API
-  # it calls, which is the one thing a rollback exists to avoid.
-  IMAGE_PORTAL="${IMAGE_PORTAL%:*}:${ROLLBACK_TAG}"
-  IMAGE_WIDGET="${IMAGE_WIDGET%:*}:${ROLLBACK_TAG}"
-  export IMAGE_API IMAGE_ADMIN IMAGE_PORTAL IMAGE_WIDGET
+  # One variable, because every image is tagged with the same commit. The old
+  # form set four and forgot the portal for a while — a version skew between a
+  # frontend and the API it calls, which is the one thing a rollback exists to
+  # avoid.
+  DS_COMMIT="$ROLLBACK_TAG"
+  export DS_COMMIT
+  # Nothing is rebuilt: the images from that commit are still on this disk,
+  # which is the whole reason the tag is the commit.
+  RUN_BUILD=0
   # A rollback to an older image against a newer schema is why migrations are
   # additive. Running them again would be pointless; running them *backwards*
   # is not something this script will ever do.
   RUN_MIGRATIONS=0
 fi
 
-# Recorded after the rollback rewrite, so what is written is what will run.
-# Only on a real deploy: `--check` promises to change nothing.
-if [[ "$DRY_RUN" != "1" ]]; then
-  (
-    umask 077
-    {
-      echo "# Written by deploy.sh. The images this host is running."
-      printf 'IMAGE_API=%s\n' "$IMAGE_API"
-      printf 'IMAGE_ADMIN=%s\n' "$IMAGE_ADMIN"
-      printf 'IMAGE_PORTAL=%s\n' "$IMAGE_PORTAL"
-      printf 'IMAGE_WIDGET=%s\n' "$IMAGE_WIDGET"
-    } > "$IMAGES_FILE"
-  )
-fi
 
 # The bare domain, which is nobody's service hostname.
 #
@@ -262,10 +255,26 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 2. Pull
+# 2. Build
 # ---------------------------------------------------------------------------
-log "Pulling images"
-compose pull --quiet api admin portal widget
+# On this host, from this checkout. A failed build leaves the running site
+# untouched: nothing is swapped until step 5, and this script exits non-zero
+# long before then.
+#
+# The four images share one `deps` stage, so the workspace is installed once
+# however many of them are rebuilt.
+if [[ "$RUN_BUILD" == "1" ]]; then
+  log "Building images at ${DS_COMMIT}"
+  compose build --pull api admin portal widget
+else
+  log "Skipping the build (--no-build)"
+  # A tag that was never built is a `compose up` that fails on a missing image
+  # after the backup and the migration have already run.
+  for service in api admin portal widget; do
+    docker image inspect "ds-education/${service}:${DS_COMMIT}" >/dev/null 2>&1 || die \
+      "no image ds-education/${service}:${DS_COMMIT} — drop --no-build, or --rollback to a commit that was built"
+  done
+fi
 
 # ---------------------------------------------------------------------------
 # 3. Back up before touching the schema
@@ -395,11 +404,14 @@ for attempt in $(seq 1 20); do
   sleep 5
 done
 
-# Old images accumulate fast on a small host; a full disk is its own outage.
-log "Pruning unused images"
+# Old images and build layers accumulate fast on a host that builds; a full
+# disk is its own outage. A week keeps enough tags for a rollback to be
+# instant, which is the point of tagging by commit.
+log "Pruning unused images and build cache"
 docker image prune --force --filter "until=168h" >/dev/null
+docker builder prune --force --filter "until=168h" >/dev/null
 
-log "Deployed."
+log "Deployed ${DS_COMMIT}."
 log "  API     https://${API_DOMAIN}"
 log "  Admin   https://${ADMIN_DOMAIN}"
 log "  Portal  https://${PORTAL_DOMAIN}"
