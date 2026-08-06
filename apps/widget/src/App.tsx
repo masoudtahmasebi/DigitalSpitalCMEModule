@@ -231,9 +231,19 @@ function Catalogue(props: {
 
   return (
     <div className="space-y-6">
-      <div className="px-4 pt-4">
-        <BrandLogo apiBase={props.apiBase} projectSlug={props.projectSlug} />
-      </div>
+      {/*
+        The wrapper only when there is something in it.
+        `BrandLogo` returns null when the customer has set no logo, but
+        `px-4 pt-4` inside a `space-y-6` does not — it left 40 px of nothing
+        above the hero, which the layout draws flush to the host page's header.
+        Visible the moment the catalogue was screenshotted at 430 px against
+        the mobile design, and just as wrong at 1440 px.
+      */}
+      {branding.logoUrl === undefined ? null : (
+        <div className="px-4 pt-4">
+          <BrandLogo apiBase={props.apiBase} projectSlug={props.projectSlug} />
+        </div>
+      )}
       <CourseList client={props.client} branding={branding} onOpen={props.onOpen} />
     </div>
   );

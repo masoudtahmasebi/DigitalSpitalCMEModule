@@ -19,17 +19,17 @@ Supplied at 3840 px — 2× — and stored at 1× because 2× cost 19 MB against
 24 MB repository, and 1× is the resolution the design is actually specified in.
 Ask the client for the 2× export if a specific measurement is ever in doubt.
 
-| File                                | Desktop page       | Notes                            |
-| ----------------------------------- | ------------------ | -------------------------------- |
-| `uebersicht.png`                    | page 01            | the catalogue                    |
-| `uebersicht-variante.png`           | page 01, alternate | see below                        |
-| `detailseite-uebersicht.png`        | page 03            | Übersicht tab                    |
-| `detailseite-zertifizierung.png`    | page 04            | Zertifizierung tab               |
-| `detailseite-experten-referenten.png` | page 05          | Referenten tab                   |
-| `detailseite-mediathek.png`         | page 02            | Mediathek tab                    |
-| `detailseite-mediathek-variante.png` | page 02, alternate | see below                       |
-| `player-zusammenfassung-v1.png`     | pages 06–08        | player, Zusammenfassung tab      |
-| `player-zusammenfassung-v2.png`     | pages 06–08        | the later of the two             |
+| File                                  | Desktop page       | Notes                       |
+| ------------------------------------- | ------------------ | --------------------------- |
+| `uebersicht.png`                      | page 01            | the catalogue               |
+| `uebersicht-variante.png`             | page 01, alternate | see below                   |
+| `detailseite-uebersicht.png`          | page 03            | Übersicht tab               |
+| `detailseite-zertifizierung.png`      | page 04            | Zertifizierung tab          |
+| `detailseite-experten-referenten.png` | page 05            | Referenten tab              |
+| `detailseite-mediathek.png`           | page 02            | Mediathek tab               |
+| `detailseite-mediathek-variante.png`  | page 02, alternate | see below                   |
+| `player-zusammenfassung-v1.png`       | pages 06–08        | player, Zusammenfassung tab |
+| `player-zusammenfassung-v2.png`       | pages 06–08        | the later of the two        |
 
 ## The pairs
 

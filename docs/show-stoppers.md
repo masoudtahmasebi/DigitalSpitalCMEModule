@@ -827,6 +827,49 @@ requirements document was written from.
 
 ---
 
+## S22 · The V2 desktop exports disagree with the delivered PDF — **which is current?**
+
+- **Owner:** DigitalSpital → the client's designer · **Raised:** 06.08
+
+The archive of 06.08 carried nine desktop screens as PNG exports from the
+design tool, at the resolution the layout was drawn at. They are the same
+screens as pages 01–08 of the delivered PDF, and on the catalogue they are
+**not the same drawing**. Three differences, in `docs/design/desktop/`:
+
+1. **No tab row.** The PDF puts `On Demand` / `Weitere` as folder tabs on the
+   panel's top edge — the arrangement ticket #59 turned into an extension
+   point for a future Live/Zoom tab. The V2 export has no tabs at all.
+2. **A section strapline the PDF does not have.** "On-Demand-Fortbildungen –
+   volle Flexibilität und jederzeit verfügbar", teal and bold, above the
+   filters. There is nowhere in the schema this comes from: it is per section,
+   not per project, and it is not a course field.
+3. **No card outline.** The V2 panel has no border and no rounded top corner;
+   it is filters and a divider on the page background.
+
+Read together with the mobile export — which _does_ show the section's name
+("On Demand") as a heading over the filters — the V2 desktop looks like a
+later revision that replaced the tabs with a strapline. But three screens in
+that archive arrived **twice, with different content and no note**, which is
+exactly what an export of a working file in mid-revision looks like.
+
+**The question:** is the V2 set newer than the PDF, and does it replace it?
+
+Until it is answered the implementation follows the **PDF**, because that is
+the delivered document — recorded in `docs/design/desktop/README.md` so the
+next person meets the reasoning rather than the contradiction.
+
+**What it costs to be wrong.** Little, and it is worth saying so: the tab row
+is one component behind `CATALOG_SECTIONS`, the strapline is one string, and
+the panel's border is one class. Nothing downstream depends on which way this
+goes. It needs an answer, not a decision from us.
+
+**One thing was taken from the V2 export regardless**, because both it and the
+mobile export agree and the PDF is merely ambiguous: the orange chevron on the
+filter selects is a **full-height block with a rounded bottom-right corner**,
+not the inset rounded square that was built from the PDF's softer edges.
+
+---
+
 ## What is not blocked
 
 The API is built and the learner journey runs end to end — catalog, gated

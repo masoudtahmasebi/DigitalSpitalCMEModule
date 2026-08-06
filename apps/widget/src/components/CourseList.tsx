@@ -123,11 +123,48 @@ export function CourseList(props: {
           up with the panel's left edge. That is the widget's job rather than
           the host theme's, because the hero is the part that must bleed and a
           WordPress container would stop it. */}
-      <div className={`${CONTENT} mt-10 sm:mt-16`}>
+      {/*
+        ## The same three elements, two arrangements (P19-01)
+
+        Wide: folder tabs standing on the panel's top edge, the selected one
+        white and continuous with the panel below it.
+
+        Narrow: the selected section's name is a heading **inside** the card's
+        top edge, and the sections that are not selected become full-width
+        buttons **below** the card — which is where the mobile layout draws
+        "Weitere".
+
+        One tab row either way, reordered rather than re-rendered:
+        `max-sm:order-2` moves it under the panel and the selected tab hides
+        there, because the heading above already names it. Rendering the tabs
+        twice would put every label in the document twice — and `display: none`
+        only removes the duplicate for something that has the stylesheet, which
+        a screen reader walking the markup does not.
+      */}
+      <div className={`${CONTENT} mt-6 flex flex-col sm:mt-16`}>
+        {/*
+          The card's top edge on the narrow layout, carrying the heading. The
+          panel below it draws its own left, right and bottom borders and no
+          top border, so the two meet as one continuous outline rather than as
+          a 2 px rule across the middle of the drawing's single line.
+        */}
+        <h2 className="order-1 rounded-t-xl border-x border-t border-brand-500 bg-white px-5 pb-1 pt-6 text-center text-base font-semibold text-brand-700 sm:hidden">
+          {section.label}
+        </h2>
+
+        {/*
+          Wrapped only to carry an `order`. The panel is supplied by the
+          section — a host build can replace it (ticket #59) — so its class
+          list is not this component's to write.
+        */}
+        <div className="order-2">
+          <section.Panel client={props.client} onOpen={props.onOpen} />
+        </div>
+
         <div
           role="tablist"
           aria-label={de.catalog.title}
-          className="flex flex-wrap gap-2"
+          className="order-3 flex flex-wrap gap-2 sm:order-1 max-sm:mt-6 max-sm:flex-col max-sm:gap-3"
         >
           {CATALOG_SECTIONS.map((entry) => {
             const selected = entry.id === section.id;
@@ -140,8 +177,13 @@ export function CourseList(props: {
                 onClick={() => setSectionId(entry.id)}
                 className={`rounded-t-xl px-8 py-2.5 text-sm font-semibold transition-colors ${
                   selected
-                    ? "bg-white text-brand-700 shadow-[0_-2px_6px_rgba(0,0,0,0.04)]"
-                    : "bg-brand-600 text-brand-contrast hover:bg-brand-700"
+                    ? // Hidden below `sm`, where the heading above the panel is
+                      // this tab. Visually, and to a screen reader: the heading
+                      // is the same word, so nothing is lost, and a selected
+                      // tab rendered as one of the buttons underneath would
+                      // read as somewhere else to go.
+                      "bg-white text-brand-700 shadow-[0_-2px_6px_rgba(0,0,0,0.04)] max-sm:hidden"
+                    : "bg-brand-600 text-brand-contrast hover:bg-brand-700 max-sm:rounded-full max-sm:py-3.5 max-sm:text-base"
                 }`}
               >
                 {entry.label}
@@ -149,8 +191,6 @@ export function CourseList(props: {
             );
           })}
         </div>
-
-        <section.Panel client={props.client} onOpen={props.onOpen} />
       </div>
     </section>
   );
@@ -205,7 +245,18 @@ function CoursePanel(
     setFilters((current) => ({ ...current, ...patch, page: 1 }));
   }
 
-  const panel = "rounded-b-xl rounded-tr-xl border border-gray-200 bg-white";
+  /*
+   * `border-t-0` below `sm`: the tab row above supplies the card's top edge
+   * there, and the mobile layout draws that edge as one continuous line. Two
+   * borders meeting would render as a 2 px rule across the card exactly where
+   * the drawing has one.
+   *
+   * The border is `brand-500` at that width for the same reason — the mobile
+   * card's outline is drawn in the brand colour, not in the neutral grey the
+   * wide layout uses.
+   */
+  const panel =
+    "rounded-b-xl rounded-tr-xl border border-gray-200 bg-white max-sm:rounded-tr-none max-sm:border-t-0 max-sm:border-brand-500";
 
   if (list.loading && list.data === undefined) {
     return (
@@ -324,79 +375,150 @@ function CatalogHero(props: { branding: Branding }) {
 
   return (
     /*
-     * One large rounded corner at the bottom right, as the layout draws it,
-     * and square at the top: the hero meets the host page's header there and a
-     * radius would leave two mismatched curves against MEDICE's own chrome.
+     * ## Two arrangements, one tree (P19-01)
+     *
+     * On the wide screen the heading sits **on** the photograph, in white, over
+     * a teal gradient that clears to the right, and the seal is centred on the
+     * content column's right edge. The mobile layout does none of that: the
+     * photograph is a band of its own, the heading is underneath it in
+     * near-black on white, and the seal sits inside the photograph's
+     * bottom-left corner.
+     *
+     * A different arrangement, not a smaller one — but still one tree. Two
+     * trees behind `sm:hidden` / `hidden sm:block` would put the `<h1>` in the
+     * document twice, and `display: none` only removes the duplicate for a
+     * browser that has the stylesheet. It stays in the DOM for anything
+     * reading the markup, including this component's own tests.
+     *
+     * The previous version hid the photograph and the seal below `sm` and
+     * showed flat teal. That was a defensible reading of a layout which did
+     * not draw the narrow state, and is wrong now that it does.
+     *
+     * `overflow-hidden` only from `sm`: the mobile seal is inside the
+     * photograph, but the band is `h-[27.5rem]` and clipping it there would
+     * cut the seal if a narrower viewport shrank the band under it.
      */
-    <div className="relative overflow-hidden rounded-b-[2.5rem] bg-brand-600 sm:rounded-bl-none sm:rounded-br-[7rem]">
-      {photograph === undefined ? null : (
-        /*
-          Both layers are hidden below `sm`. The hero is as wide as the
-          photograph there, so the gradient has no room to clear and the
-          heading ends up white text over an image whose contrast nobody has
-          checked — the customer uploads it. The layout does not draw a narrow
-          state, so the safe reading of it is flat teal.
-        */
-        <>
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 hidden bg-cover bg-right sm:block"
-            style={{ backgroundImage: `url("${encodeURI(photograph)}")` }}
-          />
-          {/*
-            Teal over the photograph: opaque on the left where the heading sits
-            and clearing to the right so the image shows — the layout's
-            arrangement, and the reason the heading stays legible whatever the
-            customer uploaded. It runs to fully transparent because MEDICE's
-            photograph arrives already tinted to the brand colour; a residual
-            wash on top of that would flatten it to a block of teal.
-          */}
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 hidden bg-gradient-to-r from-brand-600 from-30% via-brand-600/80 to-transparent sm:block"
-          />
-        </>
-      )}
-
-      <div className={`relative ${CONTENT} py-12 text-brand-contrast sm:py-[5.5rem]`}>
-        <p className="text-[0.95rem] uppercase tracking-[0.1em]">{de.catalog.eyebrow}</p>
-        <h1 className="mt-2.5 max-w-[48rem] text-3xl font-bold sm:text-[2.35rem] sm:leading-tight">
-          {branding.catalogTitle ?? de.catalog.title}
-        </h1>
-        <p className="mt-5 max-w-[43rem] text-[0.95rem] leading-relaxed text-brand-50">
-          {branding.catalogIntro ?? de.catalog.intro}
-        </p>
-      </div>
-
+    <div className="relative sm:overflow-hidden sm:rounded-br-[7rem] sm:bg-brand-600">
       {/*
-        Hidden below `sm`: at 360 px the seal would sit on top of the heading,
-        and it repeats what the CME points on every card already say.
+        The photograph.
+
+        A band of its own below `sm` — which is why this is a real element with
+        a height rather than a `background-image` on the container. From `sm`
+        it becomes the layer behind the heading, `inset-0`, and the height goes
+        back to being whatever the heading needs.
+
+        `background-image` rather than `<img>`: it is decorative, it must not
+        be announced, and it has to crop rather than letterbox as the hero
+        changes width.
       */}
-      <div className="pointer-events-none absolute inset-0 hidden sm:block">
+      <div
+        className="relative h-[27.5rem] bg-brand-600 bg-cover bg-center sm:absolute sm:inset-0 sm:h-auto sm:bg-right"
+        {...(photograph === undefined
+          ? {}
+          : { style: { backgroundImage: `url("${encodeURI(photograph)}")` } })}
+      >
         {/*
-          Its own copy of the content column, so the seal is centred on that
-          column's right edge — which is where the layout puts it, and which
-          stays true at every width without a magic percentage.
+          Teal over the photograph, from `sm` only: opaque on the left where
+          the heading sits and clearing to the right so the image shows. It is
+          what keeps the heading legible on an image nobody has checked the
+          contrast of — the customer uploads it. It runs to fully transparent
+          because MEDICE's photograph arrives already tinted to the brand
+          colour, and a residual wash on top of that would flatten it to a
+          block of teal.
+
+          Nothing needs it below `sm`, where no text is over the photograph.
         */}
-        <div className={`relative mx-auto h-full ${CONTENT_WIDTH}`}>
-          <div className="absolute right-4 top-[44%] -translate-y-1/2 translate-x-1/2">
-            {branding.catalogSealImageUrl === undefined ? (
-              <CatalogSeal className="h-[8.2rem] w-[8.2rem] drop-shadow-xl" />
-            ) : (
-              <img
-                src={branding.catalogSealImageUrl}
-                // Never derived: `parseBranding` refuses a seal without
-                // alternative text, so if this renders, the text came from the
-                // customer.
-                alt={branding.catalogSealAlt ?? ""}
-                className="h-[8.2rem] w-[8.2rem] object-contain drop-shadow-xl"
-                referrerPolicy="no-referrer"
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 hidden bg-gradient-to-r from-brand-600 from-30% via-brand-600/80 to-transparent sm:block"
+        />
+
+        {/*
+          The seal, inside the photograph in both arrangements — which is what
+          lets one element serve both anchors. Below `sm` the photograph is the
+          band, so `bottom-10 left-4` is the band's bottom-left. From `sm` the
+          photograph is the whole hero, so the same element re-anchors to the
+          content column's right edge.
+        */}
+        <div className="pointer-events-none absolute bottom-10 left-4 sm:inset-0 sm:bottom-auto sm:left-auto">
+          {/*
+            The content column, repeated, so the seal is centred on *its* right
+            edge rather than on the viewport's — which is where the layout puts
+            it, and which stays true at every width without a magic percentage.
+
+            Written out rather than interpolated from `CONTENT_WIDTH`: Tailwind
+            scans this file as text, so a class name it never sees spelled in
+            full is a class name it never generates.
+          */}
+          <div className="relative mx-auto h-full sm:w-full sm:max-w-[1082px]">
+            <div className="sm:absolute sm:right-4 sm:top-[44%] sm:-translate-y-1/2 sm:translate-x-1/2">
+              <HeroSeal
+                branding={branding}
+                className="h-[11rem] w-[11rem] sm:h-[8.2rem] sm:w-[8.2rem]"
               />
-            )}
+            </div>
           </div>
         </div>
       </div>
+
+      {/*
+        The heading.
+
+        Near-black on white below `sm` and white on teal from `sm`, because the
+        photograph is beside it in one arrangement and behind it in the other.
+        `relative` so it stacks above the photograph's layer once that is
+        `absolute`.
+      */}
+      <div
+        className={`relative ${CONTENT} pb-2 pt-9 text-gray-900 sm:py-[5.5rem] sm:text-brand-contrast`}
+      >
+        <p className="text-[0.95rem] uppercase tracking-[0.06em] text-gray-600 sm:tracking-[0.1em] sm:text-inherit">
+          {de.catalog.eyebrow}
+        </p>
+        {/*
+          `break-words` because this is German and the customer writes it.
+          "Fortbildungsbereich" is 302 px at this size and the narrowest phone
+          still in use gives it 288 — one unbreakable word, and the whole page
+          scrolls sideways for it. Measured at 320 px: 334 px of document in a
+          320 px window, caused by exactly this heading.
+
+          It breaks only when a word cannot fit, so nothing changes at any
+          width where it does.
+        */}
+        <h1 className="mt-3 max-w-[48rem] break-words text-[1.75rem] font-bold leading-tight sm:mt-2.5 sm:text-[2.35rem]">
+          {branding.catalogTitle ?? de.catalog.title}
+        </h1>
+        <p className="mt-5 max-w-[43rem] text-[0.95rem] leading-relaxed text-gray-700 sm:text-brand-50">
+          {branding.catalogIntro ?? de.catalog.intro}
+        </p>
+      </div>
     </div>
+  );
+}
+
+/**
+ * The CME seal, wherever it is placed.
+ *
+ * Extracted because the two arrangements differ only in size and position, and
+ * the part that is easy to get wrong — that a customer-supplied seal must
+ * never invent its own alternative text — should exist once.
+ */
+function HeroSeal(props: { branding: Branding; className: string }) {
+  const { branding } = props;
+
+  if (branding.catalogSealImageUrl === undefined) {
+    return <CatalogSeal className={`${props.className} drop-shadow-xl`} />;
+  }
+
+  return (
+    <img
+      src={branding.catalogSealImageUrl}
+      // Never derived: `parseBranding` refuses a seal without alternative
+      // text, so if this renders, the text came from the customer.
+      alt={branding.catalogSealAlt ?? ""}
+      className={`${props.className} object-contain drop-shadow-xl`}
+      referrerPolicy="no-referrer"
+    />
   );
 }
 
@@ -448,7 +570,10 @@ function CourseCard(props: {
           {de.catalog.cardMeta(course)}
         </p>
 
-        <h2 className="mt-1.5 text-xl font-bold leading-snug text-gray-900 sm:text-2xl">
+        {/* `break-words` for the same reason as the hero heading: a course
+            title is German prose an author types, and one long compound noun
+            should wrap rather than widen the page. */}
+        <h2 className="mt-1.5 break-words text-xl font-bold leading-snug text-gray-900 sm:text-2xl">
           {course.title}
         </h2>
 
@@ -519,11 +644,19 @@ function FacetSelect(props: {
         </select>
 
         {/* Decorative: the `<select>` beside it is the control, already named
-            by its label. A rounded square inset from the pill's edge, which is
-            what the layout draws — not a full-height block. */}
+            by its label.
+
+            A **full-height block with one rounded corner**, bottom-right — not
+            an inset rounded square, which is what this was. The mobile export
+            draws it unambiguously at 2× and the desktop export agrees, so the
+            earlier reading was of the PDF's softer edges rather than of the
+            drawing (P19-01).
+
+            The pill's own right rounding is behind it and never seen; the
+            block squares off that end, which is the shape the layout has. */}
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-md bg-cta-500 text-cta-contrast"
+          className="pointer-events-none absolute inset-y-0 right-0 flex w-14 items-center justify-center rounded-br-2xl bg-cta-500 text-cta-contrast"
         >
           {/* A stroked chevron, not a filled triangle — the layout draws
               the former and at this size the two do not look alike. */}
@@ -602,8 +735,18 @@ function Pagination(props: {
   onPage: (page: number) => void;
 }) {
   return (
+    /*
+     * One row at desktop width — previous, the numbers, next — and two on the
+     * narrow layout, where the numbers take a line of their own above the two
+     * steps (P19-01).
+     *
+     * `flex-wrap` and a full-width `ul` rather than a `flex-col` with an
+     * explicit order: wrapping is what the drawing is, and it also means the
+     * transition happens when the three genuinely stop fitting rather than at
+     * a number chosen here.
+     */
     <nav
-      className="flex items-center justify-between gap-4 border-t border-gray-100 px-5 py-5"
+      className="flex flex-wrap items-center justify-between gap-4 border-t border-gray-100 px-5 py-5"
       aria-label={de.catalog.pagination}
     >
       <PageStep
@@ -613,7 +756,7 @@ function Pagination(props: {
         onClick={() => props.onPage(props.page - 1)}
       />
 
-      <ul className="flex flex-wrap items-center gap-1">
+      <ul className="flex flex-wrap items-center gap-1 max-sm:order-first max-sm:w-full max-sm:justify-center max-sm:gap-3">
         {pageWindow(props.page, props.lastPage).map((entry, index) =>
           entry === "gap" ? (
             <li
@@ -632,11 +775,20 @@ function Pagination(props: {
                 aria-current={entry === props.page ? "page" : undefined}
                 aria-label={de.catalog.goToPage(entry)}
                 onClick={() => props.onPage(entry)}
-                // The marker sits *above* the number, which is where the
-                // layout puts it.
-                className={`min-w-8 border-t-2 px-2 pb-2 pt-2 text-sm ${
+                /*
+                 * The marker sits *above* the number, which is where the
+                 * layout puts it.
+                 *
+                 * Two ways of drawing the same thing. Wide: a 2 px top border
+                 * on the button itself. Narrow: the numbers have a rule of
+                 * their own running the card's full width — the `nav`'s top
+                 * border — and the marker sits *on* that rule rather than
+                 * against the number, so it is positioned up out of the
+                 * button, past the row's padding.
+                 */
+                className={`relative min-w-8 border-t-2 px-2 pb-2 pt-2 text-sm max-sm:border-t-0 ${
                   entry === props.page
-                    ? "border-brand-600 font-bold text-brand-700"
+                    ? "border-brand-600 font-bold text-brand-700 max-sm:after:absolute max-sm:after:-top-[21px] max-sm:after:left-1/2 max-sm:after:h-[3px] max-sm:after:w-8 max-sm:after:-translate-x-1/2 max-sm:after:rounded-full max-sm:after:bg-brand-600 max-sm:after:content-['']"
                     : "border-transparent text-gray-700 hover:text-brand-700"
                 }`}
               >
@@ -684,16 +836,34 @@ function StepArrow(props: { back?: boolean; disabled: boolean }) {
   return (
     <span
       aria-hidden="true"
+      /*
+       * Disabled is a *pale brand* disc with a white arrow, not a grey disc
+       * with a grey one. The layout keeps the shape at full strength and
+       * drains the colour — which reads as "not now" rather than as "broken",
+       * and keeps the arrow legible, which a grey-on-grey glyph does not.
+       */
       className={`inline-flex h-9 w-9 items-center justify-center rounded-full ${
-        props.disabled ? "bg-gray-100 text-gray-400" : "bg-brand-600 text-brand-contrast"
+        props.disabled ? "bg-brand-100 text-white" : "bg-brand-600 text-brand-contrast"
       }`}
     >
-      <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor">
+      {/*
+        A long arrow — shaft and head — not a bare chevron. At 16 px the two
+        are genuinely different marks, and the layout draws the former.
+      */}
+      <svg
+        viewBox="0 0 20 20"
+        className="h-[1.05rem] w-[1.05rem]"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         <path
           d={
             props.back === true
-              ? "M12 4 6 10l6 6 1.4-1.4L8.8 10l4.6-4.6Z"
-              : "M8 4l6 6-6 6-1.4-1.4L11.2 10 6.6 5.4Z"
+              ? "M16 10H4.5m0 0L9 5.5M4.5 10 9 14.5"
+              : "M4 10h11.5m0 0L11 5.5m4.5 4.5L11 14.5"
           }
         />
       </svg>
