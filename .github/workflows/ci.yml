@@ -59,8 +59,14 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
           shellcheck infra/nginx/ds-runtime-config.sh
-          (cd infra/deploy && shellcheck -x deploy.sh domains.sh domains.test.sh secrets.sh dsc)
+          (cd infra/deploy && shellcheck -x deploy.sh domains.sh domains.test.sh \
+             deploy-vars.test.sh secrets.sh dsc)
           ./infra/deploy/domains.test.sh
+          # Every variable deploy.sh reads is one somebody guarantees. Static,
+          # because `--check` exits two thirds of the way down the script and
+          # `set -u` only complains at the line that reads the name — which,
+          # past that exit, is after the database has already been migrated.
+          ./infra/deploy/deploy-vars.test.sh
 
       - name: Build
         run: pnpm build
