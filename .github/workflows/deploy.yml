@@ -86,20 +86,50 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+env:
+  # `BatchMode` so a prompt is an error rather than a hang — there is no human
+  # here to answer one, and a hang burns the job's whole budget while looking
+  # exactly like slow work.
+  #
+  # `ServerAliveInterval` because the build step holds one connection open for
+  # minutes with nothing to say; without it a NAT or a load balancer in the
+  # middle can drop a live session and the deploy dies at an arbitrary point.
+  SSH_OPTS: >-
+    -o BatchMode=yes
+    -o ConnectTimeout=20
+    -o ServerAliveInterval=30
+    -o ServerAliveCountMax=10
+
 jobs:
   # Everything that can be wrong before a single byte reaches the server.
   #
   # A deploy that fails halfway is recoverable — deploy.sh leaves the previous
   # version running — but it is still twenty minutes and a fright. Most first
-  # deployments fail on a missing secret, and a missing secret is knowable
-  # here, in eight seconds, without SSH.
+  # deployments fail on a missing secret, and this catches that before a single
+  # byte reaches the server.
+  #
+  # ## Why fifteen minutes and not five
+  #
+  # Five was the original figure, written beside a claim that this is knowable
+  # "in eight seconds, without SSH". It is not. This job opens **two** SSH
+  # sessions to a CX32, and the second of them runs `deploy.sh --check`, which
+  # parses the compose file through the Docker daemon.
+  #
+  # The first real run proved the cost of being wrong about that: every step
+  # reported `success` and the *job* was killed at 5m00s, which GitHub reports
+  # as `cancelled` — so the deploy job was skipped and the deployment could not
+  # happen at all. A timeout that kills a passing preflight is not a safety
+  # net, it is the thing preventing the deployment.
+  #
+  # Fifteen is generous on purpose. The cost of a slow preflight is waiting;
+  # the cost of a short one is a deploy that cannot run.
   preflight:
     name: Check the deployment configuration
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     outputs:
       # What the *host* says its API hostname is. Published so the smoke test
       # and the GitHub environment URL cannot disagree with the server about
@@ -144,14 +174,14 @@ jobs:
         run: |
           # `--check` runs the whole preflight — the generated credentials, the
           # derived domains and their mutual consistency — and changes nothing.
-          ssh -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+          ssh $SSH_OPTS -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "cd ${REPO_DIR}/infra/deploy && ./deploy.sh --check"
 
           # Ask the host what it believes its own API hostname is, rather than
           # rebuilding the derivation here from a copy of the configuration this
           # workflow no longer holds. The smoke test and the environment URL
           # then cannot disagree with the server about where the server is.
-          api_domain=$(ssh -i ~/.ssh/id_ed25519 \
+          api_domain=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "cd ${REPO_DIR}/infra/deploy && . ./domains.sh && \
              set -a && . \$HOME/ds-education/config.env && set +a && \
@@ -165,7 +195,12 @@ jobs:
     name: Deploy to production
     needs: preflight
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Forty, not twenty. The *first* build on a host has no layer cache at all
+    # — four images from a cold `deps` stage — and without buildx compose falls
+    # back to the legacy builder, which cannot share that stage between them.
+    # Twenty minutes was measured against a warm host and would kill the one
+    # deploy that most needs to finish.
+    timeout-minutes: 40
     # A GitHub environment, so production can require a manual approval and so
     # the deployment shows up in the repository's timeline.
     environment:
@@ -194,7 +229,7 @@ jobs:
       # green, which is a different commit from the one that was tested.
       - name: Check the commit out on the host
         run: |
-          ssh -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+          ssh $SSH_OPTS -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "set -e
              cd ${REPO_DIR}
              git fetch --quiet origin
@@ -211,7 +246,7 @@ jobs:
       # a hang.
       - name: Deploy
         run: |
-          ssh -tt -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+          ssh -tt $SSH_OPTS -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "cd ${REPO_DIR}/infra/deploy && \
              ./deploy.sh ${{ inputs.rollback_tag && format('--rollback {0}', inputs.rollback_tag) || '' }}"
 
