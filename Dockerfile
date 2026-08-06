@@ -206,11 +206,12 @@ EXPOSE 3000
 # No shell form: `node` becomes PID 1 and receives SIGTERM directly, so a
 # rolling deploy drains rather than being killed after the stop timeout.
 #
-# Two other entrypoints ship in the same image and are run with
+# Three other entrypoints ship in the same image and are run with
 # `--entrypoint node`, never as the default:
 #
 #   dist/db-migrate.js       apply migrations as ds_migrator
 #   dist/bootstrap-admin.js  create the first super administrator, once
+#   dist/seed-ds.js          create the DS test tenant, on request (P20-01)
 #
 # They live here rather than in a separate tools image because they must be
 # built from the same commit as the API — a migrator one commit ahead of the

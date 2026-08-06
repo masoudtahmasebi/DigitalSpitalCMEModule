@@ -182,6 +182,49 @@ jobs:
       - name: Integration tests
         run: pnpm test:integration
 
+      # Both seeds, against the same real Postgres, **after** the integration
+      # tests rather than before (P20-01).
+      #
+      # After, because a seed rewrites reference data and the suite has its own
+      # fixtures; running it first would have the tests asserting against
+      # whatever the seed last wrote.
+      #
+      # At all, because a seed is a program with SQL in it and nothing else
+      # executes it. `pnpm db:seed` was written once, worked once, and every
+      # later migration could have broken it silently — a column renamed, a
+      # constraint added, a check tightened. It would then fail on the day
+      # somebody set up a demo, which is the worst possible day.
+      #
+      # Twice each: the seeds claim to be idempotent, and a second run is the
+      # only thing that checks the claim. The MEDICE one runs first because the
+      # DS tenant's whole point is being a *second* customer — if the ordering
+      # mattered, that is a tenancy bug worth failing on.
+      - name: Seeds run, and run twice
+        env:
+          MIGRATION_DATABASE_URL: postgres://ds_migrator:ds_migrator_dev@127.0.0.1:5432/ds_education
+        run: |
+          pnpm db:seed
+          pnpm db:seed
+          pnpm db:seed:ds
+          pnpm db:seed:ds
+
+      # And the second customer is genuinely separate — asserted here rather
+      # than believed, because "two customers exist" and "two customers are
+      # isolated" are different claims and only the first is obvious.
+      - name: The two tenants are distinct
+        run: |
+          rows=$(PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d ds_education -tAX -c \
+            "SELECT count(DISTINCT customer_id) FROM courses")
+          [ "$rows" = "2" ] || { echo "::error::expected courses across 2 customers, got ${rows}"; exit 1; }
+
+          # A course with no points, no VNR and no accreditation body — the
+          # case the client asked for and the one nothing else exercises.
+          free=$(PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d ds_education -tAX -c \
+            "SELECT count(*) FROM courses
+              WHERE slug = 'ds-ohne-punkte'
+                AND cme_points IS NULL AND vnr IS NULL AND accreditation_body IS NULL")
+          [ "$free" = "1" ] || { echo "::error::the point-free demo course is not point-free"; exit 1; }
+
   # Every image, on every branch — because the alternative was finding out at
   # deploy time, and that is exactly what happened.
   #

@@ -379,6 +379,40 @@ It refuses to run again while any staff account exists — after that the ordina
 invitation flow is the only way to add one. `--force` exists for a genuine
 lockout and records itself in `admin_audit_log`.
 
+### Optionally, the DS test tenant (P20-01)
+
+A second customer — `ds`, DigitalSpital's own — with two demo courses. It exists
+so that the console's customer registry, the project picker and every screen
+that spans customers have something to be wrong about, and so a `customer_admin`
+scoped to one customer can be shown **not** seeing the other on the real
+installation rather than only in a test.
+
+```bash
+ssh -i ~/.ssh/ds-deploy deploy@78.47.178.65
+cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
+./dsc run --rm --entrypoint node api dist/db-seed-ds.js --force
+```
+
+`--force` is required and is not a formality: the seed rebuilds its two
+courses' content trees, which deletes learner progress **on those two courses**.
+It touches nothing belonging to any other customer — the whole run is inside
+`app.customer_id = <ds>` and passes the same RLS policies a request does.
+
+What it creates:
+
+| Course           | Points | VNR   | Quiz | Why it is there                             |
+| ---------------- | ------ | ----- | ---- | ------------------------------------------- |
+| `ds-cme-demo`    | 3      | dummy | yes  | the full path, to a Punktemeldung and a PDF |
+| `ds-ohne-punkte` | none   | none  | no   | a course without CME points, which is real  |
+
+The VNR is a documented dummy and the Ärztekammer is fictional. Nothing here
+can reach the live EIV endpoint: `deploy.sh` refuses an `EIV_BASE_URL` pointing
+at eiv-fobi.de unless `EIV_ALLOW_LIVE=yes` is set deliberately (ADR-0005).
+
+No staff account comes with it. Create one through the ordinary invitation flow
+and scope it to this customer — a `customer_admin` on `ds` who can see MEDICE is
+the bug this tenant exists to make visible.
+
 ### Then point the WordPress plugin at it
 
 In `wp-admin → Einstellungen → DS Education`:

@@ -22,7 +22,13 @@
  * is set out of band.
  */
 
-import pg from "pg";
+import {
+  enterTenant,
+  openSeedPool,
+  PLACEHOLDER_IMAGE,
+  resetCourseContent,
+  upsert,
+} from "@ds/seed";
 
 /**
  * A fixed id, not a generated one, and that is load-bearing.
@@ -44,20 +50,6 @@ const COURSE_SLUG = "adhs-akademie-adult";
 
 /** Per the Bescheid. The password is never committed — see `.env.example`. */
 const VNR = "2760552025919300018";
-
-/**
- * Placeholder stamp and signature so a seeded course can actually produce a
- * certificate locally. 1×1 PNGs — deliberately obviously not real artwork.
- *
- * The real assets belong to the course's Wissenschaftliche Leitung and are
- * uploaded through the admin console. Seeding a convincing-looking fake stamp
- * would be worse than seeding an obvious placeholder: someone would eventually
- * ship it.
- */
-const PLACEHOLDER_IMAGE = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-  "base64",
-);
 
 interface ModuleSeed {
   readonly title: string;
@@ -170,30 +162,12 @@ const MODULES: readonly ModuleSeed[] = [
 const QUESTION_COUNT = 11;
 
 async function main(): Promise<void> {
-  const connectionString = process.env["MIGRATION_DATABASE_URL"];
-  if (connectionString === undefined) {
-    throw new Error("MIGRATION_DATABASE_URL is not set.");
-  }
-
-  const force = process.argv.includes("--force");
-  const host = new URL(connectionString.replace(/^postgres/, "http")).hostname;
-  const isLocal = host === "127.0.0.1" || host === "localhost" || host === "postgres";
-  if (!isLocal && !force) {
-    throw new Error(
-      `Refusing to seed a non-local database (${host}). Pass --force if you are certain.`,
-    );
-  }
-
-  const pool = new pg.Pool({ connectionString });
+  const pool = openSeedPool("the MEDICE ADHS course");
 
   try {
     await pool.query("BEGIN");
 
-    // Transaction-local, exactly as `runInTenant` does for a request. Every
-    // statement below is therefore checked by the same RLS policies the API
-    // runs under (ADR-0002).
-    await pool.query("SELECT set_config('app.customer_id', $1, true)", [CUSTOMER_ID]);
-    await pool.query("SELECT set_config('app.role', 'system', true)");
+    await enterTenant(pool, CUSTOMER_ID);
 
     const customerId = await upsert(
       pool,
@@ -303,34 +277,7 @@ async function main(): Promise<void> {
       ],
     );
 
-    // Rebuild the tree rather than reconciling it: content has no stable
-    // external key, so a partial update would leave orphans. Deletion runs
-    // child-first because the foreign keys are RESTRICT, not CASCADE —
-    // deliberately, since in production nothing should be able to delete
-    // content that a learner's progress or quiz attempt still references.
-    //
-    // That this seed *does* delete such rows is exactly why it is refused
-    // against a non-local database without --force: it discards learner data
-    // for this course.
-    const contentScope = `chapter_id IN (
-       SELECT c.id FROM chapters c JOIN modules m ON m.id = c.module_id
-        WHERE m.course_id = $1)`;
-
-    for (const statement of [
-      `DELETE FROM quiz_answers WHERE attempt_id IN (
-         SELECT id FROM quiz_attempts WHERE content_id IN (SELECT id FROM contents WHERE ${contentScope}))`,
-      `DELETE FROM quiz_attempts WHERE content_id IN (SELECT id FROM contents WHERE ${contentScope})`,
-      `DELETE FROM quiz_options WHERE question_id IN (
-         SELECT id FROM quiz_questions WHERE content_id IN (SELECT id FROM contents WHERE ${contentScope}))`,
-      `DELETE FROM quiz_questions WHERE content_id IN (SELECT id FROM contents WHERE ${contentScope})`,
-      `DELETE FROM content_progress WHERE content_id IN (SELECT id FROM contents WHERE ${contentScope})`,
-      `UPDATE enrolments SET last_content_id = NULL WHERE course_id = $1`,
-      `DELETE FROM contents WHERE ${contentScope}`,
-      `DELETE FROM chapters WHERE module_id IN (SELECT id FROM modules WHERE course_id = $1)`,
-      `DELETE FROM modules WHERE course_id = $1`,
-    ]) {
-      await pool.query(statement, [courseId]);
-    }
+    await resetCourseContent(pool, courseId);
 
     // Replaced wholesale like the modules: a seed that appended would add a
     // second copy of every expert on each run.
@@ -491,13 +438,6 @@ async function main(): Promise<void> {
   } finally {
     await pool.end();
   }
-}
-
-async function upsert(pool: pg.Pool, sql: string, values: unknown[]): Promise<string> {
-  const { rows } = await pool.query<{ id: string }>(sql, values);
-  const id = rows[0]?.id;
-  if (id === undefined) throw new Error(`seed statement returned no id:\n${sql}`);
-  return id;
 }
 
 await main();
