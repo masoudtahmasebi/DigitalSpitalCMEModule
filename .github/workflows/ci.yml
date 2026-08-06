@@ -213,9 +213,27 @@ jobs:
       # isolated" are different claims and only the first is obvious.
       - name: The two tenants are distinct
         run: |
+          # About the two **seeded** tenants, not about the database.
+          #
+          # The first version of this counted `DISTINCT customer_id` across
+          # every course and expected 2. It failed, correctly: the integration
+          # suite runs first and leaves its own fixture tenants behind, so the
+          # database holds more than the seeds put there. An assertion that is
+          # true only on an empty database is an assertion that fails on the
+          # first day somebody adds a test.
+          #
+          # What is actually being claimed is narrower and is the claim worth
+          # making: MEDICE's course and the DS tenant's courses belong to
+          # different customers.
           rows=$(PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d ds_education -tAX -c \
-            "SELECT count(DISTINCT customer_id) FROM courses")
-          [ "$rows" = "2" ] || { echo "::error::expected courses across 2 customers, got ${rows}"; exit 1; }
+            "SELECT count(DISTINCT customer_id) FROM courses
+              WHERE slug IN ('adhs-akademie-adult', 'ds-cme-demo', 'ds-ohne-punkte')")
+          [ "$rows" = "2" ] || { echo "::error::the seeded courses span ${rows} customer(s), expected 2"; exit 1; }
+
+          seeded=$(PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d ds_education -tAX -c \
+            "SELECT count(*) FROM courses
+              WHERE slug IN ('adhs-akademie-adult', 'ds-cme-demo', 'ds-ohne-punkte')")
+          [ "$seeded" = "3" ] || { echo "::error::expected 3 seeded courses, found ${seeded}"; exit 1; }
 
           # A course with no points, no VNR and no accreditation body — the
           # case the client asked for and the one nothing else exercises.

@@ -54,11 +54,21 @@ export function StickyMetaBar(props: {
     <div className="mb-4">
       {/* Two panels side by side: the teal title block and the course artwork.
           The image is not decorative framing — it is the Titelbild the customer
-          authored, and the layout gives it half the width. */}
-      <div className="overflow-hidden rounded-2xl">
-        <div className="grid sm:grid-cols-2">
-          <div className="flex items-center bg-brand-600 px-6 py-8 sm:px-8 sm:py-12">
-            <h1 className="text-2xl font-bold leading-snug text-brand-contrast sm:text-3xl">
+          authored, and the layout gives it half the width.
+
+          Below `sm` they are **stacked in the other order**, edge to edge, and
+          square (P19-03). The mobile export runs the artwork full-bleed under
+          the page header and puts the title on a teal band beneath it — the
+          same two panels, rotated a quarter turn and swapped, which is why
+          this is `flex-col-reverse` on one element rather than a second tree.
+
+          `-mx-4` cancels the widget's own gutter so "full-bleed" is actually
+          full-bleed; without it the artwork sits in a 16 px frame the drawing
+          does not have. */}
+      <div className="overflow-hidden rounded-2xl max-sm:-mx-4 max-sm:rounded-none">
+        <div className="grid max-sm:flex max-sm:flex-col-reverse sm:grid-cols-2">
+          <div className="flex items-center bg-brand-600 px-6 py-8 max-sm:px-4 sm:px-8 sm:py-12">
+            <h1 className="break-words text-2xl font-bold leading-snug text-brand-contrast sm:text-3xl">
               {course.title}
             </h1>
           </div>
@@ -71,7 +81,7 @@ export function StickyMetaBar(props: {
             <img
               src={course.heroImageUrl}
               alt=""
-              className="h-48 w-full object-cover sm:h-full"
+              className="w-full object-cover max-sm:h-[26rem] sm:h-full"
               referrerPolicy="no-referrer"
             />
           )}

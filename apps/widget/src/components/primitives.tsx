@@ -124,31 +124,58 @@ export function CourseMetaBar(props: {
   action: ReactNode;
 }) {
   return (
-    <div className="relative z-10 -mt-7 mx-4 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl bg-white px-5 py-3 shadow-md">
+    /*
+     * One row at desktop width, a **centred stack** below `sm` (P19-03).
+     *
+     * The mobile export does not wrap this row — it re-lays it: the points
+     * pill, the duration and the module count each get a line of their own,
+     * centred, and the action becomes a full-width button under them. Wrapping
+     * the desktop row would produce three left-aligned lines and a button
+     * floating off to one side, which is a different drawing.
+     */
+    <div className="relative z-10 mx-4 -mt-7 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl bg-white px-5 py-3 shadow-md max-sm:flex-col max-sm:gap-y-4 max-sm:px-5 max-sm:py-6">
       {props.points === null ? null : (
-        <span className="flex items-center gap-2">
-          <span className="rounded bg-cta-500 px-2 py-0.5 text-sm font-bold text-cta-contrast">
+        /*
+         * One pill with an internal rule, not an orange square beside grey
+         * text. The export draws the number and the words as a single orange
+         * object divided by a hairline — which is why the divider is a border
+         * on the label rather than a gap.
+         */
+        <span className="flex items-center gap-2 max-sm:gap-0 max-sm:overflow-hidden max-sm:rounded-md">
+          <span className="rounded bg-cta-500 px-2 py-0.5 text-sm font-bold text-cta-contrast max-sm:rounded-none max-sm:px-4 max-sm:py-2 max-sm:text-lg">
             {props.points}
           </span>
-          <span className="text-sm font-semibold text-gray-900">{props.pointsLabel}</span>
+          <span className="text-sm font-semibold text-gray-900 max-sm:border-l max-sm:border-white/50 max-sm:bg-cta-500 max-sm:px-4 max-sm:py-2 max-sm:text-base max-sm:text-cta-contrast">
+            {props.pointsLabel}
+          </span>
         </span>
       )}
 
+      {/*
+        `border-l` is a divider between columns, and there are no columns below
+        `sm`. Left in place there it would draw a stub of a rule to the left of
+        centred text.
+      */}
       {props.duration === null ? null : (
-        <span className="flex items-center gap-2 border-l border-gray-200 pl-6 text-sm text-gray-700">
+        <span className="flex items-center gap-2 border-l border-gray-200 pl-6 text-sm text-gray-700 max-sm:border-l-0 max-sm:pl-0 max-sm:text-base max-sm:font-semibold">
           <ClockIcon />
           {props.duration}
         </span>
       )}
 
       {props.modules === null ? null : (
-        <span className="flex items-center gap-2 border-l border-gray-200 pl-6 text-sm text-gray-700">
+        <span className="flex items-center gap-2 border-l border-gray-200 pl-6 text-sm text-gray-700 max-sm:border-l-0 max-sm:pl-0 max-sm:text-base max-sm:font-semibold">
           <ModulesIcon />
           {props.modules}
         </span>
       )}
 
-      <span className="ml-auto">{props.action}</span>
+      {/* `ml-auto` pushes it to the row's end; in a column it would push it
+          nowhere and the `w-full` is what makes it the drawing's full-width
+          button. */}
+      <span className="ml-auto max-sm:ml-0 max-sm:w-full max-sm:[&>button]:w-full">
+        {props.action}
+      </span>
     </div>
   );
 }
