@@ -4,9 +4,24 @@ on:
   push:
     branches: ["**"]
   pull_request:
+  # Weekly, against a repository nobody has pushed to (P18-05).
+  #
+  # The security audit is a gate on *changes*, which leaves the case it was
+  # built for uncovered: a CVE published against a dependency that has not
+  # moved. The lockfile is identical, the code is identical, and nothing runs —
+  # so the advisory sits there until the next unrelated commit.
+  #
+  # Monday 05:00 UTC, an hour before Dependabot's window, so the audit's
+  # verdict is already on the default branch when the update pull requests
+  # arrive.
+  schedule:
+    - cron: "0 5 * * 1"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Not keyed on the run: a scheduled run and a push to the same ref would
+  # otherwise cancel each other, and the one that loses is the one nobody
+  # notices was never run.
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:

@@ -1,0 +1,145 @@
+# Dependency updates (P18-05).
+#
+# ## Why this file exists
+#
+# A lockfile pins exact versions, and that is correct: without it the build on
+# a laptop, the build in CI and the build on the Hetzner box are three
+# different programs, and "works locally" stops meaning anything. It is also
+# what makes a compromised release visible — a new version cannot arrive
+# without a diff somebody has to approve.
+#
+# But a pin that nothing refreshes is a pin that ages. The lockfile records the
+# versions that were current the day somebody last touched it, and a CVE
+# published the day after is invisible: `pnpm audit` runs in CI, so it would
+# catch the advisory — on the next push. On a repository nobody pushes to for
+# six weeks, that is six weeks of not knowing.
+#
+# So the answer is not to unpin. It is to have something that opens the pull
+# request, and to let CI decide whether it merges. That is this file, plus the
+# `schedule:` trigger on the CI workflow, which re-runs the audit against a
+# repository nobody has touched.
+#
+# ## What is deliberately not automated
+#
+# Nothing merges itself. Every update here becomes a pull request that runs
+# the full suite — 485 domain tests, the integration suite against a real
+# Postgres, the tenant-isolation suite — and a human presses the button. On a
+# platform where a wrong number is a compliance incident (CLAUDE.md §2), an
+# auto-merged transitive bump is not a saving.
+#
+# ## And what this cannot reach
+#
+# The **running containers**. `deploy.sh` builds with `--pull`, so every deploy
+# takes the current `node:22-bookworm-slim` — but a deploy only happens when a
+# commit lands. An installation that is serving happily and receiving no
+# changes keeps whatever base image it was built from. The runbook says to
+# redeploy the same commit monthly for exactly this reason
+# (`docs/deployment.md` §7); this file cannot do it, because a redeploy is a
+# production change and belongs to a person.
+
+version: 2
+
+updates:
+  # ---------------------------------------------------------------------------
+  # The workspace
+  # ---------------------------------------------------------------------------
+  # One entry: pnpm workspaces are resolved from the root lockfile, so a
+  # per-package entry would open eleven pull requests that all edit the same
+  # file and all conflict with each other.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    # Grouped, because twenty single-package pull requests a week is how a
+    # review queue becomes something people click through without reading —
+    # which is worse than not having the updates.
+    groups:
+      # Anything with a published advisory, on its own and first. Kept out of
+      # the other groups so a security fix is never waiting behind a major
+      # version bump somebody is nervous about.
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+      # Everything that only runs on a developer's machine or in CI. A
+      # vulnerable linter is a real finding and not a production exposure, and
+      # separating them keeps that distinction visible in the queue.
+      dev-tooling:
+        applies-to: version-updates
+        dependency-type: development
+        patterns: ["*"]
+      # What actually ships.
+      runtime:
+        applies-to: version-updates
+        dependency-type: production
+        update-types: ["minor", "patch"]
+        patterns: ["*"]
+    ignore:
+      # Majors are read, not merged: NestJS, Drizzle and React majors have
+      # migration notes, and a grouped pull request that silently contains one
+      # is a grouped pull request nobody can review. They still appear in the
+      # GitHub UI's "ignored" list, so this hides nothing — it keeps them out
+      # of the automatic queue.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "P18-05"
+      include: scope
+
+  # ---------------------------------------------------------------------------
+  # Base images
+  # ---------------------------------------------------------------------------
+  # `node:22-bookworm-slim`, `nginx:1.27-alpine`, `postgres:16-alpine` and the
+  # rest. These float within their line and pick up patches on a `--pull`
+  # build — but only within it. `nginx:1.27` stops receiving anything when 1.27
+  # leaves support, and the failure mode of that is silence: the build keeps
+  # succeeding against an image that is no longer patched.
+  #
+  # Dependabot is what notices the line has moved on.
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /infra/deploy
+      - /infra
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 3
+    groups:
+      base-images:
+        patterns: ["*"]
+    commit-message:
+      prefix: "P18-05"
+
+  # ---------------------------------------------------------------------------
+  # The workflows themselves
+  # ---------------------------------------------------------------------------
+  # `actions/checkout@v4` floats within v4, which is where security fixes for
+  # the action arrive — so this is not about patches, it is about noticing when
+  # v5 exists and v4 stops being maintained.
+  #
+  # Not SHA-pinned. SHA pinning defends against a tag being moved under us,
+  # which is real; it also freezes every action at the commit somebody pasted,
+  # and this file is what would have to un-freeze them. Given the choice
+  # between a supply-chain risk mitigated by GitHub's own tag protection and a
+  # set of actions that never receive a fix, the major tag is the better trade
+  # for a four-service deployment — recorded here rather than left as an
+  # apparent oversight.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "P18-05"

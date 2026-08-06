@@ -414,6 +414,44 @@ decisions — so it says which **required** keys the template has that your file
 does not, and prints the `diff -u` to run. Optional keys are not listed: they
 are absent because somebody chose to leave them out.
 
+### Keeping the base images patched — monthly, by hand
+
+This is the one maintenance job nothing in CI can do for you, and it is easy to
+miss because the symptom is silence.
+
+`deploy.sh` builds with `--pull`, so **every deploy takes the current
+`node:22-bookworm-slim`, `nginx:1.27-alpine`, `postgres:16-alpine` and
+`caddy:2-alpine`** — patches for the OS packages inside those images arrive
+free with any deploy. The catch is the word "deploy": an installation that is
+serving happily and receiving no code changes keeps whatever base image it was
+built from, indefinitely. Six quiet weeks is six weeks of an unpatched libc.
+
+So once a month, on a commit that has not changed:
+
+```bash
+ssh deploy@78.47.178.65
+cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
+./deploy.sh          # same commit, fresh bases, ~3 min with buildx
+```
+
+Nothing else moves: the images are rebuilt from the same source at the same
+`DS_COMMIT`, the migrations are a no-op, and the containers are replaced. If
+anything does break, `--rollback` to the previous tag is still there.
+
+Not automated, deliberately. A scheduled unattended production restart is a
+scheduled unattended production outage — it wants somebody watching, and it
+takes three minutes.
+
+The three moving parts around it _are_ automated, and are not a substitute for
+this one:
+
+| What                                           | Who does it                 |
+| ---------------------------------------------- | --------------------------- |
+| npm dependencies, base image **tags**, actions | Dependabot, weekly PRs      |
+| `pnpm audit --prod` against a quiet repo       | CI's Monday scheduled run   |
+| OS packages on the **host** itself             | `unattended-upgrades` (§1)  |
+| OS packages **inside** the containers          | **this** — a monthly deploy |
+
 ### Changing the configuration
 
 Edit `~/ds-education/config.env` on the server and redeploy — from GitHub, or
