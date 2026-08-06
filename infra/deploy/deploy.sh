@@ -89,6 +89,25 @@ log "Preflight"
 command -v docker >/dev/null || die "docker is not installed"
 docker compose version >/dev/null 2>&1 || die "docker compose v2 is not available"
 command -v openssl >/dev/null || die "openssl is not installed (needed to generate credentials)"
+command -v git >/dev/null || die "git is not installed (the deploy runs from a checkout)"
+
+# Compose v2 prefers Bake, which needs buildx. Ubuntu's `docker.io` package does
+# not ship it, so compose warns on every build and silently falls back to the
+# legacy builder — which works, but shares nothing between the four targets and
+# rebuilds the `deps` stage for each of them.
+#
+# Installing `docker-buildx` is worth several minutes a deploy. Until it is
+# there, saying so once and turning Bake off explicitly beats a warning that
+# scrolls past above ten minutes of build output.
+if docker buildx version >/dev/null 2>&1; then
+  export COMPOSE_BAKE=true
+else
+  export COMPOSE_BAKE=false
+  printf '\033[1;33m!!\033[0m %s\n' \
+    "buildx is not installed, so the four images cannot share their build stages." >&2
+  printf '\033[1;33m!!\033[0m %s\n' \
+    "  sudo apt-get install -y docker-buildx        (once; saves minutes per deploy)" >&2
+fi
 
 # The state directory, before anything needs it. Created here rather than left
 # to a documented `install -d` step, because the documented step is the one
@@ -120,6 +139,39 @@ set -a
 # shellcheck disable=SC1090 # runtime path, deliberately not resolvable at lint time
 source "$CONFIG_FILE"
 set +a
+
+# Everything the stack cannot start without and cannot derive. Named here, in
+# one list, so the drift check below can speak about exactly these.
+readonly REQUIRED_CONFIG=(
+  BASE_DOMAIN ACME_EMAIL
+  POSTGRES_DB POSTGRES_SUPERUSER
+  PORTAL_PROJECT_SLUG ADMIN_DEFAULT_PROJECT_SLUG
+  PORTAL_KEYCLOAK_ISSUER PORTAL_KEYCLOAK_CLIENT_ID
+)
+
+# A config.env written against an older template.
+#
+# The file is never rewritten by a deploy — which is right, it holds decisions —
+# so a renamed or added variable surfaces later as "X is not set", with nothing
+# to say that the *template* is where X came from. That happened on the first
+# real deployment: `PROJECT_SLUG` had become `PORTAL_PROJECT_SLUG` and
+# `ADMIN_DEFAULT_PROJECT_SLUG`, and the message named the new spellings without
+# mentioning that the file predated them.
+#
+# **Required keys only.** The optional ones are absent because somebody chose to
+# leave them out — listing those buries the two that matter under a dozen that
+# do not.
+drifted=()
+for key in "${REQUIRED_CONFIG[@]}"; do
+  grep -qE "^${key}=" "$CONFIG_FILE" || drifted+=("$key")
+done
+if [[ ${#drifted[@]} -gt 0 ]]; then
+  printf '\033[1;33m!!\033[0m %s\n' \
+    "${CONFIG_FILE} predates the current template — it does not mention:" >&2
+  printf '     %s\n' "${drifted[@]}" >&2
+  printf '\033[1;33m!!\033[0m %s\n' \
+    "  diff -u '${CONFIG_FILE}' '${SCRIPT_DIR}/config.env.example'" >&2
+fi
 
 # Credentials the machine owns. Generated on first run, loaded on every run,
 # never regenerated — see secrets.sh for why that last part is not a nicety.
@@ -163,12 +215,7 @@ ds_check_domains || die "the derived configuration is inconsistent (see above)"
 # they are mutually consistent — which is more than "non-empty" ever proved.
 # The credentials are not in this list: `ds_check_secrets` has already asserted
 # them, and they come from a file no human edits.
-for required in \
-  BASE_DOMAIN ACME_EMAIL \
-  POSTGRES_DB POSTGRES_SUPERUSER \
-  PORTAL_PROJECT_SLUG ADMIN_DEFAULT_PROJECT_SLUG \
-  PORTAL_KEYCLOAK_ISSUER PORTAL_KEYCLOAK_CLIENT_ID
-do
+for required in "${REQUIRED_CONFIG[@]}"; do
   [[ -n "${!required:-}" ]] || die "missing required variable: ${required} (set it in ${CONFIG_FILE})"
 done
 

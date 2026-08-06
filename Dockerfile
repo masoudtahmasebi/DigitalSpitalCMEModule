@@ -58,6 +58,22 @@ FROM node:22-bookworm-slim AS deps
 # so an image cannot drift to a different pnpm than CI used.
 RUN corepack enable
 
+# There is no human at this terminal, and pnpm needs telling.
+#
+# `pnpm fetch` populates `node_modules/.pnpm` before `COPY . .` lands the
+# workspace on top of it. pnpm 10 then sees a modules directory whose
+# `.modules.yaml` does not describe the install it is about to perform, wants to
+# remove it, and — finding no TTY to ask on — **aborts**:
+#
+#     ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY
+#     Aborted removal of modules directory due to no TTY
+#
+# `CI=true` is pnpm's own documented answer and is true by construction here: a
+# container build has no interactive session, so every prompt is a hang or an
+# abort. It also settles turbo's output into plain lines rather than a TUI that
+# renders as escape codes in a deployment log.
+ENV CI=true
+
 WORKDIR /repo
 
 # The lockfile alone primes the store, so a source-only change reuses this

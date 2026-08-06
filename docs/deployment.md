@@ -49,12 +49,17 @@ need to.
 not a preference: the processing record in `docs/gdpr.md` says the data stays
 in the EU, and a physician's participation record is what it is about.
 
-Ubuntu 24.04. After first boot:
+Ubuntu 24.04 or 26.04. After first boot:
 
 ```bash
 # As root, once.
 apt-get update && apt-get -y upgrade
-apt-get -y install docker.io docker-compose-v2 ca-certificates curl
+
+# `docker-buildx` is not optional here: the host builds the images, and without
+# buildx compose falls back to the legacy builder, which cannot share the one
+# `deps` stage between the four targets. That is the difference between a
+# three-minute deploy and a twelve-minute one.
+apt-get -y install docker.io docker-compose-v2 docker-buildx ca-certificates curl
 
 # A user for deployments. Not root: the CI job holds this key, and a key that
 # can `rm -rf /` is a key you have to think about every time you rotate it.
@@ -333,7 +338,10 @@ nothing is swapped until the build has succeeded.
 
 The first build takes ten to fifteen minutes; later ones are two to four,
 because all four images share one `deps` layer and Docker caches it. The
-workspace is installed **once** however many images change.
+workspace is installed **once** however many images change — provided
+`docker-buildx` is installed. Without it, compose warns and quietly falls back
+to the legacy builder, which rebuilds `deps` per target; `deploy.sh` says so
+rather than letting the warning scroll past.
 
 The commit is checked out **detached at an exact SHA**, not pulled to a branch
 tip: `main` may have moved in the twenty minutes since CI went green, and a
@@ -398,6 +406,13 @@ redeploying a plugin.
 ### Every deploy
 
 Merge to `main`. CI runs; if it is green, Deploy runs. That is the whole loop.
+
+### When `config.env` falls behind the template
+
+Variables get renamed. `deploy.sh` never rewrites `config.env` — it holds
+decisions — so it says which **required** keys the template has that your file
+does not, and prints the `diff -u` to run. Optional keys are not listed: they
+are absent because somebody chose to leave them out.
 
 ### Changing the configuration
 

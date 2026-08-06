@@ -166,8 +166,11 @@ services:
       # alert has nowhere to go.
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
 
-      EIV_BASE_URL: ${EIV_BASE_URL}
-      EIV_ALLOW_LIVE: ${EIV_ALLOW_LIVE}
+      EIV_BASE_URL: ${EIV_BASE_URL:-http://127.0.0.1:4010}
+      # `:-` because empty is the *correct* value until ÄKWL has answered — and
+      # a bare `${EIV_ALLOW_LIVE}` makes compose warn about it on every deploy,
+      # which teaches everybody to skim compose's warnings.
+      EIV_ALLOW_LIVE: ${EIV_ALLOW_LIVE:-}
       # Exactly one submitter, whatever the API scales to. Two workers racing
       # for the same submission is a duplicate Punktemeldung, which cannot be
       # withdrawn after the correction window closes.
