@@ -239,6 +239,65 @@ check "an explicit KEYCLOAK_ORIGIN survives" "https://sso.example.net" "$actual"
 rejects_check "an issuer that yields no origin" \
   eval 'PORTAL_KEYCLOAK_ISSUER=login.medice.de/realms/medice'
 
+# --- the bare domain ------------------------------------------------------
+#
+# It had no default, and the consequence was a browser security error on the
+# customer's own domain: no site block means Caddy has no certificate for the
+# name, and the DNS points here regardless.
+actual=$(
+  source ./domains.sh
+  BASE_DOMAIN=digitalspital.com
+  PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
+  PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
+  ds_derive_domains
+  printf '%s' "$APEX_REDIRECT_URL"
+)
+check "the bare domain defaults to the portal" \
+  "https://fortbildung.digitalspital.com" "$actual"
+
+actual=$(
+  source ./domains.sh
+  BASE_DOMAIN=digitalspital.com
+  PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
+  PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
+  APEX_REDIRECT_URL=""
+  ds_derive_domains
+  printf '%s' "$APEX_REDIRECT_URL"
+)
+check "an empty value takes the default, not silence" \
+  "https://fortbildung.digitalspital.com" "$actual"
+
+actual=$(
+  source ./domains.sh
+  BASE_DOMAIN=digitalspital.com
+  PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
+  PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
+  APEX_REDIRECT_URL=https://www.medice.de
+  ds_derive_domains
+  printf '%s' "$APEX_REDIRECT_URL"
+)
+check "an explicit destination wins" "https://www.medice.de" "$actual"
+
+actual=$(
+  source ./domains.sh
+  BASE_DOMAIN=digitalspital.com
+  PORTAL_PROJECT_SLUG=medice-adhs
+  ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
+  PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
+  APEX_REDIRECT_URL=none
+  ds_derive_domains
+  printf '%s' "$APEX_REDIRECT_URL"
+)
+check "'none' survives as the opt-out" "none" "$actual"
+
+# A hostname without a scheme is the natural typo, and its failure mode is a
+# Caddy block whose redirect target the browser follows to nowhere.
+rejects_check "a bare hostname as the apex destination" \
+  eval 'APEX_REDIRECT_URL=fortbildung.digitalspital.com'
+
 rm -f /tmp/ds-domains-happy.txt
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"

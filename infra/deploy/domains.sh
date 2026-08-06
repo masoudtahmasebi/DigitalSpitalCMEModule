@@ -136,6 +136,33 @@ ds_derive_domains() {
   fi
   : "${KEYCLOAK_ORIGIN:=}"
 
+  # What the bare domain does.
+  #
+  # ## Why this has a default at all
+  #
+  # It did not, and the consequence was a browser security error on the
+  # customer's own domain. `deploy.sh` writes an apex site block only when this
+  # is set, and removes it when it is not — with a comment explaining that a
+  # stale block would keep redirecting a domain the client had since pointed at
+  # a marketing site.
+  #
+  # That reasoning is sound only while the DNS does **not** point here. This
+  # deployment's does: an A record on `@` and a wildcard on `*`. So "no site
+  # block" does not mean "nothing happens" — it means Caddy receives the
+  # connection, finds no site matching the name, has no certificate for it, and
+  # the TLS handshake fails. `ERR_SSL_PROTOCOL_ERROR`, before any HTTP.
+  #
+  # The portal is the right destination: it is the learner-facing front door,
+  # and someone typing the bare domain is looking for the Fortbildungen.
+  #
+  # ## Turning it off
+  #
+  # `APEX_REDIRECT_URL=none` — explicitly, because an empty value now means
+  # "you did not choose" rather than "you chose nothing". Use it when the apex
+  # is served elsewhere: point the DNS away first, or Caddy will answer for a
+  # name it has no site for and you are back where this started.
+  : "${APEX_REDIRECT_URL:=${PORTAL_BASE_URL}}"
+
   # Where the generated Caddy site blocks live — outside the git clone, so a
   # `git checkout` can never touch them and `git status` on the server stays
   # clean. Absolute, because compose resolves a relative bind mount against the
@@ -148,7 +175,7 @@ ds_derive_domains() {
   export STAFF_COOKIE_DOMAIN CORS_ALLOWED_ORIGINS
   export DS_ADMIN_API_BASE DS_PORTAL_API_BASE DS_PORTAL_REDIRECT_URI
   export DS_ADMIN_PROJECT_SLUG DS_PORTAL_PROJECT_SLUG
-  export KEYCLOAK_ORIGIN DS_SITES_DIR
+  export KEYCLOAK_ORIGIN DS_SITES_DIR APEX_REDIRECT_URL
 }
 
 # Check the parts a derivation cannot: values a human still has to supply, and
@@ -198,6 +225,14 @@ ds_check_domains() {
   # with nothing server-side to look at.
   [[ -n "${KEYCLOAK_ORIGIN:-}" ]] || complain \
     "KEYCLOAK_ORIGIN is empty — it is cut from PORTAL_KEYCLOAK_ISSUER, so check that"
+
+  # A value that is neither a URL nor the opt-out is a typo, and the failure
+  # would be a Caddy block with a nonsense redirect target rather than an
+  # error — the browser follows it and lands nowhere.
+  case "${APEX_REDIRECT_URL:-}" in
+    none | http://* | https://*) ;;
+    *) complain "APEX_REDIRECT_URL must be a full URL or 'none', not '${APEX_REDIRECT_URL:-}'" ;;
+  esac
 
   # All four hostnames distinct: two services on one name means Caddy serves
   # whichever block it parsed last, and the other is simply gone.

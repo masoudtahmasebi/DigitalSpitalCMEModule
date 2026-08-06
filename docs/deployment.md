@@ -23,10 +23,14 @@ is here.
 Behind them, reachable from nothing outside the host: PostgreSQL, Redis, and
 Caddy terminating TLS.
 
-The bare `digitalspital.com` is **not** one of these. It is free for a
-promotional site; until there is one, `APEX_REDIRECT_URL` in the environment
-file makes Caddy redirect it somewhere useful, and leaving that empty means the
-bare domain has no site block at all.
+The bare `digitalspital.com` and `www.` are **not** in that table, and by
+default they **redirect to the portal**. They have to do something: the DNS
+wildcard points them at this host, so a name with no Caddy site block is a name
+Caddy has no certificate for — and a browser reports that as
+`ERR_SSL_PROTOCOL_ERROR`, not as a missing page. It is free for a promotional
+site whenever there is one; set `APEX_REDIRECT_URL` to that site, or to `none`
+to serve nothing from it — and if you choose `none`, point its DNS away from
+this host first, or you are back to the TLS error.
 
 ### You configure one thing
 
