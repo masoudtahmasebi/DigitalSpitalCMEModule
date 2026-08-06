@@ -2436,6 +2436,8 @@ components:
           captionsUrl,
           body,
           lastPositionSec,
+          resumeAtSec,
+          seekCeilingSec,
           watchedPercent,
           watchedSegments,
         ]
@@ -2472,7 +2474,33 @@ components:
         lastPositionSec:
           type: integer
           minimum: 0
-          description: Where the learner left off, so the player resumes there.
+          description: |
+            Where the learner left off, as last reported and stored. Playback
+            does not start here — see `resumeAtSec`.
+        resumeAtSec:
+          type: integer
+          minimum: 0
+          description: |
+            Where playback should start — `lastPositionSec` rewound to the
+            containing minute. A learner who left at 14:35 resumes at 14:00.
+
+            Never greater than `seekCeilingSec`: the position playback opens at
+            is always one seeking is allowed to reach.
+
+            Decided by the server rather than the player, so every host rewinds
+            by the same amount. The replay costs the compliance record nothing:
+            coverage is a union of intervals, so re-watching the same seconds
+            cannot inflate the percentage.
+        seekCeilingSec:
+          type: integer
+          minimum: 0
+          description: |
+            The furthest second the player may seek to — the end of what has
+            actually been watched, plus a small tolerance.
+
+            Forward seeking past this is what would make the watch gate
+            decorative. Seeking backwards is unrestricted; re-watching is
+            legitimate and free.
         watchedPercent:
           type: integer
           minimum: 0
@@ -2537,7 +2565,16 @@ components:
     ProgressResult:
       type: object
       description: The server's own recomputed figures, never the client's.
-      required: [contentId, watchedPercent, status, accepted, rejected, watchedSegments]
+      required:
+        [
+          contentId,
+          watchedPercent,
+          status,
+          accepted,
+          rejected,
+          watchedSegments,
+          seekCeilingSec,
+        ]
       properties:
         contentId: { type: string, format: uuid }
         watchedPercent: { type: integer, minimum: 0, maximum: 100 }
@@ -2563,6 +2600,16 @@ components:
             rejected: the client's optimistic bar would show credit the gate did
             not give.
           items: { $ref: "#/components/schemas/WatchedSegment" }
+        seekCeilingSec:
+          type: number
+          minimum: 0
+          description: |
+            The furthest second the player may seek to after this report.
+
+            Returned so the player's limit advances as the learner watches. The
+            alternative — deriving it on the client from `watchedSegments` —
+            would put a rule that decides what counts towards a CME point in two
+            implementations, which is what invariant 6 exists to prevent.
 
     Material:
       type: object

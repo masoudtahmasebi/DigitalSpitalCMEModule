@@ -18,13 +18,31 @@
  * | Which rendition plays | the **browser** — `<source>` order, no detection code |
  * | Position, volume, rate, fullscreen | the **element**, read back through events |
  * | Which passages count as watched | the **server**, via `watchedSegments` |
+ * | How far forward it may seek | the **server**, via `seekCeilingSec` |
  * | Whether the video is complete | the **server** — never inferred here |
  *
- * The last two are the ones that matter. This component never accumulates its
+ * The last three are the ones that matter. This component never accumulates its
  * own coverage: the bar it draws is the server's merged union, redrawn from
  * every `recordProgress` response. An optimistic local bar would show credit
  * for segments the server rejected as implausible, which is precisely the
  * disagreement `CLAUDE.md` §4 invariant 6 exists to prevent.
+ *
+ * ## Forward seeking stops at what has been watched
+ *
+ * The accreditation requires the material to have been *seen*, so the scrub bar
+ * will not go past `seekCeilingSec` — every seek path here routes through one
+ * clamp, and the bar shades the locked remainder rather than silently refusing,
+ * because a control that ignores you reads as broken.
+ *
+ * The clamp is a courtesy, not the gate. Nothing in a browser can be trusted to
+ * enforce a compliance rule: the real defence is that coverage is the union of
+ * intervals validated server-side against the wall clock, so a skipped passage
+ * simply leaves a hole the percentage never fills. If this clamp were removed
+ * tomorrow, no learner would gain a point they had not earned — they would only
+ * gain a worse explanation of why their percentage was stuck.
+ *
+ * Backwards is unrestricted. Re-watching is legitimate and free: a union counts
+ * each second once however often it is played.
  *
  * ## The element is the state
  *
@@ -41,14 +59,16 @@
  * never contradict each other.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   bufferedBars,
+  clampSeekToLimit,
   clampVolume,
   clockTime,
   coverageBars,
   nextPlaybackRate,
   nudgePositionSec,
+  playerSeekLimit,
   positionFraction,
   remainingSec,
   SEEK_JUMP_SEC,
@@ -80,8 +100,17 @@ export interface VideoPlayerProps {
   readonly title: string;
   /** The authored length the watch gate is computed against. */
   readonly durationSec: number | null;
-  /** Where the learner left off. A convenience, never a gate input. */
+  /** Where playback starts — the server's `resumeAtSec`, never computed here. */
   readonly startAtSec: number;
+  /**
+   * The furthest second forward seeking is allowed to reach, from the server.
+   *
+   * `null` lifts the restriction entirely, which is what a lesson outside the
+   * watch gate wants. It is not a fallback for a value that failed to arrive:
+   * see `clampSeekToLimit` for why unrestricted is the right direction to fail
+   * in when the field is missing.
+   */
+  readonly seekCeilingSec: number | null;
   /** The server's merged union — what the coverage bar draws. */
   readonly watchedSegments: readonly WatchedSegment[];
   /** Set by the chrome's **Fortbildung pausieren**. */
@@ -145,6 +174,46 @@ export function VideoPlayer(props: VideoPlayerProps) {
     props.durationSec !== null && props.durationSec > 0
       ? props.durationSec
       : state.durationSec;
+
+  /**
+   * The furthest second this session has reached by ordinary playback.
+   *
+   * `seekCeilingSec` is only as fresh as the last progress flush — fifteen
+   * seconds — so enforcing it alone would yank a playing video backwards the
+   * moment the playhead passed the last flushed second. Advanced only from
+   * `timeupdate` while genuinely playing: advancing it on a seek would let the
+   * limit raise itself.
+   *
+   * A ref and state for the same number, deliberately. The ref is what the
+   * handlers clamp against, so a seek fired between renders uses the current
+   * value rather than the one captured in a stale closure; the state is what
+   * the bar draws, updated on the whole second like every other reading.
+   */
+  //
+  // It starts at the resume point rather than at zero, which is safe because
+  // the server caps `resumeAtSec` at the ceiling it sends alongside it: the
+  // position playback opens at is a position seeking is allowed to reach, or
+  // the video would refuse to start where it was just told to.
+  const reachedRef = useRef(props.startAtSec);
+  const [reachedSec, setReachedSec] = useState(props.startAtSec);
+
+  // A different lesson in the same mounted player starts its own session.
+  useEffect(() => {
+    reachedRef.current = props.startAtSec;
+    setReachedSec(props.startAtSec);
+  }, [props.startAtSec, props.seekCeilingSec]);
+
+  /**
+   * The limit as the *bar* sees it, which lags a second behind the handlers.
+   *
+   * That is the right way round: a bar drawn from the throttled reading and a
+   * clamp applied from the live one can only ever disagree by showing slightly
+   * less freedom than the learner actually has, never more.
+   */
+  const seekLimit = playerSeekLimit(props.seekCeilingSec, reachedSec);
+
+  /** The limit as the *handlers* see it — the live value, at the moment of the seek. */
+  const seekLimitNow = () => playerSeekLimit(props.seekCeilingSec, reachedRef.current);
 
   const publish = useCallback(
     (video: HTMLVideoElement, patch: Partial<PlaybackState> = {}) => {
@@ -216,11 +285,19 @@ export function VideoPlayer(props: VideoPlayerProps) {
     const video = videoRef.current;
     if (video === null) return;
 
-    onTick(video.currentTime, !video.paused && !video.seeking);
+    const playing = !video.paused && !video.seeking;
+    onTick(video.currentTime, playing);
+
+    // Playback is the only thing that raises the limit. Not a seek: a limit a
+    // seek could raise would be no limit at all.
+    if (playing && video.currentTime > reachedRef.current) {
+      reachedRef.current = video.currentTime;
+    }
 
     const second = Math.floor(video.currentTime);
     if (second === lastSecond.current) return;
     lastSecond.current = second;
+    setReachedSec(reachedRef.current);
     publish(video);
   };
 
@@ -264,10 +341,34 @@ export function VideoPlayer(props: VideoPlayerProps) {
       else video.pause();
     });
 
+  /**
+   * The single seek path. Every control that moves the playhead goes through
+   * here — the scrub bar, the arrow keys, J/L, the digit shortcuts — so the
+   * clamp cannot be forgotten by one of them.
+   */
   const seekTo = (positionSec: number) =>
     withVideo((video) => {
-      video.currentTime = positionSec;
+      video.currentTime = clampSeekToLimit(positionSec, seekLimitNow());
     });
+
+  /**
+   * The last line of defence, on the element's own `seeking` event.
+   *
+   * Everything above routes through `seekTo`, but the element can also be moved
+   * by things this component does not own: the Picture-in-Picture window's own
+   * scrub bar, media-session hardware keys, and the browser's native controls in
+   * fullscreen on iOS. Snapping back here catches all of them, and costs
+   * nothing when the position was already legal.
+   */
+  const enforceSeekLimit = () => {
+    const video = videoRef.current;
+    if (video === null) return;
+    const allowed = clampSeekToLimit(video.currentTime, seekLimitNow());
+    // A second's grace: `currentTime` lands on a keyframe rather than exactly
+    // where it was set, and snapping back over a rounding difference would make
+    // the playhead stutter for a learner who did nothing wrong.
+    if (video.currentTime > allowed + 1) video.currentTime = allowed;
+  };
 
   /**
    * Keyboard control, on the player's own container.
@@ -285,7 +386,10 @@ export function VideoPlayer(props: VideoPlayerProps) {
     if (video === null) return;
 
     const seekBy = (deltaSec: number) => {
-      video.currentTime = nudgePositionSec(video.currentTime, deltaSec, duration);
+      video.currentTime = clampSeekToLimit(
+        nudgePositionSec(video.currentTime, deltaSec, duration),
+        seekLimitNow(),
+      );
       publish(video);
     };
 
@@ -402,6 +506,7 @@ export function VideoPlayer(props: VideoPlayerProps) {
           }}
           onSeeking={() => {
             onStop("seek");
+            enforceSeekLimit();
             withVideo(() => {});
           }}
           onSeeked={() => withVideo(() => {})}
@@ -484,6 +589,7 @@ export function VideoPlayer(props: VideoPlayerProps) {
         duration={duration}
         buffered={buffered}
         watchedSegments={props.watchedSegments}
+        seekLimitSec={seekLimit}
         captionsAvailable={props.captionsUrl !== null}
         captionsOn={captionsOn}
         fullscreen={fullscreen}
@@ -536,6 +642,7 @@ function Controls(props: {
   duration: number;
   buffered: ReadonlyArray<readonly [number, number]>;
   watchedSegments: readonly WatchedSegment[];
+  seekLimitSec: number;
   captionsAvailable: boolean;
   captionsOn: boolean;
   fullscreen: boolean;
@@ -559,6 +666,7 @@ function Controls(props: {
         durationSec={duration}
         buffered={props.buffered}
         watchedSegments={props.watchedSegments}
+        seekLimitSec={props.seekLimitSec}
         onSeek={props.onSeek}
       />
 
@@ -667,27 +775,47 @@ function Controls(props: {
 }
 
 /**
- * The scrub bar, with three layers.
+ * The scrub bar, with four layers.
  *
- * Bottom to top: **buffered** (what the browser has), **covered** (what the
- * *server* has credited), **position** (where the playhead is). The middle one
- * is the interesting one and it is drawn from `watchedSegments` — the merged
- * union the API returned — never from anything accumulated locally. A learner
- * looking at this bar is looking at what the CME gate will count.
+ * Bottom to top: **buffered** (what the browser has), **locked** (what may not
+ * be reached yet), **covered** (what the *server* has credited), **position**
+ * (where the playhead is). The covered layer is the interesting one and it is
+ * drawn from `watchedSegments` — the merged union the API returned — never from
+ * anything accumulated locally. A learner looking at this bar is looking at
+ * what the CME gate will count.
+ *
+ * The locked layer exists so the restriction is *visible*. A bar that simply
+ * declines to move when dragged reads as a broken control, and the learner's
+ * next move is to reload the page; a hatched remainder with a sentence under it
+ * reads as a rule, which is what it is.
  *
  * `role="slider"` with real key handling rather than an `<input type=range>`:
- * a range input cannot render the three layers, and reimplementing the ARIA
+ * a range input cannot render the four layers, and reimplementing the ARIA
  * contract is a smaller cost than reimplementing the visuals on top of one.
+ * `aria-valuemax` follows the *limit* rather than the duration, because the
+ * ARIA contract is about what the control can be set to — a screen reader that
+ * announced a maximum the slider refuses to reach would be describing a
+ * different widget.
  */
 function SeekBar(props: {
   positionSec: number;
   durationSec: number;
   buffered: ReadonlyArray<readonly [number, number]>;
   watchedSegments: readonly WatchedSegment[];
+  seekLimitSec: number;
   onSeek: (positionSec: number) => void;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
+  const noteId = useId();
   const fraction = positionFraction(props.positionSec, props.durationSec);
+
+  const limited =
+    Number.isFinite(props.seekLimitSec) &&
+    props.durationSec > 0 &&
+    props.seekLimitSec < props.durationSec;
+  const limitFraction = limited
+    ? positionFraction(props.seekLimitSec, props.durationSec)
+    : 1;
 
   const seekFromPointer = (clientX: number) => {
     const rect = trackRef.current?.getBoundingClientRect();
@@ -696,65 +824,108 @@ function SeekBar(props: {
   };
 
   return (
-    <div
-      ref={trackRef}
-      role="slider"
-      tabIndex={0}
-      aria-label={de.media.seek}
-      aria-valuemin={0}
-      aria-valuemax={Math.max(0, Math.floor(props.durationSec) || 0)}
-      aria-valuenow={Math.floor(props.positionSec)}
-      aria-valuetext={de.media.seekValue(
-        clockTime(props.positionSec),
-        clockTime(props.durationSec),
-      )}
-      onClick={(event) => seekFromPointer(event.clientX)}
-      onKeyDown={(event) => {
-        const step =
-          event.key === "ArrowLeft"
-            ? -SEEK_STEP_SEC
-            : event.key === "ArrowRight"
-              ? SEEK_STEP_SEC
-              : event.key === "Home"
-                ? -props.durationSec
-                : event.key === "End"
-                  ? props.durationSec
-                  : 0;
-        if (step === 0) return;
-        event.preventDefault();
-        props.onSeek(nudgePositionSec(props.positionSec, step, props.durationSec));
-      }}
-      className="relative h-2 w-full cursor-pointer rounded-full bg-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
-    >
-      {bufferedBars(props.buffered, props.durationSec).map((bar) => (
-        <span
-          key={`b${bar.startPercent}`}
-          aria-hidden="true"
-          className="absolute inset-y-0 rounded-full bg-gray-300"
-          style={{ left: `${bar.startPercent}%`, width: `${bar.widthPercent}%` }}
-        />
-      ))}
+    <>
+      <div
+        ref={trackRef}
+        role="slider"
+        tabIndex={0}
+        aria-label={de.media.seek}
+        aria-valuemin={0}
+        aria-valuemax={Math.max(
+          0,
+          Math.floor(limited ? props.seekLimitSec : props.durationSec) || 0,
+        )}
+        aria-valuenow={Math.floor(props.positionSec)}
+        aria-valuetext={
+          limited
+            ? de.media.seekValueLimited(
+                clockTime(props.positionSec),
+                clockTime(props.durationSec),
+                clockTime(props.seekLimitSec),
+              )
+            : de.media.seekValue(
+                clockTime(props.positionSec),
+                clockTime(props.durationSec),
+              )
+        }
+        aria-describedby={limited ? noteId : undefined}
+        onClick={(event) => seekFromPointer(event.clientX)}
+        onKeyDown={(event) => {
+          const step =
+            event.key === "ArrowLeft"
+              ? -SEEK_STEP_SEC
+              : event.key === "ArrowRight"
+                ? SEEK_STEP_SEC
+                : event.key === "Home"
+                  ? -props.durationSec
+                  : event.key === "End"
+                    ? props.durationSec
+                    : 0;
+          if (step === 0) return;
+          event.preventDefault();
+          props.onSeek(nudgePositionSec(props.positionSec, step, props.durationSec));
+        }}
+        className="relative h-2 w-full cursor-pointer rounded-full bg-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+      >
+        {bufferedBars(props.buffered, props.durationSec).map((bar) => (
+          <span
+            key={`b${bar.startPercent}`}
+            aria-hidden="true"
+            className="absolute inset-y-0 rounded-full bg-gray-300"
+            style={{ left: `${bar.startPercent}%`, width: `${bar.widthPercent}%` }}
+          />
+        ))}
 
-      {coverageBars(props.watchedSegments, props.durationSec).map((bar) => (
-        <span
-          key={`c${bar.startPercent}`}
-          aria-hidden="true"
-          className="absolute inset-y-0 rounded-full bg-brand-300"
-          style={{ left: `${bar.startPercent}%`, width: `${bar.widthPercent}%` }}
-        />
-      ))}
+        {/*
+        The locked remainder. Hatched rather than merely darker: the bar already
+        uses four shades to mean four things, and a fifth grey would be one
+        distinction too many for a bar two pixels tall — and, per WCAG 1.4.1,
+        one that colour alone would carry.
+      */}
+        {limited ? (
+          <span
+            aria-hidden="true"
+            className="absolute inset-y-0 right-0 rounded-r-full bg-gray-400/70"
+            style={{
+              left: `${limitFraction * 100}%`,
+              backgroundImage:
+                "repeating-linear-gradient(45deg, rgba(255,255,255,.6) 0 2px, transparent 2px 4px)",
+            }}
+          />
+        ) : null}
 
-      <span
-        aria-hidden="true"
-        className="absolute inset-y-0 left-0 rounded-full bg-brand-600"
-        style={{ width: `${fraction * 100}%` }}
-      />
-      <span
-        aria-hidden="true"
-        className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-700"
-        style={{ left: `${fraction * 100}%` }}
-      />
-    </div>
+        {coverageBars(props.watchedSegments, props.durationSec).map((bar) => (
+          <span
+            key={`c${bar.startPercent}`}
+            aria-hidden="true"
+            className="absolute inset-y-0 rounded-full bg-brand-300"
+            style={{ left: `${bar.startPercent}%`, width: `${bar.widthPercent}%` }}
+          />
+        ))}
+
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-0 left-0 rounded-full bg-brand-600"
+          style={{ width: `${fraction * 100}%` }}
+        />
+        <span
+          aria-hidden="true"
+          className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-700"
+          style={{ left: `${fraction * 100}%` }}
+        />
+      </div>
+
+      {/*
+        Rendered only while the restriction is actually biting. A permanent
+        notice would still be on screen for the learner who has watched the
+        whole video, telling them off for nothing.
+      */}
+      {limited ? (
+        <p id={noteId} className="text-xs text-gray-600">
+          {de.media.seekLocked}
+        </p>
+      ) : null}
+    </>
   );
 }
 

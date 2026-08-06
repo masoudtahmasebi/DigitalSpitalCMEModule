@@ -48,6 +48,17 @@ export interface EnrolmentRow {
   passThresholdPercent: number;
   maxQuizAttempts: number | null;
   completedAt: Date | null;
+  /**
+   * The course's points **as they were when this learner enrolled**.
+   *
+   * Snapshotted on the enrolment like the watch and pass thresholds beside it,
+   * and for the same reason: a course re-accredited half-way through must not
+   * change what was asked of somebody who is already part-way through it.
+   *
+   * `null` means the course awards none, which is what decides whether an EFN
+   * is asked for at all — see `completion.ts` in `@ds/domain`.
+   */
+  cmePoints: number | null;
 }
 
 export interface TreeContentRow {
@@ -171,6 +182,7 @@ export class LearningRepository implements LearningRepositoryPort {
         passThresholdPercent: enrolments.passThresholdPercent,
         maxQuizAttempts: enrolments.maxQuizAttempts,
         completedAt: enrolments.completedAt,
+        cmePoints: enrolments.cmePoints,
       })
       .from(enrolments)
       .where(and(eq(enrolments.courseId, courseId), eq(enrolments.userId, userId)))
@@ -214,6 +226,7 @@ export class LearningRepository implements LearningRepositoryPort {
         passThresholdPercent: enrolments.passThresholdPercent,
         maxQuizAttempts: enrolments.maxQuizAttempts,
         completedAt: enrolments.completedAt,
+        cmePoints: enrolments.cmePoints,
       });
 
     if (row !== undefined) return row;

@@ -176,6 +176,12 @@ course to have its own URL listens for `ds-lms:course-open` and calls
 `preventDefault()` — that is the portal, and it is why the portal has no learner
 screen of its own.
 
+The event's detail carries `{ slug, intent }`. `intent` is `"resume"` when the
+learner pressed **Fortbildung fortsetzen** rather than **Zur Fortbildung**; a
+routing host honours it by mounting the element with `open-at="resume"`, which
+opens the player at the point they left off instead of the course's start page.
+Ignoring it is safe — both buttons then land on the start page, as before.
+
 ---
 
 ## Status

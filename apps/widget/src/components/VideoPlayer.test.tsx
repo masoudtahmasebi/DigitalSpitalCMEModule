@@ -38,6 +38,9 @@ function renderPlayer(over: Partial<React.ComponentProps<typeof VideoPlayer>> = 
     title: "Modul 3 — Diagnostik",
     durationSec: 1545,
     startAtSec: 875,
+    // Unrestricted by default: the seek-limit tests below opt in, so every
+    // other test keeps asserting the player's ordinary behaviour.
+    seekCeilingSec: null as number | null,
     watchedSegments: [],
     paused: false,
     onPlayback: vi.fn(),
@@ -175,6 +178,150 @@ describe("the scrub bar", () => {
     // jsdom will not move a media element's currentTime, so what is asserted is
     // that the handler ran rather than the resulting position.
     expect(props.onPlayback).toHaveBeenCalled();
+  });
+});
+
+describe("forward seeking", () => {
+  /**
+   * jsdom will not move a real media element, so the element's `currentTime`
+   * is replaced with a plain accessor that records what was written to it.
+   * What is under test is the *value the player computes*, which is the part
+   * that decides whether a physician can skip a video and still be credited.
+   */
+  function trackedPlayer(over: Partial<React.ComponentProps<typeof VideoPlayer>> = {}) {
+    const rendered = renderPlayer(over);
+    const video = rendered.container.querySelector("video") as HTMLVideoElement;
+    let current = 0;
+    const writes: number[] = [];
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      get: () => current,
+      set: (value: number) => {
+        current = value;
+        writes.push(value);
+      },
+    });
+    return { ...rendered, video, writes, at: () => current };
+  }
+
+  it("stops a drag to the end at what has actually been watched", () => {
+    // Five minutes watched of a 25-minute module: dragging to the end lands at
+    // 5:05, not at 25:45. The clamp is what makes the accreditation's "must be
+    // seen" visible in the control rather than only in a withheld point.
+    const { writes } = trackedPlayer({ seekCeilingSec: 305, startAtSec: 0 });
+    const slider = screen.getByRole("slider", { name: "Wiedergabeposition" });
+
+    fireEvent.keyDown(slider, { key: "End" });
+
+    expect(writes.at(-1)).toBe(305);
+  });
+
+  it("leaves backwards seeking alone", () => {
+    // Re-watching is legitimate and free — a union counts each second once —
+    // so nothing here may punish it.
+    const { writes } = trackedPlayer({ seekCeilingSec: 305, startAtSec: 0 });
+    const slider = screen.getByRole("slider", { name: "Wiedergabeposition" });
+
+    fireEvent.keyDown(slider, { key: "Home" });
+
+    expect(writes.at(-1)).toBe(0);
+  });
+
+  it("stops the arrow keys and the digit shortcuts at the same place", () => {
+    // Every seek path goes through one clamp. A shortcut that forgot it would
+    // be a hole in the gate that nothing else in the interface reveals.
+    const { container, writes } = trackedPlayer({ seekCeilingSec: 120, startAtSec: 0 });
+    const player = container.querySelector('[aria-label="Modul 3 — Diagnostik"]');
+    if (player === null) throw new Error("player container not found");
+
+    fireEvent.keyDown(player, { key: "ArrowRight" });
+    expect(writes.at(-1)).toBe(5);
+
+    fireEvent.keyDown(player, { key: "9" });
+    // 90 % of 25:45 is 23:10 — refused, and 2:00 is offered instead.
+    expect(writes.at(-1)).toBe(120);
+
+    fireEvent.keyDown(player, { key: "l" });
+    expect(writes.at(-1)).toBe(120);
+  });
+
+  it("snaps back a position set by something it does not own", () => {
+    // Picture-in-Picture's own scrub bar, media keys, iOS fullscreen controls.
+    // They move the element directly, so the element's own `seeking` event is
+    // the only place they can be caught.
+    const { video, at } = trackedPlayer({ seekCeilingSec: 120, startAtSec: 0 });
+
+    video.currentTime = 1400;
+    fireEvent.seeking(video);
+
+    expect(at()).toBe(120);
+  });
+
+  it("lets a playing video pass the ceiling it was given", () => {
+    // The ceiling is only as fresh as the last flush, fifteen seconds apart.
+    // Enforcing it literally would drag a learner watching normally backwards,
+    // which is precisely the wrong person to punish.
+    const { video, at } = trackedPlayer({ seekCeilingSec: 60, startAtSec: 0 });
+    Object.defineProperty(video, "paused", { value: false, configurable: true });
+
+    video.currentTime = 75;
+    fireEvent.timeUpdate(video);
+    fireEvent.seeking(video);
+
+    expect(at()).toBe(75);
+  });
+
+  it("does not let a seek raise its own ceiling", () => {
+    // If a seek counted as "reached", one refused drag would authorise the
+    // next one and the limit would walk itself to the end of the video.
+    const { video, at } = trackedPlayer({ seekCeilingSec: 60, startAtSec: 0 });
+
+    video.currentTime = 900;
+    fireEvent.seeking(video);
+    expect(at()).toBe(60);
+
+    video.currentTime = 900;
+    fireEvent.seeking(video);
+    expect(at()).toBe(60);
+  });
+
+  it("says why the bar will not move, and only while it will not", () => {
+    // A control that silently refuses reads as broken, and the learner's next
+    // move is to reload the page.
+    renderPlayer({ seekCeilingSec: 305, startAtSec: 300 });
+    expect(screen.getByText(/Vorspulen ist nicht möglich/)).toBeTruthy();
+
+    cleanup();
+    renderPlayer({ seekCeilingSec: 1545 });
+    expect(screen.queryByText(/Vorspulen ist nicht möglich/)).toBeNull();
+  });
+
+  it("announces the restricted range rather than the full one", () => {
+    // `aria-valuemax` is what the slider can be *set* to. Announcing 25:45 for
+    // a control that refuses to pass 5:05 describes a different widget.
+    //
+    // The pair is coherent on purpose: the API caps `resumeAtSec` at
+    // `seekCeilingSec`, so a video never opens at a position it would then
+    // refuse to seek back to.
+    renderPlayer({ seekCeilingSec: 305, startAtSec: 300 });
+    const slider = screen.getByRole("slider", { name: "Wiedergabeposition" });
+
+    expect(slider.getAttribute("aria-valuemax")).toBe("305");
+    expect(slider.getAttribute("aria-valuetext")).toBe(
+      "5:00 von 25:45, freigegeben bis 5:05",
+    );
+  });
+
+  it("imposes nothing when the server sent no ceiling", () => {
+    // A missing field must not lock the player: the gate is the union of
+    // reported intervals, and locking would cost every learner for no gain.
+    const { writes } = trackedPlayer({ seekCeilingSec: null, startAtSec: 0 });
+    const slider = screen.getByRole("slider", { name: "Wiedergabeposition" });
+
+    fireEvent.keyDown(slider, { key: "End" });
+
+    expect(writes.at(-1)).toBe(1545);
+    expect(screen.queryByText(/Vorspulen ist nicht möglich/)).toBeNull();
   });
 });
 

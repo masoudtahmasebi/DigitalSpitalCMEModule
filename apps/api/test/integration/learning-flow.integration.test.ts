@@ -68,6 +68,9 @@ let seedPool: Pool;
 
 let projectSlug: string;
 let courseSlug: string;
+/** A course awarding no CME points — see the suite at the end of this file. */
+let freeCourseSlug: string;
+let freeVideoId: string;
 let video1Id: string;
 let video2Id: string;
 let quizId: string;
@@ -99,8 +102,10 @@ beforeAll(async () => {
     [customerId, departmentId, projectSlug, "LF project", issuer, AUDIENCE],
   );
   const courseId = await insert(
-    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent)
-     VALUES ($1,$2,$3,$4,100,70) RETURNING id`,
+    // 4 CME points, which is what makes the EFN a condition of completion: a
+    // course awarding none reports nothing to EIV-FOBI and so needs no EFN.
+    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent, cme_points)
+     VALUES ($1,$2,$3,$4,100,70,4) RETURNING id`,
     [customerId, projectId, courseSlug, "Learning flow course"],
   );
 
@@ -167,6 +172,41 @@ beforeAll(async () => {
     `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, file_url, mime_type, file_size)
      VALUES ($1,$2,9,'material',$3,$4,'application/pdf',2048) RETURNING id`,
     [customerId, chapter2, "Modul 2 Handout", "https://cdn.example.org/m2.pdf"],
+  );
+
+  /*
+   * A second course in the same project, awarding **no** CME points.
+   *
+   * Educational material without accreditation is a real case — the client has
+   * asked for it explicitly — and it changes what completion means: with no
+   * points there is nothing to report to EIV-FOBI, so there is nothing an EFN
+   * would identify, and demanding one would collect a physician's identifier
+   * for no purpose (ADR-0004). One module, one video: this fixture exists to
+   * exercise the conditional, not the structure.
+   */
+  freeCourseSlug = `lf-free-${suffix}`;
+  const freeCourseId = await insert(
+    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent, cme_points)
+     VALUES ($1,$2,$3,$4,100,70,NULL) RETURNING id`,
+    [customerId, projectId, freeCourseSlug, "Fortbildung ohne Punkte"],
+  );
+  const freeModule = await insert(
+    "INSERT INTO modules (customer_id, course_id, ordinal, title) VALUES ($1,$2,0,$3) RETURNING id",
+    [customerId, freeCourseId, "Modul 1"],
+  );
+  const freeChapter = await insert(
+    "INSERT INTO chapters (customer_id, module_id, ordinal, title) VALUES ($1,$2,0,$3) RETURNING id",
+    [customerId, freeModule, "Kapitel 1"],
+  );
+  freeVideoId = await insert(
+    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, duration_sec, media_sources)
+     VALUES ($1,$2,0,'video',$3,60,$4::jsonb) RETURNING id`,
+    [
+      customerId,
+      freeChapter,
+      "Einführung",
+      JSON.stringify([{ url: VIDEO_1_URL, mimeType: "video/mp4", label: null }]),
+    ],
   );
 
   const userId = await insert(
@@ -388,6 +428,29 @@ describe("the learner journey", () => {
     expect(status).toBe(200);
     expect(body.watchedPercent).toBe(20);
     expect(body.status).toBe("in_progress");
+    // The seek ceiling comes back with the union it was computed from — the
+    // end of what was actually watched (600), plus the tolerance. It is
+    // derived from the segments, never from `lastPositionSec`: a ceiling taken
+    // from the reported position would let a client raise its own limit by
+    // claiming to have arrived somewhere it never played.
+    expect(body.seekCeilingSec).toBe(605);
+  });
+
+  it("resumes at the last whole minute of what is left to watch", async () => {
+    const { status, body } = await call(
+      "GET",
+      `/courses/${courseSlug}/contents/${video1Id}`,
+    );
+
+    expect(status).toBe(200);
+    // Stopped at 600 — the very end of a 600-second video. Resuming there
+    // presents as a player that will not start, so the resume point is the
+    // last whole minute that still has something in it: 09:00.
+    expect(body.lastPositionSec).toBe(600);
+    expect(body.resumeAtSec).toBe(540);
+    // And it is never beyond the ceiling: the position playback opens at is
+    // always one the player is allowed to seek to.
+    expect(body.resumeAtSec).toBeLessThanOrEqual(body.seekCeilingSec);
   });
 
   it("merges later intervals into the stored union across requests", async () => {
@@ -535,5 +598,56 @@ describe("the Mediathek", () => {
     const { body } = await call("GET", `/courses/${courseSlug}/enrolment`);
 
     expect(body.modules[0].gate).toBe("completed");
+  });
+});
+
+/**
+ * A course that awards no CME points.
+ *
+ * The platform is a CME platform, but not everything it will carry is
+ * accredited: the client has asked for purely educational courses, and those
+ * change what "complete" means. With no points there is no Punktemeldung, so
+ * there is no EFN to report — and asking for one anyway would collect a
+ * physician's national identifier for a purpose that does not exist, which
+ * ADR-0004 exists to prevent.
+ *
+ * Run against the database rather than a fake because the condition rides on a
+ * column copied from the course onto the enrolment at enrolment time. A select
+ * that forgot the column would look exactly like a course with no points.
+ */
+describe("a course without CME points", () => {
+  it("never lists the EFN among the outstanding conditions", async () => {
+    const { status, body } = await call("PUT", `/courses/${freeCourseSlug}/enrolment`);
+
+    expect(status).toBe(200);
+    expect(body.outstanding).toEqual(["watch", "evaluation"]);
+  });
+
+  it("still does not ask for one once everything watchable is watched", async () => {
+    // The interesting moment: the accredited course reaches this point with
+    // "efn" outstanding and refuses to complete without it. This one has
+    // nothing left but the Evaluationsbogen — no EFN is ever demanded, at any
+    // stage, because there is no Punktemeldung for it to appear in.
+    await call("POST", `/courses/${freeCourseSlug}/contents/${freeVideoId}/progress`, {
+      segments: [{ startSec: 0, endSec: 60 }],
+      lastPositionSec: 60,
+    });
+
+    const { body } = await call("GET", `/courses/${freeCourseSlug}/enrolment`);
+
+    expect(body.achievedWatchPercent).toBe(100);
+    expect(body.outstanding).toEqual(["evaluation"]);
+    expect(body.efnPresent).toBe(false);
+  });
+
+  it("refuses completion for the evaluation, and says only that", async () => {
+    const { status, body } = await call("POST", `/courses/${freeCourseSlug}/completion`);
+
+    expect(status).toBe(409);
+    // The problem document names what is missing. It must not mention the
+    // Fortbildungsnummer, which would send a learner looking for a field that
+    // this course does not have.
+    expect(body.detail).not.toContain("Fortbildungsnummer");
+    expect(body.detail).not.toMatch(/EFN/iu);
   });
 });

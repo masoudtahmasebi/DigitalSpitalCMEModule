@@ -75,6 +75,8 @@ export interface EnrolmentListRow {
   userId: string;
   requiredWatchPercent: number;
   passThresholdPercent: number;
+  /** The enrolment's snapshot — see `EnrolmentRow` in the learning repository. */
+  cmePoints: number | null;
   completedAt: Date | null;
   attestedName: string | null;
   firstName: string | null;
@@ -339,6 +341,7 @@ export class AdminRepository implements AdminRepositoryPort {
         userId: enrolments.userId,
         requiredWatchPercent: enrolments.requiredWatchPercent,
         passThresholdPercent: enrolments.passThresholdPercent,
+        cmePoints: enrolments.cmePoints,
         completedAt: enrolments.completedAt,
         attestedName: enrolments.attestedName,
         firstName: users.firstName,

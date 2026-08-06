@@ -1,4 +1,4 @@
-# Backlog — work orders P0–P11
+# Backlog — work orders P0–P15
 
 One file per phase. Each file is an **Epic**; each entry inside it is a **Task**
 written so it can be handed to Claude Code verbatim.
@@ -18,12 +18,22 @@ written so it can be handed to Claude Code verbatim.
 | P10 · Hardening, Hetzner deploy & launch | [P10.md](P10.md) | 10 h      | 6     |
 | **Total (the plan)**                     |                  | **140 h** |       |
 | P11 · Second host and extension points   | [P11.md](P11.md) | 12 h ⚠    | —     |
+| P12 · Two identity planes, full admin    | [P12.md](P12.md) | 30 h ⚠    | —     |
+| P15 · Course behaviour: length, resuming | [P15.md](P15.md) | 11 h ⚠    | —     |
 
-⚠ **P11 is outside the 140 h plan.** It was built on an explicit instruction and
-is recorded rather than absorbed: `CLAUDE.md` §3 says the rest of the plan is not
-negotiable, so those hours came from somewhere. See the header of
+⚠ **P11, P12 and P15 are outside the 140 h plan.** Each was built on an explicit
+instruction and is recorded rather than absorbed: `CLAUDE.md` §3 says the rest of
+the plan is not negotiable, so those hours came from somewhere. See the header of
 [P11.md](P11.md), which also states that its work orders were written after the
 code — a process violation, named rather than hidden.
+
+**Two ID ranges have no file here.** `P13-01` (course presentation fields —
+which hero image, subtitle and description a physician sees, authorable rather
+than seeded) is specified in [`../content-model.md`](../content-model.md) §8, and
+`P14-01` (the first super administrator) in
+[`../deployment.md`](../deployment.md). They are named in code comments with
+those IDs; the work order is the section, not a file in this directory. Anything
+new under those numbers belongs in a file here.
 
 ## Global definition of done
 

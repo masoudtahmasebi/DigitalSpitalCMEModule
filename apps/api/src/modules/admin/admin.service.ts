@@ -448,6 +448,7 @@ export class AdminService {
         passThresholdPercent: enrolment.passThresholdPercent,
         efnPresent,
         evaluationSubmitted,
+        cmePoints: enrolment.cmePoints,
       });
 
       const submission = submissions.get(enrolment.enrolmentId);

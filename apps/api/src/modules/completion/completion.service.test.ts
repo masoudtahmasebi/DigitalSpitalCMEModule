@@ -81,6 +81,8 @@ const tree: CourseTree = {
   ],
 };
 
+// 4 points, so the EFN is required: without points there is nothing to report
+// to EIV-FOBI and nothing to report it against.
 const enrolment: EnrolmentRow = {
   id: ENROLMENT_ID,
   courseId: COURSE_ID,
@@ -89,6 +91,7 @@ const enrolment: EnrolmentRow = {
   passThresholdPercent: 70,
   maxQuizAttempts: null,
   completedAt: null,
+  cmePoints: 4,
 };
 
 const questions: EvaluationQuestionRow[] = [

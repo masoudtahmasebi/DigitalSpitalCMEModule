@@ -17,6 +17,8 @@ import {
   evaluateSequence,
   isCourseComplete,
   mergeWatchedSegments,
+  resumePosition,
+  seekCeiling,
   orderSources,
   parseMediaSources,
   rollupProgress,
@@ -204,6 +206,10 @@ export class LearningService {
       // The union that was just stored, so the player's bar redraws from what
       // the gate credited rather than from what the client believed it sent.
       watchedSegments: [...merged],
+      // And how far it may now seek, computed from that same union. Sent rather
+      // than left to the client so the ceiling advances as the learner watches
+      // without the player owning the rule.
+      seekCeilingSec: seekCeiling(merged),
     };
   }
 
@@ -256,6 +262,52 @@ export class LearningService {
       captionsUrl: this.media.resolve(content.captionsUrl, learner.customerId, now),
       body: content.body,
       lastPositionSec: progress?.lastPositionSec ?? 0,
+      /*
+       * Where playback actually starts, decided here rather than in the
+       * player.
+       *
+       * A learner who left at 14:35 comes back at 14:00 — the containing
+       * minute — because dropping somebody into the middle of a sentence they
+       * have half-forgotten is worse than replaying thirty seconds. The replay
+       * is free: coverage is a union, so re-watching the same seconds cannot
+       * inflate the percentage (invariant 5).
+       *
+       * Server-side because it is a rule about what a learner is shown of a
+       * course that awards a CME point, and the client is a renderer
+       * (invariant 1). It also means every host — the widget, the portal, the
+       * WordPress embed — rewinds by the same amount without three of them
+       * agreeing to.
+       */
+      resumeAtSec: resumePosition({
+        // Capped at the seek ceiling before it is floored, so the resume point
+        // can never be a position the player would then refuse to seek to.
+        //
+        // The two can diverge because `lastPositionSec` is reported by the
+        // client while the ceiling is derived from segments this API validated:
+        // a report whose segments were rejected as implausible still moves the
+        // position. Without the cap, a client could raise its own ceiling by
+        // reporting a position it never watched to — which would credit nothing
+        // (the union is untouched) but would still hand out a scrub bar it had
+        // not earned.
+        lastPositionSec: Math.min(
+          progress?.lastPositionSec ?? 0,
+          seekCeiling([...readSegments(progress?.watchedSegments)]),
+        ),
+        durationSec: content.durationSec,
+      }),
+      /*
+       * The furthest second the player may seek to.
+       *
+       * The end of what has actually been watched, plus the same tolerance
+       * `isSeekAllowed` applies, so the scrub bar cannot offer a position the
+       * API would then refuse to credit. Seeking backwards is unrestricted.
+       *
+       * Sent rather than derived in the client from `watchedSegments` for the
+       * usual reason: the client already has the segments, but the *rule*
+       * about what they permit belongs to one place, and that place is the
+       * server.
+       */
+      seekCeilingSec: seekCeiling([...readSegments(progress?.watchedSegments)]),
       watchedPercent: progress?.watchedPercent ?? 0,
       // The intervals the percentage above was computed from, so the player's
       // coverage bar and its number come from one source.
@@ -512,6 +564,7 @@ export class LearningService {
       passThresholdPercent: enrolment.passThresholdPercent,
       efnPresent,
       evaluationSubmitted,
+      cmePoints: enrolment.cmePoints,
     });
 
     const courseNode = toCourseNode(tree);
@@ -558,6 +611,13 @@ export function summariseEnrolment(input: {
   passThresholdPercent: number;
   efnPresent: boolean;
   evaluationSubmitted: boolean;
+  /**
+   * The enrolment's snapshot of the course's points, not the live course
+   * record — a course re-accredited after somebody enrolled must not change
+   * what was asked of them mid-way, which is the same reason
+   * `requiredWatchPercent` is snapshotted.
+   */
+  cmePoints: number | null;
 }): {
   achievedWatchPercent: number;
   quizPassed: boolean;
@@ -579,6 +639,9 @@ export function summariseEnrolment(input: {
     quizPassed,
     evaluationSubmitted: input.evaluationSubmitted,
     efnPresent: input.efnPresent,
+    // No points, no Punktemeldung, and therefore no reason to hold a
+    // physician's Fortbildungsnummer — see the note in `completion.ts`.
+    awardsCmePoints: input.cmePoints !== null && input.cmePoints > 0,
   });
 
   return {

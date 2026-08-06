@@ -266,3 +266,13 @@ export type {
   AttestedNameProblem,
   AttestedNameResult,
 } from "./attested-name.js";
+
+export {
+  clampSeek,
+  clampSeekToLimit,
+  playerSeekLimit,
+  RESUME_GRANULARITY_SEC,
+  resumePosition,
+  seekCeiling,
+} from "./resume.js";
+export type { ResumeInput } from "./resume.js";

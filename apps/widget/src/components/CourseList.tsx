@@ -75,7 +75,7 @@ export interface CatalogSection {
 
 export interface CatalogPanelProps {
   readonly client: ApiClient;
-  readonly onOpen: (slug: string) => void;
+  readonly onOpen: (slug: string, intent: "start" | "resume") => void;
 }
 
 /**
@@ -103,7 +103,7 @@ export const CATALOG_SECTIONS: readonly CatalogSection[] = [
 export function CourseList(props: {
   client: ApiClient;
   branding: Branding;
-  onOpen: (slug: string) => void;
+  onOpen: (slug: string, intent: "start" | "resume") => void;
 }) {
   const [sectionId, setSectionId] = useState(CATALOG_SECTIONS[0]?.id ?? "");
   const section =
@@ -284,7 +284,10 @@ function CoursePanel(
         <ul className="space-y-6 p-5 sm:p-7">
           {items.map((course) => (
             <li key={course.slug}>
-              <CourseCard course={course} onOpen={() => props.onOpen(course.slug)} />
+              <CourseCard
+                course={course}
+                onOpen={(intent) => props.onOpen(course.slug, intent)}
+              />
             </li>
           ))}
         </ul>
@@ -397,14 +400,25 @@ function CatalogHero(props: { branding: Branding }) {
   );
 }
 
-function CourseCard(props: { course: CourseSummary; onOpen: () => void }) {
+function CourseCard(props: {
+  course: CourseSummary;
+  onOpen: (intent: "start" | "resume") => void;
+}) {
   const { course } = props;
 
-  // Started but not finished. The layout gives this case a second, orange
-  // button beside the neutral one — "Zur Fortbildung" opens the detail page,
-  // "Fortbildung fortsetzen" goes straight back to where they stopped. Both
-  // land on the same screen here; the distinction the layout draws is between
-  // *browsing* and *resuming*, and only the second is worth an accent colour.
+  /*
+   * Started but not finished — the case the layout gives two buttons.
+   *
+   * They are genuinely two destinations. **Zur Fortbildung** opens the course's
+   * start page: description, Referenten, Zertifizierung, the outline. **
+   * Fortbildung fortsetzen** skips all of it and lands in the video the learner
+   * was watching, or the next one if they finished it — which content that is,
+   * the server decides (`resumeContentId`).
+   *
+   * Only the second gets the accent colour: it is the one action a returning
+   * learner almost always wants, and giving both equal weight would make them
+   * read the labels every time.
+   */
   const inProgress = course.enrolment !== null && !course.enrolment.complete;
 
   return (
@@ -447,13 +461,13 @@ function CourseCard(props: { course: CourseSummary; onOpen: () => void }) {
         {/* The CTA is the server's answer, not a guess from the card's own
             fields: `enrolment` is the caller's row, or null. */}
         <div className="mt-5 flex flex-wrap gap-3">
-          <Button onClick={props.onOpen}>
+          <Button onClick={() => props.onOpen("start")}>
             {course.enrolment !== null && course.enrolment.complete
               ? de.catalog.review
               : de.catalog.open}
           </Button>
           {inProgress ? (
-            <Button variant="cta" onClick={props.onOpen}>
+            <Button variant="cta" onClick={() => props.onOpen("resume")}>
               {de.overview.resume}
             </Button>
           ) : null}

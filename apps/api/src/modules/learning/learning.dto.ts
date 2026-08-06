@@ -83,8 +83,32 @@ export const lessonContentSchema = z.object({
    */
   captionsUrl: z.string().nullable(),
   body: z.string().nullable(),
-  /** Where the learner left off, so the player can resume. */
+  /** Where the learner left off, as last reported and stored. */
   lastPositionSec: z.number().int().nonnegative(),
+  /**
+   * Where playback should actually start — `lastPositionSec` rewound to the
+   * containing minute.
+   *
+   * A learner who left at 14:35 resumes at 14:00. Decided by the server
+   * (`resumePosition` in `@ds/domain`) rather than by the player, so every
+   * host rewinds by the same amount and the rule sits with the other rules
+   * about what a learner is shown of a course that awards a CME point.
+   */
+  resumeAtSec: z.number().int().nonnegative(),
+  /**
+   * The furthest second the player may seek to.
+   *
+   * Forward seeking is what makes a watch gate decorative, so the scrub bar is
+   * clamped to what has actually been watched. Backwards is unrestricted —
+   * re-watching is legitimate and, because coverage is a union, free.
+   *
+   * The client already holds `watchedSegments` and could compute this, but the
+   * *rule* about what they permit lives in one place and that place is the
+   * server. The API validates every reported segment regardless; this is the
+   * courtesy that stops the control offering a position that would then be
+   * refused.
+   */
+  seekCeilingSec: z.number().int().nonnegative(),
   watchedPercent: z.number().int().min(0).max(100),
   /**
    * The merged intervals behind `watchedPercent`, so the scrub bar can shade
@@ -194,6 +218,16 @@ export const progressResultSchema = z.object({
    * rejected: an optimistic local bar would display credit the gate withheld.
    */
   watchedSegments: z.array(watchedSegmentSchema),
+  /**
+   * The seek ceiling after this report.
+   *
+   * Returned for the same reason the union is: the player's limit has to
+   * advance as the learner watches, and the alternative — the player deriving
+   * it from `watchedSegments` itself — would be a second implementation of a
+   * rule that decides what counts towards a CME point (CLAUDE.md §4 invariant
+   * 6). One computation, on the server, sent to whoever needs it.
+   */
+  seekCeilingSec: z.number().nonnegative(),
 });
 
 export type EnrolmentState = z.infer<typeof enrolmentStateSchema>;

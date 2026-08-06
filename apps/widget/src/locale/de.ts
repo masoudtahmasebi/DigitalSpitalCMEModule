@@ -249,6 +249,19 @@ export const de = {
     seekValue: (position: string, duration: string): string =>
       `${position} von ${duration}`,
     remaining: (clock: string): string => `noch ${clock}`,
+    /**
+     * Why the scrub bar will not go further.
+     *
+     * Stated rather than implied: a control that silently refuses reads as
+     * broken, and the learner's next move is to reload the page or write to
+     * support. Named as an accreditation condition, because it is one — the
+     * points require the material to have been seen.
+     */
+    seekLocked:
+      "Vorspulen ist nicht möglich. Für die Fortbildungspunkte muss das Video vollständig angesehen werden.",
+    /** The slider's value when the range is capped: "14:35 von 25:45, freigegeben bis 12:30". */
+    seekValueLimited: (position: string, duration: string, limit: string): string =>
+      `${position} von ${duration}, freigegeben bis ${limit}`,
     /** The union the server has credited — not the furthest position reached. */
     covered: (percent: number): string => `${percent} % angesehen`,
     speed: "Geschwindigkeit",
@@ -280,13 +293,13 @@ export const de = {
     shortcuts: "Tastaturkürzel",
     shortcutList: [
       ["Leertaste / K", "Abspielen oder pausieren"],
-      ["← / →", "5 Sekunden zurück oder vor"],
-      ["J / L", "10 Sekunden zurück oder vor"],
+      ["← / →", "5 Sekunden zurück oder vor (vor nur bis zum Gesehenen)"],
+      ["J / L", "10 Sekunden zurück oder vor (vor nur bis zum Gesehenen)"],
       ["↑ / ↓", "Lautstärke"],
       ["M", "Ton aus oder ein"],
       ["C", "Untertitel"],
       ["F", "Vollbild"],
-      ["0 – 9", "Zu 0 % … 90 % springen"],
+      ["0 – 9", "Zu 0 % … 90 % springen (nur bis zum Gesehenen)"],
     ] as ReadonlyArray<readonly [string, string]>,
   },
 

@@ -63,7 +63,8 @@ mechanism. The API neither knows nor cares — it validates the token against
 Keycloak JWKS regardless (ADR-0003).
 
 **Contract 3 — one outbound event, added by P5-11.** Picking a course in the
-catalogue dispatches a cancelable `ds-lms:course-open` carrying `{ slug }`.
+catalogue dispatches a cancelable `ds-lms:course-open` carrying
+`{ slug, intent }`, where `intent` is `"start"` or `"resume"` (P15-04).
 
 It exists because hosts differ on exactly one thing: **who owns the URL.** A
 WordPress page's URL belongs to the theme, so the widget navigates internally
@@ -79,6 +80,25 @@ than notify-only, because both parties navigating would render the course twice.
 This is what removed the portal's own catalogue screen — a second React
 implementation of the same approved layout, calling the same endpoint. It was
 the one place the portal was not behaving like a host adapter.
+
+`intent` was added later, and only because the catalogue has **two** buttons:
+_Zur Fortbildung_ opens the course's start page and _Fortbildung fortsetzen_
+opens the player at the resume point. A routing host that received only the slug
+had no way to tell them apart, so the second button became decorative the moment
+the host took over navigation — the widget honoured it and the portal did not.
+
+It is carried back in through the `open-at` attribute rather than a second
+event, so the round trip has the same shape as the rest of the contract:
+attributes in, events out. A host that ignores `intent` and omits `open-at` gets
+the start page for both buttons, which is the pre-existing behaviour and is not
+wrong, only less helpful — the same graceful-degradation property as the event
+itself. Anything other than the literal `"resume"` means "start": opening a video
+a learner did not ask for is the worse of the two failures.
+
+**The full attribute set** is therefore `api-base`, `project`, `course`
+(optional), `open-at` (optional), `token-endpoint` (optional), plus the
+`tokenProvider` property. Adding to that list is a change to this contract and
+belongs in this ADR, not only in the element.
 
 **Rules the core obeys:**
 

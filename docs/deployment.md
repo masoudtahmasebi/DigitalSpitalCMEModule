@@ -219,7 +219,7 @@ Push to `main`, or run **Actions → Deploy → Run workflow**. In order, it:
 The first run takes about ten minutes, most of it building. Certificates arrive
 within a minute of Caddy starting.
 
-### Then create the first administrator
+### Then create the first administrator (P14-01)
 
 The console is empty and there is no way in: staff accounts are created by
 invitation, invitations are issued by an account that may invite, and there is

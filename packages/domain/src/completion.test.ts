@@ -87,3 +87,62 @@ describe("isCourseComplete", () => {
     ).toBe(true);
   });
 });
+
+/**
+ * A course that awards no points.
+ *
+ * There will be educational courses with no accreditation behind them. They
+ * have no Punktemeldung to file, so asking for a Fortbildungsnummer collects
+ * personal data for no purpose — and then refuses to let the learner finish
+ * until they supply it, which is the part that matters.
+ */
+describe("a course with no CME points", () => {
+  const done = {
+    requiredWatchPercent: 100,
+    achievedWatchPercent: 100,
+    quizPassed: true,
+    evaluationSubmitted: true,
+    efnPresent: false,
+  };
+
+  it("completes without an EFN", () => {
+    expect(isCourseComplete({ ...done, awardsCmePoints: false })).toEqual({
+      complete: true,
+      outstanding: [],
+    });
+  });
+
+  it("still requires the watching, the quiz and the evaluation", () => {
+    // Not accredited is not the same as not a course.
+    expect(
+      isCourseComplete({
+        requiredWatchPercent: 100,
+        achievedWatchPercent: 40,
+        quizPassed: false,
+        evaluationSubmitted: false,
+        efnPresent: false,
+        awardsCmePoints: false,
+      }),
+    ).toEqual({
+      complete: false,
+      outstanding: ["watch", "quiz", "evaluation"],
+    });
+  });
+
+  it("asks for the EFN when the flag is absent", () => {
+    // A caller that has not been updated must over-collect rather than
+    // silently stop: over-collecting is a bug, a missing Punktemeldung is a
+    // compliance incident.
+    expect(isCourseComplete(done)).toEqual({
+      complete: false,
+      outstanding: ["efn"],
+    });
+  });
+
+  it("asks for it when the course does award points", () => {
+    expect(isCourseComplete({ ...done, awardsCmePoints: true })).toEqual({
+      complete: false,
+      outstanding: ["efn"],
+    });
+  });
+});

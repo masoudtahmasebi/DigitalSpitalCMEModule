@@ -86,6 +86,16 @@ export const COURSE_COMPLETE_EVENT = "ds-lms:course-complete";
 
 export interface CourseOpenDetail {
   readonly slug: string;
+  /**
+   * Which of the catalogue's two buttons was pressed.
+   *
+   * `"start"` is **Zur Fortbildung** — the course's start page. `"resume"` is
+   * **Fortbildung fortsetzen** — straight into the content the learner left
+   * off at. A routing host that ignores this lands both on the start page,
+   * which is the old behaviour and is not wrong, only less helpful; a host
+   * that honours it should mount the element with `open-at="resume"`.
+   */
+  readonly intent: "start" | "resume";
 }
 
 export interface ProgressDetail {
@@ -174,8 +184,16 @@ export class DsLmsElement extends HTMLElement {
         apiBase,
         projectSlug,
         courseSlug: this.getAttribute("course") ?? "",
+        // `open-at="resume"` puts a course-pinned element straight into the
+        // content the learner left off at, which is how a routing host honours
+        // the catalogue's **Fortbildung fortsetzen** across its own navigation.
+        // Anything else — including the attribute being absent — is "start",
+        // because opening a video the learner did not ask for is the worse
+        // failure of the two.
+        openAt: this.getAttribute("open-at") === "resume" ? "resume" : "start",
         getToken: provider === undefined ? undefined : cachingProvider(provider),
-        onCourseOpen: (slug: string) => this.#announceCourseOpen(slug),
+        onCourseOpen: (slug: string, intent: "start" | "resume") =>
+          this.#announceCourseOpen(slug, intent),
         onProgress: (detail: ProgressDetail) => this.#announce(PROGRESS_EVENT, detail),
         onCourseComplete: (detail: CourseCompleteDetail) =>
           this.#announce(COURSE_COMPLETE_EVENT, detail),
@@ -207,8 +225,8 @@ export class DsLmsElement extends HTMLElement {
     );
   }
 
-  #announceCourseOpen(slug: string): boolean {
-    const detail: CourseOpenDetail = { slug };
+  #announceCourseOpen(slug: string, intent: "start" | "resume"): boolean {
+    const detail: CourseOpenDetail = { slug, intent };
     return this.dispatchEvent(
       new CustomEvent(COURSE_OPEN_EVENT, {
         detail,

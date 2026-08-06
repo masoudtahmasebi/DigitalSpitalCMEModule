@@ -94,6 +94,7 @@ const enrolment: EnrolmentRow = {
   passThresholdPercent: 70,
   maxQuizAttempts: null,
   completedAt: null,
+  cmePoints: 4,
 };
 
 const questions: LearnerQuestionRow[] = [

@@ -1576,8 +1576,30 @@ export interface components {
             captionsUrl: string | null;
             /** @description Text lessons. Trusted authored content, not learner input. */
             body: string | null;
-            /** @description Where the learner left off, so the player resumes there. */
+            /**
+             * @description Where the learner left off, as last reported and stored. Playback
+             *     does not start here — see `resumeAtSec`.
+             */
             lastPositionSec: number;
+            /**
+             * @description Where playback should start — `lastPositionSec` rewound to the
+             *     containing minute. A learner who left at 14:35 resumes at 14:00.
+             *
+             *     Decided by the server rather than the player, so every host rewinds
+             *     by the same amount. The replay costs the compliance record nothing:
+             *     coverage is a union of intervals, so re-watching the same seconds
+             *     cannot inflate the percentage.
+             */
+            resumeAtSec: number;
+            /**
+             * @description The furthest second the player may seek to — the end of what has
+             *     actually been watched, plus a small tolerance.
+             *
+             *     Forward seeking past this is what would make the watch gate
+             *     decorative. Seeking backwards is unrestricted; re-watching is
+             *     legitimate and free.
+             */
+            seekCeilingSec: number;
             /**
              * @description The server's figure for this content, so the player shows the same
              *     number the completion gate uses.
@@ -1637,6 +1659,15 @@ export interface components {
              *     not give.
              */
             watchedSegments: components["schemas"]["WatchedSegment"][];
+            /**
+             * @description The furthest second the player may seek to after this report.
+             *
+             *     Returned so the player's limit advances as the learner watches. The
+             *     alternative — deriving it on the client from `watchedSegments` —
+             *     would put a rule that decides what counts towards a CME point in two
+             *     implementations, which is what invariant 6 exists to prevent.
+             */
+            seekCeilingSec: number;
         };
         /**
          * @description One downloadable item. `fileUrl` is **null while locked** — the gate is

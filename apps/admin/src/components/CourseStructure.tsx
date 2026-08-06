@@ -53,6 +53,7 @@ import {
   withContents,
 } from "../structure-order.js";
 import { useLoaded, useSaver } from "../hooks.js";
+import { probeableSourceUrl, probeDurationSec } from "../media-duration.js";
 import {
   Button,
   ConfirmButton,
@@ -595,6 +596,7 @@ function ContentForm(props: {
       ? ""
       : String(initial.durationSec),
   );
+  const [probe, setProbe] = useState<"idle" | "running" | "failed" | number>("idle");
   const [fileUrl, setFileUrl] = useState(initial?.fileUrl ?? "");
   const [mimeType, setMimeType] = useState(initial?.mimeType ?? "");
   const saver = useSaver();
@@ -657,7 +659,24 @@ function ContentForm(props: {
                 id={id("duration")}
                 value={durationSec}
                 type="number"
-                onChange={setDurationSec}
+                onChange={(next) => {
+                  setDurationSec(next);
+                  // A typed value replaces the probe's verdict rather than
+                  // sitting under a stale "Länge übernommen".
+                  setProbe("idle");
+                }}
+              />
+              {/*
+                The length is a compliance input, not a caption: the watch gate
+                is a percentage of it, so a mistyped figure quietly makes the
+                tail of a video optional. Reading it out of the file is the one
+                way to get it right that does not depend on the author's care.
+              */}
+              <DurationProbe
+                sources={sources}
+                state={probe}
+                onState={setProbe}
+                onDuration={(seconds) => setDurationSec(String(seconds))}
               />
             </Field>
             <Field
@@ -884,6 +903,62 @@ function EditForm(props: {
  * the lesson is served, so getting this wrong is recoverable — but within a
  * group the author's order is preserved and is theirs to decide.
  */
+/**
+ * "Aus Video ermitteln" — fills the length from the file's own header.
+ *
+ * Offered rather than automatic. An author editing an existing content item may
+ * have a deliberate figure in that field: a recording with thirty seconds of
+ * black at the end, or a length agreed with the Ärztekammer. Overwriting it on
+ * render would replace a decision with a measurement without telling anybody.
+ *
+ * Absent entirely when no source can be fetched — a button that always fails is
+ * worse than no button.
+ */
+function DurationProbe(props: {
+  sources: readonly MediaSourceWrite[];
+  state: "idle" | "running" | "failed" | number;
+  onState: (next: "idle" | "running" | "failed" | number) => void;
+  onDuration: (seconds: number) => void;
+}) {
+  const url = probeableSourceUrl(props.sources);
+  if (url === undefined) return null;
+
+  return (
+    <div className="mt-1 space-y-1">
+      <button
+        type="button"
+        className="ds-button-secondary text-xs"
+        disabled={props.state === "running"}
+        onClick={() => {
+          props.onState("running");
+          void probeDurationSec(url).then((seconds) => {
+            if (seconds === undefined) {
+              props.onState("failed");
+              return;
+            }
+            props.onDuration(seconds);
+            props.onState(seconds);
+          });
+        }}
+      >
+        {props.state === "running"
+          ? de.structure.durationDetecting
+          : de.structure.durationDetect}
+      </button>
+      {typeof props.state === "number" ? (
+        <p className="text-xs text-green-700" role="status">
+          {de.structure.durationDetected(props.state)}
+        </p>
+      ) : null}
+      {props.state === "failed" ? (
+        <p className="text-xs text-amber-700" role="status">
+          {de.structure.durationDetectFailed}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function SourcesEditor(props: {
   sources: readonly MediaSourceWrite[];
   onChange: (next: MediaSourceWrite[]) => void;

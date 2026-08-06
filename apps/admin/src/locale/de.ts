@@ -285,7 +285,13 @@ export const de = {
       "Standbild vor dem Start. Ohne Vorschaubild zeigt der Player bis zum ersten Bild eine schwarze Fläche.",
     durationSec: "Länge in Sekunden",
     durationHint:
-      "Pflichtangabe für Videos. Der erforderliche Videoanteil ist ein Prozentsatz dieser Länge — ohne Länge gibt es nichts zu erreichen und der Inhalt wäre überspringbar.",
+      "Pflichtangabe für Videos. Der erforderliche Videoanteil ist ein Prozentsatz dieser Länge — ohne Länge gibt es nichts zu erreichen und der Inhalt wäre überspringbar. Die Gesamtdauer der Fortbildung wird aus den Längen aller Videos berechnet und nicht separat gepflegt.",
+    durationDetect: "Aus Video ermitteln",
+    durationDetecting: "Wird ermittelt …",
+    durationDetected: (seconds: number): string =>
+      `Länge übernommen: ${String(seconds)} Sekunden.`,
+    durationDetectFailed:
+      "Die Länge konnte nicht aus der Quelle gelesen werden. Das ist bei Speicher-Schlüsseln (s3://) und bei Servern ohne CORS-Freigabe normal — bitte die Länge in Sekunden eintragen.",
     captionsUrl: "Untertitel-Datei (WebVTT)",
     captionsHint:
       "URL einer .vtt-Datei mit deutschen Untertiteln. Untertitel sind Stufe A der Barrierefreiheitsrichtlinien (WCAG 1.2.2, EN 301 549): Ohne sie können hörbeeinträchtigte Ärztinnen und Ärzte die Fortbildung nicht absolvieren — und der Fortschritt wird sie als nicht angesehen erfassen.",

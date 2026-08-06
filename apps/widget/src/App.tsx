@@ -26,7 +26,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ContentSummary, CourseDetail, EnrolmentState } from "@ds/sdk";
+import type { CourseDetail, EnrolmentState } from "@ds/sdk";
 import { createWidgetClient, isConfigured, type WidgetConfig } from "./api.js";
 import { useBranding } from "./branding.js";
 import { de } from "./locale/de.js";
@@ -55,6 +55,37 @@ type Screen =
   | { kind: "quiz"; contentId: string }
   | { kind: "evaluation" };
 
+/**
+ * What the learner asked for when they picked a course.
+ *
+ * The catalogue offers two buttons and the layout means two different things by
+ * them: **Zur Fortbildung** is *browse* — the course's own start page, with its
+ * description, its Referenten and its Zertifizierung — and **Fortbildung
+ * fortsetzen** is *carry on*, straight back into the video they were watching.
+ * Sending both to the same screen would make the second button decorative.
+ */
+type OpenIntent = "start" | "resume";
+
+/**
+ * The screen a piece of content opens on.
+ *
+ * Module-level so the outline's click and the catalogue's resume cannot drift:
+ * a quiz that opened as a lesson would render a player with no video in it.
+ */
+function screenFor(course: CourseDetail, contentId: string): Screen | undefined {
+  for (const module of course.modules) {
+    for (const chapter of module.chapters) {
+      for (const content of chapter.contents) {
+        if (content.id !== contentId) continue;
+        return content.kind === "quiz"
+          ? { kind: "quiz", contentId }
+          : { kind: "lesson", contentId };
+      }
+    }
+  }
+  return undefined;
+}
+
 export interface AppProps extends WidgetConfig {
   readonly getToken: TokenProvider | undefined;
   /**
@@ -62,7 +93,16 @@ export interface AppProps extends WidgetConfig {
    * has taken over navigation, in which case this widget stays put — see
    * `element.ts`. Absent in tests and in any host that does not route.
    */
-  readonly onCourseOpen?: ((slug: string) => boolean) | undefined;
+  readonly onCourseOpen?:
+    ((slug: string, intent: "start" | "resume") => boolean) | undefined;
+  /**
+   * Where a course named by the `course` attribute opens.
+   *
+   * `"resume"` lands in the content the learner left off at, which is how a
+   * routing host carries the catalogue's **Fortbildung fortsetzen** across its
+   * own navigation. Defaults to the course's start page.
+   */
+  readonly openAt?: "start" | "resume" | undefined;
   /** Fired whenever the server returns a fresh `EnrolmentState`. */
   readonly onProgress?: ((detail: ProgressDetail) => void) | undefined;
   /** Fired once, the first time the server reports the course complete. */
@@ -115,7 +155,8 @@ export function App(props: AppProps) {
 function Routed(
   props: WidgetConfig & {
     getToken: TokenProvider;
-    onCourseOpen?: ((slug: string) => boolean) | undefined;
+    onCourseOpen?: ((slug: string, intent: OpenIntent) => boolean) | undefined;
+    openAt?: OpenIntent | undefined;
     onProgress?: ((detail: ProgressDetail) => void) | undefined;
     onCourseComplete?: ((detail: CourseCompleteDetail) => void) | undefined;
   },
@@ -133,6 +174,12 @@ function Routed(
   const [selected, setSelected] = useState<string | undefined>(
     courseSlug === "" ? undefined : courseSlug,
   );
+  // A course named by the host attribute is being *browsed* unless the host
+  // says otherwise: the page it sits on is the entry point, and dropping
+  // straight into a video would take the learner past whatever that page had to
+  // say. `open-at="resume"` is a routing host carrying the catalogue's
+  // **Fortbildung fortsetzen** across its own navigation.
+  const [intent, setIntent] = useState<OpenIntent>(props.openAt ?? "start");
 
   if (selected === undefined) {
     return (
@@ -140,11 +187,12 @@ function Routed(
         apiBase={apiBase}
         projectSlug={projectSlug}
         client={client}
-        onOpen={(slug) => {
+        onOpen={(slug, chosen) => {
           // A host that routes cancels the event and replaces this element
           // with one pinned to the course. Switching screens here as well
           // would render the course twice, briefly.
-          if (onCourseOpen !== undefined && !onCourseOpen(slug)) return;
+          if (onCourseOpen !== undefined && !onCourseOpen(slug, chosen)) return;
+          setIntent(chosen);
           setSelected(slug);
         }}
       />
@@ -157,6 +205,7 @@ function Routed(
       projectSlug={projectSlug}
       courseSlug={selected}
       client={client}
+      openAt={intent}
       // Only offered when the learner arrived through the catalogue.
       onBackToCatalogue={courseSlug === "" ? () => setSelected(undefined) : undefined}
       onProgress={props.onProgress}
@@ -176,7 +225,7 @@ function Catalogue(props: {
   apiBase: string;
   projectSlug: string;
   client: ReturnType<typeof createWidgetClient>;
-  onOpen: (slug: string) => void;
+  onOpen: (slug: string, intent: OpenIntent) => void;
 }) {
   const branding = useBranding(props.apiBase, props.projectSlug);
 
@@ -195,6 +244,8 @@ function Loaded(props: {
   projectSlug: string;
   courseSlug: string;
   client: ReturnType<typeof createWidgetClient>;
+  /** `"resume"` opens the player at the resume point instead of the overview. */
+  openAt: OpenIntent;
   onBackToCatalogue: (() => void) | undefined;
   onProgress: ((detail: ProgressDetail) => void) | undefined;
   onCourseComplete: ((detail: CourseCompleteDetail) => void) | undefined;
@@ -211,6 +262,30 @@ function Loaded(props: {
   const enrolment = useEnrolment(client, courseSlug);
 
   useAnnouncements(courseSlug, enrolment.data, props.onProgress, props.onCourseComplete);
+
+  /*
+   * "Fortbildung fortsetzen", carried through from the catalogue.
+   *
+   * From an effect rather than an initial `useState` value, because where to
+   * resume is part of the enrolment state and that has not arrived on the first
+   * render. From the *server's* `resumeContentId` rather than anything worked
+   * out here: which chapter comes next after a finished one is a rule about a
+   * course that awards a CME point, and the client renders such verdicts rather
+   * than reaching them.
+   *
+   * Once only. Coming back to the outline from the player is a decision the
+   * learner made, and re-applying the intent would trap them in the video.
+   */
+  const resumed = useRef(false);
+  useEffect(() => {
+    if (props.openAt !== "resume" || resumed.current) return;
+    const target = enrolment.data?.resumeContentId;
+    const detail = course.data;
+    if (target === undefined || target === null || detail === undefined) return;
+    resumed.current = true;
+    const next = screenFor(detail, target);
+    if (next !== undefined) setScreen(next);
+  }, [props.openAt, enrolment.data, course.data]);
 
   if (course.loading || enrolment.loading) {
     return <Spinner label={de.loading} />;
@@ -238,21 +313,9 @@ function Loaded(props: {
   const state = enrolment.data;
   const detail = course.data;
 
-  const contentsById = new Map<string, ContentSummary>();
-  for (const module of detail.modules) {
-    for (const chapter of module.chapters) {
-      for (const content of chapter.contents) contentsById.set(content.id, content);
-    }
-  }
-
   function open(contentId: string): void {
-    const content = contentsById.get(contentId);
-    if (content === undefined) return;
-    setScreen(
-      content.kind === "quiz"
-        ? { kind: "quiz", contentId }
-        : { kind: "lesson", contentId },
-    );
+    const next = screenFor(detail, contentId);
+    if (next !== undefined) setScreen(next);
   }
 
   const back = () => setScreen({ kind: "outline" });

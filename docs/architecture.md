@@ -261,7 +261,8 @@ differently in each host, which is precisely what the shadow root exists to
 prevent.
 
 Three events leave the widget, and only the first is cancelable:
-`ds-lms:course-open` (the host may take over routing), `ds-lms:progress` and
+`ds-lms:course-open` (the host may take over routing, and is told which of the
+catalogue's two buttons was pressed), `ds-lms:progress` and
 `ds-lms:course-complete`. The latter two are notifications about a decision the
 **server** has already recorded, so there is nothing to cancel — and every
 figure in them is a server figure, named individually. A host wiring analytics
@@ -291,6 +292,37 @@ taken from the request, never a maximum position. The client sends what it
 played; the server decides what that is worth. `validateSegments` additionally
 rejects more playback than wall-clock time since the last report, which is what
 a scripted client produces.
+
+### Resuming, and the ceiling on seeking
+
+Two numbers travel with every video lesson, both decided by the API:
+`resumeAtSec` — where playback starts, `lastPositionSec` rewound to the
+containing minute, so a learner who left at 14:35 comes back at 14:00 — and
+`seekCeilingSec`, the furthest second forward seeking is allowed to reach.
+`recordProgress` returns a fresh ceiling with every flush, so the limit advances
+as the learner watches.
+
+The rewind is free and the accounting says so: coverage is a union, so replaying
+thirty seconds cannot inflate the percentage. The ceiling is computed from the
+**validated segments**, never from the client-reported position, and
+`resumeAtSec` is capped at it — otherwise a client could raise its own scrub bar
+by claiming to have arrived somewhere it never played.
+
+**The player's clamp is not the gate.** Nothing in a browser is. A learner who
+defeats it skips material, leaves a hole, and never reaches the threshold — the
+union is what enforces the accreditation's "must be seen". What the clamp buys
+is an interface that explains itself: the alternative is a scrub bar that drags
+to the end and then silently withholds the points, which a physician experiences
+as a broken platform rather than as a rule.
+
+### Courses that award no points
+
+`enrolments.cme_points` decides whether a Fortbildungsnummer is required. A
+course carrying none reports nothing to EIV-FOBI, so there is nothing an EFN
+would identify and collecting one would be personal data with no purpose
+(ADR-0004). It is read off the **enrolment**, not the course: the enrolment
+snapshots what the course was worth when it was taken, so re-pricing a course
+cannot rewrite a completed record.
 
 ### The EIV submission
 

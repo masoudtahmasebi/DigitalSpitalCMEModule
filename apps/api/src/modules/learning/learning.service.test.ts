@@ -134,6 +134,9 @@ const tree: CourseTree = {
   ],
 };
 
+// An accredited course: 4 points, which is what makes the EFN a condition of
+// completion. A course with no points does not need one — see the point-free
+// case below.
 const enrolment: EnrolmentRow = {
   id: ENROLMENT_ID,
   courseId: COURSE_ID,
@@ -142,6 +145,7 @@ const enrolment: EnrolmentRow = {
   passThresholdPercent: 70,
   maxQuizAttempts: null,
   completedAt: null,
+  cmePoints: 4,
 };
 
 interface FakeState {
@@ -181,6 +185,10 @@ function fakeRepository(
         passThresholdPercent: input.course.passThresholdPercent,
         maxQuizAttempts: input.course.maxQuizAttempts,
         completedAt: null,
+        // Copied off the course, as the real repository does: the enrolment
+        // records what the course was worth when it was taken, so re-pricing a
+        // course later cannot rewrite a completed record.
+        cmePoints: input.course.cmePoints,
       };
       created.push(row);
       state.enrolment = row;
@@ -391,6 +399,34 @@ describe("getState — the completion verdict", () => {
 
     expect(state.quizPassed).toBe(false);
     expect(state.outstanding).toContain("quiz");
+  });
+
+  it("does not ask a point-free course for an EFN", async () => {
+    // An educational course carrying no CME points reports nothing to
+    // EIV-FOBI, so there is nothing an EFN would identify. Demanding one would
+    // collect personal data with no purpose (ADR-0004), and would leave the
+    // course permanently incomplete for anybody without an EFN at all.
+    const { repository } = fakeRepository({
+      enrolment: { ...enrolment, cmePoints: null },
+      progress: [
+        progressRow({
+          contentId: VIDEO_1,
+          watchedSegments: [{ startSec: 0, endSec: 600 }],
+        }),
+        progressRow({
+          contentId: VIDEO_2,
+          watchedSegments: [{ startSec: 0, endSec: 400 }],
+        }),
+        progressRow({ contentId: QUIZ, scorePercent: 80 }),
+      ],
+      evaluation: true,
+    });
+
+    const state = await new LearningService(repository).getState(course.slug, learner);
+
+    expect(state.efnPresent).toBe(false);
+    expect(state.outstanding).toEqual([]);
+    expect(state.complete).toBe(true);
   });
 
   it("never returns the EFN itself, only whether one is on file", async () => {

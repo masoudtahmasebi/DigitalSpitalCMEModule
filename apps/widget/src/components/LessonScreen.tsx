@@ -28,10 +28,22 @@
  * segments the server rejected as implausible — a bar that disagrees with the
  * gate it is meant to depict.
  *
- * Seeking is not blocked. The union of watched intervals makes blocking
- * pointless: skipping ahead simply leaves a hole and the percentage never
- * reaches the threshold. Disabling the scrub bar would punish the learner who
- * legitimately rewinds while stopping nobody.
+ * ## Seeking and resuming are the server's answers
+ *
+ * Both arrive as numbers on the lesson — `resumeAtSec` and `seekCeilingSec` —
+ * and are passed through untouched. Neither is computed here.
+ *
+ * That was not always so: forward seeking used to be unrestricted, on the
+ * reasoning that the union of intervals makes skipping self-defeating anyway.
+ * The reasoning still holds — a skipped passage leaves a hole the percentage
+ * never fills — but it answers the wrong question. The accreditation requires
+ * the material to have been *seen*, and a scrub bar that lets a physician drag
+ * to the end and then quietly withholds the points is a worse experience than
+ * one that will not drag there. So the ceiling is enforced in the interface and
+ * the union remains the gate; the first is courtesy, the second is compliance.
+ *
+ * Backwards is still unrestricted, for the original reason: re-watching is
+ * legitimate and free, and punishing it would stop nobody.
  *
  * ## Playback state belongs to the player chrome
  *
@@ -93,19 +105,29 @@ function VideoLesson(props: {
 
   const { client, courseSlug, lesson, onProgress } = props;
 
-  // Both are the server's, replaced on every response — never adjusted locally.
+  // All three are the server's, replaced on every response — never adjusted
+  // locally. The ceiling is here rather than derived from `covered` so that the
+  // rule deciding how far a learner may skip has exactly one implementation.
   const [watchedPercent, setWatchedPercent] = useState(lesson.watchedPercent);
   const [covered, setCovered] = useState<readonly WatchedSegment[]>(
     lesson.watchedSegments,
   );
+  const [seekCeilingSec, setSeekCeilingSec] = useState(lesson.seekCeilingSec);
 
   // A new lesson in the same mounted component: reset to that lesson's own
   // figures rather than briefly showing the previous video's coverage.
   useEffect(() => {
     setWatchedPercent(lesson.watchedPercent);
     setCovered(lesson.watchedSegments);
+    setSeekCeilingSec(lesson.seekCeilingSec);
     positionRef.current = lesson.lastPositionSec;
-  }, [lesson.id, lesson.watchedPercent, lesson.watchedSegments, lesson.lastPositionSec]);
+  }, [
+    lesson.id,
+    lesson.watchedPercent,
+    lesson.watchedSegments,
+    lesson.seekCeilingSec,
+    lesson.lastPositionSec,
+  ]);
 
   const flush = useCallback(async () => {
     const tracker = trackerRef.current;
@@ -123,6 +145,9 @@ function VideoLesson(props: {
       // The union the gate credited, not the intervals we believed we sent.
       // The difference is visible exactly when something was rejected.
       setCovered(result.watchedSegments);
+      // And the ceiling that goes with it: a rejected segment must not raise
+      // the limit, so the limit comes from the same answer as the union.
+      setSeekCeilingSec(result.seekCeilingSec);
       onProgress();
     } catch {
       // Deliberately silent. A failed heartbeat is not something a learner can
@@ -179,7 +204,11 @@ function VideoLesson(props: {
         captionsUrl={lesson.captionsUrl}
         title={lesson.title}
         durationSec={lesson.durationSec}
-        startAtSec={lesson.lastPositionSec}
+        // The server's resume point, not `lastPositionSec`: a learner who left
+        // at 14:35 comes back at 14:00, and which second that is, is decided in
+        // one place for every host.
+        startAtSec={lesson.resumeAtSec}
+        seekCeilingSec={seekCeilingSec}
         watchedSegments={covered}
         paused={props.paused}
         onPlayback={(state) => {

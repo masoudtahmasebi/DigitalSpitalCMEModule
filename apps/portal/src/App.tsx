@@ -104,16 +104,31 @@ function Routed(props: {
   const { config, auth } = props;
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname));
 
+  /*
+   * Which of the catalogue's two buttons brought the learner here.
+   *
+   * Deliberately *not* in the URL. It is a navigation intent, not an address:
+   * a bookmarked "resume" link would drop whoever opened it into the middle of
+   * a video months later, and a shared one would do it to somebody who had
+   * never started the course. Losing it on back/forward is the same judgement —
+   * returning to a course by history is browsing, not resuming.
+   */
+  const [openAt, setOpenAt] = useState<"start" | "resume">("start");
+
   // The browser's back button has to work: a learner who opened a course and
   // pressed back expects the list, not a page that ignored them.
   useEffect(() => {
-    const onPop = () => setRoute(parseRoute(window.location.pathname));
+    const onPop = () => {
+      setOpenAt("start");
+      setRoute(parseRoute(window.location.pathname));
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const navigate = useCallback((next: Route) => {
+  const navigate = useCallback((next: Route, intent: "start" | "resume" = "start") => {
     window.history.pushState({}, "", routePath(next));
+    setOpenAt(intent);
     setRoute(next);
     window.scrollTo({ top: 0 });
   }, []);
@@ -135,8 +150,9 @@ function Routed(props: {
       <WidgetMount
         config={config}
         courseSlug={route.kind === "course" ? route.slug : undefined}
+        openAt={openAt}
         tokenProvider={tokenProvider}
-        onOpenCourse={(slug) => navigate({ kind: "course", slug })}
+        onOpenCourse={(slug, intent) => navigate({ kind: "course", slug }, intent)}
       />
     </div>
   );

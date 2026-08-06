@@ -56,6 +56,8 @@ type TokenProvider = (request: {
 /** Mirrors `CourseOpenDetail` in the widget — see the note on the type below. */
 interface CourseOpenDetail {
   readonly slug: string;
+  /** Which catalogue button was pressed — "Zur Fortbildung" or "…fortsetzen". */
+  readonly intent?: "start" | "resume";
 }
 
 const COURSE_OPEN_EVENT = "ds-lms:course-open";
@@ -75,6 +77,8 @@ interface DsLmsAttributes {
   project: string;
   /** Omitted for the catalogue. */
   course?: string;
+  /** `"resume"` opens the course at the learner's resume point, not its start page. */
+  "open-at"?: string;
   ref?: (element: (HTMLElement & { tokenProvider?: TokenProvider }) | null) => void;
   key?: string;
 }
@@ -92,8 +96,10 @@ export function WidgetMount(props: {
   config: PortalConfig;
   /** `undefined` mounts the catalogue. */
   courseSlug: string | undefined;
+  /** Carried from the catalogue's two buttons — see `ds-lms:course-open`. */
+  openAt: "start" | "resume";
   tokenProvider: TokenProvider;
-  onOpenCourse: (slug: string) => void;
+  onOpenCourse: (slug: string, intent: "start" | "resume") => void;
 }) {
   const { tokenProvider, onOpenCourse } = props;
 
@@ -122,10 +128,13 @@ export function WidgetMount(props: {
     if (node === null) return;
 
     const listener = (event: Event) => {
-      const slug = (event as CustomEvent<CourseOpenDetail>).detail?.slug;
+      const detail = (event as CustomEvent<CourseOpenDetail>).detail;
+      const slug = detail?.slug;
       if (typeof slug !== "string" || slug === "") return;
       event.preventDefault();
-      onOpenCourse(slug);
+      // Anything other than an explicit "resume" is the start page: opening a
+      // video a learner did not ask for is the worse of the two mistakes.
+      onOpenCourse(slug, detail?.intent === "resume" ? "resume" : "start");
     };
 
     node.addEventListener(COURSE_OPEN_EVENT, listener);
@@ -139,7 +148,9 @@ export function WidgetMount(props: {
         ref={attach}
         api-base={props.config.apiBase}
         project={props.config.projectSlug}
-        {...(props.courseSlug === undefined ? {} : { course: props.courseSlug })}
+        {...(props.courseSlug === undefined
+          ? {}
+          : { course: props.courseSlug, "open-at": props.openAt })}
       />
     </div>
   );
