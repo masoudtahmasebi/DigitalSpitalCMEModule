@@ -181,6 +181,11 @@ source "${SCRIPT_DIR}/secrets.sh"
 ds_ensure_secrets "$STATE_DIR" || die "could not prepare ${STATE_DIR}/secrets.env"
 ds_check_secrets || die "the generated credentials are not usable (see above)"
 
+# The percent-encoded forms, for the two places a password lands inside a URL.
+# See `ds_url_encode` — a base64 password contains `/`, and a `/` in a URL's
+# userinfo terminates the authority component.
+ds_export_url_passwords
+
 # Which commit this is. The image tag, so `docker images` is a deployment
 # history and a rollback is an image that is already on the disk.
 #
@@ -379,7 +384,7 @@ if [[ "$RUN_MIGRATIONS" == "1" ]]; then
   # "permission denied", not as RLS filtering, and looks like isolation working
   # until you read the error.
   compose run --rm \
-    -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD}@postgres:5432/${POSTGRES_DB}" \
+    -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD_URL}@postgres:5432/${POSTGRES_DB}" \
     --entrypoint node api dist/db-migrate.js
 fi
 

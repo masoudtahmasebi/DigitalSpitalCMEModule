@@ -76,6 +76,17 @@ mapfile -t generated < <(
 )
 [[ ${#generated[@]} -ge 4 ]] || { echo "xx could not find the generated credentials in secrets.sh" >&2; exit 1; }
 
+# And what `ds_export_url_passwords` derives from them: the percent-encoded
+# forms, for the two places a password lands inside a URL. Read from its
+# `export` line for the same reason `domains.sh`'s exports are — that line is
+# also what makes the names visible to `docker compose`.
+mapfile -t url_forms < <(
+  sed -n '/^ds_export_url_passwords()/,/^}/p' secrets.sh \
+    | sed -n '/^  export /p' | sed 's/^  export //' | tr ' ' '\n' | grep -E '^[A-Z]'
+)
+[[ ${#url_forms[@]} -ge 2 ]] || { echo "xx could not read the exports out of ds_export_url_passwords" >&2; exit 1; }
+generated+=("${url_forms[@]}")
+
 # What domains.sh derives: exactly its `export` lines, which is also what makes
 # those names visible to `docker compose`.
 mapfile -t derived < <(

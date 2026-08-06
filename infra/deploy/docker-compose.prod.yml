@@ -115,7 +115,11 @@ services:
     environment:
       NODE_ENV: production
       API_PORT: 3000
-      DATABASE_URL: postgres://ds_app:${DS_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # `_URL` — the percent-encoded form. `openssl rand -base64 32` emits `/`,
+      # and a `/` in a URL's userinfo terminates the authority component, so the
+      # raw value produces a connection string the client rejects as invalid.
+      # `ds_url_encode` in infra/deploy/secrets.sh, exported by deploy.sh.
+      DATABASE_URL: postgres://ds_app:${DS_APP_PASSWORD_URL}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
       # No Keycloak configuration. Which realm a learner's token is validated
       # against is a property of the project the request names, read from
