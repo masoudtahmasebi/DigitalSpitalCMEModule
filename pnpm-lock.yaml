@@ -171,8 +171,8 @@ importers:
         specifier: ^5.11.1
         version: 5.11.1
       jose:
-        specifier: ^6.2.4
-        version: 6.2.4
+        specifier: ^6.2.8
+        version: 6.2.8
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
@@ -2358,8 +2358,8 @@ packages:
     resolution: {integrity: sha512-/imKNG4EbWNrVjoNC/1H5/9GFy+tqjGBHCaSsN+P2RnPqjsLmv6UD3Ej+Kj8nBWaRAwyk7kK5ZUc+OEatnTR3A==}
     hasBin: true
 
-  jose@6.2.4:
-    resolution: {integrity: sha512-N8acGzVsQy6M/fjFcxtysNc4Q379TcM5dM/qKkNtsHFji88yANnXTr7BLeP75iPnFwBfQzM/jg2BZ9+HZrHCZA==}
+  jose@6.2.8:
+    resolution: {integrity: sha512-Bsdjwm3Qsd/P0jR+BHDe3LytDfY7WBq2HmCCLIwuVRHMuEC9ae7/R474GIUdF1NgCyZjzVo/A9DOiOBtXq8ZoQ==}
 
   js-levenshtein@1.1.6:
     resolution: {integrity: sha512-X2BB11YZtrRqY4EnQcLX5Rh373zbK4alC1FW7D7MBhL2gtcC17cTnr6DmfHZeS0s2rTHjUTMMHfG7gO8SSdw+g==}
@@ -5432,7 +5432,7 @@ snapshots:
 
   jiti@1.21.7: {}
 
-  jose@6.2.4: {}
+  jose@6.2.8: {}
 
   js-levenshtein@1.1.6: {}
 
