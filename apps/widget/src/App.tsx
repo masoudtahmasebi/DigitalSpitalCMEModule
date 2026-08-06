@@ -44,7 +44,7 @@ import { EvaluationScreen } from "./components/EvaluationScreen.js";
 import { CompletionScreen } from "./components/CompletionScreen.js";
 import { CertificatePanel } from "./components/CertificatePanel.js";
 import { MediathekPanel } from "./components/MediathekPanel.js";
-import { Button, ErrorNotice, Spinner, TabBar } from "./components/primitives.js";
+import { Button, ErrorNotice, Spinner, TabbedPanel } from "./components/primitives.js";
 
 /** The four tabs of the course detail (layout §4.2). */
 const TABS = ["overview", "speakers", "certification", "library"] as const;
@@ -390,16 +390,6 @@ function Loaded(props: {
         onResume={resume}
       />
 
-      <TabBar
-        tabs={TABS.map((entry) => ({ id: entry, label: de.tabs[entry] }))}
-        active={tab}
-        label={detail.title}
-        onSelect={(entry) => {
-          setTab(entry);
-          back();
-        }}
-      />
-
       {/*
         Two columns, as the layout has them: the tab panel, and the progress
         card that repeats beside all four tabs (§4.2).
@@ -408,95 +398,108 @@ function Loaded(props: {
         evaluation — each of those has a progress reading of its own, and two
         different accounts of the same course on one screen is one too many.
       */}
-      <div
-        className={
-          screen.kind === "outline"
-            ? "grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]"
-            : ""
-        }
+      <TabbedPanel
+        tabs={TABS.map((entry) => ({ id: entry, label: de.tabs[entry] }))}
+        active={tab}
+        label={detail.title}
+        onSelect={(entry) => {
+          setTab(entry);
+          back();
+        }}
       >
-        <div className="min-w-0 rounded-2xl rounded-tl-none border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
-          {tab === "overview" && screen.kind === "outline" ? (
-            <OverviewTab course={detail} state={state} />
-          ) : tab === "speakers" && screen.kind === "outline" ? (
-            <ExpertsTab experts={detail.experts} />
-          ) : tab === "library" ? (
-            <Mediathek
-              client={client}
-              courseSlug={courseSlug}
-              key={state.progress.percent}
-            />
-          ) : screen.kind === "quiz" ? (
-            <QuizGate
-              client={client}
-              courseSlug={courseSlug}
-              contentId={screen.contentId}
-              onPassed={refresh}
-              onBack={() => {
-                refresh();
-                back();
-              }}
-            />
-          ) : screen.kind === "evaluation" ? (
-            <EvaluationGate
-              client={client}
-              courseSlug={courseSlug}
-              onSubmitted={() => {
-                refresh();
-                back();
-              }}
-              onBack={back}
-            />
-          ) : (
-            <div className="space-y-8">
-              <CourseOutline course={detail} state={state} onOpen={open} />
-
-              {state.evaluationSubmitted ? null : (
-                <Button
-                  variant="secondary"
-                  onClick={() => setScreen({ kind: "evaluation" })}
-                >
-                  {de.evaluation.title}
-                </Button>
-              )}
-
-              <CompletionScreen
+        <div
+          className={
+            screen.kind === "outline"
+              ? "grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]"
+              : ""
+          }
+        >
+          {/* `max-sm:` drops the top border and the top rounding: below `sm` the
+            heading `TabbedPanel` renders supplies both, and two borders meeting
+            draw a 2 px rule across what the layout has as one line. */}
+          <div className="min-w-0 rounded-2xl rounded-tl-none border border-gray-100 bg-white p-5 shadow-sm max-sm:rounded-t-none max-sm:border-t-0 max-sm:border-brand-500 sm:p-6">
+            {tab === "overview" && screen.kind === "outline" ? (
+              <OverviewTab course={detail} state={state} />
+            ) : tab === "speakers" && screen.kind === "outline" ? (
+              <ExpertsTab experts={detail.experts} />
+            ) : tab === "library" ? (
+              <Mediathek
                 client={client}
                 courseSlug={courseSlug}
-                state={state}
-                branding={branding}
-                onCompleted={refresh}
+                key={state.progress.percent}
               />
+            ) : screen.kind === "quiz" ? (
+              <QuizGate
+                client={client}
+                courseSlug={courseSlug}
+                contentId={screen.contentId}
+                onPassed={refresh}
+                onBack={() => {
+                  refresh();
+                  back();
+                }}
+              />
+            ) : screen.kind === "evaluation" ? (
+              <EvaluationGate
+                client={client}
+                courseSlug={courseSlug}
+                onSubmitted={() => {
+                  refresh();
+                  back();
+                }}
+                onBack={back}
+              />
+            ) : (
+              <div className="space-y-8">
+                <CourseOutline course={detail} state={state} onOpen={open} />
 
-              {state.completedAt === null ? (
-                <p className="text-sm text-gray-500">{de.certificate.notYet}</p>
-              ) : (
-                <CertificateGate client={client} courseSlug={courseSlug} />
-              )}
-            </div>
-          )}
-        </div>
+                {state.evaluationSubmitted ? null : (
+                  <Button
+                    variant="secondary"
+                    onClick={() => setScreen({ kind: "evaluation" })}
+                  >
+                    {de.evaluation.title}
+                  </Button>
+                )}
 
-        {/*
+                <CompletionScreen
+                  client={client}
+                  courseSlug={courseSlug}
+                  state={state}
+                  branding={branding}
+                  onCompleted={refresh}
+                />
+
+                {state.completedAt === null ? (
+                  <p className="text-sm text-gray-500">{de.certificate.notYet}</p>
+                ) : (
+                  <CertificateGate client={client} courseSlug={courseSlug} />
+                )}
+              </div>
+            )}
+          </div>
+
+          {/*
           The inline card is the wide layout's (P19-01). Below `sm` the
           floating module below replaces it — two progress panels on one
           430 px screen would be two places to read the same number, which is
           how they end up disagreeing.
         */}
-        {screen.kind === "outline" ? (
-          <div className="max-sm:hidden">
-            <ProgressCard state={state} onResume={resume} />
-          </div>
-        ) : null}
+          {screen.kind === "outline" ? (
+            <div className="max-sm:hidden">
+              <ProgressCard state={state} onResume={resume} />
+            </div>
+          ) : null}
 
-        {/*
+          {/*
           The same two numbers, floating, below `sm` (P19-01). Not restricted
           to the outline screen: its whole reason for existing is being the
           resume affordance *while a video is playing*, which is the one screen
           the inline card is not on.
         */}
-        <StickyProgress state={state} onResume={resume} />
-      </div>
+          <StickyProgress state={state} onResume={resume} />
+        </div>
+      </TabbedPanel>
     </div>
   );
 }

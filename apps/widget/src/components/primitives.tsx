@@ -67,43 +67,96 @@ export function Card(props: { className?: string; children: ReactNode }) {
 }
 
 /**
- * The layout's pill tab row.
+ * Tabs above a panel — and, on a narrow screen, something else entirely
+ * (P19-03).
  *
- * Rendered as a real tablist so arrow keys work and a screen reader announces
- * position: the four course tabs are the widget's primary navigation, and a row
- * of unrelated buttons would leave a keyboard user tabbing through all of them
- * to reach the panel.
+ * ## The two arrangements
+ *
+ * Wide: folder tabs standing on the panel's top edge, the selected one white
+ * and continuous with the panel below it.
+ *
+ * Narrow: the selected tab's name is a **heading inside the panel's top edge**,
+ * and the tabs that are not selected become full-width buttons **below** the
+ * panel. That is how the mobile export draws both the catalogue ("On Demand"
+ * over the filters, "Weitere" underneath) and the course detail ("Übersicht"
+ * over the description) — twice, which is the strongest evidence available
+ * that it is the intended pattern rather than an accident of one screen.
+ *
+ * ## Why it is one component
+ *
+ * Because it appeared on two screens and the second one was about to be a
+ * copy. A copy would drift: the catalogue's heading and the detail's would
+ * gain different padding, and then somebody would fix one of them.
+ *
+ * ## What the caller still owns
+ *
+ * The panel's own styling, passed as `children` — the catalogue's is a
+ * bordered card and the detail's is a shadowed one, and neither is this
+ * component's business. What the caller **must** do is drop the panel's top
+ * border and its top rounding below `sm`, because the heading supplies both
+ * there; two borders meeting render as a 2 px rule across the middle of what
+ * the drawing has as one line.
  */
-export function TabBar<T extends string>(props: {
+export function TabbedPanel<T extends string>(props: {
   tabs: ReadonlyArray<{ id: T; label: string }>;
   active: T;
   onSelect: (id: T) => void;
+  /** Names the tablist for a screen reader. */
   label: string;
+  /** Extra classes for the mobile heading, for a panel with a different fill. */
+  headingClassName?: string;
+  children: ReactNode;
 }) {
+  const active = props.tabs.find((tab) => tab.id === props.active);
+
   return (
-    <div role="tablist" aria-label={props.label} className="flex flex-wrap gap-2">
-      {props.tabs.map((tab) => {
-        const selected = tab.id === props.active;
-        return (
-          <button
-            key={tab.id}
-            role="tab"
-            type="button"
-            aria-selected={selected}
-            onClick={() => props.onSelect(tab.id)}
-            className={
-              "rounded-t-xl px-6 py-2.5 text-sm font-semibold transition-colors " +
-              (selected
-                ? // The active tab is white and joins the panel below it, which
-                  // is what makes the row read as tabs rather than as buttons.
-                  "border border-b-0 border-gray-100 bg-white text-brand-700"
-                : "bg-brand-600 text-brand-contrast hover:bg-brand-700")
-            }
-          >
-            {tab.label}
-          </button>
-        );
-      })}
+    <div className="flex flex-col">
+      {active === undefined ? null : (
+        <h2
+          className={
+            "order-1 rounded-t-xl border-x border-t border-brand-500 bg-white px-5 pb-1 pt-6 text-center text-base font-semibold text-brand-700 sm:hidden " +
+            (props.headingClassName ?? "")
+          }
+        >
+          {active.label}
+        </h2>
+      )}
+
+      <div className="order-2 min-w-0">{props.children}</div>
+
+      <div
+        role="tablist"
+        aria-label={props.label}
+        className="order-3 flex flex-wrap gap-2 sm:order-1 max-sm:mt-6 max-sm:flex-col max-sm:gap-3"
+      >
+        {props.tabs.map((tab) => {
+          const selected = tab.id === props.active;
+          return (
+            <button
+              key={tab.id}
+              role="tab"
+              type="button"
+              aria-selected={selected}
+              onClick={() => {
+                props.onSelect(tab.id);
+              }}
+              className={
+                "rounded-t-xl px-6 py-2.5 text-sm font-semibold transition-colors " +
+                (selected
+                  ? // The active tab is white and joins the panel below it,
+                    // which is what makes the row read as tabs rather than as
+                    // buttons. Hidden below `sm`, where the heading above the
+                    // panel *is* this tab — a selected tab rendered among the
+                    // buttons underneath would read as somewhere else to go.
+                    "border border-b-0 border-gray-100 bg-white text-brand-700 max-sm:hidden"
+                  : "bg-brand-600 text-brand-contrast hover:bg-brand-700 max-sm:rounded-full max-sm:py-3.5 max-sm:text-base")
+              }
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

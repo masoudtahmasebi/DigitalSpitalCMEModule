@@ -42,7 +42,13 @@ import type { Branding } from "@ds/domain";
 import type { ApiClient, CourseSummary, DeliveryType } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { describeError, useAsync } from "../hooks.js";
-import { Button, ErrorNotice, ImagePlaceholder, Spinner } from "./primitives.js";
+import {
+  Button,
+  ErrorNotice,
+  ImagePlaceholder,
+  Spinner,
+  TabbedPanel,
+} from "./primitives.js";
 import { CatalogSeal } from "./CatalogSeal.js";
 
 const PER_PAGE = 10;
@@ -115,82 +121,37 @@ export function CourseList(props: {
     <section>
       <CatalogHero branding={props.branding} />
 
-      {/* The tab row sits on the panel's top edge, so the two read as one
-          element rather than a strip of buttons above a box.
-
-          `CONTENT` and not the full width: the layout runs the hero edge to
-          edge and insets everything below it, and the hero's own heading lines
-          up with the panel's left edge. That is the widget's job rather than
-          the host theme's, because the hero is the part that must bleed and a
-          WordPress container would stop it. */}
       {/*
+        `CONTENT` and not the full width: the layout runs the hero edge to edge
+        and insets everything below it, and the hero's own heading lines up
+        with the panel's left edge. That is the widget's job rather than the
+        host theme's, because the hero is the part that must bleed and a
+        WordPress container would stop it.
+
         ## The same three elements, two arrangements (P19-01)
 
-        Wide: folder tabs standing on the panel's top edge, the selected one
-        white and continuous with the panel below it.
+        Wide: folder tabs standing on the panel's top edge. Narrow: the
+        selected section's name is a heading inside the card's top edge, and
+        the sections that are not selected become full-width buttons below the
+        card — which is where the mobile layout draws "Weitere".
 
-        Narrow: the selected section's name is a heading **inside** the card's
-        top edge, and the sections that are not selected become full-width
-        buttons **below** the card — which is where the mobile layout draws
-        "Weitere".
-
-        One tab row either way, reordered rather than re-rendered:
-        `max-sm:order-2` moves it under the panel and the selected tab hides
-        there, because the heading above already names it. Rendering the tabs
-        twice would put every label in the document twice — and `display: none`
-        only removes the duplicate for something that has the stylesheet, which
-        a screen reader walking the markup does not.
+        `TabbedPanel` does both, and does them for the course detail too
+        (P19-03). It was written here first and then copied; one component is
+        what stops the two headings drifting apart and somebody fixing only
+        one of them.
       */}
-      <div className={`${CONTENT} mt-6 flex flex-col sm:mt-16`}>
-        {/*
-          The card's top edge on the narrow layout, carrying the heading. The
-          panel below it draws its own left, right and bottom borders and no
-          top border, so the two meet as one continuous outline rather than as
-          a 2 px rule across the middle of the drawing's single line.
-        */}
-        <h2 className="order-1 rounded-t-xl border-x border-t border-brand-500 bg-white px-5 pb-1 pt-6 text-center text-base font-semibold text-brand-700 sm:hidden">
-          {section.label}
-        </h2>
-
-        {/*
-          Wrapped only to carry an `order`. The panel is supplied by the
-          section — a host build can replace it (ticket #59) — so its class
-          list is not this component's to write.
-        */}
-        <div className="order-2">
-          <section.Panel client={props.client} onOpen={props.onOpen} />
-        </div>
-
-        <div
-          role="tablist"
-          aria-label={de.catalog.title}
-          className="order-3 flex flex-wrap gap-2 sm:order-1 max-sm:mt-6 max-sm:flex-col max-sm:gap-3"
+      <div className={`${CONTENT} mt-6 sm:mt-16`}>
+        <TabbedPanel
+          tabs={CATALOG_SECTIONS.map((entry) => ({
+            id: entry.id,
+            label: entry.label,
+          }))}
+          active={section.id}
+          label={de.catalog.title}
+          onSelect={setSectionId}
         >
-          {CATALOG_SECTIONS.map((entry) => {
-            const selected = entry.id === section.id;
-            return (
-              <button
-                key={entry.id}
-                role="tab"
-                type="button"
-                aria-selected={selected}
-                onClick={() => setSectionId(entry.id)}
-                className={`rounded-t-xl px-8 py-2.5 text-sm font-semibold transition-colors ${
-                  selected
-                    ? // Hidden below `sm`, where the heading above the panel is
-                      // this tab. Visually, and to a screen reader: the heading
-                      // is the same word, so nothing is lost, and a selected
-                      // tab rendered as one of the buttons underneath would
-                      // read as somewhere else to go.
-                      "bg-white text-brand-700 shadow-[0_-2px_6px_rgba(0,0,0,0.04)] max-sm:hidden"
-                    : "bg-brand-600 text-brand-contrast hover:bg-brand-700 max-sm:rounded-full max-sm:py-3.5 max-sm:text-base"
-                }`}
-              >
-                {entry.label}
-              </button>
-            );
-          })}
-        </div>
+          <section.Panel client={props.client} onOpen={props.onOpen} />
+        </TabbedPanel>
       </div>
     </section>
   );
