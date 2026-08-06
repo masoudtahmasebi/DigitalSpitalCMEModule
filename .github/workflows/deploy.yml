@@ -101,40 +101,57 @@ env:
     -o ServerAliveCountMax=10
 
 jobs:
-  # Everything that can be wrong before a single byte reaches the server.
+  # ## One job, and why it used to be two
   #
-  # A deploy that fails halfway is recoverable — deploy.sh leaves the previous
-  # version running — but it is still twenty minutes and a fright. Most first
-  # deployments fail on a missing secret, and this catches that before a single
-  # byte reaches the server.
+  # There was a `preflight` job that SSHed in, ran `deploy.sh --check` and
+  # published the host's API hostname as an output, and a `deploy` job that
+  # `needs:`-ed it. The split read well: fail before a single byte reaches the
+  # server, and keep the production environment gate off the cheap half.
   #
-  # ## Why fifteen minutes and not five
+  # It cost a **second runner acquisition**, and that turned out to be the
+  # expensive part. Three consecutive attempts to bring this deployment up
+  # died there and never reached the server:
   #
-  # Five was the original figure, written beside a claim that this is knowable
-  # "in eight seconds, without SSH". It is not. This job opens **two** SSH
-  # sessions to a CX32, and the second of them runs `deploy.sh --check`, which
-  # parses the compose file through the Docker daemon.
+  #   * one where every preflight step reported `success` and the job was
+  #     killed at its 5-minute cap — which GitHub reports as `cancelled`, so
+  #     `needs: preflight` skipped the deploy;
+  #   * one where the job sat in `Set up job` for the full 15 minutes without
+  #     executing a single step, and was killed again;
+  #   * and a run before those where GitHub could not resolve action download
+  #     info at all.
   #
-  # The first real run proved the cost of being wrong about that: every step
-  # reported `success` and the *job* was killed at 5m00s, which GitHub reports
-  # as `cancelled` — so the deploy job was skipped and the deployment could not
-  # happen at all. A timeout that kills a passing preflight is not a safety
-  # net, it is the thing preventing the deployment.
+  # Two jobs is two chances to lose that lottery, for a check that costs one
+  # SSH round trip. So the check is now the **first step of the deploy job**:
+  # same code path, same ordering guarantee — nothing is checked out, built or
+  # migrated until `--check` has passed — and one runner instead of two.
   #
-  # Fifteen is generous on purpose. The cost of a slow preflight is waiting;
-  # the cost of a short one is a deploy that cannot run.
-  preflight:
-    name: Check the deployment configuration
+  # What is genuinely lost: the production environment gate now covers the
+  # check as well as the deploy. That is arguably more correct, since the check
+  # opens an SSH session to production either way.
+  deploy:
+    name: Deploy to production
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    outputs:
-      # What the *host* says its API hostname is. Published so the smoke test
-      # and the GitHub environment URL cannot disagree with the server about
-      # where the server is.
-      api_domain: ${{ steps.derive.outputs.api_domain }}
+    # The *first* build on a host has no layer cache at all — four images from
+    # a cold `deps` stage — and without buildx compose falls back to the legacy
+    # builder, which cannot share that stage between them. Twenty minutes was a
+    # figure measured against a warm host and would kill the one deploy that
+    # most needs to finish.
+    timeout-minutes: 45
+    # A GitHub environment, so production can require a manual approval and so
+    # the deployment shows up in the repository's timeline.
+    #
+    # No `url:` any more. It used to be the preflight job's output, and a job
+    # cannot reference its own steps in `environment:`. The API hostname is
+    # printed by the step that asks the host for it, which is where somebody
+    # debugging would look anyway.
+    environment:
+      name: production
+    env:
+      REPO_DIR: ${{ vars.DEPLOY_REPO_DIR || '~/Repositories/DigitalSpitalCMEModule' }}
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - name: Required secrets are set
         env:
@@ -152,66 +169,8 @@ jobs:
           done
           [ "$missing" = "0" ] || exit 1
 
-      # The host's own preflight, over SSH, before anything is built.
-      #
-      # The configuration lives on the server now, so this is where it has to be
-      # checked — and `deploy.sh --check` is the same code path the real deploy
-      # runs, so a green check here means the next twenty minutes will not end
-      # on a missing variable.
-      - name: Configure SSH
-        run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          # Pinned host key rather than StrictHostKeyChecking=no.
-          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
-      - id: derive
-        name: The host's configuration is complete and consistent
-        env:
-          REPO_DIR: ${{ vars.DEPLOY_REPO_DIR || '~/Repositories/DigitalSpitalCMEModule' }}
-        run: |
-          # `--check` runs the whole preflight — the generated credentials, the
-          # derived domains and their mutual consistency — and changes nothing.
-          ssh $SSH_OPTS -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "cd ${REPO_DIR}/infra/deploy && ./deploy.sh --check"
-
-          # Ask the host what it believes its own API hostname is, rather than
-          # rebuilding the derivation here from a copy of the configuration this
-          # workflow no longer holds. The smoke test and the environment URL
-          # then cannot disagree with the server about where the server is.
-          api_domain=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
-            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "cd ${REPO_DIR}/infra/deploy && . ./domains.sh && \
-             set -a && . \$HOME/ds-education/config.env && set +a && \
-             ds_derive_domains && printf '%s' \"\$API_DOMAIN\"")
-
-          [ -n "$api_domain" ] || { echo "::error::the host reported no API domain"; exit 1; }
-          echo "API domain: ${api_domain}"
-          echo "api_domain=${api_domain}" >> "$GITHUB_OUTPUT"
-
-  deploy:
-    name: Deploy to production
-    needs: preflight
-    runs-on: ubuntu-latest
-    # Forty, not twenty. The *first* build on a host has no layer cache at all
-    # — four images from a cold `deps` stage — and without buildx compose falls
-    # back to the legacy builder, which cannot share that stage between them.
-    # Twenty minutes was measured against a warm host and would kill the one
-    # deploy that most needs to finish.
-    timeout-minutes: 40
-    # A GitHub environment, so production can require a manual approval and so
-    # the deployment shows up in the repository's timeline.
-    environment:
-      name: production
-      url: https://${{ needs.preflight.outputs.api_domain }}
-    env:
-      REPO_DIR: ${{ vars.DEPLOY_REPO_DIR || '~/Repositories/DigitalSpitalCMEModule' }}
-      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-    steps:
-      # No checkout: nothing from this runner reaches the server any more. The
-      # host has the repository and fetches the commit itself.
+      # No checkout: nothing from this runner reaches the server. The host has
+      # the repository and fetches the commit itself.
       - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
@@ -223,6 +182,29 @@ jobs:
           # running whatever whoever answers on port 22 would like it to run.
           printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+
+      # The host's own preflight, over SSH, before anything is checked out or
+      # built. `--check` runs the whole thing — the generated credentials, the
+      # derived domains and their mutual consistency — and changes nothing.
+      - id: derive
+        name: The host's configuration is complete and consistent
+        run: |
+          ssh $SSH_OPTS -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd ${REPO_DIR}/infra/deploy && ./deploy.sh --check"
+
+          # Ask the host what it believes its own API hostname is, rather than
+          # rebuilding the derivation here from a copy of the configuration
+          # this workflow no longer holds. The smoke test then cannot disagree
+          # with the server about where the server is.
+          api_domain=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd ${REPO_DIR}/infra/deploy && . ./domains.sh && \
+             set -a && . \$HOME/ds-education/config.env && set +a && \
+             ds_derive_domains && printf '%s' \"\$API_DOMAIN\"")
+
+          [ -n "$api_domain" ] || { echo "::error::the host reported no API domain"; exit 1; }
+          echo "API domain: ${api_domain}"
+          echo "api_domain=${api_domain}" >> "$GITHUB_OUTPUT"
 
       # Detached at an exact commit, not a branch tip. A `git pull` would
       # deploy whatever `main` had become in the twenty minutes since CI went
@@ -256,7 +238,7 @@ jobs:
           # deploy script already checked this from the host; this checks that
           # the internet agrees.
           curl --fail --silent --show-error --max-time 20 \
-            "https://${{ needs.preflight.outputs.api_domain }}/health" | tee /dev/stderr | grep -q '"status"'
+            "https://${{ steps.derive.outputs.api_domain }}/health" | tee /dev/stderr | grep -q '"status"'
 
       - name: Report failure
         if: failure()
