@@ -87,6 +87,15 @@ ds_ensure_secrets() {
   # shellcheck disable=SC1090 # runtime path, deliberately not resolvable at lint time
   source "$file"
   set +a
+
+  # Derived here, not by the caller. `deploy.sh` remembered and `dsc` did not,
+  # which is how `./dsc run … bootstrap-admin` got a blank password in its
+  # connection string and Postgres answered
+  #
+  #     SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+  #
+  # A value every consumer needs is a value the loader should produce.
+  ds_export_url_passwords
 }
 
 # Percent-encode a value for use in a URL's userinfo component.

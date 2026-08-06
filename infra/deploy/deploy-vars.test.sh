@@ -148,8 +148,53 @@ for name in "${required[@]}"; do
   }
 done
 
+# --- and the compose file, which is what both entry points must satisfy -----
+#
+# `deploy.sh` is not the only thing that runs `docker compose` here — `dsc` is
+# the other, and it is what an operator uses for `run --rm`, `logs` and `exec`.
+#
+# Checking only `deploy.sh` missed exactly that. `ds_export_url_passwords` was
+# called from `deploy.sh` and not from `dsc`, so `${DS_APP_PASSWORD_URL}`
+# interpolated blank for anything started through the wrapper, and
+# `bootstrap-admin` met
+#
+#     SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+#
+# which reads as a broken credential and is a missing one. The compose file is
+# the contract, so the compose file is what to check — and against **both**
+# loaders, because a variable only one of them exports is a variable that works
+# until somebody uses the other.
+
+# Everything the compose file may legitimately rely on: the same sources as
+# above, plus every key the template offers — those are optional-with-a-default
+# in compose and set from `config.env` in practice.
+mapfile -t template_keys < <(grep -oE '^[A-Z][A-Z0-9_]+=' config.env.example | tr -d '=')
+compose_known=("${known[@]}" "${template_keys[@]}")
+
+# A `${VAR:-default}` in compose cannot be unset by construction, exactly as in
+# the shell — so only bare `${VAR}` references are checked.
+mapfile -t compose_bare < <(
+  grep -oE '\$\{[A-Z][A-Z0-9_]*\}' docker-compose.prod.yml \
+    | sed -E 's/^\$\{//; s/\}$//' | sort -u
+)
+
+for name in "${compose_bare[@]}"; do
+  found=0
+  for k in "${compose_known[@]}"; do
+    [[ "$name" == "$k" ]] && { found=1; break; }
+  done
+  if [[ "$found" == "0" ]]; then
+    failed=$((failed + 1))
+    printf 'xx docker-compose.prod.yml interpolates ${%s}, which nothing exports.\n' "$name" >&2
+    printf '   compose substitutes a blank string and warns; the container then\n' >&2
+    printf '   starts with an empty value, which fails somewhere further in and\n' >&2
+    printf '   reads as a broken setting rather than a missing one.\n\n' >&2
+  fi
+done
+
 if [[ "$failed" == "0" ]]; then
-  printf '\n%s references checked, all guaranteed\n' "${#referenced[@]}"
+  printf '\n%s shell + %s compose references checked, all guaranteed\n' \
+    "${#referenced[@]}" "${#compose_bare[@]}"
 else
   printf '\n%s unguaranteed reference(s)\n' "$failed" >&2
 fi

@@ -93,5 +93,69 @@ if command -v node >/dev/null 2>&1; then
     "Invalid URL" "$verdict"
 fi
 
+
+# --- and `dsc` really exports them, by running it -------------------------
+#
+# The first attempt at this grepped `dsc` for `ds_export_url_passwords`. It
+# passed with the call deleted, because the *comment* above the call names the
+# function too — a test that greps for prose is not a test, and a
+# deliberate-violation probe is what showed it.
+#
+# So this runs the wrapper against a throwaway state directory with `docker`
+# stubbed on PATH, and reads back what compose would actually have been given.
+# It is the only form of the check that cannot be satisfied by a comment.
+probe_dsc() {
+  local tmp
+  tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064 # expand $tmp now, not at trap time
+  trap "rm -rf '$tmp'" RETURN
+
+  install -d -m 700 "$tmp/state"
+  cat > "$tmp/state/config.env" <<'ENV'
+BASE_DOMAIN=digitalspital.com
+ACME_EMAIL=technik@digitalspital.de
+POSTGRES_DB=ds_education
+POSTGRES_SUPERUSER=postgres
+PORTAL_PROJECT_SLUG=medice-adhs
+ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
+PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
+PORTAL_KEYCLOAK_CLIENT_ID=ds-portal
+ENV
+  chmod 600 "$tmp/state/config.env"
+
+  # A password with every character that breaks a URL, so a wrapper that
+  # forwarded the raw value would be caught as surely as one that forwarded
+  # nothing.
+  cat > "$tmp/state/secrets.env" <<'ENV'
+POSTGRES_SUPERUSER_PASSWORD=aa/bb+cc=
+DS_MIGRATOR_PASSWORD=dd/ee+ff=
+DS_APP_PASSWORD=gg/hh+ii=
+SECRETS_KMS_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+ENV
+  chmod 600 "$tmp/state/secrets.env"
+
+  # `dsc` ends in `exec docker compose …`. Stubbing `docker` is what lets the
+  # wrapper run to completion and report the environment it built.
+  install -d "$tmp/bin"
+  cat > "$tmp/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+printf 'DS_APP_PASSWORD_URL=%s\n' "${DS_APP_PASSWORD_URL-<unset>}"
+printf 'DS_MIGRATOR_PASSWORD_URL=%s\n' "${DS_MIGRATOR_PASSWORD_URL-<unset>}"
+STUB
+  chmod +x "$tmp/bin/docker"
+
+  PATH="$tmp/bin:$PATH" DS_STATE_DIR="$tmp/state" ./dsc config 2>/dev/null
+}
+
+dsc_env="$(probe_dsc)"
+
+check "dsc exports the app password, encoded" \
+  "DS_APP_PASSWORD_URL=gg%2Fhh%2Bii%3D" \
+  "$(printf '%s\n' "$dsc_env" | grep '^DS_APP_PASSWORD_URL=')"
+
+check "dsc exports the migrator password, encoded" \
+  "DS_MIGRATOR_PASSWORD_URL=dd%2Fee%2Bff%3D" \
+  "$(printf '%s\n' "$dsc_env" | grep '^DS_MIGRATOR_PASSWORD_URL=')"
+
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
 [[ "$failed" == "0" ]]

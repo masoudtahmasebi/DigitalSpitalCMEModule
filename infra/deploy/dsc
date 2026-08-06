@@ -41,6 +41,18 @@ set +a
 source "${SCRIPT_DIR}/domains.sh"
 ds_derive_domains
 
+# The percent-encoded passwords the compose file interpolates. `dsc` sources
+# `secrets.env` directly rather than through `ds_ensure_secrets` — it must never
+# generate anything — so it derives them itself.
+#
+# Without this, `${DS_APP_PASSWORD_URL}` interpolates blank and every container
+# started through `dsc` gets `postgres://ds_app:@postgres:5432/…`. Postgres
+# refuses that with "client password must be a string", which reads like a
+# broken credential and is a missing one.
+# shellcheck source=./secrets.sh
+source "${SCRIPT_DIR}/secrets.sh"
+ds_export_url_passwords
+
 # The image tag is the commit this clone is on, exactly as deploy.sh computes
 # it. So `./dsc` describes the checkout you are standing in — which is the
 # right answer, and the reason a rollback is `git checkout` plus a redeploy.
