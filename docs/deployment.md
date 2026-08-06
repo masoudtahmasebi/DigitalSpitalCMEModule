@@ -377,7 +377,49 @@ ssh -i ~/.ssh/ds-deploy deploy@78.47.178.65 \
 
 It prints a generated password **once** and stores it nowhere. Sign in at
 `https://verwaltung.digitalspital.com` immediately; the first sign-in enrols the
-second factor, which `super_admin` requires.
+second factor, which `super_admin` requires by default (P22-02 makes that a
+policy — see §"Turning the second factor on, off, or mandatory" below).
+
+### And then give it a tenant, or the tenant screens have nothing to show
+
+**A deploy creates no content.** `deploy.sh` migrates and starts containers; it
+does not seed, deliberately, because a deploy that writes rows is a deploy that
+can write the wrong ones into a live database.
+
+So on a fresh installation the console's _platform_ screens work — the customer
+registry, your own profile — and its _tenant_ screens have no project to act
+within. `DS_ADMIN_PROJECT_SLUG` (from `ADMIN_DEFAULT_PROJECT_SLUG` in
+`config.env`) names one, and until something creates it, that name resolves to
+nothing:
+
+```
+GET /admin/customers  →  200   []
+GET /admin/courses    →  404   "Dieses Projekt existiert nicht."
+```
+
+That 404 used to be a bare `401`, which the console read as an expired session
+and answered with its login form — so a missing tenant presented as a broken
+sign-in (P22-01).
+
+Two ways out, and the second is the honest one for a first installation:
+
+```bash
+# 1. The DS test tenant, which ships in the image. Creates customer `ds`,
+#    project `ds-demo`, and two demo courses.
+./dsc run --rm --entrypoint node api dist/seed-ds.js --force
+#    then set ADMIN_DEFAULT_PROJECT_SLUG=ds-demo in config.env and redeploy.
+
+# 2. Or create the real customer, department and project through the console's
+#    own screens, which is what they are for, and point the slug at that.
+```
+
+The MEDICE/ADHS seed is **not** in the image: it lives at `db/seed/adhs.ts` and
+needs a checkout and `tsx`. That is deliberate — MEDICE's real course is content
+the client owns, not a fixture a deploy should be able to recreate.
+
+P22-03 removes this whole class of problem by letting the console pick its
+project from what the operator can actually reach, instead of from a name in
+deploy config that may not exist yet.
 
 It refuses to run again while any staff account exists — after that the ordinary
 invitation flow is the only way to add one. `--force` exists for a genuine
@@ -394,7 +436,7 @@ installation rather than only in a test.
 ```bash
 ssh -i ~/.ssh/ds-deploy deploy@78.47.178.65
 cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
-./dsc run --rm --entrypoint node api dist/db-seed-ds.js --force
+./dsc run --rm --entrypoint node api dist/seed-ds.js --force
 ```
 
 `--force` is required and is not a formality: the seed rebuilds its two

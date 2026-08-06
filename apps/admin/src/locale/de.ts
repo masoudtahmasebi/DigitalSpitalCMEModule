@@ -126,12 +126,52 @@ export const de = {
     inviteHandOver:
       "Dieser Link wird nicht automatisch versendet. Bitte geben Sie ihn der eingeladenen Person weiter — er wird nur einmal angezeigt.",
     signOutEverywhere: "Überall abmelden",
+    resetSecondFactor: "Zwei-Faktor zurücksetzen",
+    resetSecondFactorConfirm: "Wirklich zurücksetzen",
+    resetSecondFactorHint:
+      "Für ein verlorenes Gerät. Das Konto muss sich beim nächsten Anmelden neu einrichten, wenn die Richtlinie es verlangt, und wird überall abgemeldet.",
     disable: "Deaktivieren",
     disableConfirm: "Wirklich deaktivieren",
     enable: "Aktivieren",
     loadFailed: "Die Konten konnten nicht geladen werden.",
     inviteFailed: "Die Einladung konnte nicht erstellt werden.",
     actionFailed: "Die Aktion konnte nicht ausgeführt werden.",
+  },
+
+  security: {
+    title: "Sicherheit",
+    intro:
+      "Regeln für die Anmeldung an der Verwaltung. Sie sehen die Regeln, die für Sie gelten; ändern dürfen Sie nur die Ihres eigenen Bereichs.",
+    secondFactor: "Zwei-Faktor-Authentifizierung",
+    platformScope: "Plattform (Super-Administration)",
+    platformHint:
+      "Gilt für Konten, die zu keinem Kunden gehören. Nur die Super-Administration darf diese Regel ändern.",
+    customerScope: "Kunde",
+    policy_: {
+      disabled: "Aus",
+      optional: "Freigestellt",
+      required: "Verpflichtend",
+    },
+    policyHint_: {
+      disabled:
+        "Wird nicht abgefragt — auch dann nicht, wenn ein Konto bereits einen zweiten Faktor eingerichtet hat. So kommt jemand mit verlorenem Gerät wieder herein.",
+      optional:
+        "Freiwillig. Wer einen zweiten Faktor eingerichtet hat, muss ihn weiterhin verwenden — sonst würde ein gestohlenes Passwort plötzlich genügen.",
+      required:
+        "Alle Konten dieses Bereichs richten einen zweiten Faktor ein und werden beim Anmelden dorthin geleitet, wenn sie es noch nicht getan haben.",
+    },
+    strictestWins:
+      "Wer Rechte in mehreren Bereichen hat, unterliegt der strengsten Regel davon.",
+    ownFactor: "Ihr eigener zweiter Faktor",
+    ownFactorEnrolled: "Eingerichtet.",
+    ownFactorNone: "Nicht eingerichtet.",
+    removeOwn: "Eigenen zweiten Faktor entfernen",
+    removeOwnConfirm: "Wirklich entfernen",
+    removeOwnBlocked:
+      "Für Ihr Konto ist der zweite Faktor verpflichtend und kann nicht entfernt werden.",
+    saved: "Gespeichert.",
+    loadFailed: "Die Sicherheitseinstellungen konnten nicht geladen werden.",
+    saveFailed: "Die Einstellung konnte nicht gespeichert werden.",
   },
 
   customers: {
@@ -157,6 +197,7 @@ export const de = {
   },
 
   nav: {
+    security: "Sicherheit",
     courses: "Fortbildungen",
     participants: "Teilnehmende",
     branding: "Erscheinungsbild",

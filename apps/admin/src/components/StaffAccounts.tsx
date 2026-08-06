@@ -206,6 +206,20 @@ export function StaffAccounts(props: {
                   >
                     {de.staff.signOutEverywhere}
                   </Button>
+                  {/* The lost-phone button (P22-02). Only for an account that
+                      has one to lose, and never for your own — the API refuses
+                      a self-reset, since it would turn a stolen session into a
+                      permanently weakened account. */}
+                  {account.totpEnrolled ? (
+                    <ConfirmButton
+                      label={de.staff.resetSecondFactor}
+                      confirmLabel={de.staff.resetSecondFactorConfirm}
+                      cancelLabel={de.common.cancel}
+                      onConfirm={() =>
+                        void act(() => client.adminResetStaffSecondFactor(account.id))
+                      }
+                    />
+                  ) : null}
                   {disabled ? (
                     <Button
                       variant="secondary"

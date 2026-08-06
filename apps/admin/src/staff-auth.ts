@@ -37,6 +37,8 @@ export interface StaffProfile {
   readonly email: string;
   readonly displayName: string;
   readonly role: string;
+  /** Whether this operator has a second factor set up (P22-02). */
+  readonly secondFactorEnrolled: boolean;
   readonly capabilities: readonly string[];
   /**
    * The grants this operator holds. The console reads the customer id off the

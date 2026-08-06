@@ -75,6 +75,9 @@ export type StaffAccount = components["schemas"]["StaffAccount"];
 export type StaffScope = components["schemas"]["StaffScope"];
 export type StaffInvitation = components["schemas"]["StaffInvitation"];
 export type CustomerSummary = components["schemas"]["CustomerSummary"];
+export type SecondFactorPolicy = components["schemas"]["SecondFactorPolicy"];
+export type SecondFactorPolicies = components["schemas"]["SecondFactorPolicies"];
+export type SecondFactorPolicyUpdate = components["schemas"]["SecondFactorPolicyUpdate"];
 export type CustomerCreate = components["schemas"]["CustomerCreate"];
 export type CustomerUpdate = components["schemas"]["CustomerUpdate"];
 export type DepartmentSummary = components["schemas"]["DepartmentSummary"];
@@ -533,6 +536,29 @@ export function createClient(options: ClientOptions) {
 
     adminSignOutStaffEverywhere: (id: string): Promise<void> =>
       request(`/admin/staff/${seg(id)}/sign-out-everywhere`, { method: "POST" }),
+
+    /**
+     * Clear an operator's second factor so they can enrol a new device.
+     *
+     * Does not sign them in and does not relax their policy: under `required`
+     * their next sign-in goes to enrolment. Every session they hold is revoked.
+     * Nobody may reset their own (P22-02).
+     */
+    adminResetStaffSecondFactor: (id: string): Promise<void> =>
+      request(`/admin/staff/${seg(id)}/second-factor/reset`, { method: "POST" }),
+
+    adminGetSecondFactorPolicy: (): Promise<SecondFactorPolicies> =>
+      request("/admin/auth/second-factor/policy"),
+
+    /** `customerId: null` is the platform's own — `super_admin` only. */
+    adminSetSecondFactorPolicy: (
+      input: SecondFactorPolicyUpdate,
+    ): Promise<{ status: string }> =>
+      request("/admin/auth/second-factor/policy", json(input, "PUT")),
+
+    /** Refused with 403 while the policy governing your account is `required`. */
+    adminRemoveOwnSecondFactor: (): Promise<{ status: string }> =>
+      request("/admin/auth/second-factor", { method: "DELETE" }),
 
     adminListCustomers: (): Promise<CustomerSummary[]> => request("/admin/customers"),
 

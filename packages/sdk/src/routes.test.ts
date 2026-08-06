@@ -145,6 +145,11 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
     }),
   adminSetStaffDisabled: (c) => c.adminSetStaffDisabled(ID, true),
   adminSignOutStaffEverywhere: (c) => c.adminSignOutStaffEverywhere(ID),
+  adminResetStaffSecondFactor: (c) => c.adminResetStaffSecondFactor(ID),
+  adminGetSecondFactorPolicy: (c) => c.adminGetSecondFactorPolicy(),
+  adminSetSecondFactorPolicy: (c) =>
+    c.adminSetSecondFactorPolicy({ customerId: null, policy: "required" }),
+  adminRemoveOwnSecondFactor: (c) => c.adminRemoveOwnSecondFactor(),
   adminListCustomers: (c) => c.adminListCustomers(),
   adminGetCustomer: (c) => c.adminGetCustomer("medice"),
   adminCreateCustomer: (c) => c.adminCreateCustomer({ slug: "medice", name: "MEDICE" }),

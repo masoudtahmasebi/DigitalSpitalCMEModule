@@ -57,6 +57,7 @@ import { Customers } from "./components/Customers.js";
 import { Learners } from "./components/Learners.js";
 import { Certificates } from "./components/Certificates.js";
 import { StaffAccounts } from "./components/StaffAccounts.js";
+import { Security } from "./components/Security.js";
 import { SignIn } from "./components/SignIn.js";
 
 export function App() {
@@ -189,6 +190,7 @@ type View =
   | { kind: "learners" }
   | { kind: "certificates" }
   | { kind: "staff" }
+  | { kind: "security" }
   | { kind: "course"; slug: string; tab: CourseTab };
 
 /**
@@ -213,6 +215,11 @@ const SECTIONS: ReadonlyArray<readonly [View["kind"], string, string | undefined
   ["certificates", de.certificates.title, "certificate"],
   ["staff", de.staff.title, "staff_user"],
   ["customers", de.customers.title, "customer"],
+  // No capability: every operator may read the rules their own sign-in is
+  // subject to. Which of them they may *change* is enforced on the write —
+  // hiding the screen would only hide the platform row from the people it
+  // governs (P22-02).
+  ["security", de.nav.security, undefined],
 ];
 
 function Console(props: {
@@ -385,6 +392,21 @@ function Console(props: {
         <StaffAccounts
           client={platformClient}
           customerId={props.profile.grants[0]?.customerId ?? null}
+          customers={customers}
+        />
+      </div>
+    );
+  }
+
+  if (view.kind === "security") {
+    return (
+      <div className="space-y-5">
+        {sections}
+        {/* Above any tenant, like the customer registry: no `X-DS-Project`. */}
+        <Security
+          client={platformClient}
+          isSuperAdmin={props.profile.role === "super_admin"}
+          ownSecondFactorEnrolled={props.profile.secondFactorEnrolled}
           customers={customers}
         />
       </div>

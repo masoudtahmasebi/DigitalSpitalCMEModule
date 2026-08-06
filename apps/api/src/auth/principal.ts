@@ -35,6 +35,14 @@ export interface StaffProfile {
   readonly email: string;
   readonly displayName: string;
   readonly role: StaffRole;
+  /**
+   * Whether this operator has a second factor set up (P22-02).
+   *
+   * A boolean, deliberately — not the secret, not the enrolment date. The
+   * console needs to know whether to offer "remove mine"; neither of the other
+   * two is its business, and one of them is a credential.
+   */
+  readonly secondFactorEnrolled: boolean;
   readonly capabilities: readonly ManagedEntity[];
   readonly grants: readonly {
     readonly role: StaffRole;

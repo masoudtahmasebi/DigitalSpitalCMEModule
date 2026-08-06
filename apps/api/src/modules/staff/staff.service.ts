@@ -79,6 +79,8 @@ export interface StaffProfile {
   readonly grants: readonly StaffGrant[];
   /** The broadest role held — what the console builds its menu from. */
   readonly role: StaffRole;
+  /** Whether this operator has a second factor set up (P22-02). */
+  readonly secondFactorEnrolled: boolean;
   readonly capabilities: readonly string[];
 }
 
@@ -907,6 +909,11 @@ function profileOf(
     displayName: account.displayName,
     grants,
     role,
+    // Whether *this* operator has a second factor, so the console can offer to
+    // remove it without a second round trip and without guessing (P22-02). A
+    // boolean, not the secret or the enrolment date: neither is the console's
+    // business, and one of them is a credential.
+    secondFactorEnrolled: account.totpEnrolledAt !== null,
     capabilities: entities.filter((entity) => canManage(role, entity)),
   };
 }

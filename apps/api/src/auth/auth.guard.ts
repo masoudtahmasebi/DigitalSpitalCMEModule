@@ -331,6 +331,10 @@ function staffProfileOf(session: ResolvedStaffSession): StaffProfile {
     email: session.account.email,
     displayName: session.account.displayName,
     role,
+    // Read off the session's own account row, so the console's security screen
+    // and the sign-in path cannot disagree about whether a factor exists
+    // (P22-02).
+    secondFactorEnrolled: session.account.totpEnrolledAt !== null,
     capabilities: capabilitiesOf(role),
     grants: session.grants,
   };
