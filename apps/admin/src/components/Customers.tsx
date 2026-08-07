@@ -42,7 +42,23 @@ import {
   TextInput,
 } from "./ui.js";
 
-export function Customers(props: { client: ApiClient }) {
+export function Customers(props: {
+  client: ApiClient;
+  /**
+   * Tell the shell the registry changed (P22-05).
+   *
+   * This screen kept its own copy of the customer list and so did `Console`,
+   * which fetched once on mount. Creating a customer refreshed *this* copy and
+   * not that one — so the customer picker stayed empty and every tenant screen
+   * went on saying "no customer has been created yet" while this table listed
+   * the customer that had just been created.
+   *
+   * Two copies of one fact, and the one the rest of the console reads was the
+   * one that never updated. The callback is the seam; there is now exactly one
+   * fetch that both depend on.
+   */
+  onChanged: () => void;
+}) {
   const { client } = props;
   const [customers, setCustomers] = useState<CustomerSummary[] | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
@@ -73,6 +89,7 @@ export function Customers(props: { client: ApiClient }) {
       setSlug("");
       setName("");
       await load();
+      props.onChanged();
     } catch (error) {
       // The API's detail is written for the operator here — "slug already
       // taken" is about what they sent, not about what exists on the server.
@@ -87,6 +104,7 @@ export function Customers(props: { client: ApiClient }) {
     try {
       await client.adminDeleteCustomer(customer.slug);
       await load();
+      props.onChanged();
     } catch (error) {
       // A 409 names the counts. Shown verbatim: it is the instruction for what
       // to empty first, and paraphrasing it would drop exactly that.

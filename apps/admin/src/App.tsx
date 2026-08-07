@@ -222,10 +222,21 @@ const SECTIONS: ReadonlyArray<readonly [View["kind"], string, string | undefined
   ["security", de.nav.security, undefined],
 ];
 
-function Console(props: {
+/**
+ * Exported, and its clients injectable, so it can be tested (P22-05).
+ *
+ * The console shipped four state bugs in a row from a shell with no component
+ * tests at all. Constructing the clients inside made that unavoidable: a test
+ * could render nothing without a live API. Two optional factories cost nothing
+ * in production — the defaults are exactly what was there — and make the shell's
+ * behaviour assertable, which is where every one of those bugs lived.
+ */
+export function Console(props: {
   config: ReturnType<typeof readConfig> & object;
   profile: StaffProfile;
   onExpired: () => void;
+  makeAdminClient?: typeof createAdminClient;
+  makePlatformClient?: typeof createPlatformClient;
 }) {
   /*
    * Which customer the tenant screens act within (P22-03).
@@ -245,9 +256,12 @@ function Console(props: {
     () => props.profile.grants[0]?.customerId ?? undefined,
   );
 
+  const makeAdmin = props.makeAdminClient ?? createAdminClient;
+  const makePlatform = props.makePlatformClient ?? createPlatformClient;
+
   const client = useMemo(
-    () => createAdminClient(props.config, customerId ?? "", props.onExpired),
-    [props.config, customerId, props.onExpired],
+    () => makeAdmin(props.config, customerId ?? "", props.onExpired),
+    [makeAdmin, props.config, customerId, props.onExpired],
   );
 
   /*
@@ -258,8 +272,8 @@ function Console(props: {
    * client that always named one would 403 the one operator able to fix that.
    */
   const platformClient = useMemo(
-    () => createPlatformClient(props.config, props.onExpired),
-    [props.config, props.onExpired],
+    () => makePlatform(props.config, props.onExpired),
+    [makePlatform, props.config, props.onExpired],
   );
 
   const [view, setView] = useState<View>({ kind: "courses" });
@@ -319,15 +333,29 @@ function Console(props: {
     void loadCourses();
   }, [loadCourses]);
 
-  useEffect(() => {
+  /**
+   * Re-read the registry.
+   *
+   * A callback rather than a bare effect, because creating or deleting a
+   * customer has to refresh *this* list too (P22-05). It did not: `Customers`
+   * kept a second copy, refreshed that one, and left the picker here empty — so
+   * the console said "no customer has been created yet" on every tenant screen
+   * while the Kunden table listed the customer just created.
+   */
+  const loadCustomers = useCallback(async () => {
     if (!props.profile.capabilities.includes("customer")) return;
-    platformClient
-      .adminListCustomers()
-      // Ignored on failure: this list is a convenience on one form, and a
-      // console that refused to open because of it would be worse.
-      .then((rows) => setCustomers(rows.map((row) => ({ id: row.id, name: row.name }))))
-      .catch(() => undefined);
+    try {
+      const rows = await platformClient.adminListCustomers();
+      setCustomers(rows.map((row) => ({ id: row.id, name: row.name })));
+    } catch {
+      // Ignored on failure: this list is a convenience, and a console that
+      // refused to open because of it would be worse.
+    }
   }, [platformClient, props.profile.capabilities]);
+
+  useEffect(() => {
+    void loadCustomers();
+  }, [loadCustomers]);
 
   // Top-level sections. Branding and organisation are project-wide rather than
   // per course — a typeface and an identity-provider binding are properties of
@@ -525,7 +553,12 @@ function Console(props: {
         {sections}
         {/* The platform client: no `X-DS-Project` header, because this list
             spans customers and has to work before any project exists. */}
-        <Customers client={platformClient} />
+        <Customers
+          client={platformClient}
+          onChanged={() => {
+            void loadCustomers();
+          }}
+        />
       </div>
     );
   }
