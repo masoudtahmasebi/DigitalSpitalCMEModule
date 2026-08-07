@@ -23,6 +23,15 @@ import helmet from "helmet";
 import type { INestApplication } from "@nestjs/common";
 import type { AppConfig } from "./config/config.js";
 
+/**
+ * The headers a client uses to name the tenant it is acting within.
+ *
+ * Exported so the CORS allow-list and the guard cannot disagree about them —
+ * a header the guard reads but CORS refuses never arrives, and the failure is
+ * a browser preflight error with nothing on the server side to see (P22-06).
+ */
+export const TENANT_HEADERS = ["x-ds-project", "x-ds-customer"] as const;
+
 export async function configureApp(
   app: INestApplication,
   config: AppConfig,
@@ -71,11 +80,24 @@ export async function configureApp(
   app.enableCors({
     origin: config.ALLOWED_ORIGINS.length > 0 ? config.ALLOWED_ORIGINS : false,
     credentials: true,
+    // Every header the browser is allowed to send on a cross-origin request.
+    //
+    // This list is easy to forget and impossible to notice from the server: a
+    // header missing here is refused by the *browser*, in the preflight, so
+    // nothing reaches the API and no log records it. `x-ds-customer` was added
+    // to the client and not here, and the console failed with
+    //
+    //   Request header field x-ds-customer is not allowed by
+    //   Access-Control-Allow-Headers in preflight response
+    //
+    // which is a browser message, not ours. `TENANT_HEADERS` below is checked
+    // against this list by a test, so a future header cannot be added to one
+    // and not the other (P22-06).
     allowedHeaders: [
       "authorization",
       "content-type",
       "accept",
-      "x-ds-project",
+      ...TENANT_HEADERS,
       "x-ds-csrf",
     ],
   });
