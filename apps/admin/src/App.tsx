@@ -118,44 +118,102 @@ export function App() {
     );
   }
 
+  // `Console` renders the frame itself: the sidebar's contents and the app
+  // bar's scope control are both its state, and passing them up only to be
+  // passed back down would put the console's navigation in two files (P22-07).
   return (
-    <Shell
-      operator={profile.displayName}
+    <Console
+      config={config}
+      profile={profile}
+      onExpired={() => setProfile(undefined)}
       onSignOut={() => {
         void signOut(config.apiBase).then(() => setProfile(undefined));
       }}
-    >
-      <Console
-        config={config}
-        profile={profile}
-        onExpired={() => setProfile(undefined)}
-      />
-    </Shell>
+    />
   );
 }
 
+/**
+ * The console's frame (P22-07).
+ *
+ * ## Why it changed
+ *
+ * It was a centred column with a row of text tabs on a white page — the shape a
+ * prototype has. Said plainly by the client: *"our admin looks really bad now
+ * and that's the place the customers will work with, how can we sell this?"*
+ *
+ * The layout borrows from **react-admin**, which the client named as the
+ * reference: a fixed sidebar for navigation, a slim app bar for identity and
+ * scope, content on its own surface. The *ideas*, not the framework — a
+ * dependency that size would have to earn its way past ADR-0001, and it would
+ * not have prevented one of the bugs this console actually shipped, which were
+ * all state.
+ *
+ * ## What the three regions are for
+ *
+ * | Sidebar | Where you are in the product. Always visible, so nothing is more than one click away. |
+ * | App bar | Whose session this is, and which customer it acts within — the two facts that change what every click does. |
+ * | Content | One surface, one width, so a table and a form do not look like two applications. |
+ *
+ * Signed out, none of it applies: there is nowhere to navigate and no scope to
+ * qualify, so the sign-in form gets a narrow centred column and nothing else.
+ */
 function Shell(props: {
   children: React.ReactNode;
   operator?: string;
   onSignOut?: () => void;
+  /** The navigation column. Absent before sign-in, when there is nowhere to go. */
+  nav?: React.ReactNode;
+  /** Scope controls for the app bar — the customer picker. */
+  scope?: React.ReactNode;
 }) {
+  const signedIn = props.onSignOut !== undefined;
+
   return (
-    <div className="mx-auto max-w-6xl p-6">
-      <header className="mb-6 flex items-center justify-between border-b border-gray-200 pb-4">
-        <h1 className="text-lg font-bold text-gray-900">{de.appTitle}</h1>
-        {props.onSignOut === undefined ? null : (
-          <div className="flex items-center gap-3">
-            {/* Whose session this is. An operator with two accounts — their own
-                and a super admin one — otherwise has no way to tell which they
-                are acting as, and the two differ in what they can destroy. */}
-            <span className="text-sm text-gray-600">{props.operator}</span>
-            <Button variant="secondary" onClick={props.onSignOut}>
-              {de.auth.signOut}
-            </Button>
+    <div className="min-h-screen bg-gray-100 md:flex">
+      {signedIn ? (
+        <aside className="shrink-0 bg-gray-900 md:min-h-screen md:w-60">
+          <div className="flex items-center gap-2.5 px-4 py-4">
+            <span
+              aria-hidden
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-brand-500 text-xs font-bold text-white"
+            >
+              DS
+            </span>
+            <span className="truncate text-sm font-semibold text-white">
+              {de.appTitle}
+            </span>
           </div>
-        )}
-      </header>
-      {props.children}
+          {props.nav}
+        </aside>
+      ) : null}
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white px-5 py-2.5">
+          {signedIn ? (
+            props.scope
+          ) : (
+            <h1 className="text-base font-semibold text-gray-900">{de.appTitle}</h1>
+          )}
+          {signedIn ? (
+            <div className="flex items-center gap-3">
+              {/* Whose session this is. An operator with two accounts — their own
+                  and a super admin one — otherwise has no way to tell which they
+                  are acting as, and the two differ in what they can destroy. */}
+              <span className="text-sm text-gray-600">{props.operator}</span>
+              <Button variant="secondary" onClick={() => props.onSignOut?.()}>
+                {de.auth.signOut}
+              </Button>
+            </div>
+          ) : null}
+        </header>
+
+        <main className="min-w-0 flex-1 p-5">
+          <div className={signedIn ? "mx-auto max-w-6xl" : "mx-auto max-w-md pt-12"}>
+            {props.children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
@@ -235,6 +293,8 @@ export function Console(props: {
   config: ReturnType<typeof readConfig> & object;
   profile: StaffProfile;
   onExpired: () => void;
+  /** Ends the session. Rendered in the app bar by the frame below. */
+  onSignOut?: () => void;
   makeAdminClient?: typeof createAdminClient;
   makePlatformClient?: typeof createPlatformClient;
 }) {
@@ -370,14 +430,27 @@ export function Console(props: {
    * be a control with a single option — a click nobody should have to make. A
    * super administrator belongs to none and must choose.
    */
-  const picker =
-    props.profile.role !== "super_admin" ? null : (
+  /*
+   * The customer picker, shown only to an operator who can act in more than one
+   * (P22-03), and living in the **app bar** rather than above the content.
+   *
+   * It is scope, not a filter: it changes what the whole console is pointed at,
+   * so it belongs beside the identity it qualifies rather than inside the thing
+   * it changes (P22-07). A customer administrator has exactly one customer, on
+   * their grant, so they get a label instead of a control with one option.
+   */
+  const scope =
+    props.profile.role !== "super_admin" ? (
+      <span className="text-sm font-semibold text-gray-900">
+        {customers.find((entry) => entry.id === customerId)?.name ?? de.appTitle}
+      </span>
+    ) : (
       <label className="flex items-center gap-2 text-sm">
-        <span className="text-gray-600">{de.customerPicker.label}</span>
+        <span className="text-gray-500">{de.customerPicker.label}</span>
         <select
           value={customerId ?? ""}
           onChange={(event) => setCustomerId(event.target.value || undefined)}
-          className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+          className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-900 shadow-sm"
         >
           <option value="">{de.customerPicker.choose}</option>
           {customers.map((customer) => (
@@ -389,30 +462,53 @@ export function Console(props: {
       </label>
     );
 
-  const sections = (
-    <>
-      {picker === null ? null : <div className="pb-2">{picker}</div>}
-      <nav className="flex gap-1 border-b border-gray-200">
-        {SECTIONS.filter(
-          ([, , capability]) =>
-            capability === undefined || props.profile.capabilities.includes(capability),
-        ).map(([value, label]) => (
+  /*
+   * The navigation column.
+   *
+   * A sidebar rather than a row of tabs — react-admin's shape, and the right one
+   * here for two reasons. There are eight destinations and the list grows with
+   * every feature, and a tab row that wraps onto a second line stops reading as
+   * navigation at all. And the content is mostly tables, which want the
+   * horizontal space a vertical nav leaves them.
+   */
+  const nav = (
+    <nav className="px-2 pb-4">
+      {SECTIONS.filter(
+        ([, , capability]) =>
+          capability === undefined || props.profile.capabilities.includes(capability),
+      ).map(([value, label]) => {
+        const active = view.kind === value;
+        return (
           <button
             key={value}
             type="button"
-            aria-current={view.kind === value ? "page" : undefined}
+            aria-current={active ? "page" : undefined}
             onClick={() => setView({ kind: value } as View)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
-              view.kind === value
-                ? "border-brand-600 text-brand-700"
-                : "border-transparent text-gray-600"
+            className={`mb-0.5 block w-full rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+              active
+                ? "bg-brand-500 text-white"
+                : "text-gray-300 hover:bg-gray-800 hover:text-white"
             }`}
           >
             {label}
           </button>
-        ))}
-      </nav>
-    </>
+        );
+      })}
+    </nav>
+  );
+
+  /** The frame every screen renders inside. */
+  const frame = (body: React.ReactNode) => (
+    <Shell
+      nav={nav}
+      scope={scope}
+      operator={props.profile.displayName}
+      // Always present in the console — it is what tells the frame it is signed
+      // in. The prop is optional only so a test can render without one.
+      onSignOut={props.onSignOut ?? (() => undefined)}
+    >
+      {body}
+    </Shell>
   );
 
   if (forbidden) {
@@ -433,9 +529,8 @@ export function Console(props: {
    * console recoverable only by signing out is not recoverable.
    */
   if (problem !== undefined) {
-    return (
-      <div className="space-y-5">
-        {sections}
+    return frame(
+      <>
         <div className="space-y-3">
           <Notice tone="error" title={de.error.title}>
             {problem}
@@ -444,16 +539,15 @@ export function Console(props: {
             {de.error.retry}
           </Button>
         </div>
-      </div>
+      </>,
     );
   }
 
   if (courses === undefined) {
-    return (
-      <div className="space-y-5">
-        {sections}
+    return frame(
+      <>
         <Spinner label={de.loading} />
-      </div>
+      </>,
     );
   }
 
@@ -489,38 +583,34 @@ export function Console(props: {
   // so beats an empty list, which reads as a customer with no content, and
   // beats a wall of 422s from an API that is answering correctly.
   if (customerId === undefined && TENANT_VIEWS.has(view.kind)) {
-    return (
-      <div className="space-y-5">
-        {sections}
+    return frame(
+      <>
         <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           {customers.length === 0 ? de.customerPicker.noneYet : de.customerPicker.none}
         </p>
-      </div>
+      </>,
     );
   }
 
   if (view.kind === "learners") {
-    return (
-      <div className="space-y-5">
-        {sections}
+    return frame(
+      <>
         <Learners client={client} />
-      </div>
+      </>,
     );
   }
 
   if (view.kind === "certificates") {
-    return (
-      <div className="space-y-5">
-        {sections}
+    return frame(
+      <>
         <Certificates client={client} />
-      </div>
+      </>,
     );
   }
 
   if (view.kind === "staff") {
-    return (
-      <div className="space-y-5">
-        {sections}
+    return frame(
+      <>
         {/* The platform client: operator accounts sit above any tenant, so the
             request must not carry `X-DS-Project`. */}
         <StaffAccounts
@@ -528,14 +618,13 @@ export function Console(props: {
           customerId={props.profile.grants[0]?.customerId ?? null}
           customers={customers}
         />
-      </div>
+      </>,
     );
   }
 
   if (view.kind === "security") {
-    return (
-      <div className="space-y-5">
-        {sections}
+    return frame(
+      <>
         {/* Above any tenant, like the customer registry: no `X-DS-Project`. */}
         <Security
           client={platformClient}
@@ -543,14 +632,13 @@ export function Console(props: {
           ownSecondFactorEnrolled={props.profile.secondFactorEnrolled}
           customers={customers}
         />
-      </div>
+      </>,
     );
   }
 
   if (view.kind === "customers") {
-    return (
-      <div className="space-y-5">
-        {sections}
+    return frame(
+      <>
         {/* The platform client: no `X-DS-Project` header, because this list
             spans customers and has to work before any project exists. */}
         <Customers
@@ -559,33 +647,30 @@ export function Console(props: {
             void loadCustomers();
           }}
         />
-      </div>
+      </>,
     );
   }
 
   if (view.kind === "branding") {
-    return (
-      <div className="space-y-5">
-        {sections}
+    return frame(
+      <>
         {/* A department_admin gets a 403 from the PUT; the screen renders for
             them because the API, not the navigation, is the gate (P9-01). */}
         <BrandingSettings client={client} />
-      </div>
+      </>,
     );
   }
 
   if (view.kind === "organisation") {
-    return (
-      <div className="space-y-5">
-        {sections}
+    return frame(
+      <>
         <Organisation client={client} />
-      </div>
+      </>,
     );
   }
 
-  return (
+  return frame(
     <section className="space-y-4">
-      {sections}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-gray-900">{de.courses.title}</h2>
         <Button onClick={() => setView({ kind: "new-course" })}>
@@ -638,7 +723,7 @@ export function Console(props: {
           ))}
         </Table>
       )}
-    </section>
+    </section>,
   );
 }
 
