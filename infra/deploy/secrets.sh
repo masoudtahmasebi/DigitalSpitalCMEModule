@@ -23,6 +23,9 @@
 #   * `SECRETS_KMS_KEY` decrypts the VNR password and the SMTP credentials.
 #     Regenerating it does not rotate anything — it makes every encrypted column
 #     permanently unreadable, and there is no plaintext fallback by design.
+#   * `BACKUP_ENCRYPTION_KEY` decrypts every stored database backup. Same rule,
+#     worse consequence: a new value does not re-encrypt anything, it makes the
+#     entire backup history unreadable at exactly the moment somebody needs it.
 #   * `POSTGRES_SUPERUSER_PASSWORD` is consumed by the Postgres image when it
 #     initialises its data directory and never again. A new value after that is
 #     simply a value that no longer matches the database.
@@ -65,12 +68,22 @@ ds_ensure_secrets() {
     return 1
   fi
 
-  # `openssl rand -base64 32` for each. The KMS key's length is load-bearing —
-  # the API refuses to start unless it decodes to exactly 32 bytes — and the
-  # others are simply long.
+  # `openssl rand -base64 32` for each. Two of these have a load-bearing
+  # *length* — `SECRETS_KMS_KEY` and `BACKUP_ENCRYPTION_KEY` must decode to
+  # exactly 32 bytes or the process that reads them refuses to start — and the
+  # rest are simply long.
+  #
+  # `BACKUP_ENCRYPTION_KEY` is separate from `SECRETS_KMS_KEY` on purpose. The
+  # KMS key decrypts the VNR password and the SMTP credentials *inside* the
+  # database; if the backup used it, anyone who obtained a backup and its key
+  # would also be able to read the encrypted columns in the dump they had just
+  # decrypted. One stolen key, both layers.
+  #
+  # It is in the same **never regenerate** class: a new value does not rotate
+  # anything, it makes every existing backup permanently unreadable.
   local name
   for name in POSTGRES_SUPERUSER_PASSWORD DS_MIGRATOR_PASSWORD DS_APP_PASSWORD \
-              SECRETS_KMS_KEY; do
+              SECRETS_KMS_KEY BACKUP_ENCRYPTION_KEY; do
     if grep -q "^${name}=." "$file"; then
       continue
     fi

@@ -19,6 +19,7 @@
 # ## The targets
 #
 #   api      NestJS, production dependency tree only
+#   backup   the api image plus pg_dump; runs on a timer, not a port
 #   admin    the console, static, behind nginx
 #   portal   the learner portal, static, behind nginx
 #   widget   ds-lms.js, static, behind nginx, CORS-enabled
@@ -217,6 +218,42 @@ EXPOSE 3000
 # built from the same commit as the API — a migrator one commit ahead of the
 # schema it migrates is the failure this arrangement exists to prevent.
 CMD ["node", "dist/main.js"]
+
+# ---------------------------------------------------------------------------
+# backup — the same code, plus the one binary it needs
+# ---------------------------------------------------------------------------
+#
+# ## Why a separate image and not the API's
+#
+# `pg_dump` has to read every row, and `ds_app` cannot: FORCE ROW LEVEL
+# SECURITY applies to it like anyone else, so a dump taken with the API's
+# credentials would be silently partial and would exit 0. The backup therefore
+# needs a credential the API deliberately does not hold — which means it cannot
+# be a thread in the API container, however convenient that would be.
+#
+# ## Why `FROM api` and not another `FROM node`
+#
+# It is the same compiled code. Rebuilding it would be a second copy that could
+# drift from the one being backed up, and the layer is already on the host.
+# The delta is `postgresql-client` — about 25 MB — and that is the whole image.
+#
+# **The client's major version must be at least the server's.** `pg_dump` from
+# 15 against a 16 server refuses with "server version mismatch"; the other way
+# round is fine. Pinned to 16 to match `postgres:16-alpine` in the compose file,
+# and the two have to move together.
+FROM api AS backup
+
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && rm -rf /var/lib/apt/lists/*
+USER node
+
+# No CMD that runs on its own. This image does nothing until something asks it
+# to — `docker compose run --rm backup database`, from a systemd timer — and a
+# default that took a backup on `docker compose up` would take one on every
+# deploy, at the worst possible moment.
+ENTRYPOINT ["node", "dist/backup/cli.js"]
 
 # ---------------------------------------------------------------------------
 # admin — the console

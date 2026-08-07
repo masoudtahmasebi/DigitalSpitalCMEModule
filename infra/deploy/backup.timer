@@ -1,0 +1,88 @@
+# systemd units for the backup jobs (P23-03).
+#
+# Copy the four sections below into /etc/systemd/system/ as four files, then:
+#
+#   systemctl daemon-reload
+#   systemctl enable --now ds-backup.timer ds-backup-verify.timer
+#
+# ## Why systemd and not a container that sleeps
+#
+# A `while true; do backup; sleep 86400; done` container has no record of
+# whether the last run succeeded, restarts its clock every time the stack is
+# deployed, and reports "up" whatever it is doing. systemd remembers the exit
+# status, `systemctl status ds-backup` answers "did last night work?", and
+# `Persistent=true` catches up a run the host missed while it was off.
+#
+# ## Why the verify job is separate, and later
+#
+# `ds-backup-verify` runs six hours after the backup and fails if the newest
+# copy is older than 26 hours. That is the check that distinguishes a working
+# backup from a belief — a timer that silently stopped firing three weeks ago
+# looks exactly like one that is working, and nothing inside the backup job can
+# tell you about a run that never happened.
+#
+# Point `OnFailure=` at whatever pages you. Without it this is a red unit
+# nobody looks at, which is the same as no check at all.
+
+# --- /etc/systemd/system/ds-backup.service ---------------------------------
+[Unit]
+Description=DS Education — database backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ds
+WorkingDirectory=/home/ds/ds-education/repo/infra/deploy
+# `run --rm`, not `up`: the container does its work and exits, and its exit
+# status is the job's exit status. `--rm` so a nightly job does not accumulate
+# a year of stopped containers.
+ExecStart=/home/ds/ds-education/repo/infra/deploy/dsc run --rm backup database
+ExecStart=/home/ds/ds-education/repo/infra/deploy/dsc run --rm backup objects
+TimeoutStartSec=7200
+# OnFailure=ds-alert@%n.service
+
+# --- /etc/systemd/system/ds-backup.timer -----------------------------------
+[Unit]
+Description=DS Education — nightly backup
+
+[Timer]
+# 02:15 Europe/Berlin. Not 02:00: every cron on every host fires at 02:00, and
+# object storage is happier for the fifteen minutes.
+OnCalendar=*-*-* 02:15:00
+# Up to five minutes of jitter, for the same reason.
+RandomizedDelaySec=300
+# Run a missed backup on the next boot rather than skipping a day because the
+# host was down at 02:15.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+
+# --- /etc/systemd/system/ds-backup-verify.service --------------------------
+[Unit]
+Description=DS Education — is there a recent backup?
+After=docker.service
+
+[Service]
+Type=oneshot
+User=ds
+WorkingDirectory=/home/ds/ds-education/repo/infra/deploy
+# Exits 1 when the newest backup is older than BACKUP_MAX_AGE_HOURS. That
+# non-zero exit is the entire point of this unit.
+ExecStart=/home/ds/ds-education/repo/infra/deploy/dsc run --rm backup verify
+# OnFailure=ds-alert@%n.service
+
+# --- /etc/systemd/system/ds-backup-verify.timer ----------------------------
+[Unit]
+Description=DS Education — backup freshness check
+
+[Timer]
+# Six hours after the backup, and again in the afternoon: one failure to notice
+# is a bad night, two is a bad week.
+OnCalendar=*-*-* 08:00:00
+OnCalendar=*-*-* 16:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

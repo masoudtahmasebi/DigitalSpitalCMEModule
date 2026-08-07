@@ -86,12 +86,17 @@ export async function startFakeS3(): Promise<FakeS3> {
     };
 
     const rawPath = (request.url ?? "").split("?")[0] ?? "";
+    const query = new URLSearchParams((request.url ?? "").split("?")[1] ?? "");
     const prefix = `/${CREDENTIALS.bucket}/`;
     const key = rawPath.startsWith(prefix)
       ? decodeURIComponent(rawPath.slice(prefix.length))
       : "";
 
-    if (key === "") {
+    // `ListObjectsV2` addresses the bucket itself, so an empty key is only
+    // legitimate for a listing.
+    const listing = key === "" && query.get("list-type") === "2";
+
+    if (key === "" && !listing) {
       record(400, rawPath, "not addressed to the bucket");
       response.end();
       return;
@@ -104,8 +109,62 @@ export async function startFakeS3(): Promise<FakeS3> {
       return;
     }
 
+    if (listing) {
+      // Enough of the real answer to exercise the caller: keys, XML-escaped,
+      // and a continuation token when the page is full. `max-keys` is honoured
+      // so a test can force pagination without creating a thousand objects.
+      const wanted = query.get("prefix") ?? "";
+      const after = query.get("continuation-token") ?? "";
+      const maxKeys = Number(query.get("max-keys") ?? "1000");
+
+      const all = [...objects.keys()].filter((k) => k.startsWith(wanted)).sort();
+      const start = after === "" ? 0 : all.indexOf(after) + 1;
+      const page = all.slice(start, start + maxKeys);
+      const truncated = start + page.length < all.length;
+
+      response.setHeader("content-type", "application/xml");
+      record(200, wanted);
+      response.end(
+        `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult>` +
+          page.map((k) => `<Contents><Key>${escapeXml(k)}</Key></Contents>`).join("") +
+          `<IsTruncated>${truncated}</IsTruncated>` +
+          (truncated
+            ? `<NextContinuationToken>${escapeXml(page.at(-1) ?? "")}</NextContinuationToken>`
+            : "") +
+          `</ListBucketResult>`,
+      );
+      return;
+    }
+
     switch (request.method) {
       case "PUT": {
+        const copySource = request.headers["x-amz-copy-source"];
+        if (typeof copySource === "string") {
+          // `/bucket/key`. Only this bucket, as a real store would only allow
+          // buckets the credential can read.
+          const sourceKey = decodeURIComponent(
+            copySource.replace(new RegExp(`^/${CREDENTIALS.bucket}/`), ""),
+          );
+          const source = objects.get(sourceKey);
+          response.setHeader("content-type", "application/xml");
+          if (source === undefined) {
+            // The trap this fake exists to reproduce: S3 answers a failed copy
+            // with **200** and an error document, so a caller checking only the
+            // status records a copy that did not happen.
+            record(200, sourceKey, "copy source does not exist");
+            response.end(
+              `<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code></Error>`,
+            );
+            return;
+          }
+          objects.set(key, source);
+          record(200, key);
+          response.end(
+            `<?xml version="1.0" encoding="UTF-8"?><CopyObjectResult><ETag>"x"</ETag></CopyObjectResult>`,
+          );
+          return;
+        }
+
         const chunks: Buffer[] = [];
         request.on("data", (chunk: Buffer) => chunks.push(chunk));
         request.on("end", () => {
@@ -244,4 +303,14 @@ function verify(request: IncomingMessage): string | undefined {
   }
 
   return undefined;
+}
+
+/** The five entities S3 escapes in a key, on the way out of a listing. */
+function escapeXml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
 }

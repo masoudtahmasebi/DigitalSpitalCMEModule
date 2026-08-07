@@ -165,6 +165,21 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      # The backup restore drill runs the real `pg_dump` and `pg_restore`
+      # (P23-03). The runner's own client is whatever Ubuntu ships, and a
+      # `pg_dump` older than the server refuses outright — "server version
+      # 16.x; pg_dump version 14.x" — so the major version is pinned to match
+      # the `postgres:16` service above. They have to move together.
+      - name: Install the PostgreSQL 16 client (pg_dump for the restore drill)
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt \
+            $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          pg_dump --version
+
       - name: Create roles (ds_app is not BYPASSRLS — ADR-0002)
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d ds_education \

@@ -166,6 +166,85 @@ export class S3Presigner implements Presigner {
   }
 
   /**
+   * A PUT whose length is not declared in advance.
+   *
+   * For **server-to-server** writes only — the backup upload, which streams a
+   * file of a size the caller already knows and has no browser on the other
+   * end to constrain. The browser path keeps `presignPut`, where binding the
+   * length is the whole point: it is what stops a client uploading something
+   * other than the file it asked permission for.
+   *
+   * Named apart rather than made an optional argument so the unconstrained form
+   * cannot be reached by forgetting a parameter.
+   */
+  presignPutStream(key: string, expiresInSec: number, now: Date): string {
+    return this.presign("PUT", key, expiresInSec, now, {});
+  }
+
+  /**
+   * A server-side copy: the bytes never come back to us.
+   *
+   * `x-amz-copy-source` is a **signed** header, so a signature minted to copy
+   * one object cannot be redirected at another. That matters more than usual
+   * here — the source is another customer's prefix away from a mistake, and
+   * this is the one operation in the platform that reads across the whole
+   * bucket.
+   *
+   * Copying rather than downloading-and-re-uploading is not only faster: a
+   * 2 GB lecture round-tripping through the backup container is bandwidth, disk
+   * and a window in which the plaintext exists somewhere it did not before.
+   */
+  presignCopy(
+    destinationKey: string,
+    sourceBucket: string,
+    sourceKey: string,
+    expiresInSec: number,
+    now: Date,
+  ): { readonly url: string; readonly headers: Readonly<Record<string, string>> } {
+    // The URL *and* the header, from one place. Returning only the URL is how
+    // the first version of this was written, and a signed header that is not
+    // then sent produces a 403 the caller reads as "wrong credentials" — the
+    // signature covers a header the request does not carry.
+    const source = `/${sourceBucket}/${sourceKey}`;
+    return {
+      url: this.presign("PUT", destinationKey, expiresInSec, now, {
+        "x-amz-copy-source": source,
+      }),
+      headers: { "x-amz-copy-source": source },
+    };
+  }
+
+  /**
+   * `ListObjectsV2`, which is addressed to the bucket rather than to an object.
+   *
+   * The only call here whose canonical URI is not a key, and the only one that
+   * needs extra *query* parameters — they are part of the canonical request, so
+   * a listing signature cannot be reused with a different prefix.
+   */
+  presignList(
+    prefix: string,
+    continuationToken: string | undefined,
+    expiresInSec: number,
+    now: Date,
+  ): string {
+    return this.presign(
+      "GET",
+      "",
+      expiresInSec,
+      now,
+      {},
+      {
+        "list-type": "2",
+        prefix,
+        "max-keys": "1000",
+        ...(continuationToken === undefined
+          ? {}
+          : { "continuation-token": continuationToken }),
+      },
+    );
+  }
+
+  /**
    * The one implementation of SigV4 query signing.
    *
    * Every method goes through here rather than each growing its own copy: the
@@ -175,7 +254,12 @@ export class S3Presigner implements Presigner {
    *
    * `extraHeaders` are additional **signed** headers. `host` is always signed —
    * it is what stops a signature minted for our bucket being replayed against
-   * another endpoint.
+   * another endpoint. `extraQuery` are additional query parameters, which SigV4
+   * covers by construction: they go into the canonical query string alongside
+   * the `X-Amz-*` ones.
+   *
+   * An empty `key` addresses the bucket itself, which is what `ListObjectsV2`
+   * needs and what nothing else may use.
    */
   private presign(
     method: "GET" | "PUT" | "HEAD" | "DELETE",
@@ -183,6 +267,7 @@ export class S3Presigner implements Presigner {
     expiresInSec: number,
     now: Date,
     extraHeaders: Readonly<Record<string, string>>,
+    extraQuery: Readonly<Record<string, string>> = {},
   ): string {
     const endpoint = new URL(this.config.endpoint);
     const pathStyle = this.config.forcePathStyle !== false;
@@ -218,6 +303,7 @@ export class S3Presigner implements Presigner {
     // Sorted by key, as SigV4 requires — object literal order is not a
     // guarantee anyone should lean on for a signature.
     const query = new URLSearchParams([
+      ...Object.entries(extraQuery),
       ["X-Amz-Algorithm", "AWS4-HMAC-SHA256"],
       ["X-Amz-Credential", `${this.config.accessKeyId}/${scope}`],
       ["X-Amz-Date", amzDate],
