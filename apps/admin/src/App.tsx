@@ -598,8 +598,24 @@ export function Console(props: {
     );
   }
 
+  /*
+   * The course editor renders **inside** the frame like everything else
+   * (P22-09).
+   *
+   * These two returned bare, above the point where the frame is built, so the
+   * course editor and the new-course form drew with no sidebar and no app bar
+   * — the content ran to the left edge of the window and the operator lost
+   * every navigation target at once. Reported as "the Fortbildung page comes
+   * out of the layout", which is exactly what it was.
+   *
+   * The cause is worth naming because it is structural rather than a typo: the
+   * frame was assembled halfway down a long component, so *every* return above
+   * that line silently escaped it and nothing made that visible. Returning
+   * through one `frame()` is what makes the layout a property of the component
+   * rather than of where a branch happens to sit.
+   */
   if (view.kind === "course") {
-    return (
+    return frame(
       <CourseScreen
         client={client}
         slug={view.slug}
@@ -609,12 +625,12 @@ export function Console(props: {
           setView({ kind: "courses" });
           void loadCourses();
         }}
-      />
+      />,
     );
   }
 
   if (view.kind === "new-course") {
-    return (
+    return frame(
       <NewCourseScreen
         client={client}
         onCreated={(slug) => {
@@ -622,7 +638,7 @@ export function Console(props: {
           setView({ kind: "course", slug, tab: "structure" });
         }}
         onCancel={() => setView({ kind: "courses" })}
-      />
+      />,
     );
   }
 

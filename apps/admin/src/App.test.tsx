@@ -84,6 +84,24 @@ function fakeClient(over: Partial<Record<string, unknown>> = {}) {
     adminListCustomers: vi.fn().mockResolvedValue([]),
     adminCreateCustomer: vi.fn().mockResolvedValue(MEDICE),
     adminDeleteCustomer: vi.fn().mockResolvedValue(undefined),
+    // The screens each section mounts read more than the shell does. Empty
+    // lists rather than rejections: what is under test here is the frame, and
+    // a screen erroring would prove the error state keeps the layout rather
+    // than the screen doing so.
+    adminListDepartments: vi.fn().mockResolvedValue([]),
+    adminListProjects: vi.fn().mockResolvedValue([]),
+    adminListLearners: vi.fn().mockResolvedValue([]),
+    adminListCertificates: vi.fn().mockResolvedValue([]),
+    adminListStaff: vi.fn().mockResolvedValue([]),
+    adminGetFont: vi.fn().mockResolvedValue({
+      fontFamilyName: null,
+      fontVersion: null,
+      fontBytes: null,
+    }),
+    adminGetBranding: vi.fn().mockResolvedValue({}),
+    adminGetSecondFactorPolicy: vi
+      .fn()
+      .mockResolvedValue({ platform: "required", customers: [] }),
     ...over,
   } as never;
 }
@@ -292,5 +310,73 @@ describe("the chosen customer survives a reload (P22-08)", () => {
       (admin as never as { adminListCourses: { mock: { calls: unknown[] } } })
         .adminListCourses.mock.calls.length,
     ).toBe(0);
+  });
+});
+
+describe("every screen renders inside the layout (P22-09)", () => {
+  /**
+   * The reported bug: *"the fortbuild page comes out of the layout"*.
+   *
+   * The course editor and the new-course form returned above the point where
+   * the frame is built, so they drew with no sidebar and no app bar — content
+   * to the left edge of the window and every navigation target gone at once.
+   *
+   * The cause is structural rather than a typo, which is why it gets a test
+   * rather than only a fix: the frame is assembled halfway down a long
+   * component, so *any* return above that line escapes it silently. This
+   * asserts the property directly — whatever screen is open, the navigation is
+   * on it — so the next screen added above that line fails here instead of in
+   * somebody's browser.
+   */
+  async function openConsole() {
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    const admin = fakeClient({
+      adminListCourses: vi.fn().mockResolvedValue([]),
+    });
+    renderConsole({ admin, platform });
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Kunden" })).toBeTruthy(),
+    );
+  }
+
+  /** The sidebar and the app bar, which together are "the layout". */
+  function layoutIsPresent(): boolean {
+    return (
+      screen.queryAllByRole("button", { name: "Kunden" }).length > 0 &&
+      screen.queryAllByRole("combobox").length > 0
+    );
+  }
+
+  it("keeps the layout on the new-course screen", async () => {
+    await openConsole();
+
+    fireEvent.click(screen.getByRole("button", { name: /Neue Fortbildung/ }));
+    await waitFor(() => expect(layoutIsPresent()).toBe(true));
+  });
+
+  it("keeps the layout on every top-level section", async () => {
+    await openConsole();
+
+    // Walking them all rather than picking one: the bug was a *class*, and any
+    // section could join it the next time somebody adds an early return.
+    for (const label of [
+      "Organisation",
+      "Erscheinungsbild",
+      "Teilnehmende",
+      "Bescheinigungen",
+      "Konten",
+      "Kunden",
+      "Sicherheit",
+      "Fortbildungen",
+    ]) {
+      fireEvent.click(screen.getAllByRole("button", { name: label })[0]!);
+      await waitFor(() =>
+        expect(layoutIsPresent(), `${label} rendered outside the layout`).toBe(true),
+      );
+    }
   });
 });
