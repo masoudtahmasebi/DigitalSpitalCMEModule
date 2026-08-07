@@ -295,6 +295,16 @@ function Console(props: {
   const [forbidden, setForbidden] = useState(false);
 
   const loadCourses = useCallback(async () => {
+    // No customer chosen, nothing to load. Without this the fetch went out
+    // anyway and came back 422 "this route is tenant-scoped and no X-DS-Project
+    // header was sent" — correct of the API, and it put the console into its
+    // error state before the customer picker had been rendered (P22-03).
+    if (customerId === undefined) {
+      setCourses([]);
+      setProblem(undefined);
+      return;
+    }
+
     setProblem(undefined);
     try {
       setCourses(await client.adminListCourses());
@@ -303,7 +313,7 @@ function Console(props: {
       if (isForbidden(error)) setForbidden(true);
       else setProblem(describeError(error, de.error.generic));
     }
-  }, [client]);
+  }, [client, customerId]);
 
   useEffect(() => {
     void loadCourses();
@@ -318,57 +328,6 @@ function Console(props: {
       .then((rows) => setCustomers(rows.map((row) => ({ id: row.id, name: row.name }))))
       .catch(() => undefined);
   }, [platformClient, props.profile.capabilities]);
-
-  if (forbidden) {
-    return (
-      <Notice tone="error" title={de.error.title}>
-        {de.auth.forbidden}
-      </Notice>
-    );
-  }
-
-  if (problem !== undefined) {
-    return (
-      <div className="space-y-3">
-        <Notice tone="error" title={de.error.title}>
-          {problem}
-        </Notice>
-        <Button variant="secondary" onClick={() => void loadCourses()}>
-          {de.error.retry}
-        </Button>
-      </div>
-    );
-  }
-
-  if (courses === undefined) return <Spinner label={de.loading} />;
-
-  if (view.kind === "course") {
-    return (
-      <CourseScreen
-        client={client}
-        slug={view.slug}
-        tab={view.tab}
-        onTab={(tab) => setView({ kind: "course", slug: view.slug, tab })}
-        onBack={() => {
-          setView({ kind: "courses" });
-          void loadCourses();
-        }}
-      />
-    );
-  }
-
-  if (view.kind === "new-course") {
-    return (
-      <NewCourseScreen
-        client={client}
-        onCreated={(slug) => {
-          void loadCourses();
-          setView({ kind: "course", slug, tab: "structure" });
-        }}
-        onCancel={() => setView({ kind: "courses" })}
-      />
-    );
-  }
 
   // Top-level sections. Branding and organisation are project-wide rather than
   // per course — a typeface and an identity-provider binding are properties of
@@ -427,6 +386,76 @@ function Console(props: {
       </nav>
     </>
   );
+
+  if (forbidden) {
+    return (
+      <Notice tone="error" title={de.error.title}>
+        {de.auth.forbidden}
+      </Notice>
+    );
+  }
+
+  /*
+   * The navigation renders above the failure, not instead of it.
+   *
+   * These were bare returns that replaced the whole screen. That is how a 422
+   * from `/admin/courses` — correct, and caused by no customer having been
+   * chosen — came to hide the customer picker: the one control that could clear
+   * the error was behind the error, and the only way out was signing out. A
+   * console recoverable only by signing out is not recoverable.
+   */
+  if (problem !== undefined) {
+    return (
+      <div className="space-y-5">
+        {sections}
+        <div className="space-y-3">
+          <Notice tone="error" title={de.error.title}>
+            {problem}
+          </Notice>
+          <Button variant="secondary" onClick={() => void loadCourses()}>
+            {de.error.retry}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (courses === undefined) {
+    return (
+      <div className="space-y-5">
+        {sections}
+        <Spinner label={de.loading} />
+      </div>
+    );
+  }
+
+  if (view.kind === "course") {
+    return (
+      <CourseScreen
+        client={client}
+        slug={view.slug}
+        tab={view.tab}
+        onTab={(tab) => setView({ kind: "course", slug: view.slug, tab })}
+        onBack={() => {
+          setView({ kind: "courses" });
+          void loadCourses();
+        }}
+      />
+    );
+  }
+
+  if (view.kind === "new-course") {
+    return (
+      <NewCourseScreen
+        client={client}
+        onCreated={(slug) => {
+          void loadCourses();
+          setView({ kind: "course", slug, tab: "structure" });
+        }}
+        onCancel={() => setView({ kind: "courses" })}
+      />
+    );
+  }
 
   // A tenant screen with no customer chosen has nothing to act within. Saying
   // so beats an empty list, which reads as a customer with no content, and
