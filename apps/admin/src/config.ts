@@ -35,13 +35,6 @@ import { configValue, type RuntimeConfig } from "@ds/domain";
 
 export interface AdminConfig {
   readonly apiBase: string;
-  /**
-   * Which project tenant-scoped screens act within, sent as `X-DS-Project`.
-   *
-   * The customer registry is above any tenant and deliberately does *not* send
-   * it — see `createPlatformClient` in `api.ts`.
-   */
-  readonly projectSlug: string;
 }
 
 /**
@@ -58,9 +51,13 @@ export function readConfig(): AdminConfig | undefined {
   const env = import.meta.env;
   const runtime = typeof window === "undefined" ? undefined : window.__DS_CONFIG__;
 
+  // `projectSlug` used to be here, from `ADMIN_DEFAULT_PROJECT_SLUG`. It named
+  // one project for the whole console, which is why a super administrator could
+  // not act inside a second customer and why a fresh installation — whose named
+  // project does not exist yet — met a 404 on every tenant screen. The customer
+  // now comes from what the operator can actually reach (P22-03).
   const config: AdminConfig = {
     apiBase: configValue(runtime, "apiBase", env.VITE_API_BASE),
-    projectSlug: configValue(runtime, "projectSlug", env.VITE_PROJECT_SLUG),
   };
 
   // A missing value is a deployment mistake, and the console says so rather

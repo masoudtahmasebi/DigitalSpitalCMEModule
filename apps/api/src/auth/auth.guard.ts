@@ -52,6 +52,8 @@ import {
 } from "./identity-provider.js";
 
 const PROJECT_HEADER = "x-ds-project";
+/** How an operator names a tenant that has no project yet (P22-03). */
+const CUSTOMER_HEADER = "x-ds-customer";
 
 export interface AuthGuardDeps {
   readonly reflector: Reflector;
@@ -242,6 +244,34 @@ async function authenticateStaffPlane(
   // separately and a field added to one would have been missing from the other.
   request.staffProfile = staffProfileOf(session);
 
+  /*
+   * An operator may name the tenant two ways, and the second one exists
+   * because the first had a hole (P22-03).
+   *
+   * `X-DS-Project` is the learner's way and works for an operator too. But
+   * *creating a project* is a tenant-scoped write, so it needed a project
+   * header — which needed a project. A customer with none had no way to get
+   * one, and that is every customer on the day they are created. A fresh
+   * installation was the same case and could not be set up at all through the
+   * console it was set up with.
+   *
+   * `X-DS-Customer` closes it by naming the customer directly. It carries an
+   * **id**, not a slug, and needs no lookup: `staffTenantContext` already
+   * decides whether these grants reach that customer, and an id the operator
+   * holds no grant for is a 403 whether or not it exists. So there is nothing
+   * here to enumerate with — which is why this is a staff-plane header and has
+   * no learner equivalent.
+   */
+  const customerHeader = request.headers[CUSTOMER_HEADER];
+  if (typeof customerHeader === "string" && customerHeader !== "") {
+    return resolveStaffTenant(deps, request, session, {
+      customerId: customerHeader,
+      // Audit entries name what the caller sent; for this header that is the
+      // customer id, and there is no project to report.
+      named: `customer=${customerHeader}`,
+    });
+  }
+
   const projectSlug = request.headers[PROJECT_HEADER];
   if (typeof projectSlug !== "string" || projectSlug === "") {
     // No tenant context, so no `principal`. Endpoints needing one refuse via
@@ -279,12 +309,31 @@ async function authenticateStaffPlane(
     );
   }
 
+  return resolveStaffTenant(deps, request, session, {
+    customerId: tenant.customerId,
+    named: `projectSlug=${projectSlug}`,
+  });
+}
+
+/**
+ * Put a staff principal on the request for one customer.
+ *
+ * Both ways of naming a tenant end here, so `X-DS-Project` and `X-DS-Customer`
+ * cannot drift apart on *authorization* — the difference between them is only
+ * how the customer id was arrived at.
+ */
+async function resolveStaffTenant(
+  deps: AuthGuardDeps,
+  request: Request,
+  session: ResolvedStaffSession,
+  tenant: { customerId: string; named: string },
+): Promise<boolean> {
   const resolution = staffTenantContext(session.grants, tenant.customerId);
   if (!resolution.ok) {
     await deps.audit.recordForCustomer(tenant.customerId, {
       actor: { identity: "staff", id: session.account.id },
       action: "staff.no_grant_for_customer",
-      detail: { reason: resolution.reason, projectSlug },
+      detail: { reason: resolution.reason, named: tenant.named },
     });
     throw AppError.forbidden(
       `staff=${session.account.id} holds no grant reaching customer=${tenant.customerId}`,

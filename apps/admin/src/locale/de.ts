@@ -196,6 +196,16 @@ export const de = {
     saveFailed: "Der Kunde konnte nicht gespeichert werden.",
   },
 
+  customerPicker: {
+    label: "Kunde",
+    choose: "Kunde auswählen …",
+    /* A super administrator belongs to no customer, so until they pick one the
+       tenant screens have nothing to act within. Saying so beats an empty list
+       that looks like a customer with no content. */
+    none: "Bitte wählen Sie oben einen Kunden aus, um diesen Bereich zu sehen.",
+    noneYet: "Es ist noch kein Kunde angelegt. Legen Sie unter „Kunden“ den ersten an.",
+  },
+
   nav: {
     security: "Sicherheit",
     courses: "Fortbildungen",

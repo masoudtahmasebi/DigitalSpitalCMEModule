@@ -140,6 +140,16 @@ export interface ClientOptions {
    */
   readonly projectSlug?: string | undefined;
   /**
+   * Which customer an operator is acting within, as an id (P22-03).
+   *
+   * The admin console's way of naming a tenant. `projectSlug` needs a project
+   * to exist, and creating the first one is itself a tenant-scoped write — so a
+   * customer with no projects, which is every customer on its first day, could
+   * not be set up at all. Sent instead of `x-ds-project` when both are given,
+   * because it is the more fundamental of the two.
+   */
+  readonly customerId?: string | undefined;
+  /**
    * Resolves the current bearer token. Async because the widget fetches it from
    * the WordPress endpoint and may need to refresh first (ADR-0003).
    *
@@ -181,7 +191,9 @@ export function createClient(options: ClientOptions) {
     const token = await options.getToken?.();
     const headers = new Headers(init.headers);
     headers.set("accept", "application/json");
-    if (options.projectSlug !== undefined && options.projectSlug !== "") {
+    if (options.customerId !== undefined && options.customerId !== "") {
+      headers.set("x-ds-customer", options.customerId);
+    } else if (options.projectSlug !== undefined && options.projectSlug !== "") {
       headers.set("x-ds-project", options.projectSlug);
     }
     if (token !== undefined) headers.set("authorization", `Bearer ${token}`);
@@ -226,7 +238,9 @@ export function createClient(options: ClientOptions) {
   async function requestBlob(path: string, isRetry = false): Promise<Response> {
     const token = await options.getToken?.();
     const headers = new Headers();
-    if (options.projectSlug !== undefined && options.projectSlug !== "") {
+    if (options.customerId !== undefined && options.customerId !== "") {
+      headers.set("x-ds-customer", options.customerId);
+    } else if (options.projectSlug !== undefined && options.projectSlug !== "") {
       headers.set("x-ds-project", options.projectSlug);
     }
     if (token !== undefined) headers.set("authorization", `Bearer ${token}`);

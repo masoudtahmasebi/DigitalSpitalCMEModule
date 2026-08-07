@@ -227,18 +227,35 @@ function Console(props: {
   profile: StaffProfile;
   onExpired: () => void;
 }) {
+  /*
+   * Which customer the tenant screens act within (P22-03).
+   *
+   * A customer administrator has exactly one and it is on their grant, so there
+   * is nothing to choose. A super administrator belongs to none, and picks —
+   * the picker is populated from the registry below, and until they have picked
+   * the tenant screens have no customer to act in and say so.
+   *
+   * This used to be `ADMIN_DEFAULT_PROJECT_SLUG`, one project named by the
+   * deployment for the whole console. That is why a super admin could not reach
+   * a second customer, and why a fresh installation — where that project does
+   * not exist yet — met a 404 on every tenant screen while the platform screens
+   * worked.
+   */
+  const [customerId, setCustomerId] = useState<string | undefined>(
+    () => props.profile.grants[0]?.customerId ?? undefined,
+  );
+
   const client = useMemo(
-    () => createAdminClient(props.config, props.onExpired),
-    [props.config, props.onExpired],
+    () => createAdminClient(props.config, customerId ?? "", props.onExpired),
+    [props.config, customerId, props.onExpired],
   );
 
   /*
-   * A second client, without the `X-DS-Project` header.
+   * A second client, naming no customer at all.
    *
    * The customer registry is above any tenant, and creating the first customer
-   * has to work before any project exists — the state a fresh installation is
-   * in. A client that always sent the slug would 401 the one operator able to
-   * fix that.
+   * has to work before any exists — the state a fresh installation is in. A
+   * client that always named one would 403 the one operator able to fix that.
    */
   const platformClient = useMemo(
     () => createPlatformClient(props.config, props.onExpired),
@@ -246,6 +263,22 @@ function Console(props: {
   );
 
   const [view, setView] = useState<View>({ kind: "courses" });
+
+  /**
+   * Which views need a customer to act within.
+   *
+   * `customers`, `staff` and `security` are above any tenant and work with none
+   * — which is what makes a fresh installation recoverable: the operator can
+   * create the first customer from a console that has none.
+   */
+  const TENANT_VIEWS: ReadonlySet<View["kind"]> = new Set([
+    "courses",
+    "course",
+    "organisation",
+    "branding",
+    "learners",
+    "certificates",
+  ]);
 
   /*
    * The customer registry, for the one place the console needs it beyond the
@@ -342,28 +375,72 @@ function Console(props: {
   // the customer, not of one Fortbildung — so they sit beside the course list
   // rather than inside a course. Kunden sits above all of them and appears only
   // for an operator who holds the capability.
-  const sections = (
-    <nav className="flex gap-1 border-b border-gray-200">
-      {SECTIONS.filter(
-        ([, , capability]) =>
-          capability === undefined || props.profile.capabilities.includes(capability),
-      ).map(([value, label]) => (
-        <button
-          key={value}
-          type="button"
-          aria-current={view.kind === value ? "page" : undefined}
-          onClick={() => setView({ kind: value } as View)}
-          className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
-            view.kind === value
-              ? "border-brand-600 text-brand-700"
-              : "border-transparent text-gray-600"
-          }`}
+  /*
+   * The customer picker, shown only to an operator who can act in more than one
+   * (P22-03).
+   *
+   * A customer administrator has exactly one, on their grant, so a picker would
+   * be a control with a single option — a click nobody should have to make. A
+   * super administrator belongs to none and must choose.
+   */
+  const picker =
+    props.profile.role !== "super_admin" ? null : (
+      <label className="flex items-center gap-2 text-sm">
+        <span className="text-gray-600">{de.customerPicker.label}</span>
+        <select
+          value={customerId ?? ""}
+          onChange={(event) => setCustomerId(event.target.value || undefined)}
+          className="rounded-md border border-gray-300 px-2 py-1 text-sm"
         >
-          {label}
-        </button>
-      ))}
-    </nav>
+          <option value="">{de.customerPicker.choose}</option>
+          {customers.map((customer) => (
+            <option key={customer.id} value={customer.id}>
+              {customer.name}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+
+  const sections = (
+    <>
+      {picker === null ? null : <div className="pb-2">{picker}</div>}
+      <nav className="flex gap-1 border-b border-gray-200">
+        {SECTIONS.filter(
+          ([, , capability]) =>
+            capability === undefined || props.profile.capabilities.includes(capability),
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            aria-current={view.kind === value ? "page" : undefined}
+            onClick={() => setView({ kind: value } as View)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+              view.kind === value
+                ? "border-brand-600 text-brand-700"
+                : "border-transparent text-gray-600"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+    </>
   );
+
+  // A tenant screen with no customer chosen has nothing to act within. Saying
+  // so beats an empty list, which reads as a customer with no content, and
+  // beats a wall of 422s from an API that is answering correctly.
+  if (customerId === undefined && TENANT_VIEWS.has(view.kind)) {
+    return (
+      <div className="space-y-5">
+        {sections}
+        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          {customers.length === 0 ? de.customerPicker.noneYet : de.customerPicker.none}
+        </p>
+      </div>
+    );
+  }
 
   if (view.kind === "learners") {
     return (

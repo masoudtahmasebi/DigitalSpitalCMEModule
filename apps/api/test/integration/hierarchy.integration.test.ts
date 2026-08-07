@@ -1108,3 +1108,123 @@ describe("recovering an operator whose device is gone (P22-02)", () => {
     expect(rows[0]?.live).toBe("0");
   });
 });
+
+/**
+ * Setting up a customer that has no project yet (P22-03).
+ *
+ * ## The hole
+ *
+ * `POST /admin/projects` is a tenant-scoped write, so it needed an
+ * `X-DS-Project` header — which needed a project. A customer with none had no
+ * way to get one, and **every customer has none on the day it is created**. A
+ * fresh installation was the same case: it could not be set up through the
+ * console it is set up with.
+ *
+ * Reported from the live deployment as `GET /admin/courses → 404 "Dieses
+ * Projekt existiert nicht"`, one fix after the 401 that used to hide it.
+ *
+ * ## The way out
+ *
+ * `X-DS-Customer` names the customer directly. It carries an **id** and needs
+ * no lookup: `staffTenantContext` already decides whether these grants reach
+ * that customer, so an id the operator holds no grant for is refused whether or
+ * not it exists — there is nothing here to enumerate with. That is also why it
+ * is a staff-plane header with no learner equivalent.
+ */
+describe("a customer with no project can still be set up (P22-03)", () => {
+  let freshCustomerId: string;
+
+  beforeAll(async () => {
+    freshCustomerId = await insert(
+      "INSERT INTO customers (slug, name) VALUES ($1,$2) RETURNING id",
+      [`fresh-${RUN}`, "Frisch GmbH"],
+    );
+  });
+
+  async function asCustomer(
+    session: StaffSession,
+    customerId: string,
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<{ status: number; body: any }> {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        cookie: session.cookie,
+        "x-ds-csrf": session.csrf,
+        "x-ds-customer": customerId,
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    return { status: response.status, body: text === "" ? undefined : JSON.parse(text) };
+  }
+
+  it("reaches a tenant screen for a customer that has nothing in it", async () => {
+    const result = await asCustomer(
+      superSession,
+      freshCustomerId,
+      "GET",
+      "/admin/courses",
+    );
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual([]);
+  });
+
+  it("creates the first department and the first project through the console", async () => {
+    // The whole point: this is the sequence a fresh installation has to be able
+    // to perform, and before P22-03 the second call was unreachable.
+    const department = await asCustomer(
+      superSession,
+      freshCustomerId,
+      "POST",
+      "/admin/departments",
+      { slug: `abteilung-${RUN}`, name: "Abteilung" },
+    );
+    expect(department.status).toBe(201);
+
+    const project = await asCustomer(
+      superSession,
+      freshCustomerId,
+      "POST",
+      "/admin/projects",
+      {
+        slug: `erstes-projekt-${RUN}`,
+        name: "Erstes Projekt",
+        departmentSlug: `abteilung-${RUN}`,
+      },
+    );
+    expect(project.status).toBe(201);
+  });
+
+  it("writes those rows into the named customer and no other", async () => {
+    const { rows } = await seedPool.query<{ n: string }>(
+      "SELECT count(*)::text AS n FROM projects WHERE customer_id = $1",
+      [freshCustomerId],
+    );
+    expect(rows[0]?.n).toBe("1");
+  });
+
+  it("refuses a customer the operator holds no grant reaching", async () => {
+    const result = await asCustomer(
+      tenantSession,
+      freshCustomerId,
+      "GET",
+      "/admin/courses",
+    );
+    // 403 whether or not the id exists, so the header is not an oracle.
+    expect(result.status).toBe(403);
+  });
+
+  it("refuses an id that is not a customer at all, the same way", async () => {
+    const result = await asCustomer(tenantSession, randomUUID(), "GET", "/admin/courses");
+    expect(result.status).toBe(403);
+  });
+
+  it("still answers 422 when neither header is sent", async () => {
+    const result = await asStaff(superSession, "GET", "/admin/courses");
+    expect(result.status).toBe(422);
+  });
+});

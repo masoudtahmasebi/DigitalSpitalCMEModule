@@ -12,12 +12,28 @@
  * token, which is the half of the double-submit check the page is allowed to
  * know.
  *
- * The two differ in one header. Tenant screens send `X-DS-Project`, which pins
+ * The two differ in one header. Tenant screens send `X-DS-Customer`, which pins
  * which customer the request acts within. **Platform screens must not**: the
  * customer registry spans customers, and creating the first one has to work
- * before any project exists — which is exactly the state a fresh installation
- * is in. A client that always sent the slug would 401 the one operator able to
- * fix that.
+ * before any customer exists — which is exactly the state a fresh installation
+ * is in. A client that always sent one would 403 the one operator able to fix
+ * that.
+ *
+ * ## Why a customer id and not a project slug (P22-03)
+ *
+ * It was a project slug, from `ADMIN_DEFAULT_PROJECT_SLUG` in the deployment.
+ * Two things wrong with that, and the second is worse.
+ *
+ * The deployment named one project for the whole console, so a super
+ * administrator could not act inside any other customer — and if the named
+ * project did not exist, every tenant screen answered 404 while the platform
+ * screens worked. That was reported from production, twice, and the second
+ * time only because the first fix turned a misleading 401 into an honest 404.
+ *
+ * And **creating a project is itself a tenant-scoped write**. It needed a
+ * project header, which needed a project. A customer with none had no way to
+ * get one — which is every customer on the day it is created, and every fresh
+ * installation.
  *
  * On a 401 there is no silent refresh. An opaque server-side session either
  * exists or does not; there is nothing to refresh with, and the honest
@@ -28,8 +44,12 @@ import { createClient, isForbidden, problemDetail, type ApiClient } from "@ds/sd
 import { currentCsrfToken } from "./staff-auth.js";
 import type { AdminConfig } from "./config.js";
 
-export function createAdminClient(config: AdminConfig, onExpired: () => void): ApiClient {
-  return staffClient(config.apiBase, config.projectSlug, onExpired);
+export function createAdminClient(
+  config: AdminConfig,
+  customerId: string,
+  onExpired: () => void,
+): ApiClient {
+  return staffClient(config.apiBase, customerId, onExpired);
 }
 
 /** For screens above any tenant — the customer registry (P12-04). */
@@ -42,12 +62,12 @@ export function createPlatformClient(
 
 function staffClient(
   baseUrl: string,
-  projectSlug: string | undefined,
+  customerId: string | undefined,
   onExpired: () => void,
 ): ApiClient {
   return createClient({
     baseUrl,
-    projectSlug,
+    customerId,
     credentials: "include",
     getCsrfToken: currentCsrfToken,
     onUnauthorized: async () => {
