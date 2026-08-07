@@ -13,10 +13,11 @@
  *    are what stop that link introducing the leak.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { ArgumentsHost } from "@nestjs/common";
-import { HttpException, HttpStatus, Logger } from "@nestjs/common";
+import { HttpException, HttpStatus } from "@nestjs/common";
 import { ProblemDetailsFilter } from "./problem-details.filter.js";
+import { JsonLogger } from "../observability/logger.js";
 import { AppError } from "./problem-details.js";
 
 interface Captured {
@@ -47,25 +48,26 @@ function hostFor(url: string, method = "GET"): { host: ArgumentsHost; sent: Capt
   return { host, sent };
 }
 
-/** Everything the filter wrote to the logger, as one string. */
+/**
+ * Everything the filter wrote, as one string.
+ *
+ * Captures the real `JsonLogger` rather than spying on Nest's — the filter
+ * takes one now (P25-01), and driving the actual logger means these assertions
+ * also cover the redaction it applies on the way out. A spy on the framework
+ * logger would have gone on passing while the filter wrote somewhere else.
+ */
+const lines: string[] = [];
+const filter = new ProblemDetailsFilter(
+  new JsonLogger("debug", (line) => {
+    lines.push(line);
+  }),
+);
+
 function captureLogs(run: () => void): string {
-  const lines: string[] = [];
-  const spies = (["warn", "error", "log"] as const).map((level) =>
-    vi.spyOn(Logger.prototype, level).mockImplementation((...args: unknown[]) => {
-      lines.push(args.map(String).join(" "));
-    }),
-  );
-
-  try {
-    run();
-  } finally {
-    for (const spy of spies) spy.mockRestore();
-  }
-
+  lines.length = 0;
+  run();
   return lines.join("\n");
 }
-
-const filter = new ProblemDetailsFilter();
 
 describe("the query string is not disclosed", () => {
   // Deliberately low-entropy and self-describing. A realistic-looking 32-hex

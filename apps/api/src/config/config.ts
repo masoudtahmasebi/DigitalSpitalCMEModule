@@ -166,6 +166,11 @@ const schema = z
     // request arrives, so a 700 MB body that began in time keeps going. Thirty
     // minutes covers a file picker left open while somebody finds the right
     // version; it is not a window in which to hunt for a bigger file.
+    // How much reaches the log (P25-01). `info` is one line per request plus
+    // every warning and error; `debug` adds detail nobody wants in production
+    // by default but everybody wants during an incident. Changing it is a
+    // container restart, not a deploy.
+    LOG_LEVEL: z.string().default("info"),
     S3_UPLOAD_TTL_SEC: z.coerce.number().int().positive().max(3_600).default(1_800),
 
     // ---------------------------------------------------------------------

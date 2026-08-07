@@ -39,12 +39,13 @@ import {
   Catch,
   HttpException,
   HttpStatus,
-  Logger,
   type ArgumentsHost,
   type ExceptionFilter,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
+import { currentCorrelationId, runWithContext } from "../observability/correlation.js";
+import { JsonLogger } from "../observability/logger.js";
 import {
   AppError,
   schemaRejectionAsAppError,
@@ -53,13 +54,48 @@ import {
 
 @Catch()
 export class ProblemDetailsFilter implements ExceptionFilter {
-  private readonly logger = new Logger("ProblemDetailsFilter");
+  constructor(private readonly logger: JsonLogger) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
+    // Outside a request there is no ambient context, so the fallback id below
+    // would appear in the client's problem document and in **no log line at
+    // all** — an id somebody can quote that matches nothing. Opening a context
+    // for the duration of the handling makes the invariant "the id you were
+    // shown is the id in the log" hold by construction, rather than by two
+    // places agreeing.
+    //
+    // Inside a request this is a no-op: `currentCorrelationId()` already
+    // returns the id the middleware opened, and re-entering with the same value
+    // changes nothing.
+    if (currentCorrelationId() === undefined) {
+      runWithContext({ correlationId: randomUUID() }, () => {
+        this.handle(exception, host);
+      });
+      return;
+    }
+    this.handle(exception, host);
+  }
+
+  private handle(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
-    const correlationId = randomUUID();
+    // The **request's** id, not a new one (P25-01).
+    //
+    // This used to be `randomUUID()` here, which meant the id identified the
+    // error and nothing else: there was no access-log line carrying it, no way
+    // to see what the client asked for, which tenant it was, or how long it ran
+    // before failing. The id a user quoted from their browser matched exactly
+    // one line in the log — the failure itself, with no context around it.
+    //
+    // Every production bug in this project so far has been diagnosed from a
+    // screenshot of somebody's DevTools instead. This is why.
+    //
+    // The fallback still exists because an error thrown outside a request —
+    // there should be none, but a filter is the wrong place to be sure — must
+    // still get an id rather than none.
+    // Always present: `catch` above guarantees a context exists by here.
+    const correlationId = currentCorrelationId() ?? randomUUID();
 
     const path = safePath(request);
 
@@ -102,10 +138,16 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 
     // Unknown failure. Logged in full server-side; the client gets nothing
     // beyond a correlation id to quote back.
-    this.logger.error(
-      `unhandled error [${correlationId}] ${request.method} ${path}`,
-      exception instanceof Error ? exception.stack : String(exception),
-    );
+    // Structured, so "every 500 in the last hour" is a `jq` filter rather than
+    // a grep over prose. The stack goes in a named field and is redacted with
+    // everything else — a stack quotes source lines, and in this codebase those
+    // include SQL.
+    this.logger.write_("error", "unhandled error", {
+      method: request.method,
+      route: path,
+      error: exception instanceof Error ? exception : String(exception),
+      stack: exception instanceof Error ? exception.stack : undefined,
+    });
 
     response.status(500).json({
       type: "https://docs.ds-education.de/errors/internal",
@@ -118,7 +160,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 
   private logAppError(
     error: AppError,
-    correlationId: string,
+    _correlationId: string,
     request: Request,
     path: string,
   ): void {
@@ -126,9 +168,14 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     // client — logged here, not in the response. `reason` is written by us and
     // carries ids and slugs; ADR-0004 forbids putting an EFN, a name or a
     // free-text evaluation answer in one.
-    this.logger.warn(
-      `${error.kind} [${correlationId}] ${request.method} ${path}: ${error.reason}`,
-    );
+    // `warn`, not `error`: a 404 or a 422 is the system working. Logging these
+    // at error level is how an error-rate alert becomes noise somebody mutes.
+    this.logger.write_("warn", "refused", {
+      kind: error.kind,
+      method: request.method,
+      route: path,
+      reason: error.reason,
+    });
   }
 }
 

@@ -12,6 +12,8 @@ import { CompletionModule } from "./modules/completion/completion.module.js";
 import { EivModule } from "./modules/eiv/eiv.module.js";
 import { CertificateModule } from "./modules/certificate/certificate.module.js";
 import { AdminModule } from "./modules/admin/admin.module.js";
+import { ObservabilityModule } from "./observability/observability.module.js";
+import { JsonLogger } from "./observability/logger.js";
 import { AuthoringModule } from "./modules/authoring/authoring.module.js";
 import { UploadModule } from "./modules/uploads/upload.module.js";
 import { CustomerModule } from "./modules/customers/customer.module.js";
@@ -25,6 +27,7 @@ import { ProjectsModule } from "./modules/projects/projects.module.js";
     HealthModule,
     CatalogModule,
     LearningModule,
+    ObservabilityModule,
     AssessmentModule,
     CompletionModule,
     EivModule,
@@ -41,7 +44,15 @@ import { ProjectsModule } from "./modules/projects/projects.module.js";
     // Nest's pipeline), so request.principal is already set when this opens
     // the RLS transaction.
     { provide: APP_INTERCEPTOR, useClass: TenantTransactionInterceptor },
-    { provide: APP_FILTER, useClass: ProblemDetailsFilter },
+    // `useFactory`, not `useClass`: the filter takes the shared JsonLogger, and
+    // type-based injection is not used anywhere in this application — see
+    // `identity-provider.boot-check.ts` for the esbuild/`emitDecoratorMetadata`
+    // reason it silently produces `undefined` under `tsx`.
+    {
+      provide: APP_FILTER,
+      useFactory: (logger: JsonLogger) => new ProblemDetailsFilter(logger),
+      inject: [JsonLogger],
+    },
   ],
 })
 export class AppModule {}
