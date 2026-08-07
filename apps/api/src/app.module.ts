@@ -13,6 +13,7 @@ import { EivModule } from "./modules/eiv/eiv.module.js";
 import { CertificateModule } from "./modules/certificate/certificate.module.js";
 import { AdminModule } from "./modules/admin/admin.module.js";
 import { AuthoringModule } from "./modules/authoring/authoring.module.js";
+import { UploadModule } from "./modules/uploads/upload.module.js";
 import { CustomerModule } from "./modules/customers/customer.module.js";
 import { ModerationModule } from "./modules/moderation/moderation.module.js";
 import { ProjectsModule } from "./modules/projects/projects.module.js";
@@ -30,6 +31,7 @@ import { ProjectsModule } from "./modules/projects/projects.module.js";
     CertificateModule,
     AdminModule,
     AuthoringModule,
+    UploadModule,
     CustomerModule,
     ModerationModule,
     ProjectsModule,

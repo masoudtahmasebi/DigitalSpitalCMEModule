@@ -28,7 +28,7 @@
  */
 
 import { keyBelongsToCustomer, storageKeyOf } from "@ds/domain";
-import type { Presigner } from "./s3-presigner.js";
+import type { ReadPresigner } from "./s3-presigner.js";
 
 export interface MediaResolver {
   /** A fetchable URL, or null when there is nothing safe to hand out. */
@@ -40,10 +40,13 @@ export interface MediaResolver {
  *
  * `ttlSec` is short by design: a presigned URL is a capability, and one copied
  * out of a browser's network tab keeps working until it expires.
+ *
+ * It takes a `ReadPresigner` rather than a `Presigner`, so the code on every
+ * lesson request cannot write or delete an object even by accident (P23-01).
  */
 export class PresigningMediaResolver implements MediaResolver {
   constructor(
-    private readonly presigner: Presigner,
+    private readonly presigner: ReadPresigner,
     private readonly ttlSec: number,
   ) {}
 

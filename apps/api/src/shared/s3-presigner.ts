@@ -51,9 +51,71 @@ export interface S3Config {
   readonly forcePathStyle?: boolean;
 }
 
-export interface Presigner {
+/**
+ * What an upload signature is allowed to be spent on.
+ *
+ * Both fields become **signed headers**, which is what turns a presigned PUT
+ * from "you may write this object" into "you may write this object, with
+ * exactly this type, at exactly this length". S3 recomputes the signature from
+ * the headers the request actually carried, so a browser that sends a different
+ * content type — or a body of a different size — gets a 403 from the bucket
+ * rather than a stored object nobody approved.
+ *
+ * `contentLength` works because a browser computes it from the body and refuses
+ * to let script set it. The client therefore cannot lie about it and have the
+ * upload succeed: the declared size either matches the file or the signature
+ * does not verify.
+ */
+export interface UploadConstraints {
+  readonly contentType: string;
+  readonly contentLength: number;
+}
+
+/**
+ * The read half, and the only half the learner-facing path is given.
+ *
+ * `PresigningMediaResolver` takes this rather than `Presigner` so the code that
+ * runs on every lesson request is structurally incapable of writing or deleting
+ * an object. It is a type, not a runtime boundary — the same `S3Presigner`
+ * satisfies both — but it means a delete in the media path is a compile error
+ * rather than a review comment somebody has to notice.
+ */
+export interface ReadPresigner {
   /** A URL that fetches exactly this object, valid for `expiresInSec`. */
   presignGet(key: string, expiresInSec: number, now: Date): string;
+}
+
+export interface Presigner extends ReadPresigner {
+  /**
+   * A URL that writes exactly this object, with exactly this type and length.
+   *
+   * Short-lived by construction and minted only for a key the server built
+   * itself from the caller's validated tenant — see `object-storage.ts`.
+   */
+  presignPut(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    constraints: UploadConstraints,
+  ): string;
+
+  /**
+   * A URL that reads this object's metadata and nothing else.
+   *
+   * Used by the API to check what was actually uploaded. A HEAD is the cheapest
+   * question that distinguishes "the browser said it succeeded" from "the bytes
+   * are in the bucket".
+   */
+  presignHead(key: string, expiresInSec: number, now: Date): string;
+
+  /**
+   * A URL that removes this object.
+   *
+   * Only ever used on an upload that failed verification. An object we refused
+   * still costs storage, still lands in the backup, and still has to be
+   * explained to whoever reads a bucket listing later.
+   */
+  presignDelete(key: string, expiresInSec: number, now: Date): string;
 }
 
 /**
@@ -80,6 +142,48 @@ export class S3Presigner implements Presigner {
   }
 
   presignGet(key: string, expiresInSec: number, now: Date): string {
+    return this.presign("GET", key, expiresInSec, now, {});
+  }
+
+  presignPut(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    constraints: UploadConstraints,
+  ): string {
+    return this.presign("PUT", key, expiresInSec, now, {
+      "content-length": String(constraints.contentLength),
+      "content-type": constraints.contentType,
+    });
+  }
+
+  presignHead(key: string, expiresInSec: number, now: Date): string {
+    return this.presign("HEAD", key, expiresInSec, now, {});
+  }
+
+  presignDelete(key: string, expiresInSec: number, now: Date): string {
+    return this.presign("DELETE", key, expiresInSec, now, {});
+  }
+
+  /**
+   * The one implementation of SigV4 query signing.
+   *
+   * Every method goes through here rather than each growing its own copy: the
+   * canonical request is the part that is easy to get subtly wrong, and a
+   * second copy of it would be tested against the first rather than against
+   * AWS's vector.
+   *
+   * `extraHeaders` are additional **signed** headers. `host` is always signed —
+   * it is what stops a signature minted for our bucket being replayed against
+   * another endpoint.
+   */
+  private presign(
+    method: "GET" | "PUT" | "HEAD" | "DELETE",
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    extraHeaders: Readonly<Record<string, string>>,
+  ): string {
     const endpoint = new URL(this.config.endpoint);
     const pathStyle = this.config.forcePathStyle !== false;
 
@@ -98,6 +202,19 @@ export class S3Presigner implements Presigner {
     const dateStamp = amzDate.slice(0, 8);
     const scope = `${dateStamp}/${this.config.region}/s3/aws4_request`;
 
+    // Header names lower-cased and sorted, values trimmed — SigV4's canonical
+    // form. Built from a map rather than a string so a caller cannot supply an
+    // out-of-order pair that signs cleanly here and fails at the bucket.
+    const headers = new Map<string, string>([["host", host]]);
+    for (const [name, value] of Object.entries(extraHeaders)) {
+      headers.set(name.toLowerCase(), value.trim());
+    }
+    const names = [...headers.keys()].sort();
+    const signedHeaders = names.join(";");
+    const canonicalHeaders = names
+      .map((name) => `${name}:${headers.get(name)}\n`)
+      .join("");
+
     // Sorted by key, as SigV4 requires — object literal order is not a
     // guarantee anyone should lean on for a signature.
     const query = new URLSearchParams([
@@ -105,18 +222,20 @@ export class S3Presigner implements Presigner {
       ["X-Amz-Credential", `${this.config.accessKeyId}/${scope}`],
       ["X-Amz-Date", amzDate],
       ["X-Amz-Expires", String(expiresInSec)],
-      ["X-Amz-SignedHeaders", "host"],
+      ["X-Amz-SignedHeaders", signedHeaders],
     ]);
     query.sort();
 
     const canonicalRequest = [
-      "GET",
+      method,
       canonicalUri,
       query.toString(),
-      `host:${host}\n`,
-      "host",
-      // "UNSIGNED-PAYLOAD" is the documented value for a presigned GET: the
-      // body is empty and the signature covers the URL, not content.
+      canonicalHeaders,
+      signedHeaders,
+      // "UNSIGNED-PAYLOAD" is the documented value for a presigned request: the
+      // signature covers the URL and the signed headers, not the body. For a
+      // PUT that is what makes streaming a 700 MB file possible at all — a
+      // signed payload would require hashing it first, on the client.
       "UNSIGNED-PAYLOAD",
     ].join("\n");
 

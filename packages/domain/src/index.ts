@@ -113,6 +113,20 @@ export {
   storageKeyOf,
 } from "./storage-key.js";
 
+export {
+  InvalidUploadTokenError,
+  planUpload,
+  UPLOAD_MAX_BYTES,
+  UPLOAD_TYPES,
+  uploadObjectName,
+} from "./upload.js";
+export type {
+  AcceptedUploadType,
+  UploadPlan,
+  UploadPurpose,
+  UploadRejection,
+} from "./upload.js";
+
 export { courseChapterSequence, rollupProgress } from "./progress.js";
 export type { CourseRollup, ModuleCompletion, ProgressSummary } from "./progress.js";
 

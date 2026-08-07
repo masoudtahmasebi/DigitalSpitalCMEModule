@@ -1061,6 +1061,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/courses/{slug}/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask for permission to upload a file
+         * @description Answers with a short-lived signed `PUT` the browser sends **directly to
+         *     object storage**. The bytes never pass through this API.
+         *
+         *     The request names a purpose, a type and a size, and every one of those
+         *     is checked rather than accepted: the type must be one this purpose
+         *     allows, the size must be within that purpose's ceiling, and both are
+         *     bound into the signature — so a browser that uploads something else
+         *     gets a 403 from the bucket, not a stored object.
+         *
+         *     The request never names a key, a prefix or a filename. Those are
+         *     derived server-side from the validated session and the course, which is
+         *     what keeps one customer's uploads out of another's space in a store
+         *     that has no row-level security.
+         *
+         *     Answering `201` does not mean anything was uploaded. Call
+         *     `adminCompleteUpload` once the `PUT` finishes to get the reference a
+         *     course may point at.
+         */
+        post: operations["adminBeginUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/courses/{slug}/uploads/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm an upload and get the reference to store
+         * @description The API asks object storage what it actually holds for this key and
+         *     compares it against what it approved when the signature was issued. An
+         *     object of a different size or type is **deleted** and the call fails.
+         *
+         *     The expected size and type are read from the recorded issue, never from
+         *     this request — otherwise a client would be choosing both sides of the
+         *     comparison.
+         *
+         *     On success, `reference` is what goes into a content item's `videoUrl`,
+         *     `posterUrl`, `captionsUrl` or `fileUrl`.
+         */
+        post: operations["adminCompleteUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/courses/{slug}/modules": {
         parameters: {
             query?: never;
@@ -2545,21 +2610,104 @@ export interface components {
              *     payload with no reason to be one.
              */
             sources?: components["schemas"]["MediaSourceWrite"][];
-            /** Format: uri */
+            /**
+             * @description An absolute URL, or an `s3://` reference produced by
+             *     `adminCompleteUpload`. No `format: uri`, for the same reason
+             *     `MediaSourceWrite.url` has none — a stored reference is not a URL.
+             *     A reference outside the caller's own storage prefix is refused with
+             *     a 422.
+             */
             posterUrl?: string | null;
             /**
-             * Format: uri
              * @description WebVTT. Owed for every video carrying speech — WCAG 1.2.2 is Level
              *     A — but not enforced: a slide-only recording legitimately has none,
              *     and the server cannot tell the two apart. The console asks for it
              *     and says why.
+             *
+             *     An absolute URL or an `s3://` reference, as `posterUrl`.
              */
             captionsUrl?: string | null;
             durationSec?: number | null;
-            /** Format: uri */
+            /** @description An absolute URL or an `s3://` reference, as `posterUrl`. */
             fileUrl?: string | null;
             fileSize?: number | null;
             mimeType?: string | null;
+        };
+        /**
+         * @description What the file is for. Decides both the accepted content types and the
+         *     size ceiling — a PDF is a perfectly good `material` and a mistake as a
+         *     `poster`, and only a per-purpose list catches that.
+         * @enum {string}
+         */
+        UploadPurpose: "video" | "captions" | "poster" | "material";
+        /**
+         * @description A claim about a file, all of which is checked. Note what is *not* here:
+         *     no key, no prefix, no bucket and no filename. Those are derived from the
+         *     validated session and the course, which is what makes the tenant
+         *     boundary hold in a store with no row-level security.
+         */
+        UploadRequest: {
+            purpose: components["schemas"]["UploadPurpose"];
+            /**
+             * @description As the file picker reported it. A `; charset=…` parameter is
+             *     tolerated and dropped; the bare type is what gets signed.
+             */
+            mimeType: string;
+            /**
+             * @description The exact byte length, which becomes a **signed** header. A browser
+             *     computes `Content-Length` from the body and will not let script set
+             *     it, so a file of a different length simply fails to verify at the
+             *     bucket. The per-purpose ceiling is enforced here, before anything is
+             *     signed.
+             */
+            sizeBytes: number;
+        };
+        /**
+         * @description A capability with an expiry. Send the body to `url` with `method` and
+         *     exactly these `headers`; anything else is refused by the bucket, because
+         *     the type and the length are part of the signature.
+         */
+        UploadTicket: {
+            /**
+             * @description The object's key. Pass it back to `adminCompleteUpload` — not the
+             *     URL, which carries a signature that should not end up in a log.
+             */
+            key: string;
+            /** @description Short-lived and single-purpose. Do not store or log it. */
+            url: string;
+            /** @enum {string} */
+            method: "PUT";
+            /**
+             * @description Send verbatim. `Content-Length` is signed too but is not listed: the
+             *     browser sets it from the body and forbids script from doing so,
+             *     which is exactly what makes signing it worth something.
+             */
+            headers: {
+                [key: string]: string;
+            };
+            /**
+             * Format: date-time
+             * @description After this the signature is refused and a new one is needed.
+             */
+            expiresAt: string;
+        };
+        UploadCompletion: {
+            /** @description The `key` from the ticket. */
+            key: string;
+        };
+        /**
+         * @description What object storage reports, not what the client declared — the two
+         *     agreeing is the point of the check, and echoing the client's numbers
+         *     would quietly discard it.
+         */
+        UploadConfirmed: {
+            /**
+             * @description `s3://<key>`. Store this in a content item's `videoUrl`,
+             *     `posterUrl`, `captionsUrl` or `fileUrl`.
+             */
+            reference: string;
+            sizeBytes: number;
+            mimeType: string;
         };
         /**
          * @description A rendition as an author supplies it. `url` accepts an `s3://` reference
@@ -5524,6 +5672,184 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    adminBeginUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadRequest"];
+            };
+        };
+        responses: {
+            /** @description A signed upload, valid until `expiresAt`. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadTicket"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /**
+             * @description This deployment has no object storage configured. Deliberately not a
+             *     500: nothing is broken, the feature is simply not available here,
+             *     and an author should be told to supply a URL instead.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            /**
+             * @description Too many signatures asked for too quickly. Minting is cheap here and
+             *     expensive at the other end of the bucket bill.
+             */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    adminCompleteUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadCompletion"];
+            };
+        };
+        responses: {
+            /** @description The object is present and is what was approved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadConfirmed"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /**
+             * @description No upload was issued for this key in this tenant. A key belonging to
+             *     another customer gets this same answer — distinguishing the two
+             *     would confirm that somebody else's object exists.
+             */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many confirmations too quickly. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /**
+             * @description Object storage could not be reached. Not the author's fault and not
+             *     a permanent refusal — "try again in a few minutes" is the correct
+             *     advice, and a 4xx would hide a storage outage inside the ordinary
+             *     noise of people uploading the wrong thing.
+             */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     adminCreateModule: {

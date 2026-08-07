@@ -19,17 +19,14 @@ import {
   PresigningMediaResolver,
   type MediaResolver,
 } from "./media-url.js";
+import { hasObjectStorage } from "./object-storage.factory.js";
 import { S3Presigner } from "./s3-presigner.js";
 
 export function mediaResolverFor(config: AppConfig): MediaResolver {
-  const configured =
-    config.S3_ENDPOINT !== "" &&
-    config.S3_REGION !== "" &&
-    config.S3_BUCKET !== "" &&
-    config.S3_ACCESS_KEY_ID !== "" &&
-    config.S3_SECRET_ACCESS_KEY !== "";
-
-  if (!configured) return new PassthroughMediaResolver();
+  // Shared with the upload factory rather than repeated. Two copies of "is
+  // storage configured?" that disagreed would mint upload signatures for a
+  // bucket the read path had already decided it could not sign for.
+  if (!hasObjectStorage(config)) return new PassthroughMediaResolver();
 
   return new PresigningMediaResolver(
     new S3Presigner({

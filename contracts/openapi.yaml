@@ -1566,6 +1566,119 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /admin/courses/{slug}/uploads:
+    post:
+      tags: [admin]
+      operationId: adminBeginUpload
+      summary: Ask for permission to upload a file
+      description: |
+        Answers with a short-lived signed `PUT` the browser sends **directly to
+        object storage**. The bytes never pass through this API.
+
+        The request names a purpose, a type and a size, and every one of those
+        is checked rather than accepted: the type must be one this purpose
+        allows, the size must be within that purpose's ceiling, and both are
+        bound into the signature — so a browser that uploads something else
+        gets a 403 from the bucket, not a stored object.
+
+        The request never names a key, a prefix or a filename. Those are
+        derived server-side from the validated session and the course, which is
+        what keeps one customer's uploads out of another's space in a store
+        that has no row-level security.
+
+        Answering `201` does not mean anything was uploaded. Call
+        `adminCompleteUpload` once the `PUT` finishes to get the reference a
+        course may point at.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadRequest" }
+      responses:
+        "201":
+          description: A signed upload, valid until `expiresAt`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadTicket" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            This deployment has no object storage configured. Deliberately not a
+            500: nothing is broken, the feature is simply not available here,
+            and an author should be told to supply a URL instead.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429":
+          description: |
+            Too many signatures asked for too quickly. Minting is cheap here and
+            expensive at the other end of the bucket bill.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /admin/courses/{slug}/uploads/complete:
+    post:
+      tags: [admin]
+      operationId: adminCompleteUpload
+      summary: Confirm an upload and get the reference to store
+      description: |
+        The API asks object storage what it actually holds for this key and
+        compares it against what it approved when the signature was issued. An
+        object of a different size or type is **deleted** and the call fails.
+
+        The expected size and type are read from the recorded issue, never from
+        this request — otherwise a client would be choosing both sides of the
+        comparison.
+
+        On success, `reference` is what goes into a content item's `videoUrl`,
+        `posterUrl`, `captionsUrl` or `fileUrl`.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadCompletion" }
+      responses:
+        "200":
+          description: The object is present and is what was approved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadConfirmed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: |
+            No upload was issued for this key in this tenant. A key belonging to
+            another customer gets this same answer — distinguishing the two
+            would confirm that somebody else's object exists.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429":
+          description: Too many confirmations too quickly.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "500":
+          description: |
+            Object storage could not be reached. Not the author's fault and not
+            a permanent refusal — "try again in a few minutes" is the correct
+            advice, and a 4xx would hide a storage outage inside the ordinary
+            noise of people uploading the wrong thing.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
   /admin/courses/{slug}/modules:
     post:
       tags: [admin]
@@ -3861,20 +3974,122 @@ components:
             handful of encodings is the real use and an unbounded list is a
             payload with no reason to be one.
           items: { $ref: "#/components/schemas/MediaSourceWrite" }
-        posterUrl: { type: [string, "null"], format: uri, maxLength: 2000 }
+        posterUrl:
+          type: [string, "null"]
+          maxLength: 2000
+          description: |
+            An absolute URL, or an `s3://` reference produced by
+            `adminCompleteUpload`. No `format: uri`, for the same reason
+            `MediaSourceWrite.url` has none — a stored reference is not a URL.
+            A reference outside the caller's own storage prefix is refused with
+            a 422.
         captionsUrl:
           type: [string, "null"]
-          format: uri
           maxLength: 2000
           description: |
             WebVTT. Owed for every video carrying speech — WCAG 1.2.2 is Level
             A — but not enforced: a slide-only recording legitimately has none,
             and the server cannot tell the two apart. The console asks for it
             and says why.
+
+            An absolute URL or an `s3://` reference, as `posterUrl`.
         durationSec: { type: [integer, "null"], minimum: 1, maximum: 86400 }
-        fileUrl: { type: [string, "null"], format: uri, maxLength: 2000 }
+        fileUrl:
+          type: [string, "null"]
+          maxLength: 2000
+          description: An absolute URL or an `s3://` reference, as `posterUrl`.
         fileSize: { type: [integer, "null"], minimum: 0 }
         mimeType: { type: [string, "null"], maxLength: 200 }
+
+    UploadPurpose:
+      type: string
+      enum: [video, captions, poster, material]
+      description: |
+        What the file is for. Decides both the accepted content types and the
+        size ceiling — a PDF is a perfectly good `material` and a mistake as a
+        `poster`, and only a per-purpose list catches that.
+
+    UploadRequest:
+      type: object
+      required: [purpose, mimeType, sizeBytes]
+      description: |
+        A claim about a file, all of which is checked. Note what is *not* here:
+        no key, no prefix, no bucket and no filename. Those are derived from the
+        validated session and the course, which is what makes the tenant
+        boundary hold in a store with no row-level security.
+      properties:
+        purpose: { $ref: "#/components/schemas/UploadPurpose" }
+        mimeType:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: |
+            As the file picker reported it. A `; charset=…` parameter is
+            tolerated and dropped; the bare type is what gets signed.
+        sizeBytes:
+          type: integer
+          minimum: 1
+          description: |
+            The exact byte length, which becomes a **signed** header. A browser
+            computes `Content-Length` from the body and will not let script set
+            it, so a file of a different length simply fails to verify at the
+            bucket. The per-purpose ceiling is enforced here, before anything is
+            signed.
+
+    UploadTicket:
+      type: object
+      required: [key, url, method, headers, expiresAt]
+      description: |
+        A capability with an expiry. Send the body to `url` with `method` and
+        exactly these `headers`; anything else is refused by the bucket, because
+        the type and the length are part of the signature.
+      properties:
+        key:
+          type: string
+          description: |
+            The object's key. Pass it back to `adminCompleteUpload` — not the
+            URL, which carries a signature that should not end up in a log.
+        url:
+          type: string
+          description: Short-lived and single-purpose. Do not store or log it.
+        method: { type: string, enum: [PUT] }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+          description: |
+            Send verbatim. `Content-Length` is signed too but is not listed: the
+            browser sets it from the body and forbids script from doing so,
+            which is exactly what makes signing it worth something.
+        expiresAt:
+          type: string
+          format: date-time
+          description: After this the signature is refused and a new one is needed.
+
+    UploadCompletion:
+      type: object
+      required: [key]
+      properties:
+        key:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: The `key` from the ticket.
+
+    UploadConfirmed:
+      type: object
+      required: [reference, sizeBytes, mimeType]
+      description: |
+        What object storage reports, not what the client declared — the two
+        agreeing is the point of the check, and echoing the client's numbers
+        would quietly discard it.
+      properties:
+        reference:
+          type: string
+          description: |
+            `s3://<key>`. Store this in a content item's `videoUrl`,
+            `posterUrl`, `captionsUrl` or `fileUrl`.
+        sizeBytes: { type: integer, minimum: 1 }
+        mimeType: { type: string }
 
     MediaSourceWrite:
       type: object

@@ -75,6 +75,12 @@ import type {
   quizWriteSchema,
   structureOrderSchema,
 } from "../../src/modules/authoring/authoring.dto.js";
+import type {
+  uploadBeginSchema,
+  uploadCompleteSchema,
+  UploadConfirmedResponse,
+  UploadTicketResponse,
+} from "../../src/modules/uploads/upload.dto.js";
 import type { Expect, MutuallyAssignable } from "./assignable.js";
 
 type Schemas = components["schemas"];
@@ -218,6 +224,12 @@ type _Authoring = [
   Expect<MutuallyAssignable<z.input<typeof moduleWriteSchema>, Schemas["ModuleWrite"]>>,
   Expect<MutuallyAssignable<z.input<typeof chapterWriteSchema>, Schemas["ChapterWrite"]>>,
   Expect<MutuallyAssignable<z.input<typeof contentWriteSchema>, Schemas["ContentWrite"]>>,
+  Expect<MutuallyAssignable<z.input<typeof uploadBeginSchema>, Schemas["UploadRequest"]>>,
+  Expect<
+    MutuallyAssignable<z.input<typeof uploadCompleteSchema>, Schemas["UploadCompletion"]>
+  >,
+  Expect<MutuallyAssignable<UploadTicketResponse, Schemas["UploadTicket"]>>,
+  Expect<MutuallyAssignable<UploadConfirmedResponse, Schemas["UploadConfirmed"]>>,
   Expect<
     MutuallyAssignable<z.input<typeof structureOrderSchema>, Schemas["StructureOrder"]>
   >,

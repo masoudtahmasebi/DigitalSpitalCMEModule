@@ -68,6 +68,26 @@ export const RATE_LIMIT_RULES = {
    */
   adminUpload: { limit: 20, windowSec: 60 },
   /**
+   * Course media uploads (P23-01). Separate from `adminUpload`, and higher.
+   *
+   * Those two limits guard different things and sharing one was wrong for both.
+   * `adminUpload` writes bytes into `bytea` through this process, so its limit
+   * is about a stuck client filling a disk — 20 a minute is generous for
+   * something nobody does twice in a sitting.
+   *
+   * This one signs a URL. The bytes go straight to the bucket and never touch
+   * us, so what the limit protects is not our disk; the size ceiling and the
+   * bucket's own quota do that. Meanwhile the legitimate shape is a burst:
+   * building a fifteen-lesson course means a video, a poster and a caption file
+   * each, and every one of them is two requests. At 20 a minute an author
+   * seeding a course hits a 429 partway through and has no idea why — which is
+   * exactly the class of thing that gets reported as "the upload is broken".
+   *
+   * 60 a minute is 30 files, sustained, which no person does and which leaves
+   * a batch comfortable.
+   */
+  mediaUpload: { limit: 60, windowSec: 60 },
+  /**
    * A participant export is where personal data leaves the system's access
    * controls entirely. Every one of them is audited (P9-07); a limit is what
    * keeps that audit trail a record of deliberate acts rather than of a script.

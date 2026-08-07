@@ -95,6 +95,11 @@ export type AuthoringExpert = components["schemas"]["AuthoringExpert"];
 export type ModuleWrite = components["schemas"]["ModuleWrite"];
 export type ChapterWrite = components["schemas"]["ChapterWrite"];
 export type ContentWrite = components["schemas"]["ContentWrite"];
+
+export type UploadPurpose = components["schemas"]["UploadPurpose"];
+export type UploadRequest = components["schemas"]["UploadRequest"];
+export type UploadTicket = components["schemas"]["UploadTicket"];
+export type UploadConfirmed = components["schemas"]["UploadConfirmed"];
 export type StructureOrder = components["schemas"]["StructureOrder"];
 export type ExpertsWrite = components["schemas"]["ExpertsWrite"];
 export type AuthoringQuiz = components["schemas"]["AuthoringQuiz"];
@@ -645,6 +650,25 @@ export function createClient(options: ClientOptions) {
     adminGetStructure: (slug: string): Promise<CourseStructure> =>
       request(`${adminCourse(slug)}/structure`),
 
+    /**
+     * Ask for permission to upload, and get a signed `PUT` for exactly one object.
+     *
+     * The bytes do not go through this client — see `uploadToTicket`, which is
+     * the only place that talks to the bucket, deliberately kept separate so
+     * nothing here ever sends a credential or a signature anywhere it stores.
+     */
+    adminBeginUpload: (slug: string, input: UploadRequest): Promise<UploadTicket> =>
+      request(`${adminCourse(slug)}/uploads`, json(input)),
+
+    /**
+     * Confirm the object landed and get the reference to store.
+     *
+     * Skipping this is not a shortcut: no reference, and the server has not
+     * checked that the bucket holds what it approved.
+     */
+    adminCompleteUpload: (slug: string, key: string): Promise<UploadConfirmed> =>
+      request(`${adminCourse(slug)}/uploads/complete`, json({ key })),
+
     adminCreateModule: (slug: string, input: ModuleWrite): Promise<CourseStructure> =>
       request(`${adminCourse(slug)}/modules`, json(input)),
 
@@ -802,4 +826,77 @@ async function readProblem(response: Response): Promise<ProblemDetails> {
       status: response.status,
     };
   }
+}
+
+/**
+ * Send a file to object storage using a ticket from `adminBeginUpload`.
+ *
+ * ## Why this is not `request`
+ *
+ * It talks to a bucket, not to the API, and everything `request` does would be
+ * wrong here. No bearer token, no session cookie, no CSRF header, no tenant
+ * header: the ticket's signature *is* the authorisation, and sending a
+ * credential to a third-party host because the code path happened to be shared
+ * is exactly the mistake a shared helper would eventually make. `credentials`
+ * is left at the default, which does not attach cookies cross-origin.
+ *
+ * ## Why XHR and not fetch
+ *
+ * `fetch` cannot report upload progress. A lecture is hundreds of megabytes and
+ * takes minutes; a spinner with no percentage in front of that is indis-
+ * tinguishable from a hang, and the author's reasonable response to a hang is
+ * to reload the page and start again. `XMLHttpRequest.upload.onprogress` is the
+ * only thing in the platform that answers "how far along is this".
+ *
+ * ## What it deliberately does not do
+ *
+ * It does not retry. A failed PUT has to start over from zero — there is no
+ * multipart or resumable path yet — so an automatic retry would silently
+ * re-send hundreds of megabytes on a connection that has just demonstrated it
+ * cannot carry them. That is the author's decision to make, with a button.
+ */
+export function uploadToTicket(
+  ticket: UploadTicket,
+  file: Blob,
+  options: {
+    /** 0–100, integer. Called often; cheap to handle. */
+    readonly onProgress?: (percent: number) => void;
+    /** Abort the upload — `signal.abort()` stops it and rejects. */
+    readonly signal?: AbortSignal;
+  } = {},
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (options.signal?.aborted === true) {
+      reject(new Error("upload cancelled"));
+      return;
+    }
+
+    const request = new XMLHttpRequest();
+    request.open(ticket.method, ticket.url, true);
+
+    for (const [name, value] of Object.entries(ticket.headers)) {
+      request.setRequestHeader(name, value);
+    }
+
+    request.upload.onprogress = (event) => {
+      if (!event.lengthComputable || options.onProgress === undefined) return;
+      options.onProgress(Math.floor((event.loaded / event.total) * 100));
+    };
+
+    request.onload = () => {
+      // 2xx and nothing else. A 403 here is the bucket refusing the signature —
+      // a different content type, a different length, or an expired ticket —
+      // and the body is S3's XML, which is not something to show an author.
+      if (request.status >= 200 && request.status < 300) resolve();
+      else reject(new Error(`object storage refused the upload (${request.status})`));
+    };
+
+    request.onerror = () => reject(new Error("the connection to object storage failed"));
+    request.ontimeout = () => reject(new Error("the upload timed out"));
+    request.onabort = () => reject(new Error("upload cancelled"));
+
+    options.signal?.addEventListener("abort", () => request.abort(), { once: true });
+
+    request.send(file);
+  });
 }

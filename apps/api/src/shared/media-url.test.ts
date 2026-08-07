@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import { PassthroughMediaResolver, PresigningMediaResolver } from "./media-url.js";
-import type { Presigner } from "./s3-presigner.js";
+import type { ReadPresigner } from "./s3-presigner.js";
 
 const CUSTOMER = "0198f4c1-7a2e-7000-8000-000000000001";
 const OTHER = "0198f4c1-7a2e-7000-8000-000000000002";
@@ -18,7 +18,7 @@ const NOW = new Date("2026-07-28T10:00:00Z");
 /** Records what it was asked to sign, so the tests can assert it was not. */
 function spyPresigner() {
   const signed: string[] = [];
-  const presigner: Presigner = {
+  const presigner: ReadPresigner = {
     presignGet(key) {
       signed.push(key);
       return `https://storage.example/${key}?signed=1`;
@@ -91,7 +91,7 @@ describe("PresigningMediaResolver", () => {
 
   it("uses the configured TTL", () => {
     const seen: number[] = [];
-    const presigner: Presigner = {
+    const presigner: ReadPresigner = {
       presignGet(_key, expiresInSec) {
         seen.push(expiresInSec);
         return "https://storage.example/x";

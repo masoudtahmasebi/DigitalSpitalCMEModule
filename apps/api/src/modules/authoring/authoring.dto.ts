@@ -51,6 +51,31 @@ const uuid = z.uuid();
 const richText = z.string().max(20_000);
 const url = z.string().url().max(2000);
 
+/**
+ * A URL the customer already serves, or a reference into our own storage.
+ *
+ * Before uploads existed (P23-01) these fields were `url`, which requires an
+ * absolute URL — so a course could only ever point at a CDN. An uploaded object
+ * is `s3://<customerId>/courses/<courseId>/<file>`, which `z.string().url()`
+ * rejects, and the media resolver has always understood both forms.
+ *
+ * The grammar is checked here; **ownership is not**. A reference naming another
+ * customer's prefix parses cleanly and is refused by the service, against the
+ * customer id from the validated session — a schema has no idea who is calling,
+ * and a check that looked like an authorization decision but was not would be
+ * worse than no check at all. `media-url.ts` refuses it a second time at read
+ * time, so a row that somehow held one would render as a padlock rather than as
+ * somebody else's video.
+ */
+const mediaReference = z
+  .string()
+  .trim()
+  .max(2000)
+  .refine(
+    (value) => value.startsWith("s3://") || z.string().url().safeParse(value).success,
+    "must be an absolute URL or an s3:// reference",
+  );
+
 // ---------------------------------------------------------------------------
 // Structure: departments and projects
 // ---------------------------------------------------------------------------
@@ -263,11 +288,11 @@ export const contentWriteSchema = z.object({
   title,
   body: richText.nullable().optional(),
   sources: z.array(mediaSourceWriteSchema).max(10).optional(),
-  posterUrl: url.nullable().optional(),
+  posterUrl: mediaReference.nullable().optional(),
   /** WebVTT. Owed for every video with speech — WCAG 1.2.2 is Level A. */
-  captionsUrl: url.nullable().optional(),
+  captionsUrl: mediaReference.nullable().optional(),
   durationSec: z.number().int().positive().max(86_400).nullable().optional(),
-  fileUrl: url.nullable().optional(),
+  fileUrl: mediaReference.nullable().optional(),
   fileSize: z.number().int().nonnegative().nullable().optional(),
   mimeType: z.string().trim().max(200).nullable().optional(),
 });

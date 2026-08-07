@@ -178,6 +178,14 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
       deliveryType: "on_demand",
     }),
   adminGetStructure: (c) => c.adminGetStructure("adhs"),
+  adminBeginUpload: (c) =>
+    c.adminBeginUpload("adhs", {
+      purpose: "video",
+      mimeType: "video/mp4",
+      sizeBytes: 1024,
+    }),
+  adminCompleteUpload: (c) =>
+    c.adminCompleteUpload("adhs", "cust/courses/id/video-x.mp4"),
   adminCreateModule: (c) => c.adminCreateModule("adhs", { title: "M" }),
   adminUpdateModule: (c) => c.adminUpdateModule(ID, { title: "M" }),
   adminDeleteCourse: (c) => c.adminDeleteCourse("adhs"),

@@ -455,6 +455,33 @@ export const auditLog = pgTable("audit_log", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Every object-storage operation, including the refusals (migration 0029).
+ *
+ * Append-only in the database: `ds_app` holds INSERT and SELECT and nothing
+ * else, so a Drizzle `update` or `delete` against this table is a runtime
+ * permission error rather than a silent no-op. There is deliberately no
+ * relation defined on `actorId` — it names either an `admin_users` row or a
+ * `users` row, and `actorKind` is what says which (ADR-0012).
+ */
+export const storageAuditLog = pgTable("storage_audit_log", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  customerId: uuid("customer_id").notNull(),
+  courseId: uuid("course_id"),
+  /** `staff` | `learner` | `system`. */
+  actorKind: text("actor_kind").notNull(),
+  actorId: uuid("actor_id"),
+  /** `mint` | `store` | `refuse` | `read` | `delete`. */
+  action: text("action").notNull(),
+  objectKey: text("object_key").notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }),
+  mimeType: text("mime_type"),
+  succeeded: boolean("succeeded").notNull(),
+  /** A short technical reason written by us. Never a request value. */
+  detail: text("detail"),
+});
+
 export const schema = {
   customers,
   departments,
@@ -480,4 +507,5 @@ export const schema = {
   eivSubmissions,
   certificates,
   auditLog,
+  storageAuditLog,
 };

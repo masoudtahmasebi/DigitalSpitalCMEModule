@@ -161,6 +161,12 @@ const schema = z
     // expires. Long enough that a learner can finish a 25-minute video without
     // the URL dying mid-playback.
     S3_URL_TTL_SEC: z.coerce.number().int().positive().max(86_400).default(3_600),
+    // How long an upload signature stays usable (P23-01). Bounds when the PUT
+    // may *start*, not how long it may take — S3 checks the expiry as the
+    // request arrives, so a 700 MB body that began in time keeps going. Thirty
+    // minutes covers a file picker left open while somebody finds the right
+    // version; it is not a window in which to hunt for a bigger file.
+    S3_UPLOAD_TTL_SEC: z.coerce.number().int().positive().max(3_600).default(1_800),
 
     // ---------------------------------------------------------------------
     // Encryption at rest for stored secrets (CLAUDE.md §4 invariant 7)

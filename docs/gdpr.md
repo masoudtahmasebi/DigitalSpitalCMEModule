@@ -118,15 +118,47 @@ first.
 
 ## 4. Retention
 
-| Data                                                        | Kept                                                                                            | Why                                                  |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Participation record (course, VNR, points, completion date) | Until the Kammer's own retention need lapses; not deleted by the platform on its own initiative | It is the counterpart of a report already filed      |
-| `eiv_submissions`                                           | Same                                                                                            | Evidence that, and when, a statutory report was made |
-| Name and e-mail                                             | Until erasure, or until the customer deletes the Keycloak account                               |                                                      |
-| EFN                                                         | Until erasure. Deleted immediately on erasure                                                   |                                                      |
-| Free-text evaluation answers                                | Until erasure. Redacted on erasure                                                              |                                                      |
-| `audit_log`                                                 | Indefinitely. Append-only — a database rule refuses UPDATE and DELETE                           | An audit trail that can be edited is not one         |
-| Application logs                                            | Whatever the host's retention is. **No personal data is written to them** — see §7              |                                                      |
+| Data                                                        | Kept                                                                                            | Why                                                                                  |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Participation record (course, VNR, points, completion date) | Until the Kammer's own retention need lapses; not deleted by the platform on its own initiative | It is the counterpart of a report already filed                                      |
+| `eiv_submissions`                                           | Same                                                                                            | Evidence that, and when, a statutory report was made                                 |
+| Name and e-mail                                             | Until erasure, or until the customer deletes the Keycloak account                               |                                                                                      |
+| EFN                                                         | Until erasure. Deleted immediately on erasure                                                   |                                                                                      |
+| Free-text evaluation answers                                | Until erasure. Redacted on erasure                                                              |                                                                                      |
+| `audit_log`                                                 | Indefinitely. Append-only — a database rule refuses UPDATE and DELETE                           | An audit trail that can be edited is not one                                         |
+| `storage_audit_log`                                         | 24 months, then pruned by the maintenance job                                                   | See below — it holds no personal data, and object storage has no RLS to fall back on |
+| Application logs                                            | Whatever the host's retention is. **No personal data is written to them** — see §7              |                                                                                      |
+
+### `storage_audit_log` — why it is here at all (P23-02)
+
+Course media is not personal data: it is a lecture, a slide deck, a handout. So
+a log of who uploaded what is **not** a processing record about a participant,
+and this table is listed for completeness rather than because a subject request
+would ever reach it.
+
+It is still worth naming what it holds, because "it has no personal data in it"
+is a claim somebody has to be able to check:
+
+- **`object_key`** — two UUIDs and a filename _we_ generated. The uploader's own
+  filename never reaches the platform (`uploadObjectName`), specifically so a
+  working title or a patient name in a file called
+  `Fallbericht_Müller_final.mp4` cannot end up in a bucket listing or here.
+- **`actor_id`** — a pseudonymous identifier for a member of staff, never a
+  participant. No name, no e-mail.
+- **`detail`** — a short technical reason written by us from a closed set
+  (`unsupported_type`, `too_large`, `the object was not found in the bucket`).
+  Never a value echoed back from a request.
+
+**Why it exists at all:** object storage has no row-level security. Tenant
+isolation there is the `<customerId>/` key prefix plus the server refusing to
+sign anything outside the caller's own — a guarantee that lives in application
+code rather than in the store, and one that therefore has to be auditable. The
+refusals are the entries that matter.
+
+**24 months** because that is long enough to answer "when did this file get
+here, and who put it there" for a course still inside its accreditation window,
+and there is no reason to keep it past the point where the objects themselves
+are gone.
 
 **Open item for the controller:** the Kammer has not been asked how long the
 participation record must be retained after the accreditation window closes.

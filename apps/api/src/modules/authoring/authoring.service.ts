@@ -31,8 +31,10 @@ import {
   parseMediaSources,
   type ContentProblem,
   correctOptionCount,
+  keyBelongsToCustomer,
   parseBranding,
   questionProblems,
+  storageKeyOf,
   validateReorder,
   MIN_QUIZ_OPTIONS,
   type ChildCensus,
@@ -409,7 +411,7 @@ export class AuthoringService {
       await this.repository.courseIdOfChapter(chapterId),
       chapterId,
     );
-    const values = this.validContent(input);
+    const values = this.validContent(input, actor.customerId);
 
     await this.repository.createContent(chapterId, values);
     await this.audit(actor, "admin.content.create", chapterId, { kind: input.kind });
@@ -425,7 +427,7 @@ export class AuthoringService {
       await this.repository.courseIdOfContent(id),
       id,
     );
-    const values = this.validContent(input);
+    const values = this.validContent(input, actor.customerId);
 
     await this.repository.updateContent(id, values);
     await this.audit(actor, "admin.content.update", id, { kind: input.kind });
@@ -682,7 +684,33 @@ export class AuthoringService {
 
   // -------------------------------------------------------------------------
 
-  private validContent(input: ContentWrite): ContentValues {
+  /**
+   * Validate a content item, including who its media may belong to.
+   *
+   * `customerId` comes from the validated session, never from the request. Every
+   * media field may now hold an `s3://` reference (P23-01), and a reference is
+   * a *claim* about which object a course points at — so the claim is checked
+   * against the caller's own prefix here, at the one place every content write
+   * passes through.
+   *
+   * `media-url.ts` refuses a foreign key again when the media is read. Both
+   * checks are wanted: this one keeps a bad reference out of the row, and that
+   * one means a row that acquired one anyway — a restored dump, a hand-run
+   * migration — renders as a padlock rather than as another customer's video.
+   * A bucket has no RLS underneath to catch what application code misses.
+   */
+  private validContent(input: ContentWrite, customerId: string): ContentValues {
+    for (const [field, value] of [
+      ["posterUrl", input.posterUrl],
+      ["captionsUrl", input.captionsUrl],
+      ["fileUrl", input.fileUrl],
+      ...(input.sources ?? []).map(
+        (source, index) => [`sources.${index}.url`, source.url] as const,
+      ),
+    ] as const) {
+      this.assertOwnedReference(value ?? null, customerId, field);
+    }
+
     const problems = contentProblems({
       kind: input.kind,
       title: input.title,
@@ -723,6 +751,35 @@ export class AuthoringService {
       fileSize: input.fileSize ?? null,
       mimeType: input.mimeType ?? null,
     };
+  }
+
+  /**
+   * Refuse a storage reference that is not this customer's.
+   *
+   * A plain `https://` value is somebody else's CDN and none of our business —
+   * passed through untouched, which is what lets a customer migrate onto the
+   * platform without moving their media first. Only `s3://` is ours to police.
+   *
+   * The refusal is a validation error rather than a 403: from the author's side
+   * this is a malformed field, and confirming that another customer's object
+   * exists is more than the refusal needs to say.
+   */
+  private assertOwnedReference(
+    value: string | null,
+    customerId: string,
+    field: string,
+  ): void {
+    if (value === null || value === "") return;
+
+    const key = storageKeyOf(value);
+    if (key === undefined) return;
+    if (keyBelongsToCustomer(key, customerId)) return;
+
+    throw new AppError(
+      "validation",
+      `content invalid: ${field} references storage outside this tenant`,
+      "Diese Datei gehört nicht zu Ihrem Konto. Bitte laden Sie sie erneut hoch.",
+    );
   }
 
   private checkPermutation(
