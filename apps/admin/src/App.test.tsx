@@ -35,6 +35,11 @@ import type { StaffProfile } from "./staff-auth.js";
 
 afterEach(cleanup);
 
+// The chosen customer is remembered in `localStorage` (P22-08), so a test that
+// selected one would otherwise hand it to the next — which is a fresh browser
+// in every case that matters.
+afterEach(() => window.localStorage.clear());
+
 const SUPER_ADMIN: StaffProfile = {
   id: "admin-1",
   email: "testing@digitalspital.de",
@@ -232,5 +237,60 @@ describe("creating a customer refreshes the picker (P22-05)", () => {
       );
       expect(options).toContain("Medice");
     });
+  });
+});
+
+describe("the chosen customer survives a reload (P22-08)", () => {
+  it("remembers it, scoped to this operator", async () => {
+    // It was component state, so every reload dropped it and a super
+    // administrator landed back on "pick a customer" — which is every reload,
+    // and there are plenty while setting a customer up.
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    const { unmount } = renderConsole({ platform });
+
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+
+    await waitFor(() =>
+      expect(window.localStorage.getItem(`ds.admin.customer.${SUPER_ADMIN.id}`)).toBe(
+        MEDICE.id,
+      ),
+    );
+
+    // Remount, which is what a reload is from the component's point of view.
+    unmount();
+    const again = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    const admin = fakeClient();
+    renderConsole({ admin, platform: again });
+
+    // Straight to that customer's courses, with no second selection.
+    await waitFor(() =>
+      expect(
+        (admin as never as { adminListCourses: { mock: { calls: unknown[] } } })
+          .adminListCourses.mock.calls.length,
+      ).toBe(1),
+    );
+  });
+
+  it("does not carry one operator's choice to another account", async () => {
+    // A super admin and their own customer-scoped account are different
+    // scopes; switching between them on one browser must not inherit.
+    window.localStorage.setItem("ds.admin.customer.somebody-else", MEDICE.id);
+
+    const admin = fakeClient();
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    renderConsole({ admin, platform });
+
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    expect(
+      (admin as never as { adminListCourses: { mock: { calls: unknown[] } } })
+        .adminListCourses.mock.calls.length,
+    ).toBe(0);
   });
 });

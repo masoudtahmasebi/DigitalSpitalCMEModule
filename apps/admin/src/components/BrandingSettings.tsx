@@ -25,7 +25,7 @@
  */
 
 import { useEffect, useState } from "react";
-import type { ApiClient, FontState } from "@ds/sdk";
+import { isNotFound, type ApiClient, type FontState } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
 import { Badge, Button, Field, Notice, TextInput } from "./ui.js";
@@ -51,7 +51,22 @@ export function BrandingSettings(props: { client: ApiClient }) {
         setState(font);
         setFamilyName(font.fontFamilyName ?? "");
       },
-      (error: unknown) => setProblem(describeError(error, de.error.generic)),
+      (error: unknown) => {
+        // A 404 is the *normal* state of a project that has never had a font,
+        // and `GET /admin/branding/font` 404s deliberately: "there is no font"
+        // and "there is no project" are the same answer and a font is not
+        // evidence of anything (see `branding.controller.ts`).
+        //
+        // Reporting it as a failure put "Bitte versuchen Sie es später erneut."
+        // on the screen of every customer who had simply not uploaded one, and
+        // left the upload form looking broken before it had been used (P22-08).
+        if (isNotFound(error)) {
+          setState({ fontFamilyName: null, fontVersion: null, fontBytes: null });
+          setFamilyName("");
+          return;
+        }
+        setProblem(describeError(error, de.error.generic));
+      },
     );
   }, [client]);
 

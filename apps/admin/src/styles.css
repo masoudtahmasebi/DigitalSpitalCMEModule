@@ -3,11 +3,52 @@
 @tailwind utilities;
 
 /*
+ * DigitalSpital's own brand, for DigitalSpital's own tool (P22-08).
+ *
+ * The `--ds-brand-*` variables exist so a *customer's* colours can be applied
+ * to the learner surfaces at runtime (ADR-0009, and `packages/config`'s
+ * preset). The admin console is not a customer surface — it is the product
+ * DigitalSpital sells — so it pins them to DigitalSpital's palette here and
+ * never reads a customer's branding.
+ *
+ * That distinction is worth keeping sharp: a console that took on each
+ * customer's colours as the operator switched between them would make "which
+ * customer am I acting within" a thing you read off the chrome, which is
+ * exactly the question the app bar answers in words.
+ *
+ * `#E4003D` is the accent. Its darker steps are for hover and active states
+ * where the flat accent on flat accent would have no contrast; the 50/100 steps
+ * are for tinted backgrounds behind it.
+ */
+:root {
+  --ds-brand-50: #fde7ee;
+  --ds-brand-100: #f9bcce;
+  --ds-brand-500: #e4003d;
+  --ds-brand-600: #c70035;
+  --ds-brand-700: #a4002c;
+  --ds-brand-800: #7d0021;
+  --ds-brand-contrast: #ffffff;
+
+  /*
+   * The neutrals, from the same palette. `accent_1` is the near-black the
+   * sidebar uses, `accent_3` the muted grey for secondary text, `accent_2` the
+   * warm light grey behind content. Named for what they are here rather than
+   * carrying the `vamtam_accent_N` numbering, which says nothing at the point
+   * of use.
+   */
+  --ds-ink: #242627;
+  --ds-ink-muted: #5f6567;
+  --ds-surface: #e9e9e7;
+  --ds-hairline: #00000026;
+}
+
+/*
  * Unlike the widget, this app owns its page, so Tailwind's preflight is on —
  * it is doing exactly the job it was designed for.
  */
 body {
-  background: #f9fafb;
+  background: var(--ds-surface);
+  color: var(--ds-ink);
 }
 
 /*
@@ -15,7 +56,7 @@ body {
  * (CLAUDE.md §3).
  */
 :focus-visible {
-  outline: 2px solid #255a94;
+  outline: 2px solid var(--ds-brand-500);
   outline-offset: 2px;
 }
 

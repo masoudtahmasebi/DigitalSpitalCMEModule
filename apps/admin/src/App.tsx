@@ -170,9 +170,9 @@ function Shell(props: {
   const signedIn = props.onSignOut !== undefined;
 
   return (
-    <div className="min-h-screen bg-gray-100 md:flex">
+    <div className="min-h-screen bg-[color:var(--ds-surface)] md:flex">
       {signedIn ? (
-        <aside className="shrink-0 bg-gray-900 md:min-h-screen md:w-60">
+        <aside className="shrink-0 bg-[color:var(--ds-ink)] md:min-h-screen md:w-60">
           <div className="flex items-center gap-2.5 px-4 py-4">
             <span
               aria-hidden
@@ -216,6 +216,21 @@ function Shell(props: {
       </div>
     </div>
   );
+}
+
+/**
+ * The remembered customer, if the browser still has one.
+ *
+ * Never trusted as authorisation — it only pre-selects the picker, and the API
+ * refuses a customer the operator holds no grant reaching.
+ */
+function readStored(key: string): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    return window.localStorage.getItem(key) ?? undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -312,9 +327,41 @@ export function Console(props: {
    * not exist yet — met a 404 on every tenant screen while the platform screens
    * worked.
    */
+  /*
+   * Which customer the tenant screens act within, remembered across reloads
+   * (P22-08).
+   *
+   * It was component state, so every reload dropped it and the console landed
+   * on "pick a customer" again — which for a super administrator is every
+   * reload, and there is no shortage of those while setting a customer up.
+   *
+   * `localStorage` rather than the URL, for now: the console has no routing,
+   * so a URL would be a second navigation model with one thing in it. It is
+   * scoped per operator id, so two accounts on one browser do not inherit each
+   * other's selection — a super admin and their own customer account are
+   * different scopes and switching between them should not carry a customer
+   * across.
+   *
+   * The stored value is *not* trusted: it is offered to the picker, and the
+   * API refuses a customer this operator holds no grant reaching. A stale id
+   * from a deleted customer simply fails to match and the picker falls back to
+   * unchosen.
+   */
+  const customerKey = `ds.admin.customer.${props.profile.id}`;
   const [customerId, setCustomerId] = useState<string | undefined>(
-    () => props.profile.grants[0]?.customerId ?? undefined,
+    () => props.profile.grants[0]?.customerId ?? readStored(customerKey),
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      if (customerId === undefined) window.localStorage.removeItem(customerKey);
+      else window.localStorage.setItem(customerKey, customerId);
+    } catch {
+      // Private browsing, or storage full. Losing the selection on reload is a
+      // nuisance; failing to render the console over it would be worse.
+    }
+  }, [customerId, customerKey]);
 
   const makeAdmin = props.makeAdminClient ?? createAdminClient;
   const makePlatform = props.makePlatformClient ?? createPlatformClient;
@@ -487,7 +534,7 @@ export function Console(props: {
             className={`mb-0.5 block w-full rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
               active
                 ? "bg-brand-500 text-white"
-                : "text-gray-300 hover:bg-gray-800 hover:text-white"
+                : "text-white/70 hover:bg-white/10 hover:text-white"
             }`}
           >
             {label}
