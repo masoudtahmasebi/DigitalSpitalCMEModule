@@ -213,6 +213,7 @@ EXPOSE 3000
 #   dist/db-migrate.js       apply migrations as ds_migrator
 #   dist/bootstrap-admin.js  create the first super administrator, once
 #   dist/seed-ds.js          create the DS test tenant, on request (P20-01)
+#   dist/seed-medice.js      create the MEDICE ADHS course (P24-02)
 #
 # They live here rather than in a separate tools image because they must be
 # built from the same commit as the API — a migrator one commit ahead of the

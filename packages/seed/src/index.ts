@@ -34,3 +34,4 @@ export {
   upsert,
 } from "./lib.js";
 export { seedDsDemo } from "./ds-demo.js";
+export { seedMediceAdhs } from "./medice-adhs.js";
