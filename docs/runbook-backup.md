@@ -71,8 +71,8 @@ ciphertext, so getting it onto a laptop is not itself a disclosure.
 # newest copy — which is also what `backup verify` reports.
 s3cmd ls s3://<backup-bucket>/backups/database/
 
-KEY=2026-08-07T02-15-00Z.dump.enc
-s3cmd get "s3://<backup-bucket>/backups/database/${KEY}"
+BACKUP_FILE=2026-08-07T02-15-00Z.dump.enc
+s3cmd get "s3://<backup-bucket>/backups/database/${BACKUP_FILE}"
 ```
 
 The credentials are `BACKUP_S3_ACCESS_KEY_ID` / `BACKUP_S3_SECRET_ACCESS_KEY`

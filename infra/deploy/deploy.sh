@@ -123,12 +123,11 @@ chmod 700 "$STATE_DIR"
 if [[ ! -f "$CONFIG_FILE" ]]; then
   (umask 077 && cp "${SCRIPT_DIR}/config.env.example" "$CONFIG_FILE")
   printf '\033[1;33m!!\033[0m %s\n' "Created ${CONFIG_FILE} from the template." >&2
-  die "Fill it in before deploying — at least BASE_DOMAIN, ACME_EMAIL,
-   PORTAL_PROJECT_SLUG, ADMIN_DEFAULT_PROJECT_SLUG and the two
-   PORTAL_KEYCLOAK_* values:
+  die "Fill it in before deploying — at minimum BASE_DOMAIN and ACME_EMAIL:
 
      nano ${CONFIG_FILE}
 
+   Everything else has a working default or is derived from BASE_DOMAIN.
    Then run this again."
 fi
 
@@ -142,11 +141,25 @@ set +a
 
 # Everything the stack cannot start without and cannot derive. Named here, in
 # one list, so the drift check below can speak about exactly these.
+# `PORTAL_PROJECT_SLUG`, `ADMIN_DEFAULT_PROJECT_SLUG` and the two
+# `PORTAL_KEYCLOAK_*` values used to be here and are not any more (P24-01).
+#
+# The first two lost their last reader in P21-03 and P22-03 — the portal takes
+# its tenant from the URL path now, and the console from what the operator can
+# actually reach. They stayed in this list anyway, so a fresh installation was
+# **refused until somebody set two variables that do nothing**, and the only way
+# to find that out was to read the source. That is worse than clutter: it is an
+# instruction that cannot be satisfied honestly.
+#
+# The `PORTAL_KEYCLOAK_*` pair is still read — `domains.sh` derives the CSP's
+# `KEYCLOAK_ORIGIN` from the issuer — but it is no longer *required*, because a
+# customer whose participants have local accounts has no Keycloak at all.
+#
+# `scripts/env-audit.mjs` is what stops this recurring: a variable in a template
+# with no reader now fails CI.
 readonly REQUIRED_CONFIG=(
   BASE_DOMAIN ACME_EMAIL
   POSTGRES_DB POSTGRES_SUPERUSER
-  PORTAL_PROJECT_SLUG ADMIN_DEFAULT_PROJECT_SLUG
-  PORTAL_KEYCLOAK_ISSUER PORTAL_KEYCLOAK_CLIENT_ID
 )
 
 # A config.env written against an older template.
@@ -389,44 +402,36 @@ fi
 # ---------------------------------------------------------------------------
 # 4b. The portal's realm and the project's realm are the same realm
 # ---------------------------------------------------------------------------
-# The API validates a learner's token against `projects.keycloak_issuer`; the
-# portal sends the learner to `PORTAL_KEYCLOAK_ISSUER`. Nothing structural keeps
-# those two the same, and when they differ the learner signs in perfectly well
-# and then has every request rejected with a 401 that names nothing.
+# A half-configured Keycloak binding, on any project (P24-01).
 #
-# A warning rather than a refusal, and only when the project row exists: on a
-# first deploy it does not, and refusing would make the platform impossible to
-# install. `|| true` throughout — a check that can fail the deploy on a psql
-# quirk is worse than no check.
+# The API validates a learner's token against that project's own
+# `keycloak_issuer` **and** `keycloak_audience`. Either one set without the
+# other refuses every token, and the learner sees a 401 that names nothing.
 #
-# The **portal's** project, `PORTAL_PROJECT_SLUG`. This block said
-# `PROJECT_SLUG` until P18-01 split that variable per surface, and the name
-# survived the rename — which under `set -u` is not a wrong answer but an
-# aborted deploy, at the one step `--check` cannot reach because it is after
-# the migrations. The console's `ADMIN_DEFAULT_PROJECT_SLUG` is deliberately
-# not what is checked: staff sign in against the local identity plane
-# (ADR-0012) and never meet Keycloak at all.
+# This used to check one project — the portal's `PORTAL_PROJECT_SLUG` — against
+# a `PORTAL_KEYCLOAK_ISSUER` in the config file. That stopped being the right
+# question in P21-03: the portal takes its tenant from the URL path and serves
+# every customer, so "the portal's project" is not a thing any more. Checking
+# one named project would pass while three others were misconfigured.
 #
-# The slug goes in as a psql variable rather than into the query text. It is a
-# value from a file only an operator writes, so this is not a live injection —
-# but it runs as the superuser, which is a bad place to keep a shape that only
-# happens to be safe.
+# A warning, never a refusal. On a first deploy there are no projects at all,
+# and a check that can fail an install is worse than no check. `|| true`
+# throughout for the same reason.
 if [[ "$RUN_MIGRATIONS" == "1" ]]; then
-  project_issuer="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
+  half_bound="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
     psql -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
-    -v "slug=${PORTAL_PROJECT_SLUG}" \
-    -c "SELECT coalesce(keycloak_issuer, '') FROM projects WHERE slug = :'slug'" \
-    2>/dev/null | tr -d '[:space:]' || true)"
+    -c "SELECT string_agg(slug, ', ' ORDER BY slug)
+          FROM projects
+         WHERE (keycloak_issuer IS NULL) <> (keycloak_audience IS NULL)" \
+    2>/dev/null | tr -d '\n' || true)"
 
-  if [[ -z "$project_issuer" ]]; then
-    log "Project '${PORTAL_PROJECT_SLUG}' has no Keycloak issuer yet — set it in the console"
-  elif [[ "$project_issuer" != "$PORTAL_KEYCLOAK_ISSUER" ]]; then
+  if [[ -n "$half_bound" ]]; then
     printf '\033[1;33m!!\033[0m %s\n' \
-      "PORTAL_KEYCLOAK_ISSUER (${PORTAL_KEYCLOAK_ISSUER}) is not the issuer on project '${PORTAL_PROJECT_SLUG}' (${project_issuer})." >&2
+      "These projects have an issuer without an audience, or the reverse: ${half_bound}." >&2
     printf '\033[1;33m!!\033[0m %s\n' \
-      "A learner will sign in successfully and then have every request refused. Fix one of the two." >&2
+      "A learner will sign in successfully and then have every request refused. Set both, or neither, in the console." >&2
   else
-    log "Portal and project agree on the Keycloak realm"
+    log "No half-configured Keycloak bindings"
   fi
 fi
 

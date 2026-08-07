@@ -24,6 +24,7 @@
     "build": "turbo run build",
     "wp:bundle": "pnpm --filter @ds/widget build && node scripts/bundle-widget.mjs wordpress/ds-lms/assets",
     "lint": "eslint .",
+    "lint:env": "node scripts/env-audit.mjs",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
     "typecheck": "turbo run typecheck && tsc -p db/tsconfig.json --noEmit",

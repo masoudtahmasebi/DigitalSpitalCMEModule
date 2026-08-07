@@ -429,6 +429,15 @@ jobs:
 
       # Catches a committed secret before it reaches the default branch. The VNR
       # password and SMTP credentials must never enter git (CLAUDE.md §4).
+      # A configuration variable documented in a template with no reader, or
+      # read by something and in no template. Both have shipped: two dead slugs
+      # that `deploy.sh` still *required* of a fresh install, and an
+      # ALLOWED_ORIGINS the compose file spelled differently — which arrived
+      # empty and had every MEDICE request refused by CORS, with no
+      # server-side trace at all.
+      - name: Configuration drift
+        run: node scripts/env-audit.mjs
+
       - name: Scan for committed secrets
         uses: gitleaks/gitleaks-action@v2
         env:

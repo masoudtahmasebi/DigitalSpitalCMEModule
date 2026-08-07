@@ -59,9 +59,17 @@ const CREDENTIALS = {
   region: "eu-central-1",
   bucket: "ds-test-bucket",
   accessKeyId: "DSTESTACCESSKEY",
-  // Test-only, generated for this file. Never a real credential — the real ones
-  // live in GitHub secrets and reach the server through `config.env`.
-  secretAccessKey: "dGVzdC1vbmx5LXNlY3JldC1uZXZlci1yZWFs",
+  /**
+   * Deliberately low-entropy and self-describing.
+   *
+   * The first version of this was a base64 blob, which is *correct* as a
+   * signing key and reads exactly like a stolen credential — gitleaks failed
+   * the build on it, and it was right to. A secret scanner cannot know that a
+   * high-entropy string in a test fixture is harmless, and the honest fix is
+   * not to teach it an exception: it is to stop writing values that look like
+   * credentials. SigV4 takes any string, so nothing is lost.
+   */
+  secretAccessKey: "example-not-a-real-secret-for-tests-only",
 };
 
 /**
