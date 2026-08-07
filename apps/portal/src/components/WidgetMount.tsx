@@ -94,6 +94,14 @@ declare module "react" {
 
 export function WidgetMount(props: {
   config: PortalConfig;
+  /**
+   * Which customer this mount acts within, from the path (P21-03).
+   *
+   * Separate from `config` because it is per-route, not per-deployment — the
+   * two used to be one field and that is what made the portal a single
+   * customer's front door.
+   */
+  projectSlug: string;
   /** `undefined` mounts the catalogue. */
   courseSlug: string | undefined;
   /** Carried from the catalogue's two buttons — see `ds-lms:course-open`. */
@@ -147,7 +155,7 @@ export function WidgetMount(props: {
         key={props.courseSlug ?? "__catalogue__"}
         ref={attach}
         api-base={props.config.apiBase}
-        project={props.config.projectSlug}
+        project={props.projectSlug}
         {...(props.courseSlug === undefined
           ? {}
           : { course: props.courseSlug, "open-at": props.openAt })}

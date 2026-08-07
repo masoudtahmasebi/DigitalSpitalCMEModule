@@ -29,6 +29,32 @@ export const de = {
     back: "Zurück zur Übersicht",
   },
 
+  /**
+   * The root page (P21-03).
+   *
+   * It names no customer and starts no login, which is the whole point: the
+   * root used to be one customer's front door and pushed every visitor at that
+   * customer's identity provider before telling them where they were.
+   */
+  welcome: {
+    title: "Fortbildungen von DigitalSpital",
+    lead: "Zertifizierte medizinische Fortbildung — online, jederzeit, mit CME-Punkten.",
+    body: "Ihre Fortbildungen erreichen Sie über die Adresse, die Sie von Ihrem Anbieter erhalten haben. Diese endet auf den Namen Ihres Anbieters, zum Beispiel /medice.",
+    contact:
+      "Sie wissen nicht, welche Adresse für Sie gilt? Ihr Anbieter hilft Ihnen weiter.",
+  },
+
+  tenant: {
+    unknown: "Diesen Bereich gibt es nicht",
+    unknownBody:
+      "Die aufgerufene Adresse gehört zu keinem Anbieter. Bitte prüfen Sie den Link.",
+    toWelcome: "Zur Startseite",
+    signInAt: (customer: string) => `Anmeldung bei ${customer}`,
+    signInExternal: (customer: string) =>
+      `Ihre Anmeldung erfolgt direkt bei ${customer}. Danach kehren Sie hierher zurück.`,
+    loading: "Wird geladen …",
+  },
+
   error: {
     title: "Es ist ein Fehler aufgetreten",
     misconfigured:

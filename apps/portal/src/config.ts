@@ -16,9 +16,14 @@
  *
  * `import.meta.env` survives as the **development** path only.
  *
- * `projectSlug` is the same `X-DS-Project` value a WordPress host would send.
- * The portal is a host surface like any other (ADR-0007) — it gets no special
- * standing with the API for being ours, and the API cannot tell the difference.
+ * ## What is deliberately *not* here any more (P21-03)
+ *
+ * `projectSlug`. It used to name the one customer this portal was, which made
+ * `fortbildung.digitalspital.com` MEDICE's front door and left no way to reach
+ * anybody else through it. The tenant now comes from the first path segment,
+ * and travels to the API as the same `X-DS-Project` value a WordPress host
+ * would send — the portal is a host surface like any other (ADR-0007), and gets
+ * no special standing for being ours.
  */
 
 import { configValue, type RuntimeConfig } from "@ds/domain";
@@ -35,7 +40,6 @@ declare global {
 
 export interface PortalConfig {
   readonly apiBase: string;
-  readonly projectSlug: string;
   readonly issuer: string;
   readonly clientId: string;
   readonly redirectUri: string;
@@ -48,7 +52,6 @@ export function readConfig(): PortalConfig | undefined {
 
   const config: PortalConfig = {
     apiBase: configValue(runtime, "apiBase", env.VITE_API_BASE),
-    projectSlug: configValue(runtime, "projectSlug", env.VITE_PROJECT_SLUG),
     issuer: configValue(runtime, "issuer", env.VITE_KEYCLOAK_ISSUER),
     clientId: configValue(runtime, "clientId", env.VITE_KEYCLOAK_CLIENT_ID),
     // Defaults to wherever the portal is served from, which is what a

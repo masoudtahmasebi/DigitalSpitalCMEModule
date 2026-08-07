@@ -21,6 +21,19 @@
  * call to action depends on the caller's own enrolment. An anonymous catalogue
  * would mean a second, unauthenticated read path returning a different shape,
  * which is a second answer to "what courses are there". One path, behind login.
+ *
+ * ## The tenant is in the path, and the root signs nobody in (P21-03)
+ *
+ * It used to be `PORTAL_PROJECT_SLUG`, baked into the deployment. That made
+ * `fortbildung.digitalspital.com/` *be* MEDICE: opening the root ran an OIDC
+ * redirect to `login.medice.de` before saying a word about where the visitor
+ * was, and the page they landed on had no link back.
+ *
+ * Now the first path segment names the customer, the root is a welcome page,
+ * and **how** a tenant signs learners in is the tenant's own configuration read
+ * from `GET /tenants/{slug}`. MEDICE's learners sign in through their WordPress
+ * plugin on their own site, so for them the button is a link there rather than
+ * a flow we run.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -29,19 +42,91 @@ import { readConfig } from "./config.js";
 import { createAuth, tokenProviderFor } from "./auth.js";
 import { parseRoute, routePath, type Route } from "./routes.js";
 import { WidgetMount } from "./components/WidgetMount.js";
+import { Welcome } from "./components/Welcome.js";
 
 type AuthState = "checking" | "anonymous" | "signed-in" | "failed";
 
 export function App() {
   const config = useMemo(() => readConfig(), []);
-  const auth = useMemo(
-    () => (config === undefined ? undefined : createAuth(config)),
-    [config],
+  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname));
+
+  // The browser's back button has to work across every screen, welcome page
+  // included — a learner who reached a course from `/medice` and pressed back
+  // twice expects the root, not a page that ignored them.
+  useEffect(() => {
+    const onPop = () => setRoute(parseRoute(window.location.pathname));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const navigate = useCallback((next: Route) => {
+    window.history.pushState({}, "", routePath(next));
+    setRoute(next);
+    window.scrollTo({ top: 0 });
+  }, []);
+
+  if (config === undefined) {
+    return (
+      <Shell>
+        <Alert>{de.error.misconfigured}</Alert>
+      </Shell>
+    );
+  }
+
+  // The root, before anything else and without touching auth. Rendering the
+  // welcome page must not depend on an identity provider being reachable, and
+  // must not start a login: that is the bug this replaced.
+  if (route.kind === "welcome") {
+    return (
+      <Shell>
+        <Welcome />
+      </Shell>
+    );
+  }
+
+  return (
+    <Tenant key={route.tenant} config={config} route={route} onNavigate={navigate} />
   );
+}
+
+/**
+ * One customer's corner of the portal.
+ *
+ * Keyed on the tenant in `App`, so moving between customers remounts rather
+ * than reusing a component holding the previous customer's session and
+ * branding — which would show one customer's catalogue under another's name
+ * for as long as the fetch took.
+ */
+function Tenant(props: {
+  config: NonNullable<ReturnType<typeof readConfig>>;
+  route: Extract<Route, { kind: "catalogue" | "course" }>;
+  onNavigate: (route: Route) => void;
+}) {
+  const { config, route } = props;
+  const [signIn, setSignIn] = useState<TenantSignIn | undefined>();
   const [state, setState] = useState<AuthState>("checking");
 
+  const auth = useMemo(() => createAuth(config), [config]);
+
+  // Who this tenant is and where its learners sign in. Public, because the page
+  // has to render before anybody has signed in — and because deciding this in
+  // the client is what produced an unprompted redirect to somebody else's
+  // identity provider.
   useEffect(() => {
-    if (auth === undefined) return;
+    let cancelled = false;
+    fetchTenant(config.apiBase, route.tenant)
+      .then((result) => {
+        if (!cancelled) setSignIn(result);
+      })
+      .catch(() => {
+        if (!cancelled) setSignIn({ kind: "unknown" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [config.apiBase, route.tenant]);
+
+  useEffect(() => {
     auth
       .completeLogin()
       .then((session) => {
@@ -54,55 +139,104 @@ export function App() {
       .catch(() => setState("failed"));
   }, [auth]);
 
-  if (config === undefined || auth === undefined) {
+  if (signIn === undefined || state === "checking") {
     return (
       <Shell>
-        <Alert>{de.error.misconfigured}</Alert>
+        <p className="py-8 text-sm text-gray-600" role="status">
+          {de.tenant.loading}
+        </p>
       </Shell>
     );
   }
 
-  if (state === "checking") {
+  if (signIn.kind === "unknown") {
+    // Not a 404 from the API — it answers 200 with `unknown` so that an
+    // unauthenticated request cannot be used to enumerate which customers
+    // exist (ADR-0007). The visitor still gets told plainly.
     return (
       <Shell>
-        <p className="py-8 text-sm text-gray-600" role="status">
-          {de.auth.signingIn}
-        </p>
+        <div className="space-y-4 py-4">
+          <h1 className="text-xl font-bold text-gray-900">{de.tenant.unknown}</h1>
+          <p className="text-sm text-gray-700">{de.tenant.unknownBody}</p>
+          <a className="ds-button-secondary inline-block" href="/">
+            {de.tenant.toWelcome}
+          </a>
+        </div>
       </Shell>
     );
   }
 
   if (state !== "signed-in") {
     return (
-      <Shell>
-        <div className="space-y-4">
+      <Shell customerName={signIn.customerName}>
+        <div className="space-y-4 py-4">
           {state === "failed" ? <Alert>{de.auth.failed}</Alert> : null}
-          <p className="text-sm text-gray-700">{de.auth.intro}</p>
-          <button
-            type="button"
-            className="ds-button"
-            onClick={() => void auth.beginLogin()}
-          >
-            {de.auth.signIn}
-          </button>
+          <p className="text-sm text-gray-700">
+            {signIn.kind === "external"
+              ? de.tenant.signInExternal(signIn.customerName)
+              : de.auth.intro}
+          </p>
+          {signIn.kind === "external" ? (
+            /*
+             * A link, not a flow we run.
+             *
+             * MEDICE signs learners in from a form on their own site, via the
+             * WordPress plugin, against their Keycloak with a client secret the
+             * plugin holds. The portal running its own authorization-code
+             * redirect at the same realm was a second route into an identity
+             * MEDICE never asked us to touch — and the one it produced dropped
+             * the visitor on a Keycloak page with no way back.
+             *
+             * `rel="noopener"` because this navigates to a third-party origin;
+             * without it the destination gets a handle on this window.
+             */
+            <a
+              className="ds-button inline-block"
+              href={signIn.url}
+              rel="noopener noreferrer"
+            >
+              {de.tenant.signInAt(signIn.customerName)}
+            </a>
+          ) : (
+            <button
+              type="button"
+              className="ds-button"
+              onClick={() => void auth.beginLogin()}
+            >
+              {de.auth.signIn}
+            </button>
+          )}
         </div>
       </Shell>
     );
   }
 
   return (
-    <Shell onSignOut={() => auth.logout()}>
-      <Routed config={config} auth={auth} />
+    <Shell customerName={signIn.customerName} onSignOut={() => auth.logout()}>
+      <Routed config={config} auth={auth} route={route} onNavigate={props.onNavigate} />
     </Shell>
   );
+}
+
+/** What `GET /tenants/{slug}` answers. Mirrors `TenantController`'s union. */
+type TenantSignIn =
+  | { readonly kind: "unknown" }
+  | { readonly kind: "external"; readonly customerName: string; readonly url: string }
+  | { readonly kind: "portal"; readonly customerName: string };
+
+async function fetchTenant(apiBase: string, slug: string): Promise<TenantSignIn> {
+  const response = await fetch(`${apiBase}/tenants/${encodeURIComponent(slug)}`);
+  if (!response.ok) return { kind: "unknown" };
+  return (await response.json()) as TenantSignIn;
 }
 
 function Routed(props: {
   config: NonNullable<ReturnType<typeof readConfig>>;
   auth: NonNullable<ReturnType<typeof createAuth>>;
+  route: Extract<Route, { kind: "catalogue" | "course" }>;
+  onNavigate: (route: Route) => void;
 }) {
-  const { config, auth } = props;
-  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname));
+  const { config, auth, route, onNavigate } = props;
 
   /*
    * Which of the catalogue's two buttons brought the learner here.
@@ -115,23 +249,20 @@ function Routed(props: {
    */
   const [openAt, setOpenAt] = useState<"start" | "resume">("start");
 
-  // The browser's back button has to work: a learner who opened a course and
-  // pressed back expects the list, not a page that ignored them.
+  // Any route change that did not come from opening a course resets the intent,
+  // including a back button press — which `App` handles, so this watches the
+  // route rather than the event.
   useEffect(() => {
-    const onPop = () => {
-      setOpenAt("start");
-      setRoute(parseRoute(window.location.pathname));
-    };
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
+    if (route.kind !== "course") setOpenAt("start");
+  }, [route]);
 
-  const navigate = useCallback((next: Route, intent: "start" | "resume" = "start") => {
-    window.history.pushState({}, "", routePath(next));
-    setOpenAt(intent);
-    setRoute(next);
-    window.scrollTo({ top: 0 });
-  }, []);
+  const go = useCallback(
+    (next: Route, intent: "start" | "resume" = "start") => {
+      setOpenAt(intent);
+      onNavigate(next);
+    },
+    [onNavigate],
+  );
 
   const tokenProvider = useMemo(() => tokenProviderFor(auth), [auth]);
 
@@ -141,7 +272,7 @@ function Routed(props: {
         <button
           type="button"
           className="ds-button-secondary"
-          onClick={() => navigate({ kind: "catalogue" })}
+          onClick={() => go({ kind: "catalogue", tenant: route.tenant })}
         >
           {de.nav.back}
         </button>
@@ -149,10 +280,16 @@ function Routed(props: {
 
       <WidgetMount
         config={config}
+        // The tenant travels with the request as `X-DS-Project`, exactly as a
+        // WordPress host would send it — from the path now, not from the
+        // container's configuration. That is the whole of P21-03.
+        projectSlug={route.tenant}
         courseSlug={route.kind === "course" ? route.slug : undefined}
         openAt={openAt}
         tokenProvider={tokenProvider}
-        onOpenCourse={(slug, intent) => navigate({ kind: "course", slug }, intent)}
+        onOpenCourse={(slug, intent) =>
+          go({ kind: "course", tenant: route.tenant, slug }, intent)
+        }
       />
     </div>
   );
@@ -177,18 +314,32 @@ function Alert(props: { children: React.ReactNode }) {
   );
 }
 
-function Shell(props: { children: React.ReactNode; onSignOut?: () => void }) {
+function Shell(props: {
+  children: React.ReactNode;
+  /** Whose portal this is. Absent on the welcome page, which names nobody. */
+  customerName?: string;
+  onSignOut?: () => void;
+}) {
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
-      <header className="mb-6 flex items-center justify-between border-b border-gray-200 pb-4">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-4">
         <a href="/" className="text-lg font-bold text-gray-900">
           {de.appTitle}
         </a>
-        {props.onSignOut === undefined ? null : (
-          <button type="button" className="ds-button-secondary" onClick={props.onSignOut}>
-            {de.auth.signOut}
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {props.customerName === undefined ? null : (
+            <span className="text-sm text-gray-600">{props.customerName}</span>
+          )}
+          {props.onSignOut === undefined ? null : (
+            <button
+              type="button"
+              className="ds-button-secondary"
+              onClick={props.onSignOut}
+            >
+              {de.auth.signOut}
+            </button>
+          )}
+        </div>
       </header>
       <main>{props.children}</main>
     </div>

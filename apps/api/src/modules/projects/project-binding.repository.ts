@@ -59,6 +59,42 @@ interface BindingRow {
   identity_provider: string;
 }
 
+/**
+ * What an anonymous visitor to `/{tenant}` needs (P21-03).
+ *
+ * Deliberately carries no issuer. A public payload with one in it invites
+ * somebody to build a second login flow out of it, which is the exact mistake
+ * this whole ticket exists to undo — the portal used to redirect straight to
+ * `login.medice.de`, a route MEDICE never asked for.
+ */
+export interface ProjectSignIn {
+  readonly customerName: string;
+  /**
+   * The customer's own sign-in page, when they have one — MEDICE's WordPress
+   * login, for instance. `undefined` means the portal's own participant
+   * sign-in applies.
+   */
+  readonly loginUrl?: string;
+}
+
+export class ProjectSignInRepository {
+  constructor(private readonly pool: Pool) {}
+
+  async resolve(slug: string): Promise<ProjectSignIn | undefined> {
+    const { rows } = await this.pool.query<{
+      customer_name: string;
+      login_url: string | null;
+    }>("SELECT customer_name, login_url FROM resolve_project_signin($1)", [slug]);
+
+    const row = rows[0];
+    if (row === undefined) return undefined;
+    return {
+      customerName: row.customer_name,
+      ...(row.login_url === null ? {} : { loginUrl: row.login_url }),
+    };
+  }
+}
+
 export class ProjectBindingRepository implements ProjectBindingRepositoryPort {
   constructor(private readonly pool: Pool) {}
 
