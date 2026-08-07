@@ -56,6 +56,43 @@ import { AppError } from "../../shared/problem-details.js";
 import { StaffService } from "./staff.service.js";
 
 export const SESSION_COOKIE = "ds_staff_session";
+
+/**
+ * The CSRF token, in a cookie the console's JavaScript **can** read (P22-04).
+ *
+ * ## Why this exists
+ *
+ * The console held its CSRF token in a module variable, set by `login` and
+ * `verify` and by nothing else. The session cookie is httpOnly and survives a
+ * page reload; the variable does not. So after any reload — or a second tab, or
+ * a restored browser session — the console could read everything and write
+ * nothing: every unsafe method came back
+ *
+ *     403 Forbidden   missing or invalid CSRF token
+ *
+ * with no `detail`, which reads as "you are not allowed to do this" and was in
+ * fact "this tab has forgotten a token it never had a way to recover".
+ * Reported from the live console trying to create the first customer.
+ *
+ * ## Why a readable cookie is the right shape and not a weakening
+ *
+ * This is the textbook double-submit pattern. The protection does not come from
+ * the token being secret from *the page* — the page has to send it — it comes
+ * from a cross-origin attacker being unable to **read** it. A foreign origin
+ * cannot read this cookie and cannot read a response carrying it, so it cannot
+ * populate the header, and the request is refused.
+ *
+ * What must stay true, and does:
+ *
+ *   * `httpOnly: false` here and `httpOnly: true` on the session cookie. The
+ *     session token remains unreadable from JavaScript, which is the property
+ *     that actually matters — a stolen CSRF token alone authenticates nothing.
+ *   * `sameSite: "lax"` and `secure` exactly as the session cookie, so the two
+ *     travel together and neither is sent from a cross-site POST.
+ *   * The server still compares the header against `csrf_token_hash`. Nothing
+ *     about verification changes; only where the client keeps its copy.
+ */
+export const CSRF_COOKIE = "ds_staff_csrf";
 export const CSRF_HEADER = "x-ds-csrf";
 
 const LoginBody = z.object({
@@ -137,9 +174,11 @@ export class StaffAuthController {
     switch (outcome.kind) {
       case "signed_in":
         response.cookie(SESSION_COOKIE, outcome.sessionToken, this.cookieOptions());
-        // The CSRF token is returned in the body, not a cookie: the console
-        // must be able to read it, and a readable cookie is one more thing to
-        // get the attributes wrong on.
+        response.cookie(CSRF_COOKIE, outcome.csrfToken, this.csrfCookieOptions());
+        // The CSRF token is returned in the body *and* set as a readable
+        // cookie. The body is what the tab that just signed in uses; the cookie
+        // is what a *reloaded* tab reads, and without it the console could read
+        // everything and write nothing (P22-04).
         return {
           status: "signed_in",
           csrfToken: outcome.csrfToken,
@@ -174,6 +213,7 @@ export class StaffAuthController {
     // it: a `Domain` mismatch leaves the original cookie in place and the
     // learner appears signed in until it expires.
     response.clearCookie(SESSION_COOKIE, this.cookieOptions());
+    response.clearCookie(CSRF_COOKIE, this.csrfCookieOptions());
     return { status: "signed_out" };
   }
 
@@ -242,6 +282,11 @@ export class StaffAuthController {
     }
 
     response.cookie(SESSION_COOKIE, outcome.sessionToken, this.cookieOptions());
+    // Both exits set both cookies. This one is the second factor's, and it is
+    // the exit a `super_admin` always takes — so missing it here would have left
+    // exactly the accounts that must use a second factor unable to write after
+    // a reload (P22-04).
+    response.cookie(CSRF_COOKIE, outcome.csrfToken, this.csrfCookieOptions());
     return {
       status: "signed_in",
       csrfToken: outcome.csrfToken,
@@ -356,6 +401,18 @@ export class StaffAuthController {
 
     if (!outcome.ok) throw AppError.forbidden(outcome.reason ?? "refused");
     return { status: "removed" };
+  }
+
+  /**
+   * The CSRF cookie's options: the session cookie's, minus `httpOnly`.
+   *
+   * Derived from `cookieOptions()` rather than written out, so a change to the
+   * domain or the `secure` flag cannot apply to one cookie and not the other —
+   * two cookies that disagree about their scope is how one of them silently
+   * stops arriving.
+   */
+  private csrfCookieOptions(): CookieOptions {
+    return { ...this.cookieOptions(), httpOnly: false };
   }
 
   private cookieOptions(): CookieOptions {

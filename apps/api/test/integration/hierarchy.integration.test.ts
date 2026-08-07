@@ -193,11 +193,36 @@ async function post(
 }
 
 function sessionFrom(response: Response, csrf: string | undefined): StaffSession {
-  const setCookie = response.headers.get("set-cookie");
-  if (setCookie === null || csrf === undefined) {
+  // Named, not positional: the response now carries two `Set-Cookie` headers,
+  // and taking the first one would sometimes send the CSRF cookie as the
+  // session and 401.
+  const session = cookieNamed(response, "ds_staff_session");
+  if (session === undefined || csrf === undefined) {
     throw new Error("signed in without a cookie or CSRF token");
   }
-  return { cookie: setCookie.split(";")[0] ?? "", csrf };
+  return { cookie: `ds_staff_session=${session}`, csrf };
+}
+
+/**
+ * Every `Set-Cookie` on a response, as separate strings.
+ *
+ * `headers.get("set-cookie")` joins them with ", " and a cookie's own
+ * attributes contain commas, so splitting that back apart is guesswork.
+ * `getSetCookie()` exists for exactly this and is what the runtime gives us.
+ */
+function setCookies(response: Response): readonly string[] {
+  return response.headers.getSetCookie();
+}
+
+function cookieNamed(response: Response, name: string): string | undefined {
+  const pair = setCookies(response)
+    .map((raw) => raw.split(";")[0] ?? "")
+    .find((part) => part.startsWith(`${name}=`));
+  return pair?.slice(name.length + 1);
+}
+
+function attributesOf(response: Response, name: string): string | undefined {
+  return setCookies(response).find((raw) => raw.startsWith(`${name}=`));
 }
 
 /** Pull the Base32 secret back out of the `otpauth://` URI and decode it. */
@@ -1226,5 +1251,125 @@ describe("a customer with no project can still be set up (P22-03)", () => {
   it("still answers 422 when neither header is sent", async () => {
     const result = await asStaff(superSession, "GET", "/admin/courses");
     expect(result.status).toBe(422);
+  });
+});
+
+/**
+ * The console after a page reload (P22-04).
+ *
+ * ## What this reproduces
+ *
+ * The console kept its CSRF token in a module variable, set by `login` and
+ * `verify` and by nothing else. The session cookie is httpOnly and survives a
+ * reload; the variable does not. So a reloaded tab — or a second tab, or a
+ * restored browser session — could **read everything and write nothing**:
+ *
+ *     GET  /admin/customers  ->  200
+ *     POST /admin/customers  ->  403   (no detail)
+ *
+ * CSRF is only checked on unsafe methods, which is exactly why the reads went
+ * on working and hid it. Reported from the live console failing to create the
+ * very first customer.
+ *
+ * ## What the fix is, and what it must not become
+ *
+ * The token now also arrives in a cookie the page can read. That is the
+ * textbook double-submit shape: the protection comes from a cross-origin
+ * attacker being unable to **read** the token, not from the page being unable
+ * to. The session cookie stays httpOnly, which is the property that matters —
+ * a CSRF token on its own authenticates nothing.
+ *
+ * So the tests below assert both halves: a reloaded tab can write, and a
+ * request with no token still cannot.
+ */
+describe("a reloaded tab can still write (P22-04)", () => {
+  let reloaded: StaffSession;
+  /** The sign-in response both cookie-attribute assertions read. */
+  let signedIn: Response;
+
+  beforeAll(async () => {
+    // Sign in and keep *only* what survives a reload: the cookies. The JSON
+    // body's `csrfToken` is deliberately thrown away — that is the variable the
+    // reload loses.
+    const email = await seedStaff("super_admin", null);
+    const first = await post("/admin/auth/login", { email, password: PASSWORD });
+    const body = first.body as { status: string; challenge?: string };
+
+    const enrol = await post("/admin/auth/totp/enrol", { challenge: body.challenge });
+    const secret = secretFromUri((enrol.body as { otpauthUri: string }).otpauthUri);
+    const verified = await post("/admin/auth/totp/verify", {
+      challenge: body.challenge,
+      code: totpCode(secret, Math.floor(Date.now() / 1000 / 30)),
+    });
+
+    signedIn = verified.response;
+    const csrf = cookieNamed(verified.response, "ds_staff_csrf");
+    const session = cookieNamed(verified.response, "ds_staff_session");
+    if (csrf === undefined || session === undefined) {
+      throw new Error("no CSRF cookie — a reloaded tab would have nothing to send");
+    }
+    reloaded = { cookie: `ds_staff_session=${session}`, csrf };
+  });
+
+  it("sets the CSRF token in a cookie the page can read", () => {
+    // `httpOnly` here would make the whole thing pointless: the page cannot
+    // send what it cannot read.
+    const csrfAttributes = attributesOf(signedIn, "ds_staff_csrf");
+    expect(csrfAttributes).toBeDefined();
+    expect(csrfAttributes?.toLowerCase()).not.toContain("httponly");
+  });
+
+  it("keeps the session cookie httpOnly, which is the half that matters", () => {
+    // Read off the *same* response as the assertion above, so the two cannot
+    // disagree about which sign-in they are describing — and so neither depends
+    // on some other suite's second-factor policy having left the shared
+    // customer in a state where a fresh login goes to enrolment instead.
+    const sessionAttributes = attributesOf(signedIn, "ds_staff_session");
+    expect(sessionAttributes).toBeDefined();
+    expect(sessionAttributes?.toLowerCase()).toContain("httponly");
+  });
+
+  it("scopes both cookies identically, so neither can stop arriving alone", () => {
+    const session = attributesOf(signedIn, "ds_staff_session") ?? "";
+    const csrf = attributesOf(signedIn, "ds_staff_csrf") ?? "";
+    const scope = (raw: string) =>
+      raw
+        .split(";")
+        .slice(1)
+        .map((a) => a.trim().toLowerCase())
+        .filter((a) => a.startsWith("path=") || a.startsWith("domain=") || a === "secure")
+        .sort();
+    expect(scope(csrf)).toEqual(scope(session));
+  });
+
+  it("creates a customer with only what a reloaded tab has", async () => {
+    // The reported failure, exactly.
+    const result = await asStaff(reloaded, "POST", "/admin/customers", {
+      slug: `reloaded-${RUN}`,
+      name: "Nach dem Neuladen GmbH",
+    });
+    expect(result.status).toBe(201);
+  });
+
+  it("still refuses a write with no CSRF token at all", async () => {
+    const response = await fetch(`${baseUrl}/admin/customers`, {
+      method: "POST",
+      headers: { cookie: reloaded.cookie, "content-type": "application/json" },
+      body: JSON.stringify({ slug: `nocsrf-${RUN}`, name: "Ohne Token" }),
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it("still refuses a write with somebody else's CSRF token", async () => {
+    const response = await fetch(`${baseUrl}/admin/customers`, {
+      method: "POST",
+      headers: {
+        cookie: reloaded.cookie,
+        "x-ds-csrf": superSession.csrf,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ slug: `wrongcsrf-${RUN}`, name: "Falscher Token" }),
+    });
+    expect(response.status).toBe(403);
   });
 });

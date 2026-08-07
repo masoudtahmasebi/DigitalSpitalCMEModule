@@ -69,10 +69,44 @@ export type SignInResult =
  * request — a client capturing the token at construction would send the first
  * one forever, and every write after a re-login would 403.
  */
+/**
+ * The CSRF token this tab sends with every unsafe request.
+ *
+ * Held in memory *and* readable from a cookie, and the cookie is the half that
+ * matters (P22-04). This used to be memory only, set by `login` and `verify`
+ * and by nothing else — so a page reload, a second tab, or a restored browser
+ * session left the console able to read everything and write nothing: every
+ * POST, PUT and DELETE came back `403 missing or invalid CSRF token`, which
+ * reads as a permissions problem and was a forgotten token.
+ *
+ * The memory copy is kept because it is authoritative for the tab that just
+ * signed in, and because reading a cookie on every request is needless work.
+ */
 let csrfToken: string | undefined;
 
+export const CSRF_COOKIE = "ds_staff_csrf";
+
 export function currentCsrfToken(): string | undefined {
-  return csrfToken;
+  return csrfToken ?? readCsrfCookie();
+}
+
+/**
+ * Read the token the API set alongside the session cookie.
+ *
+ * Deliberately not httpOnly — this is the double-submit pattern, and the page
+ * has to be able to send what it reads. The protection comes from a foreign
+ * origin being unable to read it, not from the page being unable to.
+ */
+function readCsrfCookie(): string | undefined {
+  if (typeof document === "undefined") return undefined;
+  for (const part of document.cookie.split(";")) {
+    const [name, ...rest] = part.trim().split("=");
+    if (name === CSRF_COOKIE) {
+      const value = rest.join("=");
+      return value === "" ? undefined : decodeURIComponent(value);
+    }
+  }
+  return undefined;
 }
 
 export async function signIn(
