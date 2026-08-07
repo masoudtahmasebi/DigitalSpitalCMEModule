@@ -31,6 +31,8 @@ import {
   KeycloakIdentityProvider,
 } from "./identity-provider.js";
 import { IdentityProviderBootCheck } from "./identity-provider.boot-check.js";
+import { LocalIdentityProvider } from "./local-identity-provider.js";
+import { LearnerSessionRepository } from "./learner-session.repository.js";
 import { RedisJwksCache } from "./jwks-cache.redis.js";
 import { RateLimitGuard } from "../shared/rate-limit.guard.js";
 import { StaffModule } from "../modules/staff/staff.module.js";
@@ -49,13 +51,15 @@ import { StaffService } from "../modules/staff/staff.service.js";
     },
     {
       provide: IdentityProviderRegistry,
-      useFactory: (jwksRegistry: JwksRegistry, config: AppConfig) =>
-        // One entry today. A second customer's provider is registered here and
-        // named in `projects.identity_provider` — no change to the guard.
+      useFactory: (jwksRegistry: JwksRegistry, config: AppConfig, pool: Pool) =>
+        // Two entries. Which one runs is `projects.identity_provider`, and
+        // adding the second changed nothing in the guard, the interceptor or
+        // any route — which is the property P12-02 was built for.
         new IdentityProviderRegistry([
           new KeycloakIdentityProvider(jwksRegistry, config.AUTH_CLOCK_TOLERANCE_SEC),
+          new LocalIdentityProvider(new LearnerSessionRepository(pool)),
         ]),
-      inject: [JwksRegistry, APP_CONFIG],
+      inject: [JwksRegistry, APP_CONFIG, PG_POOL],
     },
     {
       provide: ProjectBindingRepository,

@@ -31,6 +31,24 @@ export function createWidgetClient(
     getToken: () => getToken({ refresh: false }),
     // Exactly one refresh per 401, enforced by the SDK — see its `isRetry`.
     onUnauthorized: () => getToken({ refresh: true }),
+    /*
+     * Send the participant session cookie when there is one (P25-02).
+     *
+     * Needed because a project whose `identity_provider` is `local` has no
+     * bearer token at all — the credential is an httpOnly cookie, and without
+     * this the browser simply does not attach it, so every request 401s while
+     * the sign-in that produced it looks like it worked.
+     *
+     * Safe cross-origin only because `configure-app.ts` pairs
+     * `Access-Control-Allow-Credentials: true` with an explicit origin
+     * allowlist, never a wildcard — the fetch specification forbids the
+     * combination that would be dangerous.
+     *
+     * It changes nothing for a WordPress embed. That is cross-*site*, and the
+     * cookie is `SameSite=Lax`, so the browser withholds it there regardless;
+     * those requests keep authenticating with the bearer token they always did.
+     */
+    credentials: "include",
   });
 }
 

@@ -36,9 +36,10 @@ import { SYSTEM_ACTOR, type AuditServicePort } from "../audit/audit.service.js";
 import type { UserService } from "../modules/users/user.service.js";
 import type { ProjectBindingRepositoryPort } from "../modules/projects/project-binding.repository.js";
 import { AppError } from "../shared/problem-details.js";
+import { PARTICIPANT_COOKIE } from "./participant-cookie.js";
 import type { StaffProfile } from "./principal.js";
 import { IS_PUBLIC_KEY } from "./public.decorator.js";
-import { authenticateStaff, CSRF_HEADER } from "./staff-session.js";
+import { authenticateStaff, CSRF_HEADER, readCookie } from "./staff-session.js";
 import type {
   ResolvedStaffSession,
   StaffService,
@@ -95,9 +96,28 @@ export class AuthGuard implements CanActivate {
      */
     if (await authenticateStaffPlane(this.deps, request)) return true;
 
-    const token = extractBearer(request.headers.authorization);
+    // A bearer token, or the portal's session cookie (P25-02).
+    //
+    // Both are "the learner's credential", and which one arrives depends on how
+    // the customer authenticates rather than on the route: a federated project
+    // sends a Keycloak JWT from the widget, a local one sends an httpOnly
+    // cookie from the portal. The *provider* named by the project decides how
+    // the value is verified, so the guard does not need to know which is which
+    // — it needs one credential, from either place.
+    //
+    // Bearer first. A browser can hold both — a physician with a MEDICE
+    // Keycloak token and a local session at another customer — and the explicit
+    // header is the one the caller chose for this request.
+    const token =
+      extractBearer(request.headers.authorization) ??
+      readCookie(request.headers.cookie, PARTICIPANT_COOKIE);
+
     if (token === undefined) {
-      throw AppError.unauthenticated("no bearer token presented");
+      // Names both, because with two accepted forms "no bearer token" sends
+      // somebody looking for a header that was never going to be there. The
+      // first run of the portal produced exactly this 401 for a request that
+      // *had* a valid cookie, and the message was the only thing to go on.
+      throw AppError.unauthenticated("no learner credential presented");
     }
 
     const projectSlug = request.headers[PROJECT_HEADER];
@@ -146,9 +166,23 @@ export class AuthGuard implements CanActivate {
       throw AppError.unauthenticated(`token rejected: ${reason}`);
     }
 
+    // The realm is the **provider's** answer, not the project's column.
+    //
+    // For Keycloak the two are the same value by construction: `verifyToken`
+    // passes `binding.keycloakIssuer` to `jwtVerify` as a required claim, so a
+    // token that reaches here cannot carry a different `iss`.
+    //
+    // For a local project they are emphatically not the same. `keycloak_issuer`
+    // on such a row is a placeholder nothing resolves, while the credential
+    // actually lives under `LOCAL_REALM`. Keying on the column would look up
+    // `(local, '<placeholder>', subject)`, miss the row the sign-in just
+    // authenticated, and `provision_learner` would helpfully create a *second*
+    // person — one with no membership and no role, so the participant would
+    // sign in successfully and then be refused by `resolveTenantContext` with a
+    // 403 that names a user id they have never had.
     const user = await this.deps.userService.syncFromToken(
       provider,
-      binding.keycloakIssuer,
+      identity.issuer,
       identity,
     );
     const grants = await this.deps.userService.rolesFor(user.id);

@@ -41,7 +41,15 @@
  */
 
 import type pg from "pg";
-import { enterTenant, PLACEHOLDER_IMAGE, resetCourseContent, upsert } from "./lib.js";
+import {
+  enterTenant,
+  participantPassword,
+  PLACEHOLDER_IMAGE,
+  resetCourseContent,
+  seedParticipant,
+  seedPortalProject,
+  upsert,
+} from "./lib.js";
 
 /**
  * Fixed, for the same reason as MEDICE's: `customers`' own RLS policy checks
@@ -52,6 +60,19 @@ import { enterTenant, PLACEHOLDER_IMAGE, resetCourseContent, upsert } from "./li
 const CUSTOMER_ID = "0198f4c1-7a2e-7000-8000-000000000002";
 const CUSTOMER_SLUG = "ds";
 const PROJECT_SLUG = "ds-demo";
+
+/**
+ * The portal channel — `fortbildung.digitalspital.com/ds`. See
+ * `seedPortalProject` for why this is a second project and not a flag on the
+ * first one.
+ *
+ * Seeding it for *both* customers is what makes the cross-tenant test possible
+ * over real HTTP: a session minted at `/ds` presented with `X-DS-Project:
+ * medice` must be refused, and asking that needs two local projects.
+ */
+const PORTAL_PROJECT_SLUG = CUSTOMER_SLUG;
+
+const PARTICIPANT_EMAIL = "demo@ds.example";
 
 const CME_COURSE_SLUG = "ds-cme-demo";
 const FREE_COURSE_SLUG = "ds-ohne-punkte";
@@ -192,6 +213,22 @@ export async function seedDsDemo(pool: pg.Pool): Promise<string> {
       ],
     );
 
+    await seedPortalProject(pool, {
+      customerId,
+      departmentId,
+      slug: PORTAL_PROJECT_SLUG,
+      name: "DS Demo (Portal)",
+    });
+
+    const password = await participantPassword();
+    await seedParticipant(pool, {
+      customerId,
+      email: PARTICIPANT_EMAIL,
+      firstName: "Demo",
+      lastName: "Teilnehmende",
+      passwordHash: password.hash,
+    });
+
     const cmeCourseId = await seedCourse(pool, {
       customerId,
       projectId,
@@ -263,9 +300,16 @@ export async function seedDsDemo(pool: pg.Pool): Promise<string> {
     return [
       "Seeded the DS test tenant.",
       `  customer  ${CUSTOMER_SLUG}   (DigitalSpital, Testkunde)`,
-      `  project   ${PROJECT_SLUG}   (send as X-DS-Project)`,
+      `  project   ${PROJECT_SLUG}   (Keycloak channel)`,
+      `  project   ${PORTAL_PROJECT_SLUG}        (portal channel, local sign-in)`,
       `  courses   ${CME_COURSE_SLUG}   3 CME-Punkte, ${String(QUESTION_COUNT)} Fragen`,
       `            ${FREE_COURSE_SLUG}   keine Punkte, keine VNR, kein Quiz`,
+      "",
+      `Portal sign-in at /${PORTAL_PROJECT_SLUG}:`,
+      `  E-Mail    ${PARTICIPANT_EMAIL}`,
+      password.supplied
+        ? "  Passwort  as supplied in SEED_PARTICIPANT_PASSWORD"
+        : `  Passwort  ${password.plaintext}`,
       "",
       "The VNR is a dummy and the Ärztekammer is fictional. Nothing here may",
       "reach the live EIV endpoint — the deploy refuses that without",

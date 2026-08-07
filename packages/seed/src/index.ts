@@ -18,19 +18,31 @@
  * `db/seed/ds-demo.ts` for a developer with a checkout, and
  * `apps/api/src/seed-ds.ts` for the image.
  *
- * ## What is deliberately not here
+ * ## Why the MEDICE seed is here too
  *
- * The MEDICE seed. Its content belongs to a customer and reaches production
- * through the admin console, not through a script — seeding a course that
- * carries a real VNR from a file in this repository is how a placeholder gets
- * a Punktemeldung. It stays a development fixture under `db/seed/adhs.ts`.
+ * This header used to say the opposite — that MEDICE's content belonged in a
+ * developer-only fixture because a course carrying a real VNR should reach
+ * production through the admin console. The reasoning was sound and the
+ * consequence was not: the seed that creates the first customer's course was
+ * the one seed that could not run on the host serving that customer, and
+ * `fortbildung.digitalspital.com/medice` was empty with nothing to explain why
+ * (P24-02).
+ *
+ * The concern it was protecting against is real and is handled where it
+ * belongs: the seed writes no VNR password, so nothing it creates can file a
+ * Punktemeldung, and `openSeedPool` refuses a non-local database unless the
+ * operator passes `--force`.
  */
 
 export {
   enterTenant,
+  LOCAL_REALM,
   openSeedPool,
+  participantPassword,
   PLACEHOLDER_IMAGE,
   resetCourseContent,
+  seedParticipant,
+  seedPortalProject,
   upsert,
 } from "./lib.js";
 export { seedDsDemo } from "./ds-demo.js";

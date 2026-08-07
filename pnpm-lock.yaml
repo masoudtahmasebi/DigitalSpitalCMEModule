@@ -483,6 +483,9 @@ importers:
 
   packages/seed:
     dependencies:
+      '@node-rs/argon2':
+        specifier: ^2.0.2
+        version: 2.0.2
       pg:
         specifier: ^8.22.0
         version: 8.22.0

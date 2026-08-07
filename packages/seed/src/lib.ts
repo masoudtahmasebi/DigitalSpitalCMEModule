@@ -24,6 +24,8 @@
  * they came from.
  */
 
+import { randomBytes } from "node:crypto";
+import { hash as argonHash } from "@node-rs/argon2";
 import pg from "pg";
 
 /**
@@ -128,3 +130,210 @@ export const PLACEHOLDER_IMAGE = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   "base64",
 );
+
+// ---------------------------------------------------------------------------
+// The portal channel, and the participant who can walk in through it
+// ---------------------------------------------------------------------------
+
+/**
+ * The realm on a local credential. Must equal `LOCAL_REALM` in
+ * `apps/api/src/auth/local-identity-provider.ts` — it is part of
+ * `user_identities`' unique key, and if the two disagree the guard provisions a
+ * *second* person on first sign-in, with no membership and therefore a 403.
+ *
+ * Duplicated rather than imported because `@ds/seed` deliberately does not
+ * depend on the API (it runs from a checkout, from the image, and one day from
+ * a migration job). `seed.integration.test.ts` asserts the two are equal, so
+ * the duplication cannot drift silently.
+ */
+export const LOCAL_REALM = "ds:local";
+
+/**
+ * Argon2id's numeric identifier. The same constant, and the same reasoning, as
+ * `apps/api/src/modules/staff/credentials.ts`: the number is fixed by the
+ * Argon2 specification (0 = Argon2d, 1 = Argon2i, 2 = Argon2id), so writing it
+ * out is safe in a way that inlining a library's enum value would not be.
+ */
+const ARGON2ID = 2;
+
+/**
+ * Decide the demo participant's password, and hash it the way the API verifies.
+ *
+ * Returns the plaintext as well, because the caller has to print it exactly
+ * once — a seeded account whose password nobody knows is an account nobody can
+ * use, and the whole point of this one is being able to look at the portal.
+ *
+ * `SEED_PARTICIPANT_PASSWORD` wins when set, so a re-run against a shared
+ * environment does not silently invalidate a password somebody wrote down.
+ * Otherwise 24 bytes from the CSPRNG: strong enough that printing it in a
+ * deploy log is not a finding, and — because it changes on every run — not a
+ * value that can be baked into anything.
+ */
+export async function participantPassword(): Promise<{
+  plaintext: string;
+  hash: string;
+  supplied: boolean;
+}> {
+  const supplied = process.env["SEED_PARTICIPANT_PASSWORD"];
+  const plaintext =
+    supplied !== undefined && supplied !== ""
+      ? supplied
+      : randomBytes(24).toString("base64url");
+
+  return {
+    plaintext,
+    hash: await argonHash(plaintext, { algorithm: ARGON2ID }),
+    supplied: supplied !== undefined && supplied !== "",
+  };
+}
+
+/**
+ * Give a customer a **second project** whose learners sign in here.
+ *
+ * ## Why a second project rather than flipping the first one
+ *
+ * A project is the binding for one *channel*, not for one customer. MEDICE's
+ * physicians reach the course through the WordPress plugin, which carries a
+ * token from MEDICE's own Keycloak — that binding is correct and must not
+ * change. The standalone portal at `fortbildung.digitalspital.com/<slug>` is a
+ * different channel, and flipping `medice-adhs.identity_provider` to `'local'`
+ * to serve it would break the WordPress path to fix the portal.
+ *
+ * Both projects belong to the same customer, and the catalogue is scoped by
+ * *customer* under RLS, so the two channels show the same courses without the
+ * content being seeded twice.
+ *
+ * ## Why the slug is the customer's
+ *
+ * The portal reads its tenant from the first path segment and sends it as
+ * `X-DS-Project`, so `/medice` looks for a project slugged exactly `medice`.
+ * That is why `/medice` answered "Dieses Projekt existiert nicht." — the only
+ * project was `medice-adhs`.
+ */
+export async function seedPortalProject(
+  pool: pg.Pool,
+  input: { customerId: string; departmentId: string; slug: string; name: string },
+): Promise<string> {
+  return upsert(
+    pool,
+    `INSERT INTO projects
+       (customer_id, department_id, slug, name, identity_provider,
+        keycloak_issuer, keycloak_audience, keycloak_realm)
+     VALUES ($1,$2,$3,$4,'local','','','')
+     ON CONFLICT (department_id, slug) DO UPDATE
+       SET name = EXCLUDED.name,
+           identity_provider = 'local',
+           updated_at = now()
+     RETURNING id`,
+    [input.customerId, input.departmentId, input.slug, input.name],
+  );
+}
+
+/**
+ * A participant who can sign in at the portal with an e-mail and a password.
+ *
+ * ## The password is never in this repository
+ *
+ * It comes from `SEED_PARTICIPANT_PASSWORD`, or is generated from the CSPRNG
+ * and returned so the caller can print it exactly once. A literal in a seed
+ * file is a credential in git history that outlives every rotation, and on a
+ * platform where an account is a CME record it is a credential that can earn
+ * points in somebody's name.
+ *
+ * ## `must_change` is false here, and that is not laziness
+ *
+ * The column defaults to `true`, which is right for anything an administrator
+ * creates: a password somebody else chose is a password somebody else knows.
+ * A seeded demo account sets it to `false` because there is no password-change
+ * screen yet (P21-04), and a flag that makes the portal demand a change it
+ * cannot offer is worse than no flag. When P21-04 lands, this becomes `true`.
+ *
+ * Idempotent on the e-mail: re-running resets the password rather than adding a
+ * second account, which also means a forgotten demo password is one re-run
+ * away from fixed.
+ */
+export async function seedParticipant(
+  pool: pg.Pool,
+  input: {
+    customerId: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    /** Argon2id, computed by the caller — `@ds/seed` holds no crypto policy. */
+    passwordHash: string;
+  },
+): Promise<{ userId: string }> {
+  // `users` is global, not tenant-scoped: a person may learn with several
+  // customers, and the row that says *which* is `user_customers` below.
+  const userId = await upsert(
+    pool,
+    `WITH existing AS (
+       SELECT u.id FROM users u
+         JOIN user_identities i ON i.user_id = u.id
+        WHERE i.provider = 'local' AND i.realm = $4 AND i.subject = $1
+        LIMIT 1
+     ), created AS (
+       INSERT INTO users (email, first_name, last_name)
+       SELECT $1, $2, $3 WHERE NOT EXISTS (SELECT 1 FROM existing)
+       RETURNING id
+     ), updated AS (
+       UPDATE users SET email = $1, first_name = $2, last_name = $3, updated_at = now()
+        WHERE id = (SELECT id FROM existing)
+       RETURNING id
+     )
+     SELECT id FROM created UNION ALL SELECT id FROM updated`,
+    [input.email, input.firstName, input.lastName, LOCAL_REALM],
+  );
+
+  // The credential. `subject` is the e-mail rather than the user id because the
+  // sign-in resolves by e-mail and the guard then provisions by subject; using
+  // the id would mean those two agree only by a join nobody would notice
+  // breaking.
+  const identityId = await upsert(
+    pool,
+    `INSERT INTO user_identities (user_id, provider, realm, subject)
+     VALUES ($1, 'local', $2, $3)
+     ON CONFLICT (provider, realm, subject) DO UPDATE SET user_id = EXCLUDED.user_id
+     RETURNING id`,
+    [userId, LOCAL_REALM, input.email],
+  );
+
+  await pool.query(
+    `INSERT INTO learner_credentials (user_identity_id, password_hash, must_change)
+     VALUES ($1, $2, false)
+     ON CONFLICT (user_identity_id) DO UPDATE
+       SET password_hash = EXCLUDED.password_hash,
+           must_change = false,
+           failed_attempts = 0,
+           locked_until = NULL,
+           updated_at = now()`,
+    [identityId, input.passwordHash],
+  );
+
+  // Membership, then the grant. Both are needed and they answer different
+  // questions: `user_customers` is *whether this person learns with this
+  // customer*, `user_roles` is *what they may do there*. `resolveTenantContext`
+  // reads the second; a participant with neither signs in and is refused with a
+  // 403 that names a user id nobody recognises.
+  await pool.query(
+    `INSERT INTO user_customers (user_id, customer_id) VALUES ($1,$2)
+     ON CONFLICT (user_id, customer_id) DO NOTHING`,
+    [userId, input.customerId],
+  );
+  // `NOT EXISTS` rather than `ON CONFLICT`, and the difference is not cosmetic.
+  // `user_roles`' unique key includes `department_id`, which is NULL for a
+  // customer-wide grant — and in PostgreSQL two NULLs are distinct, so the
+  // constraint never fires and `ON CONFLICT DO NOTHING` would insert a fresh
+  // duplicate row on every re-run.
+  await pool.query(
+    `INSERT INTO user_roles (user_id, role, customer_id)
+     SELECT $1,'learner',$2
+      WHERE NOT EXISTS (
+        SELECT 1 FROM user_roles
+         WHERE user_id = $1 AND role = 'learner'
+           AND customer_id = $2 AND department_id IS NULL)`,
+    [userId, input.customerId],
+  );
+
+  return { userId };
+}

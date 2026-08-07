@@ -31,7 +31,19 @@ import type { JwksRegistry } from "./jwks-registry.js";
 import { verifyToken, type VerifiedIdentity } from "./token-verifier.js";
 
 /** The names a `projects.identity_provider` row may hold. */
-export type IdentityProviderName = "keycloak";
+export type IdentityProviderName =
+  /** OIDC against the project's own realm. The default, and MEDICE's. */
+  | "keycloak"
+  /**
+   * A participant whose credential is this platform's (P25-02).
+   *
+   * Not a weakening of ADR-0012, which keeps the staff and learner planes
+   * apart: this is the *learner* plane gaining a local option, with its own
+   * tables and its own sessions. A customer with no identity provider could
+   * not use the platform at all before, and "you must run a Keycloak realm"
+   * is not a precondition anybody wants to sell.
+   */
+  | "local";
 
 export interface IdentityProvider {
   readonly name: IdentityProviderName;

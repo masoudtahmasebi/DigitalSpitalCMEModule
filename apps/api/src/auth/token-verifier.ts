@@ -36,7 +36,20 @@ export type TokenRejectionReason =
   | "expired"
   | "not_yet_valid"
   | "unsupported_alg"
-  | "unknown_key";
+  | "unknown_key"
+  /**
+   * The credential was an opaque session and it is not usable — absent,
+   * revoked, expired, or presented against a project it was not created
+   * through (P25-02).
+   *
+   * One reason for all four on purpose. Distinguishing them in the audit log
+   * would be useful to us and equally useful to somebody probing, and none of
+   * the four is something a legitimate client needs to tell apart. It is a
+   * *separate* reason from the JWT ones because writing `bad_signature` for a
+   * session that has no signature would make the audit trail say something
+   * untrue.
+   */
+  | "invalid_session";
 
 export class TokenInvalidError extends Error {
   constructor(readonly reason: TokenRejectionReason) {

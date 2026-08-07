@@ -44,4 +44,16 @@ body {
   .ds-button-secondary {
     @apply inline-flex items-center rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50;
   }
+
+  /*
+   * The participant sign-in fields (P25-02).
+   *
+   * `focus-visible` rather than `focus`, so the ring appears for keyboard
+   * navigation and not on a mouse click — and it is a ring rather than an
+   * outline removal, because a field with no visible focus state is
+   * unusable without a mouse (P19's a11y floor).
+   */
+  .ds-input {
+    @apply rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus-visible:border-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600;
+  }
 }

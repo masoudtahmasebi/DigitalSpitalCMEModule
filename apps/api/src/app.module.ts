@@ -16,6 +16,7 @@ import { ObservabilityModule } from "./observability/observability.module.js";
 import { JsonLogger } from "./observability/logger.js";
 import { AuthoringModule } from "./modules/authoring/authoring.module.js";
 import { UploadModule } from "./modules/uploads/upload.module.js";
+import { ParticipantAuthModule } from "./modules/participant-auth/participant-auth.module.js";
 import { CustomerModule } from "./modules/customers/customer.module.js";
 import { ModerationModule } from "./modules/moderation/moderation.module.js";
 import { ProjectsModule } from "./modules/projects/projects.module.js";
@@ -35,6 +36,7 @@ import { ProjectsModule } from "./modules/projects/projects.module.js";
     AdminModule,
     AuthoringModule,
     UploadModule,
+    ParticipantAuthModule,
     CustomerModule,
     ModerationModule,
     ProjectsModule,

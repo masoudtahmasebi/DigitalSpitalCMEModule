@@ -39,10 +39,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { de } from "./locale/de.js";
 import { readConfig } from "./config.js";
-import { createAuth, tokenProviderFor } from "./auth.js";
+import { cookieTokenProvider, createAuth, tokenProviderFor } from "./auth.js";
 import { parseRoute, routePath, type Route } from "./routes.js";
 import { WidgetMount } from "./components/WidgetMount.js";
 import { Welcome } from "./components/Welcome.js";
+import { ParticipantSignIn } from "./components/ParticipantSignIn.js";
 
 type AuthState = "checking" | "anonymous" | "signed-in" | "failed";
 
@@ -126,18 +127,43 @@ function Tenant(props: {
     };
   }, [config.apiBase, route.tenant]);
 
+  /**
+   * Is anybody signed in, and by which of the two means?
+   *
+   * Both are asked, because the answer depends on the tenant and the tenant is
+   * still loading when this first runs. A Keycloak session lives in this tab's
+   * storage; a participant session is an httpOnly cookie this code cannot read,
+   * so the only way to ask is to call the API — `GET /auth/participant/me`
+   * answers 200 or 401 and nothing else.
+   */
+  const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
-    auth
-      .completeLogin()
-      .then((session) => {
-        setState(
-          session === undefined && auth.currentSession() === undefined
-            ? "anonymous"
-            : "signed-in",
-        );
-      })
-      .catch(() => setState("failed"));
-  }, [auth]);
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const session = await auth.completeLogin();
+        if (session !== undefined || auth.currentSession() !== undefined) {
+          if (!cancelled) setState("signed-in");
+          return;
+        }
+      } catch {
+        if (!cancelled) setState("failed");
+        return;
+      }
+
+      // No Keycloak session. A participant cookie is the other possibility, and
+      // a failure asking is "not signed in" rather than an error — the API
+      // being unreachable is already surfaced by the tenant fetch above, and
+      // reporting it twice tells the visitor nothing new.
+      const signedIn = await hasParticipantSession(config.apiBase, route.tenant);
+      if (!cancelled) setState(signedIn ? "signed-in" : "anonymous");
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auth, config.apiBase, route.tenant, refreshKey]);
 
   if (signIn === undefined || state === "checking") {
     return (
@@ -171,11 +197,13 @@ function Tenant(props: {
       <Shell customerName={signIn.customerName}>
         <div className="space-y-4 py-4">
           {state === "failed" ? <Alert>{de.auth.failed}</Alert> : null}
-          <p className="text-sm text-gray-700">
-            {signIn.kind === "external"
-              ? de.tenant.signInExternal(signIn.customerName)
-              : de.auth.intro}
-          </p>
+          {/* The form carries its own intro, so rendering one here too would
+              print the same sentence twice. */}
+          {signIn.kind === "external" ? (
+            <p className="text-sm text-gray-700">
+              {de.tenant.signInExternal(signIn.customerName)}
+            </p>
+          ) : null}
           {signIn.kind === "external" ? (
             /*
              * A link, not a flow we run.
@@ -198,13 +226,24 @@ function Tenant(props: {
               {de.tenant.signInAt(signIn.customerName)}
             </a>
           ) : (
-            <button
-              type="button"
-              className="ds-button"
-              onClick={() => void auth.beginLogin()}
-            >
-              {de.auth.signIn}
-            </button>
+            /*
+             * Our own form (P25-02), not an OIDC redirect.
+             *
+             * `kind: "portal"` means this customer's participants hold a
+             * credential here rather than at a realm of their own — which is
+             * exactly what `identity_provider = 'local'` says. Running an
+             * authorization-code flow for them would send them to a Keycloak
+             * that has never heard of them.
+             */
+            <ParticipantSignIn
+              apiBase={config.apiBase}
+              projectSlug={route.tenant}
+              customerName={signIn.customerName}
+              // Re-asks the API rather than assuming: the component never sees
+              // the cookie, so "did that work?" is only answerable by the same
+              // call the page load makes.
+              onSignedIn={() => setRefreshKey((n) => n + 1)}
+            />
           )}
         </div>
       </Shell>
@@ -212,8 +251,31 @@ function Tenant(props: {
   }
 
   return (
-    <Shell customerName={signIn.customerName} onSignOut={() => auth.logout()}>
-      <Routed config={config} auth={auth} route={route} onNavigate={props.onNavigate} />
+    <Shell
+      customerName={signIn.customerName}
+      onSignOut={() => {
+        // Both, unconditionally. Which credential this session came from is not
+        // recorded anywhere, and ending the one the visitor does not have is a
+        // no-op — whereas guessing wrong leaves them signed in after clicking
+        // "Abmelden", which on a shared clinic computer is the failure that
+        // matters.
+        void participantSignOut(config.apiBase, route.tenant).then(() => {
+          setRefreshKey((n) => n + 1);
+        });
+        auth.logout();
+      }}
+    >
+      <Routed
+        config={config}
+        auth={auth}
+        // Which credential the widget presents, taken from the tenant's own
+        // configuration rather than guessed. `external` means a Keycloak
+        // bearer token; `portal` means the httpOnly cookie, which the SDK
+        // attaches itself and no token provider can produce.
+        signInKind={signIn.kind}
+        route={route}
+        onNavigate={props.onNavigate}
+      />
     </Shell>
   );
 }
@@ -230,13 +292,56 @@ async function fetchTenant(apiBase: string, slug: string): Promise<TenantSignIn>
   return (await response.json()) as TenantSignIn;
 }
 
+/**
+ * Is there a live participant session for this tenant?
+ *
+ * The cookie is `httpOnly`, so this is the only way to ask — and that is the
+ * point of it being `httpOnly`. `credentials: "include"` is what attaches it
+ * across the portal/API origin split; without it the call is anonymous and the
+ * answer is always "no", which presents as a sign-in that silently does
+ * nothing.
+ *
+ * Scoped by `X-DS-Project` like every other call, so a cookie minted at one
+ * tenant does not report a session at another — the API refuses that, and
+ * asking correctly means the portal agrees with it rather than showing a
+ * catalogue that then 401s.
+ */
+async function hasParticipantSession(apiBase: string, slug: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${apiBase}/auth/participant/me`, {
+      credentials: "include",
+      headers: { "x-ds-project": slug },
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** End a participant session server-side, not merely in this browser. */
+async function participantSignOut(apiBase: string, slug: string): Promise<void> {
+  try {
+    await fetch(`${apiBase}/auth/participant/sign-out`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "x-ds-project": slug },
+    });
+  } catch {
+    // Best effort. The button must still return the visitor to a signed-out
+    // page: a sign-out that appears to fail leaves somebody believing they are
+    // still logged in on a shared clinic computer, which is worse than a
+    // cookie that outlives the click.
+  }
+}
+
 function Routed(props: {
   config: NonNullable<ReturnType<typeof readConfig>>;
   auth: NonNullable<ReturnType<typeof createAuth>>;
+  signInKind: "external" | "portal";
   route: Extract<Route, { kind: "catalogue" | "course" }>;
   onNavigate: (route: Route) => void;
 }) {
-  const { config, auth, route, onNavigate } = props;
+  const { config, auth, route, onNavigate, signInKind } = props;
 
   /*
    * Which of the catalogue's two buttons brought the learner here.
@@ -264,7 +369,10 @@ function Routed(props: {
     [onNavigate],
   );
 
-  const tokenProvider = useMemo(() => tokenProviderFor(auth), [auth]);
+  const tokenProvider = useMemo(
+    () => (signInKind === "portal" ? cookieTokenProvider() : tokenProviderFor(auth)),
+    [auth, signInKind],
+  );
 
   return (
     <div className="space-y-4">

@@ -1,0 +1,6 @@
+import { Module } from "@nestjs/common";
+import { ParticipantAuthController } from "./participant-auth.controller.js";
+
+/** Controllers only — see CONTRIBUTING.md for the per-request construction pattern. */
+@Module({ controllers: [ParticipantAuthController] })
+export class ParticipantAuthModule {}

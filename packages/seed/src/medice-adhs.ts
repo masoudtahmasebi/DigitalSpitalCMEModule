@@ -33,7 +33,15 @@
  */
 
 import type pg from "pg";
-import { enterTenant, PLACEHOLDER_IMAGE, resetCourseContent, upsert } from "./lib.js";
+import {
+  enterTenant,
+  participantPassword,
+  PLACEHOLDER_IMAGE,
+  resetCourseContent,
+  seedParticipant,
+  seedPortalProject,
+  upsert,
+} from "./lib.js";
 
 /**
  * A fixed id, not a generated one, and that is load-bearing.
@@ -52,6 +60,25 @@ const CUSTOMER_ID = "0198f4c1-7a2e-7000-8000-000000000001";
 const CUSTOMER_SLUG = "medice";
 const PROJECT_SLUG = "medice-adhs";
 const COURSE_SLUG = "adhs-akademie-adult";
+
+/**
+ * The project the standalone portal reaches, and why it is not `PROJECT_SLUG`.
+ *
+ * `fortbildung.digitalspital.com/medice` takes its tenant from the first path
+ * segment and sends it as `X-DS-Project`, so the portal asks for a project
+ * slugged exactly `medice` — which did not exist, which is why that URL
+ * answered "Dieses Projekt existiert nicht." rather than showing a catalogue.
+ *
+ * It is a *second* project rather than a rename because the two are different
+ * channels with different identity: `medice-adhs` is reached through the
+ * WordPress plugin and authenticates against MEDICE's own Keycloak, and that
+ * must keep working. Both belong to the same customer, and the catalogue is
+ * scoped by customer under RLS, so they show the same courses.
+ */
+const PORTAL_PROJECT_SLUG = CUSTOMER_SLUG;
+
+/** The demo participant. The password is never in this file — see below. */
+const PARTICIPANT_EMAIL = "demo@medice.example";
 
 /** Per the Bescheid. The password is never committed — see `.env.example`. */
 const VNR = "2760552025919300018";
@@ -208,6 +235,25 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
         "ds-dev",
       ],
     );
+
+    // The second channel: the standalone portal at /medice, whose participants
+    // hold a password here rather than a MEDICE Keycloak account. Same
+    // customer, same department, same courses — a different way in.
+    await seedPortalProject(pool, {
+      customerId,
+      departmentId,
+      slug: PORTAL_PROJECT_SLUG,
+      name: "ADHS Akademie (Portal)",
+    });
+
+    const password = await participantPassword();
+    await seedParticipant(pool, {
+      customerId,
+      email: PARTICIPANT_EMAIL,
+      firstName: "Demo",
+      lastName: "Teilnehmende",
+      passwordHash: password.hash,
+    });
 
     const courseId = await upsert(
       pool,
@@ -418,9 +464,23 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
     return [
       "Seeded the MEDICE ADHS course.",
       `  customer  ${CUSTOMER_SLUG}`,
-      `  project   ${PROJECT_SLUG}   (send as X-DS-Project)`,
+      `  project   ${PROJECT_SLUG}   (WordPress channel, Keycloak)`,
+      `  project   ${PORTAL_PROJECT_SLUG}         (portal channel, local sign-in)`,
       `  course    ${COURSE_SLUG}`,
       `  modules   ${MODULES.length}, ${QUESTION_COUNT} quiz questions`,
+      "",
+      `Portal sign-in at /${PORTAL_PROJECT_SLUG}:`,
+      `  E-Mail    ${PARTICIPANT_EMAIL}`,
+      password.supplied
+        ? "  Passwort  as supplied in SEED_PARTICIPANT_PASSWORD"
+        : `  Passwort  ${password.plaintext}`,
+      "",
+      password.supplied
+        ? ""
+        : "That password is printed once and stored only as an Argon2id hash.\n" +
+          "Re-run the seed to set a new one, or set SEED_PARTICIPANT_PASSWORD\n" +
+          "to choose it. It is a demo account: delete it before MEDICE's own\n" +
+          "physicians use this tenant in earnest.",
       "",
       "required_watch_percent is seeded at 100 — the stricter of the two",
       "readings (layout says 80, MEDICE-292 says 100). See",

@@ -23,6 +23,24 @@ export const de = {
     failed: "Die Anmeldung ist fehlgeschlagen. Bitte versuchen Sie es erneut.",
     intro:
       "Melden Sie sich an, um Ihre Fortbildungen zu sehen und Ihre CME-Punkte zu erhalten.",
+
+    /**
+     * The password form (P25-02).
+     *
+     * `refused` is deliberately one message for every failure — wrong address,
+     * wrong password, locked account. The API answers all of them identically
+     * on purpose, and a client that guessed at a friendlier distinction would
+     * reintroduce the account-enumeration oracle the API just removed.
+     */
+    email: "E-Mail-Adresse",
+    password: "Passwort",
+    refused: "E-Mail-Adresse oder Passwort ist nicht korrekt.",
+    tooManyAttempts:
+      "Zu viele Anmeldeversuche. Bitte warten Sie einen Moment und versuchen Sie es erneut.",
+    unreachable:
+      "Die Anmeldung ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.",
+    noAccount:
+      "Sie haben noch keine Zugangsdaten? Wenden Sie sich bitte an Ihre Ansprechperson bei",
   },
 
   nav: {

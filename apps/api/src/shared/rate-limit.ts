@@ -88,6 +88,16 @@ export const RATE_LIMIT_RULES = {
    */
   mediaUpload: { limit: 60, windowSec: 60 },
   /**
+   * Participant sign-in (P25-02). The tightest limit in the platform.
+   *
+   * It is the **only unauthenticated write on the learner plane**, so it is the
+   * only door an online guessing attack can knock on. Five a minute is more
+   * than a person typing a password wrong needs and far less than a script
+   * wants; `learner_credentials.locked_until` is the second line behind it, in
+   * the database rather than in Redis so a container restart does not clear it.
+   */
+  participantSignIn: { limit: 5, windowSec: 60 },
+  /**
    * A participant export is where personal data leaves the system's access
    * controls entirely. Every one of them is audited (P9-07); a limit is what
    * keeps that audit trail a record of deliberate acts rather than of a script.

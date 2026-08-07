@@ -136,6 +136,55 @@ describe("configuration", () => {
     );
   });
 
+  it("accepts a token provider set AFTER insertion, and re-renders", async () => {
+    // The order a React host produces, and the one that was broken.
+    // `connectedCallback` fires the instant the node is inserted; a `ref`
+    // callback runs after the commit. So the element read `undefined`, decided
+    // the embed was misconfigured, and rendered that message into a *closed*
+    // shadow root — where nothing in the page could see it and no failed
+    // request hinted at it, because a widget that has given up never calls the
+    // API. `/medice` showed a signed-in header above an empty page.
+    const element = new DsLmsElement();
+    element.setAttribute("api-base", "https://api.test");
+    element.setAttribute("project", "medice-adhs");
+
+    host.append(element);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Exactly the state the bug left behind.
+    expect(element.shadowRootForTest?.textContent ?? "").toContain(
+      "nicht korrekt eingebunden",
+    );
+
+    element.tokenProvider = async () => "late";
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(element.shadowRootForTest?.textContent ?? "").not.toContain(
+      "nicht korrekt eingebunden",
+    );
+  });
+
+  it("does not re-render when the same provider is assigned again", async () => {
+    // React re-runs a `ref` callback on every commit where the ref identity
+    // changed, and a host that rebuilds an equal-but-new function would
+    // otherwise tear down and remount the whole widget — losing scroll
+    // position, and re-fetching the catalogue, on every parent render.
+    const provider = async () => "token";
+    const element = new DsLmsElement();
+    element.setAttribute("api-base", "https://api.test");
+    element.setAttribute("project", "medice-adhs");
+    element.tokenProvider = provider;
+
+    host.append(element);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const before = element.shadowRootForTest?.firstElementChild;
+
+    element.tokenProvider = provider;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(element.shadowRootForTest?.firstElementChild).toBe(before);
+  });
+
   it("accepts a token provider set as a property before insertion", async () => {
     // The documented escape hatch for a host page that already holds a token.
     const element = new DsLmsElement();

@@ -58,3 +58,32 @@ export function tokenProviderFor(
     return undefined;
   };
 }
+
+/**
+ * The token provider for a tenant whose participants sign in *here* (P25-02).
+ *
+ * It returns `undefined`, always, and that is the whole implementation. The
+ * credential for such a tenant is an httpOnly cookie the SDK attaches itself
+ * (`credentials: "include"` in `apps/widget/src/api.ts`); there is no bearer
+ * token, there never will be one, and the request authenticates perfectly well
+ * without one.
+ *
+ * ## Why it is a separate function rather than a branch above
+ *
+ * `tokenProviderFor` calls `beginLogin()` when it has no token — an OIDC
+ * redirect to the tenant's realm. For a local tenant there is no realm to
+ * redirect to, and the first browser run of this feature showed exactly what
+ * that costs: the participant signed in, the page said "Abmelden", and the
+ * catalogue was **empty with no error**, because the widget was waiting on a
+ * provider that had gone off to start a login instead of simply saying "no
+ * token, use the cookie". `GET /courses` was never sent at all.
+ *
+ * `refresh` is ignored for the same reason. A 401 here means the session
+ * expired or was revoked, and the answer to that is signing in again — which
+ * the shell offers as soon as `/auth/participant/me` says so. Silently
+ * renewing a session the API deliberately ended is not a refresh, it is a
+ * bypass.
+ */
+export function cookieTokenProvider(): () => Promise<undefined> {
+  return async () => undefined;
+}

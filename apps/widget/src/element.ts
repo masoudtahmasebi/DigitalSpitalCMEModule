@@ -146,8 +146,30 @@ export class DsLmsElement extends HTMLElement {
     return this.#tokenProvider;
   }
 
+  /**
+   * Assigning after the element has connected re-renders it.
+   *
+   * `#upgradeProperty` covers a provider set *before* upgrade — the WordPress
+   * plugin's case, where an inline script runs ahead of the deferred module.
+   * It does not cover the opposite order, and that order is the normal one for
+   * a React host: `connectedCallback` fires the instant the node is inserted,
+   * and a `ref` callback runs *after* the commit. The element therefore read
+   * `undefined`, decided the embed was misconfigured, and rendered
+   *
+   *     Diese Fortbildung ist nicht korrekt eingebunden.
+   *
+   * inside a **closed** shadow root — invisible to `innerText`, invisible in a
+   * screenshot at a glance, and accompanied by no failed request to notice,
+   * because a widget that has decided it is misconfigured never calls the API.
+   * That is how `/medice` came to show a signed-in header above nothing at all.
+   *
+   * Re-rendering rather than throwing: a host may legitimately swap providers,
+   * and React does exactly that whenever the memoised one changes identity.
+   */
   set tokenProvider(value: TokenProvider | undefined) {
+    if (this.#tokenProvider === value) return;
     this.#tokenProvider = value;
+    if (this.#root !== undefined) this.#render();
   }
 
   connectedCallback(): void {
@@ -165,11 +187,6 @@ export class DsLmsElement extends HTMLElement {
     mount.className = "ds-lms-root";
     shadow.append(mount);
 
-    const provider = resolveTokenProvider({
-      provider: this.tokenProvider,
-      endpoint: this.getAttribute("token-endpoint") ?? undefined,
-    });
-
     const apiBase = this.getAttribute("api-base") ?? "";
     const projectSlug = this.getAttribute("project") ?? "";
 
@@ -179,7 +196,29 @@ export class DsLmsElement extends HTMLElement {
     void this.#applyBranding(mount, apiBase, projectSlug);
 
     this.#root = createRoot(mount);
-    this.#root.render(
+    this.#render();
+  }
+
+  /**
+   * Build the tree and hand it to React.
+   *
+   * One implementation, called from `connectedCallback` and from the
+   * `tokenProvider` setter. Two copies would eventually differ in exactly the
+   * property that made the second one necessary.
+   */
+  #render(): void {
+    const root = this.#root;
+    if (root === undefined) return;
+
+    const provider = resolveTokenProvider({
+      provider: this.tokenProvider,
+      endpoint: this.getAttribute("token-endpoint") ?? undefined,
+    });
+
+    const apiBase = this.getAttribute("api-base") ?? "";
+    const projectSlug = this.getAttribute("project") ?? "";
+
+    root.render(
       createElement(App, {
         apiBase,
         projectSlug,
