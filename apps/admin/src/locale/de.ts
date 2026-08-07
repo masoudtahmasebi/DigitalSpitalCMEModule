@@ -293,6 +293,30 @@ export const de = {
       "Bevor eine Fortbildung angelegt werden kann, muss es mindestens ein Projekt geben.",
   },
 
+  /**
+   * Uploads (P23-04).
+   *
+   * Deliberately says "auf unseren Server" rather than naming a bucket or a
+   * provider: the author is choosing where a file goes, not learning our
+   * infrastructure, and the answer that matters to them is "not to a link you
+   * have to maintain".
+   */
+  uploads: {
+    choose: "Datei hochladen",
+    stored: "Hochgeladen",
+    remove: "Hochgeladene Datei entfernen",
+    progress: "Upload-Fortschritt",
+    cancel: "Abbrechen",
+    cancelled: "Der Upload wurde abgebrochen.",
+    failed: "Der Upload ist fehlgeschlagen. Bitte versuchen Sie es erneut.",
+    transportFailed:
+      "Die Verbindung zum Dateispeicher ist abgebrochen. Die Datei wurde nicht vollständig übertragen — bitte laden Sie sie erneut hoch.",
+    noCourseYet: "Bitte speichern Sie die Fortbildung zuerst.",
+    videoUpload: "Video hochladen",
+    videoUploadHint:
+      "MP4 oder WebM, bis 2 GB. Die Datei wird direkt in den Dateispeicher übertragen und ist anschließend nur für Teilnehmende dieser Fortbildung abrufbar.",
+  },
+
   structure: {
     title: "Inhalte",
     intro:

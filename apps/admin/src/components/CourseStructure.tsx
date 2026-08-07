@@ -32,7 +32,7 @@
  * should not have to click to discover a rule.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type {
   ApiClient,
   AuthoringChapter,
@@ -68,6 +68,13 @@ import {
   TextArea,
   TextInput,
 } from "./ui.js";
+import {
+  isUploadedReference,
+  referenceName,
+  runUpload,
+  UploadField,
+  UploadProgress,
+} from "./UploadField.js";
 
 type ContentKind = AuthoringContent["kind"];
 
@@ -142,6 +149,7 @@ export function CourseStructureEditor(props: {
             <li key={module.id}>
               <ModuleBlock
                 client={client}
+                courseSlug={courseSlug}
                 module={module}
                 modules={modules}
                 index={index}
@@ -172,6 +180,7 @@ export function CourseStructureEditor(props: {
 
 function ModuleBlock(props: {
   client: ApiClient;
+  courseSlug: string;
   module: AuthoringModule;
   modules: readonly AuthoringModule[];
   index: number;
@@ -262,6 +271,7 @@ function ModuleBlock(props: {
               <li key={chapter.id}>
                 <ChapterBlock
                   client={client}
+                  courseSlug={props.courseSlug}
                   chapter={chapter}
                   module={module}
                   modules={modules}
@@ -294,6 +304,7 @@ function ModuleBlock(props: {
 
 function ChapterBlock(props: {
   client: ApiClient;
+  courseSlug: string;
   chapter: AuthoringChapter;
   module: AuthoringModule;
   modules: readonly AuthoringModule[];
@@ -418,6 +429,7 @@ function ChapterBlock(props: {
               <li key={content.id}>
                 <ContentRow
                   client={client}
+                  courseSlug={props.courseSlug}
                   content={content}
                   chapter={chapter}
                   modules={modules}
@@ -433,6 +445,7 @@ function ChapterBlock(props: {
 
         <NewContent
           client={client}
+          courseSlug={props.courseSlug}
           chapterId={chapter.id}
           onDone={(next) => props.onMutate(async () => next)}
         />
@@ -447,6 +460,7 @@ function ChapterBlock(props: {
 
 function ContentRow(props: {
   client: ApiClient;
+  courseSlug: string;
   content: AuthoringContent;
   chapter: AuthoringChapter;
   modules: readonly AuthoringModule[];
@@ -522,6 +536,8 @@ function ContentRow(props: {
       {editing ? (
         <div className="mt-3 border-t border-gray-100 pt-3">
           <ContentForm
+            client={client}
+            courseSlug={props.courseSlug}
             initial={content}
             submitLabel={de.common.save}
             onSubmit={(write) => client.adminUpdateContent(content.id, write)}
@@ -539,6 +555,7 @@ function ContentRow(props: {
 
 function NewContent(props: {
   client: ApiClient;
+  courseSlug: string;
   chapterId: string;
   onDone: (next: Structure) => void;
 }) {
@@ -555,6 +572,8 @@ function NewContent(props: {
   return (
     <div className="rounded border border-dashed border-gray-300 p-3">
       <ContentForm
+        client={props.client}
+        courseSlug={props.courseSlug}
         submitLabel={de.common.add}
         onSubmit={(write) => props.client.adminCreateContent(props.chapterId, write)}
         onDone={(next) => {
@@ -576,6 +595,8 @@ function NewContent(props: {
  * rule here could disagree with the one that counts.
  */
 function ContentForm(props: {
+  client: ApiClient;
+  courseSlug: string;
   initial?: AuthoringContent;
   submitLabel: string;
   onSubmit: (write: ContentWrite) => Promise<Structure>;
@@ -643,7 +664,13 @@ function ContentForm(props: {
 
       {kind === "video" ? (
         <>
-          <SourcesEditor sources={sources} onChange={setSources} idFor={id} />
+          <SourcesEditor
+            sources={sources}
+            onChange={setSources}
+            idFor={id}
+            client={props.client}
+            courseSlug={props.courseSlug}
+          />
 
           {sources.filter((source) => source.url.trim() !== "").length === 0 ? (
             <Notice tone="warning">{de.structure.sourcesMissing}</Notice>
@@ -679,30 +706,26 @@ function ContentForm(props: {
                 onDuration={(seconds) => setDurationSec(String(seconds))}
               />
             </Field>
-            <Field
+            <UploadField
               label={de.structure.posterUrl}
               hint={de.structure.posterHint}
-              htmlFor={id("poster")}
-            >
-              <TextInput
-                id={id("poster")}
-                value={posterUrl}
-                maxLength={2000}
-                onChange={setPosterUrl}
-              />
-            </Field>
-            <Field
+              id={id("poster")}
+              value={posterUrl}
+              purpose="poster"
+              client={props.client}
+              courseSlug={props.courseSlug}
+              onChange={setPosterUrl}
+            />
+            <UploadField
               label={de.structure.captionsUrl}
               hint={de.structure.captionsHint}
-              htmlFor={id("captions")}
-            >
-              <TextInput
-                id={id("captions")}
-                value={captionsUrl}
-                maxLength={2000}
-                onChange={setCaptionsUrl}
-              />
-            </Field>
+              id={id("captions")}
+              value={captionsUrl}
+              purpose="captions"
+              client={props.client}
+              courseSlug={props.courseSlug}
+              onChange={setCaptionsUrl}
+            />
           </div>
         </>
       ) : null}
@@ -732,14 +755,18 @@ function ContentForm(props: {
 
       {kind === "material" ? (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={de.structure.fileUrl} htmlFor={id("file")}>
-            <TextInput
-              id={id("file")}
-              value={fileUrl}
-              maxLength={2000}
-              onChange={setFileUrl}
-            />
-          </Field>
+          <UploadField
+            label={de.structure.fileUrl}
+            id={id("file")}
+            value={fileUrl}
+            purpose="material"
+            client={props.client}
+            courseSlug={props.courseSlug}
+            onChange={setFileUrl}
+            // The bucket's own answer, not the file picker's claim — and it
+            // saves an author typing "application/pdf" into a free-text field.
+            onMimeType={setMimeType}
+          />
           <Field label={de.structure.mimeType} htmlFor={id("mime")}>
             <TextInput
               id={id("mime")}
@@ -963,7 +990,17 @@ function SourcesEditor(props: {
   sources: readonly MediaSourceWrite[];
   onChange: (next: MediaSourceWrite[]) => void;
   idFor: (field: string) => string;
+  client: ApiClient;
+  courseSlug: string;
 }) {
+  const [upload, setUpload] = useState<
+    | { kind: "idle" }
+    | { kind: "busy"; percent: number }
+    | { kind: "failed"; message: string }
+  >({ kind: "idle" });
+  const filePicker = useRef<HTMLInputElement>(null);
+  const abort = useRef<AbortController | undefined>(undefined);
+
   const patch = (index: number, change: Partial<MediaSourceWrite>) =>
     props.onChange(
       props.sources.map((source, i) => (i === index ? { ...source, ...change } : source)),
@@ -982,13 +1019,22 @@ function SourcesEditor(props: {
           // keying on the URL would remount the input on every keystroke and
           // lose focus after each character.
           <li key={index} className="grid gap-2 sm:grid-cols-[1fr_11rem_8rem_auto]">
-            <TextInput
-              id={props.idFor(`source-url-${index}`)}
-              aria-label={de.structure.sourceUrl}
-              value={source.url}
-              maxLength={2000}
-              onChange={(url) => patch(index, { url })}
-            />
+            {isUploadedReference(source.url) ? (
+              // A key is not editable text. It is the server's, and a
+              // hand-edited one can only ever be refused — so it renders as
+              // what it is and the row is removed rather than corrected.
+              <span className="flex items-center rounded-md border border-[color:var(--ds-hairline)] bg-[color:var(--ds-surface)] px-3 py-2 text-sm text-[color:var(--ds-ink)]">
+                {de.uploads.stored} · {referenceName(source.url)}
+              </span>
+            ) : (
+              <TextInput
+                id={props.idFor(`source-url-${index}`)}
+                aria-label={de.structure.sourceUrl}
+                value={source.url}
+                maxLength={2000}
+                onChange={(url) => patch(index, { url })}
+              />
+            )}
             <Select
               id={props.idFor(`source-type-${index}`)}
               aria-label={de.structure.sourceType}
@@ -1012,19 +1058,80 @@ function SourcesEditor(props: {
         ))}
       </ul>
 
-      <Button
-        variant="secondary"
-        onClick={() =>
-          props.onChange([
-            ...props.sources,
-            // Defaults to MP4: it is the rendition every course has, and an
-            // author adding a second one changes the dropdown deliberately.
-            { url: "", mimeType: "video/mp4", label: null },
-          ])
-        }
-      >
-        {de.structure.addSource}
-      </Button>
+      <input
+        ref={filePicker}
+        type="file"
+        className="hidden"
+        accept="video/mp4,video/webm,audio/mpeg,audio/mp4"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file === undefined) return;
+
+          const controller = new AbortController();
+          abort.current = controller;
+          setUpload({ kind: "busy", percent: 0 });
+
+          void (async () => {
+            try {
+              const result = await runUpload(
+                props.client,
+                props.courseSlug,
+                "video",
+                file,
+                (percent) => setUpload({ kind: "busy", percent }),
+                controller.signal,
+              );
+              // The type comes from the bucket, so the dropdown agrees with
+              // what was actually stored rather than with what the picker said.
+              props.onChange([
+                ...props.sources,
+                { url: result.reference, mimeType: result.mimeType, label: null },
+              ]);
+              setUpload({ kind: "idle" });
+            } catch (error) {
+              setUpload({
+                kind: "failed",
+                message: error instanceof Error ? error.message : de.uploads.failed,
+              });
+            } finally {
+              abort.current = undefined;
+              if (filePicker.current !== null) filePicker.current.value = "";
+            }
+          })();
+        }}
+      />
+
+      {upload.kind === "busy" ? (
+        <UploadProgress
+          percent={upload.percent}
+          onCancel={() => abort.current?.abort()}
+        />
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" onClick={() => filePicker.current?.click()}>
+            {de.uploads.videoUpload}
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() =>
+              props.onChange([
+                ...props.sources,
+                // Defaults to MP4: it is the rendition every course has, and an
+                // author adding a second one changes the dropdown deliberately.
+                { url: "", mimeType: "video/mp4", label: null },
+              ])
+            }
+          >
+            {de.structure.addSource}
+          </Button>
+        </div>
+      )}
+
+      <p className="text-xs text-[color:var(--ds-ink-muted)]">
+        {de.uploads.videoUploadHint}
+      </p>
+
+      {upload.kind === "failed" ? <Notice tone="warning">{upload.message}</Notice> : null}
     </fieldset>
   );
 }
