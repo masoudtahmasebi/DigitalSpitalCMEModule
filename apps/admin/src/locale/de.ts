@@ -272,6 +272,10 @@ export const de = {
     identityProviderLocalNote:
       "Bei diesem Verfahren werden die Keycloak-Angaben unten nicht verwendet.",
 
+    loginUrl: "Eigene Anmeldeseite des Kunden",
+    loginUrlHint:
+      "Wenn die Teilnehmenden sich auf der Website des Kunden anmelden — zum Beispiel im WordPress-Portal —, tragen Sie hier die Adresse dieser Seite ein. Die Übersichtsseite verlinkt dann dorthin, statt ein eigenes Anmeldeformular zu zeigen. Leer lassen für die Anmeldung über dieses Portal.",
+
     keycloak: "Anmeldung (Keycloak)",
     keycloakWarning:
       "Diese Werte entscheiden, gegen welchen Realm jedes Zugangstoken dieses Projekts geprüft wird. Ein falscher Wert sperrt alle Teilnehmenden dieses Projekts aus.",
@@ -279,6 +283,29 @@ export const de = {
     issuerHint: "Zum Beispiel https://auth.example.de/realms/medice",
     audience: "Audience",
     realm: "Realm",
+
+    branding: "Auftritt und Datenschutz",
+    brandingIntro:
+      "Texte und Bilder, die die Teilnehmenden dieses Projekts sehen. Leere Felder verwenden die Standardtexte der Plattform.",
+    catalogTitle: "Überschrift der Übersicht",
+    catalogTitleHint:
+      "Zum Beispiel „Fortbildungsbereich für ADHS“. Ohne Angabe verwendet die Plattform eine allgemeine Überschrift.",
+    catalogIntro: "Einleitungstext der Übersicht",
+    catalogHeroImageUrl: "Titelbild der Übersicht",
+    catalogSealImageUrl: "Zertifizierungssiegel",
+    catalogSealAlt: "Bildbeschreibung des Siegels",
+    catalogSealHint:
+      "Beides zusammen angeben. Ein Siegel ohne Beschreibung wird von Screenreadern nur als „Bild“ vorgelesen — an der Stelle, an der die Zertifizierung behauptet wird.",
+
+    privacyPolicy: "Einwilligung zur Punktemeldung",
+    privacyPolicyHint:
+      "Nur wenn beide Felder gesetzt sind, wird auf dem Abschlussformular die Einwilligungs-Checkbox angezeigt und die Zustimmung nachweisbar gespeichert (Art. 7 Abs. 1 DSGVO). Fehlt eines der beiden, wird keine Einwilligung erhoben.",
+    privacyPolicyUrl: "Link zur Datenschutzerklärung",
+    privacyPolicyVersion: "Fassung der Datenschutzerklärung",
+    privacyPolicyVersionHint:
+      "Zum Beispiel „datenschutz-2026-01“. Wird zum Abschluss gespeichert, damit später belegbar ist, welcher Fassung zugestimmt wurde.",
+    privacyPolicyIncomplete:
+      "Bitte Link und Fassung gemeinsam angeben oder beide leer lassen.",
 
     smtp: "E-Mail-Versand (SMTP)",
     smtpIntro:
@@ -487,6 +514,16 @@ export const de = {
       "Die hochgeladene Schriftart wird in der Lernoberfläche verwendet. Ohne eigene Schriftart wird die Standardschrift angezeigt.",
     privacy:
       "Die Datei wird auf unseren eigenen Servern gespeichert und von dort ausgeliefert. Es werden keine Schriften von Drittanbietern geladen, sodass keine IP-Adressen Ihrer Nutzerinnen und Nutzer an Dritte übermittelt werden.",
+    /**
+     * Where the rest of the project's appearance lives.
+     *
+     * This screen is only the font, because a file upload needs its own
+     * endpoint. Everything else — Überschrift, Titelbild, Siegel and the
+     * Datenschutz-Einwilligung — is stored on the project row and edited with
+     * the project's other settings. Saying so here saves an operator the hunt.
+     */
+    elsewhere:
+      "Überschrift, Titelbild, Siegel und die Datenschutz-Einwilligung finden Sie unter Organisation beim jeweiligen Projekt.",
 
     familyName: "Name der Schriftfamilie",
     familyNameHint:

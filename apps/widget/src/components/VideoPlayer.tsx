@@ -497,10 +497,30 @@ export function VideoPlayer(props: VideoPlayerProps) {
           onLoadedMetadata={handleLoadedMetadata}
           onTimeUpdate={handleTimeUpdate}
           onProgress={handleProgress}
-          onPlay={() => withVideo(() => {})}
+          /*
+           * `play` and `pause`/`ended` bracket the interval; `timeupdate`
+           * alone cannot.
+           *
+           * `timeupdate` fires about four times a second, so an interval built
+           * only from it starts a quarter-second after playback did and ends a
+           * quarter-second before it stopped. Watching a video from end to end
+           * therefore credited ~97 %, and the watch gate defaults to 100 — so
+           * the gate was not strict but *unreachable*. Observing the element's
+           * own position at the two ends closes both slivers with the figure
+           * the element itself reports.
+           *
+           * Deliberately **not** on `seeking`: by the time it fires,
+           * `currentTime` is already the destination, and observing it would
+           * stretch the open interval across material nobody watched. A seek
+           * closes the interval and opens a new one where it lands.
+           */
+          onPlay={() => {
+            withVideo((video) => onTick(video.currentTime, true));
+          }}
           onPlaying={() => withVideo(() => {})}
           onWaiting={() => withVideo(() => {})}
           onPause={() => {
+            withVideo((video) => onTick(video.currentTime, true));
             onStop("pause");
             withVideo(() => {});
           }}
@@ -511,6 +531,10 @@ export function VideoPlayer(props: VideoPlayerProps) {
           }}
           onSeeked={() => withVideo(() => {})}
           onEnded={() => {
+            // `pause` fires first and has already observed this position; the
+            // repeat is idempotent — the tracker extends an interval to a
+            // position it already holds without widening it.
+            withVideo((video) => onTick(video.currentTime, true));
             onStop("ended");
             withVideo(() => {});
           }}

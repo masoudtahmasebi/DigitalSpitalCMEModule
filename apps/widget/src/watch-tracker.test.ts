@@ -158,3 +158,129 @@ describe("coalesce", () => {
     expect(coalesce([])).toEqual([]);
   });
 });
+
+/**
+ * The defect that made a 100 % watch gate unreachable (P29-01).
+ *
+ * Found by playing a real 25 s video end to end in a real browser: the server
+ * credited 97 %. Three sub-second losses compounded — the head before the first
+ * `timeupdate`, the tail after the last one, and a quarter of a second at every
+ * flush — and the course required 100 %.
+ *
+ * These cases are written in the units the bug actually occurred in: a
+ * `timeupdate` roughly every 0.26 s, which is what Chromium does.
+ */
+describe("continuity across a close", () => {
+  /** One `timeupdate` step, as Chromium emits them. */
+  const STEP = 0.26;
+
+  function play(tracker: WatchTracker, from: number, to: number): number {
+    let at = from;
+    while (at < to) {
+      at = Math.min(at + STEP, to);
+      tracker.observe(at, true);
+    }
+    return at;
+  }
+
+  it("resumes from where the last interval ended, not from the next sample", () => {
+    const tracker = new WatchTracker();
+    tracker.observe(0, true); // the `play` event, at the true start
+    play(tracker, 0, 12);
+    const first = tracker.drain();
+    expect(first).toEqual([{ startSec: 0, endSec: 12 }]);
+
+    // Playback continued; the next sample lands one step later.
+    play(tracker, 12, 25);
+    tracker.closeOpen();
+    const second = tracker.drain();
+
+    // Contiguous with the first, so the union is the whole video. Before the
+    // fix this began at 12.26 and the gap was permanent.
+    expect(second).toEqual([{ startSec: 12, endSec: 25 }]);
+  });
+
+  it("gives a whole-video watch the whole video, across flushes", () => {
+    const tracker = new WatchTracker();
+    const all: { startSec: number; endSec: number }[] = [];
+
+    tracker.observe(0, true); // the `play` event, at the true start
+    let at = 0;
+    // Flushes at 8 s and 16 s, then a last one 0.1 s before the end — the
+    // window that used to delete the tail as noise.
+    for (const mark of [8, 16, 24.9]) {
+      at = play(tracker, at, mark);
+      all.push(...tracker.drain());
+    }
+    at = play(tracker, at, 24.96);
+    tracker.observe(25, true); // the `pause`/`ended` observation
+    tracker.closeOpen();
+    all.push(...tracker.drain());
+
+    const covered = coalesce(all).reduce((sum, s) => sum + (s.endSec - s.startSec), 0);
+    // Every second of it. Not 24.4, which is what four dropped boundaries and
+    // a discarded tail came to — and which floors to 97 %.
+    expect(covered).toBeCloseTo(25, 5);
+  });
+
+  it("does not bridge a seek", () => {
+    const tracker = new WatchTracker();
+    tracker.observe(0, true);
+    play(tracker, 0, 5);
+    tracker.closeOpen();
+    tracker.drain();
+
+    // Jumped forward 60 s. Continuity must not manufacture the gap.
+    tracker.observe(65, true);
+    play(tracker, 65, 70);
+    tracker.closeOpen();
+
+    expect(tracker.drain()).toEqual([{ startSec: 65, endSec: 70 }]);
+  });
+
+  it("does not bridge a rewind", () => {
+    const tracker = new WatchTracker();
+    tracker.observe(10, true);
+    play(tracker, 10, 15);
+    tracker.closeOpen();
+    tracker.drain();
+
+    // Back to 14 — inside the tolerance in magnitude, but backwards. Starting
+    // the new interval at 15 would end it before it began.
+    tracker.observe(14, true);
+    play(tracker, 14, 20);
+    tracker.closeOpen();
+
+    expect(tracker.drain()).toEqual([{ startSec: 14, endSec: 20 }]);
+  });
+
+  it("does not bridge a pause longer than one playback step", () => {
+    // A learner who pauses at 5 and drags to 5.5 before resuming has not
+    // watched 5 → 5.5. The tolerance is a sampling allowance, not a gift.
+    const tracker = new WatchTracker();
+    tracker.observe(0, true);
+    play(tracker, 0, 5);
+    tracker.observe(5, false);
+    tracker.drain();
+
+    tracker.observe(8, true);
+    play(tracker, 8, 10);
+    tracker.closeOpen();
+
+    expect(tracker.drain()).toEqual([{ startSec: 8, endSec: 10 }]);
+  });
+
+  it("continues across a pause the learner resumed from the same second", () => {
+    const tracker = new WatchTracker();
+    tracker.observe(0, true);
+    play(tracker, 0, 5);
+    tracker.observe(5, false); // pause
+    tracker.drain();
+
+    tracker.observe(5, true); // resume, same position
+    play(tracker, 5, 10);
+    tracker.closeOpen();
+
+    expect(tracker.drain()).toEqual([{ startSec: 5, endSec: 10 }]);
+  });
+});

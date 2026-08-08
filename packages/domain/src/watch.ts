@@ -97,12 +97,76 @@ export function watchedSeconds(segments: readonly WatchedSegment[]): number {
 }
 
 /**
+ * How far from an endpoint still counts as being at it.
+ *
+ * A `<video>` timeline is continuous and the events that observe it are not.
+ * `play` fires with `currentTime` already a fraction past zero, and the last
+ * `timeupdate` lands a fraction before the end — so a learner who watches every
+ * frame reports something like `[0.0007, 25]` of a 25 s video, which is
+ * 99.997 % and **floors to 99**.
+ *
+ * That is not a rounding nicety. `required_watch_percent` defaults to 100 and
+ * is 100 on the MEDICE course, so before this the gate was not strict but
+ * *unreachable*: a physician could watch an accredited Fortbildung end to end
+ * and never be permitted to finish it. Found by playing a real video in a real
+ * browser (P29-01).
+ *
+ * Half a second, and applied **only at the two endpoints** — never to a gap in
+ * the middle. That is the distinction that matters: a hole is content the
+ * learner did not see and must stay a hole, while an endpoint sliver is the
+ * measuring instrument, not the measurement. Half a second cannot hide content
+ * at either end, and the wall-clock check bounds the total independently.
+ */
+const BOUNDARY_TOLERANCE_SEC = 0.5;
+
+/**
+ * The union, with each end snapped to the content's own bounds when it lands
+ * within a sampling artefact of them.
+ *
+ * Deliberately not exported, and deliberately not used by `maxWatchedPosition`:
+ * snapping the far end to the duration there would raise the forward-seek
+ * ceiling to the end of the video on the strength of a rounding error, which is
+ * the one thing the ceiling exists to prevent.
+ */
+function snapToBounds(
+  merged: readonly WatchedSegment[],
+  durationSec: number,
+): readonly WatchedSegment[] {
+  if (merged.length === 0) return merged;
+
+  const first = merged[0];
+  const last = merged[merged.length - 1];
+  // Non-null: length is at least one, so both indices exist.
+  if (first === undefined || last === undefined) return merged;
+
+  const snapped = [...merged];
+  if (first.startSec > 0 && first.startSec <= BOUNDARY_TOLERANCE_SEC) {
+    snapped[0] = { startSec: 0, endSec: first.endSec };
+  }
+  const lastIndex = snapped.length - 1;
+  const tail = snapped[lastIndex];
+  if (
+    tail !== undefined &&
+    tail.endSec < durationSec &&
+    durationSec - tail.endSec <= BOUNDARY_TOLERANCE_SEC
+  ) {
+    snapped[lastIndex] = { startSec: tail.startSec, endSec: durationSec };
+  }
+
+  return snapped;
+}
+
+/**
  * Integer percentage 0–100 of the content actually watched.
  *
  * Deliberately floors rather than rounds. At MEDICE's `requiredWatchPercent`
  * of 100 there is no tolerance to hide behind: rounding would report 99.6 %
  * coverage as 100 and complete a video with unwatched content in it. Flooring
  * means the number never overstates what the learner saw.
+ *
+ * The endpoints are snapped first — see `BOUNDARY_TOLERANCE_SEC`. Flooring and
+ * snapping answer different questions: flooring refuses to round a *hole* away,
+ * snapping refuses to call the sampling interval a hole.
  */
 export function watchedPercent(
   segments: readonly WatchedSegment[],
@@ -110,7 +174,11 @@ export function watchedPercent(
 ): number {
   if (!Number.isFinite(durationSec) || durationSec <= 0) return 0;
 
-  const covered = Math.min(watchedSeconds(segments), durationSec);
+  const merged = snapToBounds(mergeWatchedSegments(segments), durationSec);
+  const covered = Math.min(
+    merged.reduce((total, s) => total + (s.endSec - s.startSec), 0),
+    durationSec,
+  );
   return Math.floor((covered / durationSec) * 100);
 }
 

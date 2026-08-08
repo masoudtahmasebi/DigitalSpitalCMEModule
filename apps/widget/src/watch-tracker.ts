@@ -48,8 +48,39 @@ const SEEK_TOLERANCE_SEC = 2;
 const MIN_SEGMENT_SEC = 0.25;
 
 export class WatchTracker {
-  #open: { start: number; end: number } | undefined;
+  /**
+   * `continued` records that this interval opened at the previous one's end
+   * rather than where the sample landed — see `#startFor`. It is what lets the
+   * noise filter below tell a stray event from the tail of a real view.
+   */
+  #open: { start: number; end: number; continued: boolean } | undefined;
   #pending: Segment[] = [];
+
+  /**
+   * Where the last interval ended, so continued playback resumes from it.
+   *
+   * ## The bug this exists to close
+   *
+   * Every interval used to begin at the *first `timeupdate` after it opened*,
+   * and `timeupdate` fires about four times a second. So every close-and-resume
+   * — a pause, a flush, a backgrounded tab — silently dropped up to a quarter
+   * of a second of material the learner did watch.
+   *
+   * Individually invisible. In aggregate decisive: watching a 25 s video from
+   * end to end in a browser credited **97 %**, and `required_watch_percent`
+   * defaults to 100 and is 100 on the MEDICE course. The gate was not strict,
+   * it was **unreachable** — a physician could watch every frame of an
+   * accredited Fortbildung and never be allowed to finish it.
+   *
+   * Continuing from the recorded end rather than from the next sample is not a
+   * loosening: it credits only the span between where playback demonstrably
+   * stopped and where it demonstrably resumed, and only when that span is
+   * within `SEEK_TOLERANCE_SEC` — the same bound that already separates
+   * playback from a seek. A backward jump never continues, so rewinding cannot
+   * manufacture coverage, and the server's `faster_than_wallclock` check bounds
+   * the total independently.
+   */
+  #resumeFrom: number | undefined;
 
   /**
    * Record an observed playhead position.
@@ -68,7 +99,8 @@ export class WatchTracker {
 
     const open = this.#open;
     if (open === undefined) {
-      this.#open = { start: positionSec, end: positionSec };
+      const start = this.#startFor(positionSec);
+      this.#open = { start, end: positionSec, continued: start !== positionSec };
       return;
     }
 
@@ -78,9 +110,27 @@ export class WatchTracker {
       return;
     }
 
-    // A seek: bank what was genuinely played, then start fresh.
+    // A seek: bank what was genuinely played, then start fresh **at the new
+    // position**. Not `#startFor` — a jump is precisely the case continuity
+    // must not bridge, and `closeOpen` has just moved `#resumeFrom` to the old
+    // end which is now somewhere else entirely.
     this.closeOpen();
-    this.#open = { start: positionSec, end: positionSec };
+    this.#resumeFrom = undefined;
+    this.#open = { start: positionSec, end: positionSec, continued: false };
+  }
+
+  /**
+   * Where an interval opening at `positionSec` should actually start.
+   *
+   * The recorded end of the previous interval when playback simply carried on
+   * across a close; otherwise the position itself.
+   */
+  #startFor(positionSec: number): number {
+    const resume = this.#resumeFrom;
+    if (resume === undefined) return positionSec;
+    const gap = positionSec - resume;
+    // Forward only, and within one playback step. A backward gap is a rewind.
+    return gap >= 0 && gap <= SEEK_TOLERANCE_SEC ? resume : positionSec;
   }
 
   /** Playback stopped — pause, ended, seeking, or the component unmounting. */
@@ -88,7 +138,20 @@ export class WatchTracker {
     const open = this.#open;
     this.#open = undefined;
     if (open === undefined) return;
-    if (open.end - open.start < MIN_SEGMENT_SEC) return;
+    // Recorded even when the interval is too short to bank: the *boundary* is
+    // what a resume needs, and a sub-threshold interval is exactly the case
+    // that used to lose it — `drain` reopens a zero-length one on every flush.
+    this.#resumeFrom = open.end;
+    // The noise filter, and the one case it must not apply to.
+    //
+    // A short interval that opened where the last one closed is not a stray
+    // event — it is the tail of a view already in progress, and dropping it
+    // leaves a hole. That is not hypothetical: a flush landing within a
+    // quarter-second of a video's end deleted the final fragment and left the
+    // learner at 99 % of a course requiring 100. An interval that opened on
+    // its own, however short, is still noise.
+    if (!open.continued && open.end - open.start < MIN_SEGMENT_SEC) return;
+    if (open.end <= open.start) return;
     this.#pending.push({ startSec: open.start, endSec: open.end });
   }
 
@@ -96,17 +159,18 @@ export class WatchTracker {
    * Hand over everything recorded so far, including the interval still in
    * progress, and reset.
    *
-   * The open interval is included as a snapshot and then reopened at the
-   * current position, so a learner who watches twenty minutes without pausing
-   * still has their progress flushed periodically rather than losing it all if
-   * the tab is closed.
+   * A learner who watches twenty minutes without pausing still has their
+   * progress flushed periodically rather than losing it all if the tab closes.
+   * There is no explicit reopen here any more: `closeOpen` leaves the boundary
+   * in `#resumeFrom` and the next `observe` continues from it, which is the
+   * same rule a pause and a backgrounded tab now follow. One rule, three
+   * callers — the reopen was a fourth that only half worked, because it was
+   * skipped whenever the interval had already been closed a moment earlier.
    */
   drain(): Segment[] {
-    const open = this.#open;
     this.closeOpen();
     const drained = this.#pending;
     this.#pending = [];
-    if (open !== undefined) this.#open = { start: open.end, end: open.end };
     return drained;
   }
 
@@ -114,7 +178,9 @@ export class WatchTracker {
   get hasPending(): boolean {
     if (this.#pending.length > 0) return true;
     const open = this.#open;
-    return open !== undefined && open.end - open.start >= MIN_SEGMENT_SEC;
+    if (open === undefined) return false;
+    if (open.end <= open.start) return false;
+    return open.continued || open.end - open.start >= MIN_SEGMENT_SEC;
   }
 }
 

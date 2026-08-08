@@ -861,6 +861,55 @@ describe("project settings", () => {
     );
   });
 
+  /**
+   * The customer's own sign-in page (P29-03).
+   *
+   * `projects.login_url` existed in the database, `resolve_project_signin`
+   * returned it, and `GET /tenants/{slug}` branched on it to answer `external`
+   * instead of `portal` — but the column was absent from the Drizzle schema, so
+   * nothing this application ran could see it, let alone write it. Every
+   * project answered "use the portal's own form", including MEDICE's, whose
+   * physicians sign in through WordPress.
+   */
+  it("stores the customer's own login page, and the tenant lookup returns it", async () => {
+    const slug = `wp-${randomUUID().slice(0, 8)}`;
+    await asAdmin("POST", "/admin/departments", { slug, name: "WP-Abteilung" });
+    await asAdmin("POST", "/admin/projects", {
+      departmentSlug: slug,
+      slug,
+      name: "WordPress-Projekt",
+    });
+
+    const saved = await asAdmin("PATCH", `/admin/projects/${slug}`, {
+      loginUrl: "https://www.medice.de/anmelden",
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body.find((p: any) => p.slug === slug).loginUrl).toBe(
+      "https://www.medice.de/anmelden",
+    );
+
+    // And the portal's own lookup now answers `external` — the whole point.
+    // Unauthenticated, as an anonymous visitor to `/{tenant}` is.
+    const tenant = await fetch(`${baseUrl}/tenants/${slug}`);
+    expect(tenant.status).toBe(200);
+    const seen = (await tenant.json()) as { kind: string; url?: string };
+    expect(seen.kind).toBe("external");
+    expect(seen.url).toBe("https://www.medice.de/anmelden");
+  });
+
+  it("refuses a login page that is not HTTPS", async () => {
+    const slug = `wp-plain-${randomUUID().slice(0, 8)}`;
+    await asAdmin("POST", "/admin/departments", { slug, name: "Abteilung" });
+    await asAdmin("POST", "/admin/projects", { departmentSlug: slug, slug, name: "P" });
+
+    // A database CHECK enforces this too; refusing here makes it a 422 an
+    // operator can read rather than a 500 from the driver.
+    const refused = await asAdmin("PATCH", `/admin/projects/${slug}`, {
+      loginUrl: "http://www.medice.de/anmelden",
+    });
+    expect(refused.status).toBe(422);
+  });
+
   it("refuses an identity provider no class implements", async () => {
     const slug = `bogus-${randomUUID().slice(0, 8)}`;
     await asAdmin("POST", "/admin/departments", { slug, name: "Abteilung" });

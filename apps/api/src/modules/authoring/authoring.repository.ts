@@ -154,6 +154,7 @@ export interface ProjectRow {
   departmentSlug: string;
   /** `keycloak` or `local` — see `schema.ts`. */
   identityProvider: string;
+  loginUrl: string | null;
   keycloakIssuer: string | null;
   keycloakAudience: string | null;
   keycloakRealm: string | null;
@@ -172,6 +173,7 @@ export interface ProjectPatch {
   name?: string;
   /** `keycloak` or `local` — see `schema.ts`. */
   identityProvider?: string;
+  loginUrl?: string | null;
   keycloakIssuer?: string | null;
   keycloakAudience?: string | null;
   keycloakRealm?: string | null;
@@ -365,6 +367,7 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
         name: projects.name,
         departmentSlug: departments.slug,
         identityProvider: projects.identityProvider,
+        loginUrl: projects.loginUrl,
         keycloakIssuer: projects.keycloakIssuer,
         keycloakAudience: projects.keycloakAudience,
         keycloakRealm: projects.keycloakRealm,

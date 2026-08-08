@@ -108,6 +108,15 @@ export const projects = pgTable("projects", {
    * its participants could not sign in at all (found by the journey suite).
    */
   identityProvider: text("identity_provider").notNull(),
+  /**
+   * The customer's own sign-in page (migration 0028).
+   *
+   * Absent from this schema until P29-03, which is *why* nothing could write
+   * it: Drizzle only knows the columns declared here, so the column existed in
+   * PostgreSQL, was read by `resolve_project_signin`, was branched on by the
+   * portal — and was invisible to every query this application builds.
+   */
+  loginUrl: text("login_url"),
   keycloakIssuer: text("keycloak_issuer"),
   keycloakAudience: text("keycloak_audience"),
   keycloakRealm: text("keycloak_realm"),

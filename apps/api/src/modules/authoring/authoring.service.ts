@@ -191,6 +191,7 @@ export class AuthoringService {
     // an operator has to be able to make, because a customer that starts on the
     // portal and later gets a Keycloak realm should not need a new project.
     assign(patch, "identityProvider", update.identityProvider);
+    assign(patch, "loginUrl", update.loginUrl);
     assign(patch, "keycloakIssuer", update.keycloakIssuer);
     assign(patch, "keycloakAudience", update.keycloakAudience);
     assign(patch, "keycloakRealm", update.keycloakRealm);

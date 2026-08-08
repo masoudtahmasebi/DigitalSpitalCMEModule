@@ -82,6 +82,23 @@ const richText = z.string().max(20_000);
 const url = z.string().url().max(2000);
 
 /**
+ * An HTTPS URL, matching the database CHECK on `projects.login_url`.
+ *
+ * `url` alone accepts `http://`, which the CHECK then refuses — so an operator
+ * who typed one got a 500 from the driver rather than a sentence naming the
+ * field. Two places state the same rule because both are load-bearing: the
+ * constraint is what makes it true of every row however written, and this is
+ * what makes it *legible* to the person who can fix it.
+ *
+ * Deliberately not applied to `keycloakIssuer`: the dev realm is served over
+ * plain HTTP on the loopback, and forcing HTTPS there would break every local
+ * setup to restate a rule production already enforces at the network edge.
+ */
+const httpsUrl = url.refine((value) => value.startsWith("https://"), {
+  message: "must be an https:// URL",
+});
+
+/**
  * A URL the customer already serves, or a reference into our own storage.
  *
  * Before uploads existed (P23-01) these fields were `url`, which requires an
@@ -156,6 +173,11 @@ export const projectCreateSchema = z.object({
 export const projectUpdateSchema = z.object({
   name: title.optional(),
   identityProvider: identityProvider.optional(),
+  /**
+   * The customer's own sign-in page. HTTPS only — the same rule the database
+   * CHECK applies, stated here so an operator is told rather than 500'd.
+   */
+  loginUrl: httpsUrl.nullable().optional(),
   keycloakIssuer: url.nullable().optional(),
   keycloakAudience: z.string().trim().max(200).nullable().optional(),
   keycloakRealm: z.string().trim().max(200).nullable().optional(),
@@ -193,6 +215,7 @@ export const projectSummarySchema = z.object({
   name: z.string(),
   departmentSlug: z.string(),
   identityProvider: identityProvider,
+  loginUrl: z.string().nullable(),
   keycloakIssuer: z.string().nullable(),
   keycloakAudience: z.string().nullable(),
   keycloakRealm: z.string().nullable(),

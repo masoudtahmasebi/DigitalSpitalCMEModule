@@ -41,6 +41,7 @@ function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     name: "MEDICE",
     departmentSlug: "default",
     identityProvider: "keycloak",
+    loginUrl: null,
     keycloakIssuer: "https://auth.example.de/realms/medice",
     keycloakAudience: "ds-widget",
     keycloakRealm: "medice",
@@ -185,6 +186,108 @@ describe("editing a project", () => {
           keycloakIssuer: "https://auth.example.de/realms/medice",
         }),
       );
+    });
+  });
+});
+
+/**
+ * The branding fields, and the consent pair in particular (P29-02).
+ *
+ * `privacyPolicyUrl` and `privacyPolicyVersion` were parsed by `@ds/domain`,
+ * stored in `projects.branding`, and read by the widget on every completion
+ * screen — and publishable by no contract and settable in no form. The
+ * consequence was silent and on the GDPR path: the consent checkbox is drawn
+ * only when both are present, so it was never drawn, and
+ * `enrolments.consent_document` was empty on every completion the platform had
+ * ever recorded.
+ */
+describe("branding and the consent pair", () => {
+  async function openSettings(): Promise<void> {
+    fireEvent.click(await screen.findByLabelText(de.common.editProject("MEDICE")));
+  }
+
+  it("shows what is stored", async () => {
+    render(
+      <Organisation
+        client={clientWith([
+          project({
+            branding: {
+              catalogTitle: "Fortbildungsbereich für ADHS",
+              privacyPolicyUrl: "https://medice.de/datenschutz",
+              privacyPolicyVersion: "datenschutz-2026-01",
+            },
+          }),
+        ])}
+      />,
+    );
+    await openSettings();
+
+    expect(
+      (screen.getByLabelText(de.organisation.catalogTitle) as HTMLInputElement).value,
+    ).toBe("Fortbildungsbereich für ADHS");
+    expect(
+      (screen.getByLabelText(de.organisation.privacyPolicyVersion) as HTMLInputElement)
+        .value,
+    ).toBe("datenschutz-2026-01");
+  });
+
+  it("sends the consent pair, which is what makes the checkbox appear", async () => {
+    const client = clientWith([project()]);
+    render(<Organisation client={client} />);
+    await openSettings();
+
+    fireEvent.change(screen.getByLabelText(de.organisation.privacyPolicyUrl), {
+      target: { value: "https://medice.de/datenschutz" },
+    });
+    fireEvent.change(screen.getByLabelText(de.organisation.privacyPolicyVersion), {
+      target: { value: "datenschutz-2026-01" },
+    });
+    fireEvent.click(screen.getByText(de.common.save));
+
+    await waitFor(() => {
+      expect(client.adminUpdateProject).toHaveBeenCalledWith(
+        "medice",
+        expect.objectContaining({
+          branding: expect.objectContaining({
+            privacyPolicyUrl: "https://medice.de/datenschutz",
+            privacyPolicyVersion: "datenschutz-2026-01",
+          }),
+        }),
+      );
+    });
+  });
+
+  it("refuses to save half a consent pair", async () => {
+    const client = clientWith([project()]);
+    render(<Organisation client={client} />);
+    await openSettings();
+
+    fireEvent.change(screen.getByLabelText(de.organisation.privacyPolicyUrl), {
+      target: { value: "https://medice.de/datenschutz" },
+    });
+
+    // The API drops a half-configured pair silently — correctly, since a
+    // consent record naming no document proves nothing. Saving "successfully"
+    // and finding the checkbox still absent is the failure this prevents.
+    expect(screen.getByText(de.organisation.privacyPolicyIncomplete)).toBeTruthy();
+    expect((screen.getByText(de.common.save) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("omits a blank field rather than storing an empty string", async () => {
+    const client = clientWith([project()]);
+    render(<Organisation client={client} />);
+    await openSettings();
+
+    fireEvent.change(screen.getByLabelText(de.organisation.catalogTitle), {
+      target: { value: "  Nur dies  " },
+    });
+    fireEvent.click(screen.getByText(de.common.save));
+
+    await waitFor(() => {
+      const sent = (
+        client.adminUpdateProject as unknown as { mock: { calls: unknown[][] } }
+      ).mock.calls[0]?.[1] as { branding: Record<string, string> };
+      expect(sent.branding).toEqual({ catalogTitle: "Nur dies" });
     });
   });
 });

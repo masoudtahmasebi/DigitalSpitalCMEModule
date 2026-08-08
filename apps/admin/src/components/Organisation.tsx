@@ -526,7 +526,17 @@ function ProjectSettings(props: {
   const [smtpPassword, setSmtpPassword] = useState("");
   const [smtpFromAddress, setSmtpFromAddress] = useState(project.smtpFromAddress ?? "");
   const [smtpFromName, setSmtpFromName] = useState(project.smtpFromName ?? "");
+  const [loginUrl, setLoginUrl] = useState(project.loginUrl ?? "");
+  const [branding, setBranding] = useState(() => brandingForm(project));
   const saver = useSaver();
+
+  // Both or neither (P29-02). The API drops a half-configured pair silently —
+  // correctly, since a consent record naming no document proves nothing — and
+  // an operator who typed one field deserves to be told rather than to save
+  // successfully and find the checkbox still absent.
+  const policyIncomplete =
+    (branding.privacyPolicyUrl.trim() === "") !==
+    (branding.privacyPolicyVersion.trim() === "");
 
   const id = (field: string) => `project-${project.slug}-${field}`;
 
@@ -540,6 +550,7 @@ function ProjectSettings(props: {
             await props.client.adminUpdateProject(project.slug, {
               name: name.trim(),
               identityProvider,
+              loginUrl: blankToNull(loginUrl),
               keycloakIssuer: blankToNull(issuer),
               keycloakAudience: blankToNull(audience),
               keycloakRealm: blankToNull(realm),
@@ -554,6 +565,9 @@ function ProjectSettings(props: {
               ...(smtpPassword === "" ? {} : { smtpPassword }),
               smtpFromAddress: blankToNull(smtpFromAddress),
               smtpFromName: blankToNull(smtpFromName),
+              // Sent whole: `parseBranding` validates the object and stores the
+              // parsed result, so a partial patch would drop everything absent.
+              branding: brandingPayload(branding),
             }),
           ),
         );
@@ -593,6 +607,28 @@ function ProjectSettings(props: {
           value={embedOrigins}
           rows={3}
           onChange={setEmbedOrigins}
+        />
+      </Field>
+
+      {/*
+        Where the customer's own login lives (P29-03).
+
+        The column, the `resolve_project_signin` lookup and the portal's
+        branch on it all existed; nothing could write it, so every project
+        answered "use the portal's own form" whatever the customer actually
+        used. MEDICE sign in through WordPress, and this is the field that
+        says so.
+      */}
+      <Field
+        label={de.organisation.loginUrl}
+        hint={de.organisation.loginUrlHint}
+        htmlFor={id("login-url")}
+      >
+        <TextInput
+          id={id("login-url")}
+          value={loginUrl}
+          maxLength={2000}
+          onChange={setLoginUrl}
         />
       </Field>
 
@@ -700,9 +736,97 @@ function ProjectSettings(props: {
         </p>
       </fieldset>
 
+      <fieldset className="space-y-3">
+        <legend className="text-sm font-semibold text-gray-900">
+          {de.organisation.branding}
+        </legend>
+        <p className="text-xs text-gray-600">{de.organisation.brandingIntro}</p>
+
+        <Field
+          label={de.organisation.catalogTitle}
+          hint={de.organisation.catalogTitleHint}
+          htmlFor={id("catalog-title")}
+        >
+          <TextInput
+            id={id("catalog-title")}
+            value={branding.catalogTitle}
+            maxLength={120}
+            onChange={(v) => setBranding((b) => ({ ...b, catalogTitle: v }))}
+          />
+        </Field>
+        <Field label={de.organisation.catalogIntro} htmlFor={id("catalog-intro")}>
+          <TextArea
+            id={id("catalog-intro")}
+            value={branding.catalogIntro}
+            rows={3}
+            onChange={(v) => setBranding((b) => ({ ...b, catalogIntro: v }))}
+          />
+        </Field>
+        <Field label={de.organisation.catalogHeroImageUrl} htmlFor={id("catalog-hero")}>
+          <TextInput
+            id={id("catalog-hero")}
+            value={branding.catalogHeroImageUrl}
+            maxLength={2000}
+            onChange={(v) => setBranding((b) => ({ ...b, catalogHeroImageUrl: v }))}
+          />
+        </Field>
+        <Field
+          label={de.organisation.catalogSealImageUrl}
+          hint={de.organisation.catalogSealHint}
+          htmlFor={id("catalog-seal")}
+        >
+          <TextInput
+            id={id("catalog-seal")}
+            value={branding.catalogSealImageUrl}
+            maxLength={2000}
+            onChange={(v) => setBranding((b) => ({ ...b, catalogSealImageUrl: v }))}
+          />
+        </Field>
+        <Field label={de.organisation.catalogSealAlt} htmlFor={id("catalog-seal-alt")}>
+          <TextInput
+            id={id("catalog-seal-alt")}
+            value={branding.catalogSealAlt}
+            maxLength={200}
+            onChange={(v) => setBranding((b) => ({ ...b, catalogSealAlt: v }))}
+          />
+        </Field>
+      </fieldset>
+
+      <fieldset className="space-y-3">
+        <legend className="text-sm font-semibold text-gray-900">
+          {de.organisation.privacyPolicy}
+        </legend>
+        <Notice tone="info">{de.organisation.privacyPolicyHint}</Notice>
+
+        <Field label={de.organisation.privacyPolicyUrl} htmlFor={id("policy-url")}>
+          <TextInput
+            id={id("policy-url")}
+            value={branding.privacyPolicyUrl}
+            maxLength={2000}
+            onChange={(v) => setBranding((b) => ({ ...b, privacyPolicyUrl: v }))}
+          />
+        </Field>
+        <Field
+          label={de.organisation.privacyPolicyVersion}
+          hint={de.organisation.privacyPolicyVersionHint}
+          htmlFor={id("policy-version")}
+        >
+          <TextInput
+            id={id("policy-version")}
+            value={branding.privacyPolicyVersion}
+            maxLength={64}
+            onChange={(v) => setBranding((b) => ({ ...b, privacyPolicyVersion: v }))}
+          />
+        </Field>
+
+        {policyIncomplete ? (
+          <Notice tone="warning">{de.organisation.privacyPolicyIncomplete}</Notice>
+        ) : null}
+      </fieldset>
+
       <SaveProblem title={de.error.title} problem={saver.problem} />
 
-      <Button type="submit" disabled={saver.state === "saving"}>
+      <Button type="submit" disabled={saver.state === "saving" || policyIncomplete}>
         {saver.state === "saving" ? de.common.saving : de.common.save}
       </Button>
     </form>
@@ -710,6 +834,46 @@ function ProjectSettings(props: {
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * The branding fields this form edits, as strings.
+ *
+ * Only the seven the contract publishes for a client to set — colours, the
+ * corner radius and the uploaded font are elsewhere or server-owned. Strings
+ * rather than optionals because an input's value is a string, and the empty
+ * one means "unset" on the way back out.
+ */
+function brandingForm(project: ProjectSummary) {
+  const b = (project.branding ?? {}) as Record<string, unknown>;
+  const str = (key: string): string =>
+    typeof b[key] === "string" ? (b[key] as string) : "";
+  return {
+    catalogTitle: str("catalogTitle"),
+    catalogIntro: str("catalogIntro"),
+    catalogHeroImageUrl: str("catalogHeroImageUrl"),
+    catalogSealImageUrl: str("catalogSealImageUrl"),
+    catalogSealAlt: str("catalogSealAlt"),
+    privacyPolicyUrl: str("privacyPolicyUrl"),
+    privacyPolicyVersion: str("privacyPolicyVersion"),
+  };
+}
+
+/**
+ * The whole branding object to send, blanks omitted.
+ *
+ * `parseBranding` stores the *parsed* result, so what is sent replaces what is
+ * stored — an omitted key is a cleared value, not an untouched one. The
+ * server-owned keys (`fontFamilyName`, `fontVersion`) are re-derived from the
+ * project row on read, so leaving them out here cannot lose them.
+ */
+function brandingPayload(form: ReturnType<typeof brandingForm>) {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(form)) {
+    const trimmed = value.trim();
+    if (trimmed !== "") out[key] = trimmed;
+  }
+  return out;
+}
 
 function blankToNull(value: string): string | null {
   const trimmed = value.trim();

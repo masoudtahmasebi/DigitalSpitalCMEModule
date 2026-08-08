@@ -120,6 +120,7 @@ export function BrandingSettings(props: { client: ApiClient }) {
         <h2 className="text-base font-semibold text-gray-900">{de.branding.title}</h2>
         <p className="text-sm text-gray-700">{de.branding.intro}</p>
         <p className="text-xs text-gray-600">{de.branding.privacy}</p>
+        <p className="text-xs text-gray-600">{de.branding.elsewhere}</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

@@ -2429,6 +2429,48 @@ export interface components {
              */
             fontVersion?: string;
             cornerRadiusPx?: number;
+            /**
+             * @description Replaces the catalogue heading. Plain text, rendered as text.
+             *
+             *     The widget's own wording names no therapeutic area, which is right
+             *     for every customer and specific to none. "Fortbildungsbereich für
+             *     ADHS" is MEDICE's copy, and a second customer reading it would be
+             *     reading MEDICE's.
+             */
+            catalogTitle?: string;
+            /** @description Replaces the catalogue's intro paragraph. Plain text. */
+            catalogIntro?: string;
+            /** @description HTTPS only. Decorative photograph behind the hero. */
+            catalogHeroImageUrl?: string;
+            /**
+             * @description The customer's own accreditation seal. HTTPS only, and accepted
+             *     only together with `catalogSealAlt` — a CME seal is the claim that
+             *     the course is accredited, so an unlabelled one is a screen reader
+             *     saying "image" where a physician needs to be told what it certifies.
+             */
+            catalogSealImageUrl?: string;
+            /** @description Alternative text for the seal. Required whenever one is set. */
+            catalogSealAlt?: string;
+            /**
+             * @description Where the completion screen's **Datenschutzerklärung** link points.
+             *
+             *     Accepted only together with `privacyPolicyVersion`: a link with no
+             *     version produces a consent record that names nothing, and a version
+             *     with no link asks a physician to agree to a document they cannot
+             *     read. When either is absent the consent checkbox is not drawn and
+             *     no consent is claimed — which is why, until this pair was
+             *     publishable, `enrolments.consent_document` was empty on every
+             *     completion the platform had ever recorded.
+             */
+            privacyPolicyUrl?: string;
+            /**
+             * @description The version written to `enrolments.consent_document`, and what
+             *     makes the stored consent demonstrable under GDPR Art. 7(1).
+             *     Consent to the January wording is not consent to the June wording,
+             *     and a record that cannot tell them apart proves only that somebody
+             *     agreed to something.
+             */
+            privacyPolicyVersion?: string;
         };
         /**
          * @description A white-label font. See `PUT /admin/branding/font` for why the declared
@@ -2797,6 +2839,7 @@ export interface components {
             slug: string;
             name: string;
             departmentSlug: string;
+            loginUrl: string | null;
             /**
              * @description Returned so the console can show what it set. The Keycloak fields
              *     below are meaningless when this is `local`, and the form says so
@@ -2905,6 +2948,24 @@ export interface components {
          */
         ProjectUpdate: {
             name?: string;
+            /**
+             * @description The customer's **own** sign-in page, when they have one.
+             *
+             *     `GET /tenants/{slug}` returns `kind: external` with this URL, and
+             *     the portal's tenant page sends a visitor there instead of showing
+             *     its own password form. MEDICE sign in through their WordPress site,
+             *     so `/medice` must link there — the alternative the portal used to do
+             *     was redirect straight to `login.medice.de`, a route MEDICE never
+             *     asked for.
+             *
+             *     HTTPS only, enforced by a database CHECK as well as here. Null means
+             *     the portal's own participant sign-in applies.
+             *
+             *     Settable nowhere until P29-03: the column existed, the lookup read
+             *     it, the portal branched on it, and no API could write it — so every
+             *     project answered `kind: portal` whatever the customer actually used.
+             */
+            loginUrl?: string | null;
             /**
              * @description Changeable, because a customer that starts on the standalone portal
              *     and later stands up a Keycloak realm should not need a new project

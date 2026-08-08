@@ -108,9 +108,60 @@ describe("watchedPercent", () => {
     expect(watchedPercent([{ startSec: 0, endSec: 996 }], 1000)).toBe(99);
   });
 
-  it("reports exactly 100 only for full coverage", () => {
+  it("reports exactly 100 for full coverage", () => {
     expect(watchedPercent([{ startSec: 0, endSec: 1000 }], 1000)).toBe(100);
-    expect(watchedPercent([{ startSec: 0, endSec: 999.9 }], 1000)).toBe(99);
+  });
+
+  /**
+   * The endpoint tolerance (P29-01).
+   *
+   * A `<video>` cannot be observed at exactly 0 and exactly `duration`: `play`
+   * fires a fraction in and the last `timeupdate` lands a fraction short. A
+   * learner who watched every frame of a real 25 s video reported
+   * `[0.0007, 25]` — 99.997 %, floored to 99 — against a gate of 100. The gate
+   * was not strict, it was unreachable.
+   *
+   * What must NOT change is the treatment of a hole: half a second at an
+   * endpoint is the measuring instrument, four seconds anywhere is content.
+   */
+  describe("the endpoint tolerance", () => {
+    it("credits a start a sliver past zero as the start", () => {
+      expect(watchedPercent([{ startSec: 0.0007, endSec: 25 }], 25)).toBe(100);
+    });
+
+    it("credits an end a sliver short of the duration as the end", () => {
+      expect(watchedPercent([{ startSec: 0, endSec: 999.9 }], 1000)).toBe(100);
+    });
+
+    it("credits both ends at once", () => {
+      expect(watchedPercent([{ startSec: 0.3, endSec: 24.7 }], 25)).toBe(100);
+    });
+
+    it("stops at half a second — a second short is a second short", () => {
+      expect(watchedPercent([{ startSec: 0, endSec: 999 }], 1000)).toBe(99);
+      expect(watchedPercent([{ startSec: 1, endSec: 1000 }], 1000)).toBe(99);
+    });
+
+    it("never closes a hole in the middle, however small", () => {
+      // The two ends are exact; the gap is a tenth of a second and stays one.
+      // This is the case the tolerance must never be mistaken for.
+      const withHole = watchedPercent(
+        [
+          { startSec: 0, endSec: 499.95 },
+          { startSec: 500.05, endSec: 1000 },
+        ],
+        1000,
+      );
+      expect(withHole).toBe(99);
+    });
+
+    it("does not credit an unwatched course as complete", () => {
+      // Nothing reported is nothing watched — the tolerance has no endpoints
+      // to snap and must not invent them.
+      expect(watchedPercent([], 25)).toBe(0);
+      // And a single sliver near the start is still a sliver.
+      expect(watchedPercent([{ startSec: 0, endSec: 0.4 }], 1000)).toBe(0);
+    });
   });
 
   it("handles the 80 %% threshold boundary exactly", () => {
