@@ -30,16 +30,7 @@
  * which is a different plane and unaffected.
  */
 
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  Inject,
-  Post,
-  Req,
-  Res,
-} from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res } from "@nestjs/common";
 import type { CookieOptions, Request, Response } from "express";
 import type { Pool } from "pg";
 import { z } from "zod";
@@ -99,7 +90,11 @@ export class ParticipantAuthController {
 
     if (!result.ok) throw this.refuse();
 
-    response.cookie(PARTICIPANT_COOKIE, result.token, this.cookieOptions(result.expiresAt));
+    response.cookie(
+      PARTICIPANT_COOKIE,
+      result.token,
+      this.cookieOptions(result.expiresAt),
+    );
     return { mustChangePassword: result.mustChangePassword };
   }
 

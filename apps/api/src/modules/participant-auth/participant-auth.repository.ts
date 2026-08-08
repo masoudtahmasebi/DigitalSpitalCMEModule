@@ -69,9 +69,10 @@ export class ParticipantAuthRepository {
       project_id: string;
       customer_id: string;
       identity_provider: string;
-    }>("SELECT project_id, customer_id, identity_provider FROM resolve_project_binding($1)", [
-      slug,
-    ]);
+    }>(
+      "SELECT project_id, customer_id, identity_provider FROM resolve_project_binding($1)",
+      [slug],
+    );
     const row = rows[0];
     return row === undefined
       ? undefined
@@ -148,7 +149,11 @@ export class ParticipantAuthRepository {
    * In the database rather than in Redis on purpose: a lockout a container
    * restart clears is not a lockout, and the API is restarted by every deploy.
    */
-  async recordFailure(identityId: string, threshold: number, lockFor: string): Promise<void> {
+  async recordFailure(
+    identityId: string,
+    threshold: number,
+    lockFor: string,
+  ): Promise<void> {
     await this.pool.query(
       `UPDATE learner_credentials
           SET failed_attempts = failed_attempts + 1,
@@ -170,5 +175,4 @@ export class ParticipantAuthRepository {
       [identityId],
     );
   }
-
 }

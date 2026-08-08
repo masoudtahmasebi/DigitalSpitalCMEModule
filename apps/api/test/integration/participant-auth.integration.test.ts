@@ -220,7 +220,9 @@ async function signIn(
  * cross-site scripting bug can steal, and that is worth failing a build over.
  */
 function sessionCookie(response: Response): string | undefined {
-  const header = response.headers.getSetCookie().find((c) => c.startsWith(PARTICIPANT_COOKIE));
+  const header = response.headers
+    .getSetCookie()
+    .find((c) => c.startsWith(PARTICIPANT_COOKIE));
   const value = header?.split(";")[0]?.split("=")[1];
   return value === undefined || value === "" ? undefined : value;
 }
@@ -326,13 +328,19 @@ describe("the tenant boundary, over the wire", () => {
     const token = sessionCookie(await signIn(alpha));
     expect(token).toBeDefined();
 
-    const crossed = await fetch(`${baseUrl}/courses`, withCookie(token!, beta.projectSlug));
+    const crossed = await fetch(
+      `${baseUrl}/courses`,
+      withCookie(token!, beta.projectSlug),
+    );
     expect(crossed.status).toBe(401);
   });
 
   it("does not leak the other tenant's courses in the refusal", async () => {
     const token = sessionCookie(await signIn(alpha));
-    const crossed = await fetch(`${baseUrl}/courses`, withCookie(token!, beta.projectSlug));
+    const crossed = await fetch(
+      `${baseUrl}/courses`,
+      withCookie(token!, beta.projectSlug),
+    );
 
     expect(await crossed.text()).not.toContain(beta.courseSlug);
   });
@@ -391,7 +399,10 @@ describe("refusals", () => {
     // Revoked in the database, not merely cleared in the browser. A sign-out
     // that only drops the cookie leaves a live session behind for anybody who
     // captured it.
-    const after = await fetch(`${baseUrl}/courses`, withCookie(token!, alpha.projectSlug));
+    const after = await fetch(
+      `${baseUrl}/courses`,
+      withCookie(token!, alpha.projectSlug),
+    );
     expect(after.status).toBe(401);
   });
 
@@ -402,7 +413,10 @@ describe("refusals", () => {
       [token],
     );
 
-    const after = await fetch(`${baseUrl}/courses`, withCookie(token!, alpha.projectSlug));
+    const after = await fetch(
+      `${baseUrl}/courses`,
+      withCookie(token!, alpha.projectSlug),
+    );
     expect(after.status).toBe(401);
   });
 
