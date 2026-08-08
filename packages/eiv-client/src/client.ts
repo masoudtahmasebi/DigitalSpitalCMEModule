@@ -81,6 +81,16 @@ export interface PushTeilnahmeResult {
   readonly accepted: boolean;
   /** Reference returned by EIV, persisted for later correction (P7-05). */
   readonly reference?: string;
+  /**
+   * EIV's own word for the outcome — `ANGENOMMEN`, `BEREITS_GEMELDET` — read
+   * verbatim and not interpreted here (P30-03).
+   *
+   * Both are 200s and both are accepted; they differ in *who* caused the CME
+   * record, which is the fact an audit log needs and did not have. The field
+   * names are still unverified (S24), so nothing branches on this — see
+   * `ReportOutcome.status` in `@ds/plugin-api`.
+   */
+  readonly status?: string;
   readonly exchange: EivExchange;
 }
 
@@ -142,10 +152,12 @@ export class EivClient {
     }
 
     const reference = readString(exchange.responseBody, "referenz");
+    const reported = readString(exchange.responseBody, "status");
 
     return {
       accepted: exchange.status >= 200 && exchange.status < 300,
       ...(reference === undefined ? {} : { reference }),
+      ...(reported === undefined ? {} : { status: reported }),
       exchange,
     };
   }

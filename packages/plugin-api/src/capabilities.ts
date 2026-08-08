@@ -91,6 +91,22 @@ export interface ReportOutcome {
   readonly accepted: boolean;
   /** The receiving system's identifier, when it issued one. */
   readonly reference?: string;
+  /**
+   * The authority's own word for what it did, verbatim and uninterpreted.
+   *
+   * EIV-FOBI answers a successful push with a status alongside the reference —
+   * the mock models `ANGENOMMEN` and `BEREITS_GEMELDET`. Both are accepted, and
+   * they are not the same fact: one means this platform caused the CME record,
+   * the other that the Ärztekammer already held it. On a compliance log that
+   * distinction is the difference between "we reported it" and "somebody else
+   * did, and we may be looking at a double submission".
+   *
+   * Recorded, never acted on. The real field names are still unverified (S24 —
+   * the swagger has not been obtained), so branching on this string would be
+   * exactly the invented rule `CLAUDE.md` §7 forbids. Carrying it into the
+   * audit log costs nothing and is what makes the question answerable later.
+   */
+  readonly status?: string;
 }
 
 /**

@@ -118,6 +118,39 @@ describe("a successful submission", () => {
     expect(serialised).not.toContain(VNR_PASSWORD);
   });
 
+  it("records the authority's own status word in the audit log (P30-03)", async () => {
+    /*
+     * EIV answers a successful push with a status beside the reference.
+     * `BEREITS_GEMELDET` means the Ärztekammer already held this record — the
+     * worker treats it exactly like `ANGENOMMEN`, because both are accepted,
+     * but the audit log is the only place the difference survives. Without it,
+     * "why does this physician have two entries" has no answer at all.
+     */
+    const { service, audits } = build([base], {
+      report: async () => ({
+        accepted: true,
+        reference: "EIV-REF-1",
+        status: "BEREITS_GEMELDET",
+      }),
+    });
+
+    await service.sweep(NOW);
+
+    const entry = audits.find((a) => a.entry.action === "eiv.submitted");
+    expect(entry?.entry.detail?.["status"]).toBe("BEREITS_GEMELDET");
+  });
+
+  it("records a null status when the authority sent none", async () => {
+    // Absent is not the same as unknown-but-present, and a reporter for a
+    // second Ärztekammer may not answer with one at all.
+    const { service, audits } = build([base]);
+
+    await service.sweep(NOW);
+
+    const entry = audits.find((a) => a.entry.action === "eiv.submitted");
+    expect(entry?.entry.detail?.["status"]).toBeNull();
+  });
+
   it("passes the credentials to the reporter but never returns them", async () => {
     let seen: ParticipationReport | undefined;
     const { service } = build([base], {

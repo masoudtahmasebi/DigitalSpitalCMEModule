@@ -56,14 +56,15 @@ actively asserts the wrong behaviour.
 
 **Assumptions**
 
-| #   | Assumption                                                                                   | Confidence                                                                                                 |
-| --- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| B1  | The path and the three body fields are exactly as documented                                 | **High** — given explicitly                                                                                |
-| B2  | The JWT is presented as `Authorization: Bearer <token>`                                      | Medium                                                                                                     |
-| B3  | Success returns `{ "referenz": "...", "status": "ANGENOMMEN" }`                              | **Low** — that a reference is returned at all is an assumption, and P7-05 persists it for later correction |
-| B4  | An unknown or malformed EFN returns `422` and must **not** be retried                        | Medium                                                                                                     |
-| B5  | A repeat submission for the same VNR + EFN is acknowledged idempotently rather than rejected | **Low** — this matters: if EIV instead errors, the retry queue needs to treat that error as success        |
-| B6  | Transport failures and `5xx` are retryable; `401`/`403` and `422` are not                    | Medium                                                                                                     |
+| #   | Assumption                                                                                   | Confidence                                                                                                                                                                                                                     |
+| --- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| B1  | The path and the three body fields are exactly as documented                                 | **High** — given explicitly                                                                                                                                                                                                    |
+| B2  | The JWT is presented as `Authorization: Bearer <token>`                                      | Medium                                                                                                                                                                                                                         |
+| B3  | Success returns `{ "referenz": "...", "status": "ANGENOMMEN" }`                              | **Low** — that a reference is returned at all is an assumption, and P7-05 persists it for later correction                                                                                                                     |
+| B4  | An unknown or malformed EFN returns `422` and must **not** be retried                        | Medium                                                                                                                                                                                                                         |
+| B5  | A repeat submission for the same VNR + EFN is acknowledged idempotently rather than rejected | **Low** — this matters: if EIV instead errors, the retry queue needs to treat that error as success                                                                                                                            |
+| B7  | A repeat is distinguished by `"status": "BEREITS_GEMELDET"` on an otherwise identical 200    | **Low** — the string is invented here. Since P30-03 the client reads `status` verbatim into the audit log and **nothing branches on it**, so a wrong guess costs a misleading log line rather than a wrong compliance decision |
+| B6  | Transport failures and `5xx` are retryable; `401`/`403` and `422` are not                    | Medium                                                                                                                                                                                                                         |
 
 ### Not modelled at all
 

@@ -57,6 +57,9 @@ export class EivAccreditationReporter implements AccreditationReporter {
     return {
       accepted: push.accepted,
       ...(push.reference === undefined ? {} : { reference: push.reference }),
+      // Passed through untouched: the worker writes it to the audit log and
+      // nothing in this platform decides anything from it (P30-03).
+      ...(push.status === undefined ? {} : { status: push.status }),
     };
   }
 }

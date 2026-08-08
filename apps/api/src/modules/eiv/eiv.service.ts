@@ -184,8 +184,22 @@ export class EivService {
         actor: SYSTEM_ACTOR,
         action: "eiv.submitted",
         subject: row.enrolmentId,
-        // Reference and attempt only. No EFN, no VNR password, no payload.
-        detail: { attemptCount, reference: push.reference ?? null },
+        /*
+         * Reference, attempt and the authority's own status word. No EFN, no
+         * VNR password, no payload.
+         *
+         * `status` is what EIV called the outcome — `ANGENOMMEN` when this
+         * submission created the record, `BEREITS_GEMELDET` when the chamber
+         * already held it (P30-03). Both are accepted and the worker treats
+         * them identically; recording which is what makes a later "why does
+         * this physician have two entries" answerable at all, and the log is
+         * the only place that fact survives.
+         */
+        detail: {
+          attemptCount,
+          reference: push.reference ?? null,
+          status: push.status ?? null,
+        },
       });
 
       return "submitted";
