@@ -397,12 +397,18 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
         // Mediathek download per module, matching the layout's "Materialien zu
         // Modul N" grouping.
         await pool.query(
-          `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, file_url, mime_type, file_size)
-           VALUES ($1,$2,8,'material',$3,$4,'application/pdf',524288)`,
+          // `body` is the Mediathek card's description (page-05). Seeded so the
+          // grid renders at its real height rather than as a row of title-only
+          // cards that look nothing like the layout.
+          `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, body, file_url, mime_type, file_size)
+           VALUES ($1,$2,8,'material',$3,$4,$5,'application/pdf',524288)`,
           [
             customerId,
             chapterId,
             `Patienteninformation ${module.title} (PDF)`,
+            "Begleitmaterial zum Modul, geeignet zur Weitergabe an Patientinnen " +
+              "und Patienten. Platzhaltertext — der endgültige Inhalt wird von " +
+              "MEDICE bereitgestellt.",
             `https://media.example.org/${COURSE_SLUG}/${moduleOrdinal + 1}.pdf`,
           ],
         );

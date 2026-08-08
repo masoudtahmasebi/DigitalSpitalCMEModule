@@ -135,14 +135,28 @@ export function MediathekPanel(props: { library: MaterialLibrary }) {
 /**
  * The layout's two-column card grid.
  *
- * The layout draws a thumbnail and a paragraph of description on each card.
- * Neither exists: `Material` in `contracts/openapi.yaml` carries `title`,
- * `mimeType` and `fileSize` and nothing else. Rather than invent them — which
- * would mean a contract change, a column, an admin field and an upload path,
- * none of which this ticket covers — the card keeps the layout's *shape* and
- * fills the secondary line with what the platform actually knows about the
- * file. A placeholder stands where the thumbnail goes so the grid keeps its
- * proportions.
+ * ## The description, which used to be missing
+ *
+ * The layout draws a paragraph under each card's title and this component used
+ * to say it did not exist. It half did: `contents.body` has been a column since
+ * migration 0001 and writable through `ContentWrite` since P9-04 — it simply
+ * never reached the learner. So the fix was to carry it through the contract
+ * rather than to invent a second column for the same sentence.
+ *
+ * It renders **above** the file meta, and the meta stays: "PDF · 512 KB" is
+ * what tells somebody on a train whether to tap Download now, and an authored
+ * paragraph does not replace it.
+ *
+ * A card with no description shows none — most existing content has no body,
+ * and a placeholder sentence would be worse than a shorter card.
+ *
+ * ## The thumbnail, which still is missing
+ *
+ * `ImagePlaceholder` stands where the layout draws artwork. There is no column
+ * for it and adding one means an upload path, an admin field and a second
+ * per-object signature — real work with its own ticket, not something to
+ * smuggle in here. The placeholder keeps the grid's proportions so the page
+ * does not reflow when it arrives.
  */
 function MaterialGrid(props: {
   materials: MaterialLibrary["groups"][number]["materials"];
@@ -159,7 +173,14 @@ function MaterialGrid(props: {
             <p className="text-sm font-bold leading-snug text-gray-900">
               {material.title}
             </p>
-            <p className="mt-1 text-xs text-gray-600">{de.library.fileMeta(material)}</p>
+
+            {material.description === null || material.description === "" ? null : (
+              <p className="mt-2 text-xs leading-relaxed text-gray-700">
+                {material.description}
+              </p>
+            )}
+
+            <p className="mt-2 text-xs text-gray-500">{de.library.fileMeta(material)}</p>
 
             {material.fileUrl === null ? null : (
               <a

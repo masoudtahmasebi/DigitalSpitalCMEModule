@@ -414,6 +414,10 @@ export class LearningService {
         .map((content) => ({
           id: content.id,
           title: content.title,
+          // Sent while locked too, like the title. The layout blurs a locked
+          // group rather than hiding it, so a learner sees that material
+          // exists and what unlocks it; the gate is the absent `fileUrl`.
+          description: content.body,
           locked,
           // A locked item still gets no URL at all — the gate is the absent
           // URL, and signing one for a padlocked file would defeat it.

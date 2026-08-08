@@ -373,6 +373,8 @@ export const de = {
     captionsMissing:
       "Für dieses Video sind keine Untertitel hinterlegt. Bei Videos mit Sprache ist das ein Barrierefreiheitsmangel. Reine Folienaufzeichnungen ohne Ton benötigen keine.",
     body: "Text",
+    /** On a download: the paragraph the Mediathek card shows (page-05). */
+    materialBody: "Beschreibung (erscheint auf der Materialkarte)",
     fileUrl: "Datei-URL",
     mimeType: "Dateityp",
 

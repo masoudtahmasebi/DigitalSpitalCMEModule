@@ -741,12 +741,27 @@ function ContentForm(props: {
         <Notice tone="warning">{de.structure.captionsMissing}</Notice>
       ) : null}
 
-      {kind === "text" || kind === "details" ? (
-        <Field label={de.structure.body} htmlFor={id("body")}>
+      {/*
+        `material` is here too, and that was the missing half of the Mediathek
+        card.
+
+        The layout draws a paragraph under each download's title (page-05), and
+        the learner API now sends it — but this form only offered the field for
+        `text` and `details`, so there was no way to write one. An exposed field
+        nobody can fill is the same as no field.
+
+        Same column, same 20 000 cap, different label: on a download it is the
+        sentence that says what the file is for, not the lesson's prose.
+      */}
+      {kind === "text" || kind === "details" || kind === "material" ? (
+        <Field
+          label={kind === "material" ? de.structure.materialBody : de.structure.body}
+          htmlFor={id("body")}
+        >
           <TextArea
             id={id("body")}
             value={body}
-            rows={6}
+            rows={kind === "material" ? 3 : 6}
             maxLength={20_000}
             onChange={setBody}
           />

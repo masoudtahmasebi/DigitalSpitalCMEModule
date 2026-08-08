@@ -2097,6 +2097,19 @@ export interface components {
             /** Format: uuid */
             id: string;
             title: string;
+            /**
+             * @description The paragraph the layout draws under each Mediathek card
+             *     (`docs/design/screens/page-05.png`). Authored as the content's
+             *     `body`, which has existed and been writable through
+             *     `ContentWrite` since P9-04 — this exposes it to the learner rather
+             *     than inventing a second column for the same sentence.
+             *
+             *     Sent **even while locked**, like the title, and for the same
+             *     reason: the layout blurs a locked group rather than hiding it, so
+             *     the learner can see that material exists and what unlocks it. What
+             *     is withheld is `fileUrl`, which is the gate.
+             */
+            description: string | null;
             locked: boolean;
             fileUrl: string | null;
             mimeType: string | null;

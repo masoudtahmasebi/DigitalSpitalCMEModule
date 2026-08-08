@@ -250,6 +250,7 @@ export type LessonContent = z.infer<typeof lessonContentSchema>;
 export const materialSchema = z.object({
   id: z.uuid(),
   title: z.string(),
+  description: z.string().nullable(),
   locked: z.boolean(),
   fileUrl: z.string().nullable(),
   mimeType: z.string().nullable(),

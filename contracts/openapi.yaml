@@ -3207,10 +3207,23 @@ components:
       description: |
         One downloadable item. `fileUrl` is **null while locked** — the gate is
         the absent URL, not the boolean.
-      required: [id, title, locked, fileUrl, mimeType, fileSize]
+      required: [id, title, description, locked, fileUrl, mimeType, fileSize]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
+        description:
+          type: [string, "null"]
+          description: |
+            The paragraph the layout draws under each Mediathek card
+            (`docs/design/screens/page-05.png`). Authored as the content's
+            `body`, which has existed and been writable through
+            `ContentWrite` since P9-04 — this exposes it to the learner rather
+            than inventing a second column for the same sentence.
+
+            Sent **even while locked**, like the title, and for the same
+            reason: the layout blurs a locked group rather than hiding it, so
+            the learner can see that material exists and what unlocks it. What
+            is withheld is `fileUrl`, which is the gate.
         locked: { type: boolean }
         fileUrl: { type: [string, "null"] }
         mimeType: { type: [string, "null"] }
