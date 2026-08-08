@@ -153,13 +153,21 @@ export class AuthoringService {
       `Ein Projekt mit dem Kürzel „${input.slug}“ existiert bereits.`,
     );
 
+    // `keycloak` when the caller says nothing, which is what every project
+    // created before this already is. A `local` project is the standalone
+    // portal's; a `keycloak` one still needs its issuer and audience before a
+    // learner can sign in, and `deploy.sh` warns about the half-bound state.
+    const identityProvider = input.identityProvider ?? "keycloak";
+
     await this.repository.createProject({
       departmentId,
       slug: input.slug,
       name: input.name,
+      identityProvider,
     });
     await this.audit(actor, "admin.project.create", input.slug, {
       department: input.departmentSlug,
+      identityProvider,
     });
   }
 

@@ -190,6 +190,7 @@ export interface CoursePatch {
   scientificLeadName?: string | null;
   scientificLeadTitle?: string | null;
   certificateIssuePlace?: string | null;
+  vnr?: string | null;
   /** Already encrypted by the service — a repository never holds a plaintext secret. */
   vnrPasswordEnc?: Buffer;
 }

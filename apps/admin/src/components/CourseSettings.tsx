@@ -68,6 +68,7 @@ export function CourseSettings(props: {
         scientificLeadName: emptyToNull(form.scientificLeadName),
         scientificLeadTitle: emptyToNull(form.scientificLeadTitle),
         certificateIssuePlace: emptyToNull(form.certificateIssuePlace),
+        vnr: emptyToNull(form.vnr),
         // Omitted when empty: an absent field means "leave alone", so editing
         // anything else does not require re-entering the credential.
         ...(vnrPassword === "" ? {} : { vnrPassword }),
@@ -198,6 +199,25 @@ export function CourseSettings(props: {
             maxLength={200}
             onChange={(value) => setForm((p) => ({ ...p, certificateIssuePlace: value }))}
           />
+        </Field>
+
+        {/*
+          The VNR before its password, because that is the order they matter
+          in: without the number there is no Punktemeldung at all, and a
+          password for a number nobody entered authenticates nothing. The
+          console could set the password and not the number until P26-01 —
+          which meant every course authored here quietly reported nothing.
+        */}
+        <Field label={de.course.vnr} hint={de.course.vnrHint} htmlFor="vnr">
+          <TextInput
+            id="vnr"
+            value={form.vnr}
+            maxLength={100}
+            onChange={(value) => setForm((p) => ({ ...p, vnr: value }))}
+          />
+          {form.vnr.trim() === "" ? (
+            <p className="text-xs text-amber-700">{de.course.vnrMissing}</p>
+          ) : null}
         </Field>
 
         <Field
@@ -358,6 +378,7 @@ function initialForm(course: AdminCourseDetail) {
     scientificLeadName: course.scientificLeadName ?? "",
     scientificLeadTitle: course.scientificLeadTitle ?? "",
     certificateIssuePlace: course.certificateIssuePlace ?? "",
+    vnr: course.vnr ?? "",
   };
 }
 

@@ -56,6 +56,16 @@ const PROJECT_HEADER = "x-ds-project";
 /** How an operator names a tenant that has no project yet (P22-03). */
 const CUSTOMER_HEADER = "x-ds-customer";
 
+/**
+ * The shape `x-ds-customer` must have before its value reaches a query.
+ *
+ * Deliberately a format check and nothing more: whether the id *exists*, and
+ * whether this operator may reach it, are `staffTenantContext`'s questions and
+ * both answer 403 either way (see the header's own comment below). This only
+ * stops a value PostgreSQL cannot cast from becoming a 500.
+ */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
 export interface AuthGuardDeps {
   readonly reflector: Reflector;
   readonly identityProviders: IdentityProviderRegistry;
@@ -169,17 +179,17 @@ export class AuthGuard implements CanActivate {
     // The realm is the **provider's** answer, not the project's column.
     //
     // For Keycloak the two are the same value by construction: `verifyToken`
-    // passes `binding.keycloakIssuer` to `jwtVerify` as a required claim, so a
+    // passes `binding.keycloak.issuer` to `jwtVerify` as a required claim, so a
     // token that reaches here cannot carry a different `iss`.
     //
-    // For a local project they are emphatically not the same. `keycloak_issuer`
-    // on such a row is a placeholder nothing resolves, while the credential
-    // actually lives under `LOCAL_REALM`. Keying on the column would look up
-    // `(local, '<placeholder>', subject)`, miss the row the sign-in just
-    // authenticated, and `provision_learner` would helpfully create a *second*
-    // person — one with no membership and no role, so the participant would
-    // sign in successfully and then be refused by `resolveTenantContext` with a
-    // 403 that names a user id they have never had.
+    // For a local project there is no column to key on at all — `binding
+    // .keycloak` is absent — while the credential lives under `LOCAL_REALM`.
+    // Before the field was optional the row held a placeholder, and keying on
+    // it looked up `(local, '<placeholder>', subject)`, missed the row the
+    // sign-in had just authenticated, and let `provision_learner` helpfully
+    // create a *second* person — one with no membership and no role, so the
+    // participant signed in successfully and was then refused by
+    // `resolveTenantContext` with a 403 naming a user id they have never had.
     const user = await this.deps.userService.syncFromToken(
       provider,
       identity.issuer,
@@ -298,6 +308,32 @@ async function authenticateStaffPlane(
    */
   const customerHeader = request.headers[CUSTOMER_HEADER];
   if (typeof customerHeader === "string" && customerHeader !== "") {
+    /*
+     * Checked for shape before it reaches a query.
+     *
+     * It carries an id, and it was passed through unvalidated — so a caller
+     * sending a **slug** (the obvious mistake, and the one the journey suite
+     * made on its first run) got a 500 out of a repository, from
+     * `invalid input syntax for type uuid`, four layers below anything that
+     * knew what the header was.
+     *
+     * Three things were wrong with that. A malformed request is the client's
+     * error and 500 says it is ours; the message that would have explained it
+     * is correctly withheld from the response, so the caller has nothing to act
+     * on; and any unauthenticated-shaped mistake could raise the 500 rate,
+     * which is what the alerting watches.
+     *
+     * Refused as a 400 naming the header, before the value is used. `AppError`
+     * carries the German the console shows.
+     */
+    if (!UUID_PATTERN.test(customerHeader)) {
+      throw new AppError(
+        "validation",
+        `${CUSTOMER_HEADER} is not a uuid`,
+        "Der gewählte Kunde ist ungültig. Bitte wählen Sie ihn erneut aus.",
+      );
+    }
+
     return resolveStaffTenant(deps, request, session, {
       customerId: customerHeader,
       // Audit entries name what the caller sent; for this header that is the

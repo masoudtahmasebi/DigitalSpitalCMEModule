@@ -12,13 +12,43 @@
 
 import type { Pool } from "pg";
 
+/**
+ * The OIDC coordinates a JWT-verifying provider needs.
+ *
+ * One object rather than two sibling fields because the pair is atomic: an
+ * issuer without an audience verifies a signature and then accepts a token
+ * minted for a different client, which is ADR-0003's whole point. Modelling
+ * them separately made "half-configured" representable, and a half-configured
+ * binding is a security hole rather than a smaller feature.
+ */
+export interface KeycloakBinding {
+  readonly issuer: string;
+  readonly audience: string;
+}
+
 export interface ProjectBinding {
   readonly projectId: string;
   readonly customerId: string;
-  readonly keycloakIssuer: string;
-  readonly keycloakAudience: string;
   /** Which `IdentityProvider` verifies this project's learner tokens. */
   readonly identityProvider: string;
+  /**
+   * Present only when the project federates to an OIDC provider.
+   *
+   * Absent — not empty strings — for a `local` project (ADR-0012, P25-02),
+   * which authenticates a password against our own tables and has no issuer by
+   * design. This used to be two non-nullable `string` fields, and the seeds
+   * satisfied that by writing `''` into two columns nothing ever read. The cost
+   * of that placeholder was real: `resolve` below refused any project with a
+   * NULL issuer, so a `local` project created through the console — which
+   * writes NULL, not `''` — was unauthenticatable, while the seeded one worked.
+   * Two rows meaning the same thing behaved differently depending on which code
+   * path had written them.
+   *
+   * Optional here means a Keycloak-only field cannot be read without the reader
+   * first proving the project is a Keycloak project, which the compiler now
+   * enforces.
+   */
+  readonly keycloak?: KeycloakBinding;
 }
 
 /**
@@ -40,13 +70,13 @@ export interface ProjectBindingRepositoryPort {
    * For callers that authenticate without an identity provider — the staff
    * plane (ADR-0012).
    *
-   * `resolve` answers `undefined` for a project whose `keycloak_issuer` or
-   * `keycloak_audience` is NULL, which is right for a learner and was wrong for
-   * an operator: it made "this project has no Keycloak yet" refuse every
-   * tenant-scoped console screen with a 401. A project created through the
-   * console has no binding until somebody adds one, and a fresh installation
-   * has no project at all — so the screens an operator needs in order to fix
-   * that were among the screens refusing.
+   * `resolve` answers `undefined` for a federating project whose binding is
+   * incomplete, which is right for a learner and was wrong for an operator: it
+   * made "this project has no Keycloak yet" refuse every tenant-scoped console
+   * screen with a 401. A project created through the console has no binding
+   * until somebody adds one, and a fresh installation has no project at all —
+   * so the screens an operator needs in order to fix that were among the
+   * screens refusing.
    */
   resolveTenant(slug: string): Promise<ProjectTenant | undefined>;
 }
@@ -107,19 +137,32 @@ export class ProjectBindingRepository implements ProjectBindingRepositoryPort {
     const row = result.rows[0];
     if (row === undefined) return undefined;
 
-    // A project with no Keycloak binding configured cannot authenticate
-    // anyone; treat it the same as "not found" rather than crashing on a null
-    // issuer downstream.
-    if (row.keycloak_issuer === null || row.keycloak_audience === null) {
+    // Empty string is treated as absent alongside NULL. Two of the seeds write
+    // `''` into these columns for `local` projects — see `ProjectBinding` — and
+    // an empty issuer reaching `jwtVerify` would be a required-claim comparison
+    // against the empty string rather than the refusal it should be.
+    const issuer = emptyAsUndefined(row.keycloak_issuer);
+    const audience = emptyAsUndefined(row.keycloak_audience);
+    const keycloak =
+      issuer === undefined || audience === undefined ? undefined : { issuer, audience };
+
+    // A project that federates its identity and has no binding yet cannot
+    // authenticate anyone; treat it the same as "not found" rather than
+    // crashing on a null issuer downstream.
+    //
+    // Only for a federating provider. A `local` project has no issuer *by
+    // design*, and refusing it here is how a participant who had just signed in
+    // successfully was answered `401 unknown or unbound project` on the very
+    // next request.
+    if (row.identity_provider !== "local" && keycloak === undefined) {
       return undefined;
     }
 
     return {
       projectId: row.project_id,
       customerId: row.customer_id,
-      keycloakIssuer: row.keycloak_issuer,
-      keycloakAudience: row.keycloak_audience,
       identityProvider: row.identity_provider,
+      ...(keycloak === undefined ? {} : { keycloak }),
     };
   }
 
@@ -137,6 +180,19 @@ export class ProjectBindingRepository implements ProjectBindingRepositoryPort {
 
     return { projectId: row.project_id, customerId: row.customer_id };
   }
+}
+
+/**
+ * `NULL` and `''` both mean "not configured".
+ *
+ * Two spellings of absent exist in the data because the console writes NULL and
+ * two seeds write `''`. Normalising here rather than backfilling the rows means
+ * a seed written tomorrow cannot reintroduce the bug.
+ */
+function emptyAsUndefined(value: string | null): string | undefined {
+  if (value === null) return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
 }
 
 /**

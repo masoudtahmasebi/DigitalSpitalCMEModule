@@ -2549,6 +2549,29 @@ export interface components {
             cmePoints?: number | null;
             cmeCategory?: string | null;
             fortbildungsnummer?: string | null;
+            /**
+             * @description The Veranstaltungsnummer the Ärztekammer issued for this course —
+             *     the key **every Punktemeldung is credited against**.
+             *
+             *     Writable here because it has to be: `courses.vnr` was readable and
+             *     not settable, so a course authored through this console had none,
+             *     and `queueSubmission` skips a course without one. Every completion
+             *     on every console-authored course silently reported nothing to the
+             *     EIV. The learner passed, got a certificate, and no CME point ever
+             *     reached their Kammer.
+             *
+             *     Not format-validated beyond a length bound. The one specimen we
+             *     have is 19 digits, and inventing a rule from a sample of one is how
+             *     a valid VNR from a different Kammer gets refused at authoring time
+             *     (CLAUDE.md §7). The EIV harness is where a bad number is caught,
+             *     against the real interface.
+             *
+             *     Distinct from `fortbildungsnummer`, which is what the learner sees
+             *     printed on the Zertifizierung tab. Changing this after completions
+             *     exist does not retro-fix them — submissions snapshot the VNR they
+             *     were queued with.
+             */
+            vnr?: string | null;
             /** Format: date-time */
             validFrom?: string | null;
             /** Format: date-time */
@@ -2841,7 +2864,29 @@ export interface components {
             departmentSlug: components["schemas"]["Slug"];
             slug: components["schemas"]["Slug"];
             name: string;
+            identityProvider?: components["schemas"]["IdentityProvider"];
         };
+        /**
+         * @description How this project's learners are authenticated (ADR-0012).
+         *
+         *     `keycloak` — the customer runs the identity provider and the widget
+         *     arrives with one of their tokens. Needs `keycloakIssuer` and
+         *     `keycloakAudience` before any learner can sign in; `deploy.sh` warns
+         *     about a project that has one without the other.
+         *
+         *     `local` — participants hold a credential on this platform and sign in at
+         *     `fortbildung.…/<project>` (P21-03). This is the only value the
+         *     standalone portal can serve, and it was settable by **no API at all**
+         *     until the journey suite tried to build a working portal project through
+         *     the console and could not: the column defaulted to `keycloak`, so every
+         *     project the console created was one its own participants were locked out
+         *     of.
+         *
+         *     Omitted on create means `keycloak`, which is what every existing row
+         *     already is.
+         * @enum {string}
+         */
+        IdentityProvider: "keycloak" | "local";
         /**
          * @description Every field optional; absent means unchanged. `smtpPassword` is
          *     write-only — settable here, returned by nothing.

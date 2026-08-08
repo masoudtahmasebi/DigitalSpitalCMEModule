@@ -147,6 +147,25 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       route: path,
       error: exception instanceof Error ? exception : String(exception),
       stack: exception instanceof Error ? exception.stack : undefined,
+      /*
+       * The **cause** chain, flattened.
+       *
+       * Without it a wrapped error logs only its wrapper, and the wrapper is
+       * routinely the useless half. Drizzle is the case that forced this:
+       * every failed statement surfaces as
+       *
+       *     Failed query: select "id" from "departments" where … $1
+       *
+       * with the actual PostgreSQL error — the permission denial, the
+       * constraint, the type — hanging off `cause` where nothing read it. Three
+       * separate investigations in this project have started by adding a
+       * `console.log` here; this is that `console.log`, kept.
+       *
+       * Messages only, and the same redactor every other field passes through:
+       * a cause carries a driver's message, and a driver's message can quote a
+       * parameter (ADR-0004, `CLAUDE.md` §4 invariant 7).
+       */
+      causes: causeChain(exception),
     });
 
     response.status(500).json({
@@ -193,3 +212,31 @@ function safePath(request: Request): string {
 }
 
 const MAX_LOGGED_PATH = 200;
+
+/**
+ * The `cause` chain, as messages, outermost first.
+ *
+ * Bounded on both axes: five links, and the same truncation a path gets. A
+ * cause chain is attacker-influenceable in the same way a path is — a driver
+ * quotes the input it choked on — and an unbounded one is a caller choosing
+ * how much of the log file they fill. Five is more links than any wrapper in
+ * this stack produces.
+ */
+function causeChain(exception: unknown): string[] {
+  const messages: string[] = [];
+  let current: unknown = exception instanceof Error ? exception.cause : undefined;
+
+  while (current !== undefined && current !== null && messages.length < MAX_CAUSE_LINKS) {
+    messages.push(
+      (current instanceof Error ? current.message : String(current)).slice(
+        0,
+        MAX_LOGGED_PATH,
+      ),
+    );
+    current = current instanceof Error ? current.cause : undefined;
+  }
+
+  return messages;
+}
+
+const MAX_CAUSE_LINKS = 5;

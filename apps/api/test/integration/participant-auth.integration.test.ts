@@ -145,11 +145,19 @@ async function seedTenant(label: string, passwordHash: string): Promise<Tenant> 
     [customerId],
   );
   const projectSlug = `participant-${label}-${suffix}`;
+  // No `keycloak_issuer`, no `keycloak_audience` — exactly what the console
+  // writes for a `local` project, and what a local project means.
+  //
+  // This fixture used to insert `''` into both, and that is the only reason the
+  // whole suite passed while the product was broken: `resolve_project_binding`
+  // was refused for a NULL issuer, so every console-created local project
+  // answered 401 on the request *after* a successful sign-in, while this
+  // placeholder-carrying one worked. A fixture that writes a value production
+  // never writes is a suite that tests a system nobody runs.
   const projectId = await one(
     `INSERT INTO projects
-       (customer_id, department_id, slug, name, identity_provider,
-        keycloak_issuer, keycloak_audience)
-     VALUES ($1,$2,$3,$4,'local','','') RETURNING id`,
+       (customer_id, department_id, slug, name, identity_provider)
+     VALUES ($1,$2,$3,$4,'local') RETURNING id`,
     [customerId, departmentId, projectSlug, `Participant ${label}`],
   );
 

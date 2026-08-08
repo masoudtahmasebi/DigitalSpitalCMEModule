@@ -123,10 +123,23 @@ export const departmentUpdateSchema = z.object({
   name: title.optional(),
 });
 
+/**
+ * How this project's learners authenticate (ADR-0012).
+ *
+ * Shared by create and update. `local` is the only value the standalone portal
+ * can serve, and until the journey suite went looking for it there was no way
+ * to set it through any API — the column defaulted to `keycloak`, so a project
+ * created in the console was one its own participants could not sign in to.
+ */
+const identityProvider = z.enum(["keycloak", "local"]);
+
 export const projectCreateSchema = z.object({
   departmentSlug: slug,
   slug,
   name: title,
+  // Absent means `keycloak`, which is what every row created before this
+  // already is.
+  identityProvider: identityProvider.optional(),
 });
 
 /**
@@ -142,6 +155,7 @@ export const projectCreateSchema = z.object({
  */
 export const projectUpdateSchema = z.object({
   name: title.optional(),
+  identityProvider: identityProvider.optional(),
   keycloakIssuer: url.nullable().optional(),
   keycloakAudience: z.string().trim().max(200).nullable().optional(),
   keycloakRealm: z.string().trim().max(200).nullable().optional(),

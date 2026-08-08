@@ -137,8 +137,27 @@ GRANT CREATE ON SCHEMA public TO ds_erasure;
 GRANT CREATE ON SCHEMA public TO ds_customer_registry;
 GRANT CREATE ON SCHEMA public TO ds_merge;
 
-GRANT ALL ON DATABASE ds_education TO ds_migrator;
-GRANT CONNECT ON DATABASE ds_education TO ds_app;
+-- On **this** database, whichever it is.
+--
+-- These two lines named `ds_education` literally, and `POSTGRES_DB` is a
+-- documented, configurable variable in `config.env.example`. Any deployment
+-- that set it to anything else failed here: `GRANT ... ON DATABASE ds_education`
+-- against a cluster that has no such database is an error, and `deploy.sh` runs
+-- this with `ON_ERROR_STOP=1` — so the deploy aborted at "Ensuring database
+-- roles" with a message about a database nobody had asked for.
+--
+-- The subtler half is worse. Had the error been suppressed, the grants would
+-- have landed on a database the API never connects to, and the real one would
+-- have kept PostgreSQL's default of `CONNECT` to `PUBLIC` — the restriction
+-- this file exists to apply, silently not applied.
+--
+-- `current_database()` cannot drift from `POSTGRES_DB`, because it does not
+-- read it: it is whichever database psql was pointed at, in the deploy and in
+-- `docker-entrypoint-initdb.d` alike. `%I` quotes it as an identifier.
+SELECT format('GRANT ALL ON DATABASE %I TO ds_migrator', current_database())
+\gexec
+SELECT format('GRANT CONNECT ON DATABASE %I TO ds_app', current_database())
+\gexec
 
 -- ds_migrator owns the public schema; ds_app may only use what it is granted.
 ALTER SCHEMA public OWNER TO ds_migrator;

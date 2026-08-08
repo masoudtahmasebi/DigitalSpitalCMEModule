@@ -28,8 +28,7 @@ function binding(projectId: string): ProjectBinding {
   return {
     projectId,
     customerId: "0198f4c1-7a2e-7000-8000-000000000001",
-    keycloakIssuer: "",
-    keycloakAudience: "",
+    // No `keycloak` — a local project has no issuer, and the type now says so.
     identityProvider: "local",
   };
 }

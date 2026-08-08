@@ -119,9 +119,11 @@ async function seedTenant(label: string): Promise<Tenant> {
   );
   const projectSlug = `padmin-${label}-${suffix}`;
   await one(
-    `INSERT INTO projects (customer_id, department_id, slug, name, identity_provider,
-                           keycloak_issuer, keycloak_audience)
-     VALUES ($1,$2,$3,$4,'local','','') RETURNING id`,
+    // No Keycloak columns: that is what `local` means, and what the console
+    // writes. See `participant-auth.integration.test.ts` for why `''` here was
+    // hiding a real refusal.
+    `INSERT INTO projects (customer_id, department_id, slug, name, identity_provider)
+     VALUES ($1,$2,$3,$4,'local') RETURNING id`,
     [customerId, departmentId, projectSlug, `PAdmin ${label}`],
   );
 

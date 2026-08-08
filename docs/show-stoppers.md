@@ -72,6 +72,7 @@ wants action today.
 | S14     | Accreditation expires 12.10.2026; platform change must be notified                 | post-launch      | 24.08     | MEDICE             |
 | S9      | Hetzner account ownership and DNS                                                  | M4 · 06.09       | 24.08     | DigitalSpital      |
 | S10     | VNR password was shared over chat                                                  | —                | now       | DigitalSpital      |
+| S23     | **VNR format, and whether any VNR-less completion already exists**                 | —                | 14.08     | MEDICE / ÄKWL      |
 | ~~S3~~  | ~~WordPress repository access~~                                                    | **CLOSED 28.07** | —         | —                  |
 | ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                               | **CLOSED 28.07** | —         | —                  |
 | ~~S6~~  | ~~Signature/stamp asset~~                                                          | **CLOSED 28.07** | —         | —                  |
@@ -867,6 +868,60 @@ goes. It needs an answer, not a decision from us.
 mobile export agree and the PDF is merely ambiguous: the orange chevron on the
 filter selects is a **full-height block with a rounded bottom-right corner**,
 not the inset rounded square that was built from the PDF's softer edges.
+
+---
+
+## S23 · Every course authored in the console reported **nothing** to the EIV — **fixed 08.08, but it needs an operational answer**
+
+- **Owner:** DigitalSpital (fixed) → MEDICE (the operational half) · **Raised:** 08.08 by the journey suite (P28-03)
+
+`courses.vnr` is the number every Punktemeldung is credited against. It was
+readable through `GET /admin/courses/{slug}` and **writable nowhere**. The
+console could store the VNR _password_ — encrypted at rest, write-only, done
+carefully — for a number no operator had any way to enter.
+
+Nothing failed loudly. `queueSubmission` skips a course with no VNR, and that
+skip is correct: a missing VNR is an authoring gap, and failing a physician's
+completion over it would be the wrong trade. So a learner passed, saw a green
+Zertifizierung, and **no CME point reached their Kammer**. The certificate PDF
+refused with a 409 for the same reason, since the Bescheid requires the VNR as
+both barcodes.
+
+The code is fixed (P28-03): `vnr` is writable, surfaced in the console above the
+password field, and warned about while empty. Two things are still not ours to
+decide.
+
+**1. Was anything already completed against a VNR-less course?** Not on any
+environment we control — the fix predates any real learner. But if a course was
+authored in the console on a customer's own installation and completions exist
+against it, those points were never reported and the 8-day window in the
+Bescheid may already have closed. The remedy is the paper fallback ÄKWL
+describes in §2 of the Anerkennungsbescheid: an Original-Anwesenheitsliste with
+EFNs, in writing, with a justification. It is not something the platform can do
+by itself.
+
+The query that answers it, per installation:
+
+```sql
+SELECT c.slug, count(*) AS completions
+FROM enrolments e JOIN courses c ON c.id = e.course_id
+WHERE e.completed_at IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM eiv_submissions s WHERE s.enrolment_id = e.id)
+GROUP BY c.slug;
+```
+
+**2. What format does EIV-FOBI accept for a VNR?** The field is length-bounded
+and nothing more. The one specimen we have is 19 digits; a regex built from a
+sample of one refuses a legitimate number from another Ärztekammer at authoring
+time, and `CLAUDE.md` §7 is explicit about inventing rules of that kind. A
+format confirmed against the real interface would let the console reject a
+typo where the operator can see it, instead of at submission time.
+
+**Worth naming as a class**, because it is the third of its kind found in this
+project: a control that is present, looks implemented, and does nothing. The
+others were the `Mehr lesen…` toggle (P27-01) and the participant sign-in that
+authenticated and then refused (P28-02). All three were invisible to a test that
+seeded around the seam and obvious to one that walked through it.
 
 ---
 

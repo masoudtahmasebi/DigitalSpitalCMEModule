@@ -100,6 +100,14 @@ export const projects = pgTable("projects", {
   departmentId: uuid("department_id").notNull(),
   slug: text("slug").notNull(),
   name: text("name").notNull(),
+  /**
+   * How this project's learners authenticate (ADR-0012): `keycloak` or `local`.
+   *
+   * `local` is the standalone portal's. It was in the schema and settable by no
+   * API, so a project created through the console was always Keycloak-bound and
+   * its participants could not sign in at all (found by the journey suite).
+   */
+  identityProvider: text("identity_provider").notNull(),
   keycloakIssuer: text("keycloak_issuer"),
   keycloakAudience: text("keycloak_audience"),
   keycloakRealm: text("keycloak_realm"),

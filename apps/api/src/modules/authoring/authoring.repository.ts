@@ -63,6 +63,7 @@ export interface AuthoringRepositoryPort {
     departmentId: string;
     slug: string;
     name: string;
+    identityProvider: string;
   }): Promise<void>;
   findDepartmentId(slug: string): Promise<string | undefined>;
   updateProject(slug: string, patch: ProjectPatch): Promise<boolean>;
@@ -167,6 +168,8 @@ export interface ProjectRow {
 
 export interface ProjectPatch {
   name?: string;
+  /** `keycloak` or `local` — see `schema.ts`. */
+  identityProvider?: string;
   keycloakIssuer?: string | null;
   keycloakAudience?: string | null;
   keycloakRealm?: string | null;
@@ -408,12 +411,13 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
     departmentId: string;
     slug: string;
     name: string;
+    identityProvider: string;
   }): Promise<void> {
     await this.db.execute(sql`
-      INSERT INTO projects (customer_id, department_id, slug, name)
+      INSERT INTO projects (customer_id, department_id, slug, name, identity_provider)
       VALUES (
         current_setting('app.customer_id')::uuid,
-        ${input.departmentId}, ${input.slug}, ${input.name}
+        ${input.departmentId}, ${input.slug}, ${input.name}, ${input.identityProvider}
       )
     `);
   }

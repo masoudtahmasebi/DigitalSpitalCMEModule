@@ -49,7 +49,17 @@ export type TokenRejectionReason =
    * session that has no signature would make the audit trail say something
    * untrue.
    */
-  | "invalid_session";
+  | "invalid_session"
+  /**
+   * The project names a federating provider but carries no issuer/audience, so
+   * there is nothing to verify against.
+   *
+   * `ProjectBindingRepository.resolve` refuses such a project before a provider
+   * ever sees it, so this should not occur — it exists so that if it ever does,
+   * the audit log says "misconfigured" rather than `bad_signature`, which would
+   * send whoever reads it looking for an attacker instead of a blank column.
+   */
+  | "provider_misconfigured";
 
 export class TokenInvalidError extends Error {
   constructor(readonly reason: TokenRejectionReason) {

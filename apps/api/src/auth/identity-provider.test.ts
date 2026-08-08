@@ -31,8 +31,7 @@ function binding(identityProvider: string): ProjectBinding {
   return {
     projectId: "p1",
     customerId: "c1",
-    keycloakIssuer: "https://issuer.example",
-    keycloakAudience: "aud",
+    keycloak: { issuer: "https://issuer.example", audience: "aud" },
     identityProvider,
   } as unknown as ProjectBinding;
 }

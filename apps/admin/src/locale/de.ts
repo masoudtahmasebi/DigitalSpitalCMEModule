@@ -579,6 +579,12 @@ export const de = {
     scientificLeadName: "Name der wissenschaftlichen Leitung",
     certificateIssuePlace: "Ausstellungsort",
 
+    vnr: "VNR (Veranstaltungsnummer)",
+    vnrHint:
+      "Die von der Ärztekammer vergebene Veranstaltungsnummer aus dem Anerkennungsbescheid. Ohne sie wird für diesen Kurs keine Punktemeldung an die EIV-FOBI übermittelt.",
+    vnrMissing:
+      "Ohne VNR werden Abschlüsse zwar erfasst und Bescheinigungen erstellt, es wird aber keine Punktemeldung übermittelt.",
+
     vnrPassword: "VNR-Passwort",
     vnrPasswordHint:
       "Wird verschlüsselt gespeichert und niemals wieder angezeigt. Leer lassen, um das gespeicherte Passwort beizubehalten.",

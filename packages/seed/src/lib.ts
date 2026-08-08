@@ -216,13 +216,27 @@ export async function seedPortalProject(
 ): Promise<string> {
   return upsert(
     pool,
+    // The Keycloak columns are left NULL, which is what `local` means — this
+    // project authenticates a password against our own tables and has no
+    // issuer. It used to write `''` into all three, and that placeholder was
+    // load-bearing by accident: `ProjectBindingRepository.resolve` refused any
+    // project with a NULL issuer, so a `local` project created through the
+    // *console* — which writes NULL — could not authenticate anybody, while
+    // this seeded one could. The refusal is now scoped to federating providers,
+    // so the placeholder has nothing left to hide and is gone.
+    //
+    // The `DO UPDATE` clears them too, so re-running the seed repairs a row
+    // written by the old version rather than leaving two spellings of absent in
+    // the same table.
     `INSERT INTO projects
-       (customer_id, department_id, slug, name, identity_provider,
-        keycloak_issuer, keycloak_audience, keycloak_realm)
-     VALUES ($1,$2,$3,$4,'local','','','')
+       (customer_id, department_id, slug, name, identity_provider)
+     VALUES ($1,$2,$3,$4,'local')
      ON CONFLICT (department_id, slug) DO UPDATE
        SET name = EXCLUDED.name,
            identity_provider = 'local',
+           keycloak_issuer = NULL,
+           keycloak_audience = NULL,
+           keycloak_realm = NULL,
            updated_at = now()
      RETURNING id`,
     [input.customerId, input.departmentId, input.slug, input.name],

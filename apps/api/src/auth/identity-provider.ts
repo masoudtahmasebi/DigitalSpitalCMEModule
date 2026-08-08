@@ -28,7 +28,11 @@
 
 import type { ProjectBinding } from "../modules/projects/project-binding.repository.js";
 import type { JwksRegistry } from "./jwks-registry.js";
-import { verifyToken, type VerifiedIdentity } from "./token-verifier.js";
+import {
+  TokenInvalidError,
+  verifyToken,
+  type VerifiedIdentity,
+} from "./token-verifier.js";
 
 /** The names a `projects.identity_provider` row may hold. */
 export type IdentityProviderName =
@@ -76,10 +80,20 @@ export class KeycloakIdentityProvider implements IdentityProvider {
   ) {}
 
   async verify(credential: string, binding: ProjectBinding): Promise<VerifiedIdentity> {
-    const jwks = this.jwksRegistry.forIssuer(binding.keycloakIssuer);
+    // Unreachable through `ProjectBindingRepository.resolve`, which already
+    // answers `undefined` for a federating project with no binding — but that
+    // is a guarantee made in another file, and this class is public. Refusing
+    // is the only safe branch: continuing with a placeholder issuer would build
+    // a JWKS URL out of the empty string and compare `iss` against it.
+    const keycloak = binding.keycloak;
+    if (keycloak === undefined) {
+      throw new TokenInvalidError("provider_misconfigured");
+    }
+
+    const jwks = this.jwksRegistry.forIssuer(keycloak.issuer);
     return verifyToken(credential, await jwks.resolver(), {
-      issuer: binding.keycloakIssuer,
-      audience: binding.keycloakAudience,
+      issuer: keycloak.issuer,
+      audience: keycloak.audience,
       clockToleranceSec: this.clockToleranceSec,
     });
   }

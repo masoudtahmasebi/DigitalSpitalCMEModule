@@ -8,7 +8,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run --passWithNoTests",
     "test:integration": "vitest run -c vitest.integration.config.ts --passWithNoTests",
-    "dev": "tsx watch src/main.ts",
+    "dev": "node dev.mjs",
     "start": "node dist/main.js",
     "lint": "echo \"linted by the root pass\""
   },
@@ -40,7 +40,6 @@
     "@types/express": "^5.0.6",
     "@types/express-serve-static-core": "^5.1.2",
     "@types/pg": "^8.11.10",
-    "tsx": "^4.23.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }

@@ -109,6 +109,19 @@ export const adminCourseUpdateSchema = z.object({
   cmeCategory: z.string().max(50).nullable().optional(),
   fortbildungsnummer: z.string().max(100).nullable().optional(),
   /**
+   * The Veranstaltungsnummer — what a Punktemeldung is credited against.
+   *
+   * Trimmed and length-bounded, and nothing more. The single VNR we have seen
+   * is 19 digits; a regex built from one specimen would refuse a legitimate
+   * number from another Ärztekammer at authoring time, which `CLAUDE.md` §7
+   * calls out by name. The EIV harness validates against the real interface.
+   *
+   * `nullable` because a course is routinely authored before its Bescheid
+   * arrives — the completion still stands, and the missing VNR is an admin
+   * alert rather than a learner-facing failure (P7-07).
+   */
+  vnr: z.string().trim().max(100).nullable().optional(),
+  /**
    * The accreditation window from the Anerkennungsbescheid. ISO 8601, and
    * `nullable` because a course may be authored before the Bescheid arrives.
    */

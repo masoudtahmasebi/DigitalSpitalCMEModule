@@ -207,6 +207,10 @@ export class AdminService {
     assign(patch, "scientificLeadName", update.scientificLeadName);
     assign(patch, "scientificLeadTitle", update.scientificLeadTitle);
     assign(patch, "certificateIssuePlace", update.certificateIssuePlace);
+    // An empty string is a cleared form field, not a VNR. Storing `''` would
+    // pass the `vnr === null` check in `queueSubmission` and then be sent to
+    // the EIV as the number to credit against.
+    assign(patch, "vnr", update.vnr === "" ? null : update.vnr);
 
     if (update.vnrPassword !== undefined) {
       // Encrypted before it crosses into the repository — no layer below this
