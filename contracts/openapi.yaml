@@ -4059,6 +4059,7 @@ components:
           smtpFromAddress,
           smtpFromName,
           hasSmtpPassword,
+          embedOrigins,
           branding,
           courseCount,
         ]
@@ -4077,6 +4078,15 @@ components:
         hasSmtpPassword:
           type: boolean
           description: Presence only. The ciphertext is never returned.
+        embedOrigins:
+          type: array
+          items: { type: string }
+          description: |
+            Origins allowed to embed this project's widget — a customer's own
+            site. This used to be `EXTRA_CORS_ORIGINS` in the deployment's env
+            file, which made it the union across every customer on the
+            installation: adding a second customer widened the list for the
+            first (P18-04).
         branding: { $ref: "#/components/schemas/Branding" }
         courseCount: { type: integer, minimum: 0 }
 
@@ -4149,6 +4159,17 @@ components:
         keycloakIssuer: { type: [string, "null"], format: uri, maxLength: 2000 }
         keycloakAudience: { type: [string, "null"], maxLength: 200 }
         keycloakRealm: { type: [string, "null"], maxLength: 200 }
+        embedOrigins:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            pattern: "^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$"
+          description: |
+            Scheme + host + optional port, which is exactly what a browser puts
+            in an `Origin` header. A path or a trailing slash silently never
+            matches, so both are refused here and by a database CHECK — a
+            console is not the only way rows get written.
         smtpHost: { type: [string, "null"], maxLength: 300 }
         smtpPort: { type: [integer, "null"], minimum: 1, maximum: 65535 }
         smtpUsername: { type: [string, "null"], maxLength: 300 }

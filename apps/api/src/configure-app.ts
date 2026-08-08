@@ -21,7 +21,20 @@
 
 import helmet from "helmet";
 import type { INestApplication } from "@nestjs/common";
+import type { Pool } from "pg";
 import type { AppConfig } from "./config/config.js";
+import { PG_POOL } from "./db/tokens.js";
+import { EmbedOriginRegistry, ProjectOriginSource } from "./shared/embed-origins.js";
+
+/**
+ * `cors`' own callback shape, written out rather than imported.
+ *
+ * `@nestjs/common`'s `CorsOptions` types this as `any`, so annotating from it
+ * would reintroduce the `any` this exists to avoid. Two parameters, and the
+ * error one is always `null` here — see the handler for why a refused origin
+ * must not be an error.
+ */
+type CorsCallback = (error: Error | null, allow?: boolean) => void;
 
 /**
  * The headers a client uses to name the tenant it is acting within.
@@ -77,8 +90,42 @@ export async function configureApp(
    * double-submit token in `X-DS-CSRF` is (see `staff-auth.controller.ts`),
    * which is why that header has to be allowed through the preflight.
    */
+  /*
+   * The origin decision is a **function**, not a list, since P18-04.
+   *
+   * `ALLOWED_ORIGINS` still carries this installation's own two browser
+   * origins — the console and the portal, derived from `BASE_DOMAIN` at deploy
+   * time — because a deployment whose own console could not reach its own API
+   * would be broken in a way no customer configuration should be able to
+   * cause. Everything else comes from `projects.embed_origins`.
+   *
+   * `EmbedOriginRegistry` answers synchronously from a 60-second cache; see
+   * its header for why an `await` here would be wrong and why a database error
+   * keeps the previous set rather than emptying it.
+   */
+  const origins = new EmbedOriginRegistry(
+    new ProjectOriginSource(app.get<Pool>(PG_POOL)),
+    config.ALLOWED_ORIGINS,
+  );
+  // So the first preflight after a deploy is not a cache miss that answers
+  // "no" while the load is still in flight.
+  await origins.warm();
+
   app.enableCors({
-    origin: config.ALLOWED_ORIGINS.length > 0 ? config.ALLOWED_ORIGINS : false,
+    origin: (origin: string | undefined, callback: CorsCallback) => {
+      // No `Origin` header at all: a same-origin request, curl, or a
+      // server-to-server call. Not a CORS decision to make — the browser is
+      // what enforces this, and something that sent no origin is not a browser
+      // acting on a page's behalf.
+      if (origin === undefined || origin === "") {
+        callback(null, true);
+        return;
+      }
+      // `false`, never a thrown error: `cors` turns a thrown error into a 500,
+      // and a refused origin is a perfectly ordinary outcome that should not
+      // page anybody.
+      callback(null, origins.isAllowed(origin));
+    },
     credentials: true,
     // Every header the browser is allowed to send on a cross-origin request.
     //

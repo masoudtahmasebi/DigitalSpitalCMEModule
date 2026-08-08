@@ -99,7 +99,6 @@ services:
       # The portal's CSP connect-src. Derived from KEYCLOAK_ISSUER by
       # domains.sh — the origin of the realm the portal signs learners in
       # against — rather than being a second place to write the same host.
-      KEYCLOAK_ORIGIN: ${KEYCLOAK_ORIGIN}
     depends_on:
       api:
         condition: service_healthy
@@ -224,7 +223,6 @@ services:
     restart: unless-stopped
     environment:
       DS_API_BASE: ${DS_ADMIN_API_BASE}
-      DS_PROJECT_SLUG: ${DS_ADMIN_PROJECT_SLUG}
     networks: [internal]
 
   # The platform's own learner frontend. A host adapter like the WordPress
@@ -240,13 +238,9 @@ services:
     restart: unless-stopped
     environment:
       DS_API_BASE: ${DS_PORTAL_API_BASE}
-      DS_PROJECT_SLUG: ${DS_PORTAL_PROJECT_SLUG}
       # The portal's own Keycloak client — a learner-facing public client, not
       # the console's. The console has not spoken to Keycloak since P12-06
       # (ADR-0012), which is why only this service gets these three.
-      DS_KEYCLOAK_ISSUER: ${PORTAL_KEYCLOAK_ISSUER}
-      DS_KEYCLOAK_CLIENT_ID: ${PORTAL_KEYCLOAK_CLIENT_ID}
-      DS_REDIRECT_URI: ${DS_PORTAL_REDIRECT_URI}
     networks: [internal]
 
   widget:

@@ -84,15 +84,12 @@ ds_derive_domains() {
   # is the safer shape where the DNS allows it.
   : "${STAFF_COOKIE_DOMAIN:=.${BASE_DOMAIN}}"
 
-  # Our own two browser origins, always. `EXTRA_CORS_ORIGINS` is where a
-  # customer's WordPress origin goes — that one cannot be derived, because it is
-  # somebody else's domain.
-  local ours="https://${ADMIN_DOMAIN},https://${PORTAL_DOMAIN}"
-  if [[ -n "${EXTRA_CORS_ORIGINS:-}" ]]; then
-    : "${CORS_ALLOWED_ORIGINS:=${ours},${EXTRA_CORS_ORIGINS}}"
-  else
-    : "${CORS_ALLOWED_ORIGINS:=${ours}}"
-  fi
+  # Our own two browser origins, and only ours.
+  #
+  # A customer's site is `projects.embed_origins` now, resolved by the API at
+  # request time (P18-04). This deployment cannot know them and should not: one
+  # env-file list is the union across every customer on the installation.
+  : "${CORS_ALLOWED_ORIGINS:=https://${ADMIN_DOMAIN},https://${PORTAL_DOMAIN}}"
 
   # What the browser bundles are told at container start (see the frontends'
   # `config.ts`). Derived here so the console and the portal cannot be pointed
@@ -101,40 +98,19 @@ ds_derive_domains() {
   # domain they had to agree with.
   : "${DS_ADMIN_API_BASE:=${API_DOMAIN_URL}}"
   : "${DS_PORTAL_API_BASE:=${API_DOMAIN_URL}}"
-  : "${DS_PORTAL_REDIRECT_URI:=${PORTAL_BASE_URL}/}"
 
-  # Which project each frontend acts within, sent as `X-DS-Project`.
+  # Neither frontend is told which project it is any more.
   #
-  # **Per surface, not per platform.** There was one `PROJECT_SLUG` and it named
-  # a customer — `medice-adhs` — in a file that describes an installation which
-  # is supposed to serve many. The two are genuinely different questions:
-  #
-  #   * The **portal** is a customer's front door. `fortbildung.…` shows one
-  #     project's catalogue, so a project is what that hostname *is*. A second
-  #     customer gets a second portal hostname, or the portal learns to pick
-  #     from the host header — either way it is a property of the surface.
-  #   * The **console** spans customers: a super administrator's first screen is
-  #     the customer registry, which deliberately sends no project header at
-  #     all. What it needs is a *default* for the tenant-scoped screens until
-  #     the operator has chosen one — see P18-03, which makes that a choice in
-  #     the interface rather than a line in a file.
-  : "${DS_ADMIN_PROJECT_SLUG:=${ADMIN_DEFAULT_PROJECT_SLUG:-}}"
-  : "${DS_PORTAL_PROJECT_SLUG:=${PORTAL_PROJECT_SLUG:-}}"
+  # The portal reads its tenant from the first path segment (P21-03) and the
+  # console picks one in the interface (P22-03). There used to be a single
+  # `PROJECT_SLUG` naming a customer — `medice-adhs` — in a file that describes
+  # an installation meant to serve many.
 
-  # The portal's CSP names the realm's *origin* — scheme, host, optional port —
-  # so that the browser will let it redirect a learner to Keycloak. Cut from the
-  # portal's issuer rather than written again: two spellings of the same host is
-  # how one of them ends up with a `/realms/...` path in a `connect-src`, where
-  # it is silently ignored and the sign-in fails with nothing in any log.
-  #
-  # The *portal's* issuer, not a deployment-wide one: the API has no Keycloak
-  # configuration at all and reads the realm off the project row (P17-02).
-  if [[ -z "${KEYCLOAK_ORIGIN:-}" && -n "${PORTAL_KEYCLOAK_ISSUER:-}" ]]; then
-    if [[ "$PORTAL_KEYCLOAK_ISSUER" =~ ^(https?://[^/]+) ]]; then
-      KEYCLOAK_ORIGIN="${BASH_REMATCH[1]}"
-    fi
-  fi
-  : "${KEYCLOAK_ORIGIN:=}"
+  # No Keycloak origin in the portal's CSP, because the portal never contacts a
+  # Keycloak. It has not run an OIDC flow since P21-03: a federated tenant gets
+  # a link to the customer's own login, which is a top-level navigation and not
+  # a `connect-src`. Naming a realm here would widen the policy for a request
+  # the page cannot make.
 
   # What the bare domain does.
   #
@@ -173,9 +149,8 @@ ds_derive_domains() {
   export API_DOMAIN ADMIN_DOMAIN PORTAL_DOMAIN WIDGET_DOMAIN
   export API_DOMAIN_URL PORTAL_BASE_URL WIDGET_URL
   export STAFF_COOKIE_DOMAIN CORS_ALLOWED_ORIGINS
-  export DS_ADMIN_API_BASE DS_PORTAL_API_BASE DS_PORTAL_REDIRECT_URI
-  export DS_ADMIN_PROJECT_SLUG DS_PORTAL_PROJECT_SLUG
-  export KEYCLOAK_ORIGIN DS_SITES_DIR APEX_REDIRECT_URL
+  export DS_ADMIN_API_BASE DS_PORTAL_API_BASE
+  export DS_SITES_DIR APEX_REDIRECT_URL
 }
 
 # Check the parts a derivation cannot: values a human still has to supply, and
@@ -215,16 +190,10 @@ ds_check_domains() {
 
   # The frontends' containers refuse to start without a project slug, which is
   # a container restart loop rather than a message. Said here instead.
-  [[ -n "${DS_ADMIN_PROJECT_SLUG:-}" ]] || complain \
-    "ADMIN_DEFAULT_PROJECT_SLUG is not set — the console needs a default project"
-  [[ -n "${DS_PORTAL_PROJECT_SLUG:-}" ]] || complain \
-    "PORTAL_PROJECT_SLUG is not set — the portal serves one project's catalogue"
 
   # The portal redirects learners to Keycloak, and its CSP has to allow that
   # origin. Empty, the redirect is blocked by the browser and sign-in fails
   # with nothing server-side to look at.
-  [[ -n "${KEYCLOAK_ORIGIN:-}" ]] || complain \
-    "KEYCLOAK_ORIGIN is empty — it is cut from PORTAL_KEYCLOAK_ISSUER, so check that"
 
   # A value that is neither a URL nor the opt-out is a typo, and the failure
   # would be a Caddy block with a nonsense redirect target rather than an

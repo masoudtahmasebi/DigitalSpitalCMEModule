@@ -180,6 +180,7 @@ export class AuthoringService {
     assign(patch, "keycloakIssuer", update.keycloakIssuer);
     assign(patch, "keycloakAudience", update.keycloakAudience);
     assign(patch, "keycloakRealm", update.keycloakRealm);
+    assign(patch, "embedOrigins", update.embedOrigins);
     assign(patch, "smtpHost", update.smtpHost);
     assign(patch, "smtpPort", update.smtpPort);
     assign(patch, "smtpUsername", update.smtpUsername);

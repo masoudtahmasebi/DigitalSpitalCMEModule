@@ -40,8 +40,6 @@ declare global {
 
 export interface PortalConfig {
   readonly apiBase: string;
-  readonly issuer: string;
-  readonly clientId: string;
   readonly redirectUri: string;
 }
 
@@ -52,8 +50,6 @@ export function readConfig(): PortalConfig | undefined {
 
   const config: PortalConfig = {
     apiBase: configValue(runtime, "apiBase", env.VITE_API_BASE),
-    issuer: configValue(runtime, "issuer", env.VITE_KEYCLOAK_ISSUER),
-    clientId: configValue(runtime, "clientId", env.VITE_KEYCLOAK_CLIENT_ID),
     // Defaults to wherever the portal is served from, which is what a
     // single-page app registered as one redirect URI wants.
     redirectUri:

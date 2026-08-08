@@ -154,6 +154,7 @@ export interface ProjectRow {
   keycloakIssuer: string | null;
   keycloakAudience: string | null;
   keycloakRealm: string | null;
+  embedOrigins: string[];
   smtpHost: string | null;
   smtpPort: number | null;
   smtpUsername: string | null;
@@ -169,6 +170,7 @@ export interface ProjectPatch {
   keycloakIssuer?: string | null;
   keycloakAudience?: string | null;
   keycloakRealm?: string | null;
+  embedOrigins?: string[];
   smtpHost?: string | null;
   smtpPort?: number | null;
   smtpUsername?: string | null;
@@ -360,6 +362,7 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
         keycloakIssuer: projects.keycloakIssuer,
         keycloakAudience: projects.keycloakAudience,
         keycloakRealm: projects.keycloakRealm,
+        embedOrigins: projects.embedOrigins,
         smtpHost: projects.smtpHost,
         smtpPort: projects.smtpPort,
         smtpUsername: projects.smtpUsername,

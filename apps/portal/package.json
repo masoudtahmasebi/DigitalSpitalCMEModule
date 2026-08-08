@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@ds/domain": "workspace:*",
-    "@ds/oidc": "workspace:*",
     "@ds/sdk": "workspace:*",
     "@ds/widget": "workspace:*",
     "react": "^19.2.8",

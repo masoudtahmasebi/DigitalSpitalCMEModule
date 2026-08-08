@@ -53,6 +53,41 @@ describe("SECRETS_KMS_KEY", () => {
   });
 });
 
+describe("S3_ENDPOINT", () => {
+  it("refuses a bare host, naming the fix", () => {
+    // The mistake the Hetzner console invites: it displays the endpoint as
+    // `nbg1.your-objectstorage.com`, with no scheme. Left unvalidated this is
+    // `new URL()` throwing a TypeError on every media request, in a process
+    // that started cleanly and reported healthy — so the boot refuses instead,
+    // and the message says what to paste.
+    expect(() =>
+      loadConfig({ ...BASE, S3_ENDPOINT: "nbg1.your-objectstorage.com" }),
+    ).toThrow(/https:\/\//);
+  });
+
+  it("accepts an absolute URL", () => {
+    expect(
+      loadConfig({ ...BASE, S3_ENDPOINT: "https://nbg1.your-objectstorage.com" })
+        .S3_ENDPOINT,
+    ).toBe("https://nbg1.your-objectstorage.com");
+  });
+
+  it("strips a trailing slash", () => {
+    // `${origin}/${bucket}/${key}` with a trailing slash is a double slash, and
+    // a double slash is a *different key* to S3 — the object uploads to one
+    // path and 404s from the other, which reads as "the upload silently did
+    // nothing".
+    expect(
+      loadConfig({ ...BASE, S3_ENDPOINT: "https://nbg1.your-objectstorage.com/" })
+        .S3_ENDPOINT,
+    ).toBe("https://nbg1.your-objectstorage.com");
+  });
+
+  it("stays optional — object storage is a whole feature, not a requirement", () => {
+    expect(loadConfig({ ...BASE }).S3_ENDPOINT).toBe("");
+  });
+});
+
 describe("ALLOWED_ORIGINS", () => {
   it("splits and trims a comma-separated list", () => {
     const config = loadConfig({

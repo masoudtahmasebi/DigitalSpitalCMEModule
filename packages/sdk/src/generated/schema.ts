@@ -2680,6 +2680,14 @@ export interface components {
             smtpFromName: string | null;
             /** @description Presence only. The ciphertext is never returned. */
             hasSmtpPassword: boolean;
+            /**
+             * @description Origins allowed to embed this project's widget — a customer's own
+             *     site. This used to be `EXTRA_CORS_ORIGINS` in the deployment's env
+             *     file, which made it the union across every customer on the
+             *     installation: adding a second customer widened the list for the
+             *     first (P18-04).
+             */
+            embedOrigins: string[];
             branding: components["schemas"]["Branding"];
             courseCount: number;
         };
@@ -2746,6 +2754,13 @@ export interface components {
             keycloakIssuer?: string | null;
             keycloakAudience?: string | null;
             keycloakRealm?: string | null;
+            /**
+             * @description Scheme + host + optional port, which is exactly what a browser puts
+             *     in an `Origin` header. A path or a trailing slash silently never
+             *     matches, so both are refused here and by a database CHECK — a
+             *     console is not the only way rows get written.
+             */
+            embedOrigins?: string[];
             smtpHost?: string | null;
             smtpPort?: number | null;
             smtpUsername?: string | null;

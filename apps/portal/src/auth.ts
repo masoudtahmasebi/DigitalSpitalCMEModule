@@ -1,88 +1,55 @@
 /**
- * Keycloak login for the portal (P11-01, ADR-0003).
+ * How the portal supplies the widget a credential (P11-01, ADR-0007).
  *
- * The flow is `@ds/oidc`, shared with the admin console. What is portal-
- * specific is the **token provider** below, which is the contract every host
- * adapter has to satisfy (ADR-0007, contract 2): an async function returning a
- * currently-valid bearer token.
+ * ## What this file used to be, and why it is not any more
  *
- * That is the whole of what makes this a host. WordPress satisfies the same
- * contract by calling a nonce-protected REST endpoint that mints a token from
- * the WP session cookie; the portal satisfies it by holding a token it obtained
- * from Keycloak itself. The widget cannot tell the two apart, and neither can
- * the API — which validates the token against JWKS regardless, because nothing
- * a host says about who the user is is believed (CLAUDE.md §4 invariant 2).
+ * It held an OIDC client. The portal ran its own authorization-code flow
+ * against a `PORTAL_KEYCLOAK_ISSUER` in `config.env`, and that was wrong in
+ * three separate ways:
+ *
+ * 1. **It was a second route into a customer's identity.** MEDICE signs
+ *    learners in from a form on their own site, through the WordPress plugin,
+ *    against their Keycloak with a client secret the plugin holds. The portal
+ *    redirecting to the same realm was a flow they never asked us to run, and
+ *    the one it produced dropped a visitor on a Keycloak page with no way back.
+ * 2. **It made the deployment know a customer's realm.** An installation
+ *    serving several customers has several realms; one issuer in one env file
+ *    can only ever be right for one of them. Which realm a project uses is a
+ *    fact about the *project*, and lives on the project row (P17-02).
+ * 3. **It had already stopped running.** Since P21-03 the portal reads how a
+ *    tenant signs in from `GET /tenants/{slug}` and, for a federated one, shows
+ *    a **link** to the customer's own login. Nothing calls `beginLogin()`. The
+ *    client was constructed on every render, carried two configuration
+ *    variables, and could not be reached.
+ *
+ * So the flow is gone and the two variables with it. What remains is the one
+ * contract a host adapter actually owes the widget (ADR-0007, contract 2): an
+ * async function returning a currently-valid bearer token, or `undefined`.
+ *
+ * ## Why `undefined` is a complete answer
+ *
+ * A local participant's credential is an httpOnly cookie the SDK attaches
+ * itself (`credentials: "include"` in `apps/widget/src/api.ts`). There is no
+ * bearer token, there never will be one, and the request authenticates
+ * perfectly well without one.
+ *
+ * A federated participant does not reach the widget through this host at all —
+ * they use the customer's own site, where the WordPress plugin is the host
+ * adapter and supplies a real token. That the widget cannot tell the two hosts
+ * apart is the property ADR-0007 exists to keep.
  */
 
-import { createOidcClient, type OidcClient, type Session } from "@ds/oidc";
-import type { PortalConfig } from "./config.js";
-
-export type { Session };
-
-export function createAuth(config: PortalConfig): OidcClient {
-  return createOidcClient({
-    issuer: config.issuer,
-    clientId: config.clientId,
-    redirectUri: config.redirectUri,
-    // Distinct from the console's, so a developer running both on localhost
-    // does not have one flow's PKCE verifier overwritten by the other's.
-    storagePrefix: "ds-portal",
-  });
-}
-
 /**
- * What `<ds-lms>` is handed.
+ * The portal's token provider: there is no bearer token here.
  *
- * `refresh` is passed by the widget after a 401, at most once per failure. The
- * portal answers it by sending the browser back through Keycloak rather than by
- * silently renewing: it holds no refresh token, deliberately — a refresh token
- * in a browser is a long-lived credential in the one place we have decided not
- * to keep credentials.
+ * A function rather than a constant `undefined`, because the widget's
+ * `TokenProvider` contract is a callable and a host that satisfied it with a
+ * value would be a host the widget had to special-case.
  *
- * A 25-minute video outliving a 5-minute access token is the expected case, not
- * an edge case (docs/show-stoppers.md S2). Keycloak's own SSO cookie means the
- * round trip is usually invisible; what the learner loses is their scroll
- * position, not their progress, because progress is recorded server-side as it
- * happens.
- */
-export function tokenProviderFor(
-  auth: OidcClient,
-): (request: { readonly refresh: boolean }) => Promise<string | undefined> {
-  return async ({ refresh }) => {
-    const session = auth.currentSession();
-    if (session !== undefined && !refresh) return session.accessToken;
-
-    // No usable token. `beginLogin` navigates away and never resolves, so
-    // nothing after this line runs.
-    await auth.beginLogin();
-    return undefined;
-  };
-}
-
-/**
- * The token provider for a tenant whose participants sign in *here* (P25-02).
- *
- * It returns `undefined`, always, and that is the whole implementation. The
- * credential for such a tenant is an httpOnly cookie the SDK attaches itself
- * (`credentials: "include"` in `apps/widget/src/api.ts`); there is no bearer
- * token, there never will be one, and the request authenticates perfectly well
- * without one.
- *
- * ## Why it is a separate function rather than a branch above
- *
- * `tokenProviderFor` calls `beginLogin()` when it has no token — an OIDC
- * redirect to the tenant's realm. For a local tenant there is no realm to
- * redirect to, and the first browser run of this feature showed exactly what
- * that costs: the participant signed in, the page said "Abmelden", and the
- * catalogue was **empty with no error**, because the widget was waiting on a
- * provider that had gone off to start a login instead of simply saying "no
- * token, use the cookie". `GET /courses` was never sent at all.
- *
- * `refresh` is ignored for the same reason. A 401 here means the session
- * expired or was revoked, and the answer to that is signing in again — which
- * the shell offers as soon as `/auth/participant/me` says so. Silently
- * renewing a session the API deliberately ended is not a refresh, it is a
- * bypass.
+ * It ignores `refresh`. A 401 means the session expired or was revoked, and the
+ * answer to that is signing in again — which the shell offers as soon as
+ * `GET /auth/participant/me` says so. Silently renewing a session the API
+ * deliberately ended would be a bypass rather than a refresh.
  */
 export function cookieTokenProvider(): () => Promise<undefined> {
   return async () => undefined;

@@ -252,6 +252,9 @@ export const de = {
     columnCourses: "Fortbildungen",
     columnRealm: "Keycloak-Realm",
 
+    embedOrigins: "Erlaubte Einbettungs-Domains",
+    embedOriginsHint:
+      "Die Websites des Kunden, auf denen die Fortbildung eingebettet werden darf — eine pro Zeile, z. B. https://www.beispiel.de. Ohne Pfad und ohne Schrägstrich am Ende.",
     keycloak: "Anmeldung (Keycloak)",
     keycloakWarning:
       "Diese Werte entscheiden, gegen welchen Realm jedes Zugangstoken dieses Projekts geprüft wird. Ein falscher Wert sperrt alle Teilnehmenden dieses Projekts aus.",

@@ -250,9 +250,6 @@ importers:
       '@ds/domain':
         specifier: workspace:*
         version: link:../../packages/domain
-      '@ds/oidc':
-        specifier: workspace:*
-        version: link:../../packages/oidc
       '@ds/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk

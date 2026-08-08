@@ -144,7 +144,27 @@ const schema = z
     // S3-*compatible*, not Amazon: hosting is Hetzner in Germany on purpose, and
     // German physicians' course media in a US-controlled bucket is a transfer
     // question nobody wants to answer.
-    S3_ENDPOINT: z.string().default(""),
+    /**
+     * An **absolute** URL, scheme included.
+     *
+     * Validated here rather than left to `new URL()` in the presigner, because
+     * that is a `TypeError` on every media request in a process that started
+     * perfectly and reported healthy. A Hetzner console shows the endpoint as
+     * `nbg1.your-objectstorage.com`, so pasting it without a scheme is the
+     * obvious mistake to make and was worth failing the boot over.
+     */
+    S3_ENDPOINT: z
+      .string()
+      .default("")
+      .refine((value) => value === "" || /^https?:\/\/[^/\s]+/.test(value), {
+        message:
+          "must start with https:// — a Hetzner console shows the bare host " +
+          "(nbg1.your-objectstorage.com); the API needs https://nbg1.your-objectstorage.com",
+      })
+      // A trailing slash makes `${origin}/${bucket}/${key}` a double slash, and
+      // a double slash is a different key to S3 — the object uploads to one
+      // path and 404s from the other.
+      .transform((value) => value.replace(/\/+$/, "")),
     S3_REGION: z.string().default(""),
     S3_BUCKET: z.string().default(""),
     S3_ACCESS_KEY_ID: z.string().default(""),
@@ -166,12 +186,13 @@ const schema = z
     // request arrives, so a 700 MB body that began in time keeps going. Thirty
     // minutes covers a file picker left open while somebody finds the right
     // version; it is not a window in which to hunt for a bigger file.
+    S3_UPLOAD_TTL_SEC: z.coerce.number().int().positive().max(3_600).default(1_800),
+
     // How much reaches the log (P25-01). `info` is one line per request plus
     // every warning and error; `debug` adds detail nobody wants in production
     // by default but everybody wants during an incident. Changing it is a
     // container restart, not a deploy.
     LOG_LEVEL: z.string().default("info"),
-    S3_UPLOAD_TTL_SEC: z.coerce.number().int().positive().max(3_600).default(1_800),
 
     // ---------------------------------------------------------------------
     // Encryption at rest for stored secrets (CLAUDE.md §4 invariant 7)

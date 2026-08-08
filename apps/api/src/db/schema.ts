@@ -103,6 +103,11 @@ export const projects = pgTable("projects", {
   keycloakIssuer: text("keycloak_issuer"),
   keycloakAudience: text("keycloak_audience"),
   keycloakRealm: text("keycloak_realm"),
+  /**
+   * Origins allowed to embed this project's widget (P18-04). Used to be
+   * `EXTRA_CORS_ORIGINS` in an env file, shared across every customer.
+   */
+  embedOrigins: text("embed_origins").array().notNull().default([]),
   branding: jsonb("branding").notNull().default({}),
   smtpHost: text("smtp_host"),
   smtpPort: integer("smtp_port"),

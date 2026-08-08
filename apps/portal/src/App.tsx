@@ -39,7 +39,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { de } from "./locale/de.js";
 import { readConfig } from "./config.js";
-import { cookieTokenProvider, createAuth, tokenProviderFor } from "./auth.js";
+import { cookieTokenProvider } from "./auth.js";
 import { parseRoute, routePath, type Route } from "./routes.js";
 import { WidgetMount } from "./components/WidgetMount.js";
 import { Welcome } from "./components/Welcome.js";
@@ -108,8 +108,6 @@ function Tenant(props: {
   const [signIn, setSignIn] = useState<TenantSignIn | undefined>();
   const [state, setState] = useState<AuthState>("checking");
 
-  const auth = useMemo(() => createAuth(config), [config]);
-
   // Who this tenant is and where its learners sign in. Public, because the page
   // has to render before anybody has signed in — and because deciding this in
   // the client is what produced an unprompted redirect to somebody else's
@@ -149,20 +147,13 @@ function Tenant(props: {
     let cancelled = false;
 
     void (async () => {
-      try {
-        const session = await auth.completeLogin();
-        if (session !== undefined || auth.currentSession() !== undefined) {
-          if (!cancelled) setState("signed-in");
-          return;
-        }
-      } catch {
-        if (!cancelled) setState("failed");
-        return;
-      }
-
-      // No Keycloak session. A participant cookie is the other possibility, and
-      // a failure asking is "not signed in" rather than an error — the API
-      // being unreachable is already surfaced by the tenant fetch above, and
+      // One question, one answer. There used to be a Keycloak branch here; the
+      // portal has not run an OIDC flow since P21-03 and a federated tenant
+      // gets a link to the customer's own login instead, so a participant
+      // cookie is the only credential this host can hold.
+      //
+      // A failure asking is "not signed in" rather than an error: the API being
+      // unreachable is already surfaced by the tenant fetch above, and
       // reporting it twice tells the visitor nothing new.
       const session = await participantSession(config.apiBase, route.tenant);
       if (cancelled) return;
@@ -173,7 +164,7 @@ function Tenant(props: {
     return () => {
       cancelled = true;
     };
-  }, [auth, config.apiBase, route.tenant, refreshKey]);
+  }, [config.apiBase, route.tenant, refreshKey]);
 
   if (signIn === undefined || state === "checking") {
     return (
@@ -292,20 +283,9 @@ function Tenant(props: {
         void participantSignOut(config.apiBase, route.tenant).then(() => {
           setRefreshKey((n) => n + 1);
         });
-        auth.logout();
       }}
     >
-      <Routed
-        config={config}
-        auth={auth}
-        // Which credential the widget presents, taken from the tenant's own
-        // configuration rather than guessed. `external` means a Keycloak
-        // bearer token; `portal` means the httpOnly cookie, which the SDK
-        // attaches itself and no token provider can produce.
-        signInKind={signIn.kind}
-        route={route}
-        onNavigate={props.onNavigate}
-      />
+      <Routed config={config} route={route} onNavigate={props.onNavigate} />
     </Shell>
   );
 }
@@ -370,12 +350,10 @@ async function participantSignOut(apiBase: string, slug: string): Promise<void> 
 
 function Routed(props: {
   config: NonNullable<ReturnType<typeof readConfig>>;
-  auth: NonNullable<ReturnType<typeof createAuth>>;
-  signInKind: "external" | "portal";
   route: Extract<Route, { kind: "catalogue" | "course" }>;
   onNavigate: (route: Route) => void;
 }) {
-  const { config, auth, route, onNavigate, signInKind } = props;
+  const { config, route, onNavigate } = props;
 
   /*
    * Which of the catalogue's two buttons brought the learner here.
@@ -403,10 +381,9 @@ function Routed(props: {
     [onNavigate],
   );
 
-  const tokenProvider = useMemo(
-    () => (signInKind === "portal" ? cookieTokenProvider() : tokenProviderFor(auth)),
-    [auth, signInKind],
-  );
+  // Always the cookie. See `auth.ts` for why there is no longer a second
+  // branch here.
+  const tokenProvider = useMemo(() => cookieTokenProvider(), []);
 
   return (
     <div className="space-y-4">

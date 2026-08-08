@@ -37,6 +37,7 @@ import {
   Select,
   Spinner,
   Table,
+  TextArea,
   TextInput,
 } from "./ui.js";
 
@@ -472,6 +473,10 @@ function ProjectSettings(props: {
   const [issuer, setIssuer] = useState(project.keycloakIssuer ?? "");
   const [audience, setAudience] = useState(project.keycloakAudience ?? "");
   const [realm, setRealm] = useState(project.keycloakRealm ?? "");
+  // One origin per line. A comma-separated box invites a trailing comma and an
+  // entry with a space in it, both of which the API refuses and neither of
+  // which looks wrong on screen.
+  const [embedOrigins, setEmbedOrigins] = useState(project.embedOrigins.join("\n"));
   const [smtpHost, setSmtpHost] = useState(project.smtpHost ?? "");
   const [smtpPort, setSmtpPort] = useState(
     project.smtpPort === null ? "" : String(project.smtpPort),
@@ -496,6 +501,10 @@ function ProjectSettings(props: {
               keycloakIssuer: blankToNull(issuer),
               keycloakAudience: blankToNull(audience),
               keycloakRealm: blankToNull(realm),
+              embedOrigins: embedOrigins
+                .split("\n")
+                .map((line) => line.trim())
+                .filter((line) => line !== ""),
               smtpHost: blankToNull(smtpHost),
               smtpPort: smtpPort.trim() === "" ? null : Number(smtpPort),
               smtpUsername: blankToNull(smtpUsername),
@@ -510,6 +519,26 @@ function ProjectSettings(props: {
     >
       <Field label={de.common.name} htmlFor={id("name")}>
         <TextInput id={id("name")} value={name} maxLength={300} onChange={setName} />
+      </Field>
+
+      {/*
+        Where a customer's site is named, since P18-04. It used to be
+        `EXTRA_CORS_ORIGINS` in the deployment's env file, which made it the
+        union across every customer on the installation: adding a second
+        customer widened the permission for the first, and only somebody with
+        SSH could change it.
+      */}
+      <Field
+        label={de.organisation.embedOrigins}
+        hint={de.organisation.embedOriginsHint}
+        htmlFor={id("origins")}
+      >
+        <TextArea
+          id={id("origins")}
+          value={embedOrigins}
+          rows={3}
+          onChange={setEmbedOrigins}
+        />
       </Field>
 
       <fieldset className="space-y-3">
