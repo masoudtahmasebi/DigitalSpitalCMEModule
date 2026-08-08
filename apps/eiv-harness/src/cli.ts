@@ -20,6 +20,17 @@ import { EivClient, EivError, redact, type EivExchange } from "@ds/eiv-client";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:4010";
 
+/** What the mock understands. Mirrors `MockBehaviour` in `@ds/eiv-client`. */
+const BEHAVIOURS = [
+  "success",
+  "auth_failure",
+  "validation_failure",
+  "duplicate",
+  "server_error",
+  "timeout",
+  "non_json",
+];
+
 async function main(): Promise<number> {
   const command = process.argv[2];
   const baseUrl = process.env["EIV_BASE_URL"] ?? DEFAULT_BASE_URL;
@@ -40,10 +51,43 @@ async function main(): Promise<number> {
     return 2;
   }
 
-  const client = new EivClient({ baseUrl, vnr, vnrPassword });
+  /*
+   * `--behaviour` drives the mock's failure modes.
+   *
+   * The mock implements seven and the harness could reach none of them: it
+   * reads `x-mock-behaviour` from the request and the CLI had no way to send a
+   * header. So the paths the retry queue exists for — a validation rejection
+   * that must never be retried, an auth failure, a duplicate, a 5xx, a timeout,
+   * a non-JSON body — were exercised by unit tests and by nothing a human could
+   * run against a live process.
+   *
+   * Refused against a non-local host: it is meaningless to the real interface,
+   * and a stray header on a live submission is not a thing to find out about
+   * afterwards.
+   */
+  const behaviour = readFlag("--behaviour");
+  if (behaviour !== undefined && !isLocal(baseUrl)) {
+    console.error("--behaviour drives the local mock and cannot be sent to a real host");
+    return 2;
+  }
+  if (behaviour !== undefined && !BEHAVIOURS.includes(behaviour)) {
+    console.error(`--behaviour must be one of: ${BEHAVIOURS.join(", ")}`);
+    return 2;
+  }
+
+  const client = new EivClient({
+    baseUrl,
+    vnr,
+    vnrPassword,
+    ...(behaviour === undefined
+      ? {}
+      : { extraHeaders: { "x-mock-behaviour": behaviour } }),
+  });
 
   console.warn(`EIV harness -> ${baseUrl}`);
-  console.warn(`VNR ${vnr}\n`);
+  console.warn(`VNR ${vnr}`);
+  if (behaviour !== undefined) console.warn(`mock behaviour: ${behaviour}`);
+  console.warn("");
 
   try {
     switch (command) {
@@ -97,6 +141,24 @@ async function main(): Promise<number> {
  * an action with no undo inside the 7-day correction window, and none at all
  * after it.
  */
+/**
+ * Whether this base URL is the local mock.
+ *
+ * One definition, two callers: the live guard that refuses to contact a real
+ * host without `EIV_ALLOW_LIVE`, and `--behaviour`, which is meaningless
+ * anywhere else. Two copies of "is this local" is how one of them eventually
+ * says yes where the other says no.
+ */
+function isLocal(baseUrl: string): boolean {
+  let host: string;
+  try {
+    host = new URL(baseUrl).hostname;
+  } catch {
+    return false;
+  }
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
 function checkLiveGuard(baseUrl: string): string | undefined {
   let host: string;
 
@@ -106,9 +168,7 @@ function checkLiveGuard(baseUrl: string): string | undefined {
     return `EIV_BASE_URL is not a valid URL: ${baseUrl}`;
   }
 
-  const isLocal = host === "127.0.0.1" || host === "localhost" || host === "::1";
-
-  if (isLocal || process.env["EIV_ALLOW_LIVE"] === "yes") return undefined;
+  if (isLocal(baseUrl) || process.env["EIV_ALLOW_LIVE"] === "yes") return undefined;
 
   return [
     `Refusing to contact ${host} without EIV_ALLOW_LIVE=yes.`,

@@ -50,7 +50,7 @@ describe("the EFN — the value it would be worst to lose", () => {
   it("redacts a VNR too, and that is the right trade", () => {
     // A VNR is 19 digits so it survives; but any 15-digit identifier is
     // redacted. A VNR in a log is unhelpful; an EFN in a log is reportable.
-    expect(redactText("2760552025919300018")).toBe("2760552025919300018");
+    expect(redactText("9999999999999999999")).toBe("9999999999999999999");
   });
 });
 

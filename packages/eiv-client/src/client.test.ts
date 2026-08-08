@@ -3,7 +3,7 @@ import { EivClient, EivError } from "./client.js";
 import { startMockServer, type MockServer } from "./mock/server.js";
 import { redact } from "./redact.js";
 
-const VNR = "2760552025919300018";
+const VNR = "9999999999999999999";
 const PASSWORD = "test-password";
 const EFN = "123456789012345";
 
@@ -53,6 +53,45 @@ describe("the documented flow, end to end", () => {
     expect(first.push.accepted).toBe(true);
     expect(second.push.accepted).toBe(true);
     expect(second.push.reference).toBe(first.push.reference);
+  });
+});
+
+/**
+ * The mock's behaviours have to be reachable from outside a unit test (P30-01).
+ *
+ * The mock implements seven, selected by the `x-mock-behaviour` header, and the
+ * harness CLI could send no headers at all — so every failure path the retry
+ * queue exists for could be exercised here and from nowhere a human could run
+ * against a live process. The whole point of the harness (ADR-0005) is to
+ * answer "does it behave as documented?" in minutes, and the interesting half
+ * of that question is what happens when it does not.
+ */
+describe("extraHeaders", () => {
+  it("carries a header the caller supplied", async () => {
+    const forced = new EivClient({
+      baseUrl: mock.url,
+      vnr: VNR,
+      vnrPassword: PASSWORD,
+      timeoutMs: 2000,
+      extraHeaders: { "x-mock-behaviour": "server_error" },
+    });
+
+    await expect(forced.authenticate()).rejects.toMatchObject({ kind: "server" });
+  });
+
+  it("cannot be used to forge the bearer token", async () => {
+    // The token is applied after the spread, so a caller cannot present an
+    // `authorization` header of their own choosing on the push.
+    const forged = new EivClient({
+      baseUrl: mock.url,
+      vnr: VNR,
+      vnrPassword: PASSWORD,
+      timeoutMs: 2000,
+      extraHeaders: { authorization: "Bearer forged" },
+    });
+
+    const { push } = await forged.submit("802769999000015");
+    expect(push.accepted).toBe(true);
   });
 });
 

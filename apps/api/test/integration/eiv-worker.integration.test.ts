@@ -36,7 +36,7 @@ const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 const DATABASE_URL = requireEnv("DATABASE_URL");
 
 const EFN = "987654321098765";
-const VNR = "2760552025919300018";
+const VNR = "9999999999999999999";
 const VNR_PASSWORD = "mock-vnr-password";
 const cipher = new PlaintextSecretCipher("test");
 

@@ -80,8 +80,24 @@ const PORTAL_PROJECT_SLUG = CUSTOMER_SLUG;
 /** The demo participant. The password is never in this file — see below. */
 const PARTICIPANT_EMAIL = "demo@medice.example";
 
-/** Per the Bescheid. The password is never committed — see `.env.example`. */
-const VNR = "2760552025919300018";
+/**
+ * The Veranstaltungsnummer, from the environment.
+ *
+ * It used to be the real one from the Bescheid, hardcoded. That was defensible
+ * while a VNR was inert data — and it stopped being defensible with P28-03,
+ * which made a completion queue a Punktemeldung against whatever VNR the course
+ * carries. A seeded environment plus `EIV_ALLOW_LIVE=yes` is then a path to
+ * submitting **test participations against MEDICE's real accreditation**, which
+ * is not a mistake anyone gets to make twice: the Ärztekammer would be told that
+ * physicians who do not exist attended.
+ *
+ * The placeholder is obviously synthetic, so a submission attempt with it fails
+ * loudly at the Ärztekammer rather than succeeding quietly somewhere real. The
+ * real number lives in `config.env` next to the password it goes with —
+ * `docs/requirements/medice-adhs.md` records what it is, which is where a fact
+ * about the accreditation belongs.
+ */
+const VNR = process.env["SEED_MEDICE_VNR"] ?? "0000000000000000000";
 
 interface ModuleSeed {
   readonly title: string;

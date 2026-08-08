@@ -20,6 +20,22 @@ export interface EivClientOptions {
   readonly vnr: string;
   readonly vnrPassword: string;
   readonly timeoutMs?: number;
+  /**
+   * Extra request headers, for the contract harness only.
+   *
+   * The mock takes its behaviour from `x-mock-behaviour`, and until this
+   * existed the harness could reach none of the seven: the CLI had no way to
+   * send a header, so the failure paths the whole retry queue is built around
+   * — auth, validation, duplicate, 5xx, timeout, non-JSON — could be exercised
+   * from unit tests and from nowhere a human could type.
+   *
+   * Deliberately a general header map rather than a `behaviour` option: the
+   * production client must not grow a concept of "mock", and the next thing a
+   * real interface asks for will be a header too (an API key, a correlation
+   * id). Nothing sets it in production — `EivAccreditationReporter` does not
+   * pass it.
+   */
+  readonly extraHeaders?: Readonly<Record<string, string>>;
 }
 
 export interface EivExchange {
@@ -151,7 +167,10 @@ export class EivClient {
     const headers: Record<string, string> = {
       "content-type": "application/json",
       accept: "application/json",
+      ...this.options.extraHeaders,
     };
+    // After the spread: a caller must not be able to forge the bearer token by
+    // passing an `authorization` header of their own.
     if (token !== undefined) headers["authorization"] = `Bearer ${token}`;
 
     let response: Response;

@@ -59,7 +59,7 @@ const AUDIENCE = "ds-education-api";
 const RUN = randomUUID().slice(0, 8);
 const SUB = `completion-learner-${RUN}`;
 const ADMIN_SUB = `completion-admin-${RUN}`;
-const VNR = "2760552025919300018";
+const VNR = "9999999999999999999";
 const EFN = "123456789012345";
 /** What the learner confirms at completion — deliberately not the token's name. */
 const ATTESTED_NAME = "Dr. med. Anna Müller";

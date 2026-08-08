@@ -7,7 +7,7 @@ import {
 } from "./certificate.js";
 
 const medice: CertificateInput = {
-  vnr: "2760552025919300018",
+  vnr: "9999999999999999999",
   courseTitle: "ADHS Akademie adult",
   completedAt: new Date("2026-08-15T14:35:00Z"),
   eventLocation: "online",

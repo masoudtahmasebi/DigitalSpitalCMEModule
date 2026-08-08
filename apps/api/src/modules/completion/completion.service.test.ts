@@ -41,7 +41,7 @@ const course: CourseComplianceRow = {
   revealCorrectAnswers: false,
   cmePoints: 4,
   cmeCategory: "D",
-  vnr: "2760552025919300018",
+  vnr: "9999999999999999999",
 };
 
 const tree: CourseTree = {

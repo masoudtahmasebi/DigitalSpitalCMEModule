@@ -59,7 +59,7 @@ const course: AdminCourseRow = {
   fortbildungsnummer: null,
   validFrom: null,
   validTo: null,
-  vnr: "2760552025919300018",
+  vnr: "9999999999999999999",
   cmePoints: 4,
   cmeCategory: "D",
   requiredWatchPercent: 100,

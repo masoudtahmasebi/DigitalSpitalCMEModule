@@ -73,6 +73,7 @@ wants action today.
 | S9      | Hetzner account ownership and DNS                                                  | M4 · 06.09       | 24.08     | DigitalSpital      |
 | S10     | VNR password was shared over chat                                                  | —                | now       | DigitalSpital      |
 | S23     | **VNR format, and whether any VNR-less completion already exists**                 | —                | 14.08     | MEDICE / ÄKWL      |
+| S24     | **Export the EIV Veranstalter Swagger — our client is built on a guess**           | M3 · 30.08       | 14.08     | MEDICE             |
 | ~~S3~~  | ~~WordPress repository access~~                                                    | **CLOSED 28.07** | —         | —                  |
 | ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                               | **CLOSED 28.07** | —         | —                  |
 | ~~S6~~  | ~~Signature/stamp asset~~                                                          | **CLOSED 28.07** | —         | —                  |
@@ -796,7 +797,7 @@ and the ticket comes back.
 
 ---
 
-## S21 · The layout says the EFN is **18 digits**; the platform validates **15**
+## S21 · The layout says the EFN is **18 digits**; the platform validates **15** — **answered: 15, the layout is wrong**
 
 - **Owner:** MEDICE / ÄKWL · **Blocks:** P6, P7 · **Raised:** 05.08 from `260729_MEDICECMEFortbildungMS.pdf` p. 13
 
@@ -823,8 +824,79 @@ goes in front of a physician. If it is 18, `isValidEfn` and its tests change, al
 with the masking rule in `packages/domain/src/moderation.ts`, and every EFN captured
 before the change has to be re-validated.
 
-Until it is answered the field stays at 15, because that is the number the EIV
-requirements document was written from.
+### Answered, 08.08, from the Landesärztekammern's own published description
+
+The EFN is **15 digits**, nationally uniform, and structured:
+
+| Position | Meaning                                            |
+| -------- | -------------------------------------------------- |
+| 1–2      | Berufsgruppe — `80` is Arzt                        |
+| 3–5      | Länderkennung per ISO 3166 — `276` is Germany      |
+| 6–9      | the recognising Landesärztekammer                  |
+| 10–14    | an individual running number carrying no coding    |
+| 15       | a **Prüfziffer** derived from the preceding digits |
+
+So `isValidEfn` is correct as written and **page 13's caption is wrong**: it must
+read _Die 15-stellige EFN_, and its eighteen-character placeholder must shrink,
+before it goes in front of a physician. That is a copy fix for MEDICE's designer,
+not a platform change. See `docs/requirements/medice-adhs.md` §EFN.
+
+**What is deliberately still not implemented: the check digit.** Every public
+description of the EFN stops at "eine Prüfziffer, die sich aus den vorangegangenen
+Ziffern durch Anwendung der sog. …" and does not name the algorithm. Guessing it
+would be the worst possible trade: a wrong Modulo would refuse a _valid_ EFN at the
+last step of a completed Fortbildung, which is precisely the failure `CLAUDE.md` §7
+exists to prevent, and it would fail silently for only some physicians. Validating
+15 digits and letting the Ärztekammer reject the rest is the correct behaviour until
+somebody supplies the algorithm in writing.
+
+Worth asking for anyway, because the payoff is real: a local check digit turns a
+"validation" failure discovered _after_ the certificate was shown into a typo caught
+in the form.
+
+---
+
+## S24 · We cannot reach the EIV REST API's documentation, and our client is built on a guess
+
+- **Owner:** MEDICE (they hold the VNR login) · **Blocks:** P7 · **Raised:** 08.08
+
+Three things established on 08.08, all of which move S24 from "unknown" to
+"specific":
+
+1. **There is a REST API for Veranstalter, and it is documented in a Swagger UI**
+   at `veranstalter-swagger-ui.eiv-fobi.de`. Our ADR-0005 client was written
+   before we knew that, from a prose description.
+2. **The old Java client died 31.12.2024** and the XML file interface is slated
+   for retirement. The REST API is the path.
+3. **From 01.01.2026 organisers submit via `punkte.eiv-fobi.de`.** Our
+   `.env.example` names `https://punktemeldung.eiv-fobi.de/` as the live
+   endpoint. Both hosts exist; neither is confirmed to be the _API_ base, and
+   the Swagger host is a third name again.
+
+**We could not read the Swagger.** It is not reachable from the build
+environment, so this is not something engineering can resolve by trying harder.
+
+That matters more than it sounds, because everything below is currently an
+**assumption**, and the mock encodes the same assumptions — so our tests agree
+with our guesses rather than with the interface:
+
+| What we assume                                                      | Where                  |
+| ------------------------------------------------------------------- | ---------------------- |
+| `POST /auth/login` with `{ vnr, passwort }` returning `{ token }`   | `client.ts`            |
+| `POST /fobi/veranstalter/push_teilnahme` with `{ vnr, efn, rolle }` | `client.ts`            |
+| `rolle: "TEILNEHMER"`                                               | `client.ts`            |
+| `{ referenz, status }` with `ANGENOMMEN` / `BEREITS_GEMELDET`       | `mock/server.ts`       |
+| 422 for an unknown EFN, 401/403 for bad credentials                 | failure classification |
+
+**The ask, and it is small:** MEDICE hold the VNR and can sign in. One export of
+the Swagger document — `/v3/api-docs` or the JSON behind the UI — settles every
+row above in an afternoon, and the harness (`--behaviour`, P30-01) exists to
+replay each one the moment it arrives.
+
+Until then the client stays as it is. It is transport only: every path, field
+name and status code is one constant away from correct, and `EivExchange`
+records the verbatim request and response so the first real call is a diff
+rather than an investigation. That was the point of building it in week 1.
 
 ---
 

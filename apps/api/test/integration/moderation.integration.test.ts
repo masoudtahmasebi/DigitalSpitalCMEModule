@@ -182,7 +182,7 @@ async function seedEnrolledLearner(
     await seedPool.query(
       `INSERT INTO eiv_submissions (customer_id, enrolment_id, vnr, efn, status,
                                     event_end_at, report_due_at, first_submitted_at)
-       VALUES ($1,$2,'2760552025919300018',$3,$4::eiv_status, now(), now() + interval '8 days', now())`,
+       VALUES ($1,$2,'9999999999999999999',$3,$4::eiv_status, now(), now() + interval '8 days', now())`,
       [customerId, enrolmentId, EFN, submissionStatus],
     );
   }

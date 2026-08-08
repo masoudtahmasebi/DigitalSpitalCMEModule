@@ -20,7 +20,7 @@ const MINIMAL_JPEG = Buffer.from(
 );
 
 const data = buildCertificateData({
-  vnr: "2760552025919300018",
+  vnr: "9999999999999999999",
   courseTitle: "ADHS Akademie adult",
   completedAt: new Date("2026-07-28T14:35:00Z"),
   eventLocation: "online",
@@ -60,7 +60,7 @@ describe("the rendered PDF", () => {
     const parsed = await PDFDocument.load(await renderCertificatePdf(data, assets));
 
     expect(parsed.getTitle()).toContain("ADHS Akademie adult");
-    expect(parsed.getSubject()).toContain("2760552025919300018");
+    expect(parsed.getSubject()).toContain("9999999999999999999");
   });
 
   it("embeds both barcodes plus the stamp and signature", async () => {

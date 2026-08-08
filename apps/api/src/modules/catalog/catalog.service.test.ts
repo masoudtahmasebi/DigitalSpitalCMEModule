@@ -25,7 +25,7 @@ const adhs: CourseRow = {
   altersgruppe: ["Erwachsene"],
   cmePoints: 4,
   cmeCategory: "D",
-  vnr: "2760552025919300018",
+  vnr: "9999999999999999999",
   accreditationBody: "Ärztekammer Westfalen-Lippe",
   organizer: "Medice Arzneimittel Pütter GmbH & Co. KG, Iserlohn",
   eventLocation: "online",
@@ -301,7 +301,7 @@ describe("getCourseBySlug", () => {
       LEARNER,
     );
 
-    expect(detail.vnr).toBe("2760552025919300018");
+    expect(detail.vnr).toBe("9999999999999999999");
     expect(detail.accreditationBody).toBe("Ärztekammer Westfalen-Lippe");
     expect(detail.eventLocation).toBe("online");
     expect(detail.cmeCategory).toBe("D");

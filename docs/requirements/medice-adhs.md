@@ -61,6 +61,33 @@ Flow: pass the assessment → if no EFN on profile, prompt → validate format
 (15 digits) → store → auto-submit on completion with the course VNR and password,
 with no further user action.
 
+#### What an EFN is, established 08.08 (closes S21)
+
+15 digits, nationally uniform, published by the Landesärztekammern:
+
+| Position | Meaning                                          |
+| -------- | ------------------------------------------------ |
+| 1–2      | Berufsgruppe — `80` is Arzt                      |
+| 3–5      | Länderkennung per ISO 3166 — `276` is Germany    |
+| 6–9      | the recognising Landesärztekammer                |
+| 10–14    | an individual running number, carrying no coding |
+| 15       | a Prüfziffer derived from the preceding digits   |
+
+So `isValidEfn`'s `/^[0-9]{15}$/` is right, and **the layout's page 13 is wrong**:
+"Die 18-stellige EFN" must become "Die 15-stellige", and its eighteen-character
+placeholder must shrink. That is a copy correction for the designer.
+
+The **check digit is deliberately not verified**. No public source names the
+algorithm — every description stops at "durch Anwendung der sog. …" — and a
+guessed Modulo would refuse a valid EFN at the last step of a completed
+Fortbildung, silently and for only some physicians. `CLAUDE.md` §7. If MEDICE or
+the ÄKWL can supply it in writing it is worth having, because it converts a
+rejection discovered after the certificate was shown into a typo caught in the
+form; until then the Ärztekammer is the validator.
+
+Sample EFNs used in tests are structurally shaped (`80` `276` …) but synthetic,
+and no real EFN is committed anywhere in this repository.
+
 ### Profile data accuracy
 
 Keycloak profile data may be **out of date** at submission time — a name change
