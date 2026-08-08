@@ -53,12 +53,8 @@ export function Organisation(props: { client: ApiClient }) {
   const problem = departmentProblem ?? projectProblem;
 
   return (
+    // No heading here: `Page` draws it from the navigation entry (P30-02).
     <section className="space-y-6">
-      <div>
-        <h2 className="text-base font-semibold text-gray-900">{de.organisation.title}</h2>
-        <p className="mt-1 max-w-3xl text-sm text-gray-600">{de.organisation.intro}</p>
-      </div>
-
       {problem === undefined ? null : (
         <Notice tone="error" title={de.error.title}>
           {problem}

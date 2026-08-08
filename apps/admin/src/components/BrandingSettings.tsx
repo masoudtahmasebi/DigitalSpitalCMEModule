@@ -116,9 +116,9 @@ export function BrandingSettings(props: { client: ApiClient }) {
 
   return (
     <section className="space-y-5">
+      {/* Title and intro come from `Page` (P30-02); these two notes are specific
+          to this screen and have no equivalent in the navigation entry. */}
       <div className="space-y-1">
-        <h2 className="text-base font-semibold text-gray-900">{de.branding.title}</h2>
-        <p className="text-sm text-gray-700">{de.branding.intro}</p>
         <p className="text-xs text-gray-600">{de.branding.privacy}</p>
         <p className="text-xs text-gray-600">{de.branding.elsewhere}</p>
       </div>

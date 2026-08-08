@@ -43,6 +43,7 @@ import {
 } from "./api.js";
 import { de } from "./locale/de.js";
 import { Badge, Button, Notice, Spinner, Table } from "./components/ui.js";
+import { EmptyState, Page, type Crumb } from "./components/page.js";
 import { BrandingSettings } from "./components/BrandingSettings.js";
 import { CourseSettings } from "./components/CourseSettings.js";
 import { CoursePresentation } from "./components/CoursePresentation.js";
@@ -167,13 +168,32 @@ function Shell(props: {
   nav?: React.ReactNode;
   /** Scope controls for the app bar — the customer picker. */
   scope?: React.ReactNode;
+  /*
+   * On a narrow screen the sidebar collapses (P30-02).
+   *
+   * `md:flex` put it *above* the content rather than beside it, so on a phone
+   * every screen opened with eleven navigation buttons and the operator scrolled
+   * past all of them to reach the thing they had just navigated to.
+   *
+   * The open/closed state lives in `Console` rather than here, because the thing
+   * that has to close the menu is a navigation click — and those buttons are
+   * built there. Passing a callback down and having Shell guess when a click
+   * inside `nav` was a navigation would be the same state in two places.
+   */
+  menuOpen?: boolean;
+  onToggleMenu?: () => void;
 }) {
   const signedIn = props.onSignOut !== undefined;
+  const menuOpen = props.menuOpen ?? false;
 
   return (
     <div className="min-h-screen bg-[color:var(--ds-surface)] md:flex">
       {signedIn ? (
-        <aside className="shrink-0 bg-[color:var(--ds-ink)] md:min-h-screen md:w-60">
+        <aside
+          className={`shrink-0 bg-[color:var(--ds-ink)] md:block md:min-h-screen md:w-60 ${
+            menuOpen ? "block" : "hidden"
+          }`}
+        >
           <div className="flex items-center gap-2.5 px-4 py-4">
             <span
               aria-hidden
@@ -182,7 +202,7 @@ function Shell(props: {
               DS
             </span>
             <span className="truncate text-sm font-semibold text-white">
-              {de.appTitle}
+              {de.appShort}
             </span>
           </div>
           {props.nav}
@@ -192,7 +212,17 @@ function Shell(props: {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white px-5 py-2.5">
           {signedIn ? (
-            props.scope
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                aria-expanded={menuOpen}
+                onClick={() => props.onToggleMenu?.()}
+                className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm font-medium text-gray-700 md:hidden"
+              >
+                {menuOpen ? de.nav.closeMenu : de.nav.menu}
+              </button>
+              {props.scope}
+            </div>
           ) : (
             <h1 className="text-base font-semibold text-gray-900">{de.appTitle}</h1>
           )}
@@ -279,38 +309,128 @@ type View =
  * behind it regardless of what was drawn, and `Customers` handles that 403
  * because a URL can be typed.
  */
-const SECTIONS: ReadonlyArray<readonly [View["kind"], string, string | undefined]> = [
-  /*
-   * Ordered by the process, not by when each screen was built.
+interface Section {
+  readonly kind: View["kind"];
+  /** Short, for the sidebar. */
+  readonly label: string;
+  /**
+   * The page heading and the sentence under it.
    *
-   * The order somebody actually works in is: a customer exists, it has
-   * departments and projects, those hold courses, people are given access to
-   * them, they take them, and documents come out at the end. Setup screens
-   * (Team, Erscheinungsbild, Sicherheit) come last because they are visited
-   * once and then rarely.
-   *
-   * The previous order put Fortbildungen first and Kunden second-to-last, so an
-   * operator setting up a new customer started at step three and had to scroll
-   * past four screens to find step one.
+   * Declared here rather than inside each screen — react-admin's `Resource`
+   * idea: the page chrome belongs to the destination, not to the component
+   * that happens to fill it. Ten screens each drawing their own heading is how
+   * three of them ended up with none and two with a heading in a different
+   * size.
    */
-  ["customers", de.customers.title, "customer"],
-  ["organisation", de.nav.organisation, undefined],
-  ["courses", de.nav.courses, undefined],
-  // Access before progress: an account has to exist before there is anything
-  // to have progress on, and this is the screen that creates one.
-  ["participants", de.participantAccounts.title, "learner_record"],
-  // Learner records and certificates need `learner_record` / `certificate`,
-  // which a department admin and a course editor do not hold: neither has
-  // business correcting a physician's name or withdrawing a document.
-  ["learners", de.learners.title, "learner_record"],
-  ["certificates", de.certificates.title, "certificate"],
-  ["staff", de.staff.title, "staff_user"],
-  ["branding", de.nav.branding, undefined],
-  // No capability: every operator may read the rules their own sign-in is
-  // subject to. Which of them they may *change* is enforced on the write —
-  // hiding the screen would only hide the platform row from the people it
-  // governs (P22-02).
-  ["security", de.nav.security, undefined],
+  readonly title: string;
+  readonly description?: string;
+  /** `undefined` means every operator may see it. */
+  readonly capability?: string;
+}
+
+interface NavGroup {
+  readonly heading: string;
+  readonly sections: readonly Section[];
+}
+
+/**
+ * The navigation, grouped by the question each part answers (P30-02).
+ *
+ * Ten flat destinations is a list an operator re-reads top to bottom every
+ * time, because nothing says which part of it they are in. Grouped, the shape
+ * of the console is legible at a glance and matches the order somebody actually
+ * works in:
+ *
+ *   **Angebot** — what exists to be taken. A customer, its departments and
+ *   projects, and the courses inside them. Setup flows downwards through it.
+ *   **Teilnahme** — who is taking it, how far they have got, and what came out
+ *   at the end. Access first: an account has to exist before it can have
+ *   progress, and this is the screen that creates one.
+ *   **Einstellungen** — the platform itself. Visited once, then rarely.
+ *
+ * Capability decides only what is *drawn*. The API 403s every endpoint behind a
+ * hidden screen regardless, because any of them can be reached by typing a URL
+ * — `Customers` handles that 403 for exactly that reason.
+ */
+const NAV: readonly NavGroup[] = [
+  {
+    heading: de.nav.groupCatalogue,
+    sections: [
+      // A customer is the tenant boundary itself, so only `super_admin` holds
+      // `customer` — nobody inside one may see or mint another (P12-01b).
+      {
+        kind: "customers",
+        label: de.customers.title,
+        title: de.customers.title,
+        description: de.customers.intro,
+        capability: "customer",
+      },
+      {
+        kind: "organisation",
+        label: de.nav.organisation,
+        title: de.organisation.title,
+        description: de.organisation.intro,
+      },
+      { kind: "courses", label: de.nav.courses, title: de.courses.title },
+    ],
+  },
+  {
+    heading: de.nav.groupPeople,
+    sections: [
+      {
+        kind: "participants",
+        label: de.participantAccounts.title,
+        title: de.participantAccounts.title,
+        description: de.participantAccounts.intro,
+        capability: "learner_record",
+      },
+      // Learner records and certificates need `learner_record` / `certificate`,
+      // which a department admin and a course editor do not hold: neither has
+      // business correcting a physician's name or withdrawing a document.
+      {
+        kind: "learners",
+        label: de.learners.title,
+        title: de.learners.title,
+        description: de.learners.intro,
+        capability: "learner_record",
+      },
+      {
+        kind: "certificates",
+        label: de.certificates.title,
+        title: de.certificates.title,
+        description: de.certificates.intro,
+        capability: "certificate",
+      },
+    ],
+  },
+  {
+    heading: de.nav.groupPlatform,
+    sections: [
+      {
+        kind: "staff",
+        label: de.staff.title,
+        title: de.staff.title,
+        description: de.staff.intro,
+        capability: "staff_user",
+      },
+      {
+        kind: "branding",
+        label: de.nav.branding,
+        title: de.nav.branding,
+        description: de.branding.intro,
+      },
+      // No capability: every operator may read the rules their own sign-in is
+      // subject to. Which of them they may *change* is enforced on the write —
+      // hiding the screen would only hide the platform row from the people it
+      // governs (P22-02).
+      {
+        kind: "security",
+        label: de.nav.security,
+        title: de.security.title,
+        description: de.security.intro,
+      },
+    ],
+  },
 ];
 
 /**
@@ -402,6 +522,15 @@ export function Console(props: {
   );
 
   const [view, setView] = useState<View>({ kind: "courses" });
+
+  /*
+   * Whether the collapsed sidebar is showing (P30-02). Below `md` only —
+   * above it the sidebar is permanent and this is ignored.
+   *
+   * It lives here rather than in `Shell` because what closes it is a
+   * navigation click, and those buttons are built here.
+   */
+  const [menuOpen, setMenuOpen] = useState(false);
 
   /**
    * Which views need a customer to act within.
@@ -537,36 +666,86 @@ export function Console(props: {
    * horizontal space a vertical nav leaves them.
    */
   const nav = (
-    <nav className="px-2 pb-4">
-      {SECTIONS.filter(
-        ([, , capability]) =>
-          capability === undefined || props.profile.capabilities.includes(capability),
-      ).map(([value, label]) => {
-        const active = view.kind === value;
+    <nav className="px-2 pb-4" aria-label={de.nav.menu}>
+      {NAV.map((group, groupIndex) => {
+        const visible = group.sections.filter(
+          (section) =>
+            section.capability === undefined ||
+            props.profile.capabilities.includes(section.capability),
+        );
+        // A group whose every destination is hidden must not leave a heading
+        // floating over nothing — which is what a course editor would see over
+        // "Teilnahme" today.
+        if (visible.length === 0) return null;
+
+        /*
+         * A labelled list, not a heading.
+         *
+         * These were `h2`, which put them at the same level as the page title
+         * `Page` draws — so a screen reader's heading list read "Angebot,
+         * Teilnahme, Einstellungen, Fortbildungen" as four peers, and the one
+         * that names the screen you are on was last. `aria-labelledby` on the
+         * list says the same thing without competing for the document outline.
+         */
+        const headingId = `ds-nav-group-${groupIndex}`;
+
         return (
-          <button
-            key={value}
-            type="button"
-            aria-current={active ? "page" : undefined}
-            onClick={() => setView({ kind: value } as View)}
-            className={`mb-0.5 block w-full rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
-              active
-                ? "bg-brand-500 text-white"
-                : "text-white/70 hover:bg-white/10 hover:text-white"
-            }`}
-          >
-            {label}
-          </button>
+          <div key={group.heading} className="mb-4">
+            <p
+              id={headingId}
+              className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/40"
+            >
+              {group.heading}
+            </p>
+            <ul aria-labelledby={headingId}>
+              {visible.map((section) => {
+                const active = view.kind === section.kind;
+                return (
+                  <li key={section.kind}>
+                    <button
+                      type="button"
+                      aria-current={active ? "page" : undefined}
+                      onClick={() => {
+                        setView({ kind: section.kind } as View);
+                        setMenuOpen(false);
+                      }}
+                      className={`mb-0.5 block w-full rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+                        active
+                          ? "bg-brand-500 text-white"
+                          : "text-white/70 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      {section.label}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         );
       })}
     </nav>
   );
 
-  /** The frame every screen renders inside. */
+  /** The section the current view belongs to, for its page chrome. */
+  const section = NAV.flatMap((group) => group.sections).find(
+    (candidate) => candidate.kind === view.kind,
+  );
+
+  /**
+   * The frame every screen renders inside.
+   *
+   * `headed` wraps the body in the standard `Page` header — title, description,
+   * optional actions — so a screen never draws its own. Screens that are not a
+   * navigation destination (the course editor, the new-course form) pass their
+   * own `Page` and use `frame` directly.
+   */
   const frame = (body: React.ReactNode) => (
     <Shell
       nav={nav}
       scope={scope}
+      menuOpen={menuOpen}
+      onToggleMenu={() => setMenuOpen(!menuOpen)}
       operator={props.profile.displayName}
       // Always present in the console — it is what tells the frame it is signed
       // in. The prop is optional only so a test can render without one.
@@ -575,6 +754,19 @@ export function Console(props: {
       {body}
     </Shell>
   );
+
+  const headed = (body: React.ReactNode, actions?: React.ReactNode) =>
+    frame(
+      <Page
+        title={section?.title ?? de.appTitle}
+        {...(section?.description === undefined
+          ? {}
+          : { description: section.description })}
+        {...(actions === undefined ? {} : { actions })}
+      >
+        {body}
+      </Page>,
+    );
 
   if (forbidden) {
     return (
@@ -649,14 +841,20 @@ export function Console(props: {
 
   if (view.kind === "new-course") {
     return frame(
-      <NewCourseScreen
-        client={client}
-        onCreated={(slug) => {
-          void loadCourses();
-          setView({ kind: "course", slug, tab: "structure" });
-        }}
-        onCancel={() => setView({ kind: "courses" })}
-      />,
+      <Page
+        title={de.newCourse.title}
+        description={de.newCourse.intro}
+        trail={[{ label: de.courses.title, onClick: () => setView({ kind: "courses" }) }]}
+      >
+        <NewCourseScreen
+          client={client}
+          onCreated={(slug) => {
+            void loadCourses();
+            setView({ kind: "course", slug, tab: "structure" });
+          }}
+          onCancel={() => setView({ kind: "courses" })}
+        />
+      </Page>,
     );
   }
 
@@ -674,97 +872,76 @@ export function Console(props: {
   }
 
   if (view.kind === "participants") {
-    return frame(<ParticipantAccounts client={client} />);
+    return headed(<ParticipantAccounts client={client} />);
   }
 
   if (view.kind === "learners") {
-    return frame(
-      <>
-        <Learners client={client} />
-      </>,
-    );
+    return headed(<Learners client={client} />);
   }
 
   if (view.kind === "certificates") {
-    return frame(
-      <>
-        <Certificates client={client} />
-      </>,
-    );
+    return headed(<Certificates client={client} />);
   }
 
   if (view.kind === "staff") {
-    return frame(
-      <>
-        {/* The platform client: operator accounts sit above any tenant, so the
-            request must not carry `X-DS-Project`. */}
-        <StaffAccounts
-          client={platformClient}
-          customerId={props.profile.grants[0]?.customerId ?? null}
-          customers={customers}
-        />
-      </>,
+    // The platform client: operator accounts sit above any tenant, so the
+    // request must not carry `X-DS-Project`.
+    return headed(
+      <StaffAccounts
+        client={platformClient}
+        customerId={props.profile.grants[0]?.customerId ?? null}
+        customers={customers}
+      />,
     );
   }
 
   if (view.kind === "security") {
-    return frame(
-      <>
-        {/* Above any tenant, like the customer registry: no `X-DS-Project`. */}
-        <Security
-          client={platformClient}
-          isSuperAdmin={props.profile.role === "super_admin"}
-          ownSecondFactorEnrolled={props.profile.secondFactorEnrolled}
-          customers={customers}
-        />
-      </>,
+    // Above any tenant, like the customer registry: no `X-DS-Project`.
+    return headed(
+      <Security
+        client={platformClient}
+        isSuperAdmin={props.profile.role === "super_admin"}
+        ownSecondFactorEnrolled={props.profile.secondFactorEnrolled}
+        customers={customers}
+      />,
     );
   }
 
   if (view.kind === "customers") {
-    return frame(
-      <>
-        {/* The platform client: no `X-DS-Project` header, because this list
-            spans customers and has to work before any project exists. */}
-        <Customers
-          client={platformClient}
-          onChanged={() => {
-            void loadCustomers();
-          }}
-        />
-      </>,
+    // The platform client: no `X-DS-Project` header, because this list spans
+    // customers and has to work before any project exists.
+    return headed(
+      <Customers
+        client={platformClient}
+        onChanged={() => {
+          void loadCustomers();
+        }}
+      />,
     );
   }
 
   if (view.kind === "branding") {
-    return frame(
-      <>
-        {/* A department_admin gets a 403 from the PUT; the screen renders for
-            them because the API, not the navigation, is the gate (P9-01). */}
-        <BrandingSettings client={client} />
-      </>,
-    );
+    // A department_admin gets a 403 from the PUT; the screen renders for them
+    // because the API, not the navigation, is the gate (P9-01).
+    return headed(<BrandingSettings client={client} />);
   }
 
   if (view.kind === "organisation") {
-    return frame(
-      <>
-        <Organisation client={client} />
-      </>,
-    );
+    return headed(<Organisation client={client} />);
   }
 
-  return frame(
-    <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-gray-900">{de.courses.title}</h2>
-        <Button onClick={() => setView({ kind: "new-course" })}>
-          {de.newCourse.action}
-        </Button>
-      </div>
-
+  return headed(
+    <>
       {courses.length === 0 ? (
-        <p className="text-sm text-gray-600">{de.courses.empty}</p>
+        <EmptyState
+          title={de.courses.empty}
+          description={de.courses.emptyHint}
+          action={
+            <Button onClick={() => setView({ kind: "new-course" })}>
+              {de.newCourse.action}
+            </Button>
+          }
+        />
       ) : (
         <Table
           headers={[
@@ -808,7 +985,17 @@ export function Console(props: {
           ))}
         </Table>
       )}
-    </section>,
+    </>,
+    /*
+     * No header action while the list is empty — the empty state is already
+     * offering it, and two identical buttons on one screen is both a choice
+     * nobody has to make and an accessible-name collision.
+     */
+    courses.length === 0 ? undefined : (
+      <Button onClick={() => setView({ kind: "new-course" })}>
+        {de.newCourse.action}
+      </Button>
+    ),
   );
 }
 
@@ -894,17 +1081,31 @@ function CourseScreen(props: {
     if (tab !== "structure") setQuiz(undefined);
   }, [tab]);
 
-  return (
-    <section className="space-y-5">
-      <div className="flex items-center gap-3">
-        <Button variant="secondary" onClick={props.onBack}>
-          {de.nav.back}
-        </Button>
-        <h2 className="text-base font-semibold text-gray-900">
-          {course?.title ?? props.slug}
-        </h2>
-      </div>
+  /*
+   * Where the operator is (P30-02).
+   *
+   * The course editor is the deep part of this console — Fortbildungen →
+   * a course → a tab → a quiz — and until now the only clue about which of
+   * those you were in was a "Zurück" button that did not say where back was.
+   * The trail replaces it: every level above is named and one click away, which
+   * is both more information and one fewer control.
+   */
+  const courseLabel = course?.title ?? props.slug;
+  // The trail names the levels *above*; the heading names where you are. So a
+  // quiz pushes the course into the trail rather than repeating it.
+  const trail: Crumb[] =
+    quiz === undefined
+      ? [{ label: de.courses.title, onClick: props.onBack }]
+      : [
+          { label: de.courses.title, onClick: props.onBack },
+          { label: courseLabel, onClick: () => setQuiz(undefined) },
+        ];
 
+  return (
+    <Page
+      title={quiz === undefined ? courseLabel : `${de.quiz.title} — ${quiz.title}`}
+      trail={trail}
+    >
       <nav className="flex flex-wrap gap-1 border-b border-gray-200">
         {COURSE_TABS.map(([value, label]) => (
           <button
@@ -937,10 +1138,9 @@ function CourseScreen(props: {
         participants={participants}
         quiz={quiz}
         onEditQuiz={(contentId, title) => setQuiz({ contentId, title })}
-        onCloseQuiz={() => setQuiz(undefined)}
         onCourseSaved={setCourse}
       />
-    </section>
+    </Page>
   );
 }
 
@@ -952,7 +1152,6 @@ function CourseTabContent(props: {
   participants: ParticipantList | undefined;
   quiz: { contentId: string; title: string } | undefined;
   onEditQuiz: (contentId: string, title: string) => void;
-  onCloseQuiz: () => void;
   onCourseSaved: (course: AdminCourseDetail) => void;
 }) {
   const { client, slug } = props;
@@ -966,12 +1165,7 @@ function CourseTabContent(props: {
           onEditQuiz={props.onEditQuiz}
         />
       ) : (
-        <QuizEditor
-          client={client}
-          contentId={props.quiz.contentId}
-          contentTitle={props.quiz.title}
-          onBack={props.onCloseQuiz}
-        />
+        <QuizEditor client={client} contentId={props.quiz.contentId} />
       );
 
     case "experts":

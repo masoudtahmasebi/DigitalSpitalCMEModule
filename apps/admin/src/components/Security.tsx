@@ -115,12 +115,8 @@ export function Security(props: {
   );
 
   return (
+    // No heading here: `Page` draws it from the navigation entry (P30-02).
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900">{de.security.title}</h2>
-        <p className="mt-1 text-sm text-gray-600">{de.security.intro}</p>
-      </div>
-
       {error === undefined ? null : (
         <Notice tone="error">
           <p>{error}</p>

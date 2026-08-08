@@ -28,7 +28,14 @@
  * of the above.
  */
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Console } from "./App.js";
 import type { StaffProfile } from "./staff-auth.js";
@@ -378,5 +385,97 @@ describe("every screen renders inside the layout (P22-09)", () => {
         expect(layoutIsPresent(), `${label} rendered outside the layout`).toBe(true),
       );
     }
+  });
+});
+
+describe("one page frame, on every screen (P30-02)", () => {
+  /**
+   * The redesign's whole claim is that the console is one thing rather than ten.
+   * These assert the properties that claim rests on, because each of them was
+   * false before and each is cheap to break again by adding a screen that draws
+   * its own heading.
+   */
+  async function openConsole() {
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    const admin = fakeClient({ adminListCourses: vi.fn().mockResolvedValue([]) });
+    renderConsole({ admin, platform });
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Kunden" })).toBeTruthy(),
+    );
+  }
+
+  it("groups the navigation, and labels each group", async () => {
+    await openConsole();
+
+    // Ten flat destinations is a list re-read top to bottom every time. The
+    // groups are what make the shape of the console legible at a glance.
+    for (const group of ["Angebot", "Teilnahme", "Einstellungen"]) {
+      expect(screen.getByRole("list", { name: group })).toBeTruthy();
+    }
+  });
+
+  it("draws exactly one page heading per screen", async () => {
+    await openConsole();
+
+    /*
+     * The defect this pins: several screens drew their own `h2` on top of the
+     * one the frame draws, so the operator read the same words twice in two
+     * different sizes — and three others drew none at all. The sidebar's group
+     * labels used to be `h2` too, which is why they are now a labelled list.
+     */
+    for (const [label, title] of [
+      ["Organisation", "Organisation"],
+      ["Erscheinungsbild", "Erscheinungsbild"],
+      ["Zugänge", "Zugänge"],
+      ["Teilnehmende", "Teilnehmende"],
+      ["Bescheinigungen", "Bescheinigungen"],
+      ["Konten", "Konten"],
+      ["Kunden", "Kunden"],
+      ["Sicherheit", "Sicherheit"],
+      ["Fortbildungen", "Fortbildungen"],
+    ] as const) {
+      fireEvent.click(screen.getAllByRole("button", { name: label })[0]!);
+      await waitFor(() => {
+        const headings = screen.getAllByRole("heading", { level: 2 });
+        expect(headings.length, `${label} drew ${headings.length} headings`).toBe(1);
+        expect(headings[0]!.textContent).toBe(title);
+      });
+    }
+  });
+
+  it("offers the create button once, not twice, on an empty list", async () => {
+    await openConsole();
+
+    // The empty state carries the invitation, so the header action stands down.
+    // Two buttons with one accessible name is both a pointless choice and an
+    // a11y defect.
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: /Neue Fortbildung/ }).length).toBe(1),
+    );
+  });
+
+  it("puts a trail on the new-course form that leads back to the list", async () => {
+    await openConsole();
+
+    fireEvent.click(screen.getByRole("button", { name: /Neue Fortbildung/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
+        "Neue Fortbildung anlegen",
+      ),
+    );
+
+    // The trail is the way back. It replaced a "Zurück" button that did not say
+    // where back was.
+    const trail = screen.getByRole("navigation", { name: "Pfad" });
+    const back = within(trail).getByRole("button", { name: "Fortbildungen" });
+    fireEvent.click(back);
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Fortbildungen"),
+    );
   });
 });

@@ -348,18 +348,27 @@ export function Panel(props: {
   );
 }
 
-/** A plain table. Scrolls horizontally rather than squashing on a narrow screen. */
+/**
+ * A table on its own surface. Scrolls horizontally rather than squashing on a
+ * narrow screen.
+ *
+ * The surface is the point (P30-02): every list screen drew its table straight
+ * onto the page's grey, so rows had no edge and a table with three rows read as
+ * three stray lines of text. react-admin puts its `Datagrid` in a `Card` for
+ * exactly this reason, and doing it here rather than at each call site is what
+ * makes all nine list screens agree without any of them deciding.
+ */
 export function Table(props: { headers: readonly string[]; children: ReactNode }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-md border border-gray-200 bg-white">
       <table className="min-w-full border-collapse text-sm">
         <thead>
-          <tr className="border-b border-gray-200 text-left">
+          <tr className="border-b border-gray-200 bg-gray-50 text-left">
             {props.headers.map((header) => (
               <th
                 key={header}
                 scope="col"
-                className="px-3 py-2 font-semibold text-gray-700"
+                className="px-3 py-2.5 font-semibold text-gray-700"
               >
                 {header}
               </th>

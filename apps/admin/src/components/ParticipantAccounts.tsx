@@ -39,6 +39,7 @@ import {
   Table,
   TextInput,
 } from "./ui.js";
+import { EmptyState, ListToolbar } from "./page.js";
 
 type Issued = { readonly email: string; readonly password: string };
 
@@ -97,37 +98,40 @@ export function ParticipantAccounts(props: { client: ApiClient }) {
 
   return (
     <section className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">
-            {de.participantAccounts.title}
-          </h2>
-          <p className="text-sm text-gray-600">{de.participantAccounts.intro}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {/*
-            Next to "Neuen Zugang anlegen" because the two answer the same
-            question from opposite ends: this person has no account, or this
-            person has two. An operator who has just been refused a create with
-            "Für diese E-Mail-Adresse existiert bereits ein Zugang" is standing
-            exactly here.
+      {/* Title and intro come from `Page` (P30-02). What is left is the
+          toolbar — filter left, actions right. */}
+      <ListToolbar
+        filters={
+          <Field label={de.participantAccounts.search} htmlFor="participant-search">
+            <TextInput id="participant-search" value={search} onChange={setSearch} />
+          </Field>
+        }
+        actions={
+          <>
+            {/*
+              Next to "Neuen Zugang anlegen" because the two answer the same
+              question from opposite ends: this person has no account, or this
+              person has two. An operator who has just been refused a create
+              with "Für diese E-Mail-Adresse existiert bereits ein Zugang" is
+              standing exactly here.
 
-            The API refuses anybody but a `super_admin`, and does so with a 403
-            the panel shows — rather than the console hiding the button, which
-            would leave a customer admin with no way to find out that the
-            operation exists and who can perform it.
-          */}
-          <MergeParticipants client={client} onMerged={() => void load(search)} />
-          <NewParticipant
-            client={client}
-            onCreated={(next) => {
-              setIssued(next);
-              void load(search);
-            }}
-            onProblem={setProblem}
-          />
-        </div>
-      </header>
+              The API refuses anybody but a `super_admin`, and does so with a
+              403 the panel shows — rather than the console hiding the button,
+              which would leave a customer admin with no way to find out that
+              the operation exists and who can perform it.
+            */}
+            <MergeParticipants client={client} onMerged={() => void load(search)} />
+            <NewParticipant
+              client={client}
+              onCreated={(next) => {
+                setIssued(next);
+                void load(search);
+              }}
+              onProblem={setProblem}
+            />
+          </>
+        }
+      />
 
       {issued === undefined ? null : (
         <IssuedPassword issued={issued} onDismiss={() => setIssued(undefined)} />
@@ -135,17 +139,16 @@ export function ParticipantAccounts(props: { client: ApiClient }) {
 
       {problem === undefined ? null : <Notice tone="error">{problem}</Notice>}
 
-      <Field label={de.participantAccounts.search} htmlFor="participant-search">
-        <TextInput id="participant-search" value={search} onChange={setSearch} />
-      </Field>
-
       {rows === undefined ? (
         <Spinner label={de.loading} />
       ) : rows.length === 0 ? (
         // An empty state that names the next step, rather than "keine Daten".
         // This screen is reached most often by somebody who has just been given
         // a customer and has nobody in it yet.
-        <Notice tone="warning">{de.participantAccounts.empty}</Notice>
+        <EmptyState
+          title={de.participantAccounts.empty}
+          description={de.participantAccounts.emptyHint}
+        />
       ) : (
         <Table headers={de.participantAccounts.headers}>
           {rows.map((row) => (

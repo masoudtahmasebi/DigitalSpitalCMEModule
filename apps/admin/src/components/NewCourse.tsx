@@ -46,22 +46,16 @@ export function NewCourse(props: {
     [props.projects],
   );
 
+  // No "Zurück" button: the page's trail is the way back on every screen now
+  // (P30-02), and a second control that does the same thing is one more thing
+  // to read.
   if (props.projects.length === 0) {
-    return (
-      <div className="space-y-3">
-        <Notice tone="warning">{de.newCourse.noProjects}</Notice>
-        <Button variant="secondary" onClick={props.onCancel}>
-          {de.nav.back}
-        </Button>
-      </div>
-    );
+    return <Notice tone="warning">{de.newCourse.noProjects}</Notice>;
   }
 
   return (
+    // Heading and intro come from `Page` (P30-02).
     <section className="max-w-xl space-y-4">
-      <h2 className="text-base font-semibold text-gray-900">{de.newCourse.title}</h2>
-      <p className="text-sm text-gray-600">{de.newCourse.intro}</p>
-
       <form
         className="space-y-3"
         onSubmit={(event) => {

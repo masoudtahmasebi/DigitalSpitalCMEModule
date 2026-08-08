@@ -152,8 +152,7 @@ export function StaffAccounts(props: {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-gray-700">{de.staff.intro}</p>
-
+      {/* Heading and intro come from `Page` (P30-02). */}
       {problem === undefined ? null : (
         <Notice tone="error" title={de.error.title}>
           {problem}

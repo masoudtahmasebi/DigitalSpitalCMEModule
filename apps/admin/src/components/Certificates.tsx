@@ -30,6 +30,7 @@ import {
   Spinner,
   Table,
 } from "./ui.js";
+import { EmptyState } from "./page.js";
 
 type Status = CertificateRecord["status"];
 
@@ -94,8 +95,7 @@ export function Certificates(props: { client: ApiClient; courseSlug?: string }) 
 
   return (
     <div className="space-y-5">
-      <p className="text-sm text-gray-700">{de.certificates.intro}</p>
-
+      {/* Heading and intro come from `Page` (P30-02). */}
       {problem === undefined ? null : (
         <Notice tone="error" title={de.error.title}>
           {problem}
@@ -103,7 +103,10 @@ export function Certificates(props: { client: ApiClient; courseSlug?: string }) 
       )}
 
       {rows.length === 0 ? (
-        <p className="text-sm text-gray-600">{de.certificates.empty}</p>
+        <EmptyState
+          title={de.certificates.empty}
+          description={de.certificates.emptyHint}
+        />
       ) : (
         <Table
           headers={[

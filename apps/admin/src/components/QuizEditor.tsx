@@ -79,12 +79,7 @@ interface DraftOption {
   isCorrect: boolean;
 }
 
-export function QuizEditor(props: {
-  client: ApiClient;
-  contentId: string;
-  contentTitle: string;
-  onBack: () => void;
-}) {
+export function QuizEditor(props: { client: ApiClient; contentId: string }) {
   const { client, contentId } = props;
 
   const load = useCallback(() => client.adminGetQuiz(contentId), [client, contentId]);
@@ -120,15 +115,8 @@ export function QuizEditor(props: {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Button variant="secondary" onClick={props.onBack}>
-          {de.nav.back}
-        </Button>
-        <h3 className="text-base font-semibold text-gray-900">
-          {de.quiz.title} — {props.contentTitle}
-        </h3>
-      </div>
-
+      {/* Heading and the way back come from `Page`'s title and trail (P30-02):
+          the course editor knows a quiz is open and puts it in the path. */}
       <p className="max-w-3xl text-sm text-gray-600">{de.quiz.intro}</p>
 
       <SaveProblem title={de.error.title} problem={saver.problem} />

@@ -41,6 +41,7 @@ import {
   Table,
   TextInput,
 } from "./ui.js";
+import { EmptyState } from "./page.js";
 
 export function Customers(props: {
   client: ApiClient;
@@ -134,9 +135,8 @@ export function Customers(props: {
   }
 
   return (
+    // No heading or intro here: `Page` draws both (P30-02).
     <div className="space-y-6">
-      <p className="text-sm text-gray-700">{de.customers.intro}</p>
-
       {problem === undefined ? null : (
         <Notice tone="error" title={de.error.title}>
           {problem}
@@ -144,7 +144,7 @@ export function Customers(props: {
       )}
 
       {customers.length === 0 ? (
-        <p className="text-sm text-gray-600">{de.customers.empty}</p>
+        <EmptyState title={de.customers.empty} description={de.customers.emptyHint} />
       ) : (
         <Table
           headers={[

@@ -40,6 +40,7 @@ import {
   Table,
   TextInput,
 } from "./ui.js";
+import { EmptyState } from "./page.js";
 
 export function Learners(props: { client: ApiClient; courseSlug?: string }) {
   const { client, courseSlug } = props;
@@ -114,8 +115,7 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
 
   return (
     <div className="space-y-5">
-      <p className="text-sm text-gray-700">{de.learners.intro}</p>
-
+      {/* Heading and intro come from `Page` (P30-02). */}
       {problem === undefined ? null : (
         <Notice tone="error" title={de.error.title}>
           {problem}
@@ -123,7 +123,7 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
       )}
 
       {rows.length === 0 ? (
-        <p className="text-sm text-gray-600">{de.learners.empty}</p>
+        <EmptyState title={de.learners.empty} description={de.learners.emptyHint} />
       ) : (
         <Table
           headers={[

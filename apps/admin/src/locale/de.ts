@@ -9,6 +9,9 @@
 
 export const de = {
   appTitle: "DS Education — Verwaltung",
+  /* The sidebar is 15 rem wide and the full title does not fit in it — it
+     rendered as "DS Education — Ve…", which is worse than a short name. */
+  appShort: "DS Education",
 
   auth: {
     signIn: "Anmelden",
@@ -43,6 +46,8 @@ export const de = {
     intro:
       "Fortschritt aller Teilnehmenden. Die EFN wird aus Datenschutzgründen nur verkürzt angezeigt.",
     empty: "Zu dieser Fortbildung liegen noch keine Teilnahmen vor.",
+    emptyHint:
+      "Eine Teilnahme entsteht, sobald sich eine Person an einer Fortbildung anmeldet. Bis dahin ist hier nichts zu sehen.",
     name: "Name",
     efn: "EFN",
     course: "Fortbildung",
@@ -74,6 +79,8 @@ export const de = {
     intro:
       "Neu erstellen rendert das Dokument neu und meldet nichts an die Ärztekammer. Erneut senden verschickt dasselbe Dokument. Widerrufen zieht das Dokument zurück, die Teilnahme bleibt bestehen.",
     empty: "Es wurden noch keine Bescheinigungen erstellt.",
+    emptyHint:
+      "Eine Bescheinigung entsteht automatisch, sobald eine Person eine Fortbildung abgeschlossen hat. Sie lässt sich hier nicht von Hand anlegen.",
     participant: "Teilnehmende Person",
     status: "Status",
     issued: "Ausgestellt",
@@ -189,6 +196,8 @@ export const de = {
     remove: "Löschen",
     removeConfirm: "Diesen Kunden endgültig löschen?",
     empty: "Es sind noch keine Kunden angelegt.",
+    emptyHint:
+      "Ein Kunde ist die Mandantengrenze der Plattform. Alles Weitere — Abteilungen, Projekte, Fortbildungen — entsteht darunter. Legen Sie den ersten mit dem Formular unten an.",
     slugHint:
       "Kleinbuchstaben, Ziffern und Bindestriche. Kann später nicht geändert werden.",
     contains: "Enthält noch",
@@ -213,6 +222,21 @@ export const de = {
     branding: "Erscheinungsbild",
     organisation: "Organisation",
     back: "Zurück",
+
+    /**
+     * Headings over the navigation groups (P30-02).
+     *
+     * Ten destinations in one flat list is a list an operator reads top to
+     * bottom every time, because nothing tells them which part of it they are
+     * in. The three groups are the three questions the console answers: what
+     * is on offer, who is taking it, and how the platform itself is set up.
+     */
+    groupCatalogue: "Angebot",
+    groupPeople: "Teilnahme",
+    groupPlatform: "Einstellungen",
+
+    menu: "Menü",
+    closeMenu: "Menü schließen",
   },
 
   common: {
@@ -558,6 +582,8 @@ export const de = {
   courses: {
     title: "Fortbildungen",
     empty: "Für diesen Mandanten sind keine Fortbildungen hinterlegt.",
+    emptyHint:
+      "Eine Fortbildung besteht aus Modulen, Kapiteln und Inhalten. Sie können sie anlegen und später jederzeit erweitern.",
     columnTitle: "Titel",
     columnVnr: "VNR",
     columnPoints: "Punkte",
@@ -664,8 +690,11 @@ export const de = {
     intro:
       "Teilnehmende dieses Kunden. Hier werden Zugänge angelegt, Passwörter zurückgesetzt und Konten gesperrt.",
     search: "Suche",
-    empty:
-      "Noch keine Teilnehmenden. Legen Sie über „Zugang anlegen“ die erste Person an – sie kann sich danach sofort im Fortbildungsportal anmelden.",
+    /* Split in two for the empty state (P30-02): the first line says what is
+       missing, the second what to do about it. */
+    empty: "Noch keine Teilnehmenden.",
+    emptyHint:
+      "Legen Sie über „Zugang anlegen“ die erste Person an – sie kann sich danach sofort im Fortbildungsportal anmelden.",
     headers: ["Person", "Abgeschlossen / Belegt", "Status", ""] as const,
     create: "Zugang anlegen",
     firstName: "Vorname",
