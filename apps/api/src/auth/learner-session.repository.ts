@@ -67,10 +67,30 @@ export class LearnerSessionRepository implements LearnerSessionLookup {
     // Only forward, and only by more than a minute. Without the guard this is a
     // write on every single authenticated request — a row update per page view,
     // for a column nobody reads to the second.
+    //
+    // `$2::timestamptz` and not a bare `$2`, and the cast is load-bearing.
+    // PostgreSQL types a bare parameter from its context, and the context here
+    // is `$2 - interval '1 minute'`: `unknown - interval` resolves to
+    // `interval`, so the comparison became `timestamptz < interval` and the
+    // statement failed with
+    //
+    //   operator does not exist: timestamp with time zone < interval
+    //
+    // on **every authenticated request** from the day P25-02 shipped. Nothing
+    // noticed, because `LocalIdentityProvider` deliberately swallows a failure
+    // here — a `last_seen_at` write must never turn a valid session into a 401
+    // — so the column simply never advanced. It surfaced only as a wall of
+    // ERROR lines in the Postgres service log of a CI job that failed for an
+    // unrelated reason.
+    //
+    // The lesson is the general one about best-effort writes: swallowing the
+    // error is right, and it means the *only* thing that will ever tell you the
+    // statement is wrong is a test that asserts the effect. There is one now.
     await this.pool.query(
       `UPDATE learner_sessions
-          SET last_seen_at = $2
-        WHERE token_hash = $1 AND last_seen_at < $2 - interval '1 minute'`,
+          SET last_seen_at = $2::timestamptz
+        WHERE token_hash = $1
+          AND last_seen_at < $2::timestamptz - interval '1 minute'`,
       [hash, at],
     );
   }

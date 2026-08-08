@@ -471,6 +471,45 @@ describe("what is stored", () => {
     expect(found.rows[0]?.n).toBe("1");
   });
 
+  it("advances last_seen_at when the session is used", async () => {
+    // The test that would have caught a statement broken from the day it
+    // shipped. `touch` is best-effort and its failure is deliberately swallowed
+    // — a `last_seen_at` write must never turn a valid session into a 401 — so
+    // nothing anywhere reports that it did not work. The first version's
+    // `$2 - interval '1 minute'` typed the parameter as an interval and failed
+    // on every authenticated request; the column simply never moved, and the
+    // only trace was ERROR lines in a Postgres log nobody reads.
+    //
+    // Asserting the *effect* is the only thing that can catch that, which is
+    // the general rule for any write whose failure is intentionally ignored.
+    const token = sessionCookie(await signIn(alpha));
+
+    // Backdate it well past the one-minute threshold the statement guards with,
+    // so this asserts the update rather than the guard.
+    await pool.query(
+      `UPDATE learner_sessions SET last_seen_at = now() - interval '1 hour'
+        WHERE token_hash = digest($1,'sha256')`,
+      [token],
+    );
+
+    await fetch(`${baseUrl}/courses`, withCookie(token!, alpha.projectSlug));
+
+    // `touch` is fire-and-forget inside the provider, so the write may land
+    // just after the response. Poll rather than sleep a fixed amount.
+    let moved = false;
+    for (let attempt = 0; attempt < 20 && !moved; attempt += 1) {
+      const { rows } = await pool.query<{ stale: boolean }>(
+        `SELECT last_seen_at < now() - interval '5 minutes' AS stale
+           FROM learner_sessions WHERE token_hash = digest($1,'sha256')`,
+        [token],
+      );
+      moved = rows[0]?.stale === false;
+      if (!moved) await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    expect(moved).toBe(true);
+  });
+
   it("stores the IP as a hash, or not at all", async () => {
     // `docs/gdpr.md` §7: an IP address is personal data. The column answers
     // "was this the same client?" and must not answer "which client".
