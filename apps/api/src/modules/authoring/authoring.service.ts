@@ -139,6 +139,7 @@ export class AuthoringService {
       // Validated on read: a value stored before a grammar tightened must not
       // reach a settings form as though it were still acceptable.
       branding: parseBranding(row.branding),
+      identityProvider: narrowIdentityProvider(row.identityProvider),
     }));
   }
 
@@ -185,6 +186,11 @@ export class AuthoringService {
   ): Promise<void> {
     const patch: ProjectPatch = {};
     assign(patch, "name", update.name);
+    // Changing this changes how every participant of the project signs in, so
+    // it is audited by name below like every other field — and it is a change
+    // an operator has to be able to make, because a customer that starts on the
+    // portal and later gets a Keycloak realm should not need a new project.
+    assign(patch, "identityProvider", update.identityProvider);
     assign(patch, "keycloakIssuer", update.keycloakIssuer);
     assign(patch, "keycloakAudience", update.keycloakAudience);
     assign(patch, "keycloakRealm", update.keycloakRealm);
@@ -984,4 +990,27 @@ function contentMessage(problems: readonly ContentProblem[]): string {
     return "Bitte wählen Sie für jede Videoquelle ein unterstütztes Format — ein unbekannter Typ wird vom Browser übersprungen.";
   }
   return `Bitte prüfen Sie: ${problems.join(", ")}.`;
+}
+
+/**
+ * The stored `identity_provider` value, narrowed to what the contract publishes.
+ *
+ * A `text` column reads back as `string`, and the response type is an enum, so
+ * something has to bridge them. **Not a fallback**: a value outside the set is
+ * schema drift — a migration widened `projects_identity_provider_check` without
+ * the contract and the console following — and quietly answering `keycloak`
+ * would show an operator a setting that is not the one in the row, on the
+ * screen they would use to change it.
+ *
+ * `assertProvidersCoverSchema` already refuses to boot on that drift, so this
+ * throw should be unreachable; it exists because "should be unreachable" is not
+ * the same as "cannot happen", and this is a read of a column that decides how
+ * a learner authenticates.
+ */
+function narrowIdentityProvider(value: string): "keycloak" | "local" {
+  if (value === "keycloak" || value === "local") return value;
+  throw new AppError(
+    "internal",
+    `projects.identity_provider holds ${JSON.stringify(value)}, which the contract does not publish`,
+  );
 }

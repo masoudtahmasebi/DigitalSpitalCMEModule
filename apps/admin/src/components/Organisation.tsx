@@ -381,6 +381,22 @@ function Summary(props: { label: string; value: string }) {
   );
 }
 
+/**
+ * The two ways a project's participants can sign in (ADR-0012).
+ *
+ * Offered at creation rather than only in the settings form because a project
+ * created without the choice defaults to `keycloak`, and a customer who wanted
+ * the standalone portal would get a project whose participants cannot sign in
+ * at all — which is exactly the defect P28-02 fixed one layer down. An API that
+ * accepts a value the console cannot send is not a fixed bug.
+ */
+const IDENTITY_PROVIDER_OPTIONS = [
+  ["keycloak", de.organisation.identityProviderKeycloak],
+  ["local", de.organisation.identityProviderLocal],
+] as const;
+
+type IdentityProviderValue = (typeof IDENTITY_PROVIDER_OPTIONS)[number][0];
+
 function NewProject(props: {
   client: ApiClient;
   departments: readonly DepartmentSummary[];
@@ -392,6 +408,8 @@ function NewProject(props: {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [touchedSlug, setTouchedSlug] = useState(false);
+  const [identityProvider, setIdentityProvider] =
+    useState<IdentityProviderValue>("keycloak");
   const saver = useSaver();
 
   const effectiveSlug = touchedSlug ? slug : slugify(name);
@@ -411,6 +429,7 @@ function NewProject(props: {
               departmentSlug,
               slug: effectiveSlug,
               name: name.trim(),
+              identityProvider,
             }),
           ),
         );
@@ -443,6 +462,18 @@ function NewProject(props: {
           }}
         />
       </Field>
+      <Field
+        label={de.organisation.identityProvider}
+        hint={de.organisation.identityProviderHint}
+        htmlFor="new-project-identity-provider"
+      >
+        <Select
+          id="new-project-identity-provider"
+          value={identityProvider}
+          options={IDENTITY_PROVIDER_OPTIONS}
+          onChange={(value) => setIdentityProvider(value as IdentityProviderValue)}
+        />
+      </Field>
 
       <SaveProblem title={de.error.title} problem={saver.problem} />
 
@@ -470,6 +501,9 @@ function ProjectSettings(props: {
 }) {
   const { project } = props;
   const [name, setName] = useState(project.name);
+  const [identityProvider, setIdentityProvider] = useState<IdentityProviderValue>(
+    project.identityProvider,
+  );
   const [issuer, setIssuer] = useState(project.keycloakIssuer ?? "");
   const [audience, setAudience] = useState(project.keycloakAudience ?? "");
   const [realm, setRealm] = useState(project.keycloakRealm ?? "");
@@ -498,6 +532,7 @@ function ProjectSettings(props: {
           props.onDone(
             await props.client.adminUpdateProject(project.slug, {
               name: name.trim(),
+              identityProvider,
               keycloakIssuer: blankToNull(issuer),
               keycloakAudience: blankToNull(audience),
               keycloakRealm: blankToNull(realm),
@@ -519,6 +554,19 @@ function ProjectSettings(props: {
     >
       <Field label={de.common.name} htmlFor={id("name")}>
         <TextInput id={id("name")} value={name} maxLength={300} onChange={setName} />
+      </Field>
+
+      <Field
+        label={de.organisation.identityProvider}
+        hint={de.organisation.identityProviderHint}
+        htmlFor={id("identity-provider")}
+      >
+        <Select
+          id={id("identity-provider")}
+          value={identityProvider}
+          options={IDENTITY_PROVIDER_OPTIONS}
+          onChange={(value) => setIdentityProvider(value as IdentityProviderValue)}
+        />
       </Field>
 
       {/*
@@ -545,7 +593,11 @@ function ProjectSettings(props: {
         <legend className="text-sm font-semibold text-gray-900">
           {de.organisation.keycloak}
         </legend>
-        <Notice tone="warning">{de.organisation.keycloakWarning}</Notice>
+        <Notice tone={identityProvider === "local" ? "info" : "warning"}>
+          {identityProvider === "local"
+            ? de.organisation.identityProviderLocalNote
+            : de.organisation.keycloakWarning}
+        </Notice>
         <Field
           label={de.organisation.issuer}
           hint={de.organisation.issuerHint}

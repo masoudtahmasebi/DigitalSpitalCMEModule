@@ -255,6 +255,14 @@ export const de = {
     embedOrigins: "Erlaubte Einbettungs-Domains",
     embedOriginsHint:
       "Die Websites des Kunden, auf denen die Fortbildung eingebettet werden darf — eine pro Zeile, z. B. https://www.beispiel.de. Ohne Pfad und ohne Schrägstrich am Ende.",
+    identityProvider: "Anmeldeverfahren",
+    identityProviderHint:
+      "Wie sich die Teilnehmenden dieses Projekts anmelden. Lässt sich später ändern, betrifft dann aber alle bestehenden Zugänge.",
+    identityProviderKeycloak: "Keycloak des Kunden (eingebettet, z. B. in WordPress)",
+    identityProviderLocal: "Zugangsdaten dieser Plattform (eigenes Portal)",
+    identityProviderLocalNote:
+      "Bei diesem Verfahren werden die Keycloak-Angaben unten nicht verwendet.",
+
     keycloak: "Anmeldung (Keycloak)",
     keycloakWarning:
       "Diese Werte entscheiden, gegen welchen Realm jedes Zugangstoken dieses Projekts geprüft wird. Ein falscher Wert sperrt alle Teilnehmenden dieses Projekts aus.",

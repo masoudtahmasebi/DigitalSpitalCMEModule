@@ -208,7 +208,13 @@ export function Spinner(props: { label: string }) {
 }
 
 export function Notice(props: {
-  tone: "error" | "warning" | "success";
+  /**
+   * `info` is not a quieter `warning`: it carries no `role="alert"`, so a
+   * screen reader is not interrupted to be told something that is merely true.
+   * A warning says an action has a consequence; info explains what a form is
+   * doing.
+   */
+  tone: "error" | "warning" | "success" | "info";
   title?: string;
   children: ReactNode;
 }) {
@@ -217,10 +223,15 @@ export function Notice(props: {
       ? "border-red-200 bg-red-50 text-red-800"
       : props.tone === "warning"
         ? "border-amber-200 bg-amber-50 text-amber-900"
-        : "border-green-200 bg-green-50 text-green-800";
+        : props.tone === "info"
+          ? "border-gray-200 bg-gray-50 text-gray-700"
+          : "border-green-200 bg-green-50 text-green-800";
 
   return (
-    <div className={`rounded-md border p-3 text-sm ${skin}`} role="alert">
+    <div
+      className={`rounded-md border p-3 text-sm ${skin}`}
+      {...(props.tone === "info" ? {} : { role: "alert" })}
+    >
       {props.title === undefined ? null : <p className="font-semibold">{props.title}</p>}
       {props.children}
     </div>

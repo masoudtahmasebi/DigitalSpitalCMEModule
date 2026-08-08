@@ -192,6 +192,7 @@ export const projectSummarySchema = z.object({
   slug: z.string(),
   name: z.string(),
   departmentSlug: z.string(),
+  identityProvider: identityProvider,
   keycloakIssuer: z.string().nullable(),
   keycloakAudience: z.string().nullable(),
   keycloakRealm: z.string().nullable(),

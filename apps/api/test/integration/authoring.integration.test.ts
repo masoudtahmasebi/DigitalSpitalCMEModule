@@ -802,4 +802,78 @@ describe("project settings", () => {
     );
     expect(rows[0]?.customer_id).toBe(customerId);
   });
+
+  /**
+   * The console has to be able to create the kind of project the standalone
+   * portal uses (P28-02).
+   *
+   * `identity_provider` was in the schema, in the CHECK constraint, and read on
+   * every learner request — and settable by no API. Every project created here
+   * got the column default, `keycloak`, so a customer who wanted the portal got
+   * a project whose participants could not sign in at all. The only working
+   * `local` projects in existence came from a seed.
+   */
+  it("creates a `local` project, and can switch an existing one", async () => {
+    const slug = `lokal-${randomUUID().slice(0, 8)}`;
+
+    await asAdmin("POST", "/admin/departments", { slug, name: "Portal-Abteilung" });
+
+    const created = await asAdmin("POST", "/admin/projects", {
+      departmentSlug: slug,
+      slug,
+      name: "Portal-Projekt",
+      identityProvider: "local",
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.find((p: any) => p.slug === slug).identityProvider).toBe("local");
+
+    // Read back through the list, not the create response, since that is the
+    // screen an operator actually looks at.
+    const listed = await asAdmin("GET", "/admin/projects");
+    expect(listed.body.find((p: any) => p.slug === slug).identityProvider).toBe("local");
+
+    // And it is reversible: a customer that later stands up a Keycloak realm
+    // must not need a second project.
+    const switched = await asAdmin("PATCH", `/admin/projects/${slug}`, {
+      identityProvider: "keycloak",
+    });
+    expect(switched.status).toBe(200);
+    expect(switched.body.find((p: any) => p.slug === slug).identityProvider).toBe(
+      "keycloak",
+    );
+  });
+
+  it("defaults to keycloak when the caller says nothing", async () => {
+    // The pre-P28 behaviour, kept deliberately: every project that existed
+    // before the field is a Keycloak project, and a caller that has not been
+    // updated must keep getting one.
+    const slug = `still-kc-${randomUUID().slice(0, 8)}`;
+    await asAdmin("POST", "/admin/departments", { slug, name: "Abteilung" });
+
+    const created = await asAdmin("POST", "/admin/projects", {
+      departmentSlug: slug,
+      slug,
+      name: "Projekt",
+    });
+
+    expect(created.body.find((p: any) => p.slug === slug).identityProvider).toBe(
+      "keycloak",
+    );
+  });
+
+  it("refuses an identity provider no class implements", async () => {
+    const slug = `bogus-${randomUUID().slice(0, 8)}`;
+    await asAdmin("POST", "/admin/departments", { slug, name: "Abteilung" });
+
+    // 422, not a stored row: the CHECK constraint would catch it too, but as a
+    // 500 — and a schema violation surfacing as "the server is broken" is how a
+    // client-fixable mistake gets buried in the error rate.
+    const created = await asAdmin("POST", "/admin/projects", {
+      departmentSlug: slug,
+      slug,
+      name: "Projekt",
+      identityProvider: "azure-ad",
+    });
+    expect(created.status).toBe(422);
+  });
 });

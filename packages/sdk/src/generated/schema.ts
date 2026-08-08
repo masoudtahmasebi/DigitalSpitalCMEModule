@@ -2797,6 +2797,12 @@ export interface components {
             slug: string;
             name: string;
             departmentSlug: string;
+            /**
+             * @description Returned so the console can show what it set. The Keycloak fields
+             *     below are meaningless when this is `local`, and the form says so
+             *     rather than presenting three inputs nothing reads.
+             */
+            identityProvider: components["schemas"]["IdentityProvider"];
             keycloakIssuer: string | null;
             keycloakAudience: string | null;
             keycloakRealm: string | null;
@@ -2899,6 +2905,19 @@ export interface components {
          */
         ProjectUpdate: {
             name?: string;
+            /**
+             * @description Changeable, because a customer that starts on the standalone portal
+             *     and later stands up a Keycloak realm should not need a new project
+             *     — and a project created before this field existed is `keycloak`
+             *     whether or not that is what it wanted.
+             *
+             *     It changes how every participant of the project signs in, so it is
+             *     audited by name like the rest. Existing `person_credentials` rows
+             *     are not migrated: a participant with a local password does not
+             *     acquire a Keycloak identity by this switch, and switching back does
+             *     not delete the password they had.
+             */
+            identityProvider?: components["schemas"]["IdentityProvider"];
             /** Format: uri */
             keycloakIssuer?: string | null;
             keycloakAudience?: string | null;
