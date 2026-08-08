@@ -34,6 +34,77 @@ in the clone. A `git checkout` must never be able to touch a credential, and
 
 `DS_STATE_DIR` overrides the location, which is what the tests use.
 
+### `config.env` is not in this directory, and that is the point
+
+The checkout has **`config.env.example`** and nothing else. The file you edit is
+`~/ds-education/config.env`, and it is deliberately outside the clone: a
+credentials file inside a git working tree is a credentials file one
+`git add -A` away from being committed, and `git status` on the server has to
+stay clean across a deploy.
+
+`ls` in this directory will therefore never show it. That is not a missing
+file:
+
+```bash
+ls -l ~/ds-education/config.env
+```
+
+If it does not exist yet, the first `./deploy.sh` creates it from the template,
+stops, and tells you to fill it in — it does not deploy against defaults.
+
+## Setting up object storage
+
+Course video does not go through the API — the browser uploads straight to the
+bucket against a signature the API mints. So the credentials live on the server,
+never in the repository and never in a GitHub secret that the build could read.
+
+Six lines in `~/ds-education/config.env`:
+
+```bash
+nano ~/ds-education/config.env
+```
+
+```
+S3_ENDPOINT=https://fsn1.your-objectstorage.com
+S3_REGION=fsn1
+S3_BUCKET=ds-education-media
+S3_ACCESS_KEY_ID=…
+S3_SECRET_ACCESS_KEY=…
+S3_FORCE_PATH_STYLE=yes
+```
+
+All of it or none of it. Left empty, courses serve media from plain `https://`
+URLs and the upload button in the console is disabled with a reason — the
+platform runs, it just cannot host video.
+
+Then redeploy so the API picks them up:
+
+```bash
+cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
+./deploy.sh
+```
+
+### Two things the bucket needs that this file cannot set
+
+**CORS**, because the browser PUTs to the bucket from
+`verwaltung.<BASE_DOMAIN>` and the bucket has to allow that origin and the
+`PUT` method. Without it the upload fails in the browser's preflight and
+nothing reaches the API to be logged.
+
+**Not public.** Every object is fetched through a short-lived signature the API
+mints only after the gate agrees. A publicly readable bucket makes every
+customer's material world-readable by URL, and the per-customer key prefix
+stops meaning anything.
+
+`config.env.example` carries the exact policy documents to paste.
+
+### Backups are separate credentials, deliberately
+
+`BACKUP_S3_ACCESS_KEY_ID` / `BACKUP_S3_SECRET_ACCESS_KEY` are their own pair,
+and should be a key that can write the backup bucket and _not_ the media
+bucket. A single key that can do both is a single key whose compromise loses
+the data and the copy of it in one step.
+
 ## One domain, not twelve
 
 `BASE_DOMAIN=digitalspital.com` is the only hostname anybody sets.
@@ -77,7 +148,7 @@ Manually, from a laptop with SSH access:
 
 ```bash
 ssh deploy@host
-cd ~/ds-education/infra/deploy
+cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
 ./deploy.sh
 ```
 
@@ -172,7 +243,7 @@ possible from anywhere else.
 ## What to check when something is wrong
 
 ```bash
-cd ~/ds-education/infra/deploy
+cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
 docker compose -f docker-compose.prod.yml --env-file .env.production ps
 docker compose -f docker-compose.prod.yml --env-file .env.production logs -f api
 docker compose -f docker-compose.prod.yml --env-file .env.production logs caddy | grep -i "certificate\|acme"
@@ -201,7 +272,7 @@ GDPR Art. 17. The reasoning, and what "erasure" means for a CME record, is in
 retained under a legal obligation while every identifier is removed.
 
 ```bash
-cd ~/ds-education/infra/deploy
+cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
 set -a && . ./.env.production && set +a
 
 # Dry run. Prints counts, never names. Changes nothing.
