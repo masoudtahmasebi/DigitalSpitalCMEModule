@@ -212,6 +212,8 @@ EXPOSE 3000
 #
 #   dist/db-migrate.js       apply migrations as ds_migrator
 #   dist/bootstrap-admin.js  create the first super administrator, once
+#   dist/seed-ds-default.js  create the default DS customer (P26-01) — the one
+#                            seed deploy.sh runs by itself, with --if-missing
 #   dist/seed-ds.js          create the DS test tenant, on request (P20-01)
 #   dist/seed-medice.js      create the MEDICE ADHS course (P24-02)
 #

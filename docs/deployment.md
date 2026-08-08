@@ -380,46 +380,66 @@ It prints a generated password **once** and stores it nowhere. Sign in at
 second factor, which `super_admin` requires by default (P22-02 makes that a
 policy — see §"Turning the second factor on, off, or mandatory" below).
 
-### And then give it a tenant, or the tenant screens have nothing to show
+### The tenant it already has: DSCustomer (P26-01)
 
-**A deploy creates no content.** `deploy.sh` migrates and starts containers; it
-does not seed, deliberately, because a deploy that writes rows is a deploy that
-can write the wrong ones into a live database.
-
-So on a fresh installation the console's _platform_ screens work — the customer
-registry, your own profile — and its _tenant_ screens have no project to act
-within. `DS_ADMIN_PROJECT_SLUG` (from `ADMIN_DEFAULT_PROJECT_SLUG` in
-`config.env`) names one, and until something creates it, that name resolves to
-nothing:
+A fresh installation is **not** empty any more. After migrations, `deploy.sh`
+runs one seed:
 
 ```
-GET /admin/customers  →  200   []
-GET /admin/courses    →  404   "Dieses Projekt existiert nicht."
+==> Ensuring the default customer exists
 ```
 
-That 404 used to be a bare `401`, which the console read as an expired session
-and answered with its login form — so a missing tenant presented as a broken
-sign-in (P22-01).
+It creates `DSCustomer` → `DSOrganisation` → `DSProject` → a course with one
+module `DSModule`, five chapters, a Lernerfolgskontrolle and an evaluation. The
+prose is lorem ipsum, obviously so. It exists because the alternative was what a
+first install used to be: a console with no customer, no department, no project
+and no course, four things to create in the right order, and no example of a
+filled-in one to copy from.
 
-Two ways out, and the second is the honest one for a first installation:
+**A deploy that writes rows is a deploy that can write the wrong ones**, so this
+is narrow on purpose, in three ways:
+
+| Property                                     | Why                                                                                                                                                           |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runs with `--if-missing`                     | It reads one row and returns before writing anything once `DSCustomer` exists. The second deploy and the two-hundredth write nothing — a redeploy is a no-op. |
+| No VNR, no accreditation body, no CME points | A course with points is a course the EIV worker tries to report. Nothing this seeds can reach a third party.                                                  |
+| Prints no password                           | This runs from a GitHub Actions job, so stdout is a workflow log.                                                                                             |
+
+The demo participant `demo@dscustomer.example` therefore exists with a password
+nobody holds. Set one for it under **Teilnehmende** in the console — the same
+path a real physician's credential arrives by — or run the seed by hand, which
+prints it:
 
 ```bash
-# 1. The DS test tenant, which ships in the image. Creates customer `ds`,
-#    project `ds-demo`, and two demo courses.
-./dsc run --rm --entrypoint node api dist/seed-ds.js --force
-#    then set ADMIN_DEFAULT_PROJECT_SLUG=ds-demo in config.env and redeploy.
-
-# 2. Or create the real customer, department and project through the console's
-#    own screens, which is what they are for, and point the slug at that.
+./dsc seed default
 ```
 
-The MEDICE/ADHS seed is **not** in the image: it lives at `db/seed/adhs.ts` and
-needs a checkout and `tsx`. That is deliberate — MEDICE's real course is content
-the client owns, not a fixture a deploy should be able to recreate.
+Without `--if-missing` that **rebuilds the course's content tree**, which deletes
+learner progress on that one course. Fine on a fresh install, not something to
+run on a tenant anybody has used.
 
-P22-03 removes this whole class of problem by letting the console pick its
-project from what the operator can actually reach, instead of from a name in
-deploy config that may not exist yet.
+Switch the whole thing off with `SEED_DEFAULT_CUSTOMER=no` in `config.env` — for
+an installation whose only tenant is a customer's real content, where a
+Lorem-ipsum course in the project picker is noise.
+
+Everything else is still created through the console's own screens, which is
+what they are for. The console picks its project from what the operator can
+actually reach (P22-03), so there is no slug in deploy config that has to name a
+tenant that may not exist yet.
+
+The other two seeds are **not** on the deploy path, because both rebuild their
+content unconditionally:
+
+```bash
+./dsc seed ds        # the ds test tenant, two demo courses
+./dsc seed medice    # MEDICE's real ADHS course
+```
+
+`./dsc seed` and not `./dsc run --entrypoint node api dist/seed-….js`: a seed
+connects as `ds_migrator`, and that connection string is built from two files
+`dsc` sources and your shell does not. The longer form was in this guide for
+three releases and never worked — it refused with `MIGRATION_DATABASE_URL is not
+set` before opening a connection.
 
 It refuses to run again while any staff account exists — after that the ordinary
 invitation flow is the only way to add one. `--force` exists for a genuine
@@ -436,13 +456,19 @@ installation rather than only in a test.
 ```bash
 ssh -i ~/.ssh/ds-deploy deploy@78.47.178.65
 cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
-./dsc run --rm --entrypoint node api dist/seed-ds.js --force
+./dsc seed ds
 ```
 
-`--force` is required and is not a formality: the seed rebuilds its two
-courses' content trees, which deletes learner progress **on those two courses**.
-It touches nothing belonging to any other customer — the whole run is inside
-`app.customer_id = <ds>` and passes the same RLS policies a request does.
+It rebuilds its two courses' content trees, which deletes learner progress **on
+those two courses**. It touches nothing belonging to any other customer — the
+whole run is inside `app.customer_id = <ds>` and passes the same RLS policies a
+request does.
+
+No `--force` here, and none in the two commands above: `openSeedPool` refuses a
+database that is not obviously a development one, and on the compose network the
+host is literally `postgres`, which it counts as local. The flag exists for a
+seed run from a laptop against something remote. This guide used to say it was
+required — typing it out of habit is how that guard stops meaning anything.
 
 What it creates:
 

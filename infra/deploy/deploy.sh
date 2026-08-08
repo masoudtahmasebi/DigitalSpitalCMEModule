@@ -397,6 +397,45 @@ if [[ "$RUN_MIGRATIONS" == "1" ]]; then
   compose run --rm \
     -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD_URL}@postgres:5432/${POSTGRES_DB}" \
     --entrypoint node api dist/db-migrate.js
+
+  # -------------------------------------------------------------------------
+  # 4a. The default customer, once, on an installation that has none
+  # -------------------------------------------------------------------------
+  #
+  # ## Why a deploy writes rows here, having refused to everywhere else
+  #
+  # A deploy that writes rows is a deploy that can write the wrong ones, and
+  # that is why neither other seed runs from here: both rebuild a course's
+  # content tree unconditionally, which deletes learner progress against it.
+  #
+  # `--if-missing` makes this one different in kind. It reads one row and
+  # returns before the first write once `DSCustomer` exists, so the second
+  # deploy and the two-hundredth write nothing at all. The only installation it
+  # can affect is one that has never had this customer — where the alternative
+  # is what a fresh install used to be: a console with no customer, no
+  # department, no project and no course, four things to create in the right
+  # order, and no example of a filled-in one to copy.
+  #
+  # What it creates carries no VNR, no accreditation body and no CME points, so
+  # nothing it seeds can reach EIV.
+  #
+  # ## Why nothing here prints a password
+  #
+  # This runs over SSH from a GitHub Actions job, so stdout is a workflow log.
+  # `--if-missing` also tells the seed not to reveal the participant password it
+  # generates; an administrator sets one on the Teilnehmende screen, which is
+  # the path a real participant's credential arrives by anyway.
+  #
+  # No `--force`, unlike the manual invocations in the deployment guide. The
+  # database is `postgres` on the compose network, which `openSeedPool` already
+  # counts as local — so the flag would be redundant here, and a `--force` typed
+  # out of habit is how that guard stops meaning anything.
+  if [[ "${SEED_DEFAULT_CUSTOMER:-yes}" == "yes" ]]; then
+    log "Ensuring the default customer exists"
+    compose run --rm \
+      -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD_URL}@postgres:5432/${POSTGRES_DB}" \
+      --entrypoint node api dist/seed-ds-default.js --if-missing
+  fi
 fi
 
 # ---------------------------------------------------------------------------

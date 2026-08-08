@@ -107,6 +107,8 @@ fi
 probe_dsc() {
   local tmp
   tmp="$(mktemp -d)"
+  local -a argv=("$@")
+  [[ ${#argv[@]} -gt 0 ]] || argv=(config)
   # shellcheck disable=SC2064 # expand $tmp now, not at trap time
   trap "rm -rf '$tmp'" RETURN
 
@@ -116,10 +118,6 @@ BASE_DOMAIN=digitalspital.com
 ACME_EMAIL=technik@digitalspital.de
 POSTGRES_DB=ds_education
 POSTGRES_SUPERUSER=postgres
-PORTAL_PROJECT_SLUG=medice-adhs
-ADMIN_DEFAULT_PROJECT_SLUG=medice-adhs
-PORTAL_KEYCLOAK_ISSUER=https://login.medice.de/realms/medice
-PORTAL_KEYCLOAK_CLIENT_ID=ds-portal
 ENV
   chmod 600 "$tmp/state/config.env"
 
@@ -141,13 +139,16 @@ ENV
 #!/usr/bin/env bash
 printf 'DS_APP_PASSWORD_URL=%s\n' "${DS_APP_PASSWORD_URL-<unset>}"
 printf 'DS_MIGRATOR_PASSWORD_URL=%s\n' "${DS_MIGRATOR_PASSWORD_URL-<unset>}"
+# The argument vector too, one per line, so the subcommands below are asserted
+# on what compose was actually handed rather than on what the script says.
+printf 'ARGV=%s\n' "$@"
 STUB
   chmod +x "$tmp/bin/docker"
 
-  PATH="$tmp/bin:$PATH" DS_STATE_DIR="$tmp/state" ./dsc config 2>/dev/null
+  PATH="$tmp/bin:$PATH" DS_STATE_DIR="$tmp/state" ./dsc "${argv[@]}" 2>/dev/null
 }
 
-dsc_env="$(probe_dsc)"
+dsc_env="$(probe_dsc config)"
 
 check "dsc exports the app password, encoded" \
   "DS_APP_PASSWORD_URL=gg%2Fhh%2Bii%3D" \
@@ -156,6 +157,50 @@ check "dsc exports the app password, encoded" \
 check "dsc exports the migrator password, encoded" \
   "DS_MIGRATOR_PASSWORD_URL=dd%2Fee%2Bff%3D" \
   "$(printf '%s\n' "$dsc_env" | grep '^DS_MIGRATOR_PASSWORD_URL=')"
+
+# ---------------------------------------------------------------------------
+# `./dsc seed` and `./dsc as-migrator` build the connection string themselves
+# ---------------------------------------------------------------------------
+#
+# Every seed and the subject-erasure tool connect as `ds_migrator`, and the
+# deployment guide's `./dsc run --entrypoint node api dist/seed-ds.js` could not
+# work: `MIGRATION_DATABASE_URL` was never set, so the tool refused before
+# opening a connection. The erasure runbook had the same line with the password
+# **un-encoded**, which additionally breaks the URL on any generated password
+# containing `/` or `+` — which is most of them.
+#
+# So this asserts the whole variable, encoding included, off the argument vector
+# compose was handed.
+seed_argv="$(probe_dsc seed default --if-missing)"
+
+check "dsc seed injects the encoded migrator URL" \
+  "ARGV=MIGRATION_DATABASE_URL=postgres://ds_migrator:dd%2Fee%2Bff%3D@postgres:5432/ds_education" \
+  "$(printf '%s\n' "$seed_argv" | grep '^ARGV=MIGRATION_DATABASE_URL=')"
+
+check "dsc seed default runs the default seed" \
+  "ARGV=dist/seed-ds-default.js" \
+  "$(printf '%s\n' "$seed_argv" | grep '^ARGV=dist/')"
+
+check "dsc seed forwards the caller's flags" \
+  "ARGV=--if-missing" \
+  "$(printf '%s\n' "$seed_argv" | grep '^ARGV=--if-missing')"
+
+check "dsc seed medice runs the MEDICE seed" \
+  "ARGV=dist/seed-medice.js" \
+  "$(probe_dsc seed medice | grep '^ARGV=dist/')"
+
+check "dsc as-migrator runs what it was given" \
+  "ARGV=dist/subject-erasure.js" \
+  "$(probe_dsc as-migrator dist/subject-erasure.js --subject abc | grep '^ARGV=dist/')"
+
+# An unknown seed name must not fall through to `docker compose seed …`, which
+# would be a compose error about an unknown command rather than a usable one.
+if probe_dsc seed nonesuch >/dev/null 2>&1; then
+  failed=$((failed + 1))
+  echo "xx ./dsc seed with an unknown name should exit non-zero" >&2
+else
+  passed=$((passed + 1))
+fi
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
 [[ "$failed" == "0" ]]

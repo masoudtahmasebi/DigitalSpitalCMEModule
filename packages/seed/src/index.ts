@@ -45,5 +45,6 @@ export {
   seedPortalProject,
   upsert,
 } from "./lib.js";
+export { seedDsDefault, type DsDefaultOptions } from "./ds-default.js";
 export { seedDsDemo } from "./ds-demo.js";
 export { seedMediceAdhs } from "./medice-adhs.js";

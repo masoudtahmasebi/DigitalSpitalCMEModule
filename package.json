@@ -37,6 +37,7 @@
     "infra:reset": "docker compose -f infra/docker-compose.yml down -v && pnpm infra:up",
     "db:migrate": "tsx db/migrate.ts",
     "db:seed": "tsx db/seed/adhs.ts",
+    "db:seed:default": "tsx db/seed/ds-default.ts",
     "db:seed:ds": "tsx db/seed/ds-demo.ts",
     "verify": "pnpm lint && pnpm format && pnpm typecheck && pnpm test && pnpm audit --prod --audit-level=moderate",
     "test:integration": "turbo run test:integration",

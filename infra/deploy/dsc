@@ -59,4 +59,70 @@ ds_export_url_passwords
 DS_COMMIT="$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 export DS_COMMIT
 
+# ---------------------------------------------------------------------------
+# `./dsc as-migrator <dist/x.js> [args…]`, and `./dsc seed <name>` over it
+# ---------------------------------------------------------------------------
+#
+# ## Why these exist at all
+#
+# Three of the image's entrypoints — the seeds and the subject-erasure tool —
+# connect as `ds_migrator`, and that connection string is assembled from two
+# files this script sources and the operator's interactive shell does not. The
+# deployment guide asked people to type
+#
+#   ./dsc run --rm --entrypoint node api dist/seed-ds.js --force
+#
+# for three releases, and it could not work: `MIGRATION_DATABASE_URL` was never
+# set, so the seed refused before opening a connection. Adding the `-e` by hand
+# does not help either — `${DS_MIGRATOR_PASSWORD_URL}` expands in the *caller's*
+# shell, which has never seen `secrets.env`. The erasure runbook had the same
+# line with the *un-encoded* password, which additionally breaks the URL the
+# moment a generated password contains a `/` or a `+`.
+#
+# ## Why the API container does not simply carry the variable
+#
+# Because then it would hold a migrator credential for its whole life. `ds_app`
+# is deliberately not `ds_migrator`: it may not create a customer, and it is
+# subject to RLS (ADR-0002). Injecting the URL into one short-lived container
+# that exits is the narrow version of the same convenience.
+#
+# Both start a one-shot container and touch no running service — the reason
+# `dsc` refuses to deploy still holds.
+ds_as_migrator() {
+  exec docker compose -f "${SCRIPT_DIR}/docker-compose.prod.yml" run --rm \
+    -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD_URL}@postgres:5432/${POSTGRES_DB}" \
+    --entrypoint node api "$@"
+}
+
+if [[ "${1:-}" == "as-migrator" ]]; then
+  shift
+  [[ $# -gt 0 ]] || {
+    echo "usage: ./dsc as-migrator <dist/entrypoint.js> [args…]" >&2
+    exit 2
+  }
+  ds_as_migrator "$@"
+fi
+
+if [[ "${1:-}" == "seed" ]]; then
+  shift
+  case "${1:-}" in
+    default) seed_entrypoint=dist/seed-ds-default.js ;;
+    ds) seed_entrypoint=dist/seed-ds.js ;;
+    medice) seed_entrypoint=dist/seed-medice.js ;;
+    *)
+      echo "usage: ./dsc seed {default|ds|medice} [--if-missing]" >&2
+      echo >&2
+      echo "  default  DSCustomer — the one a deploy creates for itself" >&2
+      echo "  ds       the DS test tenant, two demo courses" >&2
+      echo "  medice   MEDICE's real ADHS course" >&2
+      echo >&2
+      echo "Without --if-missing a seed REBUILDS its courses' content, which" >&2
+      echo "deletes learner progress on those courses." >&2
+      exit 2
+      ;;
+  esac
+  shift
+  ds_as_migrator "$seed_entrypoint" "$@"
+fi
+
 exec docker compose -f "${SCRIPT_DIR}/docker-compose.prod.yml" "$@"

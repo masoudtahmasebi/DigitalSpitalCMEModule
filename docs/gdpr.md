@@ -365,14 +365,19 @@ difference between an omission and a decision.
 ## 9. Running an erasure
 
 ```bash
-# On the host, in the API container. Dry run first — this is irreversible.
-docker compose -f docker-compose.prod.yml --env-file .env.production \
-  exec -e MIGRATION_DATABASE_URL="$MIGRATION_DATABASE_URL" api \
-  node dist/subject-erasure.js --subject <idp-sub> --reason "Antrag vom 2026-07-28"
+# On the host, in infra/deploy. Dry run first — this is irreversible.
+./dsc as-migrator dist/subject-erasure.js \
+  --subject <idp-sub> --reason "Antrag vom 2026-07-28"
 
 # Then, once the printed plan is the right person:
 … --subject <idp-sub> --reason "Antrag vom 2026-07-28" --confirm
 ```
+
+`as-migrator` builds the `ds_migrator` connection string from
+`~/ds-education/secrets.env` and injects it into a one-shot container. The form
+that used to be here read `$MIGRATION_DATABASE_URL` from the operator's shell,
+where it has never been set, and `--env-file .env.production`, a file that has
+not existed since the configuration moved out of the clone.
 
 It reports what it will remove — counts only, never names — refuses while a
 Punktemeldung is open, and is idempotent: a repeated request is answered rather

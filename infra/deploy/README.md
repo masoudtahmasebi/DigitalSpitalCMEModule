@@ -273,16 +273,21 @@ retained under a legal obligation while every identifier is removed.
 
 ```bash
 cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
-set -a && . ./.env.production && set +a
 
 # Dry run. Prints counts, never names. Changes nothing.
-docker compose -f docker-compose.prod.yml --env-file .env.production run --rm \
-  -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD}@postgres:5432/${POSTGRES_DB}" \
-  --entrypoint node api dist/subject-erasure.js \
+./dsc as-migrator dist/subject-erasure.js \
   --subject "<keycloak-sub>" --reason "Antrag vom <date>"
 
 # Then, once the printed plan is the right person, add --confirm.
 ```
+
+`./dsc as-migrator` rather than a `docker compose run` with the connection
+string typed out: this tool connects as `ds_migrator`, and the password lives in
+`~/ds-education/secrets.env`, which your shell has not sourced. The form that
+used to be here read `.env.production` — a file that has not existed since the
+configuration moved out of the clone — and interpolated the **un-encoded**
+password, which produces an invalid URL as soon as a generated password contains
+a `/` or a `+`.
 
 It refuses while a Punktemeldung is still open — erasing the EFN mid-report
 leaves one that can neither be completed nor corrected — and it is idempotent.

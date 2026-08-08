@@ -51,7 +51,7 @@ apps/portal              our own learner frontend — a host adapter, like the p
 apps/eiv-harness         EIV-FOBI contract test CLI and mock server
 packages/domain          pure compliance logic — no I/O, no clock, no framework
 packages/sdk             API client, generated from the contract
-packages/seed            the DS test tenant, runnable from a checkout or the image
+packages/seed            the seeded tenants, runnable from a checkout or the image
 packages/oidc            Keycloak login (PKCE), shared by the console and the portal
 packages/plugin-api      the extension contracts — and what may not be extended
 packages/eiv-client      the EIV-FOBI protocol client, and its reporter plugin
@@ -76,7 +76,8 @@ WordPress plugin's tests.
 pnpm install
 pnpm infra:up          # Postgres, Redis, Keycloak, Mailpit
 pnpm db:migrate        # as ds_migrator — never as the superuser, see below
-pnpm db:seed           # the ADHS course, its quiz and its evaluation
+pnpm db:seed:default   # DSCustomer — the neutral tenant a deploy also creates
+pnpm db:seed           # MEDICE's ADHS course, its quiz and its evaluation
 pnpm dev               # API on :3000, widget on :5173, admin on :5174
 ```
 
@@ -196,8 +197,12 @@ Lernerfolgskontrolle and the Evaluationsbogen. It was the plan's declared trade
 lever and was for a while partly unbuilt; [`docs/backlog/P9.md`](docs/backlog/P9.md)
 records what changed and what the hours cost.
 
-`db/seed/adhs.ts` still creates the ADHS course. The console is how it is
-_changed_ after launch — and the rules that matter still refuse from the server:
+A fresh installation is not empty: the deploy creates **DSCustomer** with one
+project and one complete Lorem-ipsum course, carrying no VNR, no accreditation
+body and no CME points, so nothing it seeds can reach EIV. It exists so the
+console's screens have a filled-in example to copy from rather than four things
+to create in the right order. `db/seed/adhs.ts` still creates MEDICE's real ADHS
+course. The console is how either is _changed_ after launch — and the rules that matter still refuse from the server:
 a pass threshold below the accredited minimum, a video with no duration, a quiz
 question nobody could answer correctly, and the deletion of anything a learner
 has already touched.
