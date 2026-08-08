@@ -998,6 +998,112 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /auth/participant/sign-in:
+    post:
+      tags: [auth]
+      operationId: participantSignIn
+      summary: Sign a participant in with an e-mail and a password
+      description: |
+        Only for a project whose `identity_provider` is `local`. One whose
+        learners are federated is refused here with the same 401 as a wrong
+        password — telling a caller "this customer uses a different identity
+        provider" describes their infrastructure to anybody who asks.
+
+        On success the session arrives as an **httpOnly cookie**, never in the
+        body: a token script can read is a token an XSS bug can exfiltrate.
+
+        Every failure — wrong address, wrong password, locked account, disabled
+        account, federated project, malformed body — is the same 401 with the
+        same German message. Any distinction is an account-enumeration oracle,
+        and the list it would build is a list of physicians.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email, maxLength: 320 }
+                password: { type: string, maxLength: 1024 }
+      responses:
+        "200":
+          description: Signed in. The session is in the `Set-Cookie` header.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mustChangePassword]
+                properties:
+                  mustChangePassword:
+                    type: boolean
+                    description: |
+                      The participant has not yet chosen their own password —
+                      an administrator created or reset it. The portal shows
+                      the change screen and refuses to go further until it is
+                      done. Re-derived on every `GET me`, so a reload cannot
+                      skip it.
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "429":
+          description: |
+            Too many attempts. The tightest limit in the platform — this is the
+            only unauthenticated write on the learner plane.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /auth/participant/sign-out:
+    post:
+      tags: [auth]
+      operationId: participantSignOut
+      summary: End a participant session
+      description: |
+        Revokes the row, not merely the cookie. A sign-out that only cleared the
+        browser would leave a live session behind for anybody who had captured
+        it — which on a shared clinic computer is the case it exists for.
+
+        Public, and succeeds whether or not a session was found: a client asking
+        to be signed out should end up signed out, not told it already was.
+      responses:
+        "204": { description: Signed out, and the cookie cleared. }
+
+  /auth/participant/me:
+    get:
+      tags: [auth]
+      operationId: getParticipantSession
+      summary: Who the caller is, and whether they owe a password change
+      description: |
+        The portal's "am I still signed in?" on load. The session cookie is
+        `httpOnly`, so a round trip is the only way to ask.
+
+        `mustChangePassword` is re-derived from the database here rather than
+        remembered from the sign-in response, and that is what makes the
+        requirement a requirement: otherwise a participant shown the change
+        screen could press F5 and land in the catalogue, because the session is
+        already perfectly valid.
+
+        Omitted entirely for a federated participant — there is no local
+        password, and reporting `false` would imply there is one and it is fine.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      responses:
+        "200":
+          description: The caller.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [userId, customerId, role]
+                properties:
+                  userId: { type: string, format: uuid }
+                  customerId: { type: string, format: uuid }
+                  role: { type: string }
+                  mustChangePassword: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /auth/participant/password:
     post:
       tags: [auth]

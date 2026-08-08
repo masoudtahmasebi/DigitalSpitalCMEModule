@@ -44,6 +44,7 @@ import { parseRoute, routePath, type Route } from "./routes.js";
 import { WidgetMount } from "./components/WidgetMount.js";
 import { Welcome } from "./components/Welcome.js";
 import { ParticipantSignIn } from "./components/ParticipantSignIn.js";
+import { ChangePassword } from "./components/ChangePassword.js";
 
 type AuthState = "checking" | "anonymous" | "signed-in" | "failed";
 
@@ -137,6 +138,13 @@ function Tenant(props: {
    * answers 200 or 401 and nothing else.
    */
   const [refreshKey, setRefreshKey] = useState(0);
+  /**
+   * Whether the participant still owes their own password.
+   *
+   * Held here rather than in the sign-in response, because it is re-read from
+   * `GET me` on every load — that is what stops a reload skipping the screen.
+   */
+  const [mustChangePassword, setMustChangePassword] = useState(false);
   useEffect(() => {
     let cancelled = false;
 
@@ -156,8 +164,10 @@ function Tenant(props: {
       // a failure asking is "not signed in" rather than an error — the API
       // being unreachable is already surfaced by the tenant fetch above, and
       // reporting it twice tells the visitor nothing new.
-      const signedIn = await hasParticipantSession(config.apiBase, route.tenant);
-      if (!cancelled) setState(signedIn ? "signed-in" : "anonymous");
+      const session = await participantSession(config.apiBase, route.tenant);
+      if (cancelled) return;
+      setMustChangePassword(session?.mustChangePassword === true);
+      setState(session === undefined ? "anonymous" : "signed-in");
     })();
 
     return () => {
@@ -250,6 +260,26 @@ function Tenant(props: {
     );
   }
 
+  if (mustChangePassword) {
+    /*
+     * Instead of the catalogue, not above it.
+     *
+     * A dismissible banner would be friendlier and would be ignored, which is
+     * the same as not having it. This account's password is one an
+     * administrator chose and passed on, and it stays valid until this form is
+     * completed — so the form is the only thing there is to do.
+     */
+    return (
+      <Shell customerName={signIn.customerName}>
+        <ChangePassword
+          apiBase={config.apiBase}
+          projectSlug={route.tenant}
+          onChanged={() => setRefreshKey((n) => n + 1)}
+        />
+      </Shell>
+    );
+  }
+
   return (
     <Shell
       customerName={signIn.customerName}
@@ -306,15 +336,19 @@ async function fetchTenant(apiBase: string, slug: string): Promise<TenantSignIn>
  * asking correctly means the portal agrees with it rather than showing a
  * catalogue that then 401s.
  */
-async function hasParticipantSession(apiBase: string, slug: string): Promise<boolean> {
+async function participantSession(
+  apiBase: string,
+  slug: string,
+): Promise<{ mustChangePassword?: boolean } | undefined> {
   try {
     const response = await fetch(`${apiBase}/auth/participant/me`, {
       credentials: "include",
       headers: { "x-ds-project": slug },
     });
-    return response.ok;
+    if (!response.ok) return undefined;
+    return (await response.json()) as { mustChangePassword?: boolean };
   } catch {
-    return false;
+    return undefined;
   }
 }
 

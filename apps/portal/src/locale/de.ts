@@ -43,6 +43,31 @@ export const de = {
       "Sie haben noch keine Zugangsdaten? Wenden Sie sich bitte an Ihre Ansprechperson bei",
   },
 
+  /**
+   * Choosing your own password (P21-04).
+   *
+   * `wrongCurrent` covers a wrong current password, a disabled account and a
+   * federated one alike, because the API answers all three identically — the
+   * caller is already authenticated, so there is nothing to enumerate, and
+   * nothing the client could usefully do differently either.
+   */
+  password: {
+    title: "Bitte wählen Sie ein eigenes Passwort",
+    intro:
+      "Ihr Zugang wurde für Sie eingerichtet. Bitte vergeben Sie jetzt ein Passwort, das nur Sie kennen — danach steht Ihnen die Fortbildung offen.",
+    current: "Aktuelles Passwort",
+    next: "Neues Passwort",
+    confirm: "Neues Passwort wiederholen",
+    rule: (min: number) =>
+      `Mindestens ${String(min)} Zeichen. Ihr Name und Ihre E-Mail-Adresse dürfen nicht enthalten sein.`,
+    save: "Passwort speichern",
+    saving: "Wird gespeichert …",
+    wrongCurrent: "Das aktuelle Passwort ist nicht korrekt.",
+    tooWeak:
+      "Dieses Passwort erfüllt die Anforderungen nicht. Bitte wählen Sie ein längeres, das weder Ihren Namen noch Ihre E-Mail-Adresse enthält.",
+    mismatch: "Die beiden Passwörter stimmen nicht überein.",
+  },
+
   nav: {
     back: "Zurück zur Übersicht",
   },

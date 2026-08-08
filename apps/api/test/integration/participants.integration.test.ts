@@ -493,6 +493,126 @@ describe("a participant changing their own password", () => {
     expect(await response.json()).toEqual({ mustChangePassword: false });
   });
 
+  it("reports the requirement on /me, so a reload cannot skip it", async () => {
+    // The bypass this closes. If `mustChangePassword` lived only in the
+    // sign-in response, the portal would show the change screen and F5 would
+    // land in the catalogue — the session is already valid and nothing else
+    // would object. The requirement has to be re-derivable from the database
+    // on every page load, or it is advice.
+    const created = await createParticipant(alpha);
+    const cookie = await signInFor(
+      alpha.projectSlug,
+      created.email,
+      created.temporaryPassword,
+    );
+
+    const me = await fetch(`${baseUrl}/auth/participant/me`, {
+      headers: {
+        cookie: `${PARTICIPANT_COOKIE}=${cookie}`,
+        "x-ds-project": alpha.projectSlug,
+      },
+    });
+    expect(await me.json()).toMatchObject({ mustChangePassword: true });
+  });
+
+  it("stops reporting it once the password is the participant's own", async () => {
+    const created = await createParticipant(alpha);
+    const cookie = await signInFor(
+      alpha.projectSlug,
+      created.email,
+      created.temporaryPassword,
+    );
+
+    await fetch(`${baseUrl}/auth/participant/password`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: `${PARTICIPANT_COOKIE}=${cookie}`,
+        "x-ds-project": alpha.projectSlug,
+      },
+      body: JSON.stringify({
+        currentPassword: created.temporaryPassword,
+        newPassword: `Selbst-Gewaehlt-${randomUUID().slice(0, 8)}`,
+      }),
+    });
+
+    const me = await fetch(`${baseUrl}/auth/participant/me`, {
+      headers: {
+        cookie: `${PARTICIPANT_COOKIE}=${cookie}`,
+        "x-ds-project": alpha.projectSlug,
+      },
+    });
+    expect(await me.json()).toMatchObject({ mustChangePassword: false });
+  });
+
+  it("raises the requirement again after an administrator resets", async () => {
+    // A reset is the same situation as a fresh account: the password is one an
+    // administrator read off a screen. If the flag stayed clear, a reset would
+    // leave the administrator's password in place indefinitely.
+    const created = await createParticipant(alpha);
+    const chosen = `Selbst-Gewaehlt-${randomUUID().slice(0, 8)}`;
+    const first = await signInFor(
+      alpha.projectSlug,
+      created.email,
+      created.temporaryPassword,
+    );
+    await fetch(`${baseUrl}/auth/participant/password`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: `${PARTICIPANT_COOKIE}=${first}`,
+        "x-ds-project": alpha.projectSlug,
+      },
+      body: JSON.stringify({
+        currentPassword: created.temporaryPassword,
+        newPassword: chosen,
+      }),
+    });
+
+    const reset = await fetch(
+      `${baseUrl}/admin/participants/${created.userId}/reset-password`,
+      asAdmin(alpha, { method: "POST" }),
+    );
+    const { temporaryPassword } = (await reset.json()) as { temporaryPassword: string };
+
+    const after = await signInFor(alpha.projectSlug, created.email, temporaryPassword);
+    const me = await fetch(`${baseUrl}/auth/participant/me`, {
+      headers: {
+        cookie: `${PARTICIPANT_COOKIE}=${after}`,
+        "x-ds-project": alpha.projectSlug,
+      },
+    });
+    expect(await me.json()).toMatchObject({ mustChangePassword: true });
+  });
+
+  it("refuses a new password containing the participant's own address", async () => {
+    // The policy is `checkPassword` from `packages/domain`, which checks more
+    // than length. A password long enough to pass a client-side hint and still
+    // built out of the account's own identifiers is the one a credential-
+    // stuffing list opens first.
+    const created = await createParticipant(alpha);
+    const cookie = await signInFor(
+      alpha.projectSlug,
+      created.email,
+      created.temporaryPassword,
+    );
+
+    const local = created.email.split("@")[0]!;
+    const change = await fetch(`${baseUrl}/auth/participant/password`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: `${PARTICIPANT_COOKIE}=${cookie}`,
+        "x-ds-project": alpha.projectSlug,
+      },
+      body: JSON.stringify({
+        currentPassword: created.temporaryPassword,
+        newPassword: `${local}-Sicheres-Passwort`,
+      }),
+    });
+    expect(change.status).toBe(422);
+  });
+
   it("refuses without the current password", async () => {
     // A session is a bearer credential. Without this, a cookie captured on a
     // shared clinic computer is enough to lock a physician out of their own

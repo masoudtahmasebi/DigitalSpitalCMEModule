@@ -92,6 +92,49 @@ describe("checkPassword", () => {
     });
   });
 
+  it("refuses a password containing only the local part of the address", () => {
+    // The bug this file did not catch until P21-04. The comment on
+    // `checkPassword` has always claimed it rejects "its own email local
+    // part", and the implementation compared against the *whole* address — so
+    // a password containing `anna.mueller@medice.de` was refused and one
+    // containing `anna.mueller` sailed through. Nobody puts their full address
+    // in a password; everybody puts their name in one.
+    //
+    // It was never learner-only. This is the platform's single password
+    // policy, so a super admin's account had exactly the same hole.
+    expect(
+      checkPassword("anna.mueller-2026!", { identifiers: ["anna.mueller@medice.de"] }),
+    ).toEqual({
+      ok: false,
+      reason: "contains_identifier",
+    });
+  });
+
+  it("still refuses the whole address", () => {
+    expect(
+      checkPassword("xx-anna.mueller@medice.de-xx", {
+        identifiers: ["anna.mueller@medice.de"],
+      }),
+    ).toEqual({ ok: false, reason: "contains_identifier" });
+  });
+
+  it("ignores a local part too short to mean anything", () => {
+    // `bo@medice.de` expands to `bo`, which is in half the dictionary. The
+    // length floor applies to the expansion, not only to what was passed in.
+    expect(checkPassword("thequickbrownfox", { identifiers: ["bo@medice.de"] })).toEqual({
+      ok: true,
+    });
+  });
+
+  it("ignores an address with nothing before the @", () => {
+    // `@medice.de` has no local part. Slicing blindly would add an empty
+    // string, and `"anything".includes("")` is true — which would refuse every
+    // password on the platform.
+    expect(checkPassword("thequickbrownfox", { identifiers: ["@medice.de"] })).toEqual({
+      ok: true,
+    });
+  });
+
   it("ignores identifier fragments too short to mean anything", () => {
     // A two-letter name would otherwise ban every password containing those
     // two letters in sequence, which is most of them.

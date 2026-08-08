@@ -166,15 +166,46 @@ export function checkPassword(password: string, context: PasswordContext): Passw
   // An account whose password contains its own email local part is one
   // credential-stuffing list away from open.
   const lowered = password.toLowerCase();
-  for (const identifier of context.identifiers) {
-    const trimmed = identifier.trim().toLowerCase();
+  for (const identifier of expandIdentifiers(context.identifiers)) {
     // Short fragments match by accident; "ha" is in half the dictionary.
-    if (trimmed.length >= 4 && lowered.includes(trimmed)) {
+    if (identifier.length >= 4 && lowered.includes(identifier)) {
       return { ok: false, reason: "contains_identifier" };
     }
   }
 
   return { ok: true };
+}
+
+/**
+ * Each identifier, plus the part of an address before the `@`.
+ *
+ * The comment above has always said this function catches "its own email local
+ * part", and until P21-04 it did not: it compared against the *whole* address,
+ * so `anna.schmidt@praxis.de` as an identifier rejected a password containing
+ * `anna.schmidt@praxis.de` and accepted one containing `anna.schmidt`. Nobody
+ * puts their full address in a password. Everybody puts their name in one.
+ *
+ * Found by an integration test on the participant path, and it was never a
+ * learner-only weakness — `checkPassword` is the platform's single password
+ * policy, so the staff plane, whose accounts can read every physician's record
+ * for a customer, had exactly the same hole.
+ *
+ * The domain is a set, so a name that happens to equal a local part costs one
+ * comparison rather than two.
+ */
+function expandIdentifiers(identifiers: readonly string[]): ReadonlySet<string> {
+  const expanded = new Set<string>();
+
+  for (const identifier of identifiers) {
+    const trimmed = identifier.trim().toLowerCase();
+    if (trimmed === "") continue;
+    expanded.add(trimmed);
+
+    const at = trimmed.indexOf("@");
+    if (at > 0) expanded.add(trimmed.slice(0, at));
+  }
+
+  return expanded;
 }
 
 // ---------------------------------------------------------------------------

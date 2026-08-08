@@ -157,6 +157,22 @@ export class ParticipantAuthService {
   }
 
   /**
+   * The credential state behind a signed-in participant, for `me`.
+   *
+   * `undefined` for a federated one — they have no local password, and saying
+   * so by omission is more honest than reporting `mustChange: false`, which
+   * would imply there is a password and it is fine.
+   */
+  async credentialState(
+    userId: string,
+  ): Promise<{ mustChange: boolean; disabled: boolean } | undefined> {
+    const credential = await this.repository.credentialForUser(userId);
+    return credential === undefined
+      ? undefined
+      : { mustChange: credential.mustChange, disabled: credential.disabledAt !== null };
+  }
+
+  /**
    * A participant choosing their own password (P21-04).
    *
    * ## Why the current password is required

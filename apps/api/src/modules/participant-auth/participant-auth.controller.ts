@@ -147,11 +147,28 @@ export class ParticipantAuthController {
    */
   @Get("me")
   @Roles("learner", "department_admin", "customer_admin", "super_admin")
-  me(@CurrentPrincipal() principal: Principal) {
+  async me(@CurrentPrincipal() principal: Principal) {
+    /*
+     * `mustChangePassword` is here and not only on the sign-in response, and
+     * that is the difference between a requirement and a suggestion.
+     *
+     * The portal asks this on every page load. If the flag lived only in the
+     * sign-in answer, a participant who is shown the change screen could press
+     * F5 and land in the catalogue — the session is already valid, so nothing
+     * would stop them. The requirement has to be re-derived from the database
+     * on every load, or it is advice.
+     *
+     * Absent for a federated participant: there is no local password to
+     * change, so the field is omitted rather than sent as `false`, which would
+     * imply one exists and is fine.
+     */
+    const credential = await this.service().credentialState(principal.userId);
+
     return {
       userId: principal.userId,
       customerId: principal.customerId,
       role: principal.role,
+      ...(credential === undefined ? {} : { mustChangePassword: credential.mustChange }),
     };
   }
 
