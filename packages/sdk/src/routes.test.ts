@@ -90,6 +90,8 @@ function client() {
 }
 
 const ID = "11111111-1111-4111-8111-111111111111";
+/** A second id, for the two calls that name two people at once. */
+const OTHER_ID = "22222222-2222-4222-8222-222222222222";
 
 /** One invocation per client method. Arguments only need to be well-typed. */
 const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
@@ -132,6 +134,14 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
     }),
   adminResetParticipantPassword: (c) => c.adminResetParticipantPassword(ID),
   adminSetParticipantDisabled: (c) => c.adminSetParticipantDisabled(ID, true),
+  adminPreviewParticipantMerge: (c) =>
+    c.adminPreviewParticipantMerge({ sourceUserId: ID, targetUserId: OTHER_ID }),
+  adminMergeParticipants: (c) =>
+    c.adminMergeParticipants({
+      sourceUserId: ID,
+      targetUserId: OTHER_ID,
+      confirm: OTHER_ID,
+    }),
   adminCorrectLearnerName: (c) => c.adminCorrectLearnerName(ID, "Dr. Anna Schmidt"),
   adminEraseSubject: (c) => c.adminEraseSubject(ID, "Löschantrag"),
   adminListCertificates: (c) => c.adminListCertificates(),

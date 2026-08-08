@@ -646,6 +646,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/participants/merge/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * What merging two credentials onto one person would do
+         * @description Reads only. Always called before `adminMergeParticipants`, because a
+         *     merge cannot be undone in any way a physician would accept and the
+         *     operator has to be shown both sides before confirming.
+         *
+         *     `super_admin` only. A merge routinely spans two customers — a MEDICE
+         *     learner given a DS portal login is the case P21-05 was written for — and
+         *     a customer-scoped administrator is correctly unable to see the other
+         *     side, so they would be confirming against a record they cannot read.
+         *
+         *     The response says **whether** each side has an EFN, never which: no
+         *     endpoint returns an EFN (ADR-0004), and the operator does not need the
+         *     digits to decide.
+         */
+        post: operations["adminPreviewParticipantMerge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/participants/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge two credentials onto one person — irreversible
+         * @description Moves every credential, membership, grant, enrolment and EFN from the
+         *     source person onto the target, ends every session on both sides, and
+         *     deletes the now-empty source person. Written to `admin_audit_log` in the
+         *     same transaction, because an audit row for a merge that rolled back
+         *     would send somebody looking for records that never moved.
+         *
+         *     Refused with `409` when the merge would have to **choose** something:
+         *     two different EFNs on file, or a course both sides are enrolled on.
+         *     Neither is a rule this platform can settle on a physician's behalf.
+         *
+         *     `confirm` must equal `targetUserId`. An irreversible operation should
+         *     take two decisions, and typing the id back is the cheapest second one
+         *     that cannot be made by a mis-click.
+         */
+        post: operations["adminMergeParticipants"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/participant/sign-in": {
         parameters: {
             query?: never;
@@ -2134,6 +2197,47 @@ export interface components {
             id: string;
             ordinal: number;
             label: string;
+        };
+        ParticipantMergeRequest: {
+            /**
+             * Format: uuid
+             * @description The person whose records move. Deleted by the merge.
+             */
+            sourceUserId: string;
+            /**
+             * Format: uuid
+             * @description The person who survives, and whose id every record ends on.
+             */
+            targetUserId: string;
+        };
+        ParticipantMergeParty: {
+            /** Format: uuid */
+            userId: string;
+            email: string | null;
+            /**
+             * @description Whether an EFN is on file — never which. No endpoint returns an EFN
+             *     (ADR-0004), and the refusal below is what tells an operator that two
+             *     exist and differ.
+             */
+            hasEfn: boolean;
+            enrolledCourseSlugs: string[];
+        };
+        ParticipantMergePreview: {
+            source: components["schemas"]["ParticipantMergeParty"];
+            target: components["schemas"]["ParticipantMergeParty"];
+            plan: {
+                /** @enum {boolean} */
+                allowed: true;
+            } | {
+                /** @enum {boolean} */
+                allowed: false;
+                refusal: {
+                    /** @enum {string} */
+                    reason: "same_person" | "conflicting_efn" | "overlapping_courses";
+                    /** @description Present on `overlapping_courses` only. */
+                    courseSlugs?: string[];
+                };
+            };
         };
         QuizQuestion: {
             /** Format: uuid */
@@ -4968,6 +5072,121 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    adminPreviewParticipantMerge: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParticipantMergeRequest"];
+            };
+        };
+        responses: {
+            /** @description What the merge would move, and whether it is allowed. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipantMergePreview"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminMergeParticipants: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParticipantMergeRequest"] & {
+                    /** @description Must equal `targetUserId`. */
+                    confirm: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Merged. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     participantSignIn: {

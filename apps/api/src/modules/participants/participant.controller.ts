@@ -69,6 +69,20 @@ const createSchema = z.object({
 
 const disableSchema = z.object({ disabled: z.boolean() });
 
+/**
+ * Who may merge two credentials onto one person.
+ *
+ * `super_admin` alone — see the route's own comment. Deliberately *not*
+ * `PARTICIPANT_ROLES`: a merge routinely spans two customers, and a
+ * customer-scoped administrator is correctly unable to see the other side.
+ */
+const MERGE_ROLES = ["super_admin"] as const;
+
+const mergeSchema = z.object({
+  sourceUserId: z.uuid(),
+  targetUserId: z.uuid(),
+});
+
 @Controller("admin/participants")
 export class ParticipantController {
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
@@ -127,6 +141,66 @@ export class ParticipantController {
       // operation for want of one would be the wrong trade.
       request.staffProfile?.id ?? null,
     );
+  }
+
+  /**
+   * What a merge would do (P21-05). Reads only.
+   *
+   * Always called before `merge`, and the reason it is a separate route rather
+   * than a flag: the operation is irreversible, and an operator has to be shown
+   * both sides — which credentials, which courses, whether an EFN is in play —
+   * before confirming. A single endpoint that merged and then reported would
+   * make "what would this do?" a question with no answer.
+   */
+  @Post("merge/preview")
+  @Roles(...MERGE_ROLES)
+  async previewMerge(@Body() body: unknown, @TenantDb() db: Db) {
+    const input = parse(mergeSchema, body);
+    return this.service(db).previewMerge(input.sourceUserId, input.targetUserId);
+  }
+
+  /**
+   * Merge two credentials onto one person. **Irreversible.**
+   *
+   * ## Why `super_admin` and not the participant roles
+   *
+   * The whole purpose is a physician who exists in two places, and those two
+   * places are frequently two customers — a MEDICE learner given a DS portal
+   * login is the case P21-05 was written for. A customer-scoped administrator
+   * cannot be shown the other side, because RLS correctly hides it from them,
+   * so they would be confirming a merge against a record they cannot see.
+   *
+   * Being above every tenant is the only position from which both sides are
+   * visible, so it is the only position from which this is a considered act
+   * rather than a leap.
+   *
+   * `confirm` is required and must name the target. A DELETE-shaped mistake on
+   * an irreversible operation should take two decisions, and typing the id back
+   * is the cheapest second one that cannot be made by a mis-click.
+   */
+  @Post("merge")
+  @Roles(...MERGE_ROLES)
+  @HttpCode(204)
+  @RateLimit("participantCreate")
+  async merge(
+    @Body() body: unknown,
+    @Req() request: Request,
+    @TenantDb() db: Db,
+  ): Promise<void> {
+    const input = parse(mergeSchema.extend({ confirm: z.string() }), body);
+    if (input.confirm !== input.targetUserId) {
+      throw AppError.badRequest("merge confirmation does not name the target");
+    }
+
+    await this.service(db).merge({
+      sourceId: input.sourceUserId,
+      targetId: input.targetUserId,
+      // From the validated staff session, never from the body. Null when a
+      // super admin acts through a learner token — the audit row records what
+      // is known rather than refusing for want of a name.
+      actorId: request.staffProfile?.id ?? null,
+      actorEmail: request.staffProfile?.email ?? null,
+    });
   }
 
   private service(db: Db): ParticipantService {

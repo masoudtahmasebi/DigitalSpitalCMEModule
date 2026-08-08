@@ -1,6 +1,6 @@
 -- Database roles (P0-03), implementing ADR-0002.
 --
--- Five roles:
+-- Six roles:
 --
 --   ds_migrator        owns the schema and runs migrations. The application
 --                       never connects as this role.
@@ -13,6 +13,9 @@
 --   ds_customer_registry owns exactly one function,
 --                       `list_customer_registry` (migration 0021), and
 --                       nothing else. NOLOGIN.
+--   ds_merge            owns exactly two functions, `participant_merge_side`
+--                       and `merge_participants` (migration 0033), and nothing
+--                       else. NOLOGIN.
 --
 -- The ds_app point is the one that is easy to get wrong. A table owner
 -- bypasses row-level security by default, so if the application role ever
@@ -20,7 +23,7 @@
 -- ROW LEVEL SECURITY` in the migration closes that door, and keeping
 -- ownership with ds_migrator means the door was never open.
 --
--- BYPASSRLS appears exactly three times, and each is deliberate. FORCE ROW LEVEL
+-- BYPASSRLS appears exactly four times, and each is deliberate. FORCE ROW LEVEL
 -- SECURITY applies to every owner, ds_migrator included, so a SECURITY DEFINER
 -- function that has to act outside a tenant context needs an owner that can
 -- see the rows at all.
@@ -38,6 +41,14 @@
 --                        operator's first screen is that list. Returns registry
 --                        metadata and child counts only, never tenant content.
 --                        Blast radius documented in migration 0021.
+--   ds_merge             merges two credentials onto one person (P21-05). The
+--                        whole point of the operation is a physician who exists
+--                        in two places, and those two places are frequently two
+--                        customers — so every row it reads and every row it
+--                        moves is, by construction, outside whichever tenant
+--                        context the request carries. It is reachable only from
+--                        a `super_admin` route. Blast radius documented in
+--                        migration 0033.
 --
 -- Note what is NOT on this list: creating, renaming and deleting a customer.
 -- Those name a single customer, so they run as ds_app inside that customer's
@@ -65,6 +76,10 @@ BEGIN
 
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'ds_erasure') THEN
     CREATE ROLE ds_erasure NOLOGIN BYPASSRLS;
+  END IF;
+
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'ds_merge') THEN
+    CREATE ROLE ds_merge NOLOGIN BYPASSRLS;
   END IF;
 
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'ds_customer_registry') THEN
@@ -110,6 +125,7 @@ ALTER ROLE ds_app PASSWORD :'ds_app_password';
 GRANT ds_binding_resolver TO ds_migrator;
 GRANT ds_erasure TO ds_migrator;
 GRANT ds_customer_registry TO ds_migrator;
+GRANT ds_merge TO ds_migrator;
 
 -- Postgres requires the TARGET of "ALTER ... OWNER TO" to hold CREATE on the
 -- containing schema, independent of role membership -- membership alone is not
@@ -119,6 +135,7 @@ GRANT ds_customer_registry TO ds_migrator;
 GRANT CREATE ON SCHEMA public TO ds_binding_resolver;
 GRANT CREATE ON SCHEMA public TO ds_erasure;
 GRANT CREATE ON SCHEMA public TO ds_customer_registry;
+GRANT CREATE ON SCHEMA public TO ds_merge;
 
 GRANT ALL ON DATABASE ds_education TO ds_migrator;
 GRANT CONNECT ON DATABASE ds_education TO ds_app;

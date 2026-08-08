@@ -153,6 +153,9 @@ export type {
   EivAttemptPlan,
 } from "./eiv-retry.js";
 
+export { planCredentialMerge } from "./credential-merge.js";
+export type { MergePlan, MergeRefusal, MergeSide } from "./credential-merge.js";
+
 export { isCourseComplete } from "./completion.js";
 export type {
   CompletionCondition,

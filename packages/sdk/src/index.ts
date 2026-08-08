@@ -72,6 +72,8 @@ export type FontState = components["schemas"]["FontState"];
 export type LearnerRecord = components["schemas"]["LearnerRecord"];
 /** A person who learns with a customer, as an administrator sees them (P21-04). */
 export type ParticipantAccount = components["schemas"]["ParticipantAccount"];
+export type ParticipantMergePreview = components["schemas"]["ParticipantMergePreview"];
+export type ParticipantMergeParty = components["schemas"]["ParticipantMergeParty"];
 export type CertificateRecord = components["schemas"]["CertificateRecord"];
 export type StaffAccount = components["schemas"]["StaffAccount"];
 export type StaffScope = components["schemas"]["StaffScope"];
@@ -545,6 +547,34 @@ export function createClient(options: ClientOptions) {
     /** Stop, or restore, an account. Disabling also ends its live sessions. */
     adminSetParticipantDisabled: (userId: string, disabled: boolean): Promise<void> =>
       request(`/admin/participants/${seg(userId)}/disabled`, json({ disabled }, "POST")),
+
+    /**
+     * What merging two credentials onto one person would do. Reads only.
+     *
+     * Always called before `adminMergeParticipants`: the merge is irreversible,
+     * and an operator has to be shown both sides before confirming. `hasEfn`
+     * says *whether* an EFN is on file, never which — no endpoint returns one
+     * (ADR-0004).
+     */
+    adminPreviewParticipantMerge: (input: {
+      sourceUserId: string;
+      targetUserId: string;
+    }): Promise<ParticipantMergePreview> =>
+      request(`/admin/participants/merge/preview`, json(input, "POST")),
+
+    /**
+     * Merge two credentials onto one person. **Irreversible**, `super_admin`
+     * only, and 409 when the merge would have to choose — two different EFNs,
+     * or a course both sides are enrolled on.
+     *
+     * `confirm` must equal `targetUserId`; the API refuses otherwise. It is the
+     * second decision an irreversible operation is worth.
+     */
+    adminMergeParticipants: (input: {
+      sourceUserId: string;
+      targetUserId: string;
+      confirm: string;
+    }): Promise<void> => request(`/admin/participants/merge`, json(input, "POST")),
 
     /** Refused with 409 once the Punktemeldung has been accepted. */
     adminCorrectLearnerName: (enrolmentId: string, name: string): Promise<void> =>

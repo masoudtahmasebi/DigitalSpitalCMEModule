@@ -276,6 +276,79 @@ export class ParticipantRepository {
     );
     return rowCount ?? 0;
   }
+
+  // -------------------------------------------------------------------------
+  // Credential merge (P21-05)
+  // -------------------------------------------------------------------------
+  //
+  // Both go through SECURITY DEFINER functions owned by `ds_merge`, and
+  // migration 0033 explains at length why they have to. In short: every table a
+  // merge reads and every table it moves is tenant-scoped under FORCE ROW LEVEL
+  // SECURITY, and the whole point of the operation is a physician who exists in
+  // two places — frequently two customers. Written as ordinary `ds_app` SQL it
+  // read no EFN, found no enrolments, matched zero rows and reported success.
+  //
+  // The *policy* is deliberately not in SQL. These report and move; the verdict
+  // is `planCredentialMerge` in `@ds/domain`.
+
+  /**
+   * What `planCredentialMerge` needs to know about one person.
+   *
+   * The EFN comes back as a **digest**, never as digits: the domain only asks
+   * whether two numbers differ, and carrying the number out of the database
+   * would put it in this process's heap and in any exception that quotes a
+   * parameter, for no gain (ADR-0004).
+   */
+  async mergeSideOf(userId: string): Promise<
+    | {
+        readonly personId: string;
+        readonly email: string | null;
+        readonly efnFingerprint: string | null;
+        readonly enrolledCourseSlugs: readonly string[];
+      }
+    | undefined
+  > {
+    const { rows } = await this.pool.query<{
+      person_id: string;
+      email: string | null;
+      efn_digest: string | null;
+      course_slugs: string[] | null;
+    }>(`SELECT * FROM participant_merge_side($1)`, [userId]);
+
+    const row = rows[0];
+    if (row === undefined) return undefined;
+    return {
+      personId: row.person_id,
+      email: row.email,
+      efnFingerprint: row.efn_digest,
+      enrolledCourseSlugs: row.course_slugs ?? [],
+    };
+  }
+
+  /**
+   * Move everything belonging to `sourceId` onto `targetId`, and record it.
+   *
+   * One call, one transaction — including the `admin_audit_log` row.
+   * `AuditService` writes on its own connection deliberately, so an entry
+   * saying "this actor asserted this identity" survives the failure of what
+   * followed. The opposite is right here: an audit row for a merge that rolled
+   * back would send somebody looking for records that never moved.
+   */
+  async merge(input: {
+    sourceId: string;
+    targetId: string;
+    actorId: string | null;
+    actorEmail: string | null;
+    detail: Record<string, unknown>;
+  }): Promise<void> {
+    await this.pool.query(`SELECT merge_participants($1, $2, $3, $4, $5::jsonb)`, [
+      input.sourceId,
+      input.targetId,
+      input.actorId,
+      input.actorEmail,
+      JSON.stringify(input.detail),
+    ]);
+  }
 }
 
 function iso(value: Date | string): string {

@@ -27,6 +27,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ApiClient, ParticipantAccount } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
+import { MergeParticipants } from "./MergeParticipants.js";
 import {
   Badge,
   Button,
@@ -103,14 +104,29 @@ export function ParticipantAccounts(props: { client: ApiClient }) {
           </h2>
           <p className="text-sm text-gray-600">{de.participantAccounts.intro}</p>
         </div>
-        <NewParticipant
-          client={client}
-          onCreated={(next) => {
-            setIssued(next);
-            void load(search);
-          }}
-          onProblem={setProblem}
-        />
+        <div className="flex flex-wrap gap-2">
+          {/*
+            Next to "Neuen Zugang anlegen" because the two answer the same
+            question from opposite ends: this person has no account, or this
+            person has two. An operator who has just been refused a create with
+            "Für diese E-Mail-Adresse existiert bereits ein Zugang" is standing
+            exactly here.
+
+            The API refuses anybody but a `super_admin`, and does so with a 403
+            the panel shows — rather than the console hiding the button, which
+            would leave a customer admin with no way to find out that the
+            operation exists and who can perform it.
+          */}
+          <MergeParticipants client={client} onMerged={() => void load(search)} />
+          <NewParticipant
+            client={client}
+            onCreated={(next) => {
+              setIssued(next);
+              void load(search);
+            }}
+            onProblem={setProblem}
+          />
+        </div>
       </header>
 
       {issued === undefined ? null : (

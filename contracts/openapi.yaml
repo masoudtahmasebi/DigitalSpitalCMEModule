@@ -998,6 +998,83 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /admin/participants/merge/preview:
+    post:
+      tags: [admin]
+      operationId: adminPreviewParticipantMerge
+      summary: What merging two credentials onto one person would do
+      description: |
+        Reads only. Always called before `adminMergeParticipants`, because a
+        merge cannot be undone in any way a physician would accept and the
+        operator has to be shown both sides before confirming.
+
+        `super_admin` only. A merge routinely spans two customers — a MEDICE
+        learner given a DS portal login is the case P21-05 was written for — and
+        a customer-scoped administrator is correctly unable to see the other
+        side, so they would be confirming against a record they cannot read.
+
+        The response says **whether** each side has an EFN, never which: no
+        endpoint returns an EFN (ADR-0004), and the operator does not need the
+        digits to decide.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ParticipantMergeRequest" }
+      responses:
+        "201":
+          description: What the merge would move, and whether it is allowed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ParticipantMergePreview" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/participants/merge:
+    post:
+      tags: [admin]
+      operationId: adminMergeParticipants
+      summary: Merge two credentials onto one person — irreversible
+      description: |
+        Moves every credential, membership, grant, enrolment and EFN from the
+        source person onto the target, ends every session on both sides, and
+        deletes the now-empty source person. Written to `admin_audit_log` in the
+        same transaction, because an audit row for a merge that rolled back
+        would send somebody looking for records that never moved.
+
+        Refused with `409` when the merge would have to **choose** something:
+        two different EFNs on file, or a course both sides are enrolled on.
+        Neither is a rule this platform can settle on a physician's behalf.
+
+        `confirm` must equal `targetUserId`. An irreversible operation should
+        take two decisions, and typing the id back is the cheapest second one
+        that cannot be made by a mis-click.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ParticipantMergeRequest"
+                - type: object
+                  required: [confirm]
+                  properties:
+                    confirm:
+                      type: string
+                      description: Must equal `targetUserId`.
+      responses:
+        "204": { description: Merged. }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /auth/participant/sign-in:
     post:
       tags: [auth]
@@ -3259,6 +3336,63 @@ components:
         id: { type: string, format: uuid }
         ordinal: { type: integer }
         label: { type: string }
+
+    ParticipantMergeRequest:
+      type: object
+      required: [sourceUserId, targetUserId]
+      properties:
+        sourceUserId:
+          type: string
+          format: uuid
+          description: The person whose records move. Deleted by the merge.
+        targetUserId:
+          type: string
+          format: uuid
+          description: The person who survives, and whose id every record ends on.
+
+    ParticipantMergeParty:
+      type: object
+      required: [userId, email, hasEfn, enrolledCourseSlugs]
+      properties:
+        userId: { type: string, format: uuid }
+        email: { type: [string, "null"] }
+        hasEfn:
+          type: boolean
+          description: |
+            Whether an EFN is on file — never which. No endpoint returns an EFN
+            (ADR-0004), and the refusal below is what tells an operator that two
+            exist and differ.
+        enrolledCourseSlugs:
+          type: array
+          items: { type: string }
+
+    ParticipantMergePreview:
+      type: object
+      required: [source, target, plan]
+      properties:
+        source: { $ref: "#/components/schemas/ParticipantMergeParty" }
+        target: { $ref: "#/components/schemas/ParticipantMergeParty" }
+        plan:
+          oneOf:
+            - type: object
+              required: [allowed]
+              properties:
+                allowed: { type: boolean, enum: [true] }
+            - type: object
+              required: [allowed, refusal]
+              properties:
+                allowed: { type: boolean, enum: [false] }
+                refusal:
+                  type: object
+                  required: [reason]
+                  properties:
+                    reason:
+                      type: string
+                      enum: [same_person, conflicting_efn, overlapping_courses]
+                    courseSlugs:
+                      type: array
+                      items: { type: string }
+                      description: Present on `overlapping_courses` only.
 
     QuizQuestion:
       type: object

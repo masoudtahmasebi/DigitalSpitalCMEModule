@@ -628,6 +628,30 @@ export const de = {
     copy: "Kopieren",
     copied: "Kopiert",
     dismiss: "Schließen",
+
+    /*
+     * Merging two credentials onto one person (P21-05).
+     *
+     * The copy is deliberately heavy. The operation is irreversible, and the
+     * screen is the last place anybody is going to read that before doing it.
+     */
+    merge: "Zugänge zusammenführen",
+    mergeIntro:
+      "Wenn eine Person zwei Zugänge hat — etwa einen über das Identitätssystem des Kunden und einen für das Fortbildungsportal — führt dies beide auf eine Person zusammen. Alle Einschreibungen, Zertifikate und die EFN wandern auf den Zielzugang; der Quellzugang wird gelöscht.",
+    mergeIrreversible:
+      "Diese Aktion kann nicht rückgängig gemacht werden. Prüfen Sie beide Seiten, bevor Sie bestätigen.",
+    mergeSource: "Quellzugang (wird gelöscht)",
+    mergeTarget: "Zielzugang (bleibt bestehen)",
+    mergeCheck: "Prüfen",
+    mergeHasEfn: "EFN hinterlegt",
+    mergeNoEfn: "keine EFN",
+    mergeCourses: "Einschreibungen",
+    mergeNoCourses: "keine",
+    mergeAllowed:
+      "Die Zusammenführung ist möglich. Bestätigen Sie mit der ID des Zielzugangs.",
+    mergeConfirmLabel: "Zur Bestätigung die ID des Zielzugangs eingeben",
+    mergeConfirm: "Endgültig zusammenführen",
+    mergeDone: "Die Zugänge wurden zusammengeführt.",
   },
 
   participants: {
