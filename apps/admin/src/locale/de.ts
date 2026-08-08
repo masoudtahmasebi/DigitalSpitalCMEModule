@@ -222,6 +222,15 @@ export const de = {
     saved: "Gespeichert.",
     cancel: "Abbrechen",
     edit: "Bearbeiten",
+    /**
+     * Accessible names for the row-level Bearbeiten buttons.
+     *
+     * A screen reader announces a button by its accessible name alone, so a
+     * page of rows each ending in "Bearbeiten" is a page of buttons that all
+     * sound the same.
+     */
+    editDepartment: (name: string): string => `Abteilung ${name} bearbeiten`,
+    editProject: (name: string): string => `Projekt ${name} bearbeiten`,
     delete: "Löschen",
     confirmDelete: "Wirklich löschen",
     moveUp: "Nach oben verschieben",

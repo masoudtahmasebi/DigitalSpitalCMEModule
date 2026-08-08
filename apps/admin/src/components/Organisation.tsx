@@ -146,7 +146,11 @@ function Departments(props: {
               <td className="px-3 py-2 text-gray-700">{department.projectCount}</td>
               <td className="px-3 py-2 text-right">
                 {editing === department.slug ? null : (
-                  <Button variant="secondary" onClick={() => setEditing(department.slug)}>
+                  <Button
+                    variant="secondary"
+                    ariaLabel={de.common.editDepartment(department.name)}
+                    onClick={() => setEditing(department.slug)}
+                  >
                     {de.common.edit}
                   </Button>
                 )}
@@ -327,6 +331,9 @@ function Projects(props: {
               actions={
                 <Button
                   variant="secondary"
+                  {...(open === project.slug
+                    ? {}
+                    : { ariaLabel: de.common.editProject(project.name) })}
                   onClick={() =>
                     setOpen(open === project.slug ? undefined : project.slug)
                   }

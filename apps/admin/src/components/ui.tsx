@@ -13,6 +13,18 @@ export function Button(props: {
   type?: "button" | "submit";
   variant?: "primary" | "secondary" | "danger";
   disabled?: boolean;
+  /**
+   * The button's name for assistive technology, when the visible label is not
+   * enough on its own.
+   *
+   * A list of rows each ending in "Bearbeiten" reads to a screen reader as a
+   * page of identical buttons — the row is visual context that the accessible
+   * name does not carry. Pass "Projekt MEDICE bearbeiten" and the visible text
+   * stays "Bearbeiten".
+   *
+   * Leave it unset when the label already says what the button does.
+   */
+  ariaLabel?: string;
   children: ReactNode;
 }) {
   const variant = props.variant ?? "primary";
@@ -28,6 +40,7 @@ export function Button(props: {
       type={props.type ?? "button"}
       disabled={props.disabled === true}
       onClick={props.onClick}
+      {...(props.ariaLabel === undefined ? {} : { "aria-label": props.ariaLabel })}
       className={`inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold disabled:opacity-50 ${skin}`}
     >
       {props.children}
