@@ -70,6 +70,8 @@ export type FontState = components["schemas"]["FontState"];
 // write shapes carry no ordinal anywhere, because position is position in an
 // array.
 export type LearnerRecord = components["schemas"]["LearnerRecord"];
+/** A person who learns with a customer, as an administrator sees them (P21-04). */
+export type ParticipantAccount = components["schemas"]["ParticipantAccount"];
 export type CertificateRecord = components["schemas"]["CertificateRecord"];
 export type StaffAccount = components["schemas"]["StaffAccount"];
 export type StaffScope = components["schemas"]["StaffScope"];
@@ -503,6 +505,46 @@ export function createClient(options: ClientOptions) {
     /** Masked EFN only — the whole value never crosses this boundary. */
     adminListLearners: (courseSlug?: string): Promise<LearnerRecord[]> =>
       request(`/admin/learners${courseQuery(courseSlug)}`),
+
+    // ----------------------------------------------------------------
+    // Participant accounts (P21-04)
+    //
+    // Distinct from `adminListLearners`, which lists **enrolments** — a row per
+    // person per course. These are **people**: somebody an administrator
+    // created two minutes ago has no enrolment and appears on no learner
+    // screen, which is exactly when they most need to be found.
+    // ----------------------------------------------------------------
+
+    adminListParticipantAccounts: (search?: string): Promise<ParticipantAccount[]> =>
+      request(
+        `/admin/participants${
+          search === undefined || search === "" ? "" : `?q=${encodeURIComponent(search)}`
+        }`,
+      ),
+
+    /**
+     * Create one, and receive the **only** copy of their password.
+     *
+     * There is no call that returns it again, and no column it could be read
+     * out of — only its Argon2id hash is stored. A caller that discards this
+     * response has to reset the password, not look it up.
+     */
+    adminCreateParticipant: (input: {
+      email: string;
+      firstName: string;
+      lastName: string;
+    }): Promise<{ userId: string; temporaryPassword: string }> =>
+      request(`/admin/participants`, json(input, "POST")),
+
+    /** A new temporary password, and every session this person holds ended. */
+    adminResetParticipantPassword: (
+      userId: string,
+    ): Promise<{ temporaryPassword: string }> =>
+      request(`/admin/participants/${seg(userId)}/reset-password`, json({}, "POST")),
+
+    /** Stop, or restore, an account. Disabling also ends its live sessions. */
+    adminSetParticipantDisabled: (userId: string, disabled: boolean): Promise<void> =>
+      request(`/admin/participants/${seg(userId)}/disabled`, json({ disabled }, "POST")),
 
     /** Refused with 409 once the Punktemeldung has been accepted. */
     adminCorrectLearnerName: (enrolmentId: string, name: string): Promise<void> =>

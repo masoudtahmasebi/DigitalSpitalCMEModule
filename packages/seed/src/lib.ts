@@ -240,13 +240,19 @@ export async function seedPortalProject(
  * platform where an account is a CME record it is a credential that can earn
  * points in somebody's name.
  *
- * ## `must_change` is false here, and that is not laziness
+ * ## `must_change` stays false here, now for a different reason
  *
- * The column defaults to `true`, which is right for anything an administrator
- * creates: a password somebody else chose is a password somebody else knows.
- * A seeded demo account sets it to `false` because there is no password-change
- * screen yet (P21-04), and a flag that makes the portal demand a change it
- * cannot offer is worse than no flag. When P21-04 lands, this becomes `true`.
+ * It was false because there was no password-change screen and a flag
+ * demanding one the portal could not offer is worse than no flag. P21-04 built
+ * the screen, so that reason is gone — and this stays `false` anyway, because
+ * the *purpose* of these two accounts changed nothing: they exist so somebody
+ * can open `/medice` and look at it. An account that demands a new password
+ * before showing anything is an account that cannot be used for a two-minute
+ * check of the layout.
+ *
+ * Anything an administrator creates through the console gets `must_change`
+ * **true**, unconditionally and not configurably (`ParticipantRepository`).
+ * That is the path a real physician arrives by.
  *
  * Idempotent on the e-mail: re-running resets the password rather than adding a
  * second account, which also means a forgotten demo password is one re-run

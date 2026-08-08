@@ -18,7 +18,7 @@
 
 import { randomBytes } from "node:crypto";
 import type { LearnerSessionRepository } from "../../auth/learner-session.repository.js";
-import { verifyPassword, hashIp } from "../staff/credentials.js";
+import { verifyPassword, hashIp, hashPassword } from "../staff/credentials.js";
 import type { ParticipantAuthRepository } from "./participant-auth.repository.js";
 
 /** Failures before the account locks, and for how long. */
@@ -93,6 +93,18 @@ export class ParticipantAuthService {
       return { ok: false };
     }
 
+    // Disabled by an administrator (P21-04). Checked before the password, and
+    // refused with the same answer as everything else — "your account has been
+    // disabled" tells anybody holding a stolen address that it is a real one.
+    //
+    // This is the check that makes the console's "sperren" button mean
+    // something. Without it, disabling an account writes a timestamp nothing
+    // reads, and the person keeps signing in.
+    if (participant.disabledAt !== null) {
+      await this.burnTime(input.password);
+      return { ok: false };
+    }
+
     // A locked account fails without checking the password at all — but only
     // *after* the lookup, so the timing does not distinguish it from a wrong
     // password on an unlocked account.
@@ -142,6 +154,57 @@ export class ParticipantAuthService {
 
   async signOut(token: string): Promise<void> {
     await this.sessions.revoke(token);
+  }
+
+  /**
+   * A participant choosing their own password (P21-04).
+   *
+   * ## Why the current password is required
+   *
+   * The caller already holds a valid session, so this could take the new
+   * password alone. It does not, because a session is a *bearer* credential: a
+   * cookie captured on a shared clinic computer would otherwise be enough to
+   * change the password and lock the physician out of their own CME record. Re-
+   * proving knowledge of the password is what makes that one step harder.
+   *
+   * ## What it deliberately does not do
+   *
+   * It does not revoke the participant's other sessions. That reads like a
+   * safety measure and is the wrong one here: `must_change` means this runs
+   * immediately after a sign-in, and killing the session that is performing the
+   * change would sign somebody out of a password change they just completed.
+   * Ending sessions is what an administrator's reset does, and there the intent
+   * is exactly the opposite.
+   */
+  async changePassword(input: {
+    userId: string;
+    currentPassword: string;
+    newPassword: string;
+  }): Promise<{ ok: boolean }> {
+    const credential = await this.repository.credentialForUser(input.userId);
+
+    // A federated participant, or a disabled one. Both refused, and identically
+    // — the caller is already authenticated, so there is no enumeration to
+    // worry about, but there is also nothing useful to tell them apart with.
+    if (credential === undefined || credential.disabledAt !== null) {
+      await this.burnTime(input.currentPassword);
+      return { ok: false };
+    }
+
+    if (!(await verifyPassword(credential.passwordHash, input.currentPassword))) {
+      await this.repository.recordFailure(
+        credential.identityId,
+        LOCKOUT_THRESHOLD,
+        LOCKOUT_INTERVAL,
+      );
+      return { ok: false };
+    }
+
+    await this.repository.replacePassword(
+      credential.identityId,
+      await hashPassword(input.newPassword),
+    );
+    return { ok: true };
   }
 
   /** Spend the same time on a failure as on a success. See the header. */

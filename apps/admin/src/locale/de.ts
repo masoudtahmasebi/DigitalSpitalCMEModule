@@ -593,6 +593,38 @@ export const de = {
     readyForCertificate: "Diese Fortbildung kann Teilnahmebescheinigungen ausstellen.",
   },
 
+  /** Participant accounts (P21-04) — people, not enrolments. */
+  participantAccounts: {
+    title: "Zugänge",
+    intro:
+      "Teilnehmende dieses Kunden. Hier werden Zugänge angelegt, Passwörter zurückgesetzt und Konten gesperrt.",
+    search: "Suche",
+    empty:
+      "Noch keine Teilnehmenden. Legen Sie über „Zugang anlegen“ die erste Person an – sie kann sich danach sofort im Fortbildungsportal anmelden.",
+    headers: ["Person", "Abgeschlossen / Belegt", "Status", ""] as const,
+    create: "Zugang anlegen",
+    firstName: "Vorname",
+    lastName: "Nachname",
+    email: "E-Mail-Adresse",
+    password: "Passwort",
+    nameWhy:
+      "Vor- und Nachname sind erforderlich: die Teilnahmebescheinigung trägt den Namen und kann ohne ihn nicht ausgestellt werden.",
+    reset: "Passwort zurücksetzen",
+    disable: "Sperren",
+    enable: "Entsperren",
+    active: "Aktiv",
+    disabled: "Gesperrt",
+    locked: "Vorübergehend gesperrt",
+    mustChange: "Passwort noch nicht geändert",
+    federated: "Externe Anmeldung",
+    issuedTitle: "Passwort – nur jetzt sichtbar",
+    issuedBody:
+      "Dieses Passwort wird nur einmal angezeigt und ist danach nicht mehr abrufbar. Geben Sie es der Person weiter; beim ersten Anmelden muss sie ein eigenes Passwort wählen. Ist es verloren, setzen Sie es einfach neu.",
+    copy: "Kopieren",
+    copied: "Kopiert",
+    dismiss: "Schließen",
+  },
+
   participants: {
     title: "Teilnehmende",
     empty: "Für diese Fortbildung sind keine Teilnahmen erfasst.",

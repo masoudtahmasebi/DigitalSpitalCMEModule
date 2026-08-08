@@ -549,6 +549,134 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/participants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The people who learn with this customer
+         * @description Deliberately **not** the same list as `/admin/learners`. That one is a
+         *     row per enrolment — a person per course — and can only ever show
+         *     somebody who has already started something. This is a row per *person*,
+         *     including one created two minutes ago who has enrolled in nothing,
+         *     which is exactly when an administrator most needs to find them.
+         *
+         *     Scoped by `user_customers` under RLS: a person with no membership in the
+         *     caller's customer is not listed, whatever else is true of them.
+         */
+        get: operations["adminListParticipantAccounts"];
+        put?: never;
+        /**
+         * Create a participant, and receive their one-time password
+         * @description The customer is taken from the authenticated session, never from the
+         *     body — accepting it would let one edited request plant a participant
+         *     inside another tenant.
+         *
+         *     **The response carries the only copy of the password.** It is stored as
+         *     an Argon2id hash and no endpoint returns it again; a caller that
+         *     discards this response has to reset it rather than look it up. The
+         *     account is created with `mustChangePassword` set, because a password an
+         *     administrator read off a screen is a password an administrator knows.
+         *
+         *     Not self-service: the caller is an authenticated member of staff.
+         *     `CLAUDE.md` §3 defers open registration and this does not undo it.
+         */
+        post: operations["adminCreateParticipant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/participants/{userId}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue a new temporary password and end every session
+         * @description Both halves matter. Replacing the password while leaving a twelve-hour
+         *     session open means a compromised account stays usable for the rest of
+         *     the day, which is the window this call exists to close.
+         *
+         *     A participant of another customer answers **404**, not 403 — a 403
+         *     would confirm the id names somebody, turning this into an oracle for
+         *     enumerating another tenant's participants one uuid at a time.
+         */
+        post: operations["adminResetParticipantPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/participants/{userId}/disabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop, or restore, a participant account
+         * @description Distinct from the automatic lockout, which expires on its own. This is a
+         *     deliberate administrative act and nothing but another one clears it.
+         *
+         *     Disabling also revokes every live session. Re-enabling does **not**
+         *     restore them — those are precisely the sessions the disable was aimed
+         *     at.
+         *
+         *     The account is never deleted: enrolments, certificates and EIV
+         *     submissions all hang off the person, and none of them may lose their
+         *     owner because somebody left a job.
+         */
+        post: operations["adminSetParticipantDisabled"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/participant/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A participant chooses their own password
+         * @description Requires the **current** password even though the caller already holds a
+         *     valid session. A session is a bearer credential: without this, a cookie
+         *     captured on a shared clinic computer would be enough to lock a physician
+         *     out of their own CME record.
+         *
+         *     The policy is the platform's single one (`checkPassword`): at least 12
+         *     code points, not containing the account's own name or address.
+         *
+         *     Does not revoke the caller's other sessions, deliberately — this runs
+         *     immediately after a sign-in that reported `mustChangePassword`, and
+         *     ending that session would sign somebody out of a change they just
+         *     completed.
+         */
+        post: operations["changeParticipantPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/learners/{enrolmentId}/name": {
         parameters: {
             query?: never;
@@ -2455,6 +2583,48 @@ export interface components {
             hasSmtpPassword: boolean;
             branding: components["schemas"]["Branding"];
             courseCount: number;
+        };
+        /**
+         * @description A **person** who learns with this customer, as an administrator sees
+         *     them. Contrast `LearnerRecord`, which is one enrolment — a person per
+         *     course. Somebody created two minutes ago has no enrolment and appears
+         *     in no `LearnerRecord`, which is exactly when they most need finding.
+         *
+         *     Carries no EFN, masked or otherwise: this screen is about accounts, and
+         *     an identifier that is not needed to do the job does not belong in the
+         *     response (ADR-0004).
+         */
+        ParticipantAccount: {
+            /** Format: uuid */
+            userId: string;
+            email: string | null;
+            firstName: string | null;
+            lastName: string | null;
+            /**
+             * @description Absent when this person signs in through the customer's own identity
+             *     provider. Nothing on this screen can act on such an account's
+             *     password, and the console greys the buttons rather than offering
+             *     ones that would 409.
+             */
+            credential?: {
+                /** @description They have not yet chosen their own password. */
+                mustChange: boolean;
+                /**
+                 * @description Stopped by an administrator. Deliberate and permanent, unlike
+                 *     `lockedUntil`.
+                 */
+                disabled: boolean;
+                /**
+                 * Format: date-time
+                 * @description The automatic lockout after repeated failed sign-ins. Expires on
+                 *     its own; nobody has to clear it.
+                 */
+                lockedUntil: string | null;
+            } | null;
+            enrolmentCount: number;
+            completedCount: number;
+            /** Format: date-time */
+            createdAt: string;
         };
         ProjectCreate: {
             departmentSlug: components["schemas"]["Slug"];
@@ -4449,6 +4619,297 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    adminListParticipantAccounts: {
+        parameters: {
+            query?: {
+                /** @description Substring of the name or e-mail address. Absent means all. */
+                q?: string;
+            };
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The participants. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipantAccount"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminCreateParticipant: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: email */
+                    email: string;
+                    firstName: string;
+                    lastName: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created. The password is shown here and nowhere else. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        userId: string;
+                        temporaryPassword: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminResetParticipantPassword: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new password, shown once. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        temporaryPassword: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    adminSetParticipantDisabled: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    disabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Applied. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    changeParticipantPassword: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    currentPassword: string;
+                    newPassword: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Changed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     adminCorrectLearnerName: {

@@ -38,6 +38,11 @@ export interface LocalParticipant {
   readonly mustChange: boolean;
   readonly failedAttempts: number;
   readonly lockedUntil: Date | null;
+  /**
+   * Set by an administrator (P21-04). Deliberate and permanent, unlike
+   * `lockedUntil`, which is the automatic lockout and expires on its own.
+   */
+  readonly disabledAt: Date | null;
 }
 
 export interface SignInProject {
@@ -118,9 +123,11 @@ export class ParticipantAuthRepository {
             must_change: boolean;
             failed_attempts: number;
             locked_until: Date | null;
+            disabled_at: Date | null;
           }>(sql`
             SELECT u.id AS user_id, i.id AS identity_id,
-                   c.password_hash, c.must_change, c.failed_attempts, c.locked_until
+                   c.password_hash, c.must_change, c.failed_attempts, c.locked_until,
+                   c.disabled_at
               FROM users u
               JOIN user_identities i     ON i.user_id = u.id AND i.provider = 'local'
               JOIN learner_credentials c ON c.user_identity_id = i.id
@@ -140,6 +147,59 @@ export class ParticipantAuthRepository {
           mustChange: row.must_change,
           failedAttempts: row.failed_attempts,
           lockedUntil: row.locked_until,
+          disabledAt: row.disabled_at,
+        };
+  }
+
+  /**
+   * Replace a participant's own password (P21-04).
+   *
+   * Separate from `ParticipantRepository.setPassword`, which an administrator
+   * drives, because the two differ in the one field that matters:
+   * `must_change` goes to **false** here. A participant who has just chosen
+   * their own password must not be asked to choose another one on the next
+   * sign-in — that loop is how a forced-change flow becomes a wall.
+   */
+  async replacePassword(identityId: string, passwordHash: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE learner_credentials
+          SET password_hash = $2, must_change = false,
+              failed_attempts = 0, locked_until = NULL, updated_at = now()
+        WHERE user_identity_id = $1`,
+      [identityId, passwordHash],
+    );
+  }
+
+  /** The local credential behind a signed-in participant, if there is one. */
+  async credentialForUser(userId: string): Promise<LocalParticipant | undefined> {
+    const { rows } = await this.pool.query<{
+      identity_id: string;
+      password_hash: string;
+      must_change: boolean;
+      failed_attempts: number;
+      locked_until: Date | null;
+      disabled_at: Date | null;
+    }>(
+      `SELECT i.id AS identity_id, c.password_hash, c.must_change,
+              c.failed_attempts, c.locked_until, c.disabled_at
+         FROM user_identities i
+         JOIN learner_credentials c ON c.user_identity_id = i.id
+        WHERE i.user_id = $1 AND i.provider = 'local'
+        LIMIT 1`,
+      [userId],
+    );
+
+    const row = rows[0];
+    return row === undefined
+      ? undefined
+      : {
+          userId,
+          identityId: row.identity_id,
+          passwordHash: row.password_hash,
+          mustChange: row.must_change,
+          failedAttempts: row.failed_attempts,
+          lockedUntil: row.locked_until,
+          disabledAt: row.disabled_at,
         };
   }
 

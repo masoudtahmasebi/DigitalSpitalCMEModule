@@ -98,6 +98,25 @@ export const RATE_LIMIT_RULES = {
    */
   participantSignIn: { limit: 5, windowSec: 60 },
   /**
+   * Creating a participant, or resetting one's password (P21-04).
+   *
+   * Both mint a credential, and the limit is about a compromised or careless
+   * *staff* session rather than an anonymous attacker — the role check already
+   * decided who may be here. Thirty a minute leaves an administrator onboarding
+   * a department comfortable, and stops a loop in a console script creating
+   * five hundred accounts that then have to be found and disabled one by one.
+   */
+  participantCreate: { limit: 30, windowSec: 60 },
+  /**
+   * A participant changing their own password.
+   *
+   * Tight, because the endpoint takes the *current* password: without a limit
+   * it is a second guessing oracle, reachable with a stolen session rather than
+   * with no credential at all. Ten a minute is far more than somebody mistyping
+   * needs.
+   */
+  participantPasswordChange: { limit: 10, windowSec: 60 },
+  /**
    * A participant export is where personal data leaves the system's access
    * controls entirely. Every one of them is audited (P9-07); a limit is what
    * keeps that audit trail a record of deliberate acts rather than of a script.

@@ -55,6 +55,7 @@ import { EvaluationEditor } from "./components/EvaluationEditor.js";
 import { ExpertsEditor } from "./components/ExpertsEditor.js";
 import { Customers } from "./components/Customers.js";
 import { Learners } from "./components/Learners.js";
+import { ParticipantAccounts } from "./components/ParticipantAccounts.js";
 import { Certificates } from "./components/Certificates.js";
 import { StaffAccounts } from "./components/StaffAccounts.js";
 import { Security } from "./components/Security.js";
@@ -260,6 +261,7 @@ type View =
   | { kind: "organisation" }
   | { kind: "branding" }
   | { kind: "customers" }
+  | { kind: "participants" }
   | { kind: "learners" }
   | { kind: "certificates" }
   | { kind: "staff" }
@@ -278,16 +280,32 @@ type View =
  * because a URL can be typed.
  */
 const SECTIONS: ReadonlyArray<readonly [View["kind"], string, string | undefined]> = [
-  ["courses", de.nav.courses, undefined],
+  /*
+   * Ordered by the process, not by when each screen was built.
+   *
+   * The order somebody actually works in is: a customer exists, it has
+   * departments and projects, those hold courses, people are given access to
+   * them, they take them, and documents come out at the end. Setup screens
+   * (Team, Erscheinungsbild, Sicherheit) come last because they are visited
+   * once and then rarely.
+   *
+   * The previous order put Fortbildungen first and Kunden second-to-last, so an
+   * operator setting up a new customer started at step three and had to scroll
+   * past four screens to find step one.
+   */
+  ["customers", de.customers.title, "customer"],
   ["organisation", de.nav.organisation, undefined],
-  ["branding", de.nav.branding, undefined],
+  ["courses", de.nav.courses, undefined],
+  // Access before progress: an account has to exist before there is anything
+  // to have progress on, and this is the screen that creates one.
+  ["participants", de.participantAccounts.title, "learner_record"],
   // Learner records and certificates need `learner_record` / `certificate`,
   // which a department admin and a course editor do not hold: neither has
   // business correcting a physician's name or withdrawing a document.
   ["learners", de.learners.title, "learner_record"],
   ["certificates", de.certificates.title, "certificate"],
   ["staff", de.staff.title, "staff_user"],
-  ["customers", de.customers.title, "customer"],
+  ["branding", de.nav.branding, undefined],
   // No capability: every operator may read the rules their own sign-in is
   // subject to. Which of them they may *change* is enforced on the write —
   // hiding the screen would only hide the platform row from the people it
@@ -653,6 +671,10 @@ export function Console(props: {
         </p>
       </>,
     );
+  }
+
+  if (view.kind === "participants") {
+    return frame(<ParticipantAccounts client={client} />);
   }
 
   if (view.kind === "learners") {

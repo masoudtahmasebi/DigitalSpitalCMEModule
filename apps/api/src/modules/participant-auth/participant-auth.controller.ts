@@ -34,6 +34,7 @@ import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res } from "@nestjs
 import type { CookieOptions, Request, Response } from "express";
 import type { Pool } from "pg";
 import { z } from "zod";
+import { checkPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@ds/domain";
 import { Public } from "../../auth/public.decorator.js";
 import { Roles } from "../../auth/roles.decorator.js";
 import { PARTICIPANT_COOKIE } from "../../auth/participant-cookie.js";
@@ -51,6 +52,13 @@ import { ParticipantAuthRepository } from "./participant-auth.repository.js";
 const signInSchema = z.object({
   email: z.string().trim().toLowerCase().min(3).max(320),
   password: z.string().min(1).max(1024),
+});
+
+const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH),
+  // Bounded here as well as by `checkPassword`, so a megabyte never reaches
+  // Argon2 even if the policy call is ever moved or removed.
+  newPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH),
 });
 
 @Controller("auth/participant")
@@ -145,6 +153,83 @@ export class ParticipantAuthController {
       customerId: principal.customerId,
       role: principal.role,
     };
+  }
+
+  /**
+   * A participant changing their own password (P21-04).
+   *
+   * ## Why this route has to exist
+   *
+   * `learner_credentials.must_change` defaults to true, and every account an
+   * administrator creates carries it — correctly, because a password somebody
+   * else chose is a password somebody else knows. Until now that flag pointed
+   * nowhere: the sign-in reported it and the portal had nothing to offer, so
+   * the honest thing was to seed accounts with it *off*. This is the screen
+   * that makes it mean something, and the seed can stop lying.
+   *
+   * ## The policy is the domain's, not a second one
+   *
+   * `checkPassword` is what the staff plane uses (`staff-identity.ts`): twelve
+   * code points, not in the account's own identifiers, bounded above so Argon2
+   * cannot be handed a megabyte. A learner-specific copy would drift, and the
+   * weaker of two copies is always the one that ends up in front of the larger
+   * population.
+   */
+  @Post("password")
+  @Roles("learner", "department_admin", "customer_admin", "super_admin")
+  @HttpCode(204)
+  @RateLimit("participantPasswordChange")
+  async changePassword(
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<void> {
+    const parsed = passwordChangeSchema.safeParse(body);
+    if (!parsed.success) throw this.weakPassword();
+
+    const policy = checkPassword(parsed.data.newPassword, {
+      identifiers: [
+        principal.email ?? "",
+        principal.firstName ?? "",
+        principal.lastName ?? "",
+      ].filter((value) => value !== ""),
+    });
+    if (!policy.ok) throw this.weakPassword(policy.reason);
+
+    const result = await this.service().changePassword({
+      userId: principal.userId,
+      currentPassword: parsed.data.currentPassword,
+      newPassword: parsed.data.newPassword,
+    });
+
+    // One refusal for a wrong current password and for a federated or disabled
+    // account alike. The caller is already authenticated, so this is not an
+    // enumeration surface — it is simply that none of the three is something
+    // the client can usefully act on differently.
+    if (!result.ok) {
+      throw new AppError(
+        "unauthenticated",
+        "participant password change refused",
+        "Das aktuelle Passwort ist nicht korrekt.",
+      );
+    }
+  }
+
+  /**
+   * Why a proposed password was refused, in German the person can act on.
+   *
+   * Naming the reason is safe and useful here — it is the caller's *own*
+   * proposed password, so nothing is disclosed about anybody else, and "too
+   * short" versus "contains your name" is the difference between fixing it and
+   * guessing.
+   */
+  private weakPassword(reason?: string): AppError {
+    const detail =
+      reason === "contains_identifier"
+        ? "Das Passwort darf Ihren Namen oder Ihre E-Mail-Adresse nicht enthalten."
+        : reason === "too_common"
+          ? "Dieses Passwort ist zu häufig. Bitte wählen Sie ein anderes."
+          : `Das Passwort muss mindestens ${String(MIN_PASSWORD_LENGTH)} Zeichen lang sein.`;
+    return new AppError("validation", `weak password: ${reason ?? "malformed"}`, detail);
   }
 
   private service(): ParticipantAuthService {

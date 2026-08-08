@@ -843,6 +843,199 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /admin/participants:
+    get:
+      tags: [admin]
+      operationId: adminListParticipantAccounts
+      summary: The people who learn with this customer
+      description: |
+        Deliberately **not** the same list as `/admin/learners`. That one is a
+        row per enrolment — a person per course — and can only ever show
+        somebody who has already started something. This is a row per *person*,
+        including one created two minutes ago who has enrolled in nothing,
+        which is exactly when an administrator most needs to find them.
+
+        Scoped by `user_customers` under RLS: a person with no membership in the
+        caller's customer is not listed, whatever else is true of them.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: q
+          in: query
+          required: false
+          description: Substring of the name or e-mail address. Absent means all.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The participants.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ParticipantAccount" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+    post:
+      tags: [admin]
+      operationId: adminCreateParticipant
+      summary: Create a participant, and receive their one-time password
+      description: |
+        The customer is taken from the authenticated session, never from the
+        body — accepting it would let one edited request plant a participant
+        inside another tenant.
+
+        **The response carries the only copy of the password.** It is stored as
+        an Argon2id hash and no endpoint returns it again; a caller that
+        discards this response has to reset it rather than look it up. The
+        account is created with `mustChangePassword` set, because a password an
+        administrator read off a screen is a password an administrator knows.
+
+        Not self-service: the caller is an authenticated member of staff.
+        `CLAUDE.md` §3 defers open registration and this does not undo it.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, firstName, lastName]
+              properties:
+                email: { type: string, format: email, maxLength: 320 }
+                # Both required. A Teilnahmebescheinigung prints a name and
+                # cannot be issued without one, so a nameless participant is
+                # somebody who finishes a course and cannot be given the point.
+                firstName: { type: string, minLength: 1, maxLength: 100 }
+                lastName: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        "201":
+          description: Created. The password is shown here and nowhere else.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [userId, temporaryPassword]
+                properties:
+                  userId: { type: string, format: uuid }
+                  temporaryPassword: { type: string }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/participants/{userId}/reset-password:
+    post:
+      tags: [admin]
+      operationId: adminResetParticipantPassword
+      summary: Issue a new temporary password and end every session
+      description: |
+        Both halves matter. Replacing the password while leaving a twelve-hour
+        session open means a compromised account stays usable for the rest of
+        the day, which is the window this call exists to close.
+
+        A participant of another customer answers **404**, not 403 — a 403
+        would confirm the id names somebody, turning this into an oracle for
+        enumerating another tenant's participants one uuid at a time.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The new password, shown once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [temporaryPassword]
+                properties:
+                  temporaryPassword: { type: string }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        # A federated participant: their password lives at the customer's
+        # Keycloak, and pretending we could reset it would be a button that
+        # silently does nothing.
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/participants/{userId}/disabled:
+    post:
+      tags: [admin]
+      operationId: adminSetParticipantDisabled
+      summary: Stop, or restore, a participant account
+      description: |
+        Distinct from the automatic lockout, which expires on its own. This is a
+        deliberate administrative act and nothing but another one clears it.
+
+        Disabling also revokes every live session. Re-enabling does **not**
+        restore them — those are precisely the sessions the disable was aimed
+        at.
+
+        The account is never deleted: enrolments, certificates and EIV
+        submissions all hang off the person, and none of them may lose their
+        owner because somebody left a job.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [disabled]
+              properties:
+                disabled: { type: boolean }
+      responses:
+        "204": { description: Applied. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /auth/participant/password:
+    post:
+      tags: [auth]
+      operationId: changeParticipantPassword
+      summary: A participant chooses their own password
+      description: |
+        Requires the **current** password even though the caller already holds a
+        valid session. A session is a bearer credential: without this, a cookie
+        captured on a shared clinic computer would be enough to lock a physician
+        out of their own CME record.
+
+        The policy is the platform's single one (`checkPassword`): at least 12
+        code points, not containing the account's own name or address.
+
+        Does not revoke the caller's other sessions, deliberately — this runs
+        immediately after a sign-in that reported `mustChangePassword`, and
+        ending that session would sign somebody out of a change they just
+        completed.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string, maxLength: 256 }
+                newPassword: { type: string, maxLength: 256 }
+      responses:
+        "204": { description: Changed. }
+        # One answer for a wrong current password, a disabled account and a
+        # federated one alike — none is something the client can usefully act
+        # on differently.
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
   /admin/learners/{enrolmentId}/name:
     patch:
       tags: [admin]
@@ -3767,6 +3960,51 @@ components:
           description: Presence only. The ciphertext is never returned.
         branding: { $ref: "#/components/schemas/Branding" }
         courseCount: { type: integer, minimum: 0 }
+
+    ParticipantAccount:
+      type: object
+      description: |
+        A **person** who learns with this customer, as an administrator sees
+        them. Contrast `LearnerRecord`, which is one enrolment — a person per
+        course. Somebody created two minutes ago has no enrolment and appears
+        in no `LearnerRecord`, which is exactly when they most need finding.
+
+        Carries no EFN, masked or otherwise: this screen is about accounts, and
+        an identifier that is not needed to do the job does not belong in the
+        response (ADR-0004).
+      required:
+        [userId, email, firstName, lastName, enrolmentCount, completedCount, createdAt]
+      properties:
+        userId: { type: string, format: uuid }
+        email: { type: [string, "null"] }
+        firstName: { type: [string, "null"] }
+        lastName: { type: [string, "null"] }
+        credential:
+          type: [object, "null"]
+          description: |
+            Absent when this person signs in through the customer's own identity
+            provider. Nothing on this screen can act on such an account's
+            password, and the console greys the buttons rather than offering
+            ones that would 409.
+          required: [mustChange, disabled, lockedUntil]
+          properties:
+            mustChange:
+              type: boolean
+              description: They have not yet chosen their own password.
+            disabled:
+              type: boolean
+              description: |
+                Stopped by an administrator. Deliberate and permanent, unlike
+                `lockedUntil`.
+            lockedUntil:
+              type: [string, "null"]
+              format: date-time
+              description: |
+                The automatic lockout after repeated failed sign-ins. Expires on
+                its own; nobody has to clear it.
+        enrolmentCount: { type: integer, minimum: 0 }
+        completedCount: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
 
     ProjectCreate:
       type: object

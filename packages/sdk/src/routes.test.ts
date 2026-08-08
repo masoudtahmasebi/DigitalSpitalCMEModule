@@ -122,6 +122,16 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
   adminListParticipants: (c) => c.adminListParticipants("adhs"),
   adminExportParticipants: (c) => c.adminExportParticipants("adhs"),
   adminListLearners: (c) => c.adminListLearners("adhs"),
+  // Participant accounts (P21-04) — people, not enrolments.
+  adminListParticipantAccounts: (c) => c.adminListParticipantAccounts("schmidt"),
+  adminCreateParticipant: (c) =>
+    c.adminCreateParticipant({
+      email: "neu@example.org",
+      firstName: "Neue",
+      lastName: "Teilnehmende",
+    }),
+  adminResetParticipantPassword: (c) => c.adminResetParticipantPassword(ID),
+  adminSetParticipantDisabled: (c) => c.adminSetParticipantDisabled(ID, true),
   adminCorrectLearnerName: (c) => c.adminCorrectLearnerName(ID, "Dr. Anna Schmidt"),
   adminEraseSubject: (c) => c.adminEraseSubject(ID, "Löschantrag"),
   adminListCertificates: (c) => c.adminListCertificates(),
