@@ -309,7 +309,31 @@ function Loaded(props: {
     if (next !== undefined) setScreen(next);
   }, [props.openAt, enrolment.data, course.data]);
 
-  if (course.loading || enrolment.loading) {
+  /*
+   * The spinner is for the **first** load only.
+   *
+   * `refresh()` sets `loading` again, and this used to be a bare
+   * `course.loading || enrolment.loading` — so every mutation replaced the
+   * whole screen with a spinner and then rebuilt it. React unmounts the tree
+   * to do that, which destroys every screen's local state, and the widget
+   * refreshes after *everything*:
+   *
+   *   * passing the quiz reset `QuizScreen` to its intro, so the result the
+   *     learner had just earned was on screen for one frame — found by walking
+   *     the exam in a browser at 430 px, which is the only way it could have
+   *     been found;
+   *   * `onProgress` fires on every watch-progress flush, so a running video
+   *     was torn down and remounted mid-playback, losing the playhead on a
+   *     platform whose whole gate is how much of it was watched.
+   *
+   * A refetch with data already in hand keeps rendering what it has. The new
+   * state replaces it when it arrives, which is what `EnrolmentState` being the
+   * only source of truth actually requires — not a spinner in between.
+   */
+  const firstLoad =
+    (course.loading && course.data === undefined) ||
+    (enrolment.loading && enrolment.data === undefined);
+  if (firstLoad) {
     return <Spinner label={de.loading} />;
   }
 
@@ -376,7 +400,7 @@ function Loaded(props: {
    * chrome is constructed at all.
    */
   if (screen.kind !== "outline") {
-    const shell = (body: React.ReactNode, currentContentId: string) => (
+    const shell = (body: React.ReactNode, currentContentId: string, progress = false) => (
       <div className="p-4">
         <CourseShell
           apiBase={apiBase}
@@ -393,6 +417,7 @@ function Loaded(props: {
             back();
           }}
           onResume={resume}
+          progress={progress}
         >
           {body}
         </CourseShell>
@@ -422,6 +447,7 @@ function Loaded(props: {
           }}
         />,
         screen.contentId,
+        true,
       );
     }
 
@@ -719,6 +745,17 @@ function CourseShell(props: {
   onOpen: (contentId: string) => void;
   onBack: () => void;
   onResume: (() => void) | undefined;
+  /**
+   * Whether the floating progress module is drawn (below `sm` only).
+   *
+   * False on the exam and on the Punktemeldung. It is `fixed` to the viewport's
+   * bottom-right, and measured at 430 px it lands over an **answer option** —
+   * where a mis-tap costs a question rather than a scroll position. Its purpose
+   * is the resume affordance, and there is nothing to resume mid-exam: the
+   * learner is in the one part of the course they cannot leave and come back
+   * into halfway.
+   */
+  progress: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -752,8 +789,18 @@ function CourseShell(props: {
         </h1>
       </div>
 
-      {/* Pulled up over the teal, the same device the course meta strip uses. */}
-      <div className="-mt-14 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
+      {/*
+        Pulled up over the teal, the same device the course meta strip uses.
+
+        `max-sm:pb-24` is for the floating progress module. It is `fixed` to the
+        viewport's bottom-right below `sm`, so at 320 px it sits over whatever
+        happens to be there — and measured at that width, that is the video's
+        lower-right corner. The player's controls are below the video rather
+        than overlaid on it, so they are not what it covers; the padding is what
+        guarantees the last of them can always be scrolled clear of it, at every
+        scroll position rather than at most of them.
+      */}
+      <div className="-mt-14 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm max-sm:pb-24 sm:p-6">
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="min-w-0 space-y-4">{props.children}</div>
 
@@ -773,7 +820,9 @@ function CourseShell(props: {
         detail's tab panel, which the player returns before reaching. It was
         absent from the one screen it was built for.
       */}
-      <StickyProgress state={props.state} onResume={props.onResume} />
+      {props.progress ? (
+        <StickyProgress state={props.state} onResume={props.onResume} />
+      ) : null}
     </div>
   );
 }

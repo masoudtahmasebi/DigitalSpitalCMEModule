@@ -162,9 +162,23 @@ function ScaleInput(props: {
       : ["1", "2", "3", "4", "5"];
 
   return (
-    <div className="flex items-center gap-3">
+    /*
+     * The anchors sit beside the scale where there is room and **above and
+     * below it** where there is not (P19-03).
+     *
+     * On one row at 320 px this pushed the page 19 px wider than the viewport:
+     * "trifft nicht zu" and "trifft voll zu" are three lines each at that
+     * width, and five 36 px circles plus two of those columns do not fit.
+     * A horizontal scrollbar on a form a physician has to complete to earn
+     * their points is not a cosmetic fault — it hides the buttons.
+     *
+     * `flex-col` rather than wrapping, because a wrapped row puts "trifft voll
+     * zu" under the *left* end of the scale, where it reads as a label for the
+     * 1.
+     */
+    <div className="flex items-center gap-3 max-sm:flex-col max-sm:items-start max-sm:gap-1">
       <span className="text-xs text-gray-500">{de.evaluation.scaleLow}</span>
-      <div className="flex gap-1">
+      <div className="flex flex-wrap gap-1">
         {options.map((option) => (
           <label key={option} className="cursor-pointer">
             <input

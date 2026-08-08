@@ -715,7 +715,14 @@ function Controls(props: {
             value={state.muted ? 0 : state.volume}
             aria-label={de.media.volume}
             onChange={(event) => props.onVolume(Number(event.target.value))}
-            className="h-1 w-20 accent-brand-600"
+            /*
+              `h-6`, not `h-1`. The track still draws thin — the browser
+              centres it in the element's box — but the box is what a thumb
+              hits, and at `h-1` this was the one control on any of the seven
+              screens below WCAG 2.2 AA's 24 x 24 target size (80 x 4). Measured
+              in Chromium during the P19-03 pass, not assumed.
+            */
+            className="h-6 w-20 accent-brand-600"
           />
         </div>
 
