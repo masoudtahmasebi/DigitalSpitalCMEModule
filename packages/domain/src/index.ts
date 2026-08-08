@@ -130,7 +130,7 @@ export type {
 export { courseChapterSequence, rollupProgress } from "./progress.js";
 export type { CourseRollup, ModuleCompletion, ProgressSummary } from "./progress.js";
 
-export { scoreQuiz, UnknownQuestionError } from "./assessment.js";
+export { minimumCorrectAnswers, scoreQuiz, UnknownQuestionError } from "./assessment.js";
 export type { Answer, Question, QuestionKind, QuizResult } from "./assessment.js";
 
 export {

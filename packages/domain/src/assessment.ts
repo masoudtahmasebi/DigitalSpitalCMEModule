@@ -102,6 +102,40 @@ export function scoreQuiz(
   };
 }
 
+/**
+ * How many questions must be right — "Mind. 8 von 11 richtig" (layout page 08).
+ *
+ * ## Why this is here and not in the widget
+ *
+ * It is the same rule as `scoreQuiz`, read backwards, and the layout puts it in
+ * front of a physician *before* they start. Computing it beside the screen that
+ * prints it would give this platform two accounts of what passing means, and the
+ * one on the poster would be the one nobody tested. `scoreQuiz` floors; a screen
+ * that used `Math.ceil(total * threshold / 100)` agrees with it on 8 of 11 and
+ * disagrees on other shapes, which is precisely the kind of divergence CLAUDE.md
+ * §4 invariant 6 exists to prevent.
+ *
+ * Searched rather than derived, for the same reason: the search asks
+ * `scoreQuiz`'s own question — "does this many correct answers reach the
+ * threshold?" — so it cannot round differently from it. Quizzes have single
+ * digits of questions; the loop is not the cost anywhere.
+ *
+ * `null` when no number of correct answers can pass: a quiz with no questions
+ * (an authoring state, which `scoreQuiz` also refuses to pass) or a threshold
+ * above 100. The caller draws nothing rather than "Mind. 1 von 0 richtig".
+ */
+export function minimumCorrectAnswers(
+  totalCount: number,
+  passThresholdPercent: number,
+): number | null {
+  if (totalCount <= 0) return null;
+
+  for (let correct = 0; correct <= totalCount; correct += 1) {
+    if (Math.floor((correct / totalCount) * 100) >= passThresholdPercent) return correct;
+  }
+  return null;
+}
+
 function isExactSetMatch(
   selected: readonly string[],
   correct: readonly string[],

@@ -14,10 +14,11 @@
  * there.
  */
 
-import { useState } from "react";
 import type { CourseExpert } from "@ds/sdk";
 import { de } from "../locale/de.js";
+import { BIOGRAPHY_LIMIT } from "../read-more.js";
 import { ImagePlaceholder } from "./primitives.js";
+import { ReadMore } from "./ReadMore.js";
 
 export function ExpertsTab(props: { experts: readonly CourseExpert[] }) {
   if (props.experts.length === 0) {
@@ -40,7 +41,6 @@ export function ExpertsTab(props: { experts: readonly CourseExpert[] }) {
 
 function ExpertCard(props: { expert: CourseExpert }) {
   const { expert } = props;
-  const [expanded, setExpanded] = useState(false);
 
   return (
     <article className="flex gap-5">
@@ -69,23 +69,11 @@ function ExpertCard(props: { expert: CourseExpert }) {
         )}
 
         {expert.biography === null ? null : (
-          <div className="space-y-1 pt-1">
-            <p
-              className={`whitespace-pre-line text-sm text-gray-800 ${
-                expanded ? "" : "line-clamp-3"
-              }`}
-            >
-              {expert.biography}
-            </p>
-            <button
-              type="button"
-              aria-expanded={expanded}
-              onClick={() => setExpanded(!expanded)}
-              className="text-sm font-medium text-brand-700 underline"
-            >
-              {expanded ? de.overviewTab.less : de.overviewTab.more}
-            </button>
-          </div>
+          <ReadMore
+            text={expert.biography}
+            limit={BIOGRAPHY_LIMIT}
+            className="whitespace-pre-line pt-1 text-sm text-gray-800"
+          />
         )}
       </div>
     </article>

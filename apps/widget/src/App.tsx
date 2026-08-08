@@ -33,11 +33,12 @@ import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
 import type { TokenProvider } from "./token.js";
 import { CourseList } from "./components/CourseList.js";
-import { CourseOutline } from "./components/CourseOutline.js";
+import { CertificationTab } from "./components/CertificationTab.js";
 import { ProgressCard, StickyMetaBar } from "./components/CourseHeader.js";
 import { StickyProgress } from "./components/StickyProgress.js";
 import { ExpertsTab } from "./components/ExpertsTab.js";
 import { OverviewTab } from "./components/OverviewTab.js";
+import { ModuleSidebar } from "./components/ModuleSidebar.js";
 import { PlayerScreen } from "./components/PlayerScreen.js";
 import { QuizScreen } from "./components/QuizScreen.js";
 import { EvaluationScreen } from "./components/EvaluationScreen.js";
@@ -54,7 +55,17 @@ type Screen =
   | { kind: "outline" }
   | { kind: "lesson"; contentId: string }
   | { kind: "quiz"; contentId: string }
-  | { kind: "evaluation" };
+  /**
+   * `then` is where submitting lands, and it exists because the evaluation is
+   * reached from two places that mean different things by it. From the
+   * Zertifizierung tab it is a thing the learner chose to do and they go back
+   * where they were; from the quiz-passed screen's **CME-Punkte geltend
+   * machen** it is a step on the way to the Punktemeldung, and stopping there
+   * would leave a physician who just passed staring at the tab they started on.
+   */
+  | { kind: "evaluation"; then: "outline" | "reporting" }
+  /** The Punktemeldung — layout page 13. Its own screen since #60. */
+  | { kind: "reporting" };
 
 /**
  * What the learner asked for when they picked a course.
@@ -332,8 +343,23 @@ function Loaded(props: {
   const back = () => setScreen({ kind: "outline" });
   const refresh = () => enrolment.reload();
 
-  const resumeId = state.resumeContentId;
-  const resume = resumeId === null ? undefined : () => open(resumeId);
+  /*
+   * Where **Fortbildung fortsetzen** goes.
+   *
+   * `resumeContentId` is the first *incomplete* reachable content, so it is
+   * null once the learner has finished everything — and since #60 removed the
+   * module outline from the Zertifizierung tab, that null was the last way back
+   * into the course. A physician who completed a course could no longer look at
+   * any of it again.
+   *
+   * So a finished course falls back to its first content. The server still
+   * decides where an unfinished one resumes; this only decides what "continue"
+   * means when there is nothing outstanding, which is a navigation question and
+   * not a compliance one.
+   */
+  const firstContentId = detail.modules[0]?.chapters[0]?.contents[0]?.id;
+  const resumeId = state.resumeContentId ?? firstContentId;
+  const resume = resumeId === undefined ? undefined : () => open(resumeId);
 
   /*
    * The player is its own screen, not a fifth tab (layout §4.3).
@@ -349,12 +375,33 @@ function Loaded(props: {
    * It renders before the course layout rather than inside it, so none of that
    * chrome is constructed at all.
    */
-  if (screen.kind === "lesson") {
-    return (
+  if (screen.kind !== "outline") {
+    const shell = (body: React.ReactNode, currentContentId: string) => (
       <div className="p-4">
-        <PlayerPage
+        <CourseShell
           apiBase={apiBase}
           projectSlug={projectSlug}
+          course={detail}
+          state={state}
+          currentContentId={currentContentId}
+          onOpen={(contentId) => {
+            refresh();
+            open(contentId);
+          }}
+          onBack={() => {
+            refresh();
+            back();
+          }}
+          onResume={resume}
+        >
+          {body}
+        </CourseShell>
+      </div>
+    );
+
+    if (screen.kind === "lesson") {
+      return shell(
+        <Player
           client={client}
           courseSlug={courseSlug}
           course={detail}
@@ -371,11 +418,78 @@ function Loaded(props: {
           }}
           onReporting={() => {
             refresh();
-            setTab("certification");
+            setScreen({ kind: "reporting" });
+          }}
+        />,
+        screen.contentId,
+      );
+    }
+
+    if (screen.kind === "quiz") {
+      return shell(
+        <QuizGate
+          client={client}
+          courseSlug={courseSlug}
+          contentId={screen.contentId}
+          onPassed={refresh}
+          onBack={() => {
+            refresh();
             back();
           }}
-        />
-      </div>
+          /*
+           * **CME-Punkte geltend machen** (layout 12.3).
+           *
+           * The evaluation first when it is still outstanding, and that order
+           * is the server's rule rather than a preference: the API refuses a
+           * completion whose evaluation is missing, so sending the learner
+           * straight to page 13 would end in a rejection *after* they had typed
+           * their EFN.
+           */
+          onClaimPoints={() => {
+            refresh();
+            setScreen(
+              state.evaluationSubmitted
+                ? { kind: "reporting" }
+                : { kind: "evaluation", then: "reporting" },
+            );
+          }}
+        />,
+        screen.contentId,
+      );
+    }
+
+    if (screen.kind === "evaluation") {
+      const then = screen.then;
+      return shell(
+        <EvaluationGate
+          client={client}
+          courseSlug={courseSlug}
+          onSubmitted={() => {
+            refresh();
+            if (then === "reporting") setScreen({ kind: "reporting" });
+            else back();
+          }}
+          onBack={back}
+        />,
+        "",
+      );
+    }
+
+    return shell(
+      <CompletionScreen
+        client={client}
+        courseSlug={courseSlug}
+        state={state}
+        branding={branding}
+        onCompleted={() => {
+          refresh();
+          // Back to the tab that describes the certificate, which is now where
+          // the download is.
+          setTab("certification");
+          back();
+        }}
+      />,
+      "",
     );
   }
 
@@ -407,20 +521,20 @@ function Loaded(props: {
           back();
         }}
       >
-        <div
-          className={
-            screen.kind === "outline"
-              ? "grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]"
-              : ""
-          }
-        >
+        {/*
+          Only the outline reaches here now: the player, the exam and the
+          Punktemeldung render through `CourseShell` above, which is what the
+          layout draws for them — a teal masthead and the Modul Übersicht, with
+          no tab row (#61).
+        */}
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
           {/* `max-sm:` drops the top border and the top rounding: below `sm` the
             heading `TabbedPanel` renders supplies both, and two borders meeting
             draw a 2 px rule across what the layout has as one line. */}
           <div className="min-w-0 rounded-2xl rounded-tl-none border border-gray-100 bg-white p-5 shadow-sm max-sm:rounded-t-none max-sm:border-t-0 max-sm:border-brand-500 sm:p-6">
-            {tab === "overview" && screen.kind === "outline" ? (
+            {tab === "overview" ? (
               <OverviewTab course={detail} state={state} />
-            ) : tab === "speakers" && screen.kind === "outline" ? (
+            ) : tab === "speakers" ? (
               <ExpertsTab experts={detail.experts} />
             ) : tab === "library" ? (
               <Mediathek
@@ -428,54 +542,30 @@ function Loaded(props: {
                 courseSlug={courseSlug}
                 key={state.progress.percent}
               />
-            ) : screen.kind === "quiz" ? (
-              <QuizGate
-                client={client}
-                courseSlug={courseSlug}
-                contentId={screen.contentId}
-                onPassed={refresh}
-                onBack={() => {
-                  refresh();
-                  back();
-                }}
-              />
-            ) : screen.kind === "evaluation" ? (
-              <EvaluationGate
-                client={client}
-                courseSlug={courseSlug}
-                onSubmitted={() => {
-                  refresh();
-                  back();
-                }}
-                onBack={back}
-              />
             ) : (
-              <div className="space-y-8">
-                <CourseOutline course={detail} state={state} onOpen={open} />
-
-                {state.evaluationSubmitted ? null : (
-                  <Button
-                    variant="secondary"
-                    onClick={() => setScreen({ kind: "evaluation" })}
-                  >
-                    {de.evaluation.title}
-                  </Button>
-                )}
-
-                <CompletionScreen
-                  client={client}
-                  courseSlug={courseSlug}
-                  state={state}
-                  branding={branding}
-                  onCompleted={refresh}
-                />
-
-                {state.completedAt === null ? (
-                  <p className="text-sm text-gray-500">{de.certificate.notYet}</p>
-                ) : (
-                  <CertificateGate client={client} courseSlug={courseSlug} />
-                )}
-              </div>
+              /*
+               * The Zertifizierung tab, informational (layout page 04).
+               *
+               * It used to be the module outline plus the EFN form plus
+               * **Fortbildung abschließen**. The layout has none of that here
+               * and #60 moved it: the form is the `reporting` screen above,
+               * reached from the quiz-passed screen, and the outline is gone —
+               * the player's Modul Übersicht is the course's navigation, and a
+               * second one on the detail page was a way past the sequential
+               * gate that the layout deliberately does not offer.
+               */
+              <CertificationTab
+                course={detail}
+                certificate={
+                  state.completedAt === null ? (
+                    <p className="mt-6 text-sm text-gray-500">{de.certificate.notYet}</p>
+                  ) : (
+                    <div className="mt-6">
+                      <CertificateGate client={client} courseSlug={courseSlug} />
+                    </div>
+                  )
+                }
+              />
             )}
           </div>
 
@@ -485,11 +575,9 @@ function Loaded(props: {
           430 px screen would be two places to read the same number, which is
           how they end up disagreeing.
         */}
-          {screen.kind === "outline" ? (
-            <div className="max-sm:hidden">
-              <ProgressCard state={state} onResume={resume} />
-            </div>
-          ) : null}
+          <div className="max-sm:hidden">
+            <ProgressCard state={state} onResume={resume} />
+          </div>
 
           {/*
           The same two numbers, floating, below `sm` (P19-01). Not restricted
@@ -586,35 +674,62 @@ function BrandLogo(props: { apiBase: string; projectSlug: string }) {
 }
 
 /**
- * The player's own masthead (layout §4.3).
+ * The chrome the layout draws on pages 06 to 13 (#61).
  *
- * A teal band carrying the course title and the way out, with the video card
- * overlapping its lower edge. Deliberately *not* the course hero: this screen
- * shows one module, and repeating the course's points, duration and tab row
- * above a running video is navigation away from the only thing the learner
- * came here to do.
+ * A teal region carrying the logo, the course title and the way out, with one
+ * white panel pulled up over its lower edge — the screen's content on the left,
+ * **Modul Übersicht** on the right.
+ *
+ * ## Why five screens share it
+ *
+ * The player, the exam's four states and the Punktemeldung are drawn
+ * identically in the layout, down to the sidebar and its ticks. They used to be
+ * two different things here: the player had its own masthead and its own
+ * sidebar, and the quiz, the evaluation and the completion form rendered inside
+ * the *course detail's* tab panel — under a tab row the layout does not draw on
+ * any of those pages, and beside no module list at all.
+ *
+ * Sharing it is not only fidelity. The sidebar states are gate verdicts; a
+ * second copy built beside the exam would have been a second reading of which
+ * chapter is unlocked, and the two would eventually disagree.
+ *
+ * ## Deliberately not the course hero
+ *
+ * These screens show one thing at a time. Repeating the course's points,
+ * duration and four tabs above a running video is navigation away from the only
+ * thing the learner came here to do.
  *
  * "Zurück zur Übersicht" is orange and sits top-right, which is the one place
- * the layout puts the accent on a *leaving* action — because on this screen
- * leaving is the resume-adjacent action: it is how the learner parks a module
- * and comes back to it.
+ * the layout puts the accent on a *leaving* action — because here leaving is
+ * the resume-adjacent action: it is how a learner parks a module and comes back
+ * to it.
  */
-function PlayerPage(props: {
+function CourseShell(props: {
   apiBase: string;
   projectSlug: string;
-  client: ReturnType<typeof createWidgetClient>;
-  courseSlug: string;
   course: CourseDetail;
   state: EnrolmentState;
-  contentId: string;
-  onProgress: () => void;
+  /**
+   * What the sidebar should mark as current. Empty on the exam-result, the
+   * evaluation and the Punktemeldung, which are not a content — `locateContent`
+   * finds nothing and the sidebar opens no module, which is how the layout
+   * draws those pages.
+   */
+  currentContentId: string;
   onOpen: (contentId: string) => void;
   onBack: () => void;
-  onReporting: () => void;
+  onResume: (() => void) | undefined;
+  children: React.ReactNode;
 }) {
   return (
     <div>
-      <div className="rounded-2xl bg-brand-600 px-6 pb-16 pt-6 sm:px-8">
+      {/*
+        Full-bleed, with one large corner where it ends (layout 6.1). `-mx-4`
+        cancels the widget's own gutter — the layout runs this teal to the edge
+        of the page and rounds only its inner corner, which reads as the page
+        *becoming* white rather than as a band sitting on it.
+      */}
+      <div className="-mx-4 rounded-br-[5rem] bg-brand-600 px-6 pb-20 pt-6 sm:px-8">
         {/*
           `ml-auto` on the button rather than `justify-between` on the row:
           `BrandLogo` renders nothing for a project with no logo configured,
@@ -637,20 +752,28 @@ function PlayerPage(props: {
         </h1>
       </div>
 
-      {/* Pulled up over the band, the same device the course meta strip uses. */}
-      <div className="-mt-10 px-2 sm:px-4">
-        <Player
-          client={props.client}
-          courseSlug={props.courseSlug}
-          course={props.course}
-          state={props.state}
-          contentId={props.contentId}
-          onProgress={props.onProgress}
-          onOpen={props.onOpen}
-          onBack={props.onBack}
-          onReporting={props.onReporting}
-        />
+      {/* Pulled up over the teal, the same device the course meta strip uses. */}
+      <div className="-mt-14 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="min-w-0 space-y-4">{props.children}</div>
+
+          <ModuleSidebar
+            course={props.course}
+            state={props.state}
+            currentContentId={props.currentContentId}
+            onOpen={props.onOpen}
+          />
+        </div>
       </div>
+
+      {/*
+        The floating resume module below `sm` (P19-01). Its own comment always
+        said its whole reason for existing was "being the resume affordance
+        *while a video is playing*" — and it was rendered only inside the course
+        detail's tab panel, which the player returns before reaching. It was
+        absent from the one screen it was built for.
+      */}
+      <StickyProgress state={props.state} onResume={props.onResume} />
     </div>
   );
 }
@@ -704,6 +827,7 @@ function QuizGate(props: {
   contentId: string;
   onPassed: () => void;
   onBack: () => void;
+  onClaimPoints: () => void;
 }) {
   const quiz = useAsync(
     () => props.client.getQuiz(props.courseSlug, props.contentId),
@@ -724,6 +848,7 @@ function QuizGate(props: {
       quiz={quiz.data}
       onPassed={props.onPassed}
       onBack={props.onBack}
+      onClaimPoints={props.onClaimPoints}
     />
   );
 }

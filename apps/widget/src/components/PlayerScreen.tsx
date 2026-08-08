@@ -1,8 +1,17 @@
 /**
- * The player screen (layout §4.3).
+ * The player screen (layout pages 06–07).
  *
- * The media, the progress panel above it, the **Modul Übersicht** sidebar, the
- * two controls, and the three content tabs beneath.
+ * The progress panel, the media, the one control under it, and the three
+ * content tabs beneath.
+ *
+ * ## What moved out of here
+ *
+ * The **Modul Übersicht** sidebar and the teal masthead around it. They belong
+ * to `CourseShell` in `App.tsx` now, because the layout draws them on five
+ * screens — the player, the exam's four states and the Punktemeldung — and a
+ * sidebar that lived here would have had to be rebuilt beside each of the
+ * others, which is how two module lists end up disagreeing about which chapter
+ * is unlocked (#61).
  *
  * ## The numbers in the progress panel, and where each comes from
  *
@@ -43,7 +52,6 @@ import type { ApiClient, CourseDetail, EnrolmentState, LessonContent } from "@ds
 import { de } from "../locale/de.js";
 import { findQuizContent, locateContent, playbackDuration } from "../player.js";
 import { LessonScreen, type PlaybackState } from "./LessonScreen.js";
-import { ModuleSidebar } from "./ModuleSidebar.js";
 import { Button, LockIcon } from "./primitives.js";
 
 const CONTENT_TABS = ["summary", "quiz", "reporting"] as const;
@@ -79,6 +87,12 @@ export function PlayerScreen(props: {
   const here = locateContent(course, lesson.id);
   const quiz = findQuizContent(course, state);
   const duration = playbackDuration(lesson.durationSec, playback.durationSec);
+
+  /** Undefined while the server still has the quiz locked. */
+  const quizOpen =
+    quiz === undefined || quiz.gate === "locked"
+      ? undefined
+      : () => props.onOpen(quiz.id);
 
   return (
     <div className="space-y-4">
@@ -127,58 +141,60 @@ export function PlayerScreen(props: {
         </div>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="min-w-0 space-y-4">
-          <LessonScreen
-            client={props.client}
-            courseSlug={props.courseSlug}
-            lesson={lesson}
-            onProgress={props.onProgress}
-            paused={paused}
-            // The learner pressing the video's own play control clears the
-            // chrome's pause, so the two never contradict each other.
-            onPlayback={(next) => {
-              setPlayback(next);
-              if (next.playing) setPaused(false);
-            }}
-          />
+      <LessonScreen
+        client={props.client}
+        courseSlug={props.courseSlug}
+        lesson={lesson}
+        onProgress={props.onProgress}
+        paused={paused}
+        // The learner pressing the video's own play control clears the
+        // chrome's pause, so the two never contradict each other.
+        onPlayback={(next) => {
+          setPlayback(next);
+          if (next.playing) setPaused(false);
+        }}
+      />
 
-          <div className="flex flex-wrap gap-3">
-            {lesson.kind !== "video" ? null : (
-              // Orange, as the layout has it: pausing is the action that
-              // belongs to the course the learner is part-way through, which
-              // is what the accent colour marks everywhere else too.
-              <Button
-                variant="cta"
-                disabled={!playback.playing}
-                onClick={() => setPaused(true)}
-              >
-                {de.player.pause}
-              </Button>
-            )}
-            <Button variant="secondary" onClick={props.onBack}>
-              {de.player.back}
+      {/*
+        The layout's one action under the video, and which one it is depends on
+        the course's state (row 6.6): orange **Fortbildung pausieren** while
+        there is still watching to do, teal **Lernerfolgskontrolle beginnen**
+        once there is not.
+
+        The switch is the **server's quiz gate**, not a percentage worked out
+        here. The layout describes the swap as happening "at 100 %", and a
+        client that decided that for itself would offer the exam to a learner
+        the API is about to refuse — or, worse, would look right while the two
+        disagreed about what 100 % means (union coverage, not playhead).
+      */}
+      <div className="flex flex-wrap gap-3">
+        {quizOpen === undefined ? (
+          lesson.kind !== "video" ? null : (
+            <Button
+              variant="cta"
+              disabled={!playback.playing}
+              onClick={() => setPaused(true)}
+            >
+              {de.player.pause}
             </Button>
-          </div>
-
-          <ContentTabs
-            tab={tab}
-            onTab={setTab}
-            lesson={lesson}
-            quizLocked={quiz === undefined || quiz.gate === "locked"}
-            reportingLocked={!state.quizPassed}
-            onQuiz={quiz === undefined ? undefined : () => props.onOpen(quiz.id)}
-            onReporting={props.onReporting}
-          />
-        </div>
-
-        <ModuleSidebar
-          course={course}
-          state={state}
-          currentContentId={lesson.id}
-          onOpen={props.onOpen}
-        />
+          )
+        ) : (
+          <Button onClick={quizOpen}>{de.player.quizBegin}</Button>
+        )}
+        <Button variant="secondary" onClick={props.onBack}>
+          {de.player.back}
+        </Button>
       </div>
+
+      <ContentTabs
+        tab={tab}
+        onTab={setTab}
+        lesson={lesson}
+        quizLocked={quiz === undefined || quiz.gate === "locked"}
+        reportingLocked={!state.quizPassed}
+        onQuiz={quizOpen}
+        onReporting={props.onReporting}
+      />
     </div>
   );
 }

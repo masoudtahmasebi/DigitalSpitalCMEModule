@@ -14,11 +14,24 @@
  * add numbers together at all.
  */
 
-import { useState } from "react";
 import type { CourseDetail, EnrolmentState, ModuleSummary } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { moduleHeading } from "../module-title.js";
+import { DESCRIPTION_LIMIT } from "../read-more.js";
 import { CheckBullet, Section } from "./primitives.js";
+import { ReadMore } from "./ReadMore.js";
+
+/**
+ * The thin rule the layout draws between sections, and the breathing room
+ * around it.
+ *
+ * On the sections rather than on the container, because which section comes
+ * first depends on the data — a course with no description starts at Lernziele
+ * — and `first:` follows the DOM, where a `null` child leaves nothing behind.
+ * A container-level `divide-y` would have worked too; this way the padding and
+ * the rule are one decision in one place.
+ */
+const DIVIDED = "border-t border-gray-200 pt-8 first:border-t-0 first:pt-0";
 
 export function OverviewTab(props: { course: CourseDetail; state: EnrolmentState }) {
   const { course } = props;
@@ -26,13 +39,13 @@ export function OverviewTab(props: { course: CourseDetail; state: EnrolmentState
   return (
     <div className="space-y-8">
       {course.description === null ? null : (
-        <Section title={de.overviewTab.description}>
-          <Expandable text={course.description} />
+        <Section title={de.overviewTab.description} className={DIVIDED}>
+          <ReadMore text={course.description} limit={DESCRIPTION_LIMIT} />
         </Section>
       )}
 
       {course.learningObjectives.length === 0 ? null : (
-        <Section title={de.overviewTab.objectives}>
+        <Section title={de.overviewTab.objectives} className={DIVIDED}>
           <p className="text-sm text-gray-700">{de.overviewTab.objectivesLead}</p>
           <ul className="space-y-3">
             {course.learningObjectives.map((objective) => (
@@ -48,7 +61,7 @@ export function OverviewTab(props: { course: CourseDetail; state: EnrolmentState
       )}
 
       {course.targetAudience === null ? null : (
-        <Section title={de.overviewTab.audience}>
+        <Section title={de.overviewTab.audience} className={DIVIDED}>
           {/* Newlines are the only formatting the field carries, and
               `whitespace-pre-line` is what preserves them without ever
               interpreting the content as markup. */}
@@ -65,7 +78,7 @@ export function OverviewTab(props: { course: CourseDetail; state: EnrolmentState
         arrow is the layout's own affordance for "this comes next", not for
         "click me".
       */}
-      <Section title={de.overviewTab.contents}>
+      <Section title={de.overviewTab.contents} className={DIVIDED}>
         <ol className="divide-y divide-gray-200">
           {course.modules.map((module, index) => (
             <li key={module.id} className="flex items-start gap-3 py-4">
@@ -82,47 +95,20 @@ export function OverviewTab(props: { course: CourseDetail; state: EnrolmentState
                 )}
               </div>
 
-              <p className="shrink-0 whitespace-nowrap text-sm text-gray-700">
-                {de.overviewTab.moduleMeta(
-                  moduleDurationSec(module),
-                  module.chapters.length,
-                )}
+              {/*
+                The duration and nothing else. This used to read
+                "25:24 Min. · 1 Kapitel", and the chapter count is not on this
+                row in the layout — on the MEDICE course, where every module has
+                exactly one chapter, it printed "· 1 Kapitel" three times and
+                told a learner nothing they could act on.
+              */}
+              <p className="shrink-0 whitespace-nowrap text-sm font-bold text-gray-900">
+                {de.overviewTab.moduleDuration(moduleDurationSec(module))}
               </p>
             </li>
           ))}
         </ol>
       </Section>
-    </div>
-  );
-}
-
-/**
- * Long prose with a _Mehr lesen…_ toggle.
- *
- * Collapsed with CSS rather than by truncating the string: the whole text stays
- * in the DOM, so a screen reader and a page search find all of it whichever
- * state the toggle is in.
- */
-function Expandable(props: { text: string }) {
-  const [expanded, setExpanded] = useState(false);
-
-  return (
-    <div className="space-y-2">
-      <p
-        className={`whitespace-pre-line text-sm text-gray-800 ${
-          expanded ? "" : "line-clamp-4"
-        }`}
-      >
-        {props.text}
-      </p>
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setExpanded(!expanded)}
-        className="text-sm font-medium text-brand-700 underline"
-      >
-        {expanded ? de.overviewTab.less : de.overviewTab.more}
-      </button>
     </div>
   );
 }

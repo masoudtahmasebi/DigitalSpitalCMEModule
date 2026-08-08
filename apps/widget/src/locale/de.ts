@@ -119,14 +119,19 @@ export const de = {
     more: "Mehr lesen …",
     less: "Weniger anzeigen",
     moduleLabel: (ordinal: number): string => `Modul ${ordinal}`,
-    /** "25:24 Min. · 3 Kapitel" */
-    moduleMeta: (durationSec: number, chapters: number): string =>
-      [
-        durationSec === 0 ? undefined : minutesAndSeconds(durationSec),
-        `${chapters} ${chapters === 1 ? "Kapitel" : "Kapitel"}`,
-      ]
-        .filter((part): part is string => part !== undefined)
-        .join(" · "),
+    /**
+     * "25:24 Min.", and nothing after it.
+     *
+     * It was "25:24 Min. · 3 Kapitel". The layout's Inhalte row carries the
+     * duration alone, and the chapter count was worse than merely extra: the
+     * MEDICE course has one chapter per module, so it printed "· 1 Kapitel" on
+     * every row — three repetitions of a number a learner cannot use.
+     *
+     * Empty when the module has no timed content, so a row does not end in a
+     * bare "Min.".
+     */
+    moduleDuration: (durationSec: number): string =>
+      durationSec === 0 ? "" : minutesAndSeconds(durationSec),
   },
 
   experts: {
@@ -218,6 +223,13 @@ export const de = {
     noSummary: "Für diesen Abschnitt ist keine Zusammenfassung hinterlegt.",
     quizLocked: "Wird nach Abschluss der Module freigeschaltet.",
     quizOpen: "Zur Lernerfolgskontrolle",
+    /**
+     * What replaces **Fortbildung pausieren** once the server opens the quiz
+     * gate (layout row 6.6). Teal rather than orange: the accent marks the
+     * action that belongs to the course in progress, and once the watching is
+     * done the exam is the way forward rather than a pause.
+     */
+    quizBegin: "Lernerfolgskontrolle beginnen",
     reportingLocked: "Wird nach bestandener Lernerfolgskontrolle freigeschaltet.",
     reportingOpen: "Zur CME Punktemeldung",
   },
@@ -318,10 +330,119 @@ export const de = {
       "Ihr Browser kann dieses Video nicht abspielen. Bitte verwenden Sie einen aktuellen Browser.",
   },
 
+  /**
+   * The Zertifizierung tab — layout page 04, read off the render.
+   *
+   * Informational throughout. The tab used to carry the module outline, the EFN
+   * field and **Fortbildung abschließen**; the layout puts none of that here and
+   * #60 moved it to where the layout does put it (the quiz-passed screen, then
+   * page 13).
+   *
+   * Every number is the course's own. A sentence that said "80 %" in prose while
+   * the course was configured at 70 would be a platform telling a physician the
+   * wrong accreditation condition, so the thresholds are arguments.
+   */
+  certification: {
+    title: "Zertifizierung",
+
+    points: "CME-Punkte",
+    pointsSentence: (points: number): string =>
+      points === 1
+        ? "Für die erfolgreiche Teilnahme an dieser Fortbildung erhalten Sie 1 CME-Punkt."
+        : `Für die erfolgreiche Teilnahme an dieser Fortbildung erhalten Sie ${points} CME-Punkte.`,
+    /**
+     * A course without accreditation is a supported case, not a broken one —
+     * the client asked for it and `ds-ohne-punkte` exists to exercise it. The
+     * tab says so plainly rather than drawing a Zertifizierung panel with every
+     * value blank.
+     */
+    noPoints:
+      "Diese Fortbildung ist nicht zertifiziert und vergibt keine CME-Punkte. Eine Punktemeldung an die Ärztekammer erfolgt nicht.",
+
+    accreditation: "Akkreditierung",
+    accreditedBy: (body: string, points: number): string =>
+      `Diese Fortbildung ist von der ${body} zertifiziert und wurde mit ${String(points)} CME-${points === 1 ? "Punkt" : "Punkten"} akkreditiert.`,
+    validity: (from: string, to: string): string => `Gültigkeit: ${from} – ${to}`,
+    fortbildungsnummer: (value: string): string => `Fortbildungsnummer: ${value}`,
+
+    requirements: "Voraussetzungen für den Zertifikatserwerb",
+    requirementsLead:
+      "Um das CME-Zertifikat zu erhalten, müssen Sie folgende Kriterien erfüllen:",
+    requirementWatch: (percent: number): string =>
+      `Vollständige Videowiedergabe: Mindestens ${percent} % aller Videomodule müssen angesehen werden`,
+    requirementQuiz: (percent: number): string =>
+      `Erfolgreiches Bestehen des Wissenstests: Mindestens ${percent} % der Fragen müssen korrekt beantwortet werden`,
+    requirementEvaluation: "Evaluationsbogen ausfüllen: Kurze Bewertung der Fortbildung",
+
+    reporting: "Punktemeldung",
+    reportingBody:
+      "Nach erfolgreicher Teilnahme erfolgt eine automatisierte Punktemeldung über eine direkte Anbindung an das EIV (Elektronischer Informationsverteiler).",
+    reportingEfn:
+      "Ihre erworbenen CME-Punkte werden direkt an Ihre zuständige Ärztekammer übermittelt. Hierfür benötigen wir Ihre EFN (Einheitliche Fortbildungsnummer), die nach erfolgreichem Fortbildungsabschluss abgefragt wird.",
+
+    certificate: "Ihr Zertifikat",
+    certificateLead:
+      "Nach erfolgreichem Abschluss steht Ihr personalisiertes Teilnahmezertifikat sofort zum Download bereit. Es enthält:",
+    /**
+     * The layout's five bullets. Fixed rather than derived: they describe what
+     * the certificate renderer actually prints (P8), and a list generated from
+     * whatever the course happens to have set would quietly shrink on a course
+     * with no Ärztekammer — while the PDF still printed the other four.
+     */
+    certificateContents: [
+      "Ihren Namen und Ihre EFN",
+      "Titel und Inhalt der Fortbildung",
+      "Anzahl der CME-Punkte",
+      "Akkreditierungsnachweis der Ärztekammer",
+      "Datum der Teilnahme",
+    ],
+  },
+
   quiz: {
     title: "Lernerfolgskontrolle",
-    intro: (threshold: number): string =>
-      `Zum Bestehen müssen mindestens ${threshold} % der Fragen richtig beantwortet werden.`,
+    /** The heading under the eyebrow on page 08, and on every question screen. */
+    exam: "Abschlussprüfung",
+
+    /*
+     * The three stat cards on page 08.
+     *
+     * `Antwortformat` is derived from the questions rather than fixed: a course
+     * whose author wrote multiple-choice questions and whose screen promised
+     * "Eine Antwort pro Frage" would be lying to a physician about how to pass.
+     */
+    statQuestions: "Anzahl Fragen",
+    statQuestionsCaption: "Fragen gesamt",
+    statFormat: "Antwortformat",
+    formatSingle: "Single Choice",
+    formatMixed: "Single & Multiple Choice",
+    formatSingleCaption: "Eine Antwort pro Frage",
+    formatMixedCaption: "Teilweise mehrere Antworten pro Frage",
+    statPass: "Bestehen",
+    statPassValue: (percent: number): string => `${percent} %`,
+    /** "Mind. 8 von 11 richtig" — the same arithmetic the server scores with. */
+    statPassCaption: (needed: number, total: number): string =>
+      `Mind. ${needed} von ${total} richtig`,
+
+    banner:
+      "Beantworten Sie alle Fragen nacheinander. Das Ergebnis wird Ihnen am Ende der Prüfung angezeigt.",
+    /**
+     * **The layout's button says "Teilprüfung starten"** directly under a
+     * heading that says Abschlussprüfung, and no per-module assessment exists
+     * anywhere in the thirteen pages or in this budget (S20). Naming a feature
+     * that does not exist is worse than departing from the render, so the button
+     * says what it actually starts.
+     */
+    start: "Abschlussprüfung starten",
+
+    /** "Frage 5 von 11" */
+    questionOf: (current: number, total: number): string =>
+      `Frage ${current} von ${total}`,
+    questionLabel: (ordinal: number): string => `Frage ${ordinal}`,
+    /** Shown when the option list is taller than its box (layout 9.3). */
+    scrollHint: "Weitere Antworten durch Scrollen sichtbar",
+    previous: "Zurück",
+    next: "Weiter",
+
     attemptsUsed: (used: number): string =>
       used === 1 ? "1 Versuch bisher" : `${used} Versuche bisher`,
     attemptsUnlimited: "Die Anzahl der Versuche ist nicht begrenzt.",
@@ -329,11 +450,27 @@ export const de = {
     multiHint: "Bitte wählen Sie alle zutreffenden Antworten.",
     submit: "Antworten absenden",
     submitting: "Wird ausgewertet …",
-    unanswered: "Bitte beantworten Sie alle Fragen, bevor Sie absenden.",
-    passed: (score: number): string => `Bestanden mit ${score} %.`,
-    failed: (score: number, threshold: number): string =>
-      `Nicht bestanden: ${score} % (erforderlich sind ${threshold} %).`,
-    retry: "Erneut versuchen",
+    unanswered: "Bitte beantworten Sie diese Frage, bevor Sie fortfahren.",
+
+    /* The two result screens, pages 11 and 12. */
+    passedTitle: "Abschlussprüfung bestanden!",
+    failedTitle: "Prüfung nicht bestanden",
+    /** "10 / 11" over "richtige Antworten". */
+    scoreOf: (correct: number, total: number): string => `${correct} / ${total}`,
+    scoreCaption: "richtige Antworten",
+    scoreRequirement: (needed: number, total: number): string =>
+      `${needed} von ${total} richtige Antworten zum Bestehen erforderlich`,
+    passedSentence: (correct: number, total: number): string =>
+      `Sie haben ${correct} von ${total} Fragen richtig beantwortet.`,
+    failedSentence: (correct: number, total: number, needed: number): string =>
+      `Sie haben ${correct} von ${total} Fragen richtig beantwortet. Zum Bestehen der Lernerfolgskontrolle sind mindestens ${needed} richtige Antworten erforderlich. Bitte wiederholen Sie die Abschlussprüfung.`,
+    retry: "Abschlussprüfung wiederholen",
+    pause: "Fortbildung pausieren",
+    pauseHint: "Prüfung zu einem späteren Zeitpunkt fortsetzen",
+    claim: "CME-Punkte geltend machen",
+    /** No points to claim, so the passed screen offers the way onwards instead. */
+    claimWithoutPoints: "Fortbildung abschließen",
+
     /** A CME course never reveals the answer key — see docs/requirements §4. */
     noReveal:
       "Die richtigen Antworten werden aus Gründen der Zertifizierung nicht angezeigt.",

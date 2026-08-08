@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { scoreQuiz, UnknownQuestionError, type Question } from "./assessment.js";
+import {
+  minimumCorrectAnswers,
+  scoreQuiz,
+  UnknownQuestionError,
+  type Question,
+} from "./assessment.js";
 
 const single = (id: string, correct: string): Question => ({
   id,
@@ -145,5 +150,49 @@ describe("determinism", () => {
     expect(scoreQuiz(mediceQuiz, answers, 70)).toEqual(
       scoreQuiz(mediceQuiz, answers, 70),
     );
+  });
+});
+
+describe("minimumCorrectAnswers", () => {
+  it("agrees with scoreQuiz on the MEDICE course", () => {
+    // The number the layout prints on page 08: 11 questions, 70 %, eight right.
+    expect(minimumCorrectAnswers(11, 70)).toBe(8);
+  });
+
+  it("never disagrees with scoreQuiz, over every shape a course could have", () => {
+    // The point of the function. `Math.ceil(total * threshold / 100)` matches on
+    // 8 of 11 and is wrong elsewhere, and "elsewhere" is every course that is
+    // not MEDICE's — which is the whole rest of this platform's life.
+    for (let total = 1; total <= 40; total += 1) {
+      for (let threshold = 0; threshold <= 100; threshold += 1) {
+        const needed = minimumCorrectAnswers(total, threshold);
+        if (needed === null) {
+          // Nothing passes: no count of correct answers reaches the threshold.
+          expect(Math.floor((total / total) * 100) >= threshold).toBe(false);
+          continue;
+        }
+
+        expect(Math.floor((needed / total) * 100) >= threshold).toBe(true);
+        if (needed > 0) {
+          expect(Math.floor(((needed - 1) / total) * 100) >= threshold).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("is zero when the threshold is zero", () => {
+    // Degenerate but real: `scoreQuiz` passes a 0 % threshold with nothing
+    // right, so the screen must not claim one answer is needed.
+    expect(minimumCorrectAnswers(11, 0)).toBe(0);
+  });
+
+  it("has no answer for a quiz with no questions", () => {
+    // An authoring state. `scoreQuiz` passes nobody on it, and "Mind. 1 von 0
+    // richtig" is not a sentence.
+    expect(minimumCorrectAnswers(0, 70)).toBeNull();
+  });
+
+  it("has no answer for a threshold nothing can reach", () => {
+    expect(minimumCorrectAnswers(11, 101)).toBeNull();
   });
 });

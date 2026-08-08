@@ -118,102 +118,129 @@ content column's right edge.
 
 ## Page 02 — Fortbildung → Übersicht
 
-| #    | The layout draws                                                                                                                                                           | Verdict                                                                                 |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| 2.1  | Hero split in two: teal with the title on the left, the course image full-bleed on the right                                                                               | **differs** — full-width teal, image not shown                                          |
-| 2.2  | Meta bar: white card overlapping the hero's lower edge — orange `4` badge, `CME Punkte`, clock + duration, module icon + count, teal `Fortbildung fortsetzen` at the right | matches, except the icons are grey rather than orange                                   |
-| 2.3  | `← Zurück zur Übersicht` under the bar                                                                                                                                     | matches                                                                                 |
-| 2.4  | Four tabs, the active one white and merged into the panel                                                                                                                  | matches                                                                                 |
-| 2.5  | `Beschreibung der Fortbildung`, then `Mehr lesen…` **inline at the end of the text**, teal and bold                                                                        | **differs** — a separate underlined link on its own line                                |
-| 2.6  | `Lernziele`: intro line, then orange circled ticks                                                                                                                         | matches                                                                                 |
-| 2.7  | `Zielgruppe`: intro line, paragraph, bullet list, `Vorkenntnisse:` paragraph                                                                                               | matches (the structure is authored content, not layout)                                 |
-| 2.8  | `Inhalte`: teal arrow, module title, topic line, duration `25:24 Min.` right-aligned                                                                                       | **differs** — the duration is followed by `· 1 Kapitel`, which the layout does not draw |
-| 2.9  | Thin rules between sections                                                                                                                                                | **missing**                                                                             |
-| 2.10 | Progress card: teal, ring, `2` over `von 3`, sentence, orange button                                                                                                       | matches, plus a watch-percentage line the layout does not draw                          |
+| #    | The layout draws                                                                                                                                                           | Verdict                                                                                         |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 2.1  | Hero split in two: teal with the title on the left, the course image full-bleed on the right                                                                               | matches (P19-03)                                                                                |
+| 2.2  | Meta bar: white card overlapping the hero's lower edge — orange `4` badge, `CME Punkte`, clock + duration, module icon + count, teal `Fortbildung fortsetzen` at the right | matches                                                                                         |
+| 2.3  | `← Zurück zur Übersicht` under the bar                                                                                                                                     | matches                                                                                         |
+| 2.4  | Four tabs, the active one white and merged into the panel                                                                                                                  | matches                                                                                         |
+| 2.5  | `Beschreibung der Fortbildung`, then `Mehr lesen…` **inline at the end of the text**, teal and bold                                                                        | matches (#63)                                                                                   |
+| 2.6  | `Lernziele`: intro line, then orange circled ticks                                                                                                                         | matches                                                                                         |
+| 2.7  | `Zielgruppe`: intro line, paragraph, bullet list, `Vorkenntnisse:` paragraph                                                                                               | matches (the structure is authored content, not layout)                                         |
+| 2.8  | `Inhalte`: teal arrow, module title, topic line, duration `25:24 Min.` right-aligned                                                                                       | matches (#63)                                                                                   |
+| 2.9  | Thin rules between sections                                                                                                                                                | matches (#63)                                                                                   |
+| 2.10 | Progress card: teal, ring, `2` over `von 3`, sentence, orange button                                                                                                       | **deliberate** — plus a watch-percentage line. See "The watch line on the progress card" below. |
 
 ## Page 03 — Experten/Referenten
 
-| #   | The layout draws                                                                                              | Verdict                             |
-| --- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| 3.1 | Heading `Die Experten/Expertinnen aus dieser Fortbildung`                                                     | matches                             |
-| 3.2 | Per expert: square image left; role in teal; name bold; institution grey; biography with inline `Mehr lesen…` | matches, except `Mehr lesen…` again |
-| 3.3 | Hairline between experts                                                                                      | matches                             |
+| #   | The layout draws                                                                                              | Verdict                                    |
+| --- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| 3.1 | Heading `Die Experten/Expertinnen aus dieser Fortbildung`                                                     | matches                                    |
+| 3.2 | Per expert: square image left; role in teal; name bold; institution grey; biography with inline `Mehr lesen…` | matches (#63 — the same `ReadMore` as 2.5) |
+| 3.3 | Hairline between experts                                                                                      | matches                                    |
 
 ## Page 04 — Zertifizierung
 
-| #   | The layout draws                                                                                                                                                                                                                                        | Verdict                                                                                                                                                  |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 4.1 | An **informational** panel: `Zertifizierung` heading, then `CME-Punkte`, `Akkreditierung` (body, `Gültigkeit`, `Fortbildungsnummer`), `Voraussetzungen für den Zertifikatserwerb` (orange ticks), `Punktemeldung`, `Ihr Zertifikat` (bulleted contents) | **differs — structurally.** The built tab is the course outline plus the EFN form plus the completion action. None of that is on this page in the layout |
-| 4.2 | No form of any kind on this tab                                                                                                                                                                                                                         | **differs** — the EFN field, the name field and `Fortbildung abschließen` all live here today                                                            |
+| #   | The layout draws                                                                                                                                                                                                                                        | Verdict                                                                                                                            |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 4.1 | An **informational** panel: `Zertifizierung` heading, then `CME-Punkte`, `Akkreditierung` (body, `Gültigkeit`, `Fortbildungsnummer`), `Voraussetzungen für den Zertifikatserwerb` (orange ticks), `Punktemeldung`, `Ihr Zertifikat` (bulleted contents) | matches (#60). Every threshold is the course's own; a course with no accreditation gets one sentence saying so                     |
+| 4.2 | No form of any kind on this tab                                                                                                                                                                                                                         | matches (#60) — asserted by a test, because "the layout has no form here" is not something anybody re-derives while adding a field |
 
 ## Page 05 — Mediathek
 
-| #   | The layout draws                                                                                                          | Verdict                                                                                                      |
-| --- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| 5.1 | `Mediathek` heading left, `Modul` filter right                                                                            | matches                                                                                                      |
-| 5.2 | Group heading `Materialien zu Modul 1 (Grundlagen & Epidemiologie)`                                                       | matches                                                                                                      |
-| 5.3 | Materials in a **two-column grid**                                                                                        | **differs** — one column, occupying half the panel                                                           |
-| 5.4 | Card: image on top, bold title, description, teal `Download ⤓` pill                                                       | **differs** — no description shown, no image, a `PDF · 512 KB` meta line the layout does not draw            |
-| 5.5 | A locked group is **blurred as a whole**, with a lock and `Wird nach Abschluss der Module freigeschaltet` centred over it | **differs** — the lock and its caption are positioned off the card, overlapping the panel's empty right half |
+| #   | The layout draws                                                                                                          | Verdict       |
+| --- | ------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| 5.1 | `Mediathek` heading left, `Modul` filter right                                                                            | matches       |
+| 5.2 | Group heading `Materialien zu Modul 1 (Grundlagen & Epidemiologie)`                                                       | matches       |
+| 5.3 | Materials in a **two-column grid**                                                                                        | matches (#62) |
+| 5.4 | Card: image on top, bold title, description, teal `Download ⤓` pill                                                       | matches (#62) |
+| 5.5 | A locked group is **blurred as a whole**, with a lock and `Wird nach Abschluss der Module freigeschaltet` centred over it | matches (#62) |
 
 ## Pages 06–07 — Player
 
-| #   | The layout draws                                                                                                                                                            | Verdict                               |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| 6.1 | The whole page teal, with one large rounded corner where it ends                                                                                                            | **differs** — a teal band, not a page |
-| 6.2 | `← Zurück zur Übersicht` as an **orange pill, top right**                                                                                                                   | matches                               |
-| 6.3 | Progress card, top right: `Modul 2 von 3`, `14:35 / 25:45`, bar, `63% absolviert`, and `Ihr Fortschritt wird automatisch gespeichert` with a save icon                      | **missing**                           |
-| 6.4 | One white panel holding the video on the left and the sidebar on the right                                                                                                  | needs checking against the build      |
-| 6.5 | Sidebar `Modul Übersicht`: orange tick for a finished module, orange pause for the one in progress, chevron to expand, chapters with ▶ / 🔒, then `🔒 Lernerfolgskontrolle` | needs checking                        |
-| 6.6 | Orange `⏸ Fortbildung pausieren`, replaced by teal `Lernerfolgskontrolle beginnen` at 100 %                                                                                 | **missing**                           |
-| 6.7 | Under the video: `Modul 3 – Therapie`, `Kapitel 1 – S3 Leitlinien 2018` in teal, then the text                                                                              | needs checking                        |
+| #   | The layout draws                                                                                                                                                            | Verdict                                                                                                                    |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 6.1 | The whole page teal, with one large rounded corner where it ends                                                                                                            | matches (#61) — full-bleed, `rounded-br-[5rem]`                                                                            |
+| 6.2 | `← Zurück zur Übersicht` as an **orange pill, top right**                                                                                                                   | matches                                                                                                                    |
+| 6.3 | Progress card: `Modul 2 von 3`, `14:35 / 25:45`, bar, `63% absolviert`, and `Ihr Fortschritt wird automatisch gespeichert` with a save icon                                 | **deliberate** — every reading is there, above the video rather than inside the teal band. See "The progress card's place" |
+| 6.4 | One white panel holding the video on the left and the sidebar on the right                                                                                                  | matches (#61) — `CourseShell`, shared with pages 08–13                                                                     |
+| 6.5 | Sidebar `Modul Übersicht`: orange tick for a finished module, orange pause for the one in progress, chevron to expand, chapters with ▶ / 🔒, then `🔒 Lernerfolgskontrolle` | matches                                                                                                                    |
+| 6.6 | Orange `⏸ Fortbildung pausieren`, replaced by teal `Lernerfolgskontrolle beginnen` at 100 %                                                                                 | matches (#61) — the switch is the server's quiz gate, not a percentage computed here                                       |
+| 6.7 | Under the video: `Modul 3 – Therapie`, `Kapitel 1 – S3 Leitlinien 2018` in teal, then the text                                                                              | matches                                                                                                                    |
 
 ## Page 08 — Lernerfolgskontrolle, before starting
 
-| #   | The layout draws                                                                                                   | Verdict                                                                                                                                  |
-| --- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| 8.1 | Eyebrow `Lernerfolgskontrolle`, heading `Abschlussprüfung`                                                         | needs checking                                                                                                                           |
-| 8.2 | Three stat cards: `Anzahl Fragen 11`, `Antwortformat Single Choice`, `Bestehen 70 %` with `Mind. 8 von 11 richtig` | **missing**                                                                                                                              |
-| 8.3 | Teal-outlined info banner                                                                                          | **missing**                                                                                                                              |
-| 8.4 | Orange `Teilprüfung starten` and outlined `Zurück zur Übersicht`                                                   | **open question** — the button says _Teilprüfung_ directly under a heading that says _Abschlussprüfung_. See `docs/show-stoppers.md` S20 |
+| #   | The layout draws                                                                                                   | Verdict                                                                                                                                                                                             |
+| --- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 8.1 | Eyebrow `Lernerfolgskontrolle`, heading `Abschlussprüfung`                                                         | matches (#61)                                                                                                                                                                                       |
+| 8.2 | Three stat cards: `Anzahl Fragen 11`, `Antwortformat Single Choice`, `Bestehen 70 %` with `Mind. 8 von 11 richtig` | matches (#61). `Mind. 8 von 11` is `minimumCorrectAnswers` in `@ds/domain`, which searches `scoreQuiz`'s own rule rather than rounding                                                              |
+| 8.3 | Teal-outlined info banner                                                                                          | matches (#61)                                                                                                                                                                                       |
+| 8.4 | Orange `Teilprüfung starten` and outlined `Zurück zur Übersicht`                                                   | **deliberate** — the button says `Abschlussprüfung starten`. No Teilprüfung exists in this budget, and naming a feature that does not exist is worse than departing from the render. S20 stays open |
 
 ## Pages 09–10 — A question
 
-| #   | The layout draws                                                                                             | Verdict        |
-| --- | ------------------------------------------------------------------------------------------------------------ | -------------- |
-| 9.1 | `Abschlussprüfung` teal, `Frage 5 von 11` right, progress bar                                                | needs checking |
-| 9.2 | Options as full-pill outlined rows; the selected one gets a teal border, a pale teal fill and a filled radio | needs checking |
-| 9.3 | When the options overflow: a scroll area and `Weitere Antworten durch Scrollen sichtbar ⌄`                   | **missing**    |
-| 9.4 | `← Zurück` outlined, `Weiter →` orange                                                                       | needs checking |
+| #   | The layout draws                                                                                             | Verdict                                                                                                    |
+| --- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| 9.1 | `Abschlussprüfung` teal, `Frage 5 von 11` right, progress bar                                                | matches (#61)                                                                                              |
+| 9.2 | Options as full-pill outlined rows; the selected one gets a teal border, a pale teal fill and a filled radio | matches (#61)                                                                                              |
+| 9.3 | When the options overflow: a scroll area and `Weitere Antworten durch Scrollen sichtbar ⌄`                   | matches (#61) — **measured**, not guessed from an option count, so it never appears when nothing is hidden |
+| 9.4 | `← Zurück` outlined, `Weiter →` orange                                                                       | matches (#61)                                                                                              |
 
 ## Page 11 — Failed
 
-| #    | The layout draws                                                                                                                        | Verdict        |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| 11.1 | `Prüfung nicht bestanden` in red, centred                                                                                               | needs checking |
-| 11.2 | Score card: `3 / 11`, `richtige Antworten`, **red** bar, `27%`, `8 von 11 richtige Antworten zum Bestehen erforderlich`                 | needs checking |
-| 11.3 | Orange `⟳ Abschlussprüfung wiederholen`; outlined `Fortbildung pausieren` with `Prüfung zu einem späteren Zeitpunkt fortsetzen` beneath | needs checking |
+| #    | The layout draws                                                                                                                        | Verdict       |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| 11.1 | `Prüfung nicht bestanden` in red, centred                                                                                               | matches (#61) |
+| 11.2 | Score card: `3 / 11`, `richtige Antworten`, **red** bar, `27%`, `8 von 11 richtige Antworten zum Bestehen erforderlich`                 | matches (#61) |
+| 11.3 | Orange `⟳ Abschlussprüfung wiederholen`; outlined `Fortbildung pausieren` with `Prüfung zu einem späteren Zeitpunkt fortsetzen` beneath | matches (#61) |
 
 ## Page 12 — Passed
 
-| #    | The layout draws                                                             | Verdict                                                                        |
-| ---- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| 12.1 | `Abschlussprüfung bestanden!` teal, centred, with a teal rosette             | needs checking                                                                 |
-| 12.2 | Score card: `10 / 11`, teal bar, `91%`, the requirement line                 | needs checking                                                                 |
-| 12.3 | Orange `CME-Punkte geltend machen →` — **this is what opens the EFN screen** | **differs** — the EFN form is on the Zertifizierung tab today, not behind this |
+| #    | The layout draws                                                             | Verdict                                                                                                                            |
+| ---- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 12.1 | `Abschlussprüfung bestanden!` teal, centred, with a teal rosette             | matches (#61)                                                                                                                      |
+| 12.2 | Score card: `10 / 11`, teal bar, `91%`, the requirement line                 | matches (#61)                                                                                                                      |
+| 12.3 | Orange `CME-Punkte geltend machen →` — **this is what opens the EFN screen** | matches (#60) — and when the evaluation is still outstanding it opens that first, because the API refuses a completion without one |
 
 ## Page 13 — Punktemeldung (EFN)
 
 | #    | The layout draws                                                         | Verdict                                                                                                                                       |
 | ---- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 13.1 | `Herzlichen Glückwunsch!` and `Sie haben die Fortbildung abgeschlossen.` | needs checking                                                                                                                                |
-| 13.2 | Grey info box explaining why the EFN is needed                           | **missing**                                                                                                                                   |
-| 13.3 | `Titel*` select, `Vorname*` / `Nachname*` side by side, `EFN-Nummer*`    | **differs** — one free-text `Name auf der Teilnahmebescheinigung`, no title, no split name                                                    |
+| 13.1 | `Herzlichen Glückwunsch!` and `Sie haben die Fortbildung abgeschlossen.` | matches                                                                                                                                       |
+| 13.2 | Grey info box explaining why the EFN is needed                           | matches                                                                                                                                       |
+| 13.3 | `Titel*` select, `Vorname*` / `Nachname*` side by side, `EFN-Nummer*`    | matches                                                                                                                                       |
 | 13.4 | Helper `Die 18-stellige EFN finden Sie auf Ihrem Arztausweis`            | **contradicts the code** — the EFN is validated as **15** digits (`packages/domain/src/eiv.ts`). Not changed. See `docs/show-stoppers.md` S21 |
-| 13.5 | Consent checkbox linking the Datenschutzerklärung                        | **missing**                                                                                                                                   |
-| 13.6 | Orange `Daten übermitteln →`                                             | matches in function                                                                                                                           |
+| 13.5 | Consent checkbox linking the Datenschutzerklärung                        | matches                                                                                                                                       |
+| 13.6 | Orange `Daten übermitteln →`                                             | matches. Reached from page 12 since #60, not from the Zertifizierung tab                                                                      |
 
 ---
+
+## The progress card's place on the player (6.3)
+
+The layout puts it inside the teal band, top right. Ours carries the same four
+readings — module counter, `14:35 / 25:45`, the bar and the autosave line — in a card
+above the video.
+
+The band is `CourseShell`'s and is drawn on five screens; the progress card is
+meaningful on one of them. Putting a per-lesson reading into chrome shared by the
+exam and the Punktemeldung would leave that slot empty four times out of five and
+would tie the shell to the player it is deliberately no longer part of.
+
+## The watch line on the progress card (2.10)
+
+The layout's progress card carries a ring, a sentence and a button. Ours carries one
+more line — `63 % von 100 % angesehen` — and that is a deviation, so it is written
+down here rather than left for a reviewer to find.
+
+It stays because the modules-completed sentence answers the wrong question when a
+learner is stuck. A module is complete when the _watched union_ reaches the course's
+`required_watch_percent`, and a learner who has opened every module and finished none
+reads "Sie haben 0 von 3 Modulen abgeschlossen" as a fault in the platform. The layout
+puts the same number on the player's own progress card (6.3); on this screen it is the
+only thing that explains the ring.
+
+If the client would rather have the card exactly as drawn, deleting the `footnote`
+prop is the whole change.
 
 ## The two things not to resolve by guessing
 

@@ -578,9 +578,18 @@ export function ErrorNotice(props: {
   );
 }
 
-export function Section(props: { title: string; children: ReactNode }) {
+export function Section(props: {
+  title: string;
+  children: ReactNode;
+  /**
+   * Extra classes on the `<section>` — the Übersicht tab's rules between
+   * sections (#63). Appended rather than replacing, so a caller cannot
+   * accidentally drop the heading spacing every other tab relies on.
+   */
+  className?: string;
+}) {
   return (
-    <section className="space-y-3">
+    <section className={`space-y-3 ${props.className ?? ""}`}>
       <h2 className="text-lg font-semibold text-gray-900">{props.title}</h2>
       {props.children}
     </section>

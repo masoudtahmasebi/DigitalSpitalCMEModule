@@ -13,10 +13,14 @@
  * bug a screenshot on the wrong fixture hides, so it gets a test.
  */
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import type { CourseDetail, EnrolmentState } from "@ds/sdk";
 import { OverviewTab } from "./OverviewTab.js";
+
+// Without this every render stacks in one document, and an assertion that
+// something is *absent* passes or fails depending on the test before it.
+afterEach(cleanup);
 
 function courseWith(modules: CourseDetail["modules"]): CourseDetail {
   return {
@@ -130,5 +134,78 @@ describe("the topic line under a module", () => {
     );
 
     expect(screen.getByText("Grundlagen")).toBeTruthy();
+  });
+});
+
+describe("the Inhalte row's right-hand column", () => {
+  const timed = (durationSec: number) => ({
+    id: "ch1",
+    ordinal: 0,
+    title: "Kapitel 1",
+    contents: [{ id: "c1", ordinal: 0, kind: "video", durationSec }],
+  });
+
+  it("carries the duration and nothing after it", () => {
+    // It read "25:24 Min. · 1 Kapitel". The layout draws the duration alone,
+    // and on this course — one chapter per module — the count was the same
+    // useless "1 Kapitel" on every row.
+    render(
+      <OverviewTab
+        course={courseWith([
+          {
+            id: "m1",
+            ordinal: 0,
+            title: "Modul 1 – Grundlagen",
+            subtitle: "ADHS-Definition",
+            chapters: [timed(1524)],
+          },
+        ] as unknown as CourseDetail["modules"])}
+        state={STATE}
+      />,
+    );
+
+    expect(screen.getByText("25:24 Min.")).toBeTruthy();
+    expect(screen.queryByText(/Kapitel$/)).toBeNull();
+  });
+
+  it("is empty rather than a bare unit when the module has no timed content", () => {
+    render(
+      <OverviewTab
+        course={courseWith([
+          {
+            id: "m1",
+            ordinal: 0,
+            title: "Modul 1 – Grundlagen",
+            subtitle: "ADHS-Definition",
+            chapters: [chapter("Nur Material")],
+          },
+        ] as unknown as CourseDetail["modules"])}
+        state={STATE}
+      />,
+    );
+
+    expect(screen.queryByText(/Min\./)).toBeNull();
+  });
+});
+
+describe("the rules between sections", () => {
+  it("start at the second section, whichever one that is", () => {
+    // `first:border-t-0` follows the DOM, and a course with no description
+    // starts at Lernziele. A container-level rule would have drawn a hairline
+    // above the first heading on exactly those courses.
+    const { container } = render(
+      <OverviewTab
+        course={{
+          ...courseWith([]),
+          description: null,
+          learningObjectives: ["Sichere Diagnosestellung"],
+        }}
+        state={STATE}
+      />,
+    );
+
+    const sections = container.querySelectorAll("section");
+    expect(sections.length).toBeGreaterThan(1);
+    expect(sections[0]?.className).toContain("first:border-t-0");
   });
 });
