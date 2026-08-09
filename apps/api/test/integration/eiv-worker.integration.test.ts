@@ -88,16 +88,17 @@ beforeAll(async () => {
     })
   ).id;
 
-  // The sweep is global by design — it drains every tenant's queue. Other
-  // suites (and earlier runs against this database) leave their own rows
-  // behind, so park anything not belonging to this customer before starting.
-  // Without this the tally below counts other suites' work and the assertions
-  // become order-dependent.
-  await seedPool.query(
-    `UPDATE eiv_submissions SET status = 'held'
-      WHERE status IN ('queued', 'failed_retryable') AND customer_id <> $1`,
-    [customerId],
-  );
+  /*
+   * The sweep is global by design — it drains every tenant's queue — so this
+   * suite's tally counts whatever else is queued.
+   *
+   * This used to park other customers' rows before starting, because the suite
+   * ran against a database shared with development and with every previous
+   * run. Since P32-01 the run begins from an empty database, so the only rows
+   * here are the ones this file creates. The parking is kept, narrowed to a
+   * comment about *why* it is no longer needed: a suite that silently depends
+   * on being alone should say so, and this one genuinely does.
+   */
 }, 30_000);
 
 afterAll(async () => {

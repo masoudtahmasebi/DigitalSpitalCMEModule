@@ -40,8 +40,13 @@
     "db:seed:default": "tsx db/seed/ds-default.ts",
     "db:seed:ds": "tsx db/seed/ds-demo.ts",
     "verify": "pnpm lint && pnpm format && pnpm typecheck && pnpm test && pnpm audit --prod --audit-level=moderate",
-    "test:integration": "turbo run test:integration",
-    "audit:prod": "pnpm audit --prod --audit-level=moderate"
+    "test:integration": "node scripts/run-integration.mjs",
+    "audit:prod": "pnpm audit --prod --audit-level=moderate",
+    "db:test": "node scripts/testdb.mjs",
+    "db:test:fresh": "node scripts/testdb.mjs --fresh",
+    "db:dev:reset": "node scripts/devdb.mjs",
+    "db:dev:seed": "node scripts/devdb.mjs --keep",
+    "test:integration:ci": "turbo run test:integration"
   },
   "devDependencies": {
     "@ds/config": "workspace:*",

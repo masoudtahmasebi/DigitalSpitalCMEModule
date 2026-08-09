@@ -97,6 +97,16 @@ const READ_WITHOUT_DOCUMENTATION = new Set([
   "KEYCLOAK_ORIGIN",
   "API_ORIGIN",
   "CORS_ALLOWED_ORIGINS",
+  // Developer-machine overrides for the test and development database scripts
+  // (P32-01). Deliberately in neither template, for two reasons: nothing in a
+  // deployment ever runs `scripts/testdb.mjs` or `scripts/devdb.mjs`, and
+  // `.env.example` configures the API — a variable listed there reads as
+  // something the API consumes. Each has a working default, and each script
+  // states its own in its header.
+  "TEST_DB_NAME",
+  "TEST_DB_HOST",
+  "DEV_DB_NAME",
+  "INTEGRATION_RESET",
   // Node's own, and the CI runner's.
   "NODE_ENV",
   "CI",

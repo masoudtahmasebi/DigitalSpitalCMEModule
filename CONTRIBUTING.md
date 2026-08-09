@@ -164,7 +164,54 @@ Controller does HTTP. Each has one job.
 `pnpm test` runs the first three; `pnpm test:integration` runs the last, and CI
 gives it its own job with Postgres and Redis services.
 
-Never mock the database to test a repository. Tenant isolation is a property of
+Never mock the database to test a repository.
+
+#### Running the integration suite (P32-01)
+
+```bash
+pnpm test:integration                       # every suite
+pnpm test:integration -- -t "cross-tenant"  # one test; filters pass through
+pnpm test:integration --fresh               # rebuild the test database first
+```
+
+One command, no environment variables. It provisions `ds_education_test`,
+builds the workspace packages the suites import through, truncates every tenant
+table, and runs vitest. Three things in there are guarantees rather than
+conveniences, and each one is a bug that has already cost this project time:
+
+- **It is a different database from `ds_education`.** The suite used to write
+  into the development database and clean nothing up — about fifty customers a
+  run. It reached 1 096, of which three were real, and the console's customer
+  picker became a wall of `Pipeline Test GmbH`. CI never saw it, because CI gets
+  a fresh container: the suite was green in CI and unreliable locally, which is
+  the worst arrangement available, since the signal people watch is the one that
+  lies.
+- **It builds first.** `@ds/domain`, `@ds/sdk` and `@ds/eiv-client` are consumed
+  through their `dist/`. Running vitest directly does not build them, and the
+  symptom is the worst kind: the fix you just made does not appear, and the test
+  fails exactly as before.
+- **It truncates before every file, not just before the run.** Four tests failed
+  the first time this ran at all — they had been passing on state a migration
+  established weeks earlier, and nobody could have told you which. Per-run
+  truncation was still not enough: files run sequentially and share one
+  database, so file eleven read what file ten left, and `EivService.sweep` is
+  global by design, which makes its tally assertion a claim about the whole
+  database. Per-file truncation is what makes that claim true.
+
+If you write a suite that asserts something global — a sweep, a count, a
+scheduled job's tally — it will be correct here and nowhere else. Do not weaken
+it to a per-tenant assertion to make it portable; a sweep test that cannot
+notice extra rows is not testing the sweep.
+
+To rebuild the _development_ database — the one the console and the portal run
+against — use `pnpm db:dev:reset`. It drops, migrates and seeds all three
+tenants (`medice`, `ds`, `dscustomer`); `pnpm db:dev:seed` re-seeds without
+dropping. Neither creates a staff account: run `bootstrap-admin` for that, which
+prints a password once.
+
+Both scripts refuse any host that is not this machine, and `testdb.mjs` also
+refuses to drop a name that does not end in `_test`. There is no override flag
+for either, because the only reason to want one is the reason they exist. Tenant isolation is a property of
 PostgreSQL RLS (ADR-0002) and a mock will happily "prove" an isolation guarantee
 that does not exist.
 

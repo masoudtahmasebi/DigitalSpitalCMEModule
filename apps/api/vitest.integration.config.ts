@@ -12,6 +12,25 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["test/integration/**/*.test.ts"],
+
+    /**
+     * Three guards before the first test (P32-01): the database must be local,
+     * the workspace builds must not be stale, and — when asked — every tenant
+     * table is truncated so a run means the same thing on the hundredth day as
+     * the first. See `test/integration/setup.ts` for why each one exists.
+     */
+    globalSetup: ["./test/integration/setup.ts"],
+
+    /**
+     * And every **file** starts from an empty database (P32-02).
+     *
+     * The run-level truncation above is not enough on its own: file eleven
+     * still saw files one to ten. `EivService.sweep` is global by design, so
+     * `eiv-worker`'s tally assertion is a claim about the whole database, and
+     * it broke on the third run — `considered: 2` where the file had queued
+     * exactly one. See `support/reset-each-file.ts`.
+     */
+    setupFiles: ["./test/integration/support/reset-each-file.ts"],
     testTimeout: 20_000,
     hookTimeout: 20_000,
 

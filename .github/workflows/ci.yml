@@ -198,8 +198,24 @@ jobs:
 
       - name: Migrate
         run: pnpm db:migrate
+      # `test:integration:ci`, not `test:integration` (P32-01).
+      #
+      # `pnpm test:integration` is the developer's command: it provisions an
+      # isolated `ds_education_test` database, builds, and truncates before
+      # running, because a developer's cluster is long-lived and the suite used
+      # to leave ~50 customers per run in the database they also run the
+      # console against.
+      #
+      # None of that applies here. The Postgres above is a fresh container that
+      # exists for this job and is discarded with it, and the steps that
+      # provision it are named steps that fail visibly — which is the right
+      # shape in CI and the wrong shape at a terminal. Running the developer's
+      # command here would create a second database, migrate it a second time,
+      # and test something other than the database the seed steps below check.
+      #
+      # So CI takes the turbo path, against the database it just migrated.
       - name: Integration tests
-        run: pnpm test:integration
+        run: pnpm test:integration:ci
 
       # Both seeds, against the same real Postgres, **after** the integration
       # tests rather than before (P20-01).
