@@ -69,12 +69,15 @@ export interface ModerationRepositoryPort {
 }
 
 /**
- * Collapse `eiv_status` onto the domain's four stages.
+ * Collapse `eiv_status` onto the domain's five stages.
  *
- * The enum has six values and the rule cares about three distinctions: nothing
- * queued, queued but not accepted, and accepted. `failed_permanent` and
- * `window_closed` join `abandoned` — nothing was ever reported, so a name may
- * still be corrected because there is no record anywhere for it to contradict.
+ * The enum has seven values and the rule cares about four distinctions: nothing
+ * queued, queued but not accepted, accepted, and accepted-then-withdrawn.
+ * `failed_permanent` and `window_closed` join `abandoned` — nothing was ever
+ * reported, so a name may still be corrected because there is no record
+ * anywhere for it to contradict. `withdrawn` does *not* join them: something
+ * was reported, and a name edited afterwards would leave no trace that a
+ * different one had reached the Kammer (P31-02).
  *
  * `::text` on the comparison rather than a bare literal. Postgres coerces the
  * literal to the enum, so comparing against a value that is not a member raises
@@ -85,6 +88,7 @@ export interface ModerationRepositoryPort {
 const STAGE_SQL = sql`CASE
   WHEN s.status IS NULL THEN 'none'
   WHEN s.status::text = 'submitted' THEN 'submitted'
+  WHEN s.status::text = 'withdrawn' THEN 'withdrawn'
   WHEN s.status::text IN ('failed_permanent', 'window_closed') THEN 'abandoned'
   ELSE 'pending'
 END`;

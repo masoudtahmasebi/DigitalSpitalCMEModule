@@ -26,6 +26,8 @@ const base: DueSubmission = {
   nextAttemptAt: null,
   lastError: null,
   vnrPassword: VNR_PASSWORD,
+  punkteBasis: true,
+  punkteLernerfolg: true,
 };
 
 function build(

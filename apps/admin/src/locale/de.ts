@@ -59,6 +59,14 @@ export const de = {
     nameLocked: "Name gemeldet",
     nameLockedHint:
       "Die Punktemeldung wurde bereits übermittelt. Eine Korrektur muss innerhalb der Korrekturfrist schriftlich bei der Ärztekammer erfolgen.",
+    /* Operator actions on a Punktemeldung (P31-02). */
+    requeue: "Erneut melden",
+    withdraw: "Meldung widerrufen",
+    withdrawConfirm: "Endgültig widerrufen",
+    withdrawReason: "Grund des Widerrufs",
+    withdrawReasonHint:
+      "Für das Prüfprotokoll, z. B. „Widerruf auf Wunsch der Teilnehmerin, Ticket 4711“. Keine Angaben zur Person.",
+
     erase: "Löschen",
     eraseConfirm: "Endgültig löschen",
     reason: "Grund der Löschung",
@@ -69,6 +77,10 @@ export const de = {
       pending: "in Warteschlange",
       submitted: "übermittelt",
       abandoned: "abgebrochen",
+      /* An operator took a reported Punktemeldung back at the Ärztekammer
+         (P31-02). Not the same as "keine": the points existed and were
+         removed, and a physician may reasonably ask why. */
+      withdrawn: "widerrufen",
     },
     loadFailed: "Die Teilnahmen konnten nicht geladen werden.",
     saveFailed: "Die Änderung konnte nicht gespeichert werden.",
@@ -668,6 +680,28 @@ export const de = {
     vnrPassword: "VNR-Passwort",
     vnrPasswordHint:
       "Wird verschlüsselt gespeichert und niemals wieder angezeigt. Leer lassen, um das gespeicherte Passwort beizubehalten.",
+    /* Which credit the Punktemeldung claims (P31-02, S25). */
+    eivPunkte: "Punkte in der Meldung",
+    eivPunkteHint:
+      "Der EIV meldet die Punkte für die Teilnahme und die für die Lernerfolgskontrolle getrennt. Welche eine Fortbildung beanspruchen darf, steht im Anerkennungsbescheid — im Zweifel unten bei der Ärztekammer prüfen.",
+    eivPunkteBasis: "Punkte für die Teilnahme",
+    eivPunkteLernerfolg: "Punkte für die Lernerfolgskontrolle",
+
+    /* The VNR pre-check (P31-02). */
+    eivCheck: "Bei der Ärztekammer prüfen",
+    eivCheckHint:
+      "Fragt den EIV, was zu dieser VNR hinterlegt ist. Es wird nichts gemeldet und nichts verändert. Wichtig ist vor allem der Zeitraum: Der EIV weist eine Meldung ab, deren Teilnahmedatum außerhalb liegt.",
+    eivCheckAction: "Daten abrufen",
+    eivChecking: "Wird abgerufen …",
+    eivCheckNeedsCredentials: "Dafür müssen VNR und VNR-Passwort hinterlegt sein.",
+    eivThema: "Thema",
+    eivZeitraum: "Anerkannter Zeitraum",
+    eivKategorie: "Kategorie",
+    eivLocked:
+      "Die Ärztekammer hat diese Veranstaltung für Meldungen gesperrt. Es wird kein Punkt mehr gutgeschrieben.",
+    eivLernerfolgMismatch:
+      "Für diese Veranstaltung sind 0 Punkte für die Lernerfolgskontrolle hinterlegt, oben ist sie aber angehakt. Der EIV kann die Meldung deshalb ablehnen.",
+
     vnrPasswordStored: "Ein Passwort ist hinterlegt.",
     vnrPasswordMissing: "Es ist kein Passwort hinterlegt.",
 
@@ -782,6 +816,9 @@ export const de = {
       failed: "fehlgeschlagen",
       needs_attention: "prüfen",
       abandoned: "abgebrochen",
+      /* Reported and then taken back at the Ärztekammer by an operator
+         (P31-02). Deliberately not "keine": the points were credited once. */
+      withdrawn: "widerrufen",
     },
 
     certificate: {

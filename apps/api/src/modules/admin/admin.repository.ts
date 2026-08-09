@@ -54,6 +54,8 @@ export interface AdminCourseRow {
   passThresholdPercent: number;
   maxQuizAttempts: number | null;
   revealCorrectAnswers: boolean;
+  eivPunkteBasis: boolean;
+  eivPunkteLernerfolg: boolean;
   organizer: string | null;
   eventLocation: string | null;
   accreditationBody: string | null;
@@ -92,7 +94,8 @@ export interface SubmissionStateRow {
     | "submitted"
     | "failed_retryable"
     | "failed_permanent"
-    | "window_closed";
+    | "window_closed"
+    | "withdrawn";
   attemptCount: number;
   reportDueAt: Date;
 }
@@ -193,6 +196,8 @@ export interface CoursePatch {
   vnr?: string | null;
   /** Already encrypted by the service — a repository never holds a plaintext secret. */
   vnrPasswordEnc?: Buffer;
+  eivPunkteBasis?: boolean;
+  eivPunkteLernerfolg?: boolean;
 }
 
 export interface CertificateAssetPatch {
@@ -224,6 +229,8 @@ const COURSE_COLUMNS = {
   passThresholdPercent: courses.passThresholdPercent,
   maxQuizAttempts: courses.maxQuizAttempts,
   revealCorrectAnswers: courses.revealCorrectAnswers,
+  eivPunkteBasis: courses.eivPunkteBasis,
+  eivPunkteLernerfolg: courses.eivPunkteLernerfolg,
   organizer: courses.organizer,
   eventLocation: courses.eventLocation,
   accreditationBody: courses.accreditationBody,

@@ -63,6 +63,7 @@ const EIV_LABELS: Record<ParticipantRow["eivState"], string> = {
   failed: "fehlgeschlagen",
   needs_attention: "PRÜFEN",
   abandoned: "abgebrochen",
+  withdrawn: "widerrufen",
 };
 
 const CERTIFICATE_LABELS: Record<ParticipantRow["certificateState"], string> = {

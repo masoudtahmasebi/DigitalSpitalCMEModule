@@ -58,6 +58,8 @@ export const eivStatus = pgEnum("eiv_status", [
   "failed_retryable",
   "failed_permanent",
   "window_closed",
+  /** Reported, then withdrawn by an operator at the authority (P31-02). */
+  "withdrawn",
 ]);
 export const certificateStatus = pgEnum("certificate_status", [
   "pending",
@@ -163,6 +165,17 @@ export const courses = pgTable("courses", {
   vnr: text("vnr"),
   // Ciphertext. Read only through SecretCipher; never selected into a response.
   vnrPasswordEnc: bytea("vnr_password_enc"),
+  /*
+   * Which credit a Punktemeldung claims for this course (P31-02, S25).
+   *
+   * A course setting rather than a constant because the Ärztekammer accredits
+   * each event for its own point values, and `GET /veranstaltung` reports them
+   * per VNR. Drizzle only knows columns declared here — a column absent from
+   * this file is invisible to every query, which is how `login_url` came to be
+   * writable nowhere (P28-02).
+   */
+  eivPunkteBasis: boolean("eiv_punkte_basis").notNull().default(true),
+  eivPunkteLernerfolg: boolean("eiv_punkte_lernerfolg").notNull().default(true),
   fortbildungsnummer: text("fortbildungsnummer"),
   accreditationBody: text("accreditation_body"),
   cmePoints: integer("cme_points"),

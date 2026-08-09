@@ -50,6 +50,10 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
   const [editing, setEditing] = useState<string | undefined>();
   const [name, setName] = useState("");
   const [erasing, setErasing] = useState<string | undefined>();
+  /** Which row is confirming a withdrawal (P31-02). Shares `reason` below. */
+  const [withdrawing, setWithdrawing] = useState<string | undefined>();
+  /** The row with an outbound call in flight, so its buttons can be disabled. */
+  const [busy, setBusy] = useState<string | undefined>();
   const [reason, setReason] = useState("");
 
   const load = useCallback(async () => {
@@ -77,6 +81,49 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
       // A 409 explains that the Punktemeldung has gone and what to do instead.
       // Shown verbatim: paraphrasing it would drop the instruction.
       setProblem(describeError(error, de.learners.saveFailed));
+    }
+  }
+
+  /**
+   * Hand an abandoned Punktemeldung back to the worker (P31-02).
+   *
+   * For a row the worker gave up on — a 406 the operator has since fixed by
+   * entering a VNR, a password corrected, a lock lifted at the Kammer. It does
+   * not submit inline: the retry budget and the deadline arithmetic live in
+   * `@ds/domain`, and a second path would be a second opinion on them.
+   */
+  async function requeue(row: LearnerRecord): Promise<void> {
+    setProblem(undefined);
+    setBusy(row.enrolmentId);
+    try {
+      await client.adminRequeueEivSubmission(row.enrolmentId);
+      await load();
+    } catch (error) {
+      setProblem(describeError(error, de.learners.saveFailed));
+    } finally {
+      setBusy(undefined);
+    }
+  }
+
+  /**
+   * Withdraw a reported Punktemeldung.
+   *
+   * Reuses the reason field the erasure flow already has, because it is the
+   * same kind of value — a sentence about the process, for the audit trail,
+   * never about the person.
+   */
+  async function withdraw(row: LearnerRecord): Promise<void> {
+    setProblem(undefined);
+    setBusy(row.enrolmentId);
+    try {
+      await client.adminWithdrawEivSubmission(row.enrolmentId, reason.trim());
+      setWithdrawing(undefined);
+      setReason("");
+      await load();
+    } catch (error) {
+      setProblem(describeError(error, de.learners.saveFailed));
+    } finally {
+      setBusy(undefined);
     }
   }
 
@@ -208,11 +255,73 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
                       </Button>
                     </div>
                   </div>
+                ) : withdrawing === row.enrolmentId ? (
+                  /*
+                   * The same shape as the erasure confirmation, deliberately:
+                   * both are irreversible acts on a physician's CME record and
+                   * both want a sentence for the audit trail before they run.
+                   */
+                  <div className="space-y-2">
+                    <Field
+                      label={de.learners.withdrawReason}
+                      htmlFor={`withdraw-${row.enrolmentId}`}
+                      hint={de.learners.withdrawReasonHint}
+                    >
+                      <TextInput
+                        id={`withdraw-${row.enrolmentId}`}
+                        value={reason}
+                        maxLength={200}
+                        onChange={setReason}
+                      />
+                    </Field>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="danger"
+                        onClick={() => void withdraw(row)}
+                        disabled={reason.trim() === "" || busy === row.enrolmentId}
+                      >
+                        {de.learners.withdrawConfirm}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => setWithdrawing(undefined)}
+                      >
+                        {de.common.cancel}
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
                   <div className="flex justify-end gap-2">
+                    {/*
+                      Requeue an abandoned Meldung, withdraw a reported one
+                      (P31-02). Neither is offered where it cannot work: the API
+                      refuses both outside their windows, and a button that only
+                      fails is worse than no button.
+                    */}
+                    {row.submissionStage === "abandoned" ? (
+                      <Button
+                        variant="secondary"
+                        disabled={busy === row.enrolmentId}
+                        onClick={() => void requeue(row)}
+                      >
+                        {de.learners.requeue}
+                      </Button>
+                    ) : null}
+                    {row.submissionStage === "submitted" ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setWithdrawing(row.enrolmentId);
+                          setReason("");
+                        }}
+                      >
+                        {de.learners.withdraw}
+                      </Button>
+                    ) : null}
                     {/* Disabled once reported: the API refuses it and the
                         operator should know before typing, not after. */}
-                    {row.submissionStage === "submitted" ? (
+                    {row.submissionStage === "submitted" ||
+                    row.submissionStage === "withdrawn" ? (
                       <span
                         className="text-xs text-gray-500"
                         title={de.learners.nameLockedHint}

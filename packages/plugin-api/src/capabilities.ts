@@ -119,19 +119,55 @@ export interface ReportOutcome {
   /**
    * The authority's own word for what it did, verbatim and uninterpreted.
    *
-   * EIV-FOBI answers a successful push with a status alongside the reference —
-   * the mock models `ANGENOMMEN` and `BEREITS_GEMELDET`. Both are accepted, and
-   * they are not the same fact: one means this platform caused the CME record,
-   * the other that the Ärztekammer already held it. On a compliance log that
-   * distinction is the difference between "we reported it" and "somebody else
-   * did, and we may be looking at a double submission".
-   *
-   * Recorded, never acted on. The real field names are still unverified (S24 —
-   * the swagger has not been obtained), so branching on this string would be
-   * exactly the invented rule `CLAUDE.md` §7 forbids. Carrying it into the
-   * audit log costs nothing and is what makes the question answerable later.
+   * **EIV-FOBI returns none** — its success body carries only diagnostics its
+   * own specification calls non-contractual (P31-01). The field stays because
+   * the port spans authorities and another Ärztekammer may issue one; for EIV
+   * it is always absent, and nothing branches on it in any case.
    */
   readonly status?: string;
+}
+
+/** Where to send a question about an event, and what may authenticate it. */
+export interface AuthorityQuery {
+  /** The event's number, as issued by the authority. */
+  readonly vnr: string;
+  /** Per deployment, never compiled into a reporter. */
+  readonly endpoint: string;
+  /** Decrypted by the caller for this one call. Never logged. */
+  readonly credentials: Readonly<Record<string, string>>;
+}
+
+/**
+ * What the authority holds about an accredited event.
+ *
+ * Every field optional, because this crosses an interface we do not own and a
+ * missing field must not be a crash. The two that matter:
+ *
+ * - `validFrom`/`validUntil` — EIV refuses a participation dated outside them.
+ *   Knowing them at *authoring* time is the difference between a warning on a
+ *   settings screen and a 406 after a physician has been shown a green tick.
+ * - `locked` — the authority has closed the event to further reporting.
+ */
+export interface AccreditedEvent {
+  readonly title?: string;
+  readonly validFrom?: string;
+  readonly validUntil?: string;
+  readonly category?: string;
+  /** Points the event carries for attending. */
+  readonly attendancePoints?: number;
+  /** Points it carries for the assessment. */
+  readonly assessmentPoints?: number;
+  readonly locked?: boolean;
+}
+
+/** One participation the authority believes it already holds. */
+export interface ReportedParticipation {
+  readonly efn?: string;
+  readonly attendance?: boolean;
+  readonly assessment?: boolean;
+  readonly speaker?: number;
+  readonly participatedOn?: string;
+  readonly lastModified?: string;
 }
 
 /**
@@ -155,6 +191,42 @@ export interface AccreditationReporter {
   /** Stable identifier, recorded in the audit log beside each attempt. */
   readonly id: string;
   report(report: ParticipationReport): Promise<ReportOutcome>;
+
+  /*
+   * The three below are **optional**, and that is the whole design.
+   *
+   * Reporting a participation is the only thing every accreditation interface
+   * must be able to do; withdrawing one, describing an event and listing what
+   * has been reported are things EIV-FOBI happens to offer. Requiring them
+   * would make a second Ärztekammer's reporter impossible to write until its
+   * interface happened to match this one's — which is the opposite of what a
+   * port is for.
+   *
+   * The platform degrades rather than failing: a console that cannot pre-check
+   * a VNR simply does not offer the button.
+   */
+
+  /**
+   * Withdraw a participation already reported.
+   *
+   * Not a deletion. EIV keeps the record and zeroes the points, because a CME
+   * record that vanished would be worse than one that says "withdrawn" — the
+   * physician, the Kammer and this platform all need the history.
+   */
+  withdraw?(report: ParticipationReport): Promise<ReportOutcome>;
+
+  /** What the authority holds about the event behind a VNR. */
+  describeEvent?(query: AuthorityQuery): Promise<AccreditedEvent>;
+
+  /**
+   * What the authority believes it has already been told.
+   *
+   * The platform's own audit log records what it *sent*. Nothing in it can
+   * detect a disagreement with what the authority actually holds — a request
+   * that arrived after we gave up, a withdrawal somebody performed in the
+   * authority's own web application. This is the only way to see that.
+   */
+  listReported?(query: AuthorityQuery): Promise<readonly ReportedParticipation[]>;
 }
 
 // ---------------------------------------------------------------------------

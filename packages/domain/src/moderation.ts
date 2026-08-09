@@ -34,7 +34,16 @@ export type SubmissionStage =
   /** Accepted by EIV-FOBI. The name is now on somebody else's record. */
   | "submitted"
   /** Permanently failed. Nothing was reported, so nothing disagrees. */
-  | "abandoned";
+  | "abandoned"
+  /**
+   * Reported, then withdrawn at the authority by an operator (P31-02).
+   *
+   * Distinct from `abandoned`, and the difference decides whether a name may
+   * still be corrected: something *was* on the Ärztekammer's record. Treating
+   * it as `none` would let a name be edited after the fact with no trace that
+   * a different one had been reported.
+   */
+  | "withdrawn";
 
 export type NameCorrectionVerdict =
   | { readonly ok: true }
@@ -62,7 +71,16 @@ export function nameCorrection(input: {
   readonly stage: SubmissionStage;
 }): NameCorrectionVerdict {
   if (input.proposed.trim() === "") return { ok: false, reason: "blank" };
-  if (input.stage === "submitted") return { ok: false, reason: "already_submitted" };
+  /*
+   * `withdrawn` refuses along with `submitted` (P31-02). The withdrawal zeroed
+   * the points; it did not unsay the name. EIV keeps the record — "der Vorgang
+   * bleibt nachvollziehbar" — so a name silently edited here would still
+   * disagree with one the Kammer holds, which is the exact failure this rule
+   * exists to prevent.
+   */
+  if (input.stage === "submitted" || input.stage === "withdrawn") {
+    return { ok: false, reason: "already_submitted" };
+  }
   return { ok: true };
 }
 

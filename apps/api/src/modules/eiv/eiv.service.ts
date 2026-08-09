@@ -171,6 +171,18 @@ export class EivService {
         // record below carries the attempt count and the reference, nothing
         // that could authenticate anybody.
         credentials: { [EIV_PASSWORD_KEY]: row.vnrPassword },
+        /*
+         * Which credit this course claims (P31-02). A course setting rather
+         * than a constant in the reporter, because only the Ärztekammer knows
+         * what an event is accredited for and it differs per VNR — S25.
+         */
+        credit: {
+          attendance: row.punkteBasis,
+          assessment: row.punkteLernerfolg,
+          // Every participant is a Teilnehmer; a Referent is reported by
+          // whoever organised the event, not by this platform.
+          speaker: 0,
+        },
       });
 
       if (!push.accepted) {

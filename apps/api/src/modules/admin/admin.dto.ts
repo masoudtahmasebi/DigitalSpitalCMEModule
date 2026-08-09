@@ -65,6 +65,16 @@ export const adminCourseDetailSchema = adminCourseSummarySchema.extend({
   hasVnrPassword: z.boolean(),
   maxQuizAttempts: z.number().int().positive().nullable(),
   revealCorrectAnswers: z.boolean(),
+  /**
+   * Which credit a Punktemeldung claims for this course (P31-02).
+   *
+   * A setting rather than a constant because the Ärztekammer accredits each
+   * event for its own point values, and only it can say which flags a course
+   * may claim — S25. `GET /admin/courses/{slug}/eiv/event` reports what the
+   * authority holds, so the two can be compared without guessing.
+   */
+  eivPunkteBasis: z.boolean(),
+  eivPunkteLernerfolg: z.boolean(),
 });
 
 /**
@@ -121,6 +131,8 @@ export const adminCourseUpdateSchema = z.object({
    * alert rather than a learner-facing failure (P7-07).
    */
   vnr: z.string().trim().max(100).nullable().optional(),
+  eivPunkteBasis: z.boolean().optional(),
+  eivPunkteLernerfolg: z.boolean().optional(),
   /**
    * The accreditation window from the Anerkennungsbescheid. ISO 8601, and
    * `nullable` because a course may be authored before the Bescheid arrives.
@@ -205,6 +217,7 @@ export const eivStateSchema = z.enum([
   "failed",
   "needs_attention",
   "abandoned",
+  "withdrawn",
 ]);
 
 export const participantRowSchema = z.object({

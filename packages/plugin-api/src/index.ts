@@ -12,6 +12,9 @@
 
 export type {
   AccreditationReporter,
+  AccreditedEvent,
+  AuthorityQuery,
+  ReportedParticipation,
   CertificateRenderer,
   ContentIngestor,
   DeliveryChannel,

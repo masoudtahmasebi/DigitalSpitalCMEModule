@@ -1219,6 +1219,159 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+  /admin/courses/{slug}/eiv/event:
+    get:
+      tags: [admin]
+      operationId: adminDescribeEivEvent
+      summary: What the Ärztekammer holds about this course's VNR
+      description: |
+        Asks EIV directly, using the course's own VNR and password. Read-only —
+        it creates no Punktemeldung and changes nothing.
+
+        This exists because of one status code. EIV refuses a participation
+        whose `teilnahmedatum` falls outside the accredited period with a 406,
+        and for an on-demand Fortbildung taken across a year that is potentially
+        every completion. The period is knowable before the first physician
+        starts; without this endpoint it was discovered after one had been shown
+        a completed Zertifizierung.
+
+        `locked` is the same question one step further on: the Kammer can close
+        an event to further reporting, and a course whose event is closed will
+        never report another point.
+
+        `502` when EIV itself refused or could not be reached — the reason is in
+        the problem detail, and never a credential.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: What the authority holds.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EivEvent" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "502": { $ref: "#/components/responses/BadGateway" }
+
+  /admin/courses/{slug}/eiv/reported:
+    get:
+      tags: [admin]
+      operationId: adminReconcileEiv
+      summary: Compare what we sent with what the Ärztekammer holds
+      description: |
+        `eiv_submissions` records what this platform *sent*. This asks EIV what
+        it *holds*, and reports the difference.
+
+        A disagreement is the one failure an append-only log of our own attempts
+        cannot detect: a request that arrived after we gave up retrying, or a
+        withdrawal somebody performed in EIV's own web application. Both leave
+        our record and the Kammer's record saying different things about a
+        physician's CME points.
+
+        The EFN is matched but never returned in full — `efnMasked` carries the
+        last four digits only, which is enough to reconcile a row with a person
+        an operator is already looking at and not enough to be a disclosure.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The comparison.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EivReconciliation" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+
+  /admin/learners/{enrolmentId}/eiv:
+    post:
+      tags: [admin]
+      operationId: adminRequeueEivSubmission
+      summary: Put an abandoned Punktemeldung back in the queue
+      description: |
+        For a submission the worker gave up on — attempts exhausted, a business
+        refusal an operator has since fixed, a missing VNR that has now been
+        entered. It resets the attempt counter and lets the ordinary worker try
+        again; it does **not** submit inline, because the retry budget, the
+        deadline arithmetic and the permanent-failure classification live in
+        `@ds/domain` and a second path would be a second opinion on them.
+
+        Refused with 409 once the correction window has closed: after that no
+        electronic submission for that VNR is possible at all, and offering a
+        button that cannot work would be worse than not offering one.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: enrolmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: Requeued. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+    delete:
+      tags: [admin]
+      operationId: adminWithdrawEivSubmission
+      summary: Withdraw a Punktemeldung already reported
+      description: |
+        Sends EIV the same participation with both point flags false and
+        `punkte_referent` zero. **Not a deletion**: EIV keeps the record and the
+        Vorgang stays traceable, which is the right shape for a CME record — a
+        physician whose points vanished without trace would have no way to find
+        out why.
+
+        Inline rather than queued, because a withdrawal is a human's decision
+        taken at a moment they are accountable for, and the 7-day correction
+        window may be hours from closing.
+
+        Refused with 409 outside that window: EIV will not accept it, and the
+        remedy is the written one in §2 of the Anerkennungsbescheid.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: enrolmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  description: |
+                    For the audit trail. About the *process* — never about the
+                    person.
+      responses:
+        "204": { description: Withdrawn. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+
   /admin/learners/{enrolmentId}/name:
     patch:
       tags: [admin]
@@ -2659,6 +2812,18 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }
 
+    BadGateway:
+      description: |
+        An interface this platform does not own refused or could not be reached
+        — today, only EIV-FOBI.
+
+        Distinct from a 5xx of our own on purpose: nothing here is broken, and
+        the operator's next step is different. The `detail` carries what the
+        authority said, and never a credential.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+
   schemas:
     SecondFactorPolicy:
       type: string
@@ -3861,6 +4026,76 @@ components:
           type: array
           items: { type: string }
 
+    EivEvent:
+      type: object
+      description: |
+        What the Ärztekammer holds about an accredited event. Every field
+        optional: this crosses an interface we do not own, and a field the
+        authority stops sending must not break an authoring screen.
+      properties:
+        title: { type: [string, "null"] }
+        validFrom:
+          type: [string, "null"]
+          description: |
+            Start of the accredited period. A participation dated outside
+            `validFrom`..`validUntil` is refused by EIV.
+        validUntil: { type: [string, "null"] }
+        category: { type: [string, "null"] }
+        attendancePoints: { type: [integer, "null"] }
+        assessmentPoints:
+          type: [integer, "null"]
+          description: |
+            Zero here and `eivPunkteLernerfolg` true on the course is the
+            combination worth looking at — see S25.
+        locked:
+          type: [boolean, "null"]
+          description: |
+            The authority has closed this event to further reporting. No
+            further point will ever be credited against it.
+
+    EivReconciliation:
+      type: object
+      required: [rows, onlyHere, onlyThere]
+      description: |
+        What this platform sent, against what the authority holds.
+      properties:
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/EivReconciliationRow" }
+        onlyHere:
+          type: integer
+          minimum: 0
+          description: |
+            Submissions we recorded as accepted that the authority does not
+            hold. The serious direction: a physician believes they have points
+            that were never credited.
+        onlyThere:
+          type: integer
+          minimum: 0
+          description: |
+            Participations the authority holds that we have no accepted record
+            of — a request that landed after we gave up, or a Meldung somebody
+            made in EIV's own web application.
+
+    EivReconciliationRow:
+      type: object
+      required: [efnMasked, here, there]
+      properties:
+        efnMasked:
+          type: string
+          description: |
+            Last four digits only. Enough to reconcile a row against a person an
+            operator is already looking at; not a disclosure of the EFN.
+        here:
+          type: boolean
+          description: This platform holds an accepted submission.
+        there:
+          type: boolean
+          description: The authority holds a participation.
+        participatedOn: { type: [string, "null"] }
+        attendance: { type: [boolean, "null"] }
+        assessment: { type: [boolean, "null"] }
+
     AdminCourseDetail:
       allOf:
         - $ref: "#/components/schemas/AdminCourseSummary"
@@ -3878,6 +4113,8 @@ components:
               hasVnrPassword,
               maxQuizAttempts,
               revealCorrectAnswers,
+              eivPunkteBasis,
+              eivPunkteLernerfolg,
             ]
           properties:
             organizer: { type: [string, "null"] }
@@ -3897,6 +4134,16 @@ components:
                 API. Not the value, not a mask, not a length.
             maxQuizAttempts: { type: [integer, "null"] }
             revealCorrectAnswers: { type: boolean }
+            eivPunkteBasis:
+              type: boolean
+              description: |
+                Claim `punkte_basis_flag` on the Punktemeldung — credit for
+                attending. Which flags an accredited course may claim is a
+                question for the Ärztekammer (S25), so it is a course setting
+                rather than a constant.
+            eivPunkteLernerfolg:
+              type: boolean
+              description: Claim `punkte_lernerfolg_flag` — credit for the assessment.
 
     AdminCourseUpdate:
       type: object
@@ -3925,6 +4172,8 @@ components:
         cmePoints: { type: [integer, "null"], minimum: 1, maximum: 100 }
         cmeCategory: { type: [string, "null"], maxLength: 50 }
         fortbildungsnummer: { type: [string, "null"], maxLength: 100 }
+        eivPunkteBasis: { type: boolean }
+        eivPunkteLernerfolg: { type: boolean }
         vnr:
           type: [string, "null"]
           maxLength: 100
@@ -3989,7 +4238,12 @@ components:
         `needs_attention` is distinct from `failed` on purpose: a submission
         unresolved after the fast retries will not fix itself, and the paper
         fallback is only open while the 8-day deadline has not passed.
-      enum: [none, queued, submitted, failed, needs_attention, abandoned]
+
+        `withdrawn` means an operator took a reported Punktemeldung back at the
+        Ärztekammer (P31-02). Distinct from `none`: points were reported and
+        then removed, which is a different history from never having been
+        reported, and the physician may reasonably ask about it.
+      enum: [none, queued, submitted, failed, needs_attention, abandoned, withdrawn]
 
     ParticipantRow:
       type: object
@@ -4139,10 +4393,11 @@ components:
         completedAt: { type: [string, "null"], format: date-time }
         submissionStage:
           type: string
-          enum: [none, pending, submitted, abandoned]
+          enum: [none, pending, submitted, abandoned, withdrawn]
           description: |
             How far the Punktemeldung has got. `submitted` is what makes a name
-            correction refusable.
+            correction refusable — and so is `withdrawn`, because the withdrawal
+            zeroed the points without unsaying the name (P31-02).
         certificateStatus: { type: [string, "null"] }
 
     CertificateRecord:

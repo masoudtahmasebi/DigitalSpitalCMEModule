@@ -75,6 +75,8 @@ const course: AdminCourseRow = {
   hasStampImage: true,
   hasSignatureImage: true,
   hasVnrPassword: false,
+  eivPunkteBasis: true,
+  eivPunkteLernerfolg: true,
 };
 
 const tree: CourseTree = {

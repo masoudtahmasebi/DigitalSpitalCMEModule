@@ -14,8 +14,11 @@
 
 import type {
   AccreditationReporter,
+  AccreditedEvent,
+  AuthorityQuery,
   ParticipationCredit,
   ParticipationReport,
+  ReportedParticipation,
   ReportOutcome,
 } from "@ds/plugin-api";
 import { formatBerlinIsoDate } from "@ds/domain";
@@ -51,17 +54,7 @@ export class EivAccreditationReporter implements AccreditationReporter {
    * Response-Felder."*
    */
   async report(report: ParticipationReport): Promise<ReportOutcome> {
-    const vnrPassword = report.credentials[EIV_PASSWORD_KEY];
-    if (vnrPassword === undefined || vnrPassword === "") {
-      throw new MissingEivCredentialError();
-    }
-
-    const client = new EivClient({
-      baseUrl: report.endpoint,
-      vnr: report.vnr,
-      vnrPassword,
-    });
-
+    const client = this.clientFor(report.endpoint, report.vnr, report.credentials);
     const credit = report.credit ?? DEFAULT_CREDIT;
 
     const { push } = await client.submit({
@@ -77,6 +70,101 @@ export class EivAccreditationReporter implements AccreditationReporter {
 
     return { accepted: push.accepted };
   }
+
+  /**
+   * Withdraw a Punktemeldung — the same endpoint with the points zeroed.
+   *
+   * `@ds/domain` has computed a 7-day correction window since week 1 and there
+   * was no mechanism to correct anything; the specification supplied one
+   * (P31-01) and this is it. EIV keeps the record: *"es handelt sich nicht um
+   * eine physische Löschung des Datensatzes"*, which is the right shape for a
+   * CME record — a physician whose points vanished with no trace would have no
+   * way to find out why.
+   *
+   * `teilnahmedatum` is still checked against the accredited period, so a
+   * withdrawal after that period closes is refused exactly like any other push.
+   */
+  async withdraw(report: ParticipationReport): Promise<ReportOutcome> {
+    const client = this.clientFor(report.endpoint, report.vnr, report.credentials);
+    const auth = await client.authenticate();
+
+    const push = await client.retractTeilnahme(
+      report.efn,
+      formatBerlinIsoDate(report.completedAt),
+      auth.token,
+    );
+
+    return { accepted: push.accepted };
+  }
+
+  /**
+   * What EIV holds about the event behind this VNR.
+   *
+   * The accredited period is the one fact that decides whether *any* of a
+   * course's completions can be reported, and it is knowable before the first
+   * physician starts. Reading it at authoring time turns a 406 — arriving after
+   * a learner has been shown a completed Zertifizierung — into a warning on a
+   * settings screen.
+   */
+  async describeEvent(query: AuthorityQuery): Promise<AccreditedEvent> {
+    const client = this.clientFor(query.endpoint, query.vnr, query.credentials);
+    const auth = await client.authenticate();
+    const { info } = await client.getVeranstaltung(auth.token);
+
+    return {
+      ...optional("title", info.thema),
+      ...optional("validFrom", info.beginn),
+      ...optional("validUntil", info.ende),
+      ...optional("category", info.kategorie),
+      ...optional("attendancePoints", info.punkteBasis),
+      ...optional("assessmentPoints", info.punkteLernerfolg),
+      ...optional("locked", info.gesperrtFuerVeranstalter),
+    };
+  }
+
+  /** What EIV believes it already holds for this VNR. */
+  async listReported(query: AuthorityQuery): Promise<readonly ReportedParticipation[]> {
+    const client = this.clientFor(query.endpoint, query.vnr, query.credentials);
+    const auth = await client.authenticate();
+    const { rows } = await client.getGemeldetePunkte(auth.token);
+
+    return rows.map((row) => ({
+      ...optional("efn", row.efn),
+      // EIV answers with 0/1 rather than a boolean. Normalised here so the
+      // platform above never has to know which flavour of falsy it got.
+      ...optional("attendance", flag(row.punkteBasisFlag)),
+      ...optional("assessment", flag(row.punkteLernerfolgFlag)),
+      ...optional("speaker", row.punkteReferent),
+      ...optional("participatedOn", row.teilnahmedatum),
+      ...optional("lastModified", row.lastModified),
+    }));
+  }
+
+  /** One place that turns credentials into a client, so one place can refuse. */
+  private clientFor(
+    endpoint: string,
+    vnr: string,
+    credentials: Readonly<Record<string, string>>,
+  ): EivClient {
+    const vnrPassword = credentials[EIV_PASSWORD_KEY];
+    if (vnrPassword === undefined || vnrPassword === "") {
+      throw new MissingEivCredentialError();
+    }
+
+    return new EivClient({ baseUrl: endpoint, vnr, vnrPassword });
+  }
+}
+
+function flag(value: number | undefined): boolean | undefined {
+  return value === undefined ? undefined : value !== 0;
+}
+
+/** `exactOptionalPropertyTypes` forbids assigning `undefined` to an optional. */
+function optional<K extends string, V>(
+  key: K,
+  value: V | undefined,
+): Record<K, V> | Record<string, never> {
+  return value === undefined ? {} : ({ [key]: value } as Record<K, V>);
 }
 
 /**

@@ -149,6 +149,8 @@ export class AdminService {
       hasVnrPassword: row.hasVnrPassword,
       maxQuizAttempts: row.maxQuizAttempts,
       revealCorrectAnswers: row.revealCorrectAnswers,
+      eivPunkteBasis: row.eivPunkteBasis,
+      eivPunkteLernerfolg: row.eivPunkteLernerfolg,
     };
   }
 
@@ -211,6 +213,9 @@ export class AdminService {
     // pass the `vnr === null` check in `queueSubmission` and then be sent to
     // the EIV as the number to credit against.
     assign(patch, "vnr", update.vnr === "" ? null : update.vnr);
+    // Which credit the Punktemeldung claims (P31-02, S25).
+    assign(patch, "eivPunkteBasis", update.eivPunkteBasis);
+    assign(patch, "eivPunkteLernerfolg", update.eivPunkteLernerfolg);
 
     if (update.vnrPassword !== undefined) {
       // Encrypted before it crosses into the repository — no layer below this
@@ -560,6 +565,11 @@ function eivState(
     case "failed_permanent":
     case "window_closed":
       return "abandoned";
+    // Reported and then taken back by an operator (P31-02). Not `none`: the
+    // Ärztekammer held these points once, and a physician asking why they
+    // vanished deserves a screen that can say so.
+    case "withdrawn":
+      return "withdrawn";
     case "failed_retryable":
     case "held":
       return "needs_attention";

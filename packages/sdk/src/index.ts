@@ -75,6 +75,9 @@ export type ParticipantAccount = components["schemas"]["ParticipantAccount"];
 export type ParticipantMergePreview = components["schemas"]["ParticipantMergePreview"];
 export type ParticipantMergeParty = components["schemas"]["ParticipantMergeParty"];
 export type CertificateRecord = components["schemas"]["CertificateRecord"];
+export type EivEvent = components["schemas"]["EivEvent"];
+export type EivReconciliation = components["schemas"]["EivReconciliation"];
+export type EivReconciliationRow = components["schemas"]["EivReconciliationRow"];
 export type StaffAccount = components["schemas"]["StaffAccount"];
 export type StaffScope = components["schemas"]["StaffScope"];
 export type StaffInvitation = components["schemas"]["StaffInvitation"];
@@ -589,6 +592,29 @@ export function createClient(options: ClientOptions) {
       reason: string,
     ): Promise<{ enrolments: number; responses: number; submissions: number }> =>
       request(`/admin/learners/${seg(enrolmentId)}`, json({ reason }, "DELETE")),
+
+    /**
+     * Read-only. Asks the Ärztekammer what it holds about this course's VNR —
+     * above all the accredited period, outside which every Punktemeldung is
+     * refused.
+     */
+    adminDescribeEivEvent: (slug: string): Promise<EivEvent> =>
+      request(`/admin/courses/${seg(slug)}/eiv/event`),
+
+    /** What we sent, against what the authority holds. */
+    adminReconcileEiv: (slug: string): Promise<EivReconciliation> =>
+      request(`/admin/courses/${seg(slug)}/eiv/reported`),
+
+    /** Put an abandoned Punktemeldung back in the worker's queue. */
+    adminRequeueEivSubmission: (enrolmentId: string): Promise<void> =>
+      request(`/admin/learners/${seg(enrolmentId)}/eiv`, { method: "POST" }),
+
+    /**
+     * Withdraw a Punktemeldung. Not a deletion — EIV keeps the record with the
+     * points zeroed, and refuses this outside the correction window.
+     */
+    adminWithdrawEivSubmission: (enrolmentId: string, reason: string): Promise<void> =>
+      request(`/admin/learners/${seg(enrolmentId)}/eiv`, json({ reason }, "DELETE")),
 
     adminListCertificates: (courseSlug?: string): Promise<CertificateRecord[]> =>
       request(`/admin/certificates${courseQuery(courseSlug)}`),

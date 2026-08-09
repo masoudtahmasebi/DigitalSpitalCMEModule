@@ -47,6 +47,9 @@ export interface DueSubmission {
   lastError: string | null;
   /** Decrypted from the course's ciphertext. Never leaves this process. */
   vnrPassword: string | null;
+  /** Which credit this course's Punktemeldung claims (P31-02, S25). */
+  punkteBasis: boolean;
+  punkteLernerfolg: boolean;
 }
 
 export interface EivRepositoryPort {
@@ -111,6 +114,8 @@ export class EivRepository implements EivRepositoryPort {
           nextAttemptAt: eivSubmissions.nextAttemptAt,
           lastError: eivSubmissions.lastError,
           vnrPassword: courses.vnrPasswordEnc,
+          punkteBasis: courses.eivPunkteBasis,
+          punkteLernerfolg: courses.eivPunkteLernerfolg,
         })
         .from(eivSubmissions)
         .innerJoin(enrolments, eq(enrolments.id, eivSubmissions.enrolmentId))

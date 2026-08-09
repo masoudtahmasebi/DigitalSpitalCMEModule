@@ -27,6 +27,15 @@ export type AppErrorKind =
   | "conflict"
   | "gate_locked"
   | "rate_limited"
+  /**
+   * An interface this platform does not own refused or could not be reached
+   * (P31-02) — today, only EIV-FOBI.
+   *
+   * Distinct from `internal` on purpose: nothing here is broken, and the
+   * operator's next step is a different one. A 500 would also page whoever
+   * watches our own error rate for somebody else's outage.
+   */
+  | "upstream_unavailable"
   | "internal";
 
 const STATUS: Record<AppErrorKind, number> = {
@@ -37,6 +46,7 @@ const STATUS: Record<AppErrorKind, number> = {
   conflict: 409,
   gate_locked: 403,
   rate_limited: 429,
+  upstream_unavailable: 502,
   internal: 500,
 };
 
@@ -48,6 +58,7 @@ const TITLE: Record<AppErrorKind, string> = {
   conflict: "Conflict",
   gate_locked: "Content locked",
   rate_limited: "Too many requests",
+  upstream_unavailable: "Upstream unavailable",
   internal: "Internal server error",
 };
 

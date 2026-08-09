@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useState } from "react";
-import type { AdminCourseDetail, ApiClient } from "@ds/sdk";
+import type { AdminCourseDetail, ApiClient, EivEvent } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
 import { Badge, Button, Field, Notice, TextInput } from "./ui.js";
@@ -69,6 +69,8 @@ export function CourseSettings(props: {
         scientificLeadTitle: emptyToNull(form.scientificLeadTitle),
         certificateIssuePlace: emptyToNull(form.certificateIssuePlace),
         vnr: emptyToNull(form.vnr),
+        eivPunkteBasis: form.eivPunkteBasis,
+        eivPunkteLernerfolg: form.eivPunkteLernerfolg,
         // Omitted when empty: an absent field means "leave alone", so editing
         // anything else does not require re-entering the credential.
         ...(vnrPassword === "" ? {} : { vnrPassword }),
@@ -241,6 +243,33 @@ export function CourseSettings(props: {
               : de.course.vnrPasswordMissing}
           </p>
         </Field>
+
+        {/*
+          Which credit the Punktemeldung claims (P31-02, S25).
+
+          Two checkboxes rather than a single "report points" switch, because
+          EIV carries the two separately and an event may be accredited for one
+          and not the other. Both default on — see `reporter.ts` for why
+          claiming too much is the safer of the two wrong answers.
+        */}
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium text-gray-900">
+            {de.course.eivPunkte}
+          </legend>
+          <p className="text-xs text-gray-600">{de.course.eivPunkteHint}</p>
+          <Checkbox
+            id="eiv-punkte-basis"
+            label={de.course.eivPunkteBasis}
+            checked={form.eivPunkteBasis}
+            onChange={(next) => setForm((p) => ({ ...p, eivPunkteBasis: next }))}
+          />
+          <Checkbox
+            id="eiv-punkte-lernerfolg"
+            label={de.course.eivPunkteLernerfolg}
+            checked={form.eivPunkteLernerfolg}
+            onChange={(next) => setForm((p) => ({ ...p, eivPunkteLernerfolg: next }))}
+          />
+        </fieldset>
       </section>
 
       {problem === undefined ? null : <Notice tone="error">{problem}</Notice>}
@@ -254,7 +283,99 @@ export function CourseSettings(props: {
       </Button>
 
       <AssetUpload client={props.client} course={course} onSaved={props.onSaved} />
+      <EivEventCheck client={props.client} course={course} />
     </div>
+  );
+}
+
+/**
+ * Ask the Ärztekammer what it holds about this VNR (P31-02).
+ *
+ * The single most useful thing on this screen, and the reason it exists: EIV
+ * refuses a Punktemeldung whose date falls outside the accredited period with
+ * a 406, and for an on-demand Fortbildung taken across a year that is
+ * potentially *every* completion. Before this, that was discovered after a
+ * physician had been shown a completed Zertifizierung.
+ *
+ * On demand rather than on load: it is an authenticated call to somebody
+ * else's system, and opening a settings screen should not make one.
+ */
+function EivEventCheck(props: { client: ApiClient; course: AdminCourseDetail }) {
+  const [event, setEvent] = useState<EivEvent | undefined>();
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | undefined>();
+
+  const ready = props.course.vnr !== null && props.course.hasVnrPassword;
+
+  async function check(): Promise<void> {
+    setBusy(true);
+    setProblem(undefined);
+    try {
+      setEvent(await props.client.adminDescribeEivEvent(props.course.slug));
+    } catch (error) {
+      setEvent(undefined);
+      setProblem(describeError(error, de.error.generic));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="space-y-3 border-t border-gray-200 pt-6">
+      <h3 className="text-base font-semibold text-gray-900">{de.course.eivCheck}</h3>
+      <p className="text-xs text-gray-600">{de.course.eivCheckHint}</p>
+
+      <Button variant="secondary" disabled={!ready || busy} onClick={() => void check()}>
+        {busy ? de.course.eivChecking : de.course.eivCheckAction}
+      </Button>
+      {ready ? null : (
+        <p className="text-xs text-amber-700">{de.course.eivCheckNeedsCredentials}</p>
+      )}
+
+      {problem === undefined ? null : <Notice tone="error">{problem}</Notice>}
+
+      {event === undefined ? null : (
+        <div className="space-y-2">
+          {/* The two findings worth shouting about, before the raw values. */}
+          {event.locked === true ? (
+            <Notice tone="error">{de.course.eivLocked}</Notice>
+          ) : null}
+          {event.assessmentPoints === 0 && props.course.eivPunkteLernerfolg ? (
+            <Notice tone="warning">{de.course.eivLernerfolgMismatch}</Notice>
+          ) : null}
+
+          <dl className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[12rem_1fr]">
+            <Detail label={de.course.eivThema} value={event.title} />
+            <Detail
+              label={de.course.eivZeitraum}
+              value={`${event.validFrom ?? "?"} – ${event.validUntil ?? "?"}`}
+            />
+            <Detail label={de.course.eivKategorie} value={event.category} />
+            <Detail
+              label={de.course.eivPunkteBasis}
+              value={
+                event.attendancePoints === null ? null : String(event.attendancePoints)
+              }
+            />
+            <Detail
+              label={de.course.eivPunkteLernerfolg}
+              value={
+                event.assessmentPoints === null ? null : String(event.assessmentPoints)
+              }
+            />
+          </dl>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Detail(props: { label: string; value: string | null | undefined }) {
+  return (
+    <>
+      <dt className="text-gray-600">{props.label}</dt>
+      <dd className="text-gray-900">{props.value ?? "—"}</dd>
+    </>
   );
 }
 
@@ -379,7 +500,36 @@ function initialForm(course: AdminCourseDetail) {
     scientificLeadTitle: course.scientificLeadTitle ?? "",
     certificateIssuePlace: course.certificateIssuePlace ?? "",
     vnr: course.vnr ?? "",
+    eivPunkteBasis: course.eivPunkteBasis,
+    eivPunkteLernerfolg: course.eivPunkteLernerfolg,
   };
+}
+
+/**
+ * A labelled checkbox.
+ *
+ * Local rather than in `ui.tsx` because these two are the only checkboxes in
+ * the console; promoting it would be a shared component with one caller, and
+ * `ui.tsx` earns its place by being what several screens agree on.
+ */
+function Checkbox(props: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <label htmlFor={props.id} className="flex items-center gap-2 text-sm text-gray-900">
+      <input
+        id={props.id}
+        type="checkbox"
+        checked={props.checked}
+        onChange={(event) => props.onChange(event.target.checked)}
+        className="h-4 w-4 rounded border-gray-300 text-brand-600"
+      />
+      {props.label}
+    </label>
+  );
 }
 
 function emptyToNull(value: string): string | null {
