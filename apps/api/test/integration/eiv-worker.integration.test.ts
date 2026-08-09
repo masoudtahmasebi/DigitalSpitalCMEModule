@@ -185,14 +185,53 @@ async function readSubmission(id: string) {
   return rows[0]!;
 }
 
+/**
+ * How many rows the worker ought to claim, right now.
+ *
+ * The predicate is `claim_due_eiv_submissions`' own, written out here from
+ * migration 0005 rather than shared with it — an independent statement of the
+ * same rule, which is the only version worth asserting against.
+ *
+ * **Why this is not simply `1` (P32-02).** `EivService.sweep` is global by
+ * design: a reporting deadline does not care whose tenant it belongs to, and a
+ * per-tenant sweep would need something to enumerate tenants, which is the
+ * design the worker exists to avoid. So `considered` is a fact about the whole
+ * database, and a hard-coded `1` is really the claim "this suite is the only
+ * thing in this database" — a property of the harness, asserted here by
+ * accident, in a test about the worker.
+ *
+ * That claim broke in CI twice, and the assertion it broke had nothing to do
+ * with what the test was for. Counting instead keeps every bit of the original
+ * meaning — a worker that claimed a row it should not have, or skipped one it
+ * should have taken, still fails — and drops the part that was never this
+ * test's business.
+ */
+async function countDue(now: Date): Promise<number> {
+  const { rows } = await seedPool.query<{ n: string }>(
+    `SELECT count(*) AS n
+       FROM eiv_submissions
+      WHERE status IN ('queued', 'failed_retryable')
+        AND (next_attempt_at IS NULL OR next_attempt_at <= $1)`,
+    [now],
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
 describe("the worker submits a queued participation", () => {
   it("submits against the mock and stores the reference", async () => {
     await freshUser();
     const { submissionId } = await queueSubmission();
 
-    const result = await buildService().sweep(new Date());
+    const now = new Date();
+    const due = await countDue(now);
+    const result = await buildService().sweep(now);
 
-    expect(result).toMatchObject({ considered: 1, submitted: 1 });
+    // The sweep claimed exactly the rows that were claimable, and reported at
+    // least one submission. What was submitted is asserted on the row below,
+    // which is where this suite's own claim actually lives — `submitted` is a
+    // count across every tenant and says nothing about *whose*.
+    expect(result.considered).toBe(due);
+    expect(result.submitted).toBeGreaterThanOrEqual(1);
 
     const row = await readSubmission(submissionId);
     expect(row.status).toBe("submitted");
