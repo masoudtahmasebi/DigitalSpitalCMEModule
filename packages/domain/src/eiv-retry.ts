@@ -36,9 +36,22 @@ export type EivAttemptFailure =
   | "transport"
   /** 5xx from EIV. Worth retrying. */
   | "server"
+  /**
+   * 429. Worth retrying — the interface asks for backoff by name, and the
+   * existing 10-minute interval is one. Treating it as permanent would abandon
+   * a Punktemeldung EIV was willing to accept, purely because we sent it during
+   * a busy minute (P31-01).
+   */
+  | "rate_limited"
   /** Credentials rejected. Not worth retrying without human action. */
   | "auth"
-  /** EIV rejected the payload — a wrong EFN or VNR. Never retried. */
+  /**
+   * 406 — the *event* is the problem, not the payload. An unknown or blocked
+   * VNR, or a Teilnahmedatum outside the accredited period. Permanent, and the
+   * remedy is an operator's or the Ärztekammer's, never a retry (P31-01).
+   */
+  | "business"
+  /** 422 — the payload is malformed: a failed EFN check digit. Never retried. */
   | "validation"
   | "unknown";
 
@@ -117,9 +130,20 @@ export function planEivAttempt(input: EivAttemptInput): EivAttemptPlan {
     };
   }
 
-  // A rejection of the payload itself, or of our credentials, is not a
-  // transient condition. Retrying spends the window to no purpose.
-  if (input.lastFailure === "validation" || input.lastFailure === "auth") {
+  /*
+   * A rejection of the payload, of the event, or of our credentials is not a
+   * transient condition. Retrying spends the window to no purpose.
+   *
+   * `business` joined this list with the real specification (P31-01): a 406
+   * says the VNR is unknown or locked, or the Teilnahmedatum falls outside the
+   * accredited period. None of those change because we asked again in ten
+   * minutes, and all three need a human — which is what `alertAdmin` is for.
+   */
+  if (
+    input.lastFailure === "validation" ||
+    input.lastFailure === "auth" ||
+    input.lastFailure === "business"
+  ) {
     return {
       action: "abandon",
       reason: "permanent_rejection",

@@ -201,3 +201,27 @@ export function formatBerlinTime(instant: Date): string {
 export function formatBerlinDateTime(instant: Date): string {
   return DATE_TIME.format(instant);
 }
+
+/**
+ * `2026-07-28` — the ISO calendar date, resolved in **Berlin** (P31-01).
+ *
+ * EIV-FOBI's `teilnahmedatum` is a date without a time, and the authority
+ * reading it is German. So the date has to be the one that was on a German
+ * calendar at the moment the physician completed, not the one that was on a UTC
+ * clock.
+ *
+ * The difference is a whole day for every completion between 22:00 and midnight
+ * UTC in summer — 23:30 UTC on 9 August is already the 10th in Berlin. The API
+ * refuses a `teilnahmedatum` outside the accredited event period with a 406, so
+ * a completion on the last evening of the window would be rejected as "outside
+ * the event" by a client that formatted it in UTC. It is one function precisely
+ * so there is one answer.
+ */
+export function formatBerlinIsoDate(instant: Date): string {
+  const { year, month, day } = berlinDateOf(instant);
+  return `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`;
+}
+
+function pad(value: number, width: number): string {
+  return value.toString().padStart(width, "0");
+}

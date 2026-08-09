@@ -196,19 +196,28 @@ describe("the worker submits a queued participation", () => {
     const row = await readSubmission(submissionId);
     expect(row.status).toBe("submitted");
     expect(row.attempt_count).toBe(1);
-    expect(row.external_reference).not.toBeNull();
+    // EIV issues no reference — the column stays null for this authority, and
+    // the port keeps it only because another Ärztekammer might (P31-01).
+    expect(row.external_reference).toBeNull();
     expect(row.first_submitted_at).not.toBeNull();
     expect(row.last_error).toBeNull();
   });
 
-  it("delivered the EFN and VNR to the mock", async () => {
+  it("delivered a Meldung shaped as the real interface requires (P31-01)", async () => {
     // The mock records what it received, which is how we know the payload was
     // shaped as the EIV contract requires rather than merely accepted.
+    //
+    // There is no `rolle` and no `vnr` in the body any more: the specification
+    // has neither, because the VNR is carried by the token. The mock therefore
+    // attributes the record to the VNR it authenticated.
     const received = mock.submissions.at(-1);
 
     expect(received?.efn).toBe(EFN);
-    expect(received?.vnr).toBe(VNR);
-    expect(received?.rolle).toBe("TEILNEHMER");
+    expect(received?.punkteBasisFlag).toBe(1);
+    expect(received?.punkteLernerfolgFlag).toBe(1);
+    expect(received?.punkteReferent).toBe(0);
+    // A German calendar date, checked against the accredited period by EIV.
+    expect(received?.teilnahmedatum).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
   });
 
   it("does not pick up an already-submitted row on the next sweep", async () => {

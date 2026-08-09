@@ -5,6 +5,7 @@ import {
   endOfBerlinDay,
   formatBerlinDate,
   formatBerlinDateTime,
+  formatBerlinIsoDate,
   formatBerlinTime,
   BerlinFormatError,
 } from "./berlin.js";
@@ -197,5 +198,44 @@ describe("BerlinFormatError", () => {
     expect(error.name).toBe("BerlinFormatError");
     expect(error.part).toBe("month");
     expect(error.message).toContain("Europe/Berlin");
+  });
+});
+
+describe("formatBerlinIsoDate — EIV's teilnahmedatum (P31-01)", () => {
+  it("pads to a fixed width, because the field is a string", () => {
+    expect(formatBerlinIsoDate(new Date("2026-03-05T12:00:00Z"))).toBe("2026-03-05");
+  });
+
+  it("gives the Berlin date, not the UTC one, late in the evening", () => {
+    /*
+     * The case that matters. 22:30 UTC on 9 August is already 10 August in
+     * Berlin (CEST, +02:00). EIV refuses a teilnahmedatum outside the
+     * accredited event period with a 406, so a physician completing on the last
+     * evening of the window would have been reported against the *next* day and
+     * rejected — the points lost to a timezone.
+     */
+    expect(formatBerlinIsoDate(new Date("2026-08-09T22:30:00Z"))).toBe("2026-08-10");
+  });
+
+  it("gives the Berlin date late in the evening in winter too", () => {
+    // CET, +01:00 — so the boundary sits an hour later than in summer, and
+    // 22:30 UTC is still the same day.
+    expect(formatBerlinIsoDate(new Date("2026-01-09T22:30:00Z"))).toBe("2026-01-09");
+    expect(formatBerlinIsoDate(new Date("2026-01-09T23:30:00Z"))).toBe("2026-01-10");
+  });
+
+  it("agrees with berlinDateOf, which the deadline clock uses", () => {
+    // Two readings of "which day is it in Berlin" that disagreed would put the
+    // reported date and the 8-day deadline on different days.
+    for (const iso of [
+      "2026-03-29T00:30:00Z", // the spring-forward night
+      "2026-10-25T00:30:00Z", // the autumn-back night
+      "2026-12-31T23:00:00Z", // a year boundary
+    ]) {
+      const instant = new Date(iso);
+      const { year, month, day } = berlinDateOf(instant);
+      const expected = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      expect(formatBerlinIsoDate(instant)).toBe(expected);
+    }
   });
 });

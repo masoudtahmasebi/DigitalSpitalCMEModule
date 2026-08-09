@@ -179,6 +179,7 @@ export {
   berlinDateOf,
   endOfBerlinDay,
   formatBerlinDate,
+  formatBerlinIsoDate,
   formatBerlinDateTime,
   formatBerlinTime,
   BerlinFormatError,

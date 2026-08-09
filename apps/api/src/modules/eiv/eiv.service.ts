@@ -151,9 +151,19 @@ export class EivService {
       const push = await this.submitter.report({
         efn: row.efn,
         vnr: row.vnr,
-        // `eventEndAt` is what the reporting deadline runs from — see
-        // `eivDeadlines`, and docs/show-stoppers.md for what "Veranstaltungsende"
-        // means for an on-demand course, which is still open with the ÄKWL.
+        /*
+         * `eventEndAt` is the learner's completion instant — `completion.service`
+         * writes `now` into it — and it is what the reporting deadline runs
+         * from. See `eivDeadlines`, and S11 for what "Veranstaltungsende" means
+         * for an on-demand course.
+         *
+         * It also becomes EIV's `teilnahmedatum`, which the authority checks
+         * against the accredited period and refuses with a 406 outside it
+         * (P31-01). So for an on-demand Fortbildung whose accredited period has
+         * a fixed end, a late completion is refused by EIV even though our own
+         * 8-day clock is satisfied. `GET /fobi/veranstalter/veranstaltung` is
+         * what makes that knowable in advance.
+         */
         completedAt: row.eventEndAt,
         endpoint: this.options.baseUrl,
         // Decrypted by the repository for this one call and handed straight
@@ -185,15 +195,15 @@ export class EivService {
         action: "eiv.submitted",
         subject: row.enrolmentId,
         /*
-         * Reference, attempt and the authority's own status word. No EFN, no
-         * VNR password, no payload.
+         * Attempt count, and the reference when the authority issued one. No
+         * EFN, no VNR password, no payload.
          *
-         * `status` is what EIV called the outcome — `ANGENOMMEN` when this
-         * submission created the record, `BEREITS_GEMELDET` when the chamber
-         * already held it (P30-03). Both are accepted and the worker treats
-         * them identically; recording which is what makes a later "why does
-         * this physician have two entries" answerable at all, and the log is
-         * the only place that fact survives.
+         * **EIV issues no reference and no status word** (P31-01): the fields
+         * P30-03 carried here were read from a response shape the real
+         * interface does not have, and the specification says the status code
+         * is the only thing that means anything. They stay in the record
+         * because the port is authority-agnostic and a second Ärztekammer may
+         * well issue one — for EIV they are simply always null.
          */
         detail: {
           attemptCount,
@@ -291,7 +301,9 @@ function toFailure(kind: EivFailureKind | string): EivAttemptFailure {
   switch (kind) {
     case "transport":
     case "server":
+    case "rate_limited":
     case "auth":
+    case "business":
     case "validation":
       return kind;
     default:

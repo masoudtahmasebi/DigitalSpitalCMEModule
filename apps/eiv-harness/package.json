@@ -10,7 +10,9 @@
     "start:mock": "tsx src/start-mock.ts",
     "push": "tsx src/cli.ts push",
     "authenticate": "tsx src/cli.ts authenticate",
-    "lint": "echo \"linted by the root pass\""
+    "lint": "echo \"linted by the root pass\"",
+    "veranstaltung": "tsx src/cli.ts veranstaltung",
+    "gemeldetepunkte": "tsx src/cli.ts gemeldetepunkte"
   },
   "dependencies": {
     "@ds/domain": "workspace:*",

@@ -85,6 +85,31 @@ export interface ParticipationReport {
    * would put it there too (CLAUDE.md §4 invariants 7 and 8).
    */
   readonly credentials: Readonly<Record<string, string>>;
+  /**
+   * Which kinds of credit this participation earned (P31-01).
+   *
+   * Optional, and absent means "the ordinary case for this authority" — a
+   * reporter for an interface with no such distinction ignores it entirely.
+   *
+   * It exists because EIV-FOBI does distinguish: a Punktemeldung carries
+   * separate flags for attending and for passing the Lernerfolgskontrolle, and
+   * the accredited event declares a point value for each. Naming them here in
+   * neutral terms rather than in EIV's keeps the port authority-agnostic while
+   * letting the platform say the thing it actually knows.
+   *
+   * Note what is still *not* here: no score, no watched percentage. Whether the
+   * assessment was passed has already been decided, audited and written down.
+   */
+  readonly credit?: ParticipationCredit;
+}
+
+export interface ParticipationCredit {
+  /** Credit for attending — true for any completion the platform reports. */
+  readonly attendance: boolean;
+  /** Credit for passing the assessment. */
+  readonly assessment: boolean;
+  /** Speaker credit. Zero for a participant. */
+  readonly speaker: number;
 }
 
 export interface ReportOutcome {

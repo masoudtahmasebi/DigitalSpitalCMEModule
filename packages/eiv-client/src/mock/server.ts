@@ -1,14 +1,25 @@
 /**
- * EIV-FOBI mock server (P7-02), implementing ADR-0005.
+ * EIV-FOBI mock server (P7-02, rebuilt to the real specification in P31-01).
  *
- * Built to the DOCUMENTED contract. It encodes our assumptions about an
- * interface whose behaviour we have not yet observed — see `README.md` in this
- * directory for the field-by-field list, so that a real divergence is a diff
- * rather than an investigation.
+ * It used to encode our *guesses*, which meant CI proved our client agreed with
+ * our assumptions. It now encodes the published contract — endpoints, status
+ * codes, field names, and the two behaviours the specification states in prose
+ * and which nothing else in this repository could have discovered:
  *
- * It exists so that every code path the retry queue and deadline logic must
- * handle — success, validation rejection, auth failure, duplicate, timeout,
- * 5xx — is exercised in CI, which can never depend on an external sandbox.
+ * 1. **Idempotency is per `(EFN, VNR)`.** A repeat updates the same record and
+ *    never double-books. So the mock keeps records and updates them, rather
+ *    than answering a second submission with a different status word — which is
+ *    what it did before, from an invented `BEREITS_GEMELDET`.
+ * 2. **A retraction is a push with the points zeroed**, and the record survives.
+ *    The mock keeps it and marks it withdrawn, because "the Vorgang bleibt
+ *    nachvollziehbar" is the property that matters on a CME record.
+ *
+ * It also refuses a `teilnahmedatum` outside the event period with a **406**,
+ * which is the failure most likely to bite an on-demand Fortbildung and could
+ * not be reproduced at all before.
+ *
+ * It exists so every path the retry queue and the deadline logic must handle is
+ * exercised in CI, which can never depend on an external sandbox.
  */
 
 import {
@@ -22,8 +33,11 @@ import {
 export type MockBehaviour =
   | "success"
   | "auth_failure"
+  | "rate_limited"
+  | "business_failure"
   | "validation_failure"
   | "duplicate"
+  | "locked_event"
   | "server_error"
   | "timeout"
   | "non_json";
@@ -34,13 +48,25 @@ export interface MockOptions {
   readonly expectedPassword?: string;
   /** Delay used by the `timeout` behaviour. */
   readonly timeoutDelayMs?: number;
+  /**
+   * The accredited event period, `YYYY-MM-DD`. A `teilnahmedatum` outside it is
+   * refused 406, as the real interface does. Unset means any date is accepted,
+   * which keeps every existing caller working.
+   */
+  readonly eventBeginn?: string;
+  readonly eventEnde?: string;
 }
 
+/** One Punktemeldung the mock holds, keyed by `(EFN, VNR)` as EIV is. */
 export interface MockRecord {
   readonly vnr: string;
   readonly efn: string;
-  readonly rolle: string;
-  readonly reference: string;
+  punkteBasisFlag: number;
+  punkteLernerfolgFlag: number;
+  punkteReferent: number;
+  teilnahmedatum: string;
+  readonly created: string;
+  lastModified: string;
 }
 
 export interface MockServer {
@@ -50,6 +76,7 @@ export interface MockServer {
 }
 
 const MOCK_TOKEN = "mock-eiv-jwt-token";
+const MOCK_VNR = "0000000000000000000";
 
 export async function startMockServer(
   port = 0,
@@ -80,6 +107,7 @@ async function handle(
 ): Promise<void> {
   const behaviour = (req.headers["x-mock-behaviour"] as MockBehaviour) ?? "success";
   const body = await readJson(req);
+  const path = (req.url ?? "").split("?")[0] ?? "";
 
   if (behaviour === "timeout") {
     // Never responds. The client's AbortSignal is what ends this.
@@ -88,7 +116,7 @@ async function handle(
   }
 
   if (behaviour === "server_error") {
-    return json(res, 503, { message: "EIV temporarily unavailable" });
+    return json(res, 500, { message: "EIV temporarily unavailable" });
   }
 
   if (behaviour === "non_json") {
@@ -97,43 +125,67 @@ async function handle(
     return;
   }
 
-  if (req.url === "/auth/login") {
-    return handleAuth(res, body, behaviour, options);
+  if (behaviour === "rate_limited") {
+    return json(res, 429, { message: "Zu viele Anfragen in kurzer Zeit" });
   }
 
-  if (req.url === "/fobi/veranstalter/push_teilnahme") {
-    return handlePush(req, res, body, behaviour, submissions);
+  if (path === "/fobi/veranstalter-auth/jwt") {
+    return handleAuth(req, res, behaviour, options);
   }
 
-  return json(res, 404, { message: `Unknown endpoint ${req.url ?? ""}` });
+  if (path === "/fobi/veranstalter/push_teilnahme") {
+    return handlePush(req, res, body, behaviour, submissions, options);
+  }
+
+  if (path === "/fobi/veranstalter/veranstaltung") {
+    return handleVeranstaltung(req, res, behaviour, options);
+  }
+
+  if (path === "/fobi/veranstalter/gemeldetepunkte") {
+    return handleGemeldetePunkte(req, res, submissions);
+  }
+
+  return json(res, 404, { message: `Unknown endpoint ${path}` });
 }
 
+/**
+ * `GET` with HTTP Basic, and the token comes back as `jwt`.
+ *
+ * The previous mock accepted a JSON body on `POST /auth/login`, so a client
+ * that got the authentication scheme wrong still passed every test we had.
+ */
 function handleAuth(
+  req: IncomingMessage,
   res: ServerResponse,
-  body: Record<string, unknown>,
   behaviour: MockBehaviour,
   options: MockOptions,
 ): void {
   if (behaviour === "auth_failure") {
-    return json(res, 401, { message: "Ungültige VNR oder Passwort" });
+    return json(res, 401, { message: "Anmeldung fehlgeschlagen" });
   }
 
-  const vnr = typeof body["vnr"] === "string" ? body["vnr"] : "";
-  const passwort = typeof body["passwort"] === "string" ? body["passwort"] : "";
+  const credential = readBasic(req);
 
-  if (vnr === "" || passwort === "") {
-    return json(res, 401, { message: "VNR und Passwort sind erforderlich" });
+  if (credential === undefined) {
+    return json(res, 401, { message: "Basic Authorization erforderlich" });
   }
 
-  if (options.expectedVnr !== undefined && vnr !== options.expectedVnr) {
-    return json(res, 401, { message: "Ungültige VNR oder Passwort" });
+  if (credential.vnr === "" || credential.password === "") {
+    return json(res, 401, { message: "VNR und Kennwort sind erforderlich" });
   }
 
-  if (options.expectedPassword !== undefined && passwort !== options.expectedPassword) {
-    return json(res, 401, { message: "Ungültige VNR oder Passwort" });
+  if (options.expectedVnr !== undefined && credential.vnr !== options.expectedVnr) {
+    return json(res, 401, { message: "VNR/Passwort oder der Token sind falsch" });
   }
 
-  return json(res, 200, { token: MOCK_TOKEN, expiresIn: 3600 });
+  if (
+    options.expectedPassword !== undefined &&
+    credential.password !== options.expectedPassword
+  ) {
+    return json(res, 401, { message: "VNR/Passwort oder der Token sind falsch" });
+  }
+
+  return json(res, 200, { jwt: MOCK_TOKEN });
 }
 
 function handlePush(
@@ -142,44 +194,173 @@ function handlePush(
   body: Record<string, unknown>,
   behaviour: MockBehaviour,
   submissions: MockRecord[],
+  options: MockOptions,
 ): void {
-  const authorization = req.headers["authorization"];
-
-  if (authorization !== `Bearer ${MOCK_TOKEN}`) {
+  if (!isAuthorised(req)) {
     return json(res, 401, { message: "Bearer-Token fehlt oder ist ungültig" });
   }
 
-  if (behaviour === "validation_failure") {
-    return json(res, 422, { message: "EFN ist der Ärztekammer nicht bekannt" });
+  if (behaviour === "business_failure" || behaviour === "locked_event") {
+    return json(res, 406, { message: "VNR unbekannt oder gesperrt" });
   }
 
-  const vnr = typeof body["vnr"] === "string" ? body["vnr"] : "";
-  const efn = typeof body["efn"] === "string" ? body["efn"] : "";
-  const rolle = typeof body["rolle"] === "string" ? body["rolle"] : "";
+  if (behaviour === "validation_failure") {
+    return json(res, 422, { message: "Ungültige EFN-Prüfziffer" });
+  }
 
-  if (!/^[0-9]{15}$/.test(efn)) {
+  const efn = typeof body["efn"] === "string" ? body["efn"] : "";
+  const teilnahmedatum =
+    typeof body["teilnahmedatum"] === "string" ? body["teilnahmedatum"] : "";
+  const punkteReferent =
+    typeof body["punkte_referent"] === "number" ? body["punkte_referent"] : 0;
+
+  // 422 — a *format* error, per the specification's own examples.
+  if (!/^[0-9]{15}$/u.test(efn)) {
     return json(res, 422, { message: "EFN muss aus genau 15 Ziffern bestehen" });
   }
 
-  if (rolle !== "TEILNEHMER") {
-    return json(res, 422, { message: `Unbekannte Rolle: ${rolle}` });
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(teilnahmedatum)) {
+    return json(res, 422, { message: "teilnahmedatum muss YYYY-MM-DD sein" });
   }
 
+  if (punkteReferent < 0) {
+    return json(res, 422, { message: "Punktewert außerhalb des zulässigen Bereichs" });
+  }
+
+  // 406 — a *business* refusal. Lexicographic comparison is exact for
+  // zero-padded ISO dates, which is why the field is a string here too.
+  if (options.eventBeginn !== undefined && teilnahmedatum < options.eventBeginn) {
+    return json(res, 406, { message: "Teilnahmedatum vor Veranstaltungsbeginn" });
+  }
+
+  if (options.eventEnde !== undefined && teilnahmedatum > options.eventEnde) {
+    return json(res, 406, { message: "Teilnahmedatum nach Veranstaltungsende" });
+  }
+
+  const vnr = options.expectedVnr ?? MOCK_VNR;
+  const now = new Date().toISOString();
+  const basis = body["punkte_basis_flag"] === true ? 1 : 0;
+  const lernerfolg = body["punkte_lernerfolg_flag"] === true ? 1 : 0;
+
+  /*
+   * Idempotent on `(EFN, VNR)`: the same pair *updates*, it does not insert.
+   *
+   * `duplicate` is kept as an explicit behaviour so the harness can force the
+   * second-write path without sending twice — but it is no longer a different
+   * *response*, because the specification says a repeat is indistinguishable
+   * from a first write. Our old mock answered it with an invented status word,
+   * and P30-03 dutifully carried that invention into the audit log.
+   */
   const existing = submissions.find((record) => record.efn === efn && record.vnr === vnr);
 
-  // Assumed behaviour: a repeat submission is acknowledged idempotently rather
-  // than rejected. Flagged in README.md as unverified.
   if (existing !== undefined || behaviour === "duplicate") {
-    return json(res, 200, {
-      referenz: existing?.reference ?? "MOCK-DUPLICATE",
-      status: "BEREITS_GEMELDET",
-    });
+    if (existing !== undefined) {
+      existing.punkteBasisFlag = basis;
+      existing.punkteLernerfolgFlag = lernerfolg;
+      existing.punkteReferent = punkteReferent;
+      existing.teilnahmedatum = teilnahmedatum;
+      existing.lastModified = now;
+    }
+    return json(res, 200, { affectedRows: 1, messages: ["aktualisiert"] });
   }
 
-  const reference = `MOCK-${(submissions.length + 1).toString().padStart(6, "0")}`;
-  submissions.push({ vnr, efn, rolle, reference });
+  submissions.push({
+    vnr,
+    efn,
+    punkteBasisFlag: basis,
+    punkteLernerfolgFlag: lernerfolg,
+    punkteReferent,
+    teilnahmedatum,
+    created: now,
+    lastModified: now,
+  });
 
-  return json(res, 200, { referenz: reference, status: "ANGENOMMEN" });
+  /*
+   * `affectedRows` and `messages` are returned because the real interface
+   * returns them — and are documented there as diagnostic, explicitly *not*
+   * contractual. The mock includes them precisely so a client that started
+   * branching on them would still pass here and fail in production; the
+   * client's own tests assert that it decides on the status code alone.
+   */
+  return json(res, 200, { affectedRows: 1, messages: [] });
+}
+
+function handleVeranstaltung(
+  req: IncomingMessage,
+  res: ServerResponse,
+  behaviour: MockBehaviour,
+  options: MockOptions,
+): void {
+  if (!isAuthorised(req)) {
+    return json(res, 401, { message: "Bearer-Token fehlt oder ist ungültig" });
+  }
+
+  return json(res, 200, {
+    vnr: options.expectedVnr ?? MOCK_VNR,
+    thema: "Mock-Fortbildung",
+    unterthema: "",
+    beginn: `${options.eventBeginn ?? "2026-01-01"}T00:00:00.000Z`,
+    ende: `${options.eventEnde ?? "2026-12-31"}T23:59:59.000Z`,
+    kategorie: "D",
+    punkte_basis: 4,
+    punkte_lernerfolg: 0,
+    // The one field an authoring screen most wants before promising a point.
+    gesperrt_fuer_veranstalter: behaviour === "locked_event",
+  });
+}
+
+function handleGemeldetePunkte(
+  req: IncomingMessage,
+  res: ServerResponse,
+  submissions: readonly MockRecord[],
+): void {
+  if (!isAuthorised(req)) {
+    return json(res, 401, { message: "Bearer-Token fehlt oder ist ungültig" });
+  }
+
+  const query = new URL(req.url ?? "/", "http://mock").searchParams;
+  const limit = Number(query.get("limit") ?? "0");
+  const offset = Number(query.get("offset") ?? "0");
+
+  const page = submissions.slice(offset, limit > 0 ? offset + limit : undefined);
+
+  res.writeHead(200, {
+    "content-type": "application/json",
+    // The real interface returns this so a reader can tell how fresh the
+    // snapshot is. Reconciliation without it is a race.
+    service_db_clock_timestamp: new Date().toISOString(),
+  });
+  res.end(
+    JSON.stringify(
+      page.map((record) => ({
+        efn: record.efn,
+        vnr: record.vnr,
+        punkte_basis_flag: record.punkteBasisFlag,
+        punkte_lernerfolg_flag: record.punkteLernerfolgFlag,
+        punkte_referent: record.punkteReferent,
+        teilnahmedatum: record.teilnahmedatum,
+        created: record.created,
+        last_modified: record.lastModified,
+      })),
+    ),
+  );
+}
+
+function isAuthorised(req: IncomingMessage): boolean {
+  return req.headers["authorization"] === `Bearer ${MOCK_TOKEN}`;
+}
+
+function readBasic(
+  req: IncomingMessage,
+): { readonly vnr: string; readonly password: string } | undefined {
+  const header = req.headers["authorization"];
+  if (typeof header !== "string" || !header.startsWith("Basic ")) return undefined;
+
+  const decoded = Buffer.from(header.slice("Basic ".length), "base64").toString("utf8");
+  const separator = decoded.indexOf(":");
+  if (separator === -1) return { vnr: decoded, password: "" };
+
+  return { vnr: decoded.slice(0, separator), password: decoded.slice(separator + 1) };
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {

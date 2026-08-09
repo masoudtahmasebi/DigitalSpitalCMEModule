@@ -1,22 +1,33 @@
 /**
- * EIV-FOBI contract test harness CLI (P7-01).
+ * EIV-FOBI contract test harness CLI (P7-01, extended in P31-01).
  *
  * Reports exactly what was sent and exactly what came back, so that the first
  * contact with the real interface answers "does it behave as documented?" in
  * minutes rather than days (ADR-0005).
  *
  *   pnpm --filter @ds/eiv-harness authenticate
+ *   pnpm --filter @ds/eiv-harness veranstaltung
+ *   pnpm --filter @ds/eiv-harness gemeldetepunkte
  *   pnpm --filter @ds/eiv-harness push -- --efn 123456789012345
+ *   pnpm --filter @ds/eiv-harness push -- --efn … --retract
+ *
+ * **`veranstaltung` is the one to run first against the test system.** It
+ * prints the accredited period and the two point values, which between them
+ * settle S11 (what `Veranstaltungsende` is for an on-demand course) and S25
+ * (which point flags a completion may claim) — two questions that were
+ * otherwise letters to the Ärztekammer.
  *
  * Configuration is entirely environmental — no credential is ever committed:
  *
  *   EIV_BASE_URL        default http://127.0.0.1:4010 (the local mock)
+ *                       test system: https://backend-test.eiv-fobi.de
  *   EIV_VNR             Veranstaltungsnummer
  *   EIV_VNR_PASSWORD    password issued with the VNR
  *   EIV_ALLOW_LIVE      must be "yes" to target a non-local host
  */
 
 import { EivClient, EivError, redact, type EivExchange } from "@ds/eiv-client";
+import { formatBerlinIsoDate } from "@ds/domain";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:4010";
 
@@ -24,8 +35,11 @@ const DEFAULT_BASE_URL = "http://127.0.0.1:4010";
 const BEHAVIOURS = [
   "success",
   "auth_failure",
+  "rate_limited",
+  "business_failure",
   "validation_failure",
   "duplicate",
+  "locked_event",
   "server_error",
   "timeout",
   "non_json",
@@ -97,6 +111,46 @@ async function main(): Promise<number> {
         return 0;
       }
 
+      /*
+       * What EIV holds about this VNR's event.
+       *
+       * The accredited period is what a `teilnahmedatum` is checked against —
+       * outside it the Meldung is refused 406 — and `gesperrt_fuer_veranstalter`
+       * says whether reporting is open at all. Both are knowable before a
+       * physician is ever promised a point.
+       */
+      case "veranstaltung": {
+        const auth = await client.authenticate();
+        const { info, exchange } = await client.getVeranstaltung(auth.token);
+        report("veranstaltung", exchange);
+
+        console.warn(`Thema:        ${info.thema ?? "(none)"}`);
+        console.warn(`Zeitraum:     ${info.beginn ?? "?"} → ${info.ende ?? "?"}`);
+        console.warn(`Kategorie:    ${info.kategorie ?? "?"}`);
+        console.warn(
+          `Punkte:       basis=${info.punkteBasis ?? "?"} lernerfolg=${info.punkteLernerfolg ?? "?"}`,
+        );
+        console.warn(`Gesperrt:     ${String(info.gesperrtFuerVeranstalter ?? "?")}`);
+        console.warn("");
+        console.warn("Zeitraum answers S11; the two Punkte values answer S25.");
+        return 0;
+      }
+
+      /*
+       * What EIV believes it already holds — the reconciliation our own
+       * append-only log of *sent* attempts structurally cannot provide.
+       */
+      case "gemeldetepunkte": {
+        const auth = await client.authenticate();
+        const { rows, exchange } = await client.getGemeldetePunkte(auth.token, {
+          limit: Number(readFlag("--limit") ?? "0"),
+          offset: Number(readFlag("--offset") ?? "0"),
+        });
+        report("gemeldetepunkte", exchange);
+        console.warn(`${rows.length} Meldung(en) held by EIV for this VNR.`);
+        return 0;
+      }
+
       case "push": {
         const efn = readFlag("--efn");
 
@@ -105,20 +159,53 @@ async function main(): Promise<number> {
           return 2;
         }
 
-        const { auth, push } = await client.submit(efn);
+        /*
+         * The date defaults to today in **Berlin**, not UTC — the same function
+         * the production reporter uses, so the harness cannot accidentally
+         * prove a formatting the platform does not perform.
+         */
+        const teilnahmedatum = readFlag("--datum") ?? formatBerlinIsoDate(new Date());
+
+        // A retraction is a normal push with the points zeroed. The record
+        // survives at EIV; this is the withdrawal, not a delete.
+        const retract = process.argv.includes("--retract");
+
+        const auth = await client.authenticate();
         report("authenticate", auth.exchange);
+
+        const push = retract
+          ? await client.retractTeilnahme(efn, teilnahmedatum, auth.token)
+          : await client.pushTeilnahme(
+              {
+                efn,
+                punkteBasis: !process.argv.includes("--no-basis"),
+                punkteLernerfolg: !process.argv.includes("--no-lernerfolg"),
+                punkteReferent: Number(readFlag("--referent") ?? "0"),
+                teilnahmedatum,
+              },
+              auth.token,
+            );
+
         report("push_teilnahme", push.exchange);
 
+        /*
+         * The status code, and nothing else. The specification is explicit that
+         * `affectedRows` and `messages` are diagnostic rather than contractual,
+         * so the harness prints them (they are in the exchange above) and
+         * decides on neither.
+         */
         console.warn(
           push.accepted
-            ? `\nAccepted. Reference: ${push.reference ?? "(none returned)"}`
+            ? `\n${retract ? "Withdrawn" : "Accepted"} — HTTP ${push.exchange.status}.`
             : "\nNot accepted.",
         );
         return push.accepted ? 0 : 1;
       }
 
       default:
-        console.error("Usage: cli.ts <authenticate|push --efn NNNNNNNNNNNNNNN>");
+        console.error(
+          "Usage: cli.ts <authenticate|veranstaltung|gemeldetepunkte|push --efn NNNNNNNNNNNNNNN [--datum YYYY-MM-DD] [--retract]>",
+        );
         return 2;
     }
   } catch (error) {

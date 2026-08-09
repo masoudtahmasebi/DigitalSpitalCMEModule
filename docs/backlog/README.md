@@ -1,4 +1,4 @@
-# Backlog — work orders P0–P30
+# Backlog — work orders P0–P31
 
 One file per phase. Each file is an **Epic**; each entry inside it is a **Task**
 written so it can be handed to Claude Code verbatim.
@@ -34,6 +34,7 @@ written so it can be handed to Claude Code verbatim.
 | P28 · One test that walks the whole system     | [P28.md](P28.md) | 10 h ⚠    | —     |
 | P29 · The same walk, in a real browser         | [P29.md](P29.md) | 10 h ⚠    | —     |
 | P30 · One page frame, and a reachable mock     | [P30.md](P30.md) | 10 h ⚠    | —     |
+| P31 · The real EIV contract, at last           | [P31.md](P31.md) | 6 h ⚠     | —     |
 
 ⚠ **Everything below the 140 h line is outside the plan.** Each was built on an explicit
 instruction and is recorded rather than absorbed: `CLAUDE.md` §3 says the rest of

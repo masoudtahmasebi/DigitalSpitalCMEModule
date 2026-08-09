@@ -23,6 +23,7 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "@ds/domain": "workspace:*",
     "@ds/plugin-api": "workspace:*"
   }
 }

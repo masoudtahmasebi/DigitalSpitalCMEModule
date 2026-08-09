@@ -17,6 +17,7 @@ export type {
   DeliveryChannel,
   DeliveryOutcome,
   OutboundMessage,
+  ParticipationCredit,
   ParticipationReport,
   ReportOutcome,
 } from "./capabilities.js";

@@ -6,11 +6,29 @@ import { redact } from "./redact.js";
 const VNR = "9999999999999999999";
 const PASSWORD = "test-password";
 const EFN = "123456789012345";
+const DATUM = "2026-06-15";
+
+/** The accredited period the mock enforces, as the real interface does. */
+const BEGINN = "2026-01-01";
+const ENDE = "2026-12-31";
+
+const meldung = (efn: string, teilnahmedatum = DATUM) => ({
+  efn,
+  punkteBasis: true,
+  punkteLernerfolg: true,
+  punkteReferent: 0,
+  teilnahmedatum,
+});
 
 let mock: MockServer;
 
 beforeAll(async () => {
-  mock = await startMockServer(0, { expectedVnr: VNR, expectedPassword: PASSWORD });
+  mock = await startMockServer(0, {
+    expectedVnr: VNR,
+    expectedPassword: PASSWORD,
+    eventBeginn: BEGINN,
+    eventEnde: ENDE,
+  });
 });
 
 afterAll(async () => {
@@ -21,22 +39,44 @@ const client = () =>
   new EivClient({ baseUrl: mock.url, vnr: VNR, vnrPassword: PASSWORD, timeoutMs: 2000 });
 
 describe("the documented flow, end to end", () => {
-  it("authenticates and submits a participation", async () => {
-    const { auth, push } = await client().submit(EFN);
+  it("authenticates with Basic on a GET and reads the jwt", async () => {
+    /*
+     * The shape, not just the outcome. The previous client POSTed a JSON body
+     * to `/auth/login` and read a `token` field — and every test passed,
+     * because the mock had been built from the same guess (P31-01).
+     */
+    const auth = await client().authenticate();
 
     expect(auth.token).not.toBe("");
-    expect(push.accepted).toBe(true);
-    expect(push.reference).toMatch(/^MOCK-/);
+    expect(auth.exchange.method).toBe("GET");
+    expect(auth.exchange.url).toContain("/fobi/veranstalter-auth/jwt");
+    // The credential travels in a header, so it can never reach the audit log
+    // through the recorded body.
+    expect(auth.exchange.requestBody).toBeNull();
+  });
 
-    // rolle is always TEILNEHMER: every participant is a regular attendee.
+  it("submits a Meldung carrying the point flags and the date", async () => {
+    const { push } = await client().submit(meldung(EFN));
+
+    expect(push.accepted).toBe(true);
     expect(push.exchange.requestBody).toMatchObject({
-      vnr: VNR,
-      rolle: "TEILNEHMER",
+      punkte_basis_flag: true,
+      punkte_lernerfolg_flag: true,
+      punkte_referent: 0,
+      teilnahmedatum: DATUM,
     });
   });
 
+  it("sends neither vnr nor rolle — the token carries the VNR", async () => {
+    const { push } = await client().submit(meldung("999888777666555"));
+    const body = push.exchange.requestBody as Record<string, unknown>;
+
+    expect(body["vnr"]).toBeUndefined();
+    expect(body["rolle"]).toBeUndefined();
+  });
+
   it("records the request and response verbatim for inspection", async () => {
-    const { push } = await client().submit("999888777666555");
+    const { push } = await client().submit(meldung("999888777666556"));
 
     expect(push.exchange.method).toBe("POST");
     expect(push.exchange.url).toContain("/fobi/veranstalter/push_teilnahme");
@@ -44,15 +84,74 @@ describe("the documented flow, end to end", () => {
     expect(push.exchange.durationMs).toBeGreaterThanOrEqual(0);
   });
 
-  it("acknowledges a repeat submission idempotently", async () => {
+  it("updates the same record on a repeat rather than filing a second", async () => {
+    // The specification's own guarantee: the key is (EFN, VNR), a repeat
+    // updates, and a repeat after an unclear 5xx is explicitly safe. That is
+    // the property the whole retry queue rests on.
     const efn = "111122223333444";
 
-    const first = await client().submit(efn);
-    const second = await client().submit(efn);
+    const first = await client().submit(meldung(efn));
+    const before = mock.submissions.length;
+    const second = await client().submit(meldung(efn, "2026-06-16"));
 
     expect(first.push.accepted).toBe(true);
     expect(second.push.accepted).toBe(true);
-    expect(second.push.reference).toBe(first.push.reference);
+    expect(mock.submissions.length).toBe(before);
+    expect(mock.submissions.find((r) => r.efn === efn)?.teilnahmedatum).toBe(
+      "2026-06-16",
+    );
+  });
+
+  it("decides on the status code, never on affectedRows", async () => {
+    /*
+     * *"Maßgeblich für die technische Bewertung einer Antwort ist immer der
+     * HTTP-Statuscode, nicht einzelne interne Response-Felder wie affectedRows
+     * oder messages."* The mock returns those fields precisely so a client that
+     * started reading them would still pass here — this asserts we do not.
+     */
+    const { push } = await client().submit(meldung("222233334444555"));
+
+    expect(push.exchange.responseBody).toMatchObject({ affectedRows: 1 });
+    expect(Object.keys(push)).toEqual(["accepted", "exchange"]);
+  });
+
+  it("withdraws a Meldung by zeroing the points, keeping the record", async () => {
+    const efn = "555566667777888";
+    const auth = await client().authenticate();
+    await client().pushTeilnahme(meldung(efn), auth.token);
+
+    const before = mock.submissions.length;
+    const withdrawal = await client().retractTeilnahme(efn, DATUM, auth.token);
+
+    expect(withdrawal.accepted).toBe(true);
+    // Not a delete: "der Vorgang bleibt nachvollziehbar".
+    expect(mock.submissions.length).toBe(before);
+    const record = mock.submissions.find((r) => r.efn === efn);
+    expect(record?.punkteBasisFlag).toBe(0);
+    expect(record?.punkteLernerfolgFlag).toBe(0);
+    expect(record?.punkteReferent).toBe(0);
+  });
+});
+
+describe("what EIV holds, which our own log cannot tell us", () => {
+  it("reads the accredited period and the point values", async () => {
+    // The two facts that answer S11 and S25 without writing to anybody.
+    const auth = await client().authenticate();
+    const { info } = await client().getVeranstaltung(auth.token);
+
+    expect(info.beginn).toContain(BEGINN);
+    expect(info.ende).toContain(ENDE);
+    expect(info.punkteBasis).toBe(4);
+    expect(info.gesperrtFuerVeranstalter).toBe(false);
+  });
+
+  it("lists what EIV believes it was told", async () => {
+    const auth = await client().authenticate();
+    await client().pushTeilnahme(meldung("777788889999000"), auth.token);
+
+    const { rows } = await client().getGemeldetePunkte(auth.token);
+
+    expect(rows.some((row) => row.efn === "777788889999000")).toBe(true);
   });
 });
 
@@ -90,7 +189,7 @@ describe("extraHeaders", () => {
       extraHeaders: { authorization: "Bearer forged" },
     });
 
-    const { push } = await forged.submit("802769999000015");
+    const { push } = await forged.submit(meldung("802769999000015"));
     expect(push.accepted).toBe(true);
   });
 });
@@ -111,16 +210,48 @@ describe("failure classification drives the retry queue", () => {
     expect((error as EivError).retryable).toBe(false);
   });
 
-  it("treats a rejected EFN as non-retryable", async () => {
-    // An EFN the Ärztekammer does not recognise will still be unrecognised in
-    // an hour. Retrying it hides the problem until the window has closed.
+  it("treats a malformed EFN as a non-retryable 422", async () => {
+    // A format error will still be a format error in an hour. Retrying hides
+    // the problem until the window has closed.
     const error = await client()
-      .submit("12345")
+      .submit(meldung("12345"))
       .catch((e: unknown) => e);
 
     expect((error as EivError).kind).toBe("validation");
     expect((error as EivError).retryable).toBe(false);
     expect((error as EivError).message).toContain("15 Ziffern");
+  });
+
+  it("treats a date outside the accredited period as a non-retryable 406", async () => {
+    /*
+     * The failure most likely to bite an on-demand Fortbildung, and one the old
+     * mock could not produce at all. It is *permanent* but its remedy is an
+     * operator's or the Kammer's — not the physician's EFN — which is why it is
+     * `business` and not `validation`.
+     */
+    const error = await client()
+      .submit(meldung(EFN, "2027-01-01"))
+      .catch((e: unknown) => e);
+
+    expect((error as EivError).kind).toBe("business");
+    expect((error as EivError).retryable).toBe(false);
+    expect((error as EivError).exchange?.status).toBe(406);
+  });
+
+  it("treats a 429 as retryable, because the interface asks for backoff", async () => {
+    const limited = new EivClient({
+      baseUrl: mock.url,
+      vnr: VNR,
+      vnrPassword: PASSWORD,
+      timeoutMs: 2000,
+      extraHeaders: { "x-mock-behaviour": "rate_limited" },
+    });
+
+    const error = await limited.authenticate().catch((e: unknown) => e);
+
+    expect((error as EivError).kind).toBe("rate_limited");
+    // Abandoning here would drop a Meldung EIV was willing to accept.
+    expect((error as EivError).retryable).toBe(true);
   });
 
   it("treats a 5xx as retryable", async () => {
@@ -163,22 +294,10 @@ describe("failure classification drives the retry queue", () => {
 
   it("rejects a submission without a valid bearer token", async () => {
     const error = await client()
-      .pushTeilnahme(EFN, "not-a-real-token")
+      .pushTeilnahme(meldung(EFN), "not-a-real-token")
       .catch((e: unknown) => e);
 
     expect((error as EivError).kind).toBe("auth");
-  });
-
-  it("rejects an unknown rolle, proving the mock enforces the documented value", async () => {
-    const { token } = await client().authenticate();
-
-    const response = await fetch(new URL("/fobi/veranstalter/push_teilnahme", mock.url), {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ vnr: VNR, efn: EFN, rolle: "REFERENT" }),
-    });
-
-    expect(response.status).toBe(422);
   });
 });
 

@@ -393,6 +393,9 @@ importers:
 
   packages/eiv-client:
     dependencies:
+      '@ds/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@ds/plugin-api':
         specifier: workspace:*
         version: link:../plugin-api

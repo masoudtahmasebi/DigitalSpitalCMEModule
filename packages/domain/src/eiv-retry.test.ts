@@ -140,6 +140,38 @@ describe("permanent rejections are never retried", () => {
     expect(decision.reason).toBe("permanent_rejection");
   });
 
+  it("abandons a business refusal — the event is the problem, not the payload", () => {
+    /*
+     * 406 (P31-01): the VNR is unknown or locked, or the Teilnahmedatum falls
+     * outside the accredited period. None of those change because we asked
+     * again in ten minutes, and the remedy belongs to an operator or the
+     * Ärztekammer — so a human has to be told while the window is still open.
+     */
+    const decision = plan({
+      attemptCount: 1,
+      lastAttemptAt: new Date("2026-07-01T12:00:10Z"),
+      lastFailure: "business",
+      now: new Date("2026-07-01T13:00:00Z"),
+    });
+
+    expect(decision.action).toBe("abandon");
+    expect(decision.reason).toBe("permanent_rejection");
+    expect(decision.alertAdmin).toBe(true);
+  });
+
+  it("does retry a rate limit — EIV asked for backoff, not for us to give up", () => {
+    // Abandoning a 429 would drop a Punktemeldung the Ärztekammer was willing
+    // to accept, purely because we sent it during a busy minute.
+    const decision = plan({
+      attemptCount: 1,
+      lastAttemptAt: new Date("2026-07-01T12:00:10Z"),
+      lastFailure: "rate_limited",
+      now: new Date("2026-07-01T13:00:00Z"),
+    });
+
+    expect(decision.action).toBe("submit");
+  });
+
   it("does retry an unknown failure — unclassified is not the same as permanent", () => {
     const decision = plan({
       attemptCount: 1,

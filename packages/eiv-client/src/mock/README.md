@@ -1,94 +1,137 @@
-# EIV-FOBI mock — documented assumptions
+# EIV-FOBI mock — built from the published specification
 
-**This mock is built from documentation, not from observation.** Nobody on this
-project has yet seen the real EIV-FOBI interface respond. Everything below is an
-assumption, and it is written out field by field so that the first run against
-the real sandbox or live endpoint produces a **diff** rather than an
-investigation (ADR-0005).
+**As of P31-01 this mock is built from the real contract**, not from guesses.
+The Veranstalter Swagger (`EIV FOBI - Veranstalter`, OAS 3, version
+`1.0 20260714-01`) arrived on 09.08.2026 and closed S24. Everything the previous
+version of this file listed as an assumption was wrong; the table at the bottom
+records that, because "we guessed and the guess was wrong" is worth keeping.
 
-## The real endpoint
+Where the specification is silent, this file still says so — those are the rows
+that could still bite.
 
-The Anerkennungsbescheid (ÄKWL, 18.06.2026) names it:
+## Environments
 
-> Mit der Anerkennung verpflichtet sich der Veranstaltende, die
-> Fortbildungspunkte der Teilnehmenden … unter **https://punktemeldung.eiv-fobi.de/**
-> direkt an den Elektronischen Informationsverteiler (EIV) der Bundesärztekammer
-> zu melden.
+| Purpose          | Host                                                                     |
+| ---------------- | ------------------------------------------------------------------------ |
+| API, test system | `https://backend-test.eiv-fobi.de` — the only server the Swagger names   |
+| Web app, test    | `https://punktemeldung-test.eiv-fobi.de/`                                |
+| Web app, live    | `https://punktemeldung.eiv-fobi.de/` — named by the Anerkennungsbescheid |
+| API, live        | **not published** — see S26                                              |
 
-So the **host** is settled. The **paths beneath it** (A1, B1) are still
-unverified — the Bescheid names the service, not its API surface.
+The specification is explicit that test and production are completely separate
+and that development must use the test system: _"Bitte nutzen Sie für die
+Entwicklung ausschließlich das Test-System."_ Credentials and test events come
+from EIV support, not from the live VNR.
 
-This is deliberately **not** the default `EIV_BASE_URL`. The harness refuses any
-non-local host without `EIV_ALLOW_LIVE=yes`, because the configured VNR belongs
-to a real accredited event and a submission there creates a genuine
-Punktemeldung for a real physician.
+None of these is the default `EIV_BASE_URL`. The harness refuses any non-local
+host without `EIV_ALLOW_LIVE=yes`, because the configured VNR belongs to a real
+accredited event and a submission there creates a genuine Punktemeldung for a
+real physician.
 
-When reality is observed, correct this mock immediately. A mock that disagrees
-with the real interface is worse than no mock, because the test suite then
-actively asserts the wrong behaviour.
+## The contract, as published
 
-## Assumed contract
+### `GET /fobi/veranstalter-auth/jwt`
 
-### `POST /auth/login`
+HTTP **Basic**, username = VNR, password = VNRPWD. Returns `{ "jwt": "..." }`.
 
-**Request**
+- `401` — VNR/password wrong, or the token was invalidated.
+- `429` — too many requests. **Retry with backoff**, do not treat as permanent.
+- `500` — retryable after a wait.
 
-```json
-{ "vnr": "<19 digits>", "passwort": "<password>" }
-```
-
-**Assumptions**
-
-| #   | Assumption                                                         | Confidence                                                                                   |
-| --- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| A1  | The auth endpoint is at `/auth/login`                              | **Low** — the documented flow says "authenticate using VNR + password" without naming a path |
-| A2  | The credential field is `passwort` (German) rather than `password` | **Low**                                                                                      |
-| A3  | Success returns `{ "token": "...", "expiresIn": 3600 }`            | **Low** — that the result is a JWT is documented; the envelope is not                        |
-| A4  | Bad credentials return `401` with a JSON `message`                 | Medium                                                                                       |
+Changing the VNRPWD invalidates every token already issued, so a `401` on a
+later call means "fetch a new token", not necessarily "the credentials are
+wrong".
 
 ### `POST /fobi/veranstalter/push_teilnahme`
 
-**Request**
+Bearer JWT. **The VNR is carried by the token and is not in the body.**
 
 ```json
-{ "vnr": "<19 digits>", "efn": "<15 digits>", "rolle": "TEILNEHMER" }
+{
+  "efn": "<15 digits>",
+  "punkte_basis_flag": true,
+  "punkte_lernerfolg_flag": false,
+  "punkte_referent": 0,
+  "teilnahmedatum": "2023-07-30"
+}
 ```
 
-**Assumptions**
+| Status | Meaning                                                                       | Retryable     |
+| ------ | ----------------------------------------------------------------------------- | ------------- |
+| `200`  | Processed. The stored state now equals what was sent.                         | —             |
+| `401`  | Token missing, expired, or invalidated by a VNRPWD change                     | after re-auth |
+| `406`  | Business refusal — unknown or blocked VNR, or a date outside the event period | **no**        |
+| `422`  | Format error — failed EFN check digit, point value out of range               | **no**        |
+| `500`  | Internal error. Retry **with an unchanged payload**.                          | **yes**       |
 
-| #   | Assumption                                                                                   | Confidence                                                                                                                                                                                                                     |
-| --- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| B1  | The path and the three body fields are exactly as documented                                 | **High** — given explicitly                                                                                                                                                                                                    |
-| B2  | The JWT is presented as `Authorization: Bearer <token>`                                      | Medium                                                                                                                                                                                                                         |
-| B3  | Success returns `{ "referenz": "...", "status": "ANGENOMMEN" }`                              | **Low** — that a reference is returned at all is an assumption, and P7-05 persists it for later correction                                                                                                                     |
-| B4  | An unknown or malformed EFN returns `422` and must **not** be retried                        | Medium                                                                                                                                                                                                                         |
-| B5  | A repeat submission for the same VNR + EFN is acknowledged idempotently rather than rejected | **Low** — this matters: if EIV instead errors, the retry queue needs to treat that error as success                                                                                                                            |
-| B7  | A repeat is distinguished by `"status": "BEREITS_GEMELDET"` on an otherwise identical 200    | **Low** — the string is invented here. Since P30-03 the client reads `status` verbatim into the audit log and **nothing branches on it**, so a wrong guess costs a misleading log line rather than a wrong compliance decision |
-| B6  | Transport failures and `5xx` are retryable; `401`/`403` and `422` are not                    | Medium                                                                                                                                                                                                                         |
+Three properties stated in prose, all of which this platform relies on:
 
-### Not modelled at all
+1. **Idempotency is per `(EFN, VNR)`.** A repeat updates the same record; there
+   is no double booking, and a repeat after an unclear `5xx` is explicitly safe.
+2. **A withdrawal is a normal push** with `punkte_basis_flag: false`,
+   `punkte_lernerfolg_flag: false`, `punkte_referent: 0`. The record is not
+   deleted — _"der Vorgang bleibt nachvollziehbar"_.
+3. **`affectedRows` and `messages` are diagnostic, not contractual.** _"Maßgeblich
+   für die technische Bewertung einer Antwort ist immer der HTTP-Statuscode."_
+   The mock returns them anyway, precisely so that a client which started
+   reading them would still pass here and fail in production.
 
-- **Corrections.** The 7-day correction window is confirmed by the Bescheid
-  ("Nach erstmaliger Meldung an den EIV besteht eine 7-Tage-Frist für etwaige
-  Korrekturen und Ergänzungen"), but the **mechanism** — a different endpoint, a
-  flag, a re-POST — is unknown. `packages/domain` computes the window; nothing
-  yet performs a correction.
-- Rate limits, pagination, bulk submission, event metadata beyond the VNR.
+### `GET /fobi/veranstalter/veranstaltung`
 
-### The open question the mock cannot answer
+Returns `vnr`, `thema`, `unterthema`, `beginn`, `ende`, `kategorie`,
+`punkte_basis`, `punkte_lernerfolg`, `gesperrt_fuer_veranstalter`.
 
-**What is `Veranstaltungsende` for an on-demand course?** The reporting clock
-runs 8 days from it, and the Bescheid says the Fortbildungsmaßnahme is _am
-13.10.2025_, valid _13.10.2025 – 12.10.2026_. Three readings, with wildly
-different consequences:
+This is the endpoint that turns two open questions into a command:
 
-- the **participant's completion date** — the only one that works operationally;
-- **13.10.2025** — every submission is then already years late;
-- **12.10.2026** — nothing may be reported until the validity window ends.
+- `beginn`/`ende` are what a `teilnahmedatum` is checked against, and therefore
+  what **S11** — "what is `Veranstaltungsende` for an on-demand course?" — has
+  been asking the Ärztekammer about in writing.
+- `punkte_basis`/`punkte_lernerfolg` say which credit the event actually
+  carries, which is **S25**.
 
-`eivDeadlines(eventEndAt, …)` takes this as an argument, so the code is
-indifferent. We still do not know what to pass. `CLAUDE.md` §7: do not guess on
-compliance semantics — this is a question for the Ärztekammer.
+```bash
+pnpm --filter @ds/eiv-harness veranstaltung
+```
+
+### `GET /fobi/veranstalter/gemeldetepunkte?limit&offset`
+
+An array of `{ efn, vnr, punkte_basis_flag, punkte_lernerfolg_flag,
+punkte_referent, teilnahmedatum, created, last_modified }`, plus a
+`service_db_clock_timestamp` response header.
+
+This is reconciliation: our `eiv_submissions` table records what we _sent_, this
+records what the Ärztekammer _holds_. A disagreement between the two is the one
+failure an append-only log of our own attempts structurally cannot detect.
+
+## What is still not known
+
+| #   | Question                                                                                                                     | Owner       |
+| --- | ---------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| S26 | The **production** API base URL. The Swagger names only the test server; `punktemeldung.eiv-fobi.de` is the web app.         | MEDICE      |
+| S25 | Which point flags a completion may claim for the accredited course. `veranstaltung` answers it against the test system.      | MEDICE/ÄKWL |
+| S11 | Whether the accredited `ende` for an on-demand course permits completions throughout the validity window.                    | ÄKWL        |
+| —   | Whether the interface **cross-checks** the flags against the event's point values. The mock deliberately does not (see S25). | —           |
+
+The 4xx bodies are documented as _"historisch gewachsen und aktuell nicht in
+jedem Fall einheitlich"_, with a unification planned. The client therefore never
+parses an error body for meaning — it records it verbatim and decides on the
+status code.
+
+## What we assumed before the specification, and what it actually was
+
+Kept as a record, because five of six were wrong and the tests all passed:
+
+| We assumed                              | It is                                             |
+| --------------------------------------- | ------------------------------------------------- |
+| `POST /auth/login` with a JSON body     | `GET /fobi/veranstalter-auth/jwt` with HTTP Basic |
+| the token field is `token`              | `jwt`                                             |
+| the push body carries `vnr` and `rolle` | neither                                           |
+| `422` is the business rejection         | `406` is; `422` is a format error                 |
+| success returns `{ referenz, status }`  | no reference, no status word                      |
+| a repeat answers `BEREITS_GEMELDET`     | a repeat is indistinguishable from a first write  |
+
+The lesson worth keeping: a mock written from the same guess as the client makes
+CI assert the guess. Six of these were green for months.
 
 ## Forcing failures
 
@@ -97,15 +140,26 @@ Send `x-mock-behaviour` to exercise a path:
 | Value                | Effect                                                        |
 | -------------------- | ------------------------------------------------------------- |
 | `success` (default)  | Normal flow                                                   |
-| `auth_failure`       | `401` from `/auth/login`                                      |
+| `auth_failure`       | `401` from the token endpoint                                 |
+| `rate_limited`       | `429` — retryable, backoff                                    |
+| `business_failure`   | `406` from `push_teilnahme`                                   |
 | `validation_failure` | `422` from `push_teilnahme`                                   |
-| `duplicate`          | Idempotent acknowledgement                                    |
-| `server_error`       | `503` — retryable                                             |
+| `duplicate`          | Forces the update path without sending twice                  |
+| `locked_event`       | `gesperrt_fuer_veranstalter: true`, and `406` on a push       |
+| `server_error`       | `500` — retryable                                             |
 | `timeout`            | Never responds; the client's timeout ends it                  |
 | `non_json`           | HTML body on a `200`, to prove the client reports it verbatim |
+
+A `teilnahmedatum` outside the configured period is refused `406` without any
+header — that is the failure most likely to bite an on-demand Fortbildung, so it
+is reachable the same way it would happen.
 
 ## Running
 
 ```bash
-pnpm --filter @ds/eiv-harness start:mock     # listens on :4010
+# Any date accepted:
+pnpm --filter @ds/eiv-harness start:mock
+
+# With an accredited period, so the 406 can be reproduced:
+pnpm --filter @ds/eiv-harness start:mock -- --beginn 2026-01-01 --ende 2026-12-31
 ```

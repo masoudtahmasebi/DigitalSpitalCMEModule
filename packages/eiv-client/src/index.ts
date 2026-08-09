@@ -15,12 +15,14 @@
 export {
   EivClient,
   EivError,
-  ROLE_TEILNEHMER,
   type AuthenticateResult,
   type EivClientOptions,
   type EivExchange,
   type EivFailureKind,
   type PushTeilnahmeResult,
+  type TeilnahmeMeldung,
+  type VeranstaltungsInfos,
+  type GemeldeterPunkt,
 } from "./client.js";
 
 export {
@@ -31,4 +33,10 @@ export {
 
 export { redact } from "./redact.js";
 
-export { startMockServer, type MockServer } from "./mock/server.js";
+export {
+  startMockServer,
+  type MockServer,
+  type MockBehaviour,
+  type MockOptions,
+  type MockRecord,
+} from "./mock/server.js";

@@ -140,3 +140,42 @@ response time, with no work possible in the meantime.
 encoding assumptions in a mock. Rejected: it leaves retry, deadline and error
 handling untestable in CI, permanently, since CI cannot depend on an external
 sandbox.
+
+## Update — 09.08.2026: the specification arrived, and the decision held
+
+The Veranstalter Swagger was supplied on 09.08, closing S24. **Five of the six
+contract assumptions this ADR was built on were wrong** (P31-01):
+
+| This ADR said                            | It actually is                                    |
+| ---------------------------------------- | ------------------------------------------------- |
+| authenticate (VNR + password) → JWT      | `GET /fobi/veranstalter-auth/jwt`, HTTP **Basic** |
+| `POST /fobi/veranstalter/push_teilnahme` | correct                                           |
+| body carries `rolle: TEILNEHMER`         | no such field; also no `vnr`                      |
+| a validation rejection is `422`          | `406` is business, `422` is _format_              |
+| success returns a reference              | it returns nothing contractual                    |
+
+**The decision is unchanged and is what made the correction cheap.** All three
+parts did the job they were chosen for:
+
+1. The **harness** turned first contact into a diff. Every path, field name and
+   status code was one constant away from correct, and `EivExchange` had recorded
+   verbatim requests and responses from the start.
+2. The **mock** was the weak part, and precisely in the way this ADR's third
+   rejected alternative predicted the _absence_ of one would be: it encoded the
+   assumptions, so CI asserted them. Eighteen green tests proved agreement with
+   ourselves. That is not an argument against the mock — without it the retry and
+   deadline paths would have been untested for months — but it is the reason the
+   mock's README lists assumptions field by field, and the reason that list was
+   the reconciliation checklist.
+3. The **pure deadline functions** needed no change at all. `eivDeadlines` and
+   `planEivAttempt` gained two failure kinds and nothing else.
+
+**What the specification added that we had not planned for:** a withdrawal
+mechanism (a push with the points zeroed), an endpoint returning the accredited
+period, and an endpoint returning what the Kammer already holds. The last two
+answer S11 and S25 by asking rather than by writing to the Ärztekammer.
+
+The one architectural claim worth restating: _"`EIV_BASE_URL` is the only thing
+that changes between mock, sandbox and live."_ That survived. The rewrite touched
+the transport's field names and status handling and reached neither the worker
+nor the domain.

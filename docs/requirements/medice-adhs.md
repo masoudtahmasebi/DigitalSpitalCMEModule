@@ -11,18 +11,36 @@ it unilaterally.
 
 ### Data required
 
-| Field        | Source         | Notes                                                                             |
-| ------------ | -------------- | --------------------------------------------------------------------------------- |
-| `efn`        | Learner        | 15-digit Einheitliche Fortbildungsnummer, unique per physician, **never changes** |
-| `rolle`      | Fixed          | Always `TEILNEHMER` — all participants are regular attendees                      |
-| `vnr`        | Course setting | Veranstaltungsnummer, issued per course by the Ärztekammer                        |
-| VNR password | Course setting | Issued alongside the VNR on accreditation approval. **Unique per course.**        |
+_Corrected 09.08 against the published Swagger (S24 closed, P31-01). The
+previous version of this table listed a `rolle` field and a `vnr` in the body;
+neither exists._
+
+| Field                    | Source         | Notes                                                                             |
+| ------------------------ | -------------- | --------------------------------------------------------------------------------- |
+| `efn`                    | Learner        | 15-digit Einheitliche Fortbildungsnummer, unique per physician, **never changes** |
+| `punkte_basis_flag`      | Platform       | Credit for attending. See S25 — which flags this course may claim is unconfirmed  |
+| `punkte_lernerfolg_flag` | Platform       | Credit for passing the Lernerfolgskontrolle                                       |
+| `punkte_referent`        | Fixed          | `0` — every participant is a Teilnehmer, never a speaker                          |
+| `teilnahmedatum`         | Platform       | `YYYY-MM-DD`, the **Berlin** calendar date. Outside the accredited period → 406   |
+| `vnr`                    | Course setting | Veranstaltungsnummer. Carried by the **token**, not by the body                   |
+| VNR password             | Course setting | Issued alongside the VNR on accreditation approval. **Unique per course.**        |
 
 ### API flow
 
-1. Authenticate with VNR + password → receive JWT.
-2. `POST /fobi/veranstalter/push_teilnahme` with `{ vnr, efn, rolle: "TEILNEHMER" }`.
+1. `GET /fobi/veranstalter-auth/jwt` with HTTP Basic (user = VNR, password =
+   VNRPWD) → `{ "jwt": … }`.
+2. `POST /fobi/veranstalter/push_teilnahme` with the five fields above, as
+   `Authorization: Bearer <jwt>`.
 3. EIV forwards the credits to the physician's Ärztekammer.
+
+A repeat for the same `(EFN, VNR)` **updates** the record rather than
+double-booking, so a retry after an unclear failure is safe. A withdrawal is the
+same call with both flags `false` and `punkte_referent: 0`; the record survives.
+
+Two further endpoints exist and are wired into the harness:
+`GET /fobi/veranstalter/veranstaltung` (accredited period, point values, whether
+the event is locked) and `GET /fobi/veranstalter/gemeldetepunkte` (what the
+Kammer already holds).
 
 ### Live credentials
 
@@ -383,7 +401,9 @@ groups now render blurred behind a padlock rather than as a line of text.
 | Accreditation body                   | Ärztekammer Westfalen-Lippe                                                    |
 | CME points / category (first course) | 4 Punkte, Kategorie D                                                          |
 | Accreditation validity               | 13.10.2025 – 12.10.2026                                                        |
-| EIV service                          | `https://punktemeldung.eiv-fobi.de/`                                           |
+| EIV web app (live)                   | `https://punktemeldung.eiv-fobi.de/`                                           |
+| EIV API (test)                       | `https://backend-test.eiv-fobi.de` — the only server the Swagger names         |
+| EIV API (live)                       | **not published** — confirm with EIV support before go-live (S26)              |
 | Reporting window                     | 8 days after Veranstaltungsende — **but see §6.10: its value is undefined**    |
 | Correction window                    | 7 days after first submission, then permanently closed                         |
 | EFN format                           | Exactly 15 digits                                                              |

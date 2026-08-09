@@ -73,7 +73,10 @@ wants action today.
 | S9      | Hetzner account ownership and DNS                                                  | M4 · 06.09       | 24.08     | DigitalSpital      |
 | S10     | VNR password was shared over chat                                                  | —                | now       | DigitalSpital      |
 | S23     | **VNR format, and whether any VNR-less completion already exists**                 | —                | 14.08     | MEDICE / ÄKWL      |
-| S24     | **Export the EIV Veranstalter Swagger — our client is built on a guess**           | M3 · 30.08       | 14.08     | MEDICE             |
+| S25     | **Which point flags may a completion claim for this VNR?**                         | M3 · 30.08       | **14.08** | MEDICE / ÄKWL      |
+| S26     | **The production EIV API base URL is not published**                               | M3 · 30.08       | 21.08     | MEDICE             |
+| S27     | **Test-system credentials from EIV support, so the client can be proven**          | M3 · 30.08       | **14.08** | MEDICE             |
+| ~~S24~~ | ~~Export the EIV Veranstalter Swagger~~                                            | **CLOSED 09.08** | —         | —                  |
 | ~~S3~~  | ~~WordPress repository access~~                                                    | **CLOSED 28.07** | —         | —                  |
 | ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                               | **CLOSED 28.07** | —         | —                  |
 | ~~S6~~  | ~~Signature/stamp asset~~                                                          | **CLOSED 28.07** | —         | —                  |
@@ -116,6 +119,21 @@ the same as having one.
 > **Why it is still on this list:** that is our reading of a form, not a
 > statement from the ÄKWL. It is one sentence to confirm, and confirming it
 > costs nothing. The mitigation below means the launch does not wait for it.
+>
+> **Updated 09.08 — the API can now be asked, and it raises the stakes.** The
+> Swagger (S24, closed) shows `GET /fobi/veranstalter/veranstaltung` returning
+> `beginn` and `ende` for the VNR, and `push_teilnahme` refusing a
+> `teilnahmedatum` outside that period with a **406**. So EIV holds an opinion
+> about when this event ran, and it enforces it.
+>
+> If that `ende` is 13.10.2025, then **every completion this platform reports
+> will be refused**, no matter what our own 8-day clock says. That is no longer
+> a question about which date to pass to our deadline function; it is a question
+> about whether the Punktemeldung is possible at all.
+>
+> One command answers it against the test system, once S27 supplies
+> credentials: `pnpm --filter @ds/eiv-harness veranstaltung`. Ask before the
+> first live completion, not after.
 
 The single most consequential unknown in the project, and it comes straight out
 of the Anerkennungsbescheid.
@@ -856,47 +874,131 @@ in the form.
 
 ---
 
-## S24 · We cannot reach the EIV REST API's documentation, and our client is built on a guess
+## S24 · The EIV Veranstalter API — **CLOSED 09.08, and five of our six assumptions were wrong**
 
-- **Owner:** MEDICE (they hold the VNR login) · **Blocks:** P7 · **Raised:** 08.08
+- **Owner:** MEDICE · **Closed:** 09.08 by the client supplying the Swagger
 
-Three things established on 08.08, all of which move S24 from "unknown" to
-"specific":
+The specification arrived: `EIV FOBI - Veranstalter`, OAS 3, version
+`1.0 20260714-01`. The client, the mock, the harness and the retry policy have
+all been reconciled with it in **P31-01**. What it changed:
 
-1. **There is a REST API for Veranstalter, and it is documented in a Swagger UI**
-   at `veranstalter-swagger-ui.eiv-fobi.de`. Our ADR-0005 client was written
-   before we knew that, from a prose description.
-2. **The old Java client died 31.12.2024** and the XML file interface is slated
-   for retirement. The REST API is the path.
-3. **From 01.01.2026 organisers submit via `punkte.eiv-fobi.de`.** Our
-   `.env.example` names `https://punktemeldung.eiv-fobi.de/` as the live
-   endpoint. Both hosts exist; neither is confirmed to be the _API_ base, and
-   the Swagger host is a third name again.
+| We assumed                              | It is                                             |
+| --------------------------------------- | ------------------------------------------------- |
+| `POST /auth/login` with a JSON body     | `GET /fobi/veranstalter-auth/jwt` with HTTP Basic |
+| the token field is `token`              | `jwt`                                             |
+| the push body carries `vnr` and `rolle` | neither — the VNR is carried by the token         |
+| `422` is the business rejection         | `406` is; `422` is a _format_ error               |
+| success returns `{ referenz, status }`  | no reference and no status word exist             |
+| a repeat answers `BEREITS_GEMELDET`     | a repeat is indistinguishable from a first write  |
 
-**We could not read the Swagger.** It is not reachable from the build
-environment, so this is not something engineering can resolve by trying harder.
+Only "the JWT is a Bearer token" survived.
 
-That matters more than it sounds, because everything below is currently an
-**assumption**, and the mock encodes the same assumptions — so our tests agree
-with our guesses rather than with the interface:
+**Three things the specification gave us that we did not know to ask for:**
 
-| What we assume                                                      | Where                  |
-| ------------------------------------------------------------------- | ---------------------- |
-| `POST /auth/login` with `{ vnr, passwort }` returning `{ token }`   | `client.ts`            |
-| `POST /fobi/veranstalter/push_teilnahme` with `{ vnr, efn, rolle }` | `client.ts`            |
-| `rolle: "TEILNEHMER"`                                               | `client.ts`            |
-| `{ referenz, status }` with `ANGENOMMEN` / `BEREITS_GEMELDET`       | `mock/server.ts`       |
-| 422 for an unknown EFN, 401/403 for bad credentials                 | failure classification |
+1. **A withdrawal mechanism.** Re-send with both flags false and
+   `punkte_referent: 0`; the record survives and stays auditable. `@ds/domain`
+   has computed a 7-day correction window since week 1 and nothing could
+   perform a correction. Now `retractTeilnahme` can.
+2. **`GET /fobi/veranstalter/veranstaltung`** — the accredited period and the
+   point values, per VNR. This is what turns S11 and S25 from letters into a
+   command.
+3. **`GET /fobi/veranstalter/gemeldetepunkte`** — what the Ärztekammer holds, as
+   opposed to what we believe we sent. Our append-only log cannot detect a
+   disagreement between the two; this can.
 
-**The ask, and it is small:** MEDICE hold the VNR and can sign in. One export of
-the Swagger document — `/v3/api-docs` or the JSON behind the UI — settles every
-row above in an afternoon, and the harness (`--behaviour`, P30-01) exists to
-replay each one the moment it arrives.
+**And one new hazard, which is the reason S11 now matters more, not less:** a
+`teilnahmedatum` outside the accredited period is refused **406**. For an
+on-demand Fortbildung accredited _am 13.10.2025_ and valid until 12.10.2026,
+that is the difference between every completion being reported and none of them
+being reported. It is reproducible locally now —
+`start:mock -- --beginn … --ende …` — but the real answer is the one the test
+system gives.
 
-Until then the client stays as it is. It is transport only: every path, field
-name and status code is one constant away from correct, and `EivExchange`
-records the verbatim request and response so the first real call is a diff
-rather than an investigation. That was the point of building it in week 1.
+**The lesson, recorded rather than absorbed.** The mock was written from the
+same guesses as the client, so CI asserted the guesses. Eighteen tests were
+green against an interface that does not exist. A contract test is only worth
+what its fixture is worth, and ours was worth our own imagination.
+
+---
+
+## S25 · Which point flags may a completion claim?
+
+- **Owner:** MEDICE / ÄKWL · **Blocks:** the first live submission · **Raised:** 09.08 by P31-01
+
+`push_teilnahme` carries `punkte_basis_flag` and `punkte_lernerfolg_flag`
+separately, and `GET /veranstaltung` declares a `punkte_basis` and a
+`punkte_lernerfolg` value for the event. The Anerkennungsbescheid awards this
+Fortbildung **4 Punkte, Kategorie D**, with 70 % on the Lernerfolgskontrolle as
+a _condition_ of awarding them — which does not obviously map onto two flags.
+
+Our completion already requires passing the assessment, so both kinds of credit
+have plainly been earned. What is not confirmed is whether an event accredited
+for zero Lernerfolg points refuses the flag.
+
+**The platform sends both `true` by default, deliberately**, and the reasoning
+is in `reporter.ts`:
+
+- Claiming credit the event does not carry → 406 or 422. Loud, logged, in front
+  of an operator inside the 8-day window.
+- Not claiming credit that was earned → **accepted silently**, and the physician
+  is short of points with nothing anywhere saying so until they check their
+  Kammer account months later.
+
+A wrong answer that fails is recoverable; a wrong answer that succeeds is not.
+
+**One command settles it** once S27 provides test credentials:
+
+```bash
+EIV_BASE_URL=https://backend-test.eiv-fobi.de EIV_ALLOW_LIVE=yes \
+  pnpm --filter @ds/eiv-harness veranstaltung
+```
+
+---
+
+## S26 · The production API base URL is not published
+
+- **Owner:** MEDICE · **Blocks:** go-live, not development · **Raised:** 09.08
+
+The Swagger names exactly one server: `https://backend-test.eiv-fobi.de`, the
+test environment. Three other hosts are in circulation and none is confirmed as
+the production **API** base:
+
+| Host                             | What it is                                          |
+| -------------------------------- | --------------------------------------------------- |
+| `punktemeldung.eiv-fobi.de`      | the live **web application**, named by the Bescheid |
+| `punktemeldung-test.eiv-fobi.de` | the test web application                            |
+| `punkte.eiv-fobi.de`             | named for organiser submissions from 01.01.2026     |
+
+`backend-test` → `backend`? Plausible, and plausible is not good enough for the
+one URL where being wrong means a physician's points go nowhere. It is a single
+environment variable, so it blocks nothing before launch — but it must be
+confirmed with EIV support, not inferred.
+
+---
+
+## S27 · Test-system credentials, so the client can be proven before it is trusted
+
+- **Owner:** MEDICE · **Blocks:** the last unverified half of P7 · **Raised:** 09.08
+
+The specification is explicit: _"Bitte nutzen Sie für die Entwicklung
+ausschließlich das Test-System. Zugangsdaten und Test-Veranstaltungen erhalten
+Sie über den Support."_ Test and production are completely separate, so a test
+run cannot touch real data — which is exactly why it is the right place to
+prove this.
+
+We now match the published contract field for field, but **nothing has spoken to
+a real EIV server**. The remaining unknowns are the ones only a real response
+answers: whether Basic on a GET behaves as documented behind their gateway,
+what the 4xx bodies actually look like ("historisch gewachsen", by their own
+admission), and whether `teilnahmedatum` is validated as we expect.
+
+The harness is ready for it — `authenticate`, `veranstaltung`, `gemeldetepunkte`
+and `push` each print the verbatim exchange with the password redacted and the
+EFN masked to four digits, so the output can be pasted into a ticket.
+
+**Do not use the live VNR for this.** Which is also S10: the live VNR password
+has now been shared over chat twice. It should be rotated before launch
+regardless of what else happens.
 
 ---
 
