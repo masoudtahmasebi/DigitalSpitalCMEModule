@@ -237,6 +237,29 @@ describe("without onlyIfMissing", () => {
   });
 });
 
+/**
+ * A printed password line: two spaces, the label, two spaces, 32 base64url
+ * characters, and then the end of the line.
+ *
+ * The generated password is 24 random bytes as base64url — 32 characters with
+ * no padding. Asserting on the shape rather than the value is the only way to
+ * catch a future edit that starts printing it again.
+ *
+ * **Anchored to the line, not with `\b`, and that is the whole point of this
+ * comment (P32-02).** The first version ended in `\b`, which fails whenever the
+ * password's last character is `-`: `-` is not a word character, so between it
+ * and the end of the line there is no boundary to match. base64url's alphabet
+ * makes that the last character about one time in sixty-four, so the suite
+ * failed roughly once every sixty runs, on a different machine each time, with
+ * a diff that looked like the seed had printed the password correctly — because
+ * it had.
+ *
+ * That is the shape of flake worth naming: not a race, not shared state, just
+ * an assertion that was wrong about its own input for a subset of values it was
+ * always going to see.
+ */
+const PRINTED_PASSWORD = /^ {2}Passwort {2}[A-Za-z0-9_-]{32}$/mu;
+
 describe("the report", () => {
   it("withholds the generated password when the run is unattended", async () => {
     await dropDefaultTenant();
@@ -244,10 +267,7 @@ describe("the report", () => {
     const report = await seedDsDefault(seeder, { revealPassword: false });
 
     expect(report).toContain("deliberately not printed");
-    // The generated password is 24 random bytes as base64url — 32 characters
-    // with no padding. Asserting on the shape rather than on the value is the
-    // only way to catch a future edit that starts printing it again.
-    expect(report).not.toMatch(/\bPasswort {2}[A-Za-z0-9_-]{32}\b/);
+    expect(report).not.toMatch(PRINTED_PASSWORD);
   });
 
   it("prints it when a human is looking at the terminal", async () => {
@@ -255,6 +275,6 @@ describe("the report", () => {
 
     const report = await seedDsDefault(seeder);
 
-    expect(report).toMatch(/\bPasswort {2}[A-Za-z0-9_-]{32}\b/);
+    expect(report).toMatch(PRINTED_PASSWORD);
   });
 });

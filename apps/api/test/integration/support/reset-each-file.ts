@@ -38,13 +38,37 @@
 import { beforeAll } from "vitest";
 import { resetDatabase } from "./reset.js";
 
+/**
+ * Truncating requires being asked, or a database that says what it is.
+ *
+ * `pnpm test:integration` sets `INTEGRATION_RESET=1` and points at
+ * `ds_education_test`, so both are true. `pnpm test:integration:ci` sets
+ * neither by itself — CI supplies the flag in the workflow, where the Postgres
+ * is a container discarded with the job.
+ *
+ * Without this, a developer who ran the CI-shaped command at a terminal with
+ * `DATABASE_URL` pointing at `ds_education` would empty the database they
+ * develop against, on the first test file, silently. That is worse than the
+ * pollution this ticket set out to fix, and it would have been introduced by
+ * fixing it.
+ */
+function requested(url: string): boolean {
+  if (process.env["INTEGRATION_RESET"] === "1") return true;
+
+  try {
+    return new URL(url).pathname.replace(/^\//u, "").endsWith("_test");
+  } catch {
+    return false;
+  }
+}
+
 beforeAll(async () => {
+  // The superuser, because RLS applies to `ds_app` and truncation must not be a
+  // tenant-scoped operation.
   const url = process.env["POSTGRES_SUPERUSER_URL"] ?? process.env["DATABASE_URL"];
   if (url === undefined || url === "") {
     throw new Error("POSTGRES_SUPERUSER_URL or DATABASE_URL must be set.");
   }
 
-  // The superuser, because RLS applies to `ds_app` and truncation must not be a
-  // tenant-scoped operation.
-  await resetDatabase(url);
+  if (requested(url)) await resetDatabase(url);
 });

@@ -156,6 +156,12 @@ jobs:
       # Integration test fixture seeding only (BYPASSRLS) — see .env.example.
       POSTGRES_SUPERUSER_URL: postgres://postgres:postgres@127.0.0.1:5432/ds_education
       REDIS_URL: redis://127.0.0.1:6379
+      # Truncate before every test file (P32-02). Safe here and nowhere else:
+      # the Postgres above is a container created for this job and discarded
+      # with it. The suites ask for this explicitly rather than doing it by
+      # default, so the same command at a developer's terminal cannot empty the
+      # database they develop against.
+      INTEGRATION_RESET: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
