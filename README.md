@@ -75,14 +75,22 @@ WordPress plugin's tests.
 ```bash
 pnpm install
 pnpm infra:up          # Postgres, Redis, Keycloak, Mailpit
-pnpm db:migrate        # as ds_migrator — never as the superuser, see below
-pnpm db:seed:default   # DSCustomer — the neutral tenant a deploy also creates
-pnpm db:seed           # MEDICE's ADHS course, its quiz and its evaluation
+pnpm db:dev:reset      # migrate, then seed medice, ds and dscustomer
 pnpm dev               # API on :3000, widget on :5173, admin on :5174
 ```
 
-`pnpm infra:reset` throws the database away and starts again, which is usually
-faster than reasoning about a half-migrated schema.
+`db:dev:reset` drops and rebuilds the development database, which is the usual
+thing to want: it is faster than reasoning about a half-migrated schema, and
+the individual steps behind it (`db:migrate`, `db:seed`, `db:seed:ds`,
+`db:seed:default`) are still there when you need one on its own. `db:dev:seed`
+does the same without dropping. Migration runs as `ds_migrator`, never as the
+superuser — see below.
+
+The three tenants are seeded rather than one because the portal takes its
+tenant from the URL path: `/medice`, `/ds` and `/dsproject` are only
+exercisable when all three exist. Neither command creates a staff account —
+`pnpm --filter @ds/api exec node dist/bootstrap-admin.js` does that, and prints
+a password once.
 
 ### Checks
 
@@ -91,6 +99,12 @@ pnpm verify            # lint, format, typecheck, unit tests, prod audit
 pnpm test:integration  # against a real Postgres — needs infra:up
 pnpm test:wp           # the WordPress plugin's security checks (needs php)
 ```
+
+`test:integration` provisions its own database, `ds_education_test`, and never
+touches the one `pnpm dev` runs against. It builds the workspace first and
+truncates before every file, so a run means the same thing on the hundredth day
+as the first — CONTRIBUTING.md §Tests says what each of those guards is for and
+which failure bought it.
 
 `pnpm verify` is what CI runs first. Run it before pushing; it is faster than a
 round trip through Actions and it fails in the same order.
