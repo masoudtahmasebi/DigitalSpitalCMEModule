@@ -247,6 +247,44 @@ if [[ "${EIV_BASE_URL:-}" == *"eiv-fobi.de"* && "${EIV_ALLOW_LIVE:-}" != "yes" ]
   die "EIV_BASE_URL points at the live endpoint but EIV_ALLOW_LIVE is not 'yes'"
 fi
 
+# The API never reads a VNR or its password from the environment, and an
+# operator who believes otherwise has a worker that cannot authenticate.
+#
+# Both belong to a *course*: `courses.vnr` and `courses.vnr_password_enc`,
+# the latter encrypted with the application KMS key and settable only through
+# the admin console's write-only field (CLAUDE.md §4 invariant 7). The VNR
+# differs per accredited event, so there is no single environment value that
+# could be right for an installation serving more than one.
+#
+# `EIV_VNR_PASSWORD` and `EIV_VNR` do exist — in `.env.example`, read by
+# `apps/eiv-harness` at a developer's terminal, and by nothing else.
+#
+# This refuses rather than warns. A password sitting in `config.env` that
+# nothing reads is two problems at once: a credential at rest for no reason,
+# and an operator who reasonably believes the worker is configured. What
+# actually happens is that every completion is abandoned `missing_vnr_password`
+# — permanently, one row at a time, until somebody reads the audit log.
+for inert in EIV_VNR_PASSWORD EIV_VNR; do
+  [[ -z "${!inert:-}" ]] || die \
+    "${inert} is set in ${CONFIG_FILE}, where nothing reads it. The VNR and its
+   password belong to the course: set them on the Fortbildung's settings screen
+   in the admin console (the password is write-only and encrypted at rest).
+   Remove ${inert} from ${CONFIG_FILE} — and rotate it if it has been shared."
+done
+
+# Going live without somewhere for the deadline alarm to go.
+#
+# CLAUDE.md §4 invariant 8: a submission approaching its deadline raises an
+# alert rather than failing silently. With ALERT_WEBHOOK_URL empty the alarm
+# still fires and is still written to the audit log, but it reaches a log file
+# nobody is watching — and the thing it is warning about has an 8-day statutory
+# limit. A warning, not a refusal: it degrades to logging by design.
+if [[ "${EIV_ALLOW_LIVE:-}" == "yes" && "${EIV_WORKER_ENABLED:-yes}" != "no" &&
+      -z "${ALERT_WEBHOOK_URL:-}" ]]; then
+  log "WARNING: the EIV worker may submit to ${EIV_BASE_URL:-?} and"
+  log "         ALERT_WEBHOOK_URL is empty — deadline alarms are log-only."
+fi
+
 if [[ -n "$ROLLBACK_TAG" ]]; then
   log "Rolling back to ${ROLLBACK_TAG}"
   # One variable, because every image is tagged with the same commit. The old

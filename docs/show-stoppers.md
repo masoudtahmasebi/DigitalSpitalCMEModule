@@ -1000,6 +1000,31 @@ EFN masked to four digits, so the output can be pasted into a ticket.
 has now been shared over chat twice. It should be rotated before launch
 regardless of what else happens.
 
+### Update 09.08 — an environment now points at the test system
+
+A deployment configuration has been set to:
+
+```
+EIV_BASE_URL=https://backend-test.eiv-fobi.de
+EIV_ALLOW_LIVE=yes
+EIV_WORKER_ENABLED=yes
+```
+
+Which is the right host and the right shape. **The open question is whose
+credentials are behind it**, and it is the whole of S27:
+
+- **A test VNR and password issued by EIV support** — then this works, and the
+  first real answers to S11 and S25 are one `veranstaltung` call away.
+- **The live VNR from the Anerkennungsbescheid** — then it does not
+  authenticate, because the two systems share no accounts, and every completion
+  is abandoned as a permanent business failure inside the 8-day window.
+
+The platform cannot tell the difference and neither can this document. **Ask
+EIV support for Zugangsdaten und Test-Veranstaltungen before the worker is
+allowed to run against that host**, and put the VNR and its password on the
+course in the admin console — never in `config.env`, which is not read and which
+`deploy.sh` now refuses.
+
 ---
 
 ## S22 · The V2 desktop exports disagree with the delivered PDF — **which is current?**
