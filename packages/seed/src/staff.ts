@@ -35,11 +35,15 @@
  *
  * ## What these accounts are not
  *
- * **Not exempt from anything.** The platform's second-factor policy is
- * `required` (ADR-0012) and these accounts hold no factor, so the first sign-in
- * goes to enrolment exactly as the super administrator's does. Seeding a factor
- * would mean seeding a shared TOTP secret, which is a credential in the
- * repository — the thing the whole design refuses.
+ * **Not exempt from anything.** Neither holds a TOTP secret, so each follows
+ * whatever policy applies to it — and for a customer-scoped operator that is the
+ * *customer's* policy, which defaults to `optional`. Only a `super_admin`
+ * follows the platform row that ADR-0012 fixes at `required`. So these two
+ * ordinarily sign straight in, and raising their customer's policy under
+ * Sicherheit sends them to enrolment like anybody else.
+ *
+ * Seeding a factor instead would mean a shared TOTP secret in the repository,
+ * which is the thing the whole design refuses.
  *
  * **Not for production, unflagged.** They are listed in `docs/mock-data.md` as
  * mock data with an owner and a replacement, because an installation that
@@ -190,8 +194,12 @@ export function describeDemoStaff(accounts: readonly DemoStaffAccount[]): string
 
   lines.push(
     "",
-    "  Both owe a second factor: the platform policy is `required`, so the",
-    "  first sign-in goes to enrolment. Nothing here is exempt from it.",
+    "  Second factor: neither account holds one, and what happens on the first",
+    "  sign-in is decided by this CUSTOMER's policy, not the platform's. That",
+    "  default is `optional` (DEFAULT_CUSTOMER_SECOND_FACTOR), so unless the",
+    "  customer's policy has been raised these two go straight in. Only a",
+    "  super_admin follows the platform row, which ADR-0012 fixes at `required`.",
+    "  Raise it per customer under Sicherheit.",
   );
 
   return lines;

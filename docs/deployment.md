@@ -441,9 +441,16 @@ connects as `ds_migrator`, and that connection string is built from two files
 three releases and never worked — it refused with `MIGRATION_DATABASE_URL is not
 set` before opening a connection.
 
-It refuses to run again while any staff account exists — after that the ordinary
-invitation flow is the only way to add one. `--force` exists for a genuine
-lockout and records itself in `admin_audit_log`.
+It refuses to run again while an **active super administrator** exists — after
+that the ordinary invitation flow is the only way to add one. `--force` exists
+for a genuine lockout and records itself in `admin_audit_log`.
+
+The condition used to be "any staff account", which was wrong in a way that only
+appeared once the seeds started creating operators (P38-03): `canGrant` refuses
+a grant broader than the actor's own, so an installation holding only a
+`customer_admin` has no path to a super administrator at all — and the one
+command that could create one refused because that account existed. Order still
+does not matter now: seed first or bootstrap first, both work.
 
 ### Optionally, the DS test tenant (P20-01)
 
@@ -458,6 +465,25 @@ ssh -i ~/.ssh/ds-deploy deploy@78.47.178.65
 cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
 ./dsc seed ds
 ```
+
+Since P38-01 it also creates the tenant's **two console operators**, one per
+customer role, and prints their passwords once:
+
+| Account                 | Role             | May                                                    |
+| ----------------------- | ---------------- | ------------------------------------------------------ |
+| `verwaltung@ds.example` | `customer_admin` | departments, projects, courses, participants, branding |
+| `redaktion@ds.example`  | `course_editor`  | courses and their content — nothing above a course     |
+
+Both are on a reserved domain (RFC 2606), so neither can receive mail, and both
+are mock data — `docs/mock-data.md` lists what replaces them. Set
+`SEED_STAFF_PASSWORD` to choose the password instead of having one generated;
+note that doing so gives **both** accounts the same one, which is fine for a
+demo installation being handed round and wrong for anything else.
+
+Neither holds a second factor, and what happens on their first sign-in is
+decided by the **customer's** policy, not the platform's — that default is
+`optional`, so they sign straight in. Raise it for this customer under
+**Sicherheit** to send them to enrolment.
 
 It rebuilds its two courses' content trees, which deletes learner progress **on
 those two courses**. It touches nothing belonging to any other customer — the
