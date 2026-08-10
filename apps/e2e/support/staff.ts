@@ -74,6 +74,46 @@ export function totpCode(secret: Buffer, at: Date = new Date()): string {
   return String(binary % 1_000_000).padStart(6, "0");
 }
 
+/**
+ * A code that has not been presented yet in this process.
+ *
+ * ## The finding this exists because of
+ *
+ * The first version called `totpCode` directly for every sign-in, and the
+ * second sign-in of the run failed with **"Der Code ist nicht korrekt oder
+ * nicht mehr gültig."** — because two tests signing in within the same
+ * thirty-second step compute the *same* code, and the API refuses a counter it
+ * has already accepted (`packages/domain/src/totp.ts`, rejection `replayed`).
+ *
+ * That is the product being right. RFC 6238 §5.2 says an accepted code must not
+ * be accepted a second time, and without it a code shoulder-surfed or read out
+ * of a log stays usable for the rest of its window. The harness was the naive
+ * half: a person with a phone cannot present the same six digits twice either —
+ * they wait for the next one. So this waits.
+ *
+ * Up to thirty seconds of it, which is why the tests that sign in more than once
+ * carry a raised timeout rather than a shortened window.
+ */
+let lastStepPresented = -1;
+
+export async function freshTotpCode(secret: Buffer): Promise<string> {
+  for (;;) {
+    const now = Date.now();
+    const step = Math.floor(now / 30_000);
+
+    if (step !== lastStepPresented) {
+      lastStepPresented = step;
+      return totpCode(secret, new Date(now));
+    }
+
+    // To the start of the next step, plus a moment: a code submitted in the
+    // last milliseconds of its own window is a flake waiting to happen, and it
+    // would look exactly like the replay this method is avoiding.
+    const untilNextStep = (step + 1) * 30_000 - now + 250;
+    await new Promise((resolve) => setTimeout(resolve, untilNextStep));
+  }
+}
+
 /** Run `bootstrap-admin` and read back the credential it printed. */
 export function bootstrapSuperAdmin(
   repo: string,
