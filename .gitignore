@@ -38,3 +38,9 @@ apps/portal/public/ds-lms.js
 
 # Production environment file, written on the host by the deploy workflow.
 infra/deploy/.env.production
+
+# Playwright's per-failure artefacts (P35-01). Traces and screenshots are for
+# the run that produced them; a committed one is a stale picture of a bug that
+# has since been fixed.
+apps/e2e/test-results/
+apps/e2e/playwright-report/

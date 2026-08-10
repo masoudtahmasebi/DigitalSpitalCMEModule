@@ -46,7 +46,8 @@
     "db:test:fresh": "node scripts/testdb.mjs --fresh",
     "db:dev:reset": "node scripts/devdb.mjs",
     "db:dev:seed": "node scripts/devdb.mjs --keep",
-    "test:integration:ci": "turbo run test:integration"
+    "test:integration:ci": "turbo run test:integration",
+    "test:e2e": "node scripts/run-e2e.mjs"
   },
   "devDependencies": {
     "@ds/config": "workspace:*",

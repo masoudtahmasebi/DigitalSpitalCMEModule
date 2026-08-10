@@ -97,6 +97,12 @@ const READ_WITHOUT_DOCUMENTATION = new Set([
   "KEYCLOAK_ORIGIN",
   "API_ORIGIN",
   "CORS_ALLOWED_ORIGINS",
+  // Where the browser suite finds Chromium (P35-01). Deliberately in neither
+  // template: `run-e2e.mjs` locates the pre-installed browser itself and
+  // refuses to start if there is none, so neither is a value anybody sets by
+  // hand — and neither is read by anything a deployment runs.
+  "E2E_CHROMIUM",
+  "PLAYWRIGHT_BROWSERS_PATH",
   // Developer-machine overrides for the test and development database scripts
   // (P32-01). Deliberately in neither template, for two reasons: nothing in a
   // deployment ever runs `scripts/testdb.mjs` or `scripts/devdb.mjs`, and
