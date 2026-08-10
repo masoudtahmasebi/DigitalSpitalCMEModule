@@ -35,7 +35,7 @@ function submission(
 
 function build(options: {
   pending?: PendingSubmission[];
-  alerted?: Map<string, ("warning" | "urgent" | "overdue")[]>;
+  alerted?: Map<string, ("blocked" | "warning" | "urgent" | "overdue")[]>;
   sink?: AlertSink;
 }) {
   const audited: Array<{ customerId: string; entry: AuditEntry }> = [];
@@ -99,12 +99,46 @@ describe("what gets raised", () => {
     // Nothing can be done — the reporting window is closed. The alert is the
     // record that it happened, and the record is what stops it being found
     // months later by the physician.
+    //
+    // Two levels, not one, since P33-01: `failed_permanent` also means the
+    // worker has stopped. On this row they arrive together because it was
+    // never alerted while it was alive; the point of `blocked` is the row
+    // where they do not.
     const { service } = build({ pending: [submission("e1", -20, "failed_permanent")] });
 
     const raised = await service.sweep(NOW);
 
-    expect(raised[0]?.level).toBe("overdue");
+    expect(raised.map((alert) => alert.level)).toEqual(["blocked", "overdue"]);
     expect(raised[0]?.hoursRemaining).toBe(-20);
+  });
+
+  it("wakes somebody the moment the worker gives up, not six days later", async () => {
+    // The gap P33-01 closed. A submission abandoned on day one —
+    // `missing_vnr_password`, a 406, a misconfigured endpoint — will not retry
+    // itself, and under the clock rule alone said nothing until 48 hours
+    // remained. Six days of an eight-day statutory window, silent, on a row
+    // that a person had to touch.
+    const { service, logs } = build({
+      pending: [submission("e1", 190, "failed_permanent")],
+    });
+
+    const raised = await service.sweep(NOW);
+
+    expect(raised.map((alert) => alert.level)).toEqual(["blocked"]);
+    expect(raised[0]?.hoursRemaining).toBe(190);
+    // "EIV deadline blocked" would read as a deadline that is blocked. The two
+    // alarms mean different things and the first words decide which one
+    // somebody at 03:00 thinks they are looking at.
+    expect(logs[0]).toContain("EIV submission stopped");
+  });
+
+  it("leaves a submission the worker is still retrying to the clock", async () => {
+    // Same deadline, same distance, still moving. Alerting here would be an
+    // alert on every queued row in the window, which is the noise that gets a
+    // channel muted.
+    const { service } = build({ pending: [submission("e1", 190, "failed_retryable")] });
+
+    expect(await service.sweep(NOW)).toEqual([]);
   });
 
   it("ignores a submission that has already been reported", async () => {

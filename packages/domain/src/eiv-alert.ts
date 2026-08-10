@@ -30,6 +30,30 @@
  * because anything can still be done about it, but because the alert is the
  * record that it happened.
  *
+ * ## And one level that is not about the clock at all
+ *
+ * `blocked` fires the moment a submission stops retrying itself, whatever the
+ * deadline says.
+ *
+ * The three levels above all assume the queue is still working on it: the row
+ * is `queued` or `failed_retryable`, the worker will try again, and time is the
+ * only thing that decides when a human needs to care. That assumption is wrong
+ * for a row the worker has abandoned — `missing_vnr_password` because nobody
+ * set the password on the course, a 406 because the VNR is unknown to the
+ * Kammer, `live_submission_not_allowed` because the environment is
+ * misconfigured. Those rows will sit at `failed_permanent` doing nothing.
+ *
+ * Under the clock-only rule such a row raises **nothing for six of its eight
+ * days**, and then arrives as `warning` with 48 h left — as though it were a
+ * retry running late rather than something that stopped on day one and needed a
+ * person. Six days is the difference between fixing a password and invoking the
+ * Bescheid's paper fallback.
+ *
+ * So `blocked` is raised immediately and once, and the clock levels still
+ * follow if nobody acts: "this stopped" and "this stopped and there are twelve
+ * hours left" are different messages and the second is not implied by the
+ * first.
+ *
  * ## Escalation, not repetition
  *
  * Each level fires **once** per submission. The caller records which levels
@@ -41,8 +65,13 @@
  * Pure: `now` is an argument, like every other clock read in this package.
  */
 
-/** Ordered by urgency. The caller escalates through them and never back. */
-export type EivAlertLevel = "warning" | "urgent" | "overdue";
+/**
+ * `warning`, `urgent` and `overdue` are a ladder the caller climbs and never
+ * descends. `blocked` is not on that ladder — it says the queue has stopped
+ * working on this submission, and it can fire at any distance from the
+ * deadline, including alongside one of the others.
+ */
+export type EivAlertLevel = "blocked" | "warning" | "urgent" | "overdue";
 
 /** Hours before `reportDueAt` at which each level begins. */
 const THRESHOLD_HOURS: Readonly<Record<"warning" | "urgent", number>> = {
@@ -57,6 +86,15 @@ export interface EivAlertCandidate {
   readonly reportDueAt: Date;
   /** Levels already sent for this submission, in any order. */
   readonly alreadyAlerted: readonly EivAlertLevel[];
+  /**
+   * Whether the queue has stopped working on this submission.
+   *
+   * A boolean rather than the status itself, so this package stays free of the
+   * database's vocabulary: `failed_permanent` and `window_closed` are names the
+   * schema chose, and a second accreditation interface would choose others. The
+   * rule here is about the fact, not the spelling.
+   */
+  readonly willNotRetry: boolean;
 }
 
 export interface EivAlert {
@@ -95,17 +133,22 @@ export function dueAlerts(
   const alerts: EivAlert[] = [];
 
   for (const candidate of candidates) {
-    const level = alertLevelFor(candidate.reportDueAt, now);
-    if (level === undefined) continue;
-    if (candidate.alreadyAlerted.includes(level)) continue;
+    const hoursRemaining = Math.trunc(
+      (candidate.reportDueAt.getTime() - now.getTime()) / HOUR_MS,
+    );
 
-    alerts.push({
-      enrolmentId: candidate.enrolmentId,
-      level,
-      hoursRemaining: Math.trunc(
-        (candidate.reportDueAt.getTime() - now.getTime()) / HOUR_MS,
-      ),
-    });
+    // `blocked` first, and independently of the clock: a submission the queue
+    // has given up on needs a person now, and saying so before the time-based
+    // level is the difference between "fix this" and "fix this, and hurry".
+    const levels: EivAlertLevel[] = candidate.willNotRetry ? ["blocked"] : [];
+
+    const onTheClock = alertLevelFor(candidate.reportDueAt, now);
+    if (onTheClock !== undefined) levels.push(onTheClock);
+
+    for (const level of levels) {
+      if (candidate.alreadyAlerted.includes(level)) continue;
+      alerts.push({ enrolmentId: candidate.enrolmentId, level, hoursRemaining });
+    }
   }
 
   return alerts;

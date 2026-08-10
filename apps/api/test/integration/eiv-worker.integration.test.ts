@@ -349,7 +349,10 @@ describe("the deadline alarm finds what it needs to find", () => {
   }
 
   /** Only this suite's own rows — other suites share this database. */
-  function mine(alerts: readonly { enrolmentId: string }[], ids: readonly string[]) {
+  function mine<T extends { enrolmentId: string }>(
+    alerts: readonly T[],
+    ids: readonly string[],
+  ): T[] {
     return alerts.filter((alert) => ids.includes(alert.enrolmentId));
   }
 
@@ -429,5 +432,58 @@ describe("the deadline alarm finds what it needs to find", () => {
     );
 
     expect(mine(await alertService().sweep(new Date()), [enrolmentId])).toEqual([]);
+  });
+
+  it("ignores a Meldung that was deliberately withdrawn (P33-01)", async () => {
+    /*
+     * `unreported_eiv_submissions` selected `status <> 'submitted'` from
+     * migration 0011, when reported and unreported were the only outcomes.
+     * P31-02 added `withdrawn` — reported, then retracted on purpose inside the
+     * correction window, which EIV keeps with its points zeroed.
+     *
+     * Under the old predicate that is permanently "unreported": nothing ever
+     * moves it to `submitted`, so it would escalate warning, urgent and overdue
+     * at whoever is on call, about a decision a named human made and recorded.
+     * Three false alarms per withdrawal, and this file's own service says an
+     * alerting path nobody trusts is worse than none.
+     *
+     * Only a real Postgres can check this — the predicate is in SQL.
+     */
+    await freshUser();
+    const eventEndAt = new Date(Date.now() - 7 * 86_400_000);
+    const { submissionId, enrolmentId } = await queueSubmission({ eventEndAt });
+
+    await seedPool.query(
+      "UPDATE eiv_submissions SET status = 'withdrawn' WHERE id = $1",
+      [submissionId],
+    );
+
+    expect(mine(await alertService().sweep(new Date()), [enrolmentId])).toEqual([]);
+  });
+
+  it("wakes somebody the moment the worker abandons a row, not six days later", async () => {
+    /*
+     * The complement of the test above, and the reason `blocked` exists: a
+     * submission with a week still on its clock that the worker has given up on
+     * — no VNR password on the course, an unknown VNR, a refused endpoint.
+     *
+     * The clock-based levels say nothing until 48 hours remain. This row will
+     * not fix itself in the meantime, and six days is the difference between
+     * setting a password and invoking the Bescheid's paper fallback.
+     */
+    await freshUser();
+    const { submissionId, enrolmentId } = await queueSubmission();
+
+    await seedPool.query(
+      "UPDATE eiv_submissions SET status = 'failed_permanent', last_error = $2 WHERE id = $1",
+      [submissionId, "missing_vnr_password"],
+    );
+
+    const raised = mine(await alertService().sweep(new Date()), [enrolmentId]);
+
+    expect(raised).toHaveLength(1);
+    expect(raised[0]).toMatchObject({ level: "blocked" });
+    // Days of window left, which is exactly why nothing else would have spoken.
+    expect(raised[0]?.hoursRemaining).toBeGreaterThan(48);
   });
 });

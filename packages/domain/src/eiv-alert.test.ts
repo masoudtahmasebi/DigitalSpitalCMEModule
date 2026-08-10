@@ -12,7 +12,20 @@ function candidate(
   hours: number,
   alreadyAlerted: EivAlertCandidate["alreadyAlerted"] = [],
 ): EivAlertCandidate {
-  return { enrolmentId: `e-${hours}`, reportDueAt: due(hours), alreadyAlerted };
+  return {
+    enrolmentId: `e-${hours}`,
+    reportDueAt: due(hours),
+    alreadyAlerted,
+    willNotRetry: false,
+  };
+}
+
+/** The same, for a submission the worker has abandoned. */
+function stopped(
+  hours: number,
+  alreadyAlerted: EivAlertCandidate["alreadyAlerted"] = [],
+): EivAlertCandidate {
+  return { ...candidate(hours, alreadyAlerted), willNotRetry: true };
 }
 
 describe("alertLevelFor", () => {
@@ -80,7 +93,14 @@ describe("dueAlerts escalates rather than repeats", () => {
     // 23.5 hours left is "23 hours", never "24" — an alert must not round in
     // the direction that makes a deadline look further away than it is.
     const alerts = dueAlerts(
-      [{ enrolmentId: "e", reportDueAt: due(23.5), alreadyAlerted: [] }],
+      [
+        {
+          enrolmentId: "e",
+          reportDueAt: due(23.5),
+          alreadyAlerted: [],
+          willNotRetry: false,
+        },
+      ],
       NOW,
     );
 
@@ -94,6 +114,41 @@ describe("dueAlerts escalates rather than repeats", () => {
     );
 
     expect(alerts.map((alert) => alert.level)).toEqual(["warning", "urgent", "overdue"]);
+  });
+
+  it("raises blocked on day one, six days before the clock would say anything", () => {
+    // The whole point. A row abandoned `missing_vnr_password` with 190 hours
+    // left is silent under the clock rule until 48 — and it was never going to
+    // fix itself in between.
+    const alerts = dueAlerts([stopped(190)], NOW);
+
+    expect(alerts.map((alert) => alert.level)).toEqual(["blocked"]);
+    expect(alerts[0]?.hoursRemaining).toBe(190);
+  });
+
+  it("raises blocked once, not on every sweep", () => {
+    expect(dueAlerts([stopped(190, ["blocked"])], NOW)).toEqual([]);
+  });
+
+  it("still escalates on the clock after blocked, because nobody may have acted", () => {
+    // "This stopped" and "this stopped and there are twelve hours left" are
+    // different messages, and the second is not implied by the first.
+    expect(dueAlerts([stopped(10, ["blocked"])], NOW).map((a) => a.level)).toEqual([
+      "urgent",
+    ]);
+  });
+
+  it("raises both at once when a submission is abandoned inside the window", () => {
+    const alerts = dueAlerts([stopped(30)], NOW);
+
+    // blocked first: it is the one that says what to do.
+    expect(alerts.map((alert) => alert.level)).toEqual(["blocked", "warning"]);
+  });
+
+  it("leaves a retrying submission alone until the clock says otherwise", () => {
+    // The distinction the level exists for. Same deadline, same everything —
+    // one is still being worked on.
+    expect(dueAlerts([candidate(190)], NOW)).toEqual([]);
   });
 
   it("carries no personal data — only the enrolment id", () => {

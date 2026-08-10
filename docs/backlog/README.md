@@ -1,41 +1,42 @@
-# Backlog — work orders P0–P32
+# Backlog — work orders P0–P33
 
 One file per phase. Each file is an **Epic**; each entry inside it is a **Task**
 written so it can be handed to Claude Code verbatim.
 
-| Phase                                          | File             | Budget    | Weeks |
-| ---------------------------------------------- | ---------------- | --------- | ----- |
-| P0 · Foundations & AI-first setup              | [P0.md](P0.md)   | 10 h      | 1     |
-| P1 · Auth & user profile                       | [P1.md](P1.md)   | 10 h      | 1–2   |
-| P2 · Backend core: hierarchy & catalog         | [P2.md](P2.md)   | 16 h      | 2     |
-| P3 · Learning engine                           | [P3.md](P3.md)   | 14 h      | 3     |
-| P4 · Assessment & evaluation                   | [P4.md](P4.md)   | 10 h      | 4     |
-| P5 · Learner frontend widget                   | [P5.md](P5.md)   | 28 h      | 1–5   |
-| P6 · WordPress integration                     | [P6.md](P6.md)   | 5 h       | 2     |
-| P7 · EIV-FOBI & EFN                            | [P7.md](P7.md)   | 12 h      | 1, 5  |
-| P8 · Certificates & email                      | [P8.md](P8.md)   | 7 h       | 5     |
-| P9 · Admin console                             | [P9.md](P9.md)   | 18 h      | 5–6   |
-| P10 · Hardening, Hetzner deploy & launch       | [P10.md](P10.md) | 10 h      | 6     |
-| **Total (the plan)**                           |                  | **140 h** |       |
-| P11 · Second host and extension points         | [P11.md](P11.md) | 12 h ⚠    | —     |
-| P12 · Two identity planes, full admin          | [P12.md](P12.md) | 30 h ⚠    | —     |
-| P15 · Course behaviour: length, resuming       | [P15.md](P15.md) | 11 h ⚠    | —     |
-| P16 · One base domain, runtime config          | [P16.md](P16.md) | 11 h ⚠    | —     |
-| P17 · Server-owned secrets, per-project IdP    | [P17.md](P17.md) | 5 h ⚠     | —     |
-| P18 · Build on the host, no customer in config | [P18.md](P18.md) | 19 h ⚠    | —     |
-| P19 · The mobile layout                        | [P19.md](P19.md) | 12 h ⚠    | —     |
-| P20 · A second customer                        | [P20.md](P20.md) | 3 h ⚠     | —     |
-| P21 · Participants, memberships, tenants       | [P21.md](P21.md) | 24 h ⚠    | —     |
-| P22 · The console's own way in                 | [P22.md](P22.md) | 17 h ⚠    | —     |
-| P23 · Uploads, and what makes them safe        | [P23.md](P23.md) | 19 h ⚠    | —     |
-| P25 · Seeing it, and finding out why not       | [P25.md](P25.md) | 16 h ⚠    | —     |
-| P26 · An installation with something in it     | [P26.md](P26.md) | 4 h ⚠     | —     |
-| P27 · The last six layout pages                | [P27.md](P27.md) | 15 h ⚠    | —     |
-| P28 · One test that walks the whole system     | [P28.md](P28.md) | 10 h ⚠    | —     |
-| P29 · The same walk, in a real browser         | [P29.md](P29.md) | 10 h ⚠    | —     |
-| P30 · One page frame, and a reachable mock     | [P30.md](P30.md) | 10 h ⚠    | —     |
-| P31 · The real EIV contract, at last           | [P31.md](P31.md) | 14 h ⚠    | —     |
-| P32 · The test database was the dev database   | [P32.md](P32.md) | 7 h ⚠     | —     |
+| Phase                                            | File             | Budget    | Weeks |
+| ------------------------------------------------ | ---------------- | --------- | ----- |
+| P0 · Foundations & AI-first setup                | [P0.md](P0.md)   | 10 h      | 1     |
+| P1 · Auth & user profile                         | [P1.md](P1.md)   | 10 h      | 1–2   |
+| P2 · Backend core: hierarchy & catalog           | [P2.md](P2.md)   | 16 h      | 2     |
+| P3 · Learning engine                             | [P3.md](P3.md)   | 14 h      | 3     |
+| P4 · Assessment & evaluation                     | [P4.md](P4.md)   | 10 h      | 4     |
+| P5 · Learner frontend widget                     | [P5.md](P5.md)   | 28 h      | 1–5   |
+| P6 · WordPress integration                       | [P6.md](P6.md)   | 5 h       | 2     |
+| P7 · EIV-FOBI & EFN                              | [P7.md](P7.md)   | 12 h      | 1, 5  |
+| P8 · Certificates & email                        | [P8.md](P8.md)   | 7 h       | 5     |
+| P9 · Admin console                               | [P9.md](P9.md)   | 18 h      | 5–6   |
+| P10 · Hardening, Hetzner deploy & launch         | [P10.md](P10.md) | 10 h      | 6     |
+| **Total (the plan)**                             |                  | **140 h** |       |
+| P11 · Second host and extension points           | [P11.md](P11.md) | 12 h ⚠    | —     |
+| P12 · Two identity planes, full admin            | [P12.md](P12.md) | 30 h ⚠    | —     |
+| P15 · Course behaviour: length, resuming         | [P15.md](P15.md) | 11 h ⚠    | —     |
+| P16 · One base domain, runtime config            | [P16.md](P16.md) | 11 h ⚠    | —     |
+| P17 · Server-owned secrets, per-project IdP      | [P17.md](P17.md) | 5 h ⚠     | —     |
+| P18 · Build on the host, no customer in config   | [P18.md](P18.md) | 19 h ⚠    | —     |
+| P19 · The mobile layout                          | [P19.md](P19.md) | 12 h ⚠    | —     |
+| P20 · A second customer                          | [P20.md](P20.md) | 3 h ⚠     | —     |
+| P21 · Participants, memberships, tenants         | [P21.md](P21.md) | 24 h ⚠    | —     |
+| P22 · The console's own way in                   | [P22.md](P22.md) | 17 h ⚠    | —     |
+| P23 · Uploads, and what makes them safe          | [P23.md](P23.md) | 19 h ⚠    | —     |
+| P25 · Seeing it, and finding out why not         | [P25.md](P25.md) | 16 h ⚠    | —     |
+| P26 · An installation with something in it       | [P26.md](P26.md) | 4 h ⚠     | —     |
+| P27 · The last six layout pages                  | [P27.md](P27.md) | 15 h ⚠    | —     |
+| P28 · One test that walks the whole system       | [P28.md](P28.md) | 10 h ⚠    | —     |
+| P29 · The same walk, in a real browser           | [P29.md](P29.md) | 10 h ⚠    | —     |
+| P30 · One page frame, and a reachable mock       | [P30.md](P30.md) | 10 h ⚠    | —     |
+| P31 · The real EIV contract, at last             | [P31.md](P31.md) | 14 h ⚠    | —     |
+| P32 · The test database was the dev database     | [P32.md](P32.md) | 7 h ⚠     | —     |
+| P33 · The alarm watched the clock, not the queue | [P33.md](P33.md) | 4 h ⚠     | —     |
 
 ⚠ **Everything below the 140 h line is outside the plan.** Each was built on an explicit
 instruction and is recorded rather than absorbed: `CLAUDE.md` §3 says the rest of

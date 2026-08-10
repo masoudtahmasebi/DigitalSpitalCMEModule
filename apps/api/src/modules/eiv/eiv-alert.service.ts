@@ -50,6 +50,23 @@ import { SYSTEM_ACTOR, type AuditServicePort } from "../../audit/audit.service.j
 /** The action recorded once per submission per level. */
 export const EIV_ALERT_ACTION = "eiv.deadline_alert";
 
+/**
+ * The statuses from which the worker will never try again (P33-01).
+ *
+ * `EivService.abandon` writes both, and neither has a path back to `queued`
+ * except an operator pressing requeue. Everything else the alarm sees —
+ * `queued`, `held`, `failed_retryable` — is still moving, and for those the
+ * clock is the only thing worth alerting on.
+ *
+ * Named here rather than in `@ds/domain`, which takes the fact as a boolean:
+ * these are the spellings this schema chose, and a second Ärztekammer's
+ * reporter would choose others.
+ */
+const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+  "failed_permanent",
+  "window_closed",
+]);
+
 export interface PendingSubmission {
   readonly enrolmentId: string;
   readonly customerId: string;
@@ -104,6 +121,7 @@ export class EivAlertService {
         enrolmentId: row.enrolmentId,
         reportDueAt: row.reportDueAt,
         alreadyAlerted: alerted.get(row.enrolmentId) ?? [],
+        willNotRetry: TERMINAL_STATUSES.has(row.status),
       })),
       now,
     );
@@ -127,8 +145,12 @@ export class EivAlertService {
         },
       });
 
+      // "EIV deadline blocked" would read as a deadline that is blocked. The
+      // two alarms say different things and the first word decides which one
+      // somebody is looking at.
       this.logger.error(
-        `EIV deadline ${alert.level}: enrolment=${alert.enrolmentId} ` +
+        `${alert.level === "blocked" ? "EIV submission stopped" : `EIV deadline ${alert.level}`}` +
+          `: enrolment=${alert.enrolmentId} ` +
           `hoursRemaining=${alert.hoursRemaining} status=${submission.status} ` +
           `attempts=${submission.attemptCount}`,
       );
