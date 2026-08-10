@@ -1,4 +1,4 @@
-# Backlog — work orders P0–P35
+# Backlog — work orders P0–P36
 
 One file per phase. Each file is an **Epic**; each entry inside it is a **Task**
 written so it can be handed to Claude Code verbatim.
@@ -38,6 +38,8 @@ written so it can be handed to Claude Code verbatim.
 | P32 · The test database was the dev database     | [P32.md](P32.md) | 7 h ⚠     | —     |
 | P33 · The alarm watched the clock, not the queue | [P33.md](P33.md) | 4 h ⚠     | —     |
 | P34 · The journey stopped short of the Kammer    | [P34.md](P34.md) | 4 h ⚠     | —     |
+| P35 · A browser suite, and a closed shadow root  | [P35.md](P35.md) | 6 h ⚠     | —     |
+| P36 · Seed, test, clean up whatever happened     | [P36.md](P36.md) | 5 h ⚠     | —     |
 
 ⚠ **Everything below the 140 h line is outside the plan.** Each was built on an explicit
 instruction and is recorded rather than absorbed: `CLAUDE.md` §3 says the rest of

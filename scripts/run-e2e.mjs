@@ -41,7 +41,12 @@ if (chromium === undefined) {
   process.exit(1);
 }
 
-const result = spawnSync("npx", ["playwright", "test", ...process.argv.slice(2)], {
+// `pnpm test:e2e -- --grep x` hands the bare `--` through as well, and
+// Playwright reads it as a file filter and finds nothing. Dropping it makes the
+// passthrough behave the way `run-integration.mjs` already does.
+const passThrough = process.argv.slice(2).filter((arg) => arg !== "--");
+
+const result = spawnSync("npx", ["playwright", "test", ...passThrough], {
   cwd: join(REPO, "apps/e2e"),
   stdio: "inherit",
   env: {

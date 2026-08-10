@@ -103,6 +103,9 @@ const READ_WITHOUT_DOCUMENTATION = new Set([
   // hand — and neither is read by anything a deployment runs.
   "E2E_CHROMIUM",
   "PLAYWRIGHT_BROWSERS_PATH",
+  // Keeps the e2e database after a run so a failure can be inspected. An escape
+  // hatch somebody types once while debugging, never a deployment setting.
+  "E2E_KEEP_DATABASE",
   // Developer-machine overrides for the test and development database scripts
   // (P32-01). Deliberately in neither template, for two reasons: nothing in a
   // deployment ever runs `scripts/testdb.mjs` or `scripts/devdb.mjs`, and
