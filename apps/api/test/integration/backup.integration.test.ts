@@ -46,16 +46,9 @@ import {
 import { DEFAULT_RETENTION } from "../../src/backup/retention.js";
 import { BackupStore } from "../../src/backup/store.js";
 import { startFakeS3, type FakeS3 } from "../support/fake-s3.js";
+import { requireEnv } from "./support/env.js";
 
 const run = promisify(execFile);
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (value === undefined || value === "") {
-    throw new Error(`${name} must be set to run the integration suite.`);
-  }
-  return value;
-}
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 const RUN = randomUUID().slice(0, 8);

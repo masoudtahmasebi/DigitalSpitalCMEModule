@@ -25,14 +25,7 @@ import { PlaintextSecretCipher } from "../../src/shared/secret-cipher.js";
 import { DeliveryRepository } from "../../src/modules/certificate/delivery.repository.js";
 import { CertificateDeliveryService } from "../../src/modules/certificate/delivery.service.js";
 import { seedLearner } from "./support/seed-learner.js";
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (value === undefined || value === "") {
-    throw new Error(`${name} must be set to run the integration suite.`);
-  }
-  return value;
-}
+import { requireEnv } from "./support/env.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 const DATABASE_URL = requireEnv("DATABASE_URL");

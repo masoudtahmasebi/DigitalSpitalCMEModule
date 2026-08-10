@@ -32,14 +32,7 @@ import { EivAdminRepository } from "../../src/modules/eiv/eiv-admin.repository.j
 import { EivAdminService } from "../../src/modules/eiv/eiv-admin.service.js";
 import { runInTenant } from "../../src/db/tenant-db.js";
 import { seedLearner } from "./support/seed-learner.js";
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (value === undefined || value === "") {
-    throw new Error(`${name} must be set to run the integration suite.`);
-  }
-  return value;
-}
+import { requireEnv } from "./support/env.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 const DATABASE_URL = requireEnv("DATABASE_URL");

@@ -47,18 +47,16 @@ import { Pool } from "pg";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { runMigrations } from "@ds/migrator";
+import {
+  EivAccreditationReporter,
+  startMockServer,
+  type MockServer,
+} from "@ds/eiv-client";
 import { PARTICIPANT_COOKIE } from "../../src/auth/participant-cookie.js";
 import { signInStaff, type StaffSession } from "./support/staff-session.js";
+import { requireEnv } from "./support/env.js";
 
 const run = promisify(execFile);
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (value === undefined || value === "") {
-    throw new Error(`${name} must be set to run the integration suite.`);
-  }
-  return value;
-}
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 const MIGRATION_URL = requireEnv("MIGRATION_DATABASE_URL");
@@ -82,6 +80,12 @@ const EFN = "123456789012345";
  * a test run by accident.
  */
 const VNR = "9999999999999999999";
+/**
+ * The credential the Ärztekammer issues with a VNR, as an operator would type
+ * it into the console. Self-describing on purpose — a realistic-looking secret
+ * in a fixture is what P33-02 spent an hour clearing out of the history.
+ */
+const VNR_PASSWORD = "vnr-password-for-the-journey";
 /** 1×1 PNG — enough to be a real image, which is what the magic-byte check
  * actually verifies. */
 const PLACEHOLDER_PNG =
@@ -132,6 +136,30 @@ beforeAll(async () => {
   process.env["KEYCLOAK_JWKS_URI"] ??=
     "http://127.0.0.1:1/realms/unused/protocol/openid-connect/certs";
   process.env["NODE_ENV"] ??= "test";
+  /*
+   * Real AES-GCM, not the plaintext development cipher (P34-01).
+   *
+   * Without this `createSecretCipher` falls back to `PlaintextSecretCipher`,
+   * and the journey would prove the VNR password survives a round trip through
+   * a cipher that does not encrypt. `CLAUDE.md` §4 invariant 7 is that the
+   * password is encrypted at rest, and act 7 is where that is actually
+   * exercised: the console writes it, the column holds ciphertext, and the
+   * worker decrypts it to authenticate.
+   *
+   * Derived rather than pasted, and self-describing: a 32-byte base64 blob in a
+   * test file is what gitleaks is for, and P33-02 is the record of what a
+   * repository full of them costs.
+   *
+   * `Buffer.alloc(32, …)` rather than a 32-character literal: the first attempt
+   * was 33 bytes, and `AesGcmSecretCipher` refused to construct — the length
+   * check doing exactly what its comment promises, reported as a native stack
+   * trace from Nest's initialisation. Padding to the required length cannot
+   * drift.
+   */
+  process.env["SECRETS_KMS_KEY"] ??= Buffer.alloc(
+    32,
+    "ds-journey-kms-key-not-a-secret",
+  ).toString("base64");
   // The two background workers stay off. This suite is about the request path,
   // and a worker that submitted a Punktemeldung mid-run would make the last
   // assertions depend on timing.
@@ -851,4 +879,168 @@ describe("6 · the operator sees it", () => {
     // The export is a participation record, not a credential dump.
     expect(text).not.toContain(EFN);
   });
+});
+
+/**
+ * 7 · The Punktemeldung actually leaves (P34-01).
+ *
+ * Until this act the journey stopped at `queued` — it proved the platform
+ * *decides* to report, and nothing more. Everything between that decision and
+ * the Ärztekammer was covered only by `eiv-worker.integration.test.ts`, which
+ * inserts its fixture course with `INSERT INTO courses (…, vnr_password_enc)`
+ * directly.
+ *
+ * That gap is exactly where a real installation fails, and this session found
+ * it the expensive way: an environment was configured with `EIV_VNR_PASSWORD`
+ * in `config.env`, where nothing reads it, because the password belongs to the
+ * *course*. Under that configuration every completion is abandoned
+ * `missing_vnr_password` — permanently, one row at a time, inside an 8-day
+ * statutory window.
+ *
+ * So this act walks the path an operator walks: set the password on the course
+ * through the console's write-only field, confirm the API never gives it back,
+ * and let the worker take it from there.
+ */
+describe("7 · the Punktemeldung reaches the Ärztekammer", () => {
+  let kammer: MockServer;
+
+  beforeAll(async () => {
+    kammer = await startMockServer(0);
+  });
+
+  afterAll(async () => {
+    await kammer?.close();
+  });
+
+  it("refuses to report while the course has no VNR password", async () => {
+    // The state the course is in after act 3: accredited, with a VNR, and no
+    // credential to authenticate with. The worker must not treat that as a
+    // transport problem and retry it forever.
+    const abandoned = await sweep();
+
+    expect(abandoned).toMatchObject({ abandoned: 1, submitted: 0 });
+
+    const { rows } = await admin.query<{ status: string; last_error: string }>(
+      "SELECT status, last_error FROM eiv_submissions",
+    );
+    expect(rows[0]).toMatchObject({
+      status: "failed_permanent",
+      last_error: "missing_vnr_password",
+    });
+  });
+
+  it("takes the password through the console, and never hands it back", async () => {
+    const response = await asStaff(`/admin/courses/${world.courseSlug}`, {
+      method: "PATCH",
+      headers: { "x-ds-project": world.projectSlug },
+      body: body({ vnrPassword: VNR_PASSWORD }),
+    });
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    // Invariant 7: write-only. Not in this response, not in the read.
+    expect(JSON.stringify(response.body)).not.toContain(VNR_PASSWORD);
+
+    const readBack = await asStaff(`/admin/courses/${world.courseSlug}`, {
+      headers: { "x-ds-project": world.projectSlug },
+    });
+    expect(JSON.stringify(readBack.body)).not.toContain(VNR_PASSWORD);
+  });
+
+  it("stores it as ciphertext, not as a password in a column", async () => {
+    const { rows } = await admin.query<{ enc: Buffer }>(
+      "SELECT vnr_password_enc AS enc FROM courses WHERE slug = $1",
+      [world.courseSlug],
+    );
+
+    const stored = rows[0]?.enc;
+    expect(stored).toBeInstanceOf(Buffer);
+    // AES-GCM, because the journey runs with a real SECRETS_KMS_KEY. The
+    // plaintext must not appear anywhere in the bytes — which is the assertion
+    // that would have failed had the fallback plaintext cipher been in use.
+    expect(stored?.toString("latin1")).not.toContain(VNR_PASSWORD);
+    expect(stored?.byteLength).toBeGreaterThan(VNR_PASSWORD.length);
+  });
+
+  it("submits the participation, shaped as the real interface requires", async () => {
+    // The operator noticed and requeued, which is the P31-02 endpoint doing the
+    // job it was built for. The id is read back rather than carried in `world`:
+    // there is exactly one enrolment in this database, and the point of the
+    // assertion is the requeue, not the bookkeeping.
+    const { rows: enrolments } = await admin.query<{ id: string }>(
+      "SELECT id FROM enrolments",
+    );
+    const enrolmentId = enrolments[0]?.id;
+    expect(enrolmentId).toBeDefined();
+
+    const requeued = await asStaff(`/admin/learners/${enrolmentId}/eiv`, {
+      method: "POST",
+      headers: { "x-ds-project": world.projectSlug },
+    });
+    expect(requeued.status, JSON.stringify(requeued.body)).toBe(204);
+
+    expect(await sweep()).toMatchObject({ considered: 1, submitted: 1 });
+
+    const meldung = kammer.submissions.at(-1);
+    expect(meldung?.efn).toBe(EFN);
+    expect(meldung?.punkteBasisFlag).toBe(1);
+    expect(meldung?.punkteLernerfolgFlag).toBe(1);
+    // A German calendar date. EIV refuses one outside the accredited period.
+    expect(meldung?.teilnahmedatum).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
+
+    const { rows } = await admin.query<{ status: string; attempt_count: number }>(
+      "SELECT status, attempt_count FROM eiv_submissions",
+    );
+    /*
+     * One attempt, not two, and the difference is a deliberate design decision
+     * rather than an off-by-one.
+     *
+     * `abandon` takes `attemptCount = row.attemptCount` by default, so being
+     * abandoned for a missing password does **not** spend a retry — the unit
+     * test calls this "abandons rather than burning the budget". The course was
+     * misconfigured; the Ärztekammer was never asked. So when the operator
+     * fixes it, the submission still has its whole retry budget for the
+     * failures that are actually EIV's.
+     */
+    expect(rows[0]).toMatchObject({ status: "submitted", attempt_count: 1 });
+  });
+
+  it("leaves no EFN and no VNR password anywhere in the audit trail", async () => {
+    const { rows } = await admin.query<{ blob: string }>(
+      "SELECT coalesce(string_agg(detail::text, ' '), '') AS blob FROM audit_log",
+    );
+
+    const blob = rows[0]?.blob ?? "";
+    expect(blob).not.toContain(EFN);
+    expect(blob).not.toContain(VNR_PASSWORD);
+  });
+
+  /**
+   * One sweep of the real worker, wired the way `EivScheduler` wires it.
+   *
+   * Constructed here rather than left to the scheduler because the scheduler is
+   * off for this suite: a background timer firing mid-run would make every
+   * assertion above depend on when it happened to tick.
+   */
+  async function sweep() {
+    const { EivService } = await import("../../src/modules/eiv/eiv.service.js");
+    const { EivRepository } = await import("../../src/modules/eiv/eiv.repository.js");
+    const { AuditService } = await import("../../src/audit/audit.service.js");
+    const { createSecretCipher } = await import("../../src/shared/secret-cipher.js");
+
+    const pool = new Pool({ connectionString: pointAt(APP_URL, DB) });
+    try {
+      const service = new EivService(
+        new EivRepository(
+          pool,
+          createSecretCipher("test", process.env["SECRETS_KMS_KEY"]),
+        ),
+        new EivAccreditationReporter(),
+        new AuditService(pool),
+        { baseUrl: kammer.url, batchSize: 25, allowLive: false, leaseSeconds: 120 },
+      );
+      return await service.sweep(new Date());
+    } finally {
+      await pool.end();
+    }
+  }
 });

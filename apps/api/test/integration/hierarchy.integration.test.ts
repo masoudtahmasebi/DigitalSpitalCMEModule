@@ -30,14 +30,7 @@ import { totpCode } from "../../src/modules/staff/totp.js";
 import { AppModule } from "../../src/app.module.js";
 import { configureApp } from "../../src/configure-app.js";
 import { loadConfig } from "../../src/config/config.js";
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (value === undefined || value === "") {
-    throw new Error(`${name} must be set to run the integration suite.`);
-  }
-  return value;
-}
+import { requireEnv } from "./support/env.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 

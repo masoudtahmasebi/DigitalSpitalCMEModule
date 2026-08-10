@@ -24,16 +24,7 @@ import { Pool, type PoolClient } from "pg";
 import { runInTenant, TenantResolutionError } from "../../src/db/tenant-db.js";
 import { courses } from "../../src/db/schema.js";
 import { addCredential, seedLearner } from "./support/seed-learner.js";
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (value === undefined || value === "") {
-    throw new Error(
-      `${name} must be set to run the integration suite — see .env.example.`,
-    );
-  }
-  return value;
-}
+import { requireEnv } from "./support/env.js";
 
 const DATABASE_URL = requireEnv("DATABASE_URL");
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
