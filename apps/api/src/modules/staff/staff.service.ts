@@ -32,6 +32,8 @@ import {
   canResetSecondFactorOf,
   DEFAULT_CUSTOMER_SECOND_FACTOR,
   canGrant,
+  inviteStatus,
+  resetStatus,
   sessionStatus,
   verifyTotp,
   type AppRole,
@@ -248,6 +250,31 @@ export class StaffService {
    * existing session is revoked: a reset is what somebody does when they think
    * their account is compromised, and leaving the attacker's session alive
    * would defeat the point.
+   *
+   * ## The state check, and what it was like without one (P39-01)
+   *
+   * `inviteStatus` and `resetStatus` were written in `@ds/domain`, exported,
+   * unit-tested against their boundaries — and **called from nowhere**. This
+   * method looked the token up by hash and, if a row came back, set the
+   * password. It read `created_at`, `accepted_at` and `revoked_at` out of the
+   * database and used none of them.
+   *
+   * Three consequences, and each is an account takeover on the console:
+   *
+   * - **Nothing expired.** `INVITE_VALID_DAYS = 7` and
+   *   `RESET_VALID_MINUTES = 60` were documentation. A link in an inbox worked
+   *   a year later.
+   * - **Nothing was spent.** `acceptCredentialToken` sets `accepted_at` only
+   *   while it is null, so a second redemption changed no row — but
+   *   `setPassword` had already run. The same link could be replayed forever,
+   *   each time choosing a new password for somebody else's account.
+   * - **Revocation did nothing.** `issueCredentialToken` revokes any
+   *   outstanding token of the same kind precisely so a forwarded invitation
+   *   stops working. That `UPDATE` was write-only.
+   *
+   * So the rule is consulted here, and the two lifetimes are kept apart by
+   * `kind` — an invitation is an offer to somebody with no account yet, a reset
+   * link is a live bypass of the password on an account that already exists.
    */
   async redeemCredentialToken(input: {
     token: string;
@@ -256,6 +283,22 @@ export class StaffService {
     const now = this.deps.now();
     const row = await this.deps.repository.findCredentialToken(hashToken(input.token));
     if (row === undefined) return false;
+
+    const verdict =
+      row.kind === "invite" ? inviteStatus(row, now) : resetStatus(row, now);
+    if (verdict !== "valid") {
+      // Not distinguished for the caller — `redeem` answers "this link is no
+      // longer valid" for every reason alike, so a spent link cannot be told
+      // from one that never existed. Recorded here, because an expired link
+      // being presented is ordinary and a *revoked* one being presented is
+      // somebody using a link that was taken away from them.
+      await this.deps.audit.recordSystem({
+        actor: { identity: "staff", id: row.adminUserId },
+        action: "staff.credential_token_refused",
+        detail: { kind: row.kind, verdict },
+      });
+      return false;
+    }
 
     await this.deps.repository.setPassword(row.adminUserId, input.passwordHash);
     await this.deps.repository.acceptCredentialToken(row.id, now);

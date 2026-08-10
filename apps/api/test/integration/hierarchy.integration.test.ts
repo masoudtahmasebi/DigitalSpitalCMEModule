@@ -1565,3 +1565,151 @@ describe("a course editor may write courses and nothing above them (P38-01)", ()
     expect(Number(rows[0]?.n ?? "1")).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+
+/**
+ * An invitation link is not a permanent key to the account (P39-01).
+ *
+ * `inviteStatus` and `resetStatus` were written in `@ds/domain`, exported,
+ * unit-tested against their boundaries, and **called from nowhere**.
+ * `redeemCredentialToken` looked the token up by hash and, if a row came back,
+ * set the password — reading `created_at`, `accepted_at` and `revoked_at` and
+ * using none of them.
+ *
+ * Each test below is one account takeover that used to work. They are written
+ * against the HTTP surface rather than the service, because the thing being
+ * asserted is what somebody holding a link can actually do with it.
+ *
+ * All three failures answer identically — "this link is no longer valid" — so
+ * a spent link cannot be told from one that never existed. That indistinguish-
+ * ability is why these have to be separated by *setup* rather than by response.
+ */
+describe("a credential token is single-use, expiring and revocable (P39-01)", () => {
+  const email = () => `redeem-${randomUUID().slice(0, 8)}@ds.test`;
+
+  /*
+   * 422, not 400. `AppError.badRequest` builds a `validation` problem, which
+   * the filter maps to 422 — and every refusal here comes back as the same
+   * "this link is no longer valid" whatever the underlying verdict was, which
+   * is the point: a spent link must not be distinguishable from one that never
+   * existed.
+   */
+  const REFUSED = 422;
+
+  /** Invite somebody and return the token the console would hand over. */
+  async function invite(address: string): Promise<string> {
+    const { status, body } = await asStaff(superSession, "POST", "/admin/staff", {
+      email: address,
+      displayName: "Eingeladene Person",
+      role: "customer_admin",
+      customerId: existingCustomerId,
+      departmentId: null,
+    });
+    expect(status).toBe(201);
+    return body.token as string;
+  }
+
+  /** `post` hands back the `Response`; only its status matters here. */
+  async function redeem(token: string, password: string): Promise<number> {
+    const { response } = await post("/admin/auth/credentials", { token, password });
+    return response.status;
+  }
+
+  it("lets the invited person set a password once", async () => {
+    const token = await invite(email());
+    expect(await redeem(token, "erste-wahl-2026!")).toBe(201);
+  });
+
+  it("refuses the same link a second time", async () => {
+    const token = await invite(email());
+    expect(await redeem(token, "erste-wahl-2026!")).toBe(201);
+
+    // The takeover: the link is in an inbox, and whoever reads it later chooses
+    // a new password for an account that is now somebody's.
+    expect(await redeem(token, "zweite-wahl-2026!")).toBe(REFUSED);
+  });
+
+  it("left the first password in place after refusing the replay", async () => {
+    // A 400 with the password already written would be the worst of both, and
+    // is exactly what `setPassword` running before the check produced.
+    const address = email();
+    const token = await invite(address);
+    await redeem(token, "erste-wahl-2026!");
+
+    const { rows: before } = await seedPool.query<{ password_hash: string }>(
+      "SELECT password_hash FROM admin_users WHERE email = $1",
+      [address],
+    );
+    await redeem(token, "zweite-wahl-2026!");
+    const { rows: after } = await seedPool.query<{ password_hash: string }>(
+      "SELECT password_hash FROM admin_users WHERE email = $1",
+      [address],
+    );
+
+    expect(after[0]?.password_hash).toBe(before[0]?.password_hash);
+  });
+
+  it("refuses a link that has been revoked", async () => {
+    /*
+     * Revoked in the database rather than through a route, because there is no
+     * route that revokes one — `issueCredentialToken` does it as a side effect
+     * of issuing the next token, and `POST /admin/staff` creates an account so
+     * it cannot be called twice for the same address. What is under test is
+     * that redemption *reads* `revoked_at`, which it did not.
+     */
+    const address = email();
+    const token = await invite(address);
+    await seedPool.query(
+      `UPDATE admin_credential_tokens SET revoked_at = now()
+        WHERE admin_user_id = (SELECT id FROM admin_users WHERE email = $1)`,
+      [address],
+    );
+
+    expect(await redeem(token, "zurueckgezogen-2026!")).toBe(REFUSED);
+  });
+
+  it("refuses a link older than the invitation window", async () => {
+    const address = email();
+    const token = await invite(address);
+
+    // Eight days, against INVITE_VALID_DAYS = 7. Moved in the database rather
+    // than by mocking a clock, because what is under test is the API's own
+    // reading of its own row.
+    await seedPool.query(
+      `UPDATE admin_credential_tokens SET created_at = now() - interval '8 days'
+        WHERE admin_user_id = (SELECT id FROM admin_users WHERE email = $1)`,
+      [address],
+    );
+
+    expect(await redeem(token, "zu-spaet-2026!")).toBe(REFUSED);
+  });
+
+  it("holds a reset link to a much shorter window than an invitation", async () => {
+    // Two hours is fine for an invitation and long dead for a reset: a reset
+    // link is a live bypass of the password on an account that already exists,
+    // sitting in an inbox. RESET_VALID_MINUTES = 60.
+    const address = email();
+    const token = await invite(address);
+
+    await seedPool.query(
+      `UPDATE admin_credential_tokens
+          SET kind = 'reset', created_at = now() - interval '2 hours'
+        WHERE admin_user_id = (SELECT id FROM admin_users WHERE email = $1)`,
+      [address],
+    );
+
+    expect(await redeem(token, "zu-spaet-2026!")).toBe(REFUSED);
+  });
+
+  it("records the refusal, so a revoked link being presented is visible", async () => {
+    // `audit_log`, not `admin_audit_log`: `recordSystem` writes the platform
+    // log with `customer_id = NULL`, which is where an event belonging to no
+    // tenant goes — and a refused token belongs to no tenant by definition.
+    const { rows } = await seedPool.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM audit_log
+        WHERE action = 'staff.credential_token_refused'`,
+    );
+    expect(Number(rows[0]?.n ?? "0")).toBeGreaterThan(0);
+  });
+});
