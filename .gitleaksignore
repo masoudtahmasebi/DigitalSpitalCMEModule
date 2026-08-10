@@ -1,0 +1,62 @@
+# Findings gitleaks reports that are not secrets (P33-02).
+#
+# ## Why this file has to exist at all
+#
+# gitleaks scans **history**, not the working tree: `git log -p --full-history
+# --all`. So a fixture that once looked like a credential is a permanent
+# finding, and editing the file today does not clear it. Two of the entries
+# below are exactly that — `fake-s3.ts` and `problem-details.filter.test.ts`
+# were both already rewritten to use low-entropy, self-describing values, and
+# both still fail the scan, because the commit that introduced them is still in
+# the history and always will be.
+#
+# The alternative is rewriting published history. For test fixtures whose worst
+# case is that they look like credentials, that is not a trade worth making.
+#
+# ## Why the job was ever green
+#
+# `gitleaks-action` scans the range of a push. Most pushes are one commit, so
+# most runs never look at these. One run scanned all 150 commits and failed —
+# on a commit that changed a shell script and two documents. Nothing regressed;
+# the scan simply widened. **A check that passes because of what it did not
+# look at is not passing**, which is why these are being suppressed explicitly,
+# by fingerprint, with a reason each — rather than left to resurface on whichever
+# unrelated commit happens to trigger a full scan next.
+#
+# ## The rule for adding a line here
+#
+# A fingerprint belongs here only when the value cannot be made to look
+# harmless. If a fixture works just as well as `download-token-for-tests`, fix
+# the fixture — three of these have been — and add the fingerprint only for the
+# history the fix cannot reach. Never add a line for a value that is, or ever
+# was, real.
+
+# A hand-made JWT: header `{"alg":"RS256"}`, payload `{"sub":"abc"}`, signature
+# the literal text "sig" base64'd. It has to be JWT-shaped, because the test
+# proves `redactText` recognises a JWT — this is the one fixture here that can
+# never be made to look harmless.
+6555e15b61138992ee748078cbc427f13be231d1:apps/api/src/observability/redact.test.ts:generic-api-key:71
+6555e15b61138992ee748078cbc427f13be231d1:apps/api/src/observability/redact.test.ts:jwt:85
+
+# An S3 signing key in the in-memory fake. Already fixed forward to
+# `DSTESTACCESSKEY` with a comment explaining this exact lesson; the flagged
+# base64 blob survives only in the commit that introduced it.
+68a2520b488b672a9d22f1935aeb942a69468f59:apps/api/test/support/fake-s3.ts:generic-api-key:64
+
+# `SECRETS_KMS_KEY=` in a fixture `secrets.env` the deploy test writes and then
+# deletes. The value is base64 of "0123456789abcdef0123456789abcdef" and has to
+# stay a well-formed key, because what the test asserts is that the wrapper
+# forwards it rather than the raw form.
+23f1e777443ff10d0d07691fb2434fa311a824dc:infra/deploy/secrets.test.sh:generic-api-key:133
+
+# A backup *filename* in a runbook — `2026-08-07T02-15-00Z.dump.enc`. There is
+# no secret on the line; the rule matched the shape of the assignment.
+a496b80d06ea650170ca676256c36f9e836056a7:docs/runbook-backup.md:generic-api-key:74
+
+# A certificate download token in a unit test, used only as a needle for two
+# `not.toContain` assertions. Fixed forward to `download-token-for-tests`.
+d8c7d85ea4f6167a7b3daabf5e856493084deff3:apps/api/src/modules/certificate/delivery.service.test.ts:generic-api-key:29
+
+# A query-string value in a log-redaction test. Already fixed forward, with a
+# comment in the file saying gitleaks flagged the first version.
+621a9404af08cff4c8e1d6deecaa2ca99a557276:apps/api/src/shared/problem-details.filter.test.ts:generic-api-key:71

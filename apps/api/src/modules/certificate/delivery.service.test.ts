@@ -26,7 +26,12 @@ const CUSTOMER = "11111111-1111-1111-1111-111111111111";
 const CERTIFICATE = "22222222-2222-2222-2222-222222222222";
 const EMAIL = "hans.mustermann@example.de";
 const NAME = "Dr. med. Hans Mustermann";
-const TOKEN = "0123456789abcdef0123456789abcdef";
+// Deliberately low-entropy and self-describing, like the fixtures in
+// `problem-details.filter.test.ts` and `test/support/fake-s3.ts`. A realistic
+// 32-hex string here is a secret scanner's problem — gitleaks flagged this one
+// — and the assertions below only need a distinctive needle to search a mail
+// body and a serialised log line for.
+const TOKEN = "download-token-for-tests";
 const SMTP_PASSWORD = "super-secret-smtp-password";
 
 function row(over: Partial<DueDelivery> = {}): DueDelivery {
