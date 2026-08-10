@@ -365,11 +365,21 @@ const NAV: readonly NavGroup[] = [
         description: de.customers.intro,
         capability: "customer",
       },
+      /*
+       * `project`, which a course editor does not hold (P38-01).
+       *
+       * This screen reads departments and projects, and both reads 403 for
+       * them — so leaving it undrawn is not a courtesy here, it is the
+       * difference between a menu entry and a menu entry that can only produce
+       * an error. `department_admin` does hold `project`, and their writes are
+       * refused by the API as they always were.
+       */
       {
         kind: "organisation",
         label: de.nav.organisation,
         title: de.organisation.title,
         description: de.organisation.intro,
+        capability: "project",
       },
       { kind: "courses", label: de.nav.courses, title: de.courses.title },
     ],
@@ -413,11 +423,17 @@ const NAV: readonly NavGroup[] = [
         description: de.staff.intro,
         capability: "staff_user",
       },
+      /*
+       * `project` as well (P38-01). Branding is a project's typeface, colours
+       * and catalogue copy; a course editor writes courses, not the surface
+       * they appear on, and `GET /admin/branding/font` refuses them.
+       */
       {
         kind: "branding",
         label: de.nav.branding,
         title: de.nav.branding,
         description: de.branding.intro,
+        capability: "project",
       },
       // No capability: every operator may read the rules their own sign-in is
       // subject to. Which of them they may *change* is enforced on the write —
@@ -633,10 +649,26 @@ export function Console(props: {
    * it changes (P22-07). A customer administrator has exactly one customer, on
    * their grant, so they get a label instead of a control with one option.
    */
+  /*
+   * A single-customer operator sees the app's name, not their customer's
+   * (P38-01, and it is a known gap rather than a choice).
+   *
+   * The intent was to name the customer. The lookup cannot find it: `customers`
+   * is fetched only for an operator holding the `customer` capability, and that
+   * capability is exactly what distinguishes a super administrator from
+   * everybody else — so for the roles this branch serves, the list is always
+   * empty and the fallback is always what renders.
+   *
+   * Naming it properly means the *session* carrying the customer's name, which
+   * means a registry read from a pool that is not tenant-scoped, under a
+   * `customers` policy that checks `id = app.customer_id`. That is a real
+   * change with a real security surface, and it is filed rather than bodged:
+   * see `docs/backlog/P38.md`. Until then this says something true.
+   */
   const scope =
     props.profile.role !== "super_admin" ? (
       <span className="text-sm font-semibold text-gray-900">
-        {customers.find((entry) => entry.id === customerId)?.name ?? de.appTitle}
+        {customers.find((entry) => entry.id === customerId)?.name ?? de.appShort}
       </span>
     ) : (
       <label className="flex items-center gap-2 text-sm">

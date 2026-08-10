@@ -13,6 +13,27 @@
  *
  * A hidden navigation item in the console is a convenience. The refusal is
  * here.
+ *
+ * ## `course_editor`, and the hole it was in (P38-01)
+ *
+ * The role the client asked for in as many words — *"customer users who can
+ * create only courses, so they have limited access"* — was declared in
+ * `@ds/domain`, granted `course` and `content` by the capability matrix,
+ * offered on the Konten screen as something to assign, and **accepted by no
+ * route anywhere**. An account holding it could sign in and then met "Ihr Konto
+ * hat keine Berechtigung für die Verwaltung", because the console's first
+ * request is `GET /admin/courses` and that 403'd.
+ *
+ * A role that grants access to nothing is worse than an absent one: it can be
+ * handed out, it looks like a decision, and the person holding it cannot work.
+ * So the course and content surfaces below now accept it, and nothing else
+ * does. The boundary is exactly the capability matrix: `course`, `content`,
+ * and the *reads* those two need — a course list a course editor cannot read is
+ * a course they cannot edit.
+ *
+ * What it still may not touch, stated because a permission is easier to widen
+ * than to narrow: departments, projects, participants, certificates, branding,
+ * staff accounts and the customer registry.
  */
 
 import {
@@ -48,24 +69,47 @@ import {
 
 const ADMIN_ROLES = ["department_admin", "customer_admin", "super_admin"] as const;
 
+/**
+ * The roles that may read and write a course itself.
+ *
+ * `course_editor` is here and is not in `ADMIN_ROLES`, which is the whole
+ * distinction: they author courses and see nothing about the people taking
+ * them. `department_admin` is in both — they run a department, which contains
+ * courses and the participants in them.
+ */
+const COURSE_ROLES = [
+  "course_editor",
+  "department_admin",
+  "customer_admin",
+  "super_admin",
+] as const;
+
 @Controller("admin")
 export class AdminController {
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
   @Get("courses")
-  @Roles(...ADMIN_ROLES)
+  @Roles(...COURSE_ROLES)
   async listCourses(@TenantDb() db: Db) {
     return this.service(db).listCourses();
   }
 
   @Get("courses/:slug")
-  @Roles(...ADMIN_ROLES)
+  @Roles(...COURSE_ROLES)
   async getCourse(@Param("slug") slug: string, @TenantDb() db: Db) {
     return this.service(db).getCourse(slug);
   }
 
+  /*
+   * `course_editor` too (P38-01): this is the course's own settings — its VNR,
+   * its points, its pass threshold, its Veranstalter. Withholding it would
+   * leave the role able to create a course and unable to make it certifiable,
+   * which is not "limited access", it is a dead end. The compliance floor is
+   * enforced in the service for every caller alike: the pass threshold cannot
+   * go below the accredited minimum whoever is asking.
+   */
   @Patch("courses/:slug")
-  @Roles("customer_admin", "super_admin")
+  @Roles(...COURSE_ROLES)
   async updateCourse(
     @Param("slug") slug: string,
     @Body() body: unknown,

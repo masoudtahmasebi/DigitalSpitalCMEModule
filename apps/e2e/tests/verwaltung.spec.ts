@@ -41,8 +41,7 @@
  */
 
 import { expect, test, type Page } from "@playwright/test";
-import { ADMIN_BASE } from "../support/stack.js";
-import { decodeBase32, freshTotpCode } from "../support/staff.js";
+import { menu, signInToConsole } from "../support/console.js";
 
 /** Unique per run, so a re-run never collides with its own leftovers. */
 const RUN = Date.now().toString(36).slice(-6);
@@ -64,7 +63,12 @@ const DEPARTMENT = `E2E Abteilung ${RUN}`;
 const PROJECT = `E2E Präsenz ${RUN}`;
 const COURSE = `E2E Fortbildung ${RUN}`;
 
-function credentials(): { email: string; password: string } {
+/**
+ * The super administrator `bootstrap-admin` created, handed over by
+ * `global-setup` through the environment — Playwright's own channel between the
+ * runner process and the workers it spawns.
+ */
+function superAdmin(): { email: string; password: string } {
   const email = process.env["E2E_STAFF_EMAIL"];
   const password = process.env["E2E_STAFF_PASSWORD"];
   if (email === undefined || password === undefined) {
@@ -75,77 +79,8 @@ function credentials(): { email: string; password: string } {
   return { email, password };
 }
 
-/**
- * Sign in, enrolling the second factor on the first run and presenting one
- * afterwards.
- *
- * The enrolment screen prints the secret for manual entry, which is exactly
- * what an authenticator app is given — so the harness reads it from the page
- * and keeps it for the rest of the run.
- */
-let secret: Buffer | undefined;
-
 async function signInToVerwaltung(page: Page): Promise<void> {
-  const { email, password } = credentials();
-
-  await page.goto(`${ADMIN_BASE}/`);
-  await page.getByLabel("E-Mail-Adresse").fill(email);
-  await page.getByLabel("Passwort").fill(password);
-  await page.getByRole("button", { name: "Anmelden" }).click();
-
-  /*
-   * `isVisible()` returns immediately — it is a question, not a wait, and the
-   * `timeout` option does not change that. The first version used it and asked
-   * while the page still said "Anmeldung läuft …", concluded no enrolment was
-   * offered, and failed with a message about a secret that was displayed two
-   * seconds later. `waitFor` is the waiting one.
-   */
-  const enrolling = page.getByText("Zwei-Faktor-Authentifizierung einrichten");
-  const offered = await enrolling
-    .waitFor({ state: "visible", timeout: 15_000 })
-    .then(() => true)
-    .catch(() => false);
-
-  if (offered) {
-    // The key offered "falls Sie nicht scannen können" — base32, exactly what
-    // an authenticator app is given, read off the page the same way a person
-    // would copy it.
-    const shown = /\b[A-Z2-7]{32}\b/u.exec(await page.locator("main").innerText());
-    if (shown === null) {
-      throw new Error("the enrolment screen showed no base32 key to read");
-    }
-    secret = decodeBase32(shown[0]);
-  }
-
-  if (secret === undefined) {
-    throw new Error("no second factor is enrolled and none was offered");
-  }
-
-  await page.getByLabel("Sechsstelliger Code").fill(await freshTotpCode(secret));
-  await page.getByRole("button", { name: "Bestätigen" }).click();
-
-  // Signed in, not merely submitted. Every caller's next act is a click on the
-  // sidebar, and asking for one before the console has drawn it is how the
-  // first version of the chain test failed 15 seconds into a screen that was
-  // still showing the login form.
-  await expect(menu(page).getByRole("button", { name: "Kunden" })).toBeVisible({
-    timeout: 20_000,
-  });
-}
-
-/**
- * The sidebar, and why every navigation click goes through it.
- *
- * The course editor draws a breadcrumb whose first crumb is a **button** named
- * "Fortbildungen" — the same accessible name as the sidebar entry. A page-level
- * `getByRole("button", { name: "Fortbildungen" })` therefore matches two
- * elements there and fails on strict mode, which is Playwright telling the
- * truth: "click Fortbildungen" is ambiguous on that screen for a screen-reader
- * user too. Naming the landmark says which one, and keeps the crumb free to be
- * asserted on separately.
- */
-function menu(page: Page) {
-  return page.getByRole("navigation", { name: "Menü" });
+  await signInToConsole(page, superAdmin());
 }
 
 test.describe("Verwaltung", () => {

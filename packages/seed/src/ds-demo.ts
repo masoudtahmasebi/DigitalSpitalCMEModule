@@ -50,6 +50,7 @@ import {
   seedPortalProject,
   upsert,
 } from "./lib.js";
+import { describeDemoStaff, seedDemoStaff } from "./staff.js";
 
 /**
  * Fixed, for the same reason as MEDICE's: `customers`' own RLS policy checks
@@ -295,6 +296,19 @@ export async function seedDsDemo(pool: pg.Pool): Promise<string> {
       );
     }
 
+    /*
+     * The two console accounts for this tenant (P38-01).
+     *
+     * Inside the same transaction as everything else: a tenant that exists with
+     * nobody able to open it is the state this seed's report used to describe
+     * as a deliberate omission, and it was the reason "log in to Verwaltung and
+     * look at the demo customer" meant using the super administrator.
+     */
+    const staff = await seedDemoStaff(pool, {
+      customerId,
+      customerSlug: CUSTOMER_SLUG,
+    });
+
     await pool.query("COMMIT");
 
     return [
@@ -315,9 +329,12 @@ export async function seedDsDemo(pool: pg.Pool): Promise<string> {
       "reach the live EIV endpoint — the deploy refuses that without",
       "EIV_ALLOW_LIVE=yes (ADR-0005).",
       "",
-      "No staff account is created. Use bootstrap-admin, then invite a",
-      "customer_admin scoped to this customer — which is the point: an account",
-      "scoped here must not see MEDICE.",
+      "",
+      ...describeDemoStaff(staff),
+      "",
+      "Both are scoped to this customer and must not see MEDICE — which is",
+      "the point of seeding them here rather than relying on the super",
+      "administrator bootstrap-admin creates.",
     ].join("\n");
   } catch (error) {
     await pool.query("ROLLBACK").catch(() => undefined);

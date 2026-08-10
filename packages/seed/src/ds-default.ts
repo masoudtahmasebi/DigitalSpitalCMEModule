@@ -61,6 +61,7 @@ import {
   seedPortalProject,
   upsert,
 } from "./lib.js";
+import { describeDemoStaff, seedDemoStaff } from "./staff.js";
 
 /**
  * Fixed, as the other two are: `customers`' RLS policy checks
@@ -349,6 +350,20 @@ export async function seedDsDefault(
       [customerId, courseId, JSON.stringify(["1", "2", "3", "4", "5"])],
     );
 
+    /*
+     * The two console accounts (P38-01), and why `revealPasswords` is tied to
+     * the same flag the participant password is.
+     *
+     * This seed is the one `deploy.sh` may run unattended, and an unattended
+     * run's report goes into a GitHub Actions log. A staff password there is
+     * worse than a participant's: it opens the console for a whole customer.
+     */
+    const staff = await seedDemoStaff(pool, {
+      customerId,
+      customerSlug: CUSTOMER_SLUG,
+      revealPasswords: revealPassword,
+    });
+
     await pool.query("COMMIT");
 
     return [
@@ -362,6 +377,8 @@ export async function seedDsDefault(
       `Portal sign-in at /${PROJECT_SLUG}:`,
       `  E-Mail    ${PARTICIPANT_EMAIL}`,
       passwordLine(password.supplied, password.plaintext, revealPassword),
+      "",
+      ...describeDemoStaff(staff),
       "",
       "No VNR, no accreditation body and no CME points — deliberately. Every",
       "gate, the quiz, the evaluation and the certificate path work; the",

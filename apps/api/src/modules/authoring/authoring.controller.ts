@@ -3,10 +3,17 @@
  *
  * ## Roles
  *
- * Everything here is `customer_admin` or `super_admin`. A `department_admin`
- * can read participant reporting but cannot change a course: ordering decides
- * gating, and a quiz decides who earns a CME point, so authoring is
- * customer-level authority rather than departmental.
+ * The organisation — departments and projects — is `customer_admin` or
+ * `super_admin`. A `department_admin` can read participant reporting but cannot
+ * change a course: ordering decides gating, and a quiz decides who earns a CME
+ * point, so authoring is customer-level authority rather than departmental.
+ *
+ * From `POST courses` downwards, `course_editor` is added (P38-01). That is the
+ * role the client asked for — *"can create only courses"* — and until now it was
+ * declared in `@ds/domain`, assignable in the console, and accepted by no route
+ * in the platform. The banner halfway down this file marks the boundary: above
+ * it is the organisation, below it is a course, and that is exactly where the
+ * role's authority stops.
  *
  * The console hides what a role cannot use. That is a courtesy — the refusal is
  * here, and every one of these routes 403s regardless of what a client chose to
@@ -62,6 +69,24 @@ import {
 import type { ZodType } from "zod";
 
 const AUTHOR_ROLES = ["customer_admin", "super_admin"] as const;
+
+/**
+ * The roles that may write a course and the content inside it (P38-01).
+ *
+ * `course_editor` is `AUTHOR_ROLES` plus exactly the client's requirement:
+ * *"customer users who can create only courses, so they have limited access"*.
+ * The capability matrix in `@ds/domain` grants it `course` and `content`; until
+ * now nothing here accepted it, so the role existed, could be assigned, and
+ * bought its holder nothing at all.
+ *
+ * The line is drawn at the course boundary and nowhere else. Everything from
+ * `POST courses` downwards — modules, chapters, contents, ordering, experts,
+ * the quiz, the evaluation — is course content and is theirs. Everything above
+ * it — departments, projects — is the organisation, and stays with
+ * `AUTHOR_ROLES`. An agency writing content for a customer gets this and
+ * cannot reorganise the customer around itself.
+ */
+const COURSE_AUTHOR_ROLES = ["course_editor", ...AUTHOR_ROLES] as const;
 
 @Controller("admin")
 export class AuthoringController {
@@ -120,8 +145,14 @@ export class AuthoringController {
     return this.service(db).listDepartments();
   }
 
+  /*
+   * Read-only, and `course_editor` may (P38-01): creating a course means
+   * choosing the project it belongs to, so a role that may create courses and
+   * may not list projects cannot create one. Reading the list is not managing
+   * it — every mutating route below stays with `AUTHOR_ROLES`.
+   */
   @Get("projects")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async listProjects(@TenantDb() db: Db) {
     return this.service(db).listProjects();
   }
@@ -161,10 +192,6 @@ export class AuthoringController {
     return this.service(db).listProjects();
   }
 
-  // -------------------------------------------------------------------------
-  // Courses and structure (P9-04)
-  // -------------------------------------------------------------------------
-
   @Delete("projects/:slug")
   @Roles(...AUTHOR_ROLES)
   async deleteProject(
@@ -176,8 +203,16 @@ export class AuthoringController {
     return this.service(db).listProjects();
   }
 
+  // -------------------------------------------------------------------------
+  // Courses and structure (P9-04)
+  //
+  // Everything below this line accepts `course_editor` (P38-01). The banner is
+  // load-bearing rather than decorative now: it is where the organisation ends
+  // and the course begins, which is exactly where that role's authority stops.
+  // -------------------------------------------------------------------------
+
   @Post("courses")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async createCourse(
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
@@ -196,7 +231,7 @@ export class AuthoringController {
    * two modules together for the sake of saving the console one request.
    */
   @Delete("courses/:slug")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   @HttpCode(204)
   async deleteCourse(
     @Param("slug") slug: string,
@@ -207,13 +242,13 @@ export class AuthoringController {
   }
 
   @Get("courses/:slug/structure")
-  @Roles("department_admin", ...AUTHOR_ROLES)
+  @Roles("department_admin", ...COURSE_AUTHOR_ROLES)
   async getStructure(@Param("slug") slug: string, @TenantDb() db: Db) {
     return this.service(db).getStructure(slug);
   }
 
   @Post("courses/:slug/modules")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async createModule(
     @Param("slug") slug: string,
     @Body() body: unknown,
@@ -228,7 +263,7 @@ export class AuthoringController {
   }
 
   @Patch("modules/:id")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async updateModule(
     @Param("id") id: string,
     @Body() body: unknown,
@@ -243,7 +278,7 @@ export class AuthoringController {
   }
 
   @Delete("modules/:id")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async deleteModule(
     @Param("id") id: string,
     @CurrentPrincipal() principal: Principal,
@@ -253,7 +288,7 @@ export class AuthoringController {
   }
 
   @Post("modules/:id/chapters")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async createChapter(
     @Param("id") id: string,
     @Body() body: unknown,
@@ -268,7 +303,7 @@ export class AuthoringController {
   }
 
   @Patch("chapters/:id")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async updateChapter(
     @Param("id") id: string,
     @Body() body: unknown,
@@ -283,7 +318,7 @@ export class AuthoringController {
   }
 
   @Delete("chapters/:id")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async deleteChapter(
     @Param("id") id: string,
     @CurrentPrincipal() principal: Principal,
@@ -293,7 +328,7 @@ export class AuthoringController {
   }
 
   @Post("chapters/:id/contents")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async createContent(
     @Param("id") id: string,
     @Body() body: unknown,
@@ -308,7 +343,7 @@ export class AuthoringController {
   }
 
   @Patch("contents/:id")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async updateContent(
     @Param("id") id: string,
     @Body() body: unknown,
@@ -323,7 +358,7 @@ export class AuthoringController {
   }
 
   @Delete("contents/:id")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async deleteContent(
     @Param("id") id: string,
     @CurrentPrincipal() principal: Principal,
@@ -341,7 +376,7 @@ export class AuthoringController {
    * before anything is written, so a wrong request changes nothing.
    */
   @Put("courses/:slug/structure/order")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async reorder(
     @Param("slug") slug: string,
     @Body() body: unknown,
@@ -356,7 +391,7 @@ export class AuthoringController {
   }
 
   @Put("courses/:slug/experts")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async replaceExperts(
     @Param("slug") slug: string,
     @Body() body: unknown,
@@ -383,14 +418,14 @@ export class AuthoringController {
    * error rather than something a reviewer has to notice (P4-01).
    */
   @Get("contents/:id/quiz")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async getQuiz(@Param("id") id: string, @TenantDb() db: Db) {
     return this.service(db).getQuiz(id);
   }
 
   @Put("contents/:id/quiz")
   @RateLimit("adminUpload")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async setQuiz(
     @Param("id") id: string,
     @Body() body: unknown,
@@ -405,14 +440,14 @@ export class AuthoringController {
   }
 
   @Get("courses/:slug/evaluation")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async getEvaluation(@Param("slug") slug: string, @TenantDb() db: Db) {
     return this.service(db).getEvaluation(slug);
   }
 
   @Put("courses/:slug/evaluation")
   @RateLimit("adminUpload")
-  @Roles(...AUTHOR_ROLES)
+  @Roles(...COURSE_AUTHOR_ROLES)
   async setEvaluation(
     @Param("slug") slug: string,
     @Body() body: unknown,

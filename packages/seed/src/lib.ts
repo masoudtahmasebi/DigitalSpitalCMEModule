@@ -169,12 +169,43 @@ const ARGON2ID = 2;
  * deploy log is not a finding, and — because it changes on every run — not a
  * value that can be baked into anything.
  */
-export async function participantPassword(): Promise<{
-  plaintext: string;
-  hash: string;
-  supplied: boolean;
-}> {
-  const supplied = process.env["SEED_PARTICIPANT_PASSWORD"];
+export async function participantPassword(): Promise<SeededPassword> {
+  return seededPassword(process.env["SEED_PARTICIPANT_PASSWORD"]);
+}
+
+export interface SeededPassword {
+  readonly plaintext: string;
+  readonly hash: string;
+  /** True when the value came from the environment rather than the CSPRNG. */
+  readonly supplied: boolean;
+}
+
+/**
+ * The same decision for any seeded credential (P38-01).
+ *
+ * There are two seeded credentials now — the demo participant's and the demo
+ * console operators' — wanting the same rule with a different override: take
+ * the environment's value when there is one, otherwise 24 bytes from the
+ * CSPRNG, hash it the way the API verifies, and hand back the plaintext so the
+ * caller can print it exactly once.
+ *
+ * One function rather than two, because the *rule* is the thing that must not
+ * drift. A second copy that quietly used a shorter secret, or a different
+ * Argon2 variant, would be a weaker credential nobody was looking at.
+ *
+ * ## Why it takes the value and not the variable's name
+ *
+ * The first version took the name and read `process.env[name]` here. It worked,
+ * and it blinded `scripts/env-audit.mjs`: that tool finds environment reads by
+ * looking for literal `process.env["…"]`, so both variables vanished from it at
+ * once and `SEED_PARTICIPANT_PASSWORD` was reported dead — documented in the
+ * template, read by nothing. A refactor that hides variables from the tool
+ * whose job is to notice missing ones is a bad trade for one line, so the reads
+ * stay literal at the call sites and only the rule is shared.
+ */
+export async function seededPassword(
+  supplied: string | undefined,
+): Promise<SeededPassword> {
   const plaintext =
     supplied !== undefined && supplied !== ""
       ? supplied

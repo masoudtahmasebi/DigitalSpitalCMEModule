@@ -16,12 +16,31 @@
  *
  * ## Why it refuses to run twice
  *
- * With any staff account in the table, the ordinary paths work: invite, reset,
- * disable. A bootstrap that stayed available would be a second way to mint a
- * super administrator, reachable by anyone who can start a container on the
- * host — which, over the life of a system, is more people than the ones who
- * should hold that role. `--force` exists for the genuine lockout, and says so
- * in the audit log.
+ * With a **super administrator** in the table, the ordinary paths work: invite,
+ * reset, disable. A bootstrap that stayed available would be a second way to
+ * mint one, reachable by anyone who can start a container on the host — which,
+ * over the life of a system, is more people than the ones who should hold that
+ * role. `--force` exists for the genuine lockout, and says so in the audit log.
+ *
+ * ### Why the check is on the role and not on the table (P38-01)
+ *
+ * It used to refuse when `admin_users` held *any* row, on the reasoning above —
+ * and that reasoning quietly assumed every account can reach the invitation
+ * flow that mints a super administrator. It cannot. `canGrant` refuses to let
+ * an operator issue a grant outranking their own, which is correct and is
+ * exactly what makes the old check wrong: an installation holding only a
+ * `customer_admin` has no path to a `super_admin` at all, and the one command
+ * that could create one refused because that account existed.
+ *
+ * That is not hypothetical. `deploy.sh` seeds the default customer on a first
+ * deploy, the seed now creates that customer's two console operators, and the
+ * operator's next step — `bootstrap-admin` — met "refusing: 2 staff account(s)
+ * already exist" on a platform with nobody able to administer it. The browser
+ * suite found it because its `global-setup` performs the same two steps in the
+ * same order a real host does.
+ *
+ * So the condition is the one the security property actually needs: refuse when
+ * a super administrator exists, because then there is another way in.
  *
  * ## Why the password is generated rather than supplied
  *
@@ -119,15 +138,25 @@ async function main(): Promise<void> {
   const pool = new Pool({ connectionString });
 
   try {
+    /*
+     * Super administrators only, and joined rather than counted on
+     * `admin_users`: an account disabled on purpose must not keep the platform
+     * bootstrappable-proof forever, but it also must not be the reason a second
+     * super administrator gets minted from the host. `disabled_at IS NULL` is
+     * the line between those two, and it is the same line the sign-in draws.
+     */
     const { rows: existing } = await pool.query<{ count: string }>(
-      "SELECT count(*)::text AS count FROM admin_users",
+      `SELECT count(*)::text AS count
+         FROM admin_user_roles r
+         JOIN admin_users u ON u.id = r.admin_user_id
+        WHERE r.role = 'super_admin' AND u.disabled_at IS NULL`,
     );
-    const accounts = Number(existing[0]?.count ?? "0");
+    const superAdmins = Number(existing[0]?.count ?? "0");
 
-    if (accounts > 0 && !options.force) {
+    if (superAdmins > 0 && !options.force) {
       throw new Error(
-        `refusing: ${accounts} staff account(s) already exist. Use the console's ` +
-          "invitation flow, or --force if you are locked out.",
+        `refusing: ${superAdmins} active super administrator(s) already exist. Use ` +
+          "the console's invitation flow, or --force if you are locked out.",
       );
     }
 
@@ -167,7 +196,7 @@ async function main(): Promise<void> {
         [
           id,
           options.email,
-          JSON.stringify({ forced: options.force, priorAccounts: accounts }),
+          JSON.stringify({ forced: options.force, priorSuperAdmins: superAdmins }),
         ],
       );
       await client.query("COMMIT");

@@ -43,8 +43,17 @@ export {
   resetCourseContent,
   seedParticipant,
   seedPortalProject,
+  seededPassword,
+  type SeededPassword,
   upsert,
 } from "./lib.js";
 export { seedDsDefault, type DsDefaultOptions } from "./ds-default.js";
 export { seedDsDemo } from "./ds-demo.js";
 export { seedMediceAdhs } from "./medice-adhs.js";
+export {
+  describeDemoStaff,
+  seedDemoStaff,
+  type DemoStaffAccount,
+  type DemoStaffOptions,
+  type DemoStaffRole,
+} from "./staff.js";

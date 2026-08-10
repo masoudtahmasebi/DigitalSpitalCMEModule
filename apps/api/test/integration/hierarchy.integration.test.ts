@@ -1366,3 +1366,202 @@ describe("a reloaded tab can still write (P22-04)", () => {
     expect(response.status).toBe(403);
   });
 });
+
+// ---------------------------------------------------------------------------
+
+/**
+ * The role the client asked for, and the hole it was in (P38-01).
+ *
+ * > two distinct customer roles: one that can create departments/projects/
+ * > courses, and one that can create **only courses**
+ *
+ * `course_editor` was declared in `@ds/domain`, granted `course` and `content`
+ * by the capability matrix, offered on the Konten screen as something to
+ * assign — and accepted by **no route in the platform**. An account holding it
+ * signed in and met "Ihr Konto hat keine Berechtigung für die Verwaltung",
+ * because the console's first request is `GET /admin/courses` and that 403'd.
+ *
+ * These tests are the boundary itself, stated in both directions. The
+ * "may not" half is the security property and is the reason this block is long:
+ * widening a permission is one line, and the only thing that stops the next
+ * line from widening it further is a test that fails when it does.
+ */
+describe("a course editor may write courses and nothing above them (P38-01)", () => {
+  let editor: StaffSession;
+  let editorProjectSlug: string;
+  let editorCourseSlug: string;
+
+  beforeAll(async () => {
+    const departmentId = await insert(
+      "INSERT INTO departments (customer_id, slug, name) VALUES ($1,$2,$3) RETURNING id",
+      [existingCustomerId, `editor-dept-${RUN}`, "Redaktion"],
+    );
+    editorProjectSlug = `editor-projekt-${RUN}`;
+    await insert(
+      `INSERT INTO projects (customer_id, department_id, slug, name)
+       VALUES ($1,$2,$3,$4) RETURNING id`,
+      [existingCustomerId, departmentId, editorProjectSlug, "Redaktionsprojekt"],
+    );
+
+    const email = await seedStaff("course_editor", existingCustomerId);
+    editor = await signIn(email);
+    editorCourseSlug = `redaktion-kurs-${RUN}`;
+  }, 30_000);
+
+  // -- may ------------------------------------------------------------------
+
+  it("can open the console at all, which is the whole defect", async () => {
+    const result = await asStaffIn(editor, editorProjectSlug, "GET", "/admin/courses");
+    expect(result.status).toBe(200);
+  });
+
+  it("can list projects, because creating a course means choosing one", async () => {
+    const result = await asStaffIn(editor, editorProjectSlug, "GET", "/admin/projects");
+    expect(result.status).toBe(200);
+  });
+
+  it("can create a course", async () => {
+    const result = await asStaffIn(editor, editorProjectSlug, "POST", "/admin/courses", {
+      projectSlug: editorProjectSlug,
+      slug: editorCourseSlug,
+      title: "Von der Redaktion angelegt",
+      deliveryType: "on_demand",
+    });
+    expect(result.status).toBe(201);
+  });
+
+  it("can put a module, a chapter and a content into it", async () => {
+    const moduleResult = await asStaffIn(
+      editor,
+      editorProjectSlug,
+      "POST",
+      `/admin/courses/${editorCourseSlug}/modules`,
+      { title: "Modul 1" },
+    );
+    expect(moduleResult.status).toBe(201);
+
+    const moduleId = moduleResult.body.modules[0].id as string;
+    const chapterResult = await asStaffIn(
+      editor,
+      editorProjectSlug,
+      "POST",
+      `/admin/modules/${moduleId}/chapters`,
+      { title: "Kapitel 1" },
+    );
+    expect(chapterResult.status).toBe(201);
+
+    const chapterId = chapterResult.body.modules[0].chapters[0].id as string;
+    const contentResult = await asStaffIn(
+      editor,
+      editorProjectSlug,
+      "POST",
+      `/admin/chapters/${chapterId}/contents`,
+      // A real video draft: `contentProblems` requires at least one source and
+      // a duration, because the watch gate is a percentage of a known length.
+      {
+        kind: "video",
+        title: "Video 1",
+        durationSec: 600,
+        sources: [{ url: "https://media.example.org/v1.mp4", mimeType: "video/mp4" }],
+      },
+    );
+    expect(contentResult.status).toBe(201);
+  });
+
+  it("can edit the course's own settings, so it can be made certifiable", async () => {
+    const result = await asStaffIn(
+      editor,
+      editorProjectSlug,
+      "PATCH",
+      `/admin/courses/${editorCourseSlug}`,
+      { requiredWatchPercent: 90 },
+    );
+    expect(result.status).toBe(200);
+  });
+
+  // -- may not --------------------------------------------------------------
+
+  it("may not create a department", async () => {
+    const result = await asStaffIn(
+      editor,
+      editorProjectSlug,
+      "POST",
+      "/admin/departments",
+      { slug: `verboten-${RUN}`, name: "Verbotene Abteilung" },
+    );
+    expect(result.status).toBe(403);
+  });
+
+  it("may not create a project", async () => {
+    const result = await asStaffIn(editor, editorProjectSlug, "POST", "/admin/projects", {
+      departmentSlug: `editor-dept-${RUN}`,
+      slug: `verboten-projekt-${RUN}`,
+      name: "Verbotenes Projekt",
+    });
+    expect(result.status).toBe(403);
+  });
+
+  it("may not edit a project — the Keycloak binding is not theirs", async () => {
+    const result = await asStaffIn(
+      editor,
+      editorProjectSlug,
+      "PATCH",
+      `/admin/projects/${editorProjectSlug}`,
+      { name: "Umbenannt" },
+    );
+    expect(result.status).toBe(403);
+  });
+
+  it("may not read the participants of the course they wrote", async () => {
+    // The sharpest line in the matrix: they author the content and never see
+    // who took it. An agency writing for a customer gets no physician's record.
+    const result = await asStaffIn(
+      editor,
+      editorProjectSlug,
+      "GET",
+      `/admin/courses/${editorCourseSlug}/participants`,
+    );
+    expect(result.status).toBe(403);
+  });
+
+  it("may not upload a certificate stamp", async () => {
+    const result = await asStaffIn(
+      editor,
+      editorProjectSlug,
+      "PUT",
+      `/admin/courses/${editorCourseSlug}/certificate-assets`,
+      { stampImage: null, signatureImage: null },
+    );
+    expect(result.status).toBe(403);
+  });
+
+  it("may not replace the project's typeface", async () => {
+    const result = await asStaffIn(
+      editor,
+      editorProjectSlug,
+      "GET",
+      "/admin/branding/font",
+    );
+    expect(result.status).toBe(403);
+  });
+
+  it("may not reach the customer registry", async () => {
+    const result = await asStaff(editor, "GET", "/admin/customers");
+    expect(result.status).toBe(403);
+  });
+
+  it("may not list or invite operator accounts", async () => {
+    const result = await asStaff(editor, "GET", "/admin/staff");
+    expect(result.status).toBe(403);
+  });
+
+  it("left nothing behind from any of the refusals", async () => {
+    // A 403 with a row behind it would be the worst of both. Checked from
+    // outside the API, on the seed pool, so this is the database's answer.
+    const { rows } = await seedPool.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM departments WHERE slug = $1`,
+      [`verboten-${RUN}`],
+    );
+    expect(Number(rows[0]?.n ?? "1")).toBe(0);
+  });
+});

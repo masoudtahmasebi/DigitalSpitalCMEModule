@@ -36,6 +36,19 @@ export const COURSE_WITHOUT_POINTS_TITLE = "DS Demo – Fortbildung ohne Punkte"
 export const COURSE_WITHOUT_POINTS = "ds-ohne-punkte";
 export const PARTICIPANT_EMAIL = "demo@ds.example";
 
+/**
+ * The tenant's own console operators, seeded alongside it (P38-01).
+ *
+ * Deterministic for the same reason the participant's password is: a suite that
+ * cannot type the password cannot open the screen. One password across both
+ * accounts is acceptable *here* and nowhere else — the two are distinguished by
+ * their grant, which is the thing under test, and this database exists for
+ * ninety seconds.
+ */
+export const STAFF_PASSWORD = "e2e-staff-password";
+export const CUSTOMER_ADMIN_EMAIL = "verwaltung@ds.example";
+export const COURSE_EDITOR_EMAIL = "redaktion@ds.example";
+
 export const EFN = "123456789012345";
 
 /** 32 bytes, padded rather than pasted — see the journey suite for why. */
@@ -110,6 +123,7 @@ export function prepareDatabase(repo: string, superuser: string): Prepared {
     DATABASE_URL: databaseUrl,
     MIGRATION_DATABASE_URL: migrationUrl,
     SEED_PARTICIPANT_PASSWORD: PARTICIPANT_PASSWORD,
+    SEED_STAFF_PASSWORD: STAFF_PASSWORD,
   });
 
   return { databaseUrl, migrationUrl, superuserUrl: target.toString() };
