@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@ds/plugin-api": "workspace:*",
-    "nodemailer": "^9.0.3"
+    "nodemailer": "^9.0.4"
   },
   "devDependencies": {
     "@types/nodemailer": "^6.4.17",
