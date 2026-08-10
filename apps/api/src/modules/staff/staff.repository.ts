@@ -30,6 +30,42 @@ export interface StaffAccount {
   readonly disabledAt: Date | null;
 }
 
+/**
+ * The platform's sender, as stored (P40-01).
+ *
+ * `passwordEnc` is the ciphertext and never leaves the repository layer as
+ * anything else — the service decrypts it for one send and the controller
+ * never sees either form. `hasPassword` is what the console is told.
+ */
+export interface PlatformSmtpRow {
+  readonly host: string | null;
+  readonly port: number | null;
+  readonly username: string | null;
+  readonly passwordEnc: Buffer | null;
+  readonly secure: boolean;
+  readonly fromAddress: string | null;
+  readonly fromName: string | null;
+  readonly updatedAt: Date;
+}
+
+export interface PlatformSmtpWrite {
+  readonly host: string | null;
+  readonly port: number | null;
+  readonly username: string | null;
+  /**
+   * Absent means "keep what is stored" and `null` means "clear it".
+   *
+   * The same three-way distinction the project SMTP form makes, and for the
+   * same reason: an operator editing the sender name must not silently wipe
+   * the credential because the password box was empty.
+   */
+  readonly passwordEnc?: Buffer | null;
+  readonly secure: boolean;
+  readonly fromAddress: string | null;
+  readonly fromName: string | null;
+  readonly updatedBy: string;
+}
+
 export interface StaffGrant {
   readonly role: StaffRole;
   readonly customerId: string | null;
@@ -104,8 +140,20 @@ export interface StaffRepositoryPort {
     adminUserId: string;
     kind: "invite" | "reset";
     tokenHash: Buffer;
-    issuedBy: string;
+    /**
+     * `null` for a self-service reset (P40-02).
+     *
+     * Which is what migration 0017's column comment already said —
+     * *"Null for a self-service reset, which nobody issued"* — while the type
+     * here required an id, so the only reachable caller was an invitation.
+     */
+    issuedBy: string | null;
   }): Promise<void>;
+
+  // --- the platform's own sender (P40-01) ----------------------------------
+
+  readPlatformSmtp(): Promise<PlatformSmtpRow>;
+  writePlatformSmtp(input: PlatformSmtpWrite): Promise<void>;
   replaceGrants(
     adminUserId: string,
     grants: readonly {
@@ -472,7 +520,7 @@ export class StaffRepository implements StaffRepositoryPort {
     adminUserId: string;
     kind: "invite" | "reset";
     tokenHash: Buffer;
-    issuedBy: string;
+    issuedBy: string | null;
   }): Promise<void> {
     // Any outstanding token of the same kind is revoked first. Two live
     // invitations for one account means the older one — possibly forwarded,
@@ -551,6 +599,87 @@ export class StaffRepository implements StaffRepositoryPort {
     ]);
     void rowCount;
     return rows.length > 0;
+  }
+
+  // --- the platform's own sender (P40-01) ----------------------------------
+
+  async readPlatformSmtp(): Promise<PlatformSmtpRow> {
+    const { rows } = await this.pool.query<{
+      host: string | null;
+      port: number | null;
+      username: string | null;
+      password_enc: Buffer | null;
+      secure: boolean;
+      from_address: string | null;
+      from_name: string | null;
+      updated_at: Date;
+    }>(
+      `SELECT host, port, username, password_enc, secure, from_address, from_name, updated_at
+         FROM platform_smtp WHERE id = true`,
+    );
+
+    const row = rows[0];
+    // The migration inserts the row, so this is the "somebody restored an old
+    // dump" case rather than an expected one — answered with empty settings,
+    // which `canSend` reads as "not configured" and nothing then tries to send.
+    if (row === undefined) {
+      return {
+        host: null,
+        port: null,
+        username: null,
+        passwordEnc: null,
+        secure: false,
+        fromAddress: null,
+        fromName: null,
+        updatedAt: new Date(0),
+      };
+    }
+
+    return {
+      host: row.host,
+      port: row.port,
+      username: row.username,
+      passwordEnc: row.password_enc,
+      secure: row.secure,
+      fromAddress: row.from_address,
+      fromName: row.from_name,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  async writePlatformSmtp(input: PlatformSmtpWrite): Promise<void> {
+    // `password_enc` is written only when the caller said something about it.
+    // `COALESCE` would be wrong here: it cannot express "clear it", and an
+    // operator removing a credential has to be able to.
+    const setPassword = input.passwordEnc !== undefined;
+
+    await this.pool.query(
+      `INSERT INTO platform_smtp
+         (id, host, port, username, password_enc, secure, from_address, from_name,
+          updated_at, updated_by)
+       VALUES (true, $1, $2, $3, $4, $5, $6, $7, now(), $8)
+       ON CONFLICT (id) DO UPDATE SET
+         host         = EXCLUDED.host,
+         port         = EXCLUDED.port,
+         username     = EXCLUDED.username,
+         password_enc = CASE WHEN $9 THEN EXCLUDED.password_enc ELSE platform_smtp.password_enc END,
+         secure       = EXCLUDED.secure,
+         from_address = EXCLUDED.from_address,
+         from_name    = EXCLUDED.from_name,
+         updated_at   = now(),
+         updated_by   = EXCLUDED.updated_by`,
+      [
+        input.host,
+        input.port,
+        input.username,
+        setPassword ? (input.passwordEnc ?? null) : null,
+        input.secure,
+        input.fromAddress,
+        input.fromName,
+        input.updatedBy,
+        setPassword,
+      ],
+    );
   }
 
   async findCredentialToken(tokenHash: Buffer): Promise<CredentialTokenRow | undefined> {

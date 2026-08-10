@@ -52,6 +52,8 @@ import {
 } from "./credentials.js";
 import { generateTotpSecret, otpauthUri, totpCode } from "./totp.js";
 import type { SecretCipher } from "../../shared/secret-cipher.js";
+import { canSend, sendNow } from "../../shared/mailer.js";
+import { passwordResetEmail } from "./reset.copy.js";
 import type {
   StaffAccount,
   StaffAccountSummary,
@@ -309,6 +311,165 @@ export class StaffService {
       action: row.kind === "invite" ? "staff.invite_accepted" : "staff.password_reset",
     });
     return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // The platform's own sender, and the reset it makes possible (P40)
+  // -------------------------------------------------------------------------
+
+  /**
+   * The sender, as the console may see it.
+   *
+   * Never the password, in either form. `hasPassword` is the whole of what an
+   * operator needs — "is one stored" — and it is the same shape the project
+   * SMTP form uses (CLAUDE.md §4 invariant 7).
+   */
+  async readPlatformSender(): Promise<{
+    host: string | null;
+    port: number | null;
+    username: string | null;
+    hasPassword: boolean;
+    secure: boolean;
+    fromAddress: string | null;
+    fromName: string | null;
+    /** Whether this is complete enough that anything can actually be sent. */
+    canSend: boolean;
+  }> {
+    const row = await this.deps.repository.readPlatformSmtp();
+    return {
+      host: row.host,
+      port: row.port,
+      username: row.username,
+      hasPassword: row.passwordEnc !== null,
+      secure: row.secure,
+      fromAddress: row.fromAddress,
+      fromName: row.fromName,
+      canSend: canSend(row),
+    };
+  }
+
+  async writePlatformSender(
+    input: {
+      host: string | null;
+      port: number | null;
+      username: string | null;
+      /** Absent keeps what is stored; `null` clears it. */
+      password?: string | null;
+      secure: boolean;
+      fromAddress: string | null;
+      fromName: string | null;
+    },
+    actor: { readonly id: string },
+  ): Promise<void> {
+    await this.deps.repository.writePlatformSmtp({
+      host: blank(input.host),
+      port: input.port,
+      username: blank(input.username),
+      ...(input.password === undefined
+        ? {}
+        : {
+            passwordEnc:
+              input.password === null || input.password === ""
+                ? null
+                : this.deps.cipher.encrypt(input.password),
+          }),
+      secure: input.secure,
+      fromAddress: blank(input.fromAddress),
+      fromName: blank(input.fromName),
+      updatedBy: actor.id,
+    });
+
+    await this.deps.audit.recordSystem({
+      actor: { identity: "staff", id: actor.id },
+      action: "platform.smtp_changed",
+      // The host, so a change of sender is traceable. Never the credential.
+      detail: { host: blank(input.host) ?? "(none)" },
+    });
+  }
+
+  /**
+   * Begin a self-service password reset (P40-02).
+   *
+   * ## Everything about the return value is about not answering the question
+   *
+   * The caller gets `undefined` whether the address is unknown, the account is
+   * disabled, or a link went out. A distinguishable answer — a different
+   * status, a different message, a measurably different response time — turns
+   * this form into an account-enumeration oracle for a console whose accounts
+   * are named after real people at a named company.
+   *
+   * So the endpoint answers 202 unconditionally, and what actually happened is
+   * in the log.
+   *
+   * ## Why it does not throw when there is no sender configured
+   *
+   * A platform with no SMTP settings cannot deliver, and the honest response to
+   * "I forgot my password" is then the one the console already gives: ask an
+   * administrator. Throwing would make the *absence of configuration*
+   * observable from an unauthenticated endpoint, which is a small leak and an
+   * entirely avoidable one.
+   */
+  async beginPasswordReset(
+    email: string,
+    resetUrl: (token: string) => string,
+  ): Promise<void> {
+    const account = await this.deps.repository.findByEmail(email);
+
+    if (account === undefined || account.disabledAt !== null) {
+      // Recorded without the address: `audit_log` is not a place to accumulate
+      // a list of addresses somebody guessed at.
+      await this.deps.audit.recordSystem({
+        actor: SYSTEM_ACTOR,
+        action: "staff.password_reset_requested",
+        detail: { delivered: false, reason: "no_such_account" },
+      });
+      return;
+    }
+
+    const sender = await this.deps.repository.readPlatformSmtp();
+    if (!canSend(sender)) {
+      await this.deps.audit.recordSystem({
+        actor: { identity: "staff", id: account.id },
+        action: "staff.password_reset_requested",
+        detail: { delivered: false, reason: "no_platform_sender" },
+      });
+      return;
+    }
+
+    // Minted only once there is somewhere to send it. A token issued into a
+    // void is a live credential in the database that nobody asked for.
+    const token = generateToken();
+    await this.deps.repository.issueCredentialToken({
+      adminUserId: account.id,
+      kind: "reset",
+      tokenHash: hashToken(token),
+      // Nobody issued it — which is what migration 0017's column comment has
+      // said since the day the table was created.
+      issuedBy: null,
+    });
+
+    const outcome = await sendNow(
+      {
+        host: sender.host ?? "",
+        port: sender.port,
+        username: sender.username,
+        password:
+          sender.passwordEnc === null
+            ? null
+            : this.deps.cipher.decrypt(sender.passwordEnc),
+        secure: sender.secure,
+        fromAddress: sender.fromAddress ?? "",
+        fromName: sender.fromName,
+      },
+      { ...passwordResetEmail(resetUrl(token)), to: account.email },
+    );
+
+    await this.deps.audit.recordSystem({
+      actor: { identity: "staff", id: account.id },
+      action: "staff.password_reset_requested",
+      // The outcome, never the token and never the address.
+      detail: { delivered: outcome.status === "delivered", status: outcome.status },
+    });
   }
 
   /** Exposed so the controller can hash without importing the primitive. */
@@ -1009,4 +1170,17 @@ function strictness(policy: SecondFactorPolicy): number {
     case "required":
       return 2;
   }
+}
+
+/**
+ * An empty box means "not set", not an empty string.
+ *
+ * `canSend` checks for a non-blank host and sender, and a stored `""` would
+ * pass a naive check while producing a transport that connects to nowhere.
+ * Normalising on the way in means the question is only asked one way.
+ */
+function blank(value: string | null): string | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
 }

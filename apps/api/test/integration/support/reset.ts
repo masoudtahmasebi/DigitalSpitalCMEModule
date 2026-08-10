@@ -120,6 +120,24 @@ export async function resetDatabase(url: string): Promise<void> {
       "INSERT INTO admin_2fa_policy (customer_id, policy) VALUES (NULL, $1)",
       [PLATFORM_SECOND_FACTOR],
     );
+
+    /*
+     * The platform's sender, back to how migration 0036 leaves it (P40-01).
+     *
+     * A singleton outside `TENANT_TABLES` — it belongs to no customer, so the
+     * truncation does not reach it — which meant a suite that configured SMTP
+     * left it configured for the next run, and "starts empty, and says it
+     * cannot send" passed once and never again. Exactly the class of thing
+     * P32 exists to stop: an assertion silently encoding whatever the last run
+     * happened to do.
+     */
+    await pool.query(
+      `UPDATE platform_smtp
+          SET host = NULL, port = NULL, username = NULL, password_enc = NULL,
+              secure = false, from_address = NULL, from_name = NULL,
+              updated_by = NULL
+        WHERE id = true`,
+    );
   } finally {
     await pool.end();
   }

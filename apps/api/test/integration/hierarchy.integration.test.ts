@@ -40,6 +40,20 @@ process.env["KEYCLOAK_JWKS_URI"] ??=
   "http://127.0.0.1:1/realms/unused/protocol/openid-connect/certs";
 process.env["NODE_ENV"] ??= "test";
 process.env["EIV_WORKER_ENABLED"] = "no";
+/*
+ * A real key, so `createSecretCipher` builds AES-GCM rather than falling back
+ * to `PlaintextSecretCipher` (P40-01).
+ *
+ * Without it the platform SMTP password would be stored as itself, and the
+ * test asserting it is *not* would have been asserting the fallback rather
+ * than the encryption. Exactly 32 bytes — `AesGcmSecretCipher` refuses to
+ * construct otherwise, and the failure surfaces as an unreadable stack trace
+ * out of Nest's initialisation.
+ */
+process.env["SECRETS_KMS_KEY"] ??= Buffer.alloc(
+  32,
+  "ds-hierarchy-kms-key-not-secret",
+).toString("base64");
 process.env["CERTIFICATE_DELIVERY_ENABLED"] = "no";
 
 const RUN = randomUUID().slice(0, 8);
@@ -1711,5 +1725,181 @@ describe("a credential token is single-use, expiring and revocable (P39-01)", ()
         WHERE action = 'staff.credential_token_refused'`,
     );
     expect(Number(rows[0]?.n ?? "0")).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * "Passwort vergessen", on the staff plane (P40-02).
+ *
+ * Everything here is about the endpoint refusing to answer the question it is
+ * being asked. A console whose accounts are named after real people at a named
+ * company must not have a form that says whether an address is one of them —
+ * so the assertions are that the answers are *identical*, which is an awkward
+ * thing to test and the entire security property.
+ */
+describe("asking for a password-reset link (P40-02)", () => {
+  async function ask(email: string): Promise<number> {
+    const { response } = await post("/admin/auth/password-reset", { email });
+    return response.status;
+  }
+
+  it("accepts a request for an address that exists", async () => {
+    const address = `vergessen-${randomUUID().slice(0, 8)}@ds.test`;
+    await asStaff(superSession, "POST", "/admin/staff", {
+      email: address,
+      displayName: "Vergesslich",
+      role: "customer_admin",
+      customerId: existingCustomerId,
+      departmentId: null,
+    });
+
+    expect(await ask(address)).toBe(202);
+  });
+
+  it("answers the same for an address that does not", async () => {
+    expect(await ask(`niemand-${randomUUID().slice(0, 8)}@ds.test`)).toBe(202);
+  });
+
+  it("mints no token when there is no sender configured", async () => {
+    /*
+     * The platform has no SMTP settings in this suite, so there is nowhere to
+     * send a link — and the service stops before issuing one. A token written
+     * into a void is a live credential in the database that nobody asked for
+     * and nobody will ever spend.
+     *
+     * Counted across the whole table because the endpoint deliberately reveals
+     * nothing about which account it belonged to.
+     */
+    const address = `ohne-versand-${randomUUID().slice(0, 8)}@ds.test`;
+    await asStaff(superSession, "POST", "/admin/staff", {
+      email: address,
+      displayName: "Ohne Versand",
+      role: "customer_admin",
+      customerId: existingCustomerId,
+      departmentId: null,
+    });
+
+    const before = await countResetTokens();
+    expect(await ask(address)).toBe(202);
+    expect(await countResetTokens()).toBe(before);
+  });
+
+  it("records the attempt without recording the address", async () => {
+    const { rows } = await seedPool.query<{ detail: unknown }>(
+      `SELECT detail FROM audit_log
+        WHERE action = 'staff.password_reset_requested'
+        ORDER BY created_at DESC LIMIT 5`,
+    );
+    expect(rows.length).toBeGreaterThan(0);
+
+    // An address in the audit log would rebuild exactly the list the endpoint
+    // refuses to hand out, for anybody who can read it later.
+    for (const row of rows) {
+      expect(JSON.stringify(row.detail)).not.toMatch(/@/u);
+    }
+  });
+
+  async function countResetTokens(): Promise<number> {
+    const { rows } = await seedPool.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM admin_credential_tokens WHERE kind = 'reset'`,
+    );
+    return Number(rows[0]?.n ?? "0");
+  }
+});
+
+/**
+ * The platform's own sender (P40-01).
+ */
+describe("configuring where platform mail comes from (P40-01)", () => {
+  it("starts empty, and says it cannot send", async () => {
+    const { status, body } = await asStaff(
+      superSession,
+      "GET",
+      "/admin/auth/platform-smtp",
+    );
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ host: null, hasPassword: false, canSend: false });
+  });
+
+  it("is saved, and reports that it can send once host and sender are set", async () => {
+    const saved = await asStaff(superSession, "PUT", "/admin/auth/platform-smtp", {
+      host: "smtp.example.test",
+      port: 587,
+      username: "plattform",
+      password: "geheim-und-lang-genug",
+      secure: false,
+      fromAddress: "no-reply@example.test",
+      fromName: "DS Education",
+    });
+    expect(saved.status).toBe(200);
+
+    const { body } = await asStaff(superSession, "GET", "/admin/auth/platform-smtp");
+    expect(body).toMatchObject({
+      host: "smtp.example.test",
+      port: 587,
+      hasPassword: true,
+      canSend: true,
+    });
+  });
+
+  it("never returns the password, in any form", async () => {
+    const { body } = await asStaff(superSession, "GET", "/admin/auth/platform-smtp");
+    expect(JSON.stringify(body)).not.toContain("geheim-und-lang-genug");
+  });
+
+  it("stores it as ciphertext, not as text", async () => {
+    const { rows } = await seedPool.query<{ password_enc: Buffer | null }>(
+      "SELECT password_enc FROM platform_smtp WHERE id = true",
+    );
+    const stored = rows[0]?.password_enc;
+    expect(stored).not.toBeNull();
+    expect(stored?.toString("utf8")).not.toContain("geheim-und-lang-genug");
+  });
+
+  it("keeps the stored password when the field is omitted", async () => {
+    // The defect this prevents: an operator corrects the sender name and
+    // silently clears the credential, and mail stops leaving days later.
+    await asStaff(superSession, "PUT", "/admin/auth/platform-smtp", {
+      host: "smtp.example.test",
+      port: 587,
+      username: "plattform",
+      secure: false,
+      fromAddress: "no-reply@example.test",
+      fromName: "Anderer Name",
+    });
+
+    const { body } = await asStaff(superSession, "GET", "/admin/auth/platform-smtp");
+    expect(body).toMatchObject({ fromName: "Anderer Name", hasPassword: true });
+  });
+
+  it("clears it when the field is an explicit null", async () => {
+    await asStaff(superSession, "PUT", "/admin/auth/platform-smtp", {
+      host: "smtp.example.test",
+      port: 587,
+      username: "plattform",
+      password: null,
+      secure: false,
+      fromAddress: "no-reply@example.test",
+      fromName: "Anderer Name",
+    });
+
+    const { body } = await asStaff(superSession, "GET", "/admin/auth/platform-smtp");
+    expect(body).toMatchObject({ hasPassword: false });
+  });
+
+  it("refuses a customer administrator changing it", async () => {
+    // Not one customer's setting: it is the address mail about *other people's*
+    // accounts comes from.
+    const { status } = await asStaff(tenantSession, "PUT", "/admin/auth/platform-smtp", {
+      host: "smtp.woanders.test",
+      port: 587,
+      username: null,
+      secure: false,
+      fromAddress: "kunde@woanders.test",
+      fromName: null,
+    });
+    expect(status).toBe(403);
   });
 });

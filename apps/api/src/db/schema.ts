@@ -474,6 +474,43 @@ export const certificates = pgTable("certificates", {
   ...timestamps,
 });
 
+/**
+ * The platform's own mail sender (P40-01).
+ *
+ * A singleton: `id` may only ever be `true`, so the write path is one
+ * `INSERT … ON CONFLICT (id) DO UPDATE` and there is no "which row" to get
+ * wrong. `passwordEnc` is write-only — encrypted with the application KMS key
+ * and never returned by any endpoint, like `projects.smtpPasswordEnc`.
+ */
+export const platformSmtp = pgTable("platform_smtp", {
+  id: boolean("id").primaryKey().default(true),
+  host: text("host"),
+  port: integer("port"),
+  username: text("username"),
+  passwordEnc: bytea("password_enc"),
+  secure: boolean("secure").notNull().default(false),
+  fromAddress: text("from_address"),
+  fromName: text("from_name"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: uuid("updated_by"),
+});
+
+/**
+ * A local participant's password-reset token (P40-03).
+ *
+ * Keyed on the identity rather than the person, like `learner_credentials`:
+ * only a `local` credential has a password to reset.
+ */
+export const learnerCredentialTokens = pgTable("learner_credential_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userIdentityId: uuid("user_identity_id").notNull(),
+  tokenHash: bytea("token_hash").notNull(),
+  projectId: uuid("project_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+});
+
 export const auditLog = pgTable("audit_log", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   customerId: uuid("customer_id"),
@@ -541,6 +578,8 @@ export const schema = {
   evaluationResponses,
   eivSubmissions,
   certificates,
+  platformSmtp,
+  learnerCredentialTokens,
   auditLog,
   storageAuditLog,
 };

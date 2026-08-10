@@ -41,6 +41,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Inject,
   Post,
   Put,
@@ -52,6 +53,7 @@ import { z } from "zod";
 import { checkPassword } from "@ds/domain";
 import { Public } from "../../auth/public.decorator.js";
 import { StaffOnly } from "../../auth/staff-only.decorator.js";
+import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { AppError } from "../../shared/problem-details.js";
 import { StaffService } from "./staff.service.js";
 
@@ -117,6 +119,36 @@ const RedeemBody = z.object({
   password: z.string().min(1).max(512),
 });
 
+/**
+ * "I forgot my password" (P40-02).
+ *
+ * `consoleUrl` is **not** taken from the body. An attacker who could name the
+ * link's origin could have a real reset token delivered to a real inbox
+ * pointing at a page they control — the classic host-header/redirect variant of
+ * a reset flow, and the one that turns a correct token into a stolen one. The
+ * origin comes from the request, checked against the same allow-list CORS uses.
+ */
+const PasswordResetBody = z.object({
+  email: z.string().trim().min(3).max(320),
+});
+
+/**
+ * The platform's own sender (P40-01).
+ *
+ * `password` is three-valued on purpose, exactly as the project SMTP form is:
+ * absent keeps what is stored, `null` clears it, a string replaces it. An
+ * operator editing the sender name must not silently wipe the credential.
+ */
+const PlatformSmtpBody = z.object({
+  host: z.string().trim().max(300).nullable(),
+  port: z.number().int().min(1).max(65_535).nullable(),
+  username: z.string().trim().max(300).nullable(),
+  password: z.string().max(300).nullable().optional(),
+  secure: z.boolean(),
+  fromAddress: z.string().trim().max(320).nullable(),
+  fromName: z.string().trim().max(200).nullable(),
+});
+
 const SecondFactorPolicyBody = z.object({
   /**
    * `null` names the platform itself — the scope a super administrator belongs
@@ -132,6 +164,16 @@ export interface StaffAuthConfig {
   /** `.cme.example.de` — omitted in development, where hosts are bare. */
   readonly cookieDomain: string;
   readonly secureCookies: boolean;
+  /**
+   * Where a password-reset link may point (P40-02).
+   *
+   * The same list CORS uses, and for the same reason: an origin nobody
+   * configured must not be able to have a real token delivered to a real inbox
+   * pointing at it.
+   */
+  readonly allowedOrigins: readonly string[];
+  /** Used when the request carries no recognised origin of its own. */
+  readonly consoleUrl: string;
 }
 
 /**
@@ -324,6 +366,127 @@ export class StaffAuthController {
     // holding a forwarded invitation that it was real.
     if (!ok) throw AppError.badRequest("this link is no longer valid");
     return { status: "password_set" };
+  }
+
+  // --- Passwort vergessen (P40-02) -----------------------------------------
+
+  /**
+   * Ask for a reset link.
+   *
+   * ## Why the answer is always the same
+   *
+   * 202 for an unknown address, a disabled account, a platform with no sender
+   * configured, and a link that went out. The console's operator accounts are
+   * named after real people at a named company, so an endpoint that answered
+   * differently for a known address would be a way to find out who works there.
+   *
+   * The service does the same thing on its side — it mints no token when there
+   * is nowhere to send one — so there is no observable difference in work done
+   * either.
+   *
+   * ## Where the link points
+   *
+   * At the request's own origin, not at anything in the body, and only if that
+   * origin is one the deployment already allows. A reset flow that lets the
+   * caller name the link's host delivers a real token to a real inbox pointing
+   * at a page the attacker controls.
+   */
+  @Public()
+  @RateLimit("staffPasswordReset")
+  // 202, not Nest's default 201: nothing was created that the caller may know
+  // about, and "accepted" is the only honest word for a request whose outcome
+  // is deliberately not reported back.
+  @HttpCode(202)
+  @Post("password-reset")
+  async requestPasswordReset(
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<{ status: string }> {
+    const input = PasswordResetBody.parse(body);
+    const origin = this.trustedOrigin(request);
+
+    await this.service.beginPasswordReset(
+      input.email,
+      (token) => `${origin}/#passwort-neu?token=${encodeURIComponent(token)}`,
+    );
+
+    return { status: "accepted" };
+  }
+
+  /**
+   * The origin a reset link may point at.
+   *
+   * The request's `Origin` header when the deployment allows it, and the
+   * configured console URL otherwise — never a value from the body. An
+   * unrecognised origin falls back rather than being refused, because the
+   * refusal would only tell an attacker which origins are configured.
+   */
+  private trustedOrigin(request: Request): string {
+    const origin = request.get("origin");
+    if (origin !== undefined && this.config.allowedOrigins.includes(origin)) {
+      return origin;
+    }
+    return this.config.consoleUrl;
+  }
+
+  // --- the platform's own sender (P40-01) ----------------------------------
+
+  /**
+   * Read it. Never the password — `hasPassword` is what an operator needs.
+   *
+   * `@StaffOnly()` without a capability, like the policy read below it: seeing
+   * that mail is configured is not a privilege, and the write is where the
+   * boundary is.
+   */
+  @StaffOnly()
+  @Get("platform-smtp")
+  async platformSmtp(@Req() request: Request): Promise<unknown> {
+    if (request.staffProfile === undefined) {
+      throw AppError.unauthenticated("no staff session");
+    }
+    return this.service.readPlatformSender();
+  }
+
+  /**
+   * Change it. Super administrators only.
+   *
+   * Not a `@StaffCapability` — this is not one customer's setting, it is the
+   * address the platform's own mail comes from, and a customer administrator
+   * redirecting it would be redirecting mail about accounts that are not
+   * theirs.
+   */
+  @StaffOnly()
+  @Put("platform-smtp")
+  async setPlatformSmtp(
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<{ status: string }> {
+    const profile = request.staffProfile;
+    if (profile === undefined) throw AppError.unauthenticated("no staff session");
+    if (profile.role !== "super_admin") {
+      throw AppError.forbidden(
+        "only a super administrator may change the platform sender",
+      );
+    }
+
+    const input = PlatformSmtpBody.parse(body);
+    // Spread the optional key rather than passing it through: under
+    // `exactOptionalPropertyTypes` an explicit `password: undefined` is a
+    // different thing from an absent one, and the difference here is "keep the
+    // stored credential" versus a type error.
+    await this.service.writePlatformSender(
+      {
+        host: input.host,
+        port: input.port,
+        username: input.username,
+        secure: input.secure,
+        fromAddress: input.fromAddress,
+        fromName: input.fromName,
+        ...(input.password === undefined ? {} : { password: input.password }),
+      },
+      { id: profile.id },
+    );
+    return { status: "saved" };
   }
 
   // --- the second factor, as a policy (P22-02) -----------------------------

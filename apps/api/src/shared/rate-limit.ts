@@ -108,6 +108,20 @@ export const RATE_LIMIT_RULES = {
    */
   participantCreate: { limit: 30, windowSec: 60 },
   /**
+   * Asking for a password-reset link, on either plane (P40-02).
+   *
+   * Unauthenticated, and it *sends mail to an address the caller chose*, so it
+   * is two abuse surfaces at once: an enumeration probe and a way to have the
+   * platform mail somebody repeatedly. Three a minute per IP is more than a
+   * person who mistyped their address needs and stops both.
+   *
+   * The endpoint answers 202 regardless, so a 429 here is the only observable
+   * difference between callers — which is why the limit is on the IP and not
+   * on the address: keying it on the address would answer "this address is
+   * being asked about a lot", and that is the question the flow refuses.
+   */
+  staffPasswordReset: { limit: 3, windowSec: 60 },
+  /**
    * A participant changing their own password.
    *
    * Tight, because the endpoint takes the *current* password: without a limit

@@ -70,6 +70,20 @@ import {
         // served over plain HTTP on localhost and a Secure cookie would simply
         // never be stored.
         secureCookies: config.NODE_ENV === "production",
+        /*
+         * Where a password-reset link may point (P40-02).
+         *
+         * The CORS list, reused rather than a second variable to keep in step:
+         * the origins allowed to *call* the API are exactly the origins the
+         * platform already trusts to be its own front ends. The first entry is
+         * the fallback for a request that carries no recognised origin —
+         * ordinarily the console, since it is listed first in every deployment
+         * template. An installation with none configured gets an empty string,
+         * which produces a relative link: wrong-looking in an email, and it
+         * cannot point anywhere an attacker chose.
+         */
+        allowedOrigins: config.ALLOWED_ORIGINS,
+        consoleUrl: config.ALLOWED_ORIGINS[0] ?? "",
       }),
       inject: [APP_CONFIG],
     },
