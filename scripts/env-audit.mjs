@@ -106,6 +106,12 @@ const READ_WITHOUT_DOCUMENTATION = new Set([
   // Keeps the e2e database after a run so a failure can be inspected. An escape
   // hatch somebody types once while debugging, never a deployment setting.
   "E2E_KEEP_DATABASE",
+  // The super administrator `bootstrap-admin` prints, passed from Playwright's
+  // globalSetup to its workers — its own documented channel, since the workers
+  // are processes the runner spawns afterwards. Generated per run, never set by
+  // hand, and gone with the database that teardown drops.
+  "E2E_STAFF_EMAIL",
+  "E2E_STAFF_PASSWORD",
   // Developer-machine overrides for the test and development database scripts
   // (P32-01). Deliberately in neither template, for two reasons: nothing in a
   // deployment ever runs `scripts/testdb.mjs` or `scripts/devdb.mjs`, and

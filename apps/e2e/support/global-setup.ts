@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { startStack, type Stack } from "./stack.js";
 import { accreditSeededCourse, prepareDatabase, KMS_KEY } from "./world.js";
+import { bootstrapSuperAdmin } from "./staff.js";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -39,6 +40,17 @@ export default async function globalSetup(): Promise<void> {
 
   const prepared = prepareDatabase(REPO, superuser);
   await accreditSeededCourse(prepared.superuserUrl);
+
+  /*
+   * The first operator, created the way a real installation creates one, and
+   * handed to the workers through the environment, which is Playwright's own
+   * channel for this: `globalSetup` runs in the runner process and the tests
+   * run in workers it spawns afterwards, so `globalThis` does not reach them
+   * and a module-level variable is a different module instance entirely.
+   */
+  const staff = bootstrapSuperAdmin(REPO, prepared.databaseUrl);
+  process.env["E2E_STAFF_EMAIL"] = staff.email;
+  process.env["E2E_STAFF_PASSWORD"] = staff.password;
 
   globalThis.__dsStack = await startStack({
     repo: REPO,
