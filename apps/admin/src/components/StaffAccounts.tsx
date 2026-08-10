@@ -49,6 +49,14 @@ const ROLES: ReadonlyArray<readonly [Role, string]> = [
 
 export function StaffAccounts(props: {
   client: ApiClient;
+  /**
+   * The signed-in operator's own account id (P38-07).
+   *
+   * Needed to tell their row apart from everybody else's, because the one
+   * action on this screen that must not be offered on your own row is exactly
+   * the one that looks most useful there — see the reset button below.
+   */
+  ownAccountId: string;
   /** The inviter's own customer, or `null` for a super admin who spans them. */
   customerId: string | null;
   /**
@@ -205,11 +213,23 @@ export function StaffAccounts(props: {
                   >
                     {de.staff.signOutEverywhere}
                   </Button>
-                  {/* The lost-phone button (P22-02). Only for an account that
-                      has one to lose, and never for your own — the API refuses
-                      a self-reset, since it would turn a stolen session into a
-                      permanently weakened account. */}
-                  {account.totpEnrolled ? (
+                  {/*
+                    The lost-phone button (P22-02). Only for an account that has
+                    one to lose, and **never for your own**.
+
+                    That second condition was stated in this comment and absent
+                    from the code (P38-07). The API refuses a self-reset —
+                    `canResetSecondFactorOf` returns `self_escalation`, because
+                    a path that does not check policy must not be reachable for
+                    oneself, or a stolen session could permanently strip its own
+                    second factor. So the button rendered on your own row, was
+                    the obvious thing to click, and answered 403 every time.
+
+                    Your own factor is the Sicherheit screen's business, where
+                    removing it is governed by the policy that applies to you
+                    rather than by this unconditional path.
+                  */}
+                  {account.totpEnrolled && account.id !== props.ownAccountId ? (
                     <ConfirmButton
                       label={de.staff.resetSecondFactor}
                       confirmLabel={de.staff.resetSecondFactorConfirm}

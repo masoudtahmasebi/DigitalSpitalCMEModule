@@ -921,6 +921,7 @@ export function Console(props: {
     return headed(
       <StaffAccounts
         client={platformClient}
+        ownAccountId={props.profile.id}
         customerId={props.profile.grants[0]?.customerId ?? null}
         customers={customers}
       />,

@@ -186,8 +186,22 @@ export const de = {
     ownFactorNone: "Nicht eingerichtet.",
     removeOwn: "Eigenen zweiten Faktor entfernen",
     removeOwnConfirm: "Wirklich entfernen",
+    /*
+     * Says what to do next, not only that the door is shut (P38-07).
+     *
+     * The previous wording stopped at "kann nicht entfernt werden", which left
+     * the one person able to change the rule — a super administrator, reading
+     * the screen the rule lives on — with no idea that they could. That is the
+     * whole situation of a sole super administrator replacing their phone: the
+     * reset button on Konten refuses a self-reset by design, nobody else exists
+     * to reset it for them, and the way through is two clicks above this line.
+     */
     removeOwnBlocked:
-      "Für Ihr Konto ist der zweite Faktor verpflichtend und kann nicht entfernt werden.",
+      "Für Ihr Konto ist der zweite Faktor verpflichtend und kann deshalb nicht " +
+      "entfernt werden. Um ihn neu einzurichten — etwa bei einem neuen Gerät —, " +
+      "stellen Sie die Regel Ihres Bereichs oben auf „Freigestellt“, entfernen " +
+      "Sie den Faktor, richten Sie ihn neu ein und stellen Sie die Regel wieder " +
+      "auf „Verpflichtend“.",
     saved: "Gespeichert.",
     loadFailed: "Die Sicherheitseinstellungen konnten nicht geladen werden.",
     saveFailed: "Die Einstellung konnte nicht gespeichert werden.",
