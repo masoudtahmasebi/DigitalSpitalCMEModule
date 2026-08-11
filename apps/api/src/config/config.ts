@@ -1,3 +1,4 @@
+import { stripTrailingSlashes } from "@ds/domain";
 import { z } from "zod";
 
 /**
@@ -164,7 +165,7 @@ const schema = z
       // A trailing slash makes `${origin}/${bucket}/${key}` a double slash, and
       // a double slash is a different key to S3 — the object uploads to one
       // path and 404s from the other.
-      .transform((value) => value.replace(/\/+$/, "")),
+      .transform(stripTrailingSlashes),
     S3_REGION: z.string().default(""),
     S3_BUCKET: z.string().default(""),
     S3_ACCESS_KEY_ID: z.string().default(""),

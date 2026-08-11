@@ -6,6 +6,13 @@
  * randomness — enforced by `purity.test.ts`.
  */
 
+export {
+  joinUrl,
+  lastWhitespaceIndex,
+  stripTrailing,
+  stripTrailingSlashes,
+} from "./url.js";
+
 export type {
   ChapterNode,
   ContentKind,

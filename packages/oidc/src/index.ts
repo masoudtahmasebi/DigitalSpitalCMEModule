@@ -221,5 +221,10 @@ async function sha256Base64Url(value: string): Promise<string> {
 function base64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
+  // The `=+$` below anchors a repetition at the end, which is quadratic in
+  // general (P49-01) — but base64 padding is at most two characters and this is
+  // `btoa`'s own output, so the run is bounded by construction and no caller
+  // can grow it.
+  // eslint-disable-next-line no-restricted-syntax -- bounded: base64 padding
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }

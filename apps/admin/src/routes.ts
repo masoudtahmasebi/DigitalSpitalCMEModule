@@ -35,6 +35,8 @@
  * code.
  */
 
+import { stripTrailingSlashes } from "@ds/domain";
+
 /** Mirrors the `CourseTab` union in `App.tsx`. */
 export type RouteCourseTab =
   "settings" | "presentation" | "structure" | "experts" | "evaluation" | "participants";
@@ -97,7 +99,9 @@ export function encode(route: Route): string {
  * `#passwort-neu?…`) is checked before this is consulted at all.
  */
 export function decode(hash: string): Route | undefined {
-  const path = hash.replace(/^#\/?/u, "").replace(/\/+$/u, "");
+  // `stripTrailingSlashes` rather than `\/+$`, which is quadratic on a long
+  // run of slashes and reads a value straight out of the address bar (P49-01).
+  const path = stripTrailingSlashes(hash.replace(/^#\/?/u, ""));
   if (path === "") return undefined;
 
   // A course, and only if its tab is one that exists: `#/fortbildungen/x/quatsch`
