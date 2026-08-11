@@ -204,7 +204,12 @@ describe("listCourses", () => {
     // an Altersgruppe that each report a non-zero count and land on "keine
     // Fortbildungen". The service has to hand the selection down.
     let seen: Record<string, unknown> | undefined;
+    let listedAt: Date | undefined;
     const repo = fakeRepository({
+      listCourses: async (filter) => {
+        listedAt = filter.now;
+        return { rows: [], total: 0, durations: new Map() };
+      },
       facets: async (selection) => {
         seen = { ...selection };
         return { thema: [], altersgruppe: [] };
@@ -226,6 +231,11 @@ describe("listCourses", () => {
       thema: "ADHS",
       altersgruppe: "Erwachsene",
       deliveryType: ["on_demand"],
+      // The same instant the page was read at (P50-01). Counting facets at a
+      // *later* one would let a course whose validity lapsed between the two
+      // calls be counted and not listed — the same dead end as the wrong
+      // selection, arriving by a different route.
+      now: listedAt,
     });
     // And without the page: a facet count describes the whole result set, not
     // the ten rows currently on screen.

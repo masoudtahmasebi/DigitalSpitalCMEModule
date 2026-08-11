@@ -29,6 +29,7 @@
  */
 
 import {
+  invalidAvailabilityWindow,
   missingCertificateFields,
   sniffFontFormat,
   type CertificateField,
@@ -198,6 +199,28 @@ export class AdminService {
     }
     if (update.validTo !== undefined) {
       patch.validTo = update.validTo === null ? null : new Date(update.validTo);
+    }
+
+    /*
+     * A window that runs backwards is refused, by name (P50-01).
+     *
+     * `invalidBrandingFields` is the precedent and the warning: it was written
+     * so a form could report a rejected value, called by nothing, and the save
+     * answered "Gespeichert." while dropping the field (P41-01). So this one is
+     * called at the only place a window can be written.
+     *
+     * Both ends are read from the *merged* result — the patch where the caller
+     * supplied a value, the stored row where it did not — because a request
+     * that moves only `validTo` can invert a window whose `validFrom` it never
+     * mentions, and validating the patch alone would let it through.
+     */
+    const mergedWindow = {
+      validFrom:
+        patch.validFrom === undefined ? (row.validFrom ?? null) : patch.validFrom,
+      validTo: patch.validTo === undefined ? (row.validTo ?? null) : patch.validTo,
+    };
+    if (invalidAvailabilityWindow(mergedWindow) !== undefined) {
+      throw AppError.badRequest("validTo is before validFrom on course " + slug);
     }
 
     // Accreditation and gating.

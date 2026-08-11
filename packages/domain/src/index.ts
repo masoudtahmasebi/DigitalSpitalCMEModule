@@ -7,6 +7,13 @@
  */
 
 export {
+  courseAvailability,
+  invalidAvailabilityWindow,
+  isCourseOffered,
+} from "./availability.js";
+export type { AvailabilityWindow, CourseAvailability } from "./availability.js";
+
+export {
   joinUrl,
   lastWhitespaceIndex,
   stripTrailing,

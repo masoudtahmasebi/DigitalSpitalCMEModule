@@ -17,6 +17,7 @@ import {
   evaluateSequence,
   isCourseComplete,
   mergeWatchedSegments,
+  isCourseOffered,
   resumePosition,
   seekCeiling,
   orderSources,
@@ -105,9 +106,32 @@ export class LearningService {
   async enrol(slug: string, learner: LearnerContext): Promise<EnrolmentState> {
     const course = await this.requireCourse(slug);
 
-    const existing = await this.repository.findEnrolment(course.id, learner.userId);
+    /*
+     * A course outside its validity window takes no new learners (P50-01).
+     *
+     * Checked here and not only in the catalogue: the list hides it, and a
+     * bookmark, a WordPress embed or a link in an old email reaches this
+     * method without ever having gone through the list.
+     *
+     * **An existing enrolment is deliberately unaffected.** A physician who
+     * started while the course was open keeps their access and their progress:
+     * the compliance settings are already snapshotted onto the enrolment
+     * (P3-01), and revoking a half-finished course is a worse outcome than a
+     * late completion — which the Ärztekammer's own `beginn`/`ende` check
+     * refuses at submission time anyway, loudly, inside the correction window.
+     * If the accreditation rule turns out to require hard cut-off, this is the
+     * one line that changes.
+     */
+    const existingEnrolment = await this.repository.findEnrolment(
+      course.id,
+      learner.userId,
+    );
+    if (existingEnrolment === undefined && !isCourseOffered(course, new Date())) {
+      throw AppError.notFound(`course slug=${slug} is outside its validity window`);
+    }
+
     const enrolment =
-      existing ??
+      existingEnrolment ??
       (await this.repository.createEnrolment({
         customerId: learner.customerId,
         courseId: course.id,

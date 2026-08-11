@@ -41,7 +41,7 @@ behaves this way.
 be rejected** — regardless of what our own deadline logic says. That turns this
 from "which date do we pass?" into "is reporting possible at all?"
 
-### Q2 — Does an emailed PDF certificate satisfy the "Originalstempel" requirement?
+### ~~Q2 — Does an emailed PDF certificate satisfy the "Originalstempel" requirement?~~ — **ANSWERED 11.08: yes**
 
 The Bescheid obliges the Veranstalter to provide each participant with a named
 Teilnahmebescheinigung. We generate it as a PDF, carrying the course's stamp and
@@ -72,7 +72,7 @@ with nothing anywhere saying so.
 
 ## For MEDICE
 
-### Q4 — Rotate the API key in the WordPress plugin · **today**
+### ~~Q4 — Rotate the API key in the WordPress plugin~~ — **DONE 11.08, rotated by MEDICE**
 
 The plugin source you sent contains a **live API key in plaintext**. Anyone with
 a copy of that file has it. Please rotate it and confirm when done.

@@ -42,6 +42,8 @@ const course: CourseComplianceRow = {
   cmePoints: 4,
   cmeCategory: "D",
   vnr: "9999999999999999999",
+  validFrom: null,
+  validTo: null,
 };
 
 const tree: CourseTree = {
