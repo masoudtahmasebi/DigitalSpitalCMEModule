@@ -19,15 +19,29 @@ import {
 const NOW = new Date("2026-07-28T10:00:00Z");
 const CUSTOMER = "22222222-0000-4000-8000-000000000001";
 
+/**
+ * A row whose **deadline** falls roughly `hoursUntilDue` from `NOW`.
+ *
+ * The fixture supplies an `eventEndAt` and lets the service derive the
+ * deadline, because that is what it now does (P58-02) — it used to be handed a
+ * `reportDueAt` and trust it, which is how the alerter and the submission sweep
+ * came to hold two different answers about one statutory date.
+ *
+ * The deadline lands at the end of the Berlin day eight days after the event,
+ * so "48 hours out" is really "the end of the day two days from now". Each
+ * case below is placed comfortably inside its band rather than on the boundary;
+ * the boundary itself is `eiv-alert.test.ts`'s job, against the pure rule.
+ */
 function submission(
   enrolmentId: string,
   hoursUntilDue: number,
   status = "queued",
 ): PendingSubmission {
+  const REPORTING_WINDOW_MS = 8 * 24 * 3_600_000;
   return {
     enrolmentId,
     customerId: CUSTOMER,
-    reportDueAt: new Date(NOW.getTime() + hoursUntilDue * 3_600_000),
+    eventEndAt: new Date(NOW.getTime() + hoursUntilDue * 3_600_000 - REPORTING_WINDOW_MS),
     status,
     attemptCount: 3,
   };
@@ -95,6 +109,28 @@ describe("what gets raised", () => {
     expect(payload).toContain("e1");
   });
 
+  it("follows the event, not a stored deadline that disagrees with it", async () => {
+    /*
+     * P58-02, and the case QA produced by hand: `report_due_at` said yesterday
+     * while `event_end_at` said the window had a week to run. The alerter
+     * raised `overdue, -24h` in the same sweep in which the submission worker
+     * — recomputing from the event — submitted the row perfectly correctly.
+     *
+     * There is now one input and one rule. The fixture cannot even express the
+     * disagreement any more, which is the point: `PendingSubmission` carries
+     * the event, and a stored deadline is not something this service can be
+     * handed.
+     */
+    const { service } = build({
+      pending: [submission("e1", 24 * 7, "queued")],
+    });
+
+    const raised = await service.sweep(NOW);
+
+    // A week of window left: nothing to say, however a column might read.
+    expect(raised).toEqual([]);
+  });
+
   it("still reports a deadline already missed", async () => {
     // Nothing can be done — the reporting window is closed. The alert is the
     // record that it happened, and the record is what stops it being found
@@ -109,7 +145,11 @@ describe("what gets raised", () => {
     const raised = await service.sweep(NOW);
 
     expect(raised.map((alert) => alert.level)).toEqual(["blocked", "overdue"]);
-    expect(raised[0]?.hoursRemaining).toBe(-20);
+    // Negative, not a specific figure: the deadline is the end of a Berlin day
+    // (P58-02), so the exact hour count is a property of that rounding and is
+    // asserted against the pure rule in `eiv-alert.test.ts`. What this case is
+    // about is that a passed deadline is still reported.
+    expect(raised[0]?.hoursRemaining).toBeLessThan(0);
   });
 
   it("wakes somebody the moment the worker gives up, not six days later", async () => {
@@ -125,7 +165,10 @@ describe("what gets raised", () => {
     const raised = await service.sweep(NOW);
 
     expect(raised.map((alert) => alert.level)).toEqual(["blocked"]);
-    expect(raised[0]?.hoursRemaining).toBe(190);
+    // Days from the deadline, which is the whole point: `blocked` does not
+    // wait for the clock. The figure is not asserted to the hour — see the
+    // note in the case above.
+    expect(raised[0]?.hoursRemaining).toBeGreaterThan(48);
     // "EIV deadline blocked" would read as a deadline that is blocked. The two
     // alarms mean different things and the first words decide which one
     // somebody at 03:00 thinks they are looking at.

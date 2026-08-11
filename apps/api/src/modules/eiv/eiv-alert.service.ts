@@ -44,7 +44,7 @@
  * be quietly reset by an UPDATE.
  */
 
-import { dueAlerts, type EivAlert, type EivAlertLevel } from "@ds/domain";
+import { dueAlerts, eivDeadlines, type EivAlert, type EivAlertLevel } from "@ds/domain";
 import { SYSTEM_ACTOR, type AuditServicePort } from "../../audit/audit.service.js";
 
 /** The action recorded once per submission per level. */
@@ -70,7 +70,19 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
 export interface PendingSubmission {
   readonly enrolmentId: string;
   readonly customerId: string;
-  readonly reportDueAt: Date;
+  /**
+   * The Veranstaltungsende the deadline is computed from — not a stored
+   * deadline (P58-02).
+   *
+   * `report_due_at` exists on the row and is deliberately not used: the
+   * submission sweep derives the window from this instant through
+   * `eivDeadlines`, and an alerter reading a materialised copy is a second
+   * answer to a statutory question. QA made the two disagree in a single
+   * sweep, and nothing in the system could say which was right.
+   */
+  readonly eventEndAt: Date;
+  /** When the first Meldung landed, if one has. Opens the correction window. */
+  readonly firstSubmittedAt?: Date;
   readonly status: string;
   readonly attemptCount: number;
 }
@@ -119,7 +131,14 @@ export class EivAlertService {
     const alerts = dueAlerts(
       pending.map((row) => ({
         enrolmentId: row.enrolmentId,
-        reportDueAt: row.reportDueAt,
+        // The same function the submission sweep asks, from the same input.
+        reportDueAt: eivDeadlines({
+          eventEndAt: row.eventEndAt,
+          ...(row.firstSubmittedAt === undefined
+            ? {}
+            : { firstSubmittedAt: row.firstSubmittedAt }),
+          now,
+        }).reportDueAt,
         alreadyAlerted: alerted.get(row.enrolmentId) ?? [],
         willNotRetry: TERMINAL_STATUSES.has(row.status),
       })),
