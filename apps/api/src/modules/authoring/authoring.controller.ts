@@ -146,13 +146,24 @@ export class AuthoringController {
   }
 
   /*
-   * Read-only, and `course_editor` may (P38-01): creating a course means
-   * choosing the project it belongs to, so a role that may create courses and
-   * may not list projects cannot create one. Reading the list is not managing
-   * it — every mutating route below stays with `AUTHOR_ROLES`.
+   * Read-only, and three roles below `customer_admin` may (P38-01, P41-02).
+   *
+   * `course_editor`, because creating a course means choosing the project it
+   * belongs to — a role that may create courses and may not list projects
+   * cannot create one.
+   *
+   * `department_admin`, because the console draws **Organisation** for anybody
+   * holding the `project` capability and that screen loads departments *and*
+   * projects. They could read the first and not the second, so the screen
+   * their role entitles them to could only ever render an error. Found by the
+   * role-against-route sweep in `scripts/role-matrix.mjs`, which exists
+   * because this is the third time this shape has appeared.
+   *
+   * Reading the list is not managing it — every mutating route below stays
+   * with `AUTHOR_ROLES`.
    */
   @Get("projects")
-  @Roles(...COURSE_AUTHOR_ROLES)
+  @Roles("department_admin", ...COURSE_AUTHOR_ROLES)
   async listProjects(@TenantDb() db: Db) {
     return this.service(db).listProjects();
   }

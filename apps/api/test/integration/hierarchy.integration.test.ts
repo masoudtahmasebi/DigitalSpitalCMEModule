@@ -21,8 +21,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Pool } from "pg";
+import Redis from "ioredis";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { hash } from "@node-rs/argon2";
@@ -1743,6 +1744,26 @@ describe("a credential token is single-use, expiring and revocable (P39-01)", ()
  * thing to test and the entire security property.
  */
 describe("asking for a password-reset link (P40-02)", () => {
+  /*
+   * The limiter is three a minute per IP, every request in every suite arrives
+   * from 127.0.0.1, and Redis outlives a run. So without this the first ask
+   * here inherits whatever the last run spent — which is how these four tests
+   * failed with 429 on the second run and passed on the first, the signature of
+   * shared state rather than a bug in either.
+   *
+   * Cleared per test rather than once, because the three asks below would
+   * otherwise spend the whole allowance between them.
+   */
+  beforeEach(async () => {
+    const redis = new Redis(process.env["REDIS_URL"] ?? "redis://127.0.0.1:6379");
+    try {
+      const keys = await redis.keys("ratelimit:staffPasswordReset:*");
+      if (keys.length > 0) await redis.del(...keys);
+    } finally {
+      redis.disconnect();
+    }
+  });
+
   async function ask(email: string): Promise<number> {
     const { response } = await post("/admin/auth/password-reset", { email });
     return response.status;
@@ -1904,5 +1925,106 @@ describe("configuring where platform mail comes from (P40-01)", () => {
       fromName: null,
     });
     expect(status).toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * A department administrator can open every screen their role is drawn (P41-02).
+ *
+ * Found by `scripts/role-matrix.mjs`, not by a person clicking — which is the
+ * point of that script. The capability matrix grants `department_admin`
+ * `project`, `learner_record` and `certificate`, so the console draws
+ * Organisation, Teilnehmende and Bescheinigungen for them; three of the routes
+ * those screens load on mount refused the role, so each could only render an
+ * error.
+ *
+ * The corrections stay refused, and that half is asserted here too: the fix was
+ * to open the *reads*, and a fix that quietly opened the writes as well would
+ * let a department administrator withdraw a Teilnahmebescheinigung.
+ */
+describe("a department administrator's screens actually load (P41-02)", () => {
+  let departmental: StaffSession;
+  let projectSlug: string;
+
+  beforeAll(async () => {
+    const departmentId = await insert(
+      "INSERT INTO departments (customer_id, slug, name) VALUES ($1,$2,$3) RETURNING id",
+      [existingCustomerId, `dept-abteilung-${RUN}`, "Abteilung"],
+    );
+    projectSlug = `abteilung-projekt-${RUN}`;
+    await insert(
+      `INSERT INTO projects (customer_id, department_id, slug, name)
+       VALUES ($1,$2,$3,$4) RETURNING id`,
+      [existingCustomerId, departmentId, projectSlug, "Abteilungsprojekt"],
+    );
+
+    const email = `dept-${randomUUID().slice(0, 8)}@ds.test`;
+    const passwordHash = await hash(PASSWORD, { algorithm: 2 });
+    const id = await insert(
+      "INSERT INTO admin_users (email, display_name, password_hash) VALUES ($1,$2,$3) RETURNING id",
+      [email, "Abteilungsleitung", passwordHash],
+    );
+    // `department_admin` is the one role whose grant carries a department, and
+    // the CHECK constraint requires it.
+    await seedPool.query(
+      `INSERT INTO admin_user_roles (admin_user_id, role, customer_id, department_id)
+       VALUES ($1,'department_admin',$2,$3)`,
+      [id, existingCustomerId, departmentId],
+    );
+
+    departmental = await signIn(email);
+  }, 30_000);
+
+  it("opens Organisation — both of its loads, not just the first", async () => {
+    // Departments passed and projects 403'd, so the screen errored on a read it
+    // needed rather than on the one it was refused.
+    expect(
+      (await asStaffIn(departmental, projectSlug, "GET", "/admin/departments")).status,
+    ).toBe(200);
+    expect(
+      (await asStaffIn(departmental, projectSlug, "GET", "/admin/projects")).status,
+    ).toBe(200);
+  });
+
+  it("opens Teilnehmende and Bescheinigungen", async () => {
+    expect(
+      (await asStaffIn(departmental, projectSlug, "GET", "/admin/learners")).status,
+    ).toBe(200);
+    expect(
+      (await asStaffIn(departmental, projectSlug, "GET", "/admin/certificates")).status,
+    ).toBe(200);
+  });
+
+  it("still may not correct a physician's name", async () => {
+    const result = await asStaffIn(
+      departmental,
+      projectSlug,
+      "PATCH",
+      `/admin/learners/${randomUUID()}/name`,
+      { name: "Neuer Name" },
+    );
+    expect(result.status).toBe(403);
+  });
+
+  it("still may not withdraw a certificate", async () => {
+    const result = await asStaffIn(
+      departmental,
+      projectSlug,
+      "POST",
+      `/admin/certificates/${randomUUID()}/revoke`,
+      {},
+    );
+    expect(result.status).toBe(403);
+  });
+
+  it("still may not create a project it could now list", async () => {
+    const result = await asStaffIn(departmental, projectSlug, "POST", "/admin/projects", {
+      departmentSlug: `dept-abteilung-${RUN}`,
+      slug: `dept-verboten-${RUN}`,
+      name: "Verboten",
+    });
+    expect(result.status).toBe(403);
   });
 });

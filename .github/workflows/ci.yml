@@ -460,6 +460,16 @@ jobs:
       - name: Configuration drift
         run: node scripts/env-audit.mjs
 
+      # A screen the console draws for a role the API refuses. Three of these
+      # shipped in one week and every one was found by a person clicking:
+      # `course_editor` met "keine Berechtigung" on its first request, and its
+      # Organisation entry — then `department_admin`'s, then that role's
+      # Teilnehmende and Bescheinigungen — could only ever render an error.
+      # Four roles by nine screens is thirty-six answers, all derivable from
+      # source, and none of them worth finding in production.
+      - name: Screens every role can actually open
+        run: node scripts/role-matrix.mjs
+
       - name: Scan for committed secrets
         uses: gitleaks/gitleaks-action@v2
         env:

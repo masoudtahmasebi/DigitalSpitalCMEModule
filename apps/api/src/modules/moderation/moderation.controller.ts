@@ -9,10 +9,18 @@
  * resolved a `Principal` — which since ADR-0012 may be a staff account or a
  * learner-plane administrator, and carries `identity` to say which.
  *
- * `customer_admin` and `super_admin` only. A `department_admin` may run a
- * department and a `course_editor` may write courses; neither has business
- * correcting a physician's name or erasing a subject, and the capability model
- * says so (`learner_record` is not in their set).
+ * **Corrections** are `customer_admin` and `super_admin` only. A
+ * `department_admin` may run a department and a `course_editor` may write
+ * courses; neither has business correcting a physician's name, erasing a
+ * subject or withdrawing a Teilnahmebescheinigung.
+ *
+ * **Reads** also accept `department_admin` (P41-02). This paragraph used to say
+ * `learner_record` "is not in their set", which was simply false — the matrix
+ * grants them `learner_record` and `certificate`, on the reasoning that they
+ * run a department and the people in it. The console believed the matrix and
+ * drew both screens; the API believed this comment and refused them. A comment
+ * that disagrees with the code it describes is how a screen comes to exist that
+ * nobody can open.
  *
  * ## What no response here contains
  *
@@ -50,6 +58,28 @@ import { ModerationService, type ModeratorContext } from "./moderation.service.j
 
 const MODERATOR_ROLES = ["customer_admin", "super_admin"] as const;
 
+/**
+ * Who may **read** a department's participation records (P41-02).
+ *
+ * `department_admin` is added here and to nothing below it, and the split is
+ * the point.
+ *
+ * The domain's capability matrix grants them `learner_record` and
+ * `certificate` — deliberately, and its own comment says why: they run "one
+ * department: projects and courses within it, **and the people who take
+ * them**". The console draws Teilnehmende and Bescheinigungen on that basis.
+ * These two reads refused them, so both screens could only ever render an
+ * error, which is the third instance of that shape this week (P38-02) and the
+ * reason `scripts/role-matrix.mjs` now exists.
+ *
+ * The corrections stay `MODERATOR_ROLES`. Changing a physician's name,
+ * erasing a subject and withdrawing a Teilnahmebescheinigung are acts against
+ * a CME record with a chamber on the other end of it, and the header's
+ * reasoning holds for those even though it was wrong about the matrix: a
+ * department administrator has no business doing them, and now cannot.
+ */
+const RECORD_READERS = ["department_admin", ...MODERATOR_ROLES] as const;
+
 const NameCorrection = z.object({
   name: z.string().trim().min(1).max(300),
 });
@@ -68,13 +98,13 @@ export class ModerationController {
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
   @Get("learners")
-  @Roles(...MODERATOR_ROLES)
+  @Roles(...RECORD_READERS)
   listLearners(@Query("course") course: string | undefined, @TenantDb() db: Db) {
     return this.service(db).listLearners(emptyToUndefined(course));
   }
 
   @Get("certificates")
-  @Roles(...MODERATOR_ROLES)
+  @Roles(...RECORD_READERS)
   listCertificates(@Query("course") course: string | undefined, @TenantDb() db: Db) {
     return this.service(db).listCertificates(emptyToUndefined(course));
   }

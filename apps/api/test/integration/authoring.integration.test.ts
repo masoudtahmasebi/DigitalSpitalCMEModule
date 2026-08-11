@@ -759,15 +759,49 @@ describe("project settings", () => {
     expect(body.find((p: any) => p.slug === projectSlug).hasSmtpPassword).toBe(true);
   });
 
-  it("drops a branding value that fails its grammar rather than storing it", async () => {
-    await asAdmin("PATCH", `/admin/projects/${projectSlug}`, {
+  it("refuses a branding value that fails its grammar, and stores none of it", async () => {
+    /*
+     * The payload is a CSS injection — `primaryColor` closing its declaration
+     * and opening a `background: url(…)`. Two properties matter and this used
+     * to assert only the first:
+     *
+     * 1. **It is not stored.** That was true before and is still true.
+     * 2. **The operator is told.** That was not. `parseBranding` dropped the
+     *    field, the save answered 200, and the console said "Gespeichert." —
+     *    so somebody who mistyped a hero image URL was told it worked and
+     *    found the field empty later, with nothing to act on (P41-01).
+     *
+     * The whole request is now refused rather than partly applied: a save that
+     * silently keeps some of what was submitted leaves the operator guessing
+     * which half.
+     */
+    const refused = await asAdmin("PATCH", `/admin/projects/${projectSlug}`, {
       branding: { primaryColor: "red; background: url(evil)", cornerRadiusPx: 8 },
     });
+    expect(refused.status).toBe(422);
+    // The field's *name*, never the value — echoing an injection payload back
+    // into a message a browser renders is how a refusal becomes the vector.
+    expect(JSON.stringify(refused.body)).toContain("primaryColor");
+    expect(JSON.stringify(refused.body)).not.toContain("url(evil)");
 
     const { body } = await asAdmin("GET", "/admin/projects");
     const branding = body.find((p: any) => p.slug === projectSlug).branding;
-
     expect(branding.primaryColor).toBeUndefined();
+    // Nothing from the refused request landed, including the valid half.
+    expect(branding.cornerRadiusPx).toBeUndefined();
+  });
+
+  it("accepts the same fields when every one of them is valid", async () => {
+    // The other half of the refusal: this must not have made valid branding
+    // unsaveable, which a too-eager validator easily would.
+    const saved = await asAdmin("PATCH", `/admin/projects/${projectSlug}`, {
+      branding: { primaryColor: "#E4003D", cornerRadiusPx: 8 },
+    });
+    expect(saved.status).toBe(200);
+
+    const { body } = await asAdmin("GET", "/admin/projects");
+    const branding = body.find((p: any) => p.slug === projectSlug).branding;
+    expect(branding.primaryColor).toBe("#E4003D");
     expect(branding.cornerRadiusPx).toBe(8);
   });
 

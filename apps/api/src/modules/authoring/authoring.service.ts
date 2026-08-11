@@ -32,6 +32,7 @@ import {
   type ContentProblem,
   correctOptionCount,
   keyBelongsToCustomer,
+  invalidBrandingFields,
   parseBranding,
   questionProblems,
   storageKeyOf,
@@ -203,6 +204,29 @@ export class AuthoringService {
     assign(patch, "smtpFromName", update.smtpFromName);
 
     if (update.branding !== undefined) {
+      /*
+       * Refuse what would be dropped, rather than dropping it quietly (P41-01).
+       *
+       * `parseBranding` discards a field it cannot use, because a learner's
+       * screen has to render whatever is stored and a half-valid blob must not
+       * blank a catalogue. That is right for the read path and wrong for this
+       * one: an operator who pasted a hero image URL the grammar refuses got
+       * "Gespeichert.", and the field was simply gone the next time they
+       * looked.
+       *
+       * `invalidBrandingFields` was written for exactly this — its own comment
+       * says *"an admin saving a value deserves to be told it was rejected,
+       * which is a different question and gets a different function"* — and
+       * nothing called it. Found by the sweep in `scripts/unused-rules.mjs`.
+       */
+      const invalid = invalidBrandingFields(update.branding);
+      if (invalid.length > 0) {
+        throw new AppError(
+          "validation",
+          `invalid branding fields: ${invalid.join(", ")}`,
+          `Diese Angaben konnten nicht gespeichert werden: ${invalid.join(", ")}. Bitte prüfen Sie die Schreibweise — Bild- und Linkadressen müssen mit https:// beginnen.`,
+        );
+      }
       patch.branding = parseBranding(update.branding);
     }
     if (update.smtpPassword !== undefined) {
