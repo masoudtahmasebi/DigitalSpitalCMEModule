@@ -158,6 +158,31 @@ export class Metrics {
     lines.push("# TYPE ds_metrics_series_overflow gauge");
     lines.push(`ds_metrics_series_overflow ${this.overflowed ? 1 : 0}`);
 
+    /*
+     * Which commit is answering (P42-03).
+     *
+     * "The feature is missing" and "the feature is not on the server you are
+     * looking at" are indistinguishable from a browser, and the second one has
+     * now cost two rounds of investigation. A running system could not be asked
+     * what it was built from: the deploy log says `Deployed <sha>` and then
+     * scrolls away.
+     *
+     * **Here and not on `/health`,** which is public — a load balancer cannot
+     * present a bearer token. A version string on a public endpoint is a
+     * fingerprint that tells anyone which vulnerabilities to try. `/metrics` is
+     * `@Public()` in the same sense but is not routed from the edge
+     * (`infra/deploy/Caddyfile`), so reaching it needs a place inside the
+     * Docker network — which an operator has and the internet does not.
+     *
+     * One series, constant labels, and the `_info` gauge-at-1 convention that
+     * `node_exporter` and `prom-client` both use, so it joins in a dashboard.
+     */
+    lines.push("# HELP ds_build_info The commit this process was built from.");
+    lines.push("# TYPE ds_build_info gauge");
+    lines.push(
+      `ds_build_info{commit="${escapeLabel(process.env["DS_COMMIT"] ?? "unknown")}"} 1`,
+    );
+
     return `${lines.join("\n")}\n`;
   }
 }

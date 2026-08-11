@@ -114,6 +114,10 @@ services:
     environment:
       NODE_ENV: production
       API_PORT: 3000
+      # The commit the image was built from, so a running process can be asked
+      # what it is rather than only the deploy log saying so once (P42-03).
+      # Surfaced as `ds_build_info` on /metrics, which the edge does not route.
+      DS_COMMIT: ${DS_COMMIT}
       # `_URL` — the percent-encoded form. `openssl rand -base64 32` emits `/`,
       # and a `/` in a URL's userinfo terminates the authority component, so the
       # raw value produces a connection string the client rejects as invalid.

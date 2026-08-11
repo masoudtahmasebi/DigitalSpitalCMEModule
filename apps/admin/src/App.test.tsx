@@ -47,6 +47,13 @@ afterEach(cleanup);
 // in every case that matters.
 afterEach(() => window.localStorage.clear());
 
+// Same argument, for the address bar. Since P42-01 the console writes its screen
+// into the fragment, and jsdom keeps one URL for the whole file — so a test that
+// navigated would leave the next one mounting on that screen instead of the
+// course list. This surfaced as "Neue Fortbildung is not on the page", which
+// reads like a rendering bug and is not one.
+afterEach(() => window.history.replaceState(null, "", "/"));
+
 const SUPER_ADMIN: StaffProfile = {
   id: "admin-1",
   email: "testing@digitalspital.de",
@@ -385,6 +392,72 @@ describe("every screen renders inside the layout (P22-09)", () => {
         expect(layoutIsPresent(), `${label} rendered outside the layout`).toBe(true),
       );
     }
+  });
+});
+
+describe("the screen is in the address bar (P42-01)", () => {
+  /**
+   * The reported bug: *"in the admin panel, with page changes, the route does
+   * not change"*.
+   *
+   * `routes.test.ts` covers `encode`/`decode` exhaustively, and would have
+   * passed on the broken console — because the console never called them. So
+   * these assert the wiring rather than the functions: what the address bar says
+   * after a click, and what is drawn when the address bar says it first.
+   *
+   * The three properties are the three things an operator lost: a linkable URL,
+   * a reload that keeps your place, and a back button that moves within the
+   * console instead of leaving it.
+   */
+  async function openConsole() {
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    const admin = fakeClient({ adminListCourses: vi.fn().mockResolvedValue([]) });
+    renderConsole({ admin, platform });
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Kunden" })).toBeTruthy(),
+    );
+  }
+
+  it("writes the screen into the fragment when the operator navigates", async () => {
+    await openConsole();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Konten" })[0]!);
+    await waitFor(() => expect(window.location.hash).toBe("#/konten"));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Sicherheit" })[0]!);
+    await waitFor(() => expect(window.location.hash).toBe("#/sicherheit"));
+  });
+
+  it("opens the screen the fragment names, so a reload keeps your place", async () => {
+    // The half that a click test cannot reach: mounting *at* a route. Without
+    // it the console could write fragments it then ignored on load, which is
+    // worse than no fragment — the URL would be confidently wrong.
+    window.history.replaceState(null, "", "#/bescheinigungen");
+    await openConsole();
+
+    await waitFor(() =>
+      expect(screen.getAllByRole("heading", { name: "Bescheinigungen" }).length).toBe(1),
+    );
+  });
+
+  it("moves back within the console rather than out of it", async () => {
+    await openConsole();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Konten" })[0]!);
+    await waitFor(() => expect(window.location.hash).toBe("#/konten"));
+
+    // jsdom does not run history traversal, so the event the browser would fire
+    // is fired here. What is under test is the listener, not jsdom's history.
+    window.history.replaceState(null, "", "#/teilnehmende");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+
+    await waitFor(() =>
+      expect(screen.getAllByRole("heading", { name: "Teilnehmende" }).length).toBe(1),
+    );
   });
 });
 

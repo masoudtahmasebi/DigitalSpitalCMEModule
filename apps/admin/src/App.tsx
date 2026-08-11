@@ -62,6 +62,7 @@ import { StaffAccounts } from "./components/StaffAccounts.js";
 import { Security } from "./components/Security.js";
 import { SignIn } from "./components/SignIn.js";
 import { forgetHash, NewPassword, tokenFromHash } from "./components/NewPassword.js";
+import { decode, encode, type Route } from "./routes.js";
 
 export function App() {
   const config = useMemo(() => readConfig(), []);
@@ -580,7 +581,49 @@ export function Console(props: {
     [makePlatform, props.config, props.onExpired],
   );
 
-  const [view, setView] = useState<View>({ kind: "courses" });
+  /*
+   * The screen, kept in the address bar (P42-01).
+   *
+   * `view` used to be plain state, so every screen shared one URL: back left
+   * the console, reload lost your place, and no screen could be linked to.
+   *
+   * `setView` still looks like `useState`'s setter to every call site — there
+   * are twenty of them — and additionally pushes a history entry, which is what
+   * makes the browser's back button mean "the screen before" rather than "the
+   * page before this app".
+   */
+  const [view, setViewState] = useState<View>(
+    () =>
+      (decode(typeof window === "undefined" ? "" : window.location.hash) as
+        View | undefined) ?? { kind: "courses" },
+  );
+
+  const setView = useCallback((next: View) => {
+    setViewState(next);
+    if (typeof window !== "undefined") {
+      const target = encode(next as Route);
+      // Guarded: `setView` is called on some paths that are already at the
+      // route (a tab re-selected, a list refreshed), and pushing a duplicate
+      // entry would make the back button need two presses to do one thing.
+      if (window.location.hash !== target) window.history.pushState(null, "", target);
+    }
+  }, []);
+
+  /*
+   * The back and forward buttons.
+   *
+   * `popstate` is the only signal a browser gives for them, and without this
+   * the URL would change while the screen did not — which is worse than the
+   * original defect, because the address bar would then be lying.
+   */
+  useEffect(() => {
+    function onPop(): void {
+      const route = decode(window.location.hash) as View | undefined;
+      setViewState(route ?? { kind: "courses" });
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   /*
    * Whether the collapsed sidebar is showing (P30-02). Below `md` only —

@@ -195,7 +195,112 @@ Where documentation goes, when you add something:
 A file header explains **why this file exists and what would go wrong without
 it**. It is not a summary of the code below it — that is what the code is for.
 
-## 9. Interim ticket IDs
+## 9. Standing checks — the failures that keep recurring
+
+Everything in this section was learned the same way: **the client found it by
+clicking, and it was derivable from source.** Each entry names the shape, the
+mechanical check, and the instance that earned it. Run the checks; do not wait
+to be told.
+
+### 9.1 A green gate is only evidence if it could have been red
+
+The recurring root cause, in three forms:
+
+| Form                                                  | Instance                                                                                                                                                          |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The check is not run where the work happens           | `check:sdk` lived only in CI; two commits pushed with a 195-line-stale SDK because `build` compiles the generated file and only `generate` re-derives it (P41-03) |
+| The check silently covers less than it claims         | `role-matrix.mjs` parsed five of nine screens and printed _"every drawn screen loads"_ (P41-02)                                                                   |
+| The check is green because of what it is not scanning | gitleaks passed on a narrow ref range (P33-02); the integration suite's tally passed because it was asserting harness state (P32-02)                              |
+
+**So:** after writing a check, break the thing it checks and watch it fail. If
+it cannot go red, it is not evidence. Two green runs is not proof — P32-01
+recorded "verified by running twice" and the third run failed.
+
+### 9.2 Never offer what the system will refuse
+
+A control that can only produce an error is worse than an absent one: it looks
+like a decision, and the person clicking it has no way to know it never could
+have worked.
+
+- `course_editor` was declared in `@ds/domain`, assignable in the console, and
+  accepted by **no route** (P38-02).
+- The Konten screen rendered "Zwei-Faktor zurücksetzen" on your own row, where
+  the API refuses self-reset by design — and the comment above it already said
+  "never for your own" (P38-07).
+- `department_admin` was drawn three screens whose mount-time reads refused it
+  (P41-02).
+
+**Check:** `pnpm check:roles`. It derives every role × screen answer from the
+capability matrix, the console's `NAV` and the `@Roles` decorators.
+
+### 9.3 A rule written is not a rule enforced
+
+`packages/domain` has near-total coverage, which makes a rule there _feel_ done.
+It is half done: nothing in the domain calls anything.
+
+- `inviteStatus` / `resetStatus` — expiry, single-use, revocation — exported,
+  exhaustively unit-tested, called from nowhere. An invitation link was a
+  permanent replayable key to a console account (P39-01).
+- `invalidBrandingFields`, written so a form could report a rejected value,
+  called by nothing: the save dropped the field and answered "Gespeichert."
+  (P41-01).
+
+**Check:** `node scripts/unused-rules.mjs`. A hit is not automatically a bug —
+somebody has to look, which is more than was happening.
+
+### 9.4 Say what the thing is, in the words of the person holding it
+
+- The invitation screen rendered a 43-character token under a sentence
+  beginning "Dieser **Link**". It was tried as a password, because nothing said
+  what else it could be (P40-05).
+- "Für Ihr Konto ist der zweite Faktor verpflichtend und kann nicht entfernt
+  werden" was true and left the one person able to change that rule with no
+  idea they could (P38-07).
+
+**Check:** for every affordance, ask _what does the person do next, and does the
+screen say so?_ Where an action is deliberately impossible, say why at the point
+somebody looks for it — an absent field reads as an unfinished feature.
+
+### 9.5 An answer must not be an oracle
+
+Enumeration is the recurring risk on a platform whose accounts are named people
+at a named company, and whose participants are physicians enrolled with a named
+pharmaceutical company.
+
+- Password reset answers 202 for unknown address, disabled account, federated
+  project and successful send alike — and mints no token when it cannot send, so
+  the _work done_ does not differ either (P40).
+- A reset link's origin comes from the request checked against
+  `ALLOWED_ORIGINS`, never the body: otherwise a caller names the host and a
+  real token lands in a real inbox pointing at their page.
+- An error message names invalid **fields**, never their values — the case that
+  exercises branding validation is a CSS injection (P41-01).
+
+### 9.6 RLS makes a missing tenant context look like missing data
+
+`projects` is under FORCE ROW LEVEL SECURITY. Read on the bare pool it matches
+zero rows, and a repository method that maps `rows[0]` to nulls turns that into
+"not configured" — so a correctly configured project silently sent nothing while
+the endpoint answered 202 (P40-03). The same mistake is documented on
+`findParticipant` one method up.
+
+**Check:** any repository read of a tenant-scoped table must be inside
+`runInTenant`. If a method can return an all-null shape, that shape must not be
+indistinguishable from a legitimate "unset".
+
+### 9.7 Fix the class, not the instance
+
+When a report arrives, the question is not "where is this bug" but **"what else
+has this shape, and what would have found it?"** Three of the entries above
+became scripts in `scripts/` and steps in `pnpm verify`; the rest became tests
+whose failure mode is stated in their own names.
+
+`pnpm verify` is the local equivalent of CI and must stay that way. A check that
+runs only in CI is a check the person writing the code does not run.
+
+---
+
+## 10. Interim ticket IDs
 
 Jira project **DEP** is not yet populated. Until it is, tasks use the internal
 IDs assigned in `docs/backlog/` (`P0-01`, `P0-02`, …) and commits use those IDs

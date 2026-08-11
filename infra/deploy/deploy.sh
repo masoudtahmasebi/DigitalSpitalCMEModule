@@ -569,3 +569,46 @@ log "  API     https://${API_DOMAIN}"
 log "  Admin   https://${ADMIN_DOMAIN}"
 log "  Portal  https://${PORTAL_DOMAIN}"
 log "  Widget  ${WIDGET_URL}"
+
+# ---------------------------------------------------------------------------
+# 7. Which tenant paths this installation actually serves (P42-02)
+# ---------------------------------------------------------------------------
+#
+# The reported problem: `https://…/medice` answered "Diesen Bereich gibt es
+# nicht", and `GET /tenants/medice` answered `{"kind":"unknown"}`, on an
+# installation where the MEDICE seed exists in the repository and had simply
+# never been run on this host.
+#
+# Which is correct behaviour from every component and useless to the person
+# looking at it. The portal cannot say more than "no such tenant" — naming the
+# tenants that *do* exist would be an oracle for enumerating customers to
+# anyone who visits (CLAUDE.md §9.5) — so the place that can answer is here,
+# where the operator already is and is already trusted.
+#
+# Local projects only. A Keycloak-bound project is reached through the
+# customer's own site (MEDICE's WordPress plugin), not by a path on the portal,
+# so listing it here would advertise a URL that does not work — the failure this
+# whole section exists to stop.
+#
+# `|| true` throughout, and never a failure: a deploy that succeeded must not
+# report failure because a report could not be produced.
+if [[ "$RUN_MIGRATIONS" == "1" ]]; then
+  tenants="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
+    psql -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
+    -c "SELECT string_agg(slug, ' ' ORDER BY slug)
+          FROM projects
+         WHERE identity_provider = 'local'" \
+    2>/dev/null | tr -d '\n' || true)"
+
+  if [[ -n "$tenants" ]]; then
+    log "Tenant paths on the portal:"
+    for slug in $tenants; do
+      log "  https://${PORTAL_DOMAIN}/${slug}"
+    done
+  else
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "No project uses local sign-in, so https://${PORTAL_DOMAIN}/<tenant> answers 'Diesen Bereich gibt es nicht' for every path." >&2
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "Create one in the console, or run a seed: ./dsc seed medice" >&2
+  fi
+fi

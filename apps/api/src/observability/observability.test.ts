@@ -247,4 +247,28 @@ describe("metrics", () => {
   it("starts empty and still renders valid output", () => {
     expect(new Metrics().render()).toContain("# TYPE ds_http_requests_total counter");
   });
+
+  it("names the commit it was built from (P42-03)", () => {
+    const was = process.env["DS_COMMIT"];
+    process.env["DS_COMMIT"] = "a1b2c3d";
+    try {
+      expect(new Metrics().render()).toContain('ds_build_info{commit="a1b2c3d"} 1');
+    } finally {
+      if (was === undefined) delete process.env["DS_COMMIT"];
+      else process.env["DS_COMMIT"] = was;
+    }
+  });
+
+  it("says 'unknown' rather than omitting the series when unset", () => {
+    // A missing series and a series saying `unknown` look the same on a graph
+    // and are not the same thing: the second says the process was asked and
+    // did not know, which is the case on a locally-run image.
+    const was = process.env["DS_COMMIT"];
+    delete process.env["DS_COMMIT"];
+    try {
+      expect(new Metrics().render()).toContain('ds_build_info{commit="unknown"} 1');
+    } finally {
+      if (was !== undefined) process.env["DS_COMMIT"] = was;
+    }
+  });
 });
