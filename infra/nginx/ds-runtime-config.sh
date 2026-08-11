@@ -127,6 +127,12 @@ emit apiBase "${DS_API_BASE:-}" required
 # back.
 emit projectSlug "${DS_PROJECT_SLUG:-}" optional
 
+# The commit this bundle was built from (P46-01). Optional, and `unknown` in
+# the footer when absent: a developer running `pnpm dev` has no image and no
+# commit, and refusing to start over a diagnostic field would be the P44-01
+# mistake again — a required value nothing supplies.
+emit commit "${DS_COMMIT:-}" optional
+
 # The portal's Keycloak client. Absent in the admin console's container, which
 # has not spoken to Keycloak since P12-06 (ADR-0012) — so these are optional
 # here rather than duplicated into a second, nearly identical script.

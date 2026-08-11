@@ -118,6 +118,19 @@ export interface CourseCompleteDetail {
   readonly completedAt: string;
 }
 
+/**
+ * Replaced at build time by Vite's `define` (see `vite.config.ts`).
+ *
+ * Declared rather than imported: there is no module to import from, and a
+ * `declare const` is what makes the substitution visible to TypeScript instead
+ * of an `any` nobody would notice going missing.
+ */
+declare const __DS_WIDGET_BUILD__: string;
+
+/** `unknown` when built without `DS_COMMIT` — a `pnpm dev` bundle. */
+const WIDGET_BUILD =
+  typeof __DS_WIDGET_BUILD__ === "string" ? __DS_WIDGET_BUILD__ : "unknown";
+
 export class DsLmsElement extends HTMLElement {
   #tokenProvider: TokenProvider | undefined;
   #root: Root | undefined;
@@ -174,6 +187,22 @@ export class DsLmsElement extends HTMLElement {
 
   connectedCallback(): void {
     if (this.#root !== undefined) return;
+
+    /*
+     * Which build of the widget is on this page (P46-01).
+     *
+     * An attribute on the host element rather than visible chrome, because
+     * this element renders inside a *customer's* page — MEDICE's WordPress
+     * site — and a version line under their course is our diagnostic printed
+     * on their layout. `document.querySelector("ds-lms").dataset.dsBuild` is
+     * as reachable as a footer for the person who needs it, and invisible to
+     * the physician who does not.
+     *
+     * Set before the shadow root exists, so it is present even on the branches
+     * that render "nicht korrekt eingebunden" and never call the API — which
+     * are exactly the states somebody asks "which build is this?" about.
+     */
+    this.dataset["dsBuild"] = WIDGET_BUILD;
 
     // Must run before anything reads the provider.
     this.#upgradeProperty("tokenProvider");

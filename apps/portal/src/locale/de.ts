@@ -51,6 +51,16 @@ export const de = {
       "Dieser Link ist nicht mehr gültig. Links lassen sich einmal verwenden und laufen ab — fordern Sie über „Passwort vergessen?“ einen neuen an.",
   },
 
+  /**
+   * The build footer (P46-01). The commit itself is never translated — it has
+   * to match `docker images` and the deploy log character for character.
+   */
+  build: {
+    portal: "Portal",
+    api: "API",
+    skew: "Unterschiedliche Stände — bitte erneut deployen.",
+  },
+
   auth: {
     signIn: "Anmelden",
     signOut: "Abmelden",

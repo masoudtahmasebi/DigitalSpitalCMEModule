@@ -240,6 +240,11 @@ services:
     restart: unless-stopped
     environment:
       DS_API_BASE: ${DS_ADMIN_API_BASE}
+      # Which build this bundle is, shown in its own footer beside the
+      # API's (P46-01). Same value, same source as the image tag — so a
+      # frontend serving an older build than the API it calls is visible
+      # by looking at the page rather than by asking somebody with SSH.
+      DS_COMMIT: ${DS_COMMIT}
     networks: [internal]
 
   # The platform's own learner frontend. A host adapter like the WordPress
@@ -257,6 +262,11 @@ services:
     restart: unless-stopped
     environment:
       DS_API_BASE: ${DS_PORTAL_API_BASE}
+      # Which build this bundle is, shown in its own footer beside the
+      # API's (P46-01). Same value, same source as the image tag — so a
+      # frontend serving an older build than the API it calls is visible
+      # by looking at the page rather than by asking somebody with SSH.
+      DS_COMMIT: ${DS_COMMIT}
       # The portal's own Keycloak client — a learner-facing public client, not
       # the console's. The console has not spoken to Keycloak since P12-06
       # (ADR-0012), which is why only this service gets these three.
@@ -270,6 +280,12 @@ services:
       context: ../..
       dockerfile: Dockerfile
       target: widget
+      args:
+        # Baked in, unlike the console's and the portal's: the widget is one
+        # `.js` file in somebody else's page, with no /config.js beside it to
+        # read at container start (P46-01). It surfaces as `data-ds-build` on
+        # the mounted element.
+        DS_COMMIT: ${DS_COMMIT}
     restart: unless-stopped
     networks: [internal]
 

@@ -62,3 +62,16 @@ export function readConfig(): PortalConfig | undefined {
   const complete = Object.values(config).every((value) => value !== "");
   return complete ? config : undefined;
 }
+
+/**
+ * The commit this bundle was built from, for the footer (P46-01).
+ *
+ * **Deliberately not a field of `PortalConfig`.** `readConfig` returns
+ * `undefined` when any value is empty and the portal renders "misconfigured",
+ * which is right for `apiBase` and wrong for a diagnostic: there is no
+ * `DS_COMMIT` under `pnpm dev`, and a portal that refused to render because it
+ * did not know its own version would be P44-01 in a second place.
+ */
+export function buildCommit(): string | undefined {
+  return typeof window === "undefined" ? undefined : window.__DS_CONFIG__?.commit;
+}

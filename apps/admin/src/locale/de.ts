@@ -284,6 +284,18 @@ export const de = {
     noneYet: "Es ist noch kein Kunde angelegt. Legen Sie unter „Kunden“ den ersten an.",
   },
 
+  /**
+   * The build footer (P46-01). German, like everything an operator reads —
+   * CLAUDE.md §5. The commit itself is not translated: it is an identifier that
+   * has to match `docker images` and the deploy log character for character.
+   */
+  build: {
+    console: "Konsole",
+    api: "API",
+    skew: "Unterschiedliche Stände — bitte erneut deployen.",
+    apiUnknown: "Die API meldet keinen Stand (ältere Version).",
+  },
+
   nav: {
     security: "Sicherheit",
     courses: "Fortbildungen",

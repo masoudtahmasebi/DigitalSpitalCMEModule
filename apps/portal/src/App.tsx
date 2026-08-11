@@ -38,7 +38,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { de } from "./locale/de.js";
-import { readConfig } from "./config.js";
+import { buildCommit, readConfig } from "./config.js";
 import { cookieTokenProvider } from "./auth.js";
 import { parseRoute, routePath, type Route } from "./routes.js";
 import { WidgetMount } from "./components/WidgetMount.js";
@@ -50,6 +50,7 @@ import {
   resetTokenFromHash,
 } from "./components/ForgotPassword.js";
 import { ChangePassword } from "./components/ChangePassword.js";
+import { BuildFooter } from "./components/BuildFooter.js";
 
 type AuthState = "checking" | "anonymous" | "signed-in" | "failed";
 
@@ -506,6 +507,15 @@ function Shell(props: {
   customerName?: string;
   onSignOut?: () => void;
 }) {
+  /*
+   * Read here rather than passed in. `Shell` has nine call sites, and a prop
+   * threaded through all nine is a prop that will be missing from the tenth —
+   * on whichever screen is added next. The footer is a diagnostic that has to
+   * be on every screen or it is not worth having, so it takes its own input.
+   *
+   * `readConfig` is a pure read of `window.__DS_CONFIG__`; it does no I/O.
+   */
+  const apiBase = readConfig()?.apiBase;
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-4">
@@ -528,6 +538,11 @@ function Shell(props: {
         </div>
       </header>
       <main>{props.children}</main>
+
+      {/* Rendered by Shell rather than passed in at each call site, so it
+          cannot be missing from one — including the misconfigured and
+          signed-out branches, which are exactly where the question is asked. */}
+      <BuildFooter apiBase={apiBase} commit={buildCommit()} />
     </div>
   );
 }
