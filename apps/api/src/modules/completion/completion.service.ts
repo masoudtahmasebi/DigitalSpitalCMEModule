@@ -184,15 +184,35 @@ export class CompletionService {
    * authorisation check to widen — the only account reachable is the one
    * already signed in.
    *
+   * ## `required`, and what it is not
+   *
+   * `{"efn": null}` alone cannot tell "we do not need one from you" from "we
+   * need one and you have not given it" — and only the server knows which,
+   * because it turns on whether any of this learner's enrolments awards CME
+   * points (P57-01). A course without points reports nothing to EIV-FOBI, so
+   * there is nothing an EFN would identify and demanding one would collect a
+   * physician's identifier for no purpose (ADR-0004).
+   *
+   * It describes the **courses**, not the gap: `required` stays true after an
+   * EFN is supplied, because the requirement did not go away. A client that
+   * wants to prompt asks for `required && efn === null`, which is one
+   * expression and cannot drift from the server's meaning of either half.
+   *
    * The admin surface is unchanged: `participantRowSchema` still reports
    * `efnPresent: boolean` and nothing anywhere returns another person's EFN.
    * A customer admin holds a grant over a *tenant*; an EFN belongs to a
    * *physician*, who may hold enrolments at several customers (docs/gdpr.md
    * §9). Those are different scopes and only the narrower one is opened here.
    */
-  async getEfn(learner: LearnerContext): Promise<{ efn: string | null }> {
-    const efn = await this.repository.findEfn(learner.userId);
-    return { efn: efn ?? null };
+  async getEfn(
+    learner: LearnerContext,
+  ): Promise<{ efn: string | null; required: boolean }> {
+    const [efn, required] = await Promise.all([
+      this.repository.findEfn(learner.userId),
+      this.repository.hasPointBearingEnrolment(learner.userId),
+    ]);
+
+    return { efn: efn ?? null, required };
   }
 
   /**

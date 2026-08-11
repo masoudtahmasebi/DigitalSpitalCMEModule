@@ -414,7 +414,8 @@ export function createClient(options: ClientOptions) {
      * the subject is the session's, so there is no parameter through which a
      * caller could ask about anybody else (ADR-0004, amended).
      */
-    getEfn: (): Promise<{ efn: string | null }> => request("/profile/efn"),
+    getEfn: (): Promise<{ efn: string | null; required: boolean }> =>
+      request("/profile/efn"),
 
     setEfn: (efn: string): Promise<void> =>
       request("/profile/efn", {

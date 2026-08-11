@@ -3099,6 +3099,18 @@ export interface components {
              *     person's — this endpoint takes no subject parameter.
              */
             efn: string | null;
+            /**
+             * @description Whether an EFN is needed at all: true when any of the caller's
+             *     enrolments **in this project's customer** awards CME points
+             *     (P57-01). A course awarding none reports nothing to EIV-FOBI, so
+             *     there is nothing an EFN would identify and asking for one would
+             *     collect a physician's identifier for no purpose (ADR-0004).
+             *
+             *     It describes the courses, not the gap — it stays true once an EFN
+             *     is supplied. A client that wants to prompt asks for
+             *     `required && efn === null`.
+             */
+            required: boolean;
         };
         CourseListResponse: {
             items: components["schemas"]["CourseSummary"][];

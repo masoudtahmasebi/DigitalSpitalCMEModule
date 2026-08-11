@@ -78,18 +78,19 @@ export class CompletionController {
    * would turn a self-service field into an EFN lookup service, which is the
    * thing the old rule was protecting.
    *
-   * Rate-limited on the same bucket as the write. A self-read is cheap and
-   * low-value to an attacker who already holds the session, but the bucket
-   * costs nothing and a route touching `efn_profiles` should not be the one
-   * unmetered path into that table.
+   * Rate-limited on its own bucket, not the write's (P57-01): the completion
+   * screen asks on every mount, and sharing the write's ten-per-minute budget
+   * meant a physician reloading while correcting a typo was refused in the
+   * middle of the correction. Still metered — a route touching `efn_profiles`
+   * should not be the one unlimited path into that table.
    */
   @Get("profile/efn")
-  @RateLimit("efnWrite")
+  @RateLimit("efnRead")
   @Roles(...LEARNER_ROLES)
   async getEfn(
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
-  ): Promise<{ efn: string | null }> {
+  ): Promise<{ efn: string | null; required: boolean }> {
     return CompletionService.fromDb(db).getEfn(context(principal));
   }
 

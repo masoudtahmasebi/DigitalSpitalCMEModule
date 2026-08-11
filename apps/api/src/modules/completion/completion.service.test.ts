@@ -151,6 +151,8 @@ function build(
     vnr?: string | null;
     /** Records which user id the repository was asked about (P54-02). */
     onFindEfn?: (userId: string) => void;
+    /** Whether any enrolment awards CME points (P57-01). */
+    pointBearing?: boolean;
   } = {},
 ) {
   const queued: Array<Record<string, unknown>> = [];
@@ -194,6 +196,7 @@ function build(
       options.onFindEfn?.(userId);
       return efn;
     },
+    hasPointBearingEnrolment: async () => options.pointBearing ?? true,
     hasEivSubmission: async () => options.hasEiv ?? false,
     queueEivSubmission: async (input) => {
       queued.push({ ...input });
@@ -338,7 +341,7 @@ describe("getEfn", () => {
   it("returns the caller's own stored EFN", async () => {
     const { service } = build({ efn: EFN });
 
-    await expect(service.getEfn(learner)).resolves.toEqual({ efn: EFN });
+    await expect(service.getEfn(learner)).resolves.toEqual({ efn: EFN, required: true });
   });
 
   it("answers null rather than omitting the field when none is stored", async () => {
@@ -347,7 +350,32 @@ describe("getEfn", () => {
     // screen that asks this draws a form in the second case.
     const { service } = build();
 
-    await expect(service.getEfn(learner)).resolves.toEqual({ efn: null });
+    await expect(service.getEfn(learner)).resolves.toEqual({
+      efn: null,
+      required: true,
+    });
+  });
+
+  /*
+   * P57-01. `{"efn": null}` on its own cannot tell "we do not need one" from
+   * "we need one and you have not given it", and only the server knows which.
+   */
+  it("says an EFN is not required when nothing this learner takes awards points", async () => {
+    const { service } = build({ pointBearing: false });
+
+    await expect(service.getEfn(learner)).resolves.toEqual({
+      efn: null,
+      required: false,
+    });
+  });
+
+  it("keeps saying it is required after one has been supplied", async () => {
+    // `required` describes the courses, not the gap. A client prompts on
+    // `required && efn === null`; flipping this to false once an EFN exists
+    // would make "is an EFN needed here" unanswerable for anybody who has one.
+    const { service } = build({ efn: EFN, pointBearing: true });
+
+    await expect(service.getEfn(learner)).resolves.toEqual({ efn: EFN, required: true });
   });
 
   it("asks about the principal's own user id and nothing else", async () => {

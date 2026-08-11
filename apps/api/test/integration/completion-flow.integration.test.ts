@@ -491,6 +491,18 @@ describe("the road to a CME point", () => {
     expect(status).toBe(409);
   });
 
+  it("says an EFN is required, because this course awards points", async () => {
+    /*
+     * P57-01. `{"efn": null}` cannot tell "we do not need one from you" from
+     * "we need one and you have not given it", and only the server knows
+     * which — it turns on whether any of this learner's enrolments awards CME
+     * points, which the client cannot see.
+     */
+    const { body } = await call("GET", "/profile/efn");
+
+    expect(body.required).toBe(true);
+  });
+
   it("answers null before an EFN has been supplied", async () => {
     /*
      * P54-02, and it runs *before* the write on purpose: the whole read is
@@ -501,7 +513,7 @@ describe("the road to a CME point", () => {
     const { status, body } = await call("GET", "/profile/efn");
 
     expect(status).toBe(200);
-    expect(body).toEqual({ efn: null });
+    expect(body).toEqual({ efn: null, required: true });
   });
 
   it("stores the EFN and returns no body", async () => {
@@ -515,7 +527,18 @@ describe("the road to a CME point", () => {
     const { status, body } = await call("GET", "/profile/efn");
 
     expect(status).toBe(200);
-    expect(body).toEqual({ efn: EFN });
+    expect(body).toEqual({ efn: EFN, required: true });
+  });
+
+  it("tells the customer admin no EFN is required, because they take no course", async () => {
+    // The other half of `required` (P57-01), and the case that separates it
+    // from "is one stored": this account has no enrolment at all, so nothing
+    // about them needs an EFN — a screen prompting them for one would be
+    // asking for a physician's identifier from somebody who is not taking
+    // anything.
+    const { body } = await callAs(ADMIN_SUB, "GET", "/profile/efn");
+
+    expect(body).toEqual({ efn: null, required: false });
   });
 
   it("gives a customer admin their own EFN, not the learner's", async () => {
@@ -533,7 +556,7 @@ describe("the road to a CME point", () => {
     const { status, body } = await callAs(ADMIN_SUB, "GET", "/profile/efn");
 
     expect(status).toBe(200);
-    expect(body).toEqual({ efn: null });
+    expect(body.efn).toBeNull();
     expect(JSON.stringify(body)).not.toContain(EFN);
   });
 
