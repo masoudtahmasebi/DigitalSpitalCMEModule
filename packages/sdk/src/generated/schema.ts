@@ -1873,7 +1873,19 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * The caller's own EFN
+         * @description Answers for the **authenticated principal only** — there is no
+         *     parameter naming a subject, and no endpoint anywhere returns another
+         *     person's EFN (ADR-0004, amended by P54-02). `null` when none is stored,
+         *     which is also the answer after erasure.
+         *
+         *     It exists so a physician can check the identifier the platform will
+         *     report on their behalf. A wrong EFN is accepted by EIV-FOBI and credits
+         *     the wrong account, so being unable to read it back is how a typo
+         *     survives to the Kammer.
+         */
+        get: operations["getEfn"];
         /**
          * Store the learner's EFN
          * @description The EFN (Einheitliche Fortbildungsnummer) is 15 digits and is the key
@@ -3075,8 +3087,18 @@ export interface components {
             rows: components["schemas"]["ParticipantRow"][];
         };
         EfnInput: {
-            /** @description 15 digits. Never returned by any endpoint once stored. */
+            /**
+             * @description 15 digits. Returned only by `GET /profile/efn`, and only to the
+             *     physician it belongs to (ADR-0004, amended by P54-02).
+             */
             efn: string;
+        };
+        EfnState: {
+            /**
+             * @description The caller's own EFN, or `null` when none is stored. Never another
+             *     person's — this endpoint takes no subject parameter.
+             */
+            efn: string | null;
         };
         CourseListResponse: {
             items: components["schemas"]["CourseSummary"][];
@@ -5883,6 +5905,19 @@ export interface operations {
                     "application/json": {
                         /** Format: uuid */
                         userId: string;
+                        /**
+                         * @description The identity provider's own `sub` for this session. The
+                         *     only value that ties a session here to a user in the
+                         *     customer's realm, which is what a support conversation
+                         *     about a broken federated sign-in needs (P54-01).
+                         */
+                        subject: string;
+                        /**
+                         * @description The caller's own address, when the identity provider
+                         *     releases it. Absent rather than null when it does not —
+                         *     a null would read as "we hold none".
+                         */
+                        email?: string;
                         /** Format: uuid */
                         customerId: string;
                         role: string;
@@ -8710,6 +8745,57 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getEfn: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's EFN, or null. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EfnState"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     setEfn: {

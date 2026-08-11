@@ -304,6 +304,31 @@ describe("signing in and seeing a catalogue", () => {
     expect(body.role).toBe("learner");
   });
 
+  it("names the account it is a session for, in terms the person recognises", async () => {
+    /*
+     * P54-01. `userId` and `customerId` are ours and mean nothing to a
+     * physician looking at a header; the address they signed in with is the
+     * one thing that answers "which account is this". `subject` is the
+     * identity provider's `sub`, which is what a support conversation about a
+     * federated sign-in has to quote.
+     *
+     * Both are the session's own — there is no parameter here — so the case
+     * that matters is the one below it: another tenant's session still gets
+     * 401 rather than somebody else's address.
+     */
+    const token = sessionCookie(await signIn(alpha));
+
+    const me = await fetch(
+      `${baseUrl}/auth/participant/me`,
+      withCookie(token!, alpha.projectSlug),
+    );
+
+    const body = (await me.json()) as { email?: string; subject?: string };
+    expect(body.email).toBe(alpha.email);
+    expect(body.subject).toBeTypeOf("string");
+    expect(body.subject).not.toBe("");
+  });
+
   it("does not answer /me for a session from another tenant", async () => {
     const token = sessionCookie(await signIn(alpha));
     const crossed = await fetch(

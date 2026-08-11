@@ -1,9 +1,10 @@
 /**
  * Completion HTTP surface (P6, P1-06, P7). Interface layer — ADR-0006.
  *
- * The EFN route lives here rather than on a course, because an EFN belongs to
- * the physician, not to a participation (ADR-0004). It is write-only: there is
- * deliberately no GET.
+ * The EFN routes live here rather than on a course, because an EFN belongs to
+ * the physician, not to a participation (ADR-0004). Read and write are both
+ * strictly self-service — the subject is always the authenticated principal
+ * and never a path parameter (P54-02).
  */
 
 import { Body, Controller, Get, HttpCode, Param, Post, Put } from "@nestjs/common";
@@ -68,9 +69,33 @@ export class CompletionController {
   }
 
   /**
-   * Write-only by design: 204 with no body, and no GET counterpart. Once
-   * stored the EFN is reported to the Ärztekammer and never read back out
-   * through the API (ADR-0004).
+   * The caller's own EFN, or `{"efn": null}` (P54-02).
+   *
+   * This route reverses the "write-only" rule that stood until P54; the
+   * reasoning for both directions is on `CompletionService.getEfn` and in
+   * ADR-0004's amendment, and the one line that matters is here: **the subject
+   * is the principal, never a parameter.** Adding a `:userId` to this path
+   * would turn a self-service field into an EFN lookup service, which is the
+   * thing the old rule was protecting.
+   *
+   * Rate-limited on the same bucket as the write. A self-read is cheap and
+   * low-value to an attacker who already holds the session, but the bucket
+   * costs nothing and a route touching `efn_profiles` should not be the one
+   * unmetered path into that table.
+   */
+  @Get("profile/efn")
+  @RateLimit("efnWrite")
+  @Roles(...LEARNER_ROLES)
+  async getEfn(
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ): Promise<{ efn: string | null }> {
+    return CompletionService.fromDb(db).getEfn(context(principal));
+  }
+
+  /**
+   * Store or correct the EFN. 204 with no body — the value the caller just
+   * sent is not echoed, and `GET profile/efn` above is the way to read it back.
    */
   @Put("profile/efn")
   @HttpCode(204)

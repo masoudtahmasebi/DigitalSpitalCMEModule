@@ -147,6 +147,8 @@ function build(
     completedAt?: Date | null;
     hasEiv?: boolean;
     vnr?: string | null;
+    /** Records which user id the repository was asked about (P54-02). */
+    onFindEfn?: (userId: string) => void;
   } = {},
 ) {
   const queued: Array<Record<string, unknown>> = [];
@@ -186,7 +188,10 @@ function build(
     saveEfn: async (_userId, value) => {
       savedEfn.push(value);
     },
-    findEfn: async () => efn,
+    findEfn: async (userId) => {
+      options.onFindEfn?.(userId);
+      return efn;
+    },
     hasEivSubmission: async () => options.hasEiv ?? false,
     queueEivSubmission: async (input) => {
       queued.push({ ...input });
@@ -319,6 +324,44 @@ describe("setEfn", () => {
 
     expect(error.reason).not.toContain(bad);
     expect(error.clientDetail ?? "").not.toContain(bad);
+  });
+});
+
+/*
+ * P54-02. The read reverses six phases of "write-only", so what is asserted
+ * here is not that it returns a string — it is the two properties that make
+ * returning one defensible.
+ */
+describe("getEfn", () => {
+  it("returns the caller's own stored EFN", async () => {
+    const { service } = build({ efn: EFN });
+
+    await expect(service.getEfn(learner)).resolves.toEqual({ efn: EFN });
+  });
+
+  it("answers null rather than omitting the field when none is stored", async () => {
+    // A missing key and `null` read differently to a client: one is "we did not
+    // look", the other is "there is none, you have not supplied one yet". The
+    // screen that asks this draws a form in the second case.
+    const { service } = build();
+
+    await expect(service.getEfn(learner)).resolves.toEqual({ efn: null });
+  });
+
+  it("asks about the principal's own user id and nothing else", async () => {
+    /*
+     * The property the whole amendment rests on. `getEfn` takes a
+     * `LearnerContext` and no subject, so there is no argument through which a
+     * caller could name somebody else — this asserts the service does not
+     * invent one. If a future overload adds a `userId` parameter, this test is
+     * where it has to be justified.
+     */
+    const asked: string[] = [];
+    const { service } = build({ efn: EFN, onFindEfn: (userId) => asked.push(userId) });
+
+    await service.getEfn(learner);
+
+    expect(asked).toEqual([learner.userId]);
   });
 });
 

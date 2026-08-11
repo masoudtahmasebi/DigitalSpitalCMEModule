@@ -17,8 +17,16 @@
  * `@ds/domain` is the real rule and it runs server-side. `autoComplete="off"`
  * matters: an EFN is the key a physician's CME points are credited against, and
  * letting a browser store it for autofill on an unrelated site is a disclosure
- * nobody asked for. It is never read back — no endpoint returns it (ADR-0004) —
- * so once submitted this screen can only say that one is on file.
+ * nobody asked for.
+ *
+ * **A stored EFN is now shown back, and can be corrected** (P54-02). This
+ * screen used to say only "Ihre EFN ist hinterlegt", because no endpoint
+ * returned one — which meant a physician who had mistyped a digit months
+ * earlier could read a reassuring sentence about the wrong number, and the
+ * first sign of it would be points credited to somebody else's account. The
+ * value comes from `GET /profile/efn`, which answers for the session and takes
+ * no subject, and the correction goes back through `PUT /profile/efn` while the
+ * course is still open.
  *
  * **The layout says eighteen digits and the platform validates fifteen.** That
  * is unresolved (S21) and is deliberately not papered over: the hint says
@@ -39,7 +47,7 @@
  * not exist.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Branding } from "@ds/domain";
 import type { ApiClient, EnrolmentState } from "@ds/sdk";
 import { de } from "../locale/de.js";
@@ -65,6 +73,9 @@ export function CompletionScreen(props: {
   const [consented, setConsented] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | undefined>();
+  /** The EFN already on file, once read back. `undefined` while unknown. */
+  const [storedEfn, setStoredEfn] = useState<string | undefined>();
+  const [correcting, setCorrecting] = useState(false);
 
   const { client, courseSlug, state, branding } = props;
 
@@ -73,14 +84,65 @@ export function CompletionScreen(props: {
   // Both or neither — `parseBranding` accepts them as a pair.
   const consentAvailable = policyUrl !== undefined && policyVersion !== undefined;
 
-  const efnNeeded = !state.efnPresent;
+  const efnNeeded = !state.efnPresent || correcting;
   const efnValid = EFN_PATTERN.test(efn);
+
+  /*
+   * Read the stored EFN back so the screen can show *which* number will be
+   * reported, rather than only that one exists (P54-02).
+   *
+   * Only when there is one to read: asking otherwise would spend a request on
+   * a certain `null`. A failure here is deliberately silent — the physician's
+   * task on this screen is to submit their completion, and a message about a
+   * read that only decorated the page would be noise in front of it.
+   */
+  useEffect(() => {
+    if (!state.efnPresent) {
+      setStoredEfn(undefined);
+      return;
+    }
+
+    let live = true;
+    void client
+      .getEfn()
+      .then((result) => {
+        if (live) setStoredEfn(result.efn ?? undefined);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      live = false;
+    };
+  }, [client, state.efnPresent]);
 
   const ready =
     givenName.trim() !== "" &&
     familyName.trim() !== "" &&
     (!efnNeeded || efnValid) &&
     (!consentAvailable || consented);
+
+  /*
+   * A correction is sent on its own, before the completion.
+   *
+   * `completeCourse` carries an EFN only when none is stored — that is the
+   * one-form-one-request rule at the top of this file, and it holds. Changing
+   * a *stored* EFN is a different act with a different failure mode, so it
+   * goes through `PUT /profile/efn` and reports its own outcome.
+   */
+  async function saveCorrection(): Promise<void> {
+    setBusy(true);
+    setProblem(undefined);
+    try {
+      await client.setEfn(efn);
+      setStoredEfn(efn);
+      setEfn("");
+      setCorrecting(false);
+    } catch (error) {
+      report(error);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function report(error: unknown): void {
     setProblem(
@@ -213,8 +275,46 @@ export function CompletionScreen(props: {
             ) : null}
           </Field>
         ) : (
-          <p className="text-sm text-status-completed">{de.completion.efnSaved}</p>
+          <div className="text-sm text-status-completed">
+            <p>
+              {storedEfn === undefined
+                ? de.completion.efnSaved
+                : de.completion.efnStored(storedEfn)}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setCorrecting(true);
+                setEfn(storedEfn ?? "");
+              }}
+              className="mt-1 text-xs text-gray-600 underline"
+            >
+              {de.completion.efnCorrect}
+            </button>
+          </div>
         )}
+
+        {correcting ? (
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              onClick={saveCorrection}
+              disabled={!efnValid || busy}
+            >
+              {de.completion.efnCorrectSave}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setCorrecting(false);
+                setEfn("");
+              }}
+              disabled={busy}
+            >
+              {de.completion.efnCorrectCancel}
+            </Button>
+          </div>
+        ) : null}
 
         {consentAvailable ? (
           <label className="flex items-start gap-3 text-sm leading-relaxed text-gray-800">

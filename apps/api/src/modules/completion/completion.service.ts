@@ -159,6 +159,43 @@ export class CompletionService {
   }
 
   /**
+   * The learner's own EFN, or null (P54-02).
+   *
+   * ## Why this exists, having deliberately not existed
+   *
+   * The EFN was write-only for six phases and the reasoning was sound: it is a
+   * physician's identifier at their Kammer, and an endpoint that returns one is
+   * an endpoint that can leak one. What that reasoning left out is the person
+   * who typed it. A physician who supplied an EFN months ago, on a different
+   * device, has no way to see what the platform will report on their behalf —
+   * and no way to notice a typo until the Kammer credits somebody else's
+   * account, which is the failure ADR-0004 itself calls the worst available
+   * because it looks like success.
+   *
+   * GDPR Art. 15 makes the answer available on request in any case. The choice
+   * was never whether the subject may see it, only whether they see it in the
+   * product or by writing to a mailbox.
+   *
+   * ## What keeps it from being the leak the old rule feared
+   *
+   * **The subject is not a parameter.** `learner.userId` comes off the
+   * validated principal. There is no shape of this request that names another
+   * person, so there is nothing to enumerate and nothing for a broken
+   * authorisation check to widen — the only account reachable is the one
+   * already signed in.
+   *
+   * The admin surface is unchanged: `participantRowSchema` still reports
+   * `efnPresent: boolean` and nothing anywhere returns another person's EFN.
+   * A customer admin holds a grant over a *tenant*; an EFN belongs to a
+   * *physician*, who may hold enrolments at several customers (docs/gdpr.md
+   * §9). Those are different scopes and only the narrower one is opened here.
+   */
+  async getEfn(learner: LearnerContext): Promise<{ efn: string | null }> {
+    const efn = await this.repository.findEfn(learner.userId);
+    return { efn: efn ?? null };
+  }
+
+  /**
    * Finalise the course and queue the Punktemeldung.
    *
    * Idempotent: a second call returns the same completed state and does not

@@ -29,21 +29,21 @@ This split is the reason erasure works the way it does — see §5.
 
 Everything in one table, because the honest version of this document is short.
 
-| Data                                    | Where                                                                      | Why it exists                                                                                                                                                                                       |
-| --------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity-provider subject + realm       | `user_identities`                                                          | The stable identity. Not a name; an opaque id issued by the customer's own IdP. Moved out of `users` by P21-01 so one physician learning with two customers is one person, not two (§2.1).          |
-| Name, e-mail                            | `users`                                                                    | Written from the token's claims. Name is printed on the Teilnahmebescheinigung; e-mail is for the future certificate delivery.                                                                      |
-| Which customers a person learns with    | `user_customers`                                                           | A membership, and the only tenant-scoped part of a person. A customer admin sees that someone learns with them and learns nothing about where else they learn.                                      |
-| Attested name                           | `enrolments.attested_name`                                                 | What the learner confirmed should be printed, which may differ from a stale Keycloak profile.                                                                                                       |
-| Attested name, in parts                 | `enrolments.attested_title`, `attested_given_name`, `attested_family_name` | The three fields layout page 13 captures. Composed into `attested_name` by one function in `@ds/domain`; kept apart so a correction does not have to re-parse a string. Cleared by `erase_subject`. |
-| Punktemeldung consent                   | `enrolments.consent_given_at`, `consent_document`                          | When the learner ticked the consent box and which privacy notice they agreed to. Art. 7(1) — see §3. **Survives erasure by design**; it names nobody once the name and EFN are gone.                |
-| **EFN**                                 | `efn_profiles`                                                             | The 15-digit Fortbildungsnummer. The key the Ärztekammer credits points against. **Write-only through the API** — there is no endpoint that returns it (ADR-0004).                                  |
-| Watched intervals, quiz answers, scores | `content_progress`, `quiz_attempts`, `quiz_answers`                        | The compliance evidence. A CME point is only defensible if what earned it is recorded.                                                                                                              |
-| Evaluation answers                      | `evaluation_responses`                                                     | Required for the Anerkennung. Free-text answers are the one place a physician may type something about a patient — treated accordingly in §5.                                                       |
-| Completion, VNR, points                 | `enrolments`                                                               | The participation record.                                                                                                                                                                           |
-| Punktemeldung state                     | `eiv_submissions`                                                          | Including the EFN as submitted, every attempt and every failure. Append-only in effect: the row is the evidence a statutory report was made.                                                        |
-| Certificate state                       | `certificates`                                                             | Status and the name printed. Not the PDF — it is rendered on demand.                                                                                                                                |
-| Admin actions                           | `audit_log`                                                                | Ids, counts and field names. Never a name, an EFN or an answer.                                                                                                                                     |
+| Data                                    | Where                                                                      | Why it exists                                                                                                                                                                                                                                 |
+| --------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity-provider subject + realm       | `user_identities`                                                          | The stable identity. Not a name; an opaque id issued by the customer's own IdP. Moved out of `users` by P21-01 so one physician learning with two customers is one person, not two (§2.1).                                                    |
+| Name, e-mail                            | `users`                                                                    | Written from the token's claims. Name is printed on the Teilnahmebescheinigung; e-mail is for the future certificate delivery.                                                                                                                |
+| Which customers a person learns with    | `user_customers`                                                           | A membership, and the only tenant-scoped part of a person. A customer admin sees that someone learns with them and learns nothing about where else they learn.                                                                                |
+| Attested name                           | `enrolments.attested_name`                                                 | What the learner confirmed should be printed, which may differ from a stale Keycloak profile.                                                                                                                                                 |
+| Attested name, in parts                 | `enrolments.attested_title`, `attested_given_name`, `attested_family_name` | The three fields layout page 13 captures. Composed into `attested_name` by one function in `@ds/domain`; kept apart so a correction does not have to re-parse a string. Cleared by `erase_subject`.                                           |
+| Punktemeldung consent                   | `enrolments.consent_given_at`, `consent_document`                          | When the learner ticked the consent box and which privacy notice they agreed to. Art. 7(1) — see §3. **Survives erasure by design**; it names nobody once the name and EFN are gone.                                                          |
+| **EFN**                                 | `efn_profiles`                                                             | The 15-digit Fortbildungsnummer. The key the Ärztekammer credits points against. **Readable only by its own subject**: `GET /profile/efn` answers for the authenticated principal and nothing else returns an EFN (ADR-0004, amended P54-02). |
+| Watched intervals, quiz answers, scores | `content_progress`, `quiz_attempts`, `quiz_answers`                        | The compliance evidence. A CME point is only defensible if what earned it is recorded.                                                                                                                                                        |
+| Evaluation answers                      | `evaluation_responses`                                                     | Required for the Anerkennung. Free-text answers are the one place a physician may type something about a patient — treated accordingly in §5.                                                                                                 |
+| Completion, VNR, points                 | `enrolments`                                                               | The participation record.                                                                                                                                                                                                                     |
+| Punktemeldung state                     | `eiv_submissions`                                                          | Including the EFN as submitted, every attempt and every failure. Append-only in effect: the row is the evidence a statutory report was made.                                                                                                  |
+| Certificate state                       | `certificates`                                                             | Status and the name printed. Not the PDF — it is rendered on demand.                                                                                                                                                                          |
+| Admin actions                           | `audit_log`                                                                | Ids, counts and field names. Never a name, an EFN or an answer.                                                                                                                                                                               |
 
 ### 2.1 One person, many customers
 
@@ -172,13 +172,16 @@ it is a decision for MEDICE, not for the platform.
 ### Auskunft (Art. 15)
 
 Every figure a learner is entitled to see is already on their own screen — the
-API has no data about a learner that the learner cannot read, with two
-exceptions:
+API has no data about a learner that the learner cannot read, with one
+exception:
 
-- the **EFN**, which is write-only by design (ADR-0004) and which the subject
-  supplied in the first place;
 - the **audit log**, which records administrative actions rather than the
   learner's own activity.
+
+The EFN used to be the second exception. It is not any more: `GET /profile/efn`
+returns the caller's own (P54-02), because a physician who cannot see the
+identifier we will report on their behalf cannot notice a typo in it before the
+Kammer credits somebody else.
 
 A formal Auskunft is therefore a database export against one `user_id`,
 performed by the processor on the controller's request. There is deliberately no

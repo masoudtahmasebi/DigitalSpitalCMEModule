@@ -1172,9 +1172,22 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [userId, customerId, role]
+                required: [userId, subject, customerId, role]
                 properties:
                   userId: { type: string, format: uuid }
+                  subject:
+                    type: string
+                    description: |
+                      The identity provider's own `sub` for this session. The
+                      only value that ties a session here to a user in the
+                      customer's realm, which is what a support conversation
+                      about a broken federated sign-in needs (P54-01).
+                  email:
+                    type: string
+                    description: |
+                      The caller's own address, when the identity provider
+                      releases it. Absent rather than null when it does not —
+                      a null would read as "we hold none".
                   customerId: { type: string, format: uuid }
                   role: { type: string }
                   mustChangePassword: { type: boolean }
@@ -2709,6 +2722,30 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
   /profile/efn:
+    get:
+      tags: [completion]
+      operationId: getEfn
+      summary: The caller's own EFN
+      description: |
+        Answers for the **authenticated principal only** — there is no
+        parameter naming a subject, and no endpoint anywhere returns another
+        person's EFN (ADR-0004, amended by P54-02). `null` when none is stored,
+        which is also the answer after erasure.
+
+        It exists so a physician can check the identifier the platform will
+        report on their behalf. A wrong EFN is accepted by EIV-FOBI and credits
+        the wrong account, so being unable to read it back is how a typo
+        survives to the Kammer.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      responses:
+        "200":
+          description: The caller's EFN, or null.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EfnState" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
     put:
       tags: [completion]
       operationId: setEfn
@@ -4535,7 +4572,21 @@ components:
         efn:
           type: string
           pattern: "^[0-9]{15}$"
-          description: 15 digits. Never returned by any endpoint once stored.
+          description: |
+            15 digits. Returned only by `GET /profile/efn`, and only to the
+            physician it belongs to (ADR-0004, amended by P54-02).
+
+    EfnState:
+      type: object
+      required: [efn]
+      properties:
+        efn:
+          type: string
+          nullable: true
+          pattern: "^[0-9]{15}$"
+          description: |
+            The caller's own EFN, or `null` when none is stored. Never another
+            person's — this endpoint takes no subject parameter.
 
     CourseListResponse:
       type: object

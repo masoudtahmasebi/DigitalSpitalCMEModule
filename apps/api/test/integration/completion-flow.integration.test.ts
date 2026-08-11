@@ -489,11 +489,50 @@ describe("the road to a CME point", () => {
     expect(status).toBe(409);
   });
 
+  it("answers null before an EFN has been supplied", async () => {
+    /*
+     * P54-02, and it runs *before* the write on purpose: the whole read is
+     * one field, so a test that only ever asked after storing would pass on an
+     * endpoint that returned a hardcoded value. Null is also what the screen
+     * needs to tell "you have not given us one" from "we did not look".
+     */
+    const { status, body } = await call("GET", "/profile/efn");
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ efn: null });
+  });
+
   it("stores the EFN and returns no body", async () => {
     const { status, body } = await call("PUT", "/profile/efn", { efn: EFN });
 
     expect(status).toBe(204);
     expect(body).toBeUndefined();
+  });
+
+  it("reads back the EFN it just stored", async () => {
+    const { status, body } = await call("GET", "/profile/efn");
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ efn: EFN });
+  });
+
+  it("gives a customer admin their own EFN, not the learner's", async () => {
+    /*
+     * The property the ADR amendment rests on, and the one case that would
+     * catch the mistake worth catching.
+     *
+     * `ADMIN_SUB` holds `customer_admin` over the same tenant as the learner
+     * whose EFN was stored two cases ago. If this endpoint were tenant-scoped
+     * like every other read on the console — the obvious way to write it — the
+     * admin would get `123456789012345` back and the platform would have an
+     * EFN lookup service. It is scoped to the *person*, so they get their own,
+     * and they have none.
+     */
+    const { status, body } = await callAs(ADMIN_SUB, "GET", "/profile/efn");
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ efn: null });
+    expect(JSON.stringify(body)).not.toContain(EFN);
   });
 
   /*

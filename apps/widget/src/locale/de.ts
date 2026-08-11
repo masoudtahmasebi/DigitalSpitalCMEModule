@@ -561,6 +561,19 @@ export const de = {
     efnHint: "Die 15-stellige EFN finden Sie auf Ihrem Arztausweis",
     efnInvalid: "Die EFN muss aus genau 15 Ziffern bestehen.",
     efnSaved: "Ihre EFN ist hinterlegt.",
+    /**
+     * The stored EFN, shown back (P54-02).
+     *
+     * "Ihre EFN ist hinterlegt" was true and useless: it told a physician that
+     * *a* number would be reported for them without saying which, so a digit
+     * mistyped months ago stayed invisible until the Kammer credited the wrong
+     * account. Printed in full rather than masked — a masked EFN cannot be
+     * checked, which is the only reason to show it at all.
+     */
+    efnStored: (efn: string): string => `Ihre hinterlegte EFN: ${efn}`,
+    efnCorrect: "EFN korrigieren",
+    efnCorrectSave: "EFN speichern",
+    efnCorrectCancel: "Abbrechen",
 
     /** Split so the Datenschutzerklärung can be a link, as the layout draws it. */
     consentBefore:
