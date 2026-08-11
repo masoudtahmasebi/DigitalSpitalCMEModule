@@ -795,6 +795,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/participant/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask for a password-reset link
+         * @description **Answers 202 in every case** — an unknown address, a project whose
+         *     participants sign in through a customer's Keycloak, a project with no
+         *     SMTP settings, and a link that actually went out.
+         *
+         *     That is not politeness. Asking whether a given physician has an account
+         *     with a named pharmaceutical company is close enough to health-adjacent
+         *     information about a named person that this form must not answer it. The
+         *     service behaves the same way on its side: no token is minted when there
+         *     is nowhere to send one, so there is no difference in work done either.
+         *
+         *     The link points at the tenant's own path, built from the request's
+         *     `Origin` when the deployment allows it and from the first configured
+         *     origin otherwise — **never** from the body. A reset flow that lets the
+         *     caller name the link's host delivers a real token to a real inbox
+         *     pointing at a page the attacker controls.
+         *
+         *     Rate-limited per IP rather than per address: a per-address limit would
+         *     itself answer "is this address being asked about a lot".
+         */
+        post: operations["requestParticipantPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/participant/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Spend a reset link and set a password
+         * @description Public, because the token **is** the credential — whoever holds it has
+         *     by definition no session.
+         *
+         *     The password policy is checked before the token is spent, so a rejected
+         *     password does not consume a single-use link and strand somebody.
+         *
+         *     One answer for a link that expired, one already spent and one that never
+         *     existed: a distinguishable "already used" would confirm to somebody
+         *     holding a forwarded link that it was once real. The lifetime is
+         *     `RESET_VALID_MINUTES` (60) and it is enforced on redemption — see
+         *     P39-01, which is the record of what happens when it is not.
+         */
+        post: operations["confirmParticipantPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/participant/password": {
         parameters: {
             query?: never;
@@ -3609,6 +3676,24 @@ export interface components {
             };
         };
         /**
+         * @description The rate limiter refused this caller for now.
+         *
+         *     Named as a shared response because two of the endpoints that use it —
+         *     the password-reset requests — answer identically for every other
+         *     outcome, which makes a 429 the *only* status a caller can distinguish.
+         *     That is deliberate and it is also why the limit is keyed on the IP: a
+         *     per-address limit would itself answer "is this address being asked
+         *     about a lot".
+         */
+        TooManyRequests: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
+        /**
          * @description An interface this platform does not own refused or could not be reached
          *     — today, only EIV-FOBI.
          *
@@ -5666,6 +5751,116 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    requestParticipantPasswordReset: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    email: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. Says nothing about whether an account exists. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    confirmParticipantPasswordReset: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                    newPassword: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Set. The link is spent. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     changeParticipantPassword: {
