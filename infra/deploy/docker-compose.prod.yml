@@ -106,6 +106,17 @@ services:
 
   api:
     image: ds-education/api:${DS_COMMIT}
+    # Never reach for a registry: there isn't one (ADR-0013), so a pull can
+    # only ever fail. Without this every `docker compose run`/`up` prints
+    #
+    #   ! api Warning pull access denied for ds-education/api, repository
+    #     does not exist or may require 'docker login'
+    #
+    # before falling back to a build — a warning that names a login step and a
+    # missing repository, neither of which is a real problem, in front of an
+    # operator trying to read the actual output. `never` makes compose use the
+    # image on this disk and say so plainly when there isn't one.
+    pull_policy: never
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -220,6 +231,8 @@ services:
   # that loads and then fails every request.
   admin:
     image: ds-education/admin:${DS_COMMIT}
+    # No registry to pull from — see the note on `api`.
+    pull_policy: never
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -235,6 +248,8 @@ services:
   # makes no cross-origin request to load it.
   portal:
     image: ds-education/portal:${DS_COMMIT}
+    # No registry to pull from — see the note on `api`.
+    pull_policy: never
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -249,6 +264,8 @@ services:
 
   widget:
     image: ds-education/widget:${DS_COMMIT}
+    # No registry to pull from — see the note on `api`.
+    pull_policy: never
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -295,6 +312,8 @@ services:
   # `docs/runbook-backup.md` for the restore.
   backup:
     image: ds-education/backup:${DS_COMMIT}
+    # No registry to pull from — see the note on `api`.
+    pull_policy: never
     profiles: [tools]
     build:
       context: ../..

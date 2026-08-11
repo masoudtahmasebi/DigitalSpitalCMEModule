@@ -60,6 +60,78 @@ export function openSeedPool(what: string): pg.Pool {
 }
 
 /**
+ * Which customer id this seed should work as — its own, or the one an operator
+ * already created under the same slug (P43-01).
+ *
+ * ## The failure
+ *
+ * ```
+ * Seeding the MEDICE course failed:
+ *   duplicate key value violates unique constraint "customers_slug_key"
+ * ```
+ *
+ * Each seed pins a fixed `CUSTOMER_ID`, because `customers`' RLS policy checks
+ * `id = app.customer_id` and the id therefore has to be known *before* the
+ * insert that creates the row. The upsert then says `ON CONFLICT (id)` — which
+ * is the wrong key for the collision that actually happens. `slug` is unique
+ * too, and an operator who created "medice" in the console before running the
+ * seed owns that slug under a *different*, random id. The insert conflicts on a
+ * constraint the `ON CONFLICT` clause does not name, so nothing is upserted and
+ * the seed dies on its first write.
+ *
+ * The seed is idempotent in every respect except the one that decides whether
+ * it is idempotent at all.
+ *
+ * ## Why adopt rather than refuse
+ *
+ * The operator wanted a customer with this slug and there is one. Refusing
+ * would be correct and useless (CLAUDE.md §9.10): the remedy would be to delete
+ * a tenant by hand in order to let a seed create the same tenant. Adopting the
+ * existing id makes the seed do what the person running it meant — fill that
+ * customer in — and keeps the fixed ids for the case they were chosen for, a
+ * database where nothing owns the slug yet.
+ *
+ * ## Why the role change
+ *
+ * The lookup is deliberately cross-tenant: it asks *whether some other id holds
+ * this slug*, which is precisely what RLS hides from `ds_migrator`. Read on the
+ * bare connection it matches zero rows and the answer is indistinguishable from
+ * "nobody has it" — CLAUDE.md §9.6, the mistake that made a configured project
+ * look unconfigured. `ds_customer_registry` is the role that exists for
+ * questions above any one tenant (migration 0021), it is granted `SELECT` on
+ * exactly `(id, slug, name, created_at)`, and `SET LOCAL` confines it to this
+ * transaction.
+ *
+ * Wrapped in a savepoint so that a database predating 0021 — where the role
+ * does not exist — degrades to "use the fixed id" instead of aborting the
+ * transaction. `assertSchemaCurrent` should have refused such a database long
+ * before this runs; this is the belt to that pair of braces, because the cost
+ * of being wrong here is a seed that fails with a role name instead of a slug.
+ *
+ * Call it inside the transaction and **before** `enterTenant`: its whole
+ * purpose is to decide the argument to `enterTenant`.
+ */
+export async function resolveCustomerId(
+  pool: pg.Pool,
+  input: { id: string; slug: string },
+): Promise<string> {
+  await pool.query("SAVEPOINT ds_seed_registry");
+  try {
+    await pool.query("SET LOCAL ROLE ds_customer_registry");
+    const { rows } = await pool.query<{ id: string }>(
+      "SELECT id FROM customers WHERE slug = $1",
+      [input.slug],
+    );
+    await pool.query("RESET ROLE");
+    await pool.query("RELEASE SAVEPOINT ds_seed_registry");
+    return rows[0]?.id ?? input.id;
+  } catch {
+    await pool.query("ROLLBACK TO SAVEPOINT ds_seed_registry");
+    return input.id;
+  }
+}
+
+/**
  * Enter the tenant, transaction-locally, exactly as `runInTenant` does for a
  * request.
  *

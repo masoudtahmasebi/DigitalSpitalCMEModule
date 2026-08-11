@@ -341,6 +341,24 @@ answers the first; the tenant paths `deploy.sh` prints answer the second.
 repository's state is not the installation's state. A seed, a migration or a
 setting that exists here exists there only if somebody ran it.
 
+**And the version of it that does not arrive as a browser report** (P43-02): the
+gap shows up as an error naming an innocent statement. `./dsc seed ds` answered
+
+```
+new row for relation "projects" violates check constraint
+  "projects_identity_provider_check"
+```
+
+which is true, is about the seed, and is not the problem: `'local'` has been
+legal since migration `0030`, and the constraint refusing it was written by
+`0019` because the deploy that would have replaced it never ran. A schema older
+than the code writing to it fails somewhere deep and blames the writer.
+
+**Check:** anything in the image that is not the migrator asks
+`assertSchemaCurrent` before its first write. More generally — when an error
+names a constraint, a column or a type, ask whether the _schema_ is the version
+the code expects before reading the code.
+
 ### 9.10 Correct is not the same as usable
 
 A component can answer exactly right and leave the person with nothing to do.

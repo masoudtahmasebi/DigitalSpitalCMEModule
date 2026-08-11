@@ -264,12 +264,23 @@ fi
 # and an operator who reasonably believes the worker is configured. What
 # actually happens is that every completion is abandoned `missing_vnr_password`
 # — permanently, one row at a time, until somebody reads the audit log.
+#
+# It says how, because it fires in an unattended GitHub Actions deploy where
+# nobody is at a shell and the message is the whole interface (CLAUDE.md §9.4).
+# The first version named the problem and the screen to fix it on, and left the
+# person holding a red deploy to work out the edit for themselves.
 for inert in EIV_VNR_PASSWORD EIV_VNR; do
   [[ -z "${!inert:-}" ]] || die \
     "${inert} is set in ${CONFIG_FILE}, where nothing reads it. The VNR and its
    password belong to the course: set them on the Fortbildung's settings screen
    in the admin console (the password is write-only and encrypted at rest).
-   Remove ${inert} from ${CONFIG_FILE} — and rotate it if it has been shared."
+
+   On the host, as the deploy user:
+
+       sed -i '/^${inert}=/d' ${CONFIG_FILE}
+
+   Then rotate the value if it has ever been shared — it has been sitting in a
+   file on disk, and this refusal is the first thing that noticed."
 done
 
 # Going live without somewhere for the deadline alarm to go.

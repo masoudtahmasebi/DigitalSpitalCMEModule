@@ -14,8 +14,10 @@
  */
 
 import { openSeedPool, seedMediceAdhs } from "@ds/seed";
+import { assertSchemaCurrent, migrationDatabaseUrl } from "./schema-freshness.js";
 
 async function main(): Promise<void> {
+  await assertSchemaCurrent(migrationDatabaseUrl());
   const pool = openSeedPool("the MEDICE ADHS course");
   try {
     // eslint-disable-next-line no-console -- this is a CLI; its output is the point

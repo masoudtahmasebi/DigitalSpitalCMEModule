@@ -38,6 +38,7 @@ import {
   participantPassword,
   PLACEHOLDER_IMAGE,
   resetCourseContent,
+  resolveCustomerId,
   seedParticipant,
   seedPortalProject,
   upsert,
@@ -213,14 +214,20 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
   try {
     await pool.query("BEGIN");
 
-    await enterTenant(pool, CUSTOMER_ID);
+    // Adopt an existing "medice" customer rather than colliding with its
+    // slug — see `resolveCustomerId`. Everything below uses the resolved id.
+    const tenantId = await resolveCustomerId(pool, {
+      id: CUSTOMER_ID,
+      slug: CUSTOMER_SLUG,
+    });
+    await enterTenant(pool, tenantId);
 
     const customerId = await upsert(
       pool,
       `INSERT INTO customers (id, slug, name) VALUES ($1,$2,$3)
        ON CONFLICT (id) DO UPDATE SET slug = EXCLUDED.slug, name = EXCLUDED.name, updated_at = now()
        RETURNING id`,
-      [CUSTOMER_ID, CUSTOMER_SLUG, "MEDICE Arzneimittel Pütter GmbH & Co. KG"],
+      [tenantId, CUSTOMER_SLUG, "MEDICE Arzneimittel Pütter GmbH & Co. KG"],
     );
 
     const departmentId = await upsert(

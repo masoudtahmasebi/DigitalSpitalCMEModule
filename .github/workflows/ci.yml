@@ -75,7 +75,8 @@ jobs:
           sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
           shellcheck infra/nginx/ds-runtime-config.sh
           (cd infra/deploy && shellcheck -x deploy.sh domains.sh domains.test.sh \
-             deploy-vars.test.sh secrets.sh secrets.test.sh dsc)
+             deploy-vars.test.sh secrets.sh secrets.test.sh images.sh \
+             images.test.sh dsc)
           ./infra/deploy/domains.test.sh
           # The URL encoder. A base64 password contains `/`, and an unencoded
           # `/` in a connection string's userinfo is what killed the first
@@ -86,6 +87,10 @@ jobs:
           # `set -u` only complains at the line that reads the name — which,
           # past that exit, is after the database has already been migrated.
           ./infra/deploy/deploy-vars.test.sh
+          # Which image `./dsc seed` runs. It used to build one — a deploy's
+          # work from the wrapper that refuses to deploy, producing a container
+          # from a different commit than the API beside it.
+          ./infra/deploy/images.test.sh
 
       - name: Build
         run: pnpm build
