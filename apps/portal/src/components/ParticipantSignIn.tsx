@@ -48,6 +48,8 @@ export function ParticipantSignIn(props: {
   customerName: string;
   /** Called after the cookie is set, so the shell can re-check the session. */
   onSignedIn: () => void;
+  /** Switches the shell to the "Passwort vergessen" form (P40-03). */
+  onForgotPassword: () => void;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -151,6 +153,20 @@ export function ParticipantSignIn(props: {
 
       <button type="submit" className="ds-button" disabled={status === "submitting"}>
         {status === "submitting" ? de.auth.signingIn : de.auth.signIn}
+      </button>
+
+      {/*
+        The escape hatch, after the thing it is an escape from, and
+        `type="button"` — a bare <button> in a <form> submits it, which would
+        attempt a sign-in with an empty password every time somebody forgot
+        theirs.
+      */}
+      <button
+        type="button"
+        className="block text-sm text-brand-700 underline underline-offset-2"
+        onClick={props.onForgotPassword}
+      >
+        {de.forgot.link}
       </button>
 
       <p className="text-xs text-gray-600">

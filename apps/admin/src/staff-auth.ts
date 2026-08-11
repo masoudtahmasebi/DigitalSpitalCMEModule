@@ -203,6 +203,113 @@ export async function signOut(apiBase: string): Promise<void> {
   csrfToken = undefined;
 }
 
+/**
+ * Ask for a reset link (P40-02).
+ *
+ * Returns nothing, and cannot fail in a way the caller may act on: the API
+ * answers 202 for an unknown address exactly as it does for a known one, so
+ * there is no outcome to report and no branch to write. A `catch` covering the
+ * network case, because a screen that says "check your inbox" after a failed
+ * fetch is worse than one that says the request could not be sent.
+ */
+export async function requestPasswordReset(
+  apiBase: string,
+  email: string,
+): Promise<{ sent: boolean }> {
+  try {
+    const response = await post(apiBase, "/admin/auth/password-reset", { email });
+    // 429 is the one status worth distinguishing: it is the only observable
+    // difference between callers, and telling somebody to wait a minute is
+    // better than telling them to check an inbox nothing is coming to.
+    return { sent: response.ok };
+  } catch {
+    return { sent: false };
+  }
+}
+
+/**
+ * Spend a reset or invitation link and set a password.
+ *
+ * The same endpoint an invitation is redeemed through — the token's `kind`
+ * decides its lifetime server-side, and the console does not need to know
+ * which it is holding.
+ */
+export async function redeemCredentialToken(
+  apiBase: string,
+  token: string,
+  password: string,
+): Promise<{ ok: true } | { ok: false; detail: string | undefined }> {
+  const response = await post(apiBase, "/admin/auth/credentials", { token, password });
+  if (response.ok) return { ok: true };
+
+  const body = (await response.json().catch(() => ({}))) as { detail?: string };
+  return { ok: false, detail: body.detail };
+}
+
+/** The platform's own mail sender, for the Sicherheit screen (P40-01). */
+export interface PlatformSender {
+  readonly host: string | null;
+  readonly port: number | null;
+  readonly username: string | null;
+  readonly hasPassword: boolean;
+  readonly secure: boolean;
+  readonly fromAddress: string | null;
+  readonly fromName: string | null;
+  /** Whether host and sender are both set — anything less sends nothing. */
+  readonly canSend: boolean;
+}
+
+export async function readPlatformSender(
+  apiBase: string,
+): Promise<PlatformSender | undefined> {
+  // `catch` and not a bare `await`: an unreachable API is a rejected promise
+  // with no handler, which React surfaces as an unhandled rejection rather than
+  // as a screen. `undefined` renders the panel with nothing filled in, which is
+  // the honest picture of "we could not read the settings".
+  try {
+    const response = await fetch(new URL("/admin/auth/platform-smtp", apiBase), {
+      credentials: "include",
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return undefined;
+    return (await response.json()) as PlatformSender;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function writePlatformSender(
+  apiBase: string,
+  input: {
+    host: string | null;
+    port: number | null;
+    username: string | null;
+    /** Omit to keep the stored password; `null` clears it. */
+    password?: string | null;
+    secure: boolean;
+    fromAddress: string | null;
+    fromName: string | null;
+  },
+): Promise<boolean> {
+  try {
+    const response = await fetch(new URL("/admin/auth/platform-smtp", apiBase), {
+      method: "PUT",
+      credentials: "include",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        ...(currentCsrfToken() === undefined
+          ? {}
+          : { [CSRF_HEADER]: currentCsrfToken() as string }),
+      },
+      body: JSON.stringify(input),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 function post(apiBase: string, path: string, body: unknown): Promise<Response> {
   return fetch(new URL(path, apiBase), {
     method: "POST",

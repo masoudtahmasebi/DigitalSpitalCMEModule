@@ -23,11 +23,16 @@
  * request must not carry `X-DS-Project`.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { ApiClient, SecondFactorPolicies, SecondFactorPolicy } from "@ds/sdk";
 import { describeError } from "../api.js";
 import { de } from "../locale/de.js";
-import { ConfirmButton, Field, Notice, Panel, Select } from "./ui.js";
+import { Button, ConfirmButton, Field, Notice, Panel, Select, TextInput } from "./ui.js";
+import {
+  readPlatformSender,
+  writePlatformSender,
+  type PlatformSender,
+} from "../staff-auth.js";
 
 /**
  * Ordered loosest to strictest, which is the order the consequences escalate
@@ -45,6 +50,15 @@ const POLICIES: ReadonlyArray<readonly [SecondFactorPolicy, string]> = [
 
 export function Security(props: {
   client: ApiClient;
+  /**
+   * The API's base URL, for the platform-sender panel (P40-01).
+   *
+   * Not through `ApiClient`: the platform SMTP endpoints live under
+   * `/admin/auth`, which is the staff plane's own surface rather than the
+   * contract-generated SDK — the same reason sign-in and the second factor are
+   * reached through `staff-auth.ts`.
+   */
+  apiBase: string;
   /** `super_admin` may set the platform row; nobody else may. */
   isSuperAdmin: boolean;
   /** Whether this operator has a second factor set up right now. */
@@ -158,6 +172,14 @@ export function Security(props: {
         </div>
       </Panel>
 
+      {/*
+        Where the platform's own mail comes from (P40-01).
+        Only for a super administrator: this is not one customer's setting, it
+        is the address mail about other people's accounts leaves from. Everyone
+        else does not see it, and the API refuses them regardless.
+      */}
+      {props.isSuperAdmin ? <PlatformSenderPanel apiBase={props.apiBase} /> : null}
+
       <Panel title={de.security.ownFactor}>
         <div className="space-y-3">
           <p className="text-sm text-gray-600">
@@ -177,6 +199,193 @@ export function Security(props: {
       </Panel>
     </div>
   );
+}
+
+/**
+ * The platform's own mail sender (P40-01).
+ *
+ * ## Why this screen exists at all
+ *
+ * A physician's reset mail leaves through their project's SMTP settings, which
+ * a customer administrator already configures under Organisation. An operator's
+ * cannot: a `super_admin` belongs to no customer, so there is no project whose
+ * sender is theirs to borrow, and borrowing one would put a customer's address
+ * on mail about accounts that are not theirs.
+ *
+ * The alternative was `PLATFORM_SMTP_*` in the deployment's env file. This is
+ * the better answer for the same reason the Keycloak binding and the embed
+ * origins moved out of it: changing where the platform's mail comes from should
+ * not need SSH.
+ *
+ * ## The password box
+ *
+ * Write-only, like every other stored secret (CLAUDE.md §4 invariant 7). The
+ * form shows *whether* one is stored and never what it is, and leaving the box
+ * empty keeps it — an operator correcting the sender name must not silently
+ * clear the credential and find out days later that no mail is leaving.
+ */
+function PlatformSenderPanel(props: { apiBase: string }) {
+  const [sender, setSender] = useState<PlatformSender | undefined>();
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [fromAddress, setFromAddress] = useState("");
+  const [fromName, setFromName] = useState("");
+  const [secure, setSecure] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | undefined>();
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      const current = await readPlatformSender(props.apiBase);
+      if (current === undefined) return;
+      setSender(current);
+      setHost(current.host ?? "");
+      setPort(current.port === null ? "" : String(current.port));
+      setUsername(current.username ?? "");
+      setFromAddress(current.fromAddress ?? "");
+      setFromName(current.fromName ?? "");
+      setSecure(current.secure);
+    })();
+  }, [props.apiBase]);
+
+  async function submit(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    setBusy(true);
+    setProblem(undefined);
+    setSaved(false);
+
+    const ok = await writePlatformSender(props.apiBase, {
+      host: blank(host),
+      port: port.trim() === "" ? null : Number(port),
+      username: blank(username),
+      // Absent, not null: an empty box means "keep what is stored".
+      ...(password === "" ? {} : { password }),
+      secure,
+      fromAddress: blank(fromAddress),
+      fromName: blank(fromName),
+    });
+
+    setPassword("");
+    setBusy(false);
+    if (!ok) {
+      setProblem(de.error.generic);
+      return;
+    }
+    setSaved(true);
+    setSender(await readPlatformSender(props.apiBase));
+  }
+
+  return (
+    <Panel title={de.security.platformMail}>
+      <form className="max-w-xl space-y-3" onSubmit={submit}>
+        <p className="text-sm text-gray-600">{de.security.platformMailIntro}</p>
+
+        {/*
+          The one thing an operator actually wants to know, said before they
+          scroll: is this configured enough to send anything. `canSend` is the
+          server's own answer to that question, not a second implementation of
+          it here.
+        */}
+        {sender === undefined ? null : (
+          <Notice tone={sender.canSend ? "success" : "warning"}>
+            {sender.canSend
+              ? de.security.platformMailReady
+              : de.security.platformMailIncomplete}
+          </Notice>
+        )}
+
+        {problem === undefined ? null : <Notice tone="error">{problem}</Notice>}
+        {saved ? <Notice tone="success">{de.security.saved}</Notice> : null}
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={de.organisation.smtpHost} htmlFor="platform-smtp-host">
+            <TextInput
+              id="platform-smtp-host"
+              value={host}
+              maxLength={300}
+              onChange={setHost}
+            />
+          </Field>
+          <Field label={de.organisation.smtpPort} htmlFor="platform-smtp-port">
+            <TextInput
+              id="platform-smtp-port"
+              value={port}
+              type="number"
+              onChange={setPort}
+            />
+          </Field>
+          <Field label={de.organisation.smtpUsername} htmlFor="platform-smtp-username">
+            <TextInput
+              id="platform-smtp-username"
+              value={username}
+              maxLength={300}
+              autoComplete="off"
+              onChange={setUsername}
+            />
+          </Field>
+          <Field
+            label={de.organisation.smtpPassword}
+            hint={de.organisation.smtpPasswordHint}
+            htmlFor="platform-smtp-password"
+          >
+            <TextInput
+              id="platform-smtp-password"
+              value={password}
+              type="password"
+              maxLength={300}
+              autoComplete="new-password"
+              onChange={setPassword}
+            />
+          </Field>
+          <Field label={de.organisation.smtpFromAddress} htmlFor="platform-smtp-from">
+            <TextInput
+              id="platform-smtp-from"
+              value={fromAddress}
+              type="email"
+              maxLength={320}
+              onChange={setFromAddress}
+            />
+          </Field>
+          <Field label={de.organisation.smtpFromName} htmlFor="platform-smtp-from-name">
+            <TextInput
+              id="platform-smtp-from-name"
+              value={fromName}
+              maxLength={200}
+              onChange={setFromName}
+            />
+          </Field>
+        </div>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={secure}
+            onChange={(event) => setSecure(event.target.checked)}
+          />
+          <span>{de.security.platformMailSecure}</span>
+        </label>
+
+        <p className="text-xs text-gray-600">
+          {sender?.hasPassword === true
+            ? de.organisation.smtpPasswordStored
+            : de.organisation.smtpPasswordMissing}
+        </p>
+
+        <Button type="submit" disabled={busy}>
+          {busy ? de.common.saving : de.common.save}
+        </Button>
+      </form>
+    </Panel>
+  );
+}
+
+/** An empty box is "not set", never an empty string. */
+function blank(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
 }
 
 function PolicyRow(props: {

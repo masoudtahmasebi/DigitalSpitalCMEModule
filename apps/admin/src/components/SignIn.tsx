@@ -25,12 +25,21 @@ import { useState, type FormEvent } from "react";
 import { de } from "../locale/de.js";
 import { Button, Field, Notice, Spinner, TextInput } from "./ui.js";
 import { QrCode } from "./QrCode.js";
-import { beginEnrolment, signIn, submitCode, type StaffProfile } from "../staff-auth.js";
+import {
+  beginEnrolment,
+  requestPasswordReset,
+  signIn,
+  submitCode,
+  type StaffProfile,
+} from "../staff-auth.js";
 
 type Step =
   | { kind: "password" }
   | { kind: "code"; challenge: string }
-  | { kind: "enrol"; challenge: string; otpauthUri: string };
+  | { kind: "enrol"; challenge: string; otpauthUri: string }
+  /** "Passwort vergessen" — the address form, and then the sentence (P40-02). */
+  | { kind: "forgot" }
+  | { kind: "forgot_sent" };
 
 export function SignIn(props: {
   apiBase: string;
@@ -85,7 +94,11 @@ export function SignIn(props: {
 
   async function submitTotp(event: FormEvent): Promise<void> {
     event.preventDefault();
-    if (step.kind === "password") return;
+    // Only the two steps that hold a challenge. Named positively rather than as
+    // `!== "password"`: the reset steps were added later and a negative test
+    // would have silently included them, reaching for a `challenge` that is not
+    // there.
+    if (step.kind !== "code" && step.kind !== "enrol") return;
 
     setBusy(true);
     setProblem(undefined);
@@ -102,6 +115,24 @@ export function SignIn(props: {
       return;
     }
     props.onSignedIn(profile);
+  }
+
+  async function submitForgot(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    setBusy(true);
+    setProblem(undefined);
+
+    const { sent } = await requestPasswordReset(props.apiBase, email);
+    setBusy(false);
+
+    // The only failure worth showing is "the request did not leave" — a network
+    // error or the rate limiter. Everything the *server* decided is deliberately
+    // indistinguishable, so there is nothing else to branch on.
+    if (!sent) {
+      setProblem(de.auth.forgotFailed);
+      return;
+    }
+    setStep({ kind: "forgot_sent" });
   }
 
   if (busy) return <Spinner label={de.auth.signingIn} />;
@@ -135,7 +166,64 @@ export function SignIn(props: {
             />
           </Field>
           <Button type="submit">{de.auth.signIn}</Button>
+
+          {/*
+            A link, not a button, and below the submit (P40-02).
+
+            It is the escape hatch from this form, so it belongs after the thing
+            it is an escape from — and `type="button"` because a bare <button>
+            inside a <form> submits it, which would try to sign in with an empty
+            password every time somebody forgot theirs.
+          */}
+          <button
+            type="button"
+            className="block text-sm text-brand-700 underline underline-offset-2"
+            onClick={() => {
+              setProblem(undefined);
+              setPassword("");
+              setStep({ kind: "forgot" });
+            }}
+          >
+            {de.auth.forgotPassword}
+          </button>
         </form>
+      ) : step.kind === "forgot" ? (
+        <form className="space-y-4" onSubmit={submitForgot}>
+          <h2 className="text-base font-semibold">{de.auth.forgotTitle}</h2>
+          <p className="text-sm text-gray-700">{de.auth.forgotPrompt}</p>
+          <Field label={de.auth.email} htmlFor="forgot-email">
+            <TextInput
+              id="forgot-email"
+              type="email"
+              value={email}
+              autoComplete="username"
+              onChange={setEmail}
+            />
+          </Field>
+          <div className="flex gap-2">
+            <Button type="submit">{de.auth.forgotSubmit}</Button>
+            <Button variant="secondary" onClick={() => setStep({ kind: "password" })}>
+              {de.common.cancel}
+            </Button>
+          </div>
+        </form>
+      ) : step.kind === "forgot_sent" ? (
+        <div className="space-y-4">
+          {/*
+            One sentence, true whether or not the address exists.
+
+            The API answers 202 either way — a console whose accounts are named
+            after real people at a named company must not have a form that says
+            who works there — so the screen has to be equally uninformative or
+            the whole property is undone in the last inch.
+          */}
+          <Notice tone="info" title={de.auth.forgotTitle}>
+            {de.auth.forgotSent}
+          </Notice>
+          <Button variant="secondary" onClick={() => setStep({ kind: "password" })}>
+            {de.auth.backToSignIn}
+          </Button>
+        </div>
       ) : (
         <form className="space-y-4" onSubmit={submitTotp}>
           {step.kind === "enrol" ? (

@@ -24,7 +24,7 @@
  * asserting twice at two different levels.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import Redis from "ioredis";
@@ -106,7 +106,22 @@ beforeAll(async () => {
  * accident somewhere unrelated.
  */
 beforeEach(async () => {
-  const keys = await redis.keys("ratelimit:participantSignIn:*");
+  /*
+   * Both buckets this suite can trip, and for the same reason.
+   *
+   * `staffPasswordReset` allows three a minute per IP — every request here
+   * arrives from 127.0.0.1 — and the reset tests below make more than three
+   * between them. Left alone, the last one 429s for a reason that has nothing
+   * to do with what it is asserting, which is the definition of a test that
+   * will be deleted rather than understood.
+   *
+   * The limits themselves are asserted deliberately in "the rate limit" below,
+   * where tripping one is the point.
+   */
+  const keys = [
+    ...(await redis.keys("ratelimit:participantSignIn:*")),
+    ...(await redis.keys("ratelimit:staffPasswordReset:*")),
+  ];
   if (keys.length > 0) await redis.del(...keys);
 });
 
@@ -551,3 +566,196 @@ async function failedAttempts(email: string): Promise<number> {
   );
   return rows[0]?.failed_attempts ?? -1;
 }
+
+// ---------------------------------------------------------------------------
+
+/**
+ * "Passwort vergessen", on the learner plane (P40-03).
+ *
+ * The mail cannot be delivered from here — there is no SMTP server — so the
+ * seam is the token table: the request writes one when it can send and refuses
+ * to when it cannot, and redemption is driven with the value read back out.
+ * That is the same shape the flow has in production, minus the transport.
+ *
+ * What is asserted about the *responses* is mostly that they are identical.
+ * Asking whether a given physician has an account with a named pharmaceutical
+ * company is close enough to health-adjacent information about a named person
+ * that the form must not answer it, and an assertion that two things are the
+ * same is the only way to state that.
+ */
+describe("resetting a forgotten password (P40-03)", () => {
+  let tenant: Tenant;
+
+  /*
+   * 422, not 400: `AppError.badRequest` builds a `validation` problem and the
+   * filter maps it there. Every refusal on the confirm endpoint answers with
+   * it — a link that expired, one already spent, one that never existed and a
+   * password the policy rejects alike — so the status says nothing a caller
+   * could use to tell them apart.
+   */
+  const REFUSED = 422;
+
+  beforeAll(async () => {
+    // The same hash the file-level fixture uses. `seedTenant` takes it as an
+    // argument rather than computing one, so that every participant in this
+    // suite shares a single Argon2 call — it is the slowest thing here.
+    tenant = await seedTenant("reset", await argonHash(PASSWORD, { algorithm: 2 }));
+    // A sender on the project, because a project with none cannot deliver and
+    // the service declines to mint a token it could never send.
+    await pool.query(
+      `UPDATE projects
+          SET smtp_host = 'smtp.invalid.test', smtp_port = 587,
+              smtp_from_address = 'no-reply@invalid.test', smtp_from_name = 'Portal'
+        WHERE slug = $1`,
+      [tenant.projectSlug],
+    );
+  }, 30_000);
+
+  async function ask(email: string, projectSlug = tenant.projectSlug): Promise<number> {
+    const response = await fetch(`${baseUrl}/auth/participant/password-reset`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-ds-project": projectSlug },
+      body: JSON.stringify({ email }),
+    });
+    return response.status;
+  }
+
+  /** The token cannot be read from the mail, so it is read from the row. */
+  async function openTokenHashes(): Promise<number> {
+    const { rows } = await pool.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM learner_credential_tokens
+        WHERE accepted_at IS NULL AND revoked_at IS NULL`,
+    );
+    return Number(rows[0]?.n ?? "0");
+  }
+
+  it("accepts a request for an address that exists", async () => {
+    expect(await ask(tenant.email)).toBe(202);
+  });
+
+  it("answers identically for one that does not", async () => {
+    expect(await ask(`niemand-${randomUUID().slice(0, 8)}@example.org`)).toBe(202);
+  });
+
+  it("wrote a token for the real address and none for the invented one", async () => {
+    // The response cannot say which happened, so the database is asked instead
+    // — this is the assertion the identical statuses above are hiding.
+    expect(await openTokenHashes()).toBe(1);
+  });
+
+  it("revokes the previous link when a second is asked for", async () => {
+    // A link already in a mailbox — forwarded, quoted in a ticket — stops
+    // working the moment a newer one is issued.
+    expect(await ask(tenant.email)).toBe(202);
+    expect(await openTokenHashes()).toBe(1);
+
+    const { rows } = await pool.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM learner_credential_tokens WHERE revoked_at IS NOT NULL`,
+    );
+    expect(Number(rows[0]?.n ?? "0")).toBe(1);
+  });
+
+  it("sets the password, and the participant can sign in with it", async () => {
+    const token = await freshToken();
+
+    const confirmed = await confirm(token, "ein-ganz-neues-passwort-2026");
+    expect(confirmed).toBe(204);
+
+    const signedIn = await signIn(tenant, { password: "ein-ganz-neues-passwort-2026" });
+    expect(signedIn.status).toBe(200);
+  });
+
+  it("refuses the same link a second time", async () => {
+    // P39-01 on this plane: without the state check a link is a permanent key
+    // to the account, replayable by anybody who ever saw the mail.
+    const token = await freshToken();
+    expect(await confirm(token, "erste-wahl-2026-lang")).toBe(204);
+    expect(await confirm(token, "zweite-wahl-2026-lang")).toBe(REFUSED);
+  });
+
+  it("refuses a link older than its window", async () => {
+    const token = await freshToken();
+    // Two hours against RESET_VALID_MINUTES = 60. Moved in the database rather
+    // than by mocking a clock: what is under test is the API reading its row.
+    await pool.query(
+      `UPDATE learner_credential_tokens SET created_at = now() - interval '2 hours'
+        WHERE accepted_at IS NULL AND revoked_at IS NULL`,
+    );
+    expect(await confirm(token, "zu-spaet-2026-lang")).toBe(REFUSED);
+  });
+
+  it("refuses a password the policy rejects, without spending the link", async () => {
+    const token = await freshToken();
+    expect(await confirm(token, "kurz")).toBe(REFUSED);
+    // Still usable: a rejected password must not consume a single-use link and
+    // strand somebody who simply chose badly the first time.
+    expect(await confirm(token, "danach-doch-noch-lang-genug")).toBe(204);
+  });
+
+  it("mints nothing for a project whose participants sign in elsewhere", async () => {
+    // A federated participant's password is not ours to reset, and offering to
+    // would send them a link that cannot work.
+    await pool.query(
+      "UPDATE projects SET identity_provider = 'keycloak' WHERE slug = $1",
+      [tenant.projectSlug],
+    );
+
+    const before = await openTokenHashes();
+    expect(await ask(tenant.email)).toBe(202);
+    expect(await openTokenHashes()).toBe(before);
+
+    await pool.query("UPDATE projects SET identity_provider = 'local' WHERE slug = $1", [
+      tenant.projectSlug,
+    ]);
+  });
+
+  /** Ask for a link and read the token straight back out of the row. */
+  async function freshToken(): Promise<string> {
+    /*
+     * The table stores only a hash, so the value cannot be recovered from it —
+     * which is the point of storing a hash. The token is therefore generated
+     * here and written in, standing in for the one the mail would have carried.
+     * What that still exercises is everything after delivery: the lookup, the
+     * state check, the policy, and the write.
+     */
+    const token = randomUUID().replace(/-/gu, "") + randomUUID().replace(/-/gu, "");
+    const hash = createHash("sha256").update(token).digest();
+
+    const { rows } = await pool.query<{ id: string; project_id: string }>(
+      `SELECT ui.id, p.id AS project_id
+         FROM user_identities ui
+         JOIN users u ON u.id = ui.user_id
+         JOIN projects p ON p.slug = $2
+        WHERE u.email = $1 AND ui.provider = 'local'`,
+      [tenant.email, tenant.projectSlug],
+    );
+    const row = rows[0];
+    if (row === undefined)
+      throw new Error("no local identity for the seeded participant");
+
+    await pool.query(
+      `UPDATE learner_credential_tokens SET revoked_at = now()
+        WHERE user_identity_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL`,
+      [row.id],
+    );
+    await pool.query(
+      `INSERT INTO learner_credential_tokens (user_identity_id, project_id, token_hash)
+       VALUES ($1, $2, $3)`,
+      [row.id, row.project_id, hash],
+    );
+
+    return token;
+  }
+
+  async function confirm(token: string, newPassword: string): Promise<number> {
+    const response = await fetch(`${baseUrl}/auth/participant/password-reset/confirm`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-ds-project": tenant.projectSlug,
+      },
+      body: JSON.stringify({ token, newPassword }),
+    });
+    return response.status;
+  }
+});

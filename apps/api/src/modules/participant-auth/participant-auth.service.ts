@@ -18,7 +18,17 @@
 
 import { randomBytes } from "node:crypto";
 import type { LearnerSessionRepository } from "../../auth/learner-session.repository.js";
-import { verifyPassword, hashIp, hashPassword } from "../staff/credentials.js";
+import {
+  generateToken,
+  hashIp,
+  hashPassword,
+  hashToken,
+  verifyPassword,
+} from "../staff/credentials.js";
+import { resetStatus } from "@ds/domain";
+import { canSend, sendNow } from "../../shared/mailer.js";
+import { participantResetEmail } from "../staff/reset.copy.js";
+import type { SecretCipher } from "../../shared/secret-cipher.js";
 import type { ParticipantAuthRepository } from "./participant-auth.repository.js";
 
 /** Failures before the account locks, and for how long. */
@@ -62,6 +72,8 @@ export class ParticipantAuthService {
     /** The same repository the guard verifies through — see its header. */
     private readonly sessions: LearnerSessionRepository,
     private readonly ipSalt: string,
+    /** Decrypts the project's stored SMTP password for one send (P40-03). */
+    private readonly cipher: SecretCipher,
   ) {}
 
   async signIn(input: {
@@ -220,6 +232,97 @@ export class ParticipantAuthService {
       credential.identityId,
       await hashPassword(input.newPassword),
     );
+    return { ok: true };
+  }
+
+  // --- Passwort vergessen (P40-03) -----------------------------------------
+
+  /**
+   * Ask for a reset link.
+   *
+   * Resolves nothing back to the caller — the controller answers 202 in every
+   * case — for the same reason the staff plane's does: a different answer for a
+   * known address turns the form into a way of asking "is this physician
+   * enrolled with this customer", which is health-adjacent information about a
+   * named person.
+   *
+   * The tenant is not the caller's to choose. It comes from
+   * `resolve_project_binding` for the slug in `X-DS-Project`, exactly as
+   * sign-in does, so a request naming one customer cannot reach an account
+   * belonging to another — a person with the same address at two customers has
+   * two credentials, and only the one for the named project is touched.
+   */
+  async beginPasswordReset(input: {
+    projectSlug: string;
+    email: string;
+    resetUrl: (token: string) => string;
+  }): Promise<void> {
+    const project = await this.repository.findProject(input.projectSlug);
+    // Also the `keycloak` case: a federated participant's password is not ours
+    // to reset, and offering to would send them a link that cannot work.
+    if (project === undefined || project.identityProvider !== "local") return;
+
+    const participant = await this.repository.findParticipant(
+      input.email,
+      project.customerId,
+    );
+    if (participant === undefined || participant.disabledAt !== null) return;
+
+    const sender = await this.repository.projectSender(
+      project.customerId,
+      project.projectId,
+    );
+    // No sender on the project means no way to deliver, so no token is minted:
+    // a live credential in the database that nobody can ever spend is worse
+    // than nothing.
+    if (!canSend({ host: sender.host, fromAddress: sender.fromAddress })) return;
+
+    const token = generateToken();
+    await this.repository.issueResetToken({
+      userIdentityId: participant.identityId,
+      projectId: project.projectId,
+      tokenHash: hashToken(token),
+    });
+
+    await sendNow(
+      {
+        host: sender.host ?? "",
+        port: sender.port,
+        username: sender.username,
+        password:
+          sender.passwordEnc === null ? null : this.cipher.decrypt(sender.passwordEnc),
+        // Implicit TLS is inferred from the port, since `projects` has no
+        // column for it: 465 is the only port on which SMTP is TLS from the
+        // first byte.
+        secure: sender.port === 465,
+        fromAddress: sender.fromAddress ?? "",
+        fromName: sender.fromName,
+      },
+      { ...participantResetEmail(input.resetUrl(token)), to: input.email },
+    );
+  }
+
+  /**
+   * Spend a reset link and set the password.
+   *
+   * The state check is not optional and its absence is a whole ticket on the
+   * other plane (P39-01): without it a link never expires, can be replayed
+   * indefinitely, and cannot be revoked. `resetStatus` owns the rule.
+   */
+  async completePasswordReset(input: {
+    token: string;
+    newPassword: string;
+    now: Date;
+  }): Promise<{ ok: boolean }> {
+    const row = await this.repository.findResetToken(hashToken(input.token));
+    if (row === undefined) return { ok: false };
+    if (resetStatus(row, input.now) !== "valid") return { ok: false };
+
+    await this.repository.replacePassword(
+      row.userIdentityId,
+      await hashPassword(input.newPassword),
+    );
+    await this.repository.acceptResetToken(row.id, input.now);
     return { ok: true };
   }
 

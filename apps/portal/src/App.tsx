@@ -44,6 +44,11 @@ import { parseRoute, routePath, type Route } from "./routes.js";
 import { WidgetMount } from "./components/WidgetMount.js";
 import { Welcome } from "./components/Welcome.js";
 import { ParticipantSignIn } from "./components/ParticipantSignIn.js";
+import {
+  ForgotPassword,
+  ResetPassword,
+  resetTokenFromHash,
+} from "./components/ForgotPassword.js";
 import { ChangePassword } from "./components/ChangePassword.js";
 
 type AuthState = "checking" | "anonymous" | "signed-in" | "failed";
@@ -106,6 +111,31 @@ function Tenant(props: {
 }) {
   const { config, route } = props;
   const [signIn, setSignIn] = useState<TenantSignIn | undefined>();
+  const [forgot, setForgot] = useState(false);
+
+  /*
+   * The token out of `#passwort-neu?token=…`, read once and erased from the
+   * address bar in the same breath (P40-03).
+   *
+   * A fragment rather than a query string: a query string is sent to the server
+   * on every request for the page and lands in access logs, proxy logs and the
+   * `Referer` of anything the page loads. `useState`'s lazy initialiser rather
+   * than an effect, because an effect runs after the first paint — which would
+   * be the sign-in form, flipping to this a moment later.
+   */
+  const [resetToken, setResetToken] = useState<string | undefined>(() => {
+    const token = resetTokenFromHash(
+      typeof window === "undefined" ? "" : window.location.hash,
+    );
+    if (token !== undefined && typeof window !== "undefined") {
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search,
+      );
+    }
+    return token;
+  });
   const [state, setState] = useState<AuthState>("checking");
 
   // Who this tenant is and where its learners sign in. Public, because the page
@@ -193,6 +223,42 @@ function Tenant(props: {
     );
   }
 
+  /*
+   * A reset link beats the sign-in form (P40-03).
+   *
+   * Checked before "are they signed in", because somebody following a reset
+   * link while still holding a session is somebody who thinks their account is
+   * compromised — dropping them into the catalogue would be the wrong answer to
+   * that.
+   */
+  if (resetToken !== undefined) {
+    return (
+      <Shell customerName={signIn.customerName}>
+        <ResetPassword
+          apiBase={config.apiBase}
+          projectSlug={route.tenant}
+          token={resetToken}
+          onDone={() => {
+            setResetToken(undefined);
+            setRefreshKey((n) => n + 1);
+          }}
+        />
+      </Shell>
+    );
+  }
+
+  if (state !== "signed-in" && forgot) {
+    return (
+      <Shell customerName={signIn.customerName}>
+        <ForgotPassword
+          apiBase={config.apiBase}
+          projectSlug={route.tenant}
+          onCancel={() => setForgot(false)}
+        />
+      </Shell>
+    );
+  }
+
   if (state !== "signed-in") {
     return (
       <Shell customerName={signIn.customerName}>
@@ -244,6 +310,7 @@ function Tenant(props: {
               // the cookie, so "did that work?" is only answerable by the same
               // call the page load makes.
               onSignedIn={() => setRefreshKey((n) => n + 1)}
+              onForgotPassword={() => setForgot(true)}
             />
           )}
         </div>

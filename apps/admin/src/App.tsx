@@ -61,11 +61,29 @@ import { Certificates } from "./components/Certificates.js";
 import { StaffAccounts } from "./components/StaffAccounts.js";
 import { Security } from "./components/Security.js";
 import { SignIn } from "./components/SignIn.js";
+import { forgetHash, NewPassword, tokenFromHash } from "./components/NewPassword.js";
 
 export function App() {
   const config = useMemo(() => readConfig(), []);
   const [profile, setProfile] = useState<StaffProfile | undefined>();
   const [checking, setChecking] = useState(true);
+
+  /*
+   * The token out of `#passwort-neu?token=…`, read exactly once (P40-02).
+   *
+   * The initialiser runs on the first render and clears the fragment in the
+   * same breath, so the address bar stops carrying a live credential the
+   * moment the page has it. `useState`'s lazy form rather than an effect,
+   * because an effect runs *after* the first paint — and the first paint would
+   * be the sign-in form, which then flips to this screen.
+   */
+  const [resetToken, setResetToken] = useState<string | undefined>(() => {
+    const token = tokenFromHash(
+      typeof window === "undefined" ? "" : window.location.hash,
+    );
+    if (token !== undefined) forgetHash();
+    return token;
+  });
 
   /*
    * Ask the API who is signed in.
@@ -108,6 +126,31 @@ export function App() {
     return (
       <Shell>
         <Spinner label={de.auth.signingIn} />
+      </Shell>
+    );
+  }
+
+  /*
+   * A reset or invitation link beats everything else on the page (P40-02).
+   *
+   * Checked before the signed-out branch and before the signed-*in* one: an
+   * operator who followed a reset link while still holding a session is
+   * somebody who thinks their account is compromised, and dropping them into
+   * the console they are already signed in to would be the wrong answer to
+   * that.
+   *
+   * Read once into state rather than off `window` on every render, and erased
+   * from the address bar at the same moment — so a reload does not carry the
+   * token and a bookmark cannot preserve it.
+   */
+  if (resetToken !== undefined) {
+    return (
+      <Shell>
+        <NewPassword
+          apiBase={config.apiBase}
+          token={resetToken}
+          onDone={() => setResetToken(undefined)}
+        />
       </Shell>
     );
   }
@@ -933,6 +976,7 @@ export function Console(props: {
     return headed(
       <Security
         client={platformClient}
+        apiBase={props.config.apiBase}
         isSuperAdmin={props.profile.role === "super_admin"}
         ownSecondFactorEnrolled={props.profile.secondFactorEnrolled}
         customers={customers}

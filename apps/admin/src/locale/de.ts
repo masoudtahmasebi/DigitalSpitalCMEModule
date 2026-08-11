@@ -32,6 +32,34 @@ export const de = {
     codePrompt: "Bitte geben Sie den Code aus Ihrer Authenticator-App ein.",
     codeSubmit: "Bestätigen",
     codeInvalid: "Der Code ist nicht korrekt oder nicht mehr gültig.",
+    // Passwort vergessen (P40-02).
+    forgotPassword: "Passwort vergessen?",
+    forgotTitle: "Passwort zurücksetzen",
+    forgotPrompt:
+      "Geben Sie die E-Mail-Adresse Ihres Kontos ein. Wenn es ein Konto dazu gibt, senden wir Ihnen einen Link, mit dem Sie ein neues Passwort vergeben können.",
+    forgotSubmit: "Link anfordern",
+    /* Deliberately says "wenn" and not "wir haben": the API answers the same
+       for an unknown address, and a screen that confirmed the address exists
+       would undo that in the last inch. */
+    forgotSent:
+      "Wenn es ein Konto zu dieser Adresse gibt, ist ein Link unterwegs. Er ist 60 Minuten gültig und kann einmal verwendet werden. Prüfen Sie bitte auch den Spam-Ordner.",
+    forgotFailed:
+      "Die Anfrage konnte nicht gesendet werden. Bitte versuchen Sie es in einer Minute erneut.",
+    backToSignIn: "Zurück zur Anmeldung",
+
+    // Setting a password from an invitation or a reset link (P40-02).
+    newPasswordTitle: "Neues Passwort vergeben",
+    newPasswordPrompt:
+      "Bitte wählen Sie ein Passwort mit mindestens 12 Zeichen. Es darf Ihren Namen und Ihre E-Mail-Adresse nicht enthalten.",
+    newPassword: "Neues Passwort",
+    newPasswordRepeat: "Passwort wiederholen",
+    newPasswordSubmit: "Passwort speichern",
+    newPasswordMismatch: "Die beiden Eingaben stimmen nicht überein.",
+    newPasswordDone:
+      "Das Passwort wurde gespeichert. Sie können sich jetzt anmelden. Alle bisherigen Anmeldungen dieses Kontos wurden beendet.",
+    newPasswordLinkDead:
+      "Dieser Link ist nicht mehr gültig. Links sind einmalig verwendbar und laufen ab — fordern Sie über „Passwort vergessen?“ einen neuen an.",
+
     enrolTitle: "Zwei-Faktor-Authentifizierung einrichten",
     enrolPrompt:
       "Scannen Sie diesen Code mit Ihrer Authenticator-App und geben Sie anschließend den angezeigten sechsstelligen Code ein.",
@@ -184,6 +212,16 @@ export const de = {
     ownFactor: "Ihr eigener zweiter Faktor",
     ownFactorEnrolled: "Eingerichtet.",
     ownFactorNone: "Nicht eingerichtet.",
+    // The platform's own mail sender (P40-01).
+    platformMail: "E-Mail-Versand der Plattform",
+    platformMailIntro:
+      "Von dieser Adresse verschickt die Plattform E-Mails zu Verwaltungskonten — etwa Links zum Zurücksetzen eines Passworts. Für Teilnehmende gelten stattdessen die SMTP-Angaben des jeweiligen Projekts.",
+    platformMailReady:
+      "Der Versand ist eingerichtet. „Passwort vergessen?“ funktioniert für Verwaltungskonten.",
+    platformMailIncomplete:
+      "Server und Absenderadresse fehlen noch. Ohne sie kann kein Link verschickt werden — Betroffene brauchen dann eine Einladung durch eine andere Administration.",
+    platformMailSecure: "Verschlüsselt ab Verbindungsaufbau (Port 465)",
+
     removeOwn: "Eigenen zweiten Faktor entfernen",
     removeOwnConfirm: "Wirklich entfernen",
     /*

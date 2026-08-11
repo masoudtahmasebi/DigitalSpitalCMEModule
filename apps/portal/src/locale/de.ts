@@ -16,6 +16,41 @@
 export const de = {
   appTitle: "Fortbildungen",
 
+  /**
+   * "Passwort vergessen" (P40-03).
+   *
+   * The confirmation says *wenn* and not *wir haben*, deliberately. The API
+   * answers the same for an unknown address as for a known one — asking whether
+   * a given physician has an account with a named pharmaceutical company is
+   * close enough to health-adjacent information about a named person — and a
+   * sentence that confirmed the address exists would give that back in the last
+   * inch.
+   */
+  forgot: {
+    link: "Passwort vergessen?",
+    title: "Passwort zurücksetzen",
+    intro:
+      "Geben Sie die E-Mail-Adresse Ihres Zugangs ein. Wenn es einen Zugang dazu gibt, senden wir Ihnen einen Link, mit dem Sie ein neues Passwort vergeben können.",
+    submit: "Link anfordern",
+    sending: "Wird gesendet …",
+    sent: "Wenn es einen Zugang zu dieser Adresse gibt, ist ein Link unterwegs. Er ist 60 Minuten gültig und lässt sich einmal verwenden. Bitte prüfen Sie auch den Spam-Ordner.",
+    throttled:
+      "Es wurden zu viele Anfragen gestellt. Bitte versuchen Sie es in einer Minute erneut.",
+    back: "Zurück zur Anmeldung",
+
+    resetTitle: "Neues Passwort vergeben",
+    resetIntro:
+      "Bitte wählen Sie ein Passwort mit mindestens 12 Zeichen. Es darf Ihren Namen und Ihre E-Mail-Adresse nicht enthalten.",
+    newPassword: "Neues Passwort",
+    repeat: "Passwort wiederholen",
+    resetSubmit: "Passwort speichern",
+    mismatch: "Die beiden Eingaben stimmen nicht überein.",
+    resetDone:
+      "Das Passwort wurde gespeichert. Sie können sich jetzt mit dem neuen Passwort anmelden.",
+    linkDead:
+      "Dieser Link ist nicht mehr gültig. Links lassen sich einmal verwenden und laufen ab — fordern Sie über „Passwort vergessen?“ einen neuen an.",
+  },
+
   auth: {
     signIn: "Anmelden",
     signOut: "Abmelden",

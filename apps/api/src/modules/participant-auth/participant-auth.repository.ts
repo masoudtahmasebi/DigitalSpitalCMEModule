@@ -160,6 +160,135 @@ export class ParticipantAuthRepository {
    * their own password must not be asked to choose another one on the next
    * sign-in — that loop is how a forced-change flow becomes a wall.
    */
+  // --- password reset (P40-03) ---------------------------------------------
+
+  /**
+   * Revoke whatever is outstanding, then write a new token.
+   *
+   * Revoking first is the point: a link already in a mailbox — forwarded,
+   * quoted in a ticket, or simply older than the one just asked for — stops
+   * working. That property only holds because redemption *reads* `revoked_at`,
+   * which on the staff plane it did not until P39-01.
+   *
+   * Not inside a tenant transaction: `learner_credential_tokens` has no RLS,
+   * for the same reason `learner_credentials` has none — the token is presented
+   * by somebody with no session, so it is resolved before any tenant context
+   * can exist.
+   */
+  async issueResetToken(input: {
+    userIdentityId: string;
+    projectId: string;
+    tokenHash: Buffer;
+  }): Promise<void> {
+    await this.pool.query(
+      `UPDATE learner_credential_tokens SET revoked_at = now()
+        WHERE user_identity_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL`,
+      [input.userIdentityId],
+    );
+    await this.pool.query(
+      `INSERT INTO learner_credential_tokens (user_identity_id, project_id, token_hash)
+       VALUES ($1, $2, $3)`,
+      [input.userIdentityId, input.projectId, input.tokenHash],
+    );
+  }
+
+  async findResetToken(tokenHash: Buffer): Promise<
+    | {
+        id: string;
+        userIdentityId: string;
+        createdAt: Date;
+        acceptedAt: Date | null;
+        revokedAt: Date | null;
+      }
+    | undefined
+  > {
+    const { rows } = await this.pool.query<{
+      id: string;
+      user_identity_id: string;
+      created_at: Date;
+      accepted_at: Date | null;
+      revoked_at: Date | null;
+    }>(
+      `SELECT id, user_identity_id, created_at, accepted_at, revoked_at
+         FROM learner_credential_tokens WHERE token_hash = $1`,
+      [tokenHash],
+    );
+    const row = rows[0];
+    return row === undefined
+      ? undefined
+      : {
+          id: row.id,
+          userIdentityId: row.user_identity_id,
+          createdAt: row.created_at,
+          acceptedAt: row.accepted_at,
+          revokedAt: row.revoked_at,
+        };
+  }
+
+  async acceptResetToken(id: string, at: Date): Promise<void> {
+    await this.pool.query(
+      `UPDATE learner_credential_tokens SET accepted_at = $2
+        WHERE id = $1 AND accepted_at IS NULL`,
+      [id, at],
+    );
+  }
+
+  /**
+   * The project's own sender, for the mail this reset produces.
+   *
+   * **Inside a tenant transaction**, and that is not optional. `projects` is
+   * under FORCE ROW LEVEL SECURITY, so reading it on the bare pool with no
+   * `app.customer_id` matches zero rows — and this method's shape hides that
+   * perfectly: every column comes back `null`, which `canSend` reads as "not
+   * configured", so a correctly configured project silently sent nothing.
+   *
+   * That is exactly how it failed the first time it was run, and it is the same
+   * mistake `findParticipant` documents one method up. The customer id is not
+   * the caller's to choose — it comes from `resolve_project_binding` for the
+   * slug in `X-DS-Project`, so entering that tenant is entering the one the
+   * request already named.
+   */
+  async projectSender(
+    customerId: string,
+    projectId: string,
+  ): Promise<{
+    host: string | null;
+    port: number | null;
+    username: string | null;
+    passwordEnc: Buffer | null;
+    fromAddress: string | null;
+    fromName: string | null;
+  }> {
+    const rows = await runInTenant(
+      this.pool,
+      { customerId, role: "system" },
+      async (db) =>
+        (
+          await db.execute<{
+            smtp_host: string | null;
+            smtp_port: number | null;
+            smtp_username: string | null;
+            smtp_password_enc: Buffer | null;
+            smtp_from_address: string | null;
+            smtp_from_name: string | null;
+          }>(
+            sql`SELECT smtp_host, smtp_port, smtp_username, smtp_password_enc,
+                     smtp_from_address, smtp_from_name
+                FROM projects WHERE id = ${projectId}`,
+          )
+        ).rows,
+    );
+    const row = rows[0];
+    return {
+      host: row?.smtp_host ?? null,
+      port: row?.smtp_port ?? null,
+      username: row?.smtp_username ?? null,
+      passwordEnc: row?.smtp_password_enc ?? null,
+      fromAddress: row?.smtp_from_address ?? null,
+      fromName: row?.smtp_from_name ?? null,
+    };
+  }
+
   async replacePassword(identityId: string, passwordHash: string): Promise<void> {
     await this.pool.query(
       `UPDATE learner_credentials

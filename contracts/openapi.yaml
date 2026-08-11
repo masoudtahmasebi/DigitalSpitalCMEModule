@@ -1181,6 +1181,79 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /auth/participant/password-reset:
+    post:
+      tags: [auth]
+      operationId: requestParticipantPasswordReset
+      summary: Ask for a password-reset link
+      description: |
+        **Answers 202 in every case** — an unknown address, a project whose
+        participants sign in through a customer's Keycloak, a project with no
+        SMTP settings, and a link that actually went out.
+
+        That is not politeness. Asking whether a given physician has an account
+        with a named pharmaceutical company is close enough to health-adjacent
+        information about a named person that this form must not answer it. The
+        service behaves the same way on its side: no token is minted when there
+        is nowhere to send one, so there is no difference in work done either.
+
+        The link points at the tenant's own path, built from the request's
+        `Origin` when the deployment allows it and from the first configured
+        origin otherwise — **never** from the body. A reset flow that lets the
+        caller name the link's host delivers a real token to a real inbox
+        pointing at a page the attacker controls.
+
+        Rate-limited per IP rather than per address: a per-address limit would
+        itself answer "is this address being asked about a lot".
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, maxLength: 320 }
+      responses:
+        "202": { description: Accepted. Says nothing about whether an account exists. }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/participant/password-reset/confirm:
+    post:
+      tags: [auth]
+      operationId: confirmParticipantPasswordReset
+      summary: Spend a reset link and set a password
+      description: |
+        Public, because the token **is** the credential — whoever holds it has
+        by definition no session.
+
+        The password policy is checked before the token is spent, so a rejected
+        password does not consume a single-use link and strand somebody.
+
+        One answer for a link that expired, one already spent and one that never
+        existed: a distinguishable "already used" would confirm to somebody
+        holding a forwarded link that it was once real. The lifetime is
+        `RESET_VALID_MINUTES` (60) and it is enforced on redemption — see
+        P39-01, which is the record of what happens when it is not.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token: { type: string, maxLength: 512 }
+                newPassword: { type: string, maxLength: 256 }
+      responses:
+        "204": { description: Set. The link is spent. }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
   /auth/participant/password:
     post:
       tags: [auth]
@@ -2808,6 +2881,20 @@ components:
         already taken, or a delete of something a learner has already used. The
         second kind is not a validation failure: nothing about the request is
         wrong, and the same request would have succeeded yesterday.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+    TooManyRequests:
+      description: |
+        The rate limiter refused this caller for now.
+
+        Named as a shared response because two of the endpoints that use it —
+        the password-reset requests — answer identically for every other
+        outcome, which makes a 429 the *only* status a caller can distinguish.
+        That is deliberate and it is also why the limit is keyed on the IP: a
+        per-address limit would itself answer "is this address being asked
+        about a lot".
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetails" }

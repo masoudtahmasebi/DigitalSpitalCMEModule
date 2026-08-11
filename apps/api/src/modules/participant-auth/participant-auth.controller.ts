@@ -42,6 +42,7 @@ import { readCookie } from "../../auth/staff-session.js";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
 import { RateLimit } from "../../shared/rate-limit.guard.js";
+import { createSecretCipher } from "../../shared/secret-cipher.js";
 import { AppError } from "../../shared/problem-details.js";
 import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
@@ -58,6 +59,15 @@ const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH),
   // Bounded here as well as by `checkPassword`, so a megabyte never reaches
   // Argon2 even if the policy call is ever moved or removed.
+  newPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH),
+});
+
+const resetRequestSchema = z.object({
+  email: z.string().trim().min(3).max(320),
+});
+
+const resetConfirmSchema = z.object({
+  token: z.string().min(1).max(512),
   newPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH),
 });
 
@@ -104,6 +114,88 @@ export class ParticipantAuthController {
       this.cookieOptions(result.expiresAt),
     );
     return { mustChangePassword: result.mustChangePassword };
+  }
+
+  /**
+   * Ask for a reset link (P40-03).
+   *
+   * 202 for an unknown address, a federated project, a project with no SMTP
+   * settings, and a link that went out. Asking whether a physician is enrolled
+   * with a named pharmaceutical company is close enough to health-adjacent
+   * information about a named person that the form must not answer it.
+   *
+   * The link points at the tenant's own path — `/<slug>#passwort-neu?token=…`
+   * — built from the origin the request already came from, never from the body.
+   */
+  @Public()
+  @Post("password-reset")
+  @HttpCode(202)
+  @RateLimit("staffPasswordReset")
+  async requestPasswordReset(
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<{ status: string }> {
+    const parsed = resetRequestSchema.safeParse(body);
+    // A malformed body is answered exactly like a well-formed one: telling
+    // somebody their probe was at least the right shape is information.
+    if (!parsed.success) return { status: "accepted" };
+
+    const slug = request.header("x-ds-project") ?? "";
+    const origin = this.portalOrigin(request);
+
+    await this.service().beginPasswordReset({
+      projectSlug: slug,
+      email: parsed.data.email,
+      resetUrl: (token) =>
+        `${origin}/${encodeURIComponent(slug)}#passwort-neu?token=${encodeURIComponent(token)}`,
+    });
+
+    return { status: "accepted" };
+  }
+
+  /**
+   * Spend the link and set the password.
+   *
+   * Public, because the token *is* the credential — the person holding it has
+   * by definition no session. The policy is checked before the token is spent,
+   * so a rejected password does not consume a single-use link and strand
+   * somebody.
+   */
+  @Public()
+  @Post("password-reset/confirm")
+  @HttpCode(204)
+  @RateLimit("participantPasswordChange")
+  async confirmPasswordReset(@Body() body: unknown): Promise<void> {
+    const parsed = resetConfirmSchema.safeParse(body);
+    if (!parsed.success) throw AppError.badRequest("invalid reset");
+
+    const verdict = checkPassword(parsed.data.newPassword, { identifiers: [] });
+    if (!verdict.ok) throw AppError.badRequest(`password rejected: ${verdict.reason}`);
+
+    const result = await this.service().completePasswordReset({
+      token: parsed.data.token,
+      newPassword: parsed.data.newPassword,
+      now: new Date(),
+    });
+
+    // One answer for expired, spent and never-existed alike (P39-01).
+    if (!result.ok) throw AppError.badRequest("this link is no longer valid");
+  }
+
+  /**
+   * The origin a reset link may point at.
+   *
+   * The request's own when the deployment allows it, the first configured
+   * origin otherwise — never a value from the body. A reset flow that lets the
+   * caller name the host delivers a real token to a real inbox pointing at a
+   * page the attacker controls.
+   */
+  private portalOrigin(request: Request): string {
+    const origin = request.header("origin");
+    if (origin !== undefined && this.config.ALLOWED_ORIGINS.includes(origin)) {
+      return origin;
+    }
+    return this.config.ALLOWED_ORIGINS[0] ?? "";
   }
 
   @Public()
@@ -259,6 +351,9 @@ export class ParticipantAuthController {
       // for the same address, and the column exists precisely to answer "was
       // this the same client?" across restarts.
       this.config.SECRETS_KMS_KEY,
+      // The same cipher the rest of the application uses: the project's stored
+      // SMTP password is a secret at rest (CLAUDE.md §4 invariant 7).
+      createSecretCipher(this.config.NODE_ENV, this.config.SECRETS_KMS_KEY),
     );
   }
 
