@@ -94,9 +94,38 @@ emit() {
   echo "window.__DS_CONFIG__ = {"
 } > "$target.tmp"
 
-# The two both apps need.
+# The one both apps need.
 emit apiBase "${DS_API_BASE:-}" required
-emit projectSlug "${DS_PROJECT_SLUG:-}" required
+
+# `projectSlug` was required here and is now written only when it is set.
+#
+# ## Why this crash-looped the console and the portal (P44-01)
+#
+# Nothing supplied it. `docker-compose.prod.yml` gives `admin` and `portal`
+# exactly one variable, `DS_API_BASE`; `DS_PROJECT_SLUG` was never in the
+# compose file, never in `config.env.example` and never derived by
+# `domains.sh`. So this line ran `exit 1` on every container start, which is
+# `Restarting (1)` in `docker ps` and — because `caddy` depends on them —
+# a deploy that reports the *API* as the thing that failed.
+#
+# ## Why it is not simply added to compose instead
+#
+# Because nothing reads it any more, and has not since P21-03/P22-03. The
+# console picks its customer from what the operator can actually reach, and the
+# portal takes its tenant from the first path segment — `/medice`, `/ds` — which
+# is the whole reason one installation can serve several. `readConfig` in both
+# apps returns `{ apiBase }` and nothing else; `apps/admin/src/config.ts` even
+# carries the comment explaining why `projectSlug` was removed.
+#
+# So this was a required value that no deployment supplied and no code consumed:
+# CLAUDE.md §9.3, a rule written and never enforced, in the one position where
+# the enforcement was a container that would not start.
+#
+# Still emitted when present, because a host adapter embedding the widget may
+# legitimately pin one — `scripts/check-runtime-config.mjs` asserts that every
+# `required` value here is one compose actually provides, so this cannot drift
+# back.
+emit projectSlug "${DS_PROJECT_SLUG:-}" optional
 
 # The portal's Keycloak client. Absent in the admin console's container, which
 # has not spoken to Keycloak since P12-06 (ADR-0012) — so these are optional

@@ -526,8 +526,54 @@ fi
 # ---------------------------------------------------------------------------
 # 5. Start and wait
 # ---------------------------------------------------------------------------
+# Print why, for every container that is not running (P44-03).
+#
+# ## The failure this exists to end
+#
+# The deploy said, in full:
+#
+# ```
+# ✘ Container ds-education-api-1  Error
+# dependency failed to start: container ds-education-api-1 is unhealthy
+# xx failed at line 316. The previous version is still running.
+# ```
+#
+# and stopped. Two other containers were in a restart loop with the actual
+# cause in their logs — `ds-runtime-config: DS_PROJECT_SLUG is empty and is
+# required` — and the deploy named neither, because `caddy` `depends_on` all of
+# them and the API is the one carrying a healthcheck.
+#
+# There *was* a `compose logs --tail 50 api` below, and it could not run: it
+# lives after the wait loop, and `compose up -d` had already exited non-zero, so
+# the ERR trap fired first. A diagnostic behind a failing command is a
+# diagnostic that only prints when it is not needed (CLAUDE.md §9.1).
+#
+# So the logs are dumped **here**, for every service that is not `running`, and
+# `up` is allowed to fail on its own terms rather than through the trap.
+ds_dump_broken_services() {
+  local service container status
+  for service in api admin portal widget caddy; do
+    container="$(compose ps -aq "$service" 2>/dev/null || true)"
+    if [[ -z "$container" ]]; then
+      printf '\n\033[1;31m✘\033[0m %s\n' "${service}: no container was created"
+      continue
+    fi
+
+    status="$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || echo unknown)"
+    [[ "$status" == "running" ]] && continue
+
+    printf '\n\033[1;31m✘\033[0m %s\n' \
+      "${service} is ${status} (exit $(docker inspect -f '{{.State.ExitCode}}' "$container" 2>/dev/null || echo '?')) — its last 40 log lines:"
+    docker logs --tail 40 "$container" 2>&1 | sed 's/^/     /' >&2
+  done
+}
+
 log "Starting services"
-compose up -d --remove-orphans
+if ! compose up -d --remove-orphans; then
+  ds_dump_broken_services
+  die "one or more containers did not start — the logs above say which and why.
+   The previous version is still running."
+fi
 
 log "Waiting for the API to become healthy"
 # `docker compose ps --format json` has changed shape between v2 releases
@@ -541,7 +587,10 @@ for attempt in $(seq 1 30); do
   fi
   [[ "$state" == "healthy" ]] && break
   [[ "$attempt" == "30" ]] && {
+    # Every broken service, not only the API. The API's healthcheck is what
+    # times out, but the container that explains it is often another one.
     compose logs --tail 50 api >&2
+    ds_dump_broken_services
     die "API did not become healthy within 60s"
   }
   sleep 2

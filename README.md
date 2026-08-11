@@ -74,23 +74,45 @@ WordPress plugin's tests.
 
 ```bash
 pnpm install
-pnpm infra:up          # Postgres, Redis, Keycloak, Mailpit
-pnpm db:dev:reset      # migrate, then seed medice, ds and dscustomer
-pnpm dev               # API on :3000, widget on :5173, admin on :5174
+pnpm start             # everything: .env, containers, schema, all three tenants,
+                       # a console account — then prints what to open
+pnpm dev               # the app servers
 ```
 
-`db:dev:reset` drops and rebuilds the development database, which is the usual
-thing to want: it is faster than reasoning about a half-migrated schema, and
-the individual steps behind it (`db:migrate`, `db:seed`, `db:seed:ds`,
-`db:seed:default`) are still there when you need one on its own. `db:dev:seed`
-does the same without dropping. Migration runs as `ds_migrator`, never as the
-superuser — see below.
+`pnpm start` is the whole setup. It checks the tools it needs and names the one
+that is missing, writes `.env` from `.env.example` if you have none (and
+generates a local `SECRETS_KMS_KEY`, so the encrypted-at-rest path behaves here
+the way it does in production), brings up Postgres, Redis, Keycloak and Mailpit,
+migrates, seeds all three tenants and creates a console super administrator —
+printing its password once. `pnpm start --keep` does the same without dropping
+the database.
 
-The three tenants are seeded rather than one because the portal takes its
-tenant from the URL path: `/medice`, `/ds` and `/dsproject` are only
-exercisable when all three exist. Neither command creates a staff account —
-`pnpm --filter @ds/api exec node dist/bootstrap-admin.js` does that, and prints
-a password once.
+Then `pnpm dev`, and:
+
+| URL                               | What                                     |
+| --------------------------------- | ---------------------------------------- |
+| `http://localhost:5174`           | the admin console                        |
+| `http://localhost:5175/medice`    | the learner portal, MEDICE's tenant      |
+| `http://localhost:5175/ds`        | the learner portal, the DS test tenant   |
+| `http://localhost:5175/dsproject` | the neutral default tenant               |
+| `http://localhost:5173`           | the widget on its own                    |
+| `http://localhost:3000/health`    | the API                                  |
+| `http://localhost:8025`           | Mailpit — every email the platform sends |
+
+Mailpit is where password-reset, invitation and certificate emails land. Nothing
+in development reaches a real inbox.
+
+The three tenants are seeded rather than one because the portal takes its tenant
+from the URL path: `/medice`, `/ds` and `/dsproject` are only exercisable when
+all three exist.
+
+The individual steps are still there when you want one on its own —
+`pnpm db:dev:reset` (drop, migrate, seed), `pnpm db:dev:seed` (the same without
+dropping), `db:migrate`, `db:seed`, `db:seed:ds`, `db:seed:default`, and
+`pnpm --filter @ds/api exec node dist/bootstrap-admin.js` for a staff account.
+Migration runs as `ds_migrator`, never as the superuser — see below. A `psql` on
+your machine is optional: without one, the database commands use the postgres
+container's own client.
 
 ### Checks
 
