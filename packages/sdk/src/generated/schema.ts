@@ -1958,8 +1958,28 @@ export interface components {
             instance?: string;
         };
         HealthStatus: {
-            /** @enum {string} */
+            /**
+             * @description `degraded` when **any** dependency below is unreachable.
+             *
+             *     `/health` answers 200 either way — it is a diagnostic, and the body
+             *     is the answer. `/health/ready` answers **503** when this is
+             *     `degraded`, which is what a load balancer and the container
+             *     healthcheck read (P52-01). `/health/live` ignores dependencies
+             *     entirely, so a Redis outage cannot restart-loop the fleet.
+             * @enum {string}
+             */
             status: "ok" | "degraded";
+            /** @description Postgres answered `SELECT 1`. */
+            database: boolean;
+            /**
+             * @description Redis answered `PING` (P52-01).
+             *
+             *     Not checked at all before: `/health` reported `ok` with Redis
+             *     stopped, the container healthcheck read the 200 as healthy, and a
+             *     deploy could go green on an API that could neither cache JWKS nor
+             *     count a rate limit. A gate that cannot go red is not a gate.
+             */
+            redis: boolean;
             /**
              * @description The release number this process was deployed as — `major.minor` from
              *     the workspace's package.json, patch from the commit count, so it
