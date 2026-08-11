@@ -640,9 +640,18 @@ export function createClient(options: ClientOptions) {
     adminListStaff: (): Promise<StaffAccount[]> => request("/admin/staff"),
 
     /** Returns a single-use token; it is not emailed. */
+    /**
+     * `delivered` says whether the platform emailed the invitation (P40-05).
+     *
+     * The token comes back either way — an invitation must not be lost because
+     * a mail server was down — so this is what decides whether the console
+     * tells the inviter to hand the link over or that it is already in an
+     * inbox.
+     */
     adminInviteStaff: (
       input: StaffInvitation,
-    ): Promise<{ status: string; token: string }> => request("/admin/staff", json(input)),
+    ): Promise<{ status: string; token: string; delivered: boolean }> =>
+      request("/admin/staff", json(input)),
 
     adminSetStaffScope: (id: string, scope: StaffScope): Promise<void> =>
       request(`/admin/staff/${seg(id)}/scope`, json(scope)),

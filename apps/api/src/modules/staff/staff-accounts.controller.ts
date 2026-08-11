@@ -38,6 +38,8 @@ import type { Request } from "express";
 import { z } from "zod";
 import type { StaffRole, StaffScope } from "@ds/domain";
 import { StaffCapability } from "../../auth/staff-only.decorator.js";
+import { APP_CONFIG } from "../../db/tokens.js";
+import type { AppConfig } from "../../config/config.js";
 import { AppError } from "../../shared/problem-details.js";
 import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { StaffService } from "./staff.service.js";
@@ -66,7 +68,11 @@ const Disabled = z.object({ disabled: z.boolean() });
 @Controller("admin/staff")
 @StaffCapability("staff_user")
 export class StaffAccountsController {
-  constructor(@Inject(StaffService) private readonly service: StaffService) {}
+  constructor(
+    @Inject(StaffService) private readonly service: StaffService,
+    // For `ALLOWED_ORIGINS`, which is where an invitation link may point.
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+  ) {}
 
   @Get()
   list(@Req() request: Request) {
@@ -90,10 +96,20 @@ export class StaffAccountsController {
         departmentId: input.departmentId,
       },
       actor,
+      // The link the invitation mail carries, built from an origin this API
+      // already trusts — never from the request body (P40-05). Same rule as the
+      // reset flow, and for the same reason: a caller who could name the host
+      // would have a real token delivered to a real inbox pointing at a page
+      // they control.
+      (token) =>
+        `${trustedOrigin(request, this.config)}/#passwort-neu?token=${encodeURIComponent(token)}`,
     );
 
     if (outcome.kind === "refused") throw refusal(outcome.reason);
-    return { status: "invited", token: outcome.token };
+    // `delivered` so the console can stop telling somebody to hand over a link
+    // that is already in the invitee's inbox. The token comes back either way:
+    // an invitation must not be lost because a mail server was down.
+    return { status: "invited", token: outcome.token, delivered: outcome.delivered };
   }
 
   @Post(":id/scope")
@@ -205,4 +221,19 @@ function refusal(reason: string): AppError {
     `staff account change refused: ${reason}`,
     "Sie sind nicht berechtigt, dieses Konto zu ändern.",
   );
+}
+
+/**
+ * The origin a link in an outbound mail may point at.
+ *
+ * The request's own when the deployment allows it, the first configured origin
+ * otherwise. Duplicated from `staff-auth.controller.ts` rather than shared,
+ * because the two controllers are wired with different configuration objects
+ * and threading one through to reach four lines would be more machinery than
+ * the four lines.
+ */
+function trustedOrigin(request: Request, config: AppConfig): string {
+  const origin = request.header("origin");
+  if (origin !== undefined && config.ALLOWED_ORIGINS.includes(origin)) return origin;
+  return config.ALLOWED_ORIGINS[0] ?? "";
 }

@@ -53,7 +53,7 @@ import {
 import { generateTotpSecret, otpauthUri, totpCode } from "./totp.js";
 import type { SecretCipher } from "../../shared/secret-cipher.js";
 import { canSend, sendNow } from "../../shared/mailer.js";
-import { passwordResetEmail } from "./reset.copy.js";
+import { invitationEmail, passwordResetEmail } from "./reset.copy.js";
 import type {
   StaffAccount,
   StaffAccountSummary,
@@ -535,7 +535,16 @@ export class StaffService {
       departmentId: string | null;
     },
     actor: StaffScope & { readonly id: string },
-  ): Promise<{ kind: "invited"; token: string } | { kind: "refused"; reason: string }> {
+    /**
+     * Builds the link the invitation mail carries, from an origin the API
+     * trusts (P40-05). Absent means "do not send" — which is what every caller
+     * that has no request context to take an origin from passes.
+     */
+    inviteUrl?: (token: string) => string,
+  ): Promise<
+    | { kind: "invited"; token: string; delivered: boolean }
+    | { kind: "refused"; reason: string }
+  > {
     const target: StaffScope = {
       role: input.role,
       customerId: input.customerId,
@@ -567,16 +576,53 @@ export class StaffService {
       issuedBy: actor.id,
     });
 
+    /*
+     * Send it, if the platform has a sender (P40-05).
+     *
+     * Until P40-01 there was nowhere for operator mail to come from, so an
+     * invitation could only be handed over by whoever created it. That is still
+     * the fallback and the caller still gets the token for it — but "copy this
+     * string out of a green box and message it to your colleague" is not a
+     * credential-delivery mechanism anybody should have to use as the *only*
+     * one, and it was reported exactly that way: an account created, a weird
+     * string shown, and no way to give the person a password.
+     *
+     * Delivery failure is not an error the inviter has to act on: the token
+     * comes back either way, so the invitation is never lost because a mail
+     * server was down. `delivered` says which happened, so the console can
+     * stop telling somebody to hand over a link that is already in an inbox.
+     */
+    let delivered = false;
+    const sender = await this.deps.repository.readPlatformSmtp();
+    if (inviteUrl !== undefined && canSend(sender)) {
+      const outcome = await sendNow(
+        {
+          host: sender.host ?? "",
+          port: sender.port,
+          username: sender.username,
+          password:
+            sender.passwordEnc === null
+              ? null
+              : this.deps.cipher.decrypt(sender.passwordEnc),
+          secure: sender.secure,
+          fromAddress: sender.fromAddress ?? "",
+          fromName: sender.fromName,
+        },
+        { ...invitationEmail(inviteUrl(token)), to: input.email },
+      );
+      delivered = outcome.status === "delivered";
+    }
+
     await this.deps.audit.recordSystem({
       actor: { identity: "staff", id: actor.id },
       action: "staff.invited",
       subject: adminUserId,
       // The role and scope, never the address — it is personal data and the
       // account id is enough to find the row.
-      detail: { role: input.role, scoped: input.customerId !== null },
+      detail: { role: input.role, scoped: input.customerId !== null, delivered },
     });
 
-    return { kind: "invited", token };
+    return { kind: "invited", token, delivered };
   }
 
   /**

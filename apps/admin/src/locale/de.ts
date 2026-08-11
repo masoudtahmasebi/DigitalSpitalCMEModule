@@ -171,7 +171,12 @@ export const de = {
     inviting: "Wird eingeladen …",
     inviteCreated: "Einladung erstellt",
     inviteHandOver:
-      "Dieser Link wird nicht automatisch versendet. Bitte geben Sie ihn der eingeladenen Person weiter — er wird nur einmal angezeigt.",
+      "Es ist kein E-Mail-Versand eingerichtet, deshalb wurde nichts verschickt. Bitte geben Sie diesen Link der eingeladenen Person weiter — er wird nur einmal angezeigt. Damit vergibt sie ihr eigenes Passwort; ein Passwort kann hier niemand für sie festlegen.",
+    inviteSent:
+      "Die Einladung wurde an die angegebene Adresse verschickt. Falls sie nicht ankommt, können Sie diesen Link auch direkt weitergeben — er wird nur einmal angezeigt.",
+    inviteCopy: "Link kopieren",
+    inviteCopied: "Kopiert",
+    inviteValidity: "7 Tage gültig, einmal verwendbar.",
     signOutEverywhere: "Überall abmelden",
     resetSecondFactor: "Zwei-Faktor zurücksetzen",
     resetSecondFactorConfirm: "Wirklich zurücksetzen",

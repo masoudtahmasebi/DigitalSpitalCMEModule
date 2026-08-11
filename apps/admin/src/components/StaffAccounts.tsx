@@ -1,12 +1,31 @@
 /**
  * Operator accounts (P12-05).
  *
- * ## The invitation token is shown, not sent
+ * ## The invitation is emailed when it can be, and shown either way (P40-05)
  *
- * There is no mail path yet, and this screen says so rather than pretending.
- * The token appears once, after the invitation is created, for the operator to
- * pass on themselves — it is not stored anywhere this screen can read again, so
- * navigating away loses it and the fix is to invite again.
+ * The API sends the invitation itself when the platform has a sender
+ * configured (Sicherheit → E-Mail-Versand der Plattform). It comes back either
+ * way, because an invitation must not be lost because a mail server was down —
+ * so this screen always shows the link and says which of the two happened.
+ *
+ * **The link, not the token.** It used to render the bare 43-character token
+ * under a sentence beginning "Dieser Link", which is how somebody came to try
+ * it as a password: they were told to hand over a link, shown a string that was
+ * not one, and given nothing else to do with it.
+ *
+ * It is shown once and stored nowhere this screen can read again, so navigating
+ * away loses it and the fix is to invite again. That is a property of the
+ * design rather than an oversight: the token's only copy in the database is a
+ * hash, deliberately.
+ *
+ * ## Why nobody can set a password *for* an invited operator
+ *
+ * There is no field for it and there will not be. An invited account is created
+ * with `password_hash NULL` — asserted by an integration test whose name is
+ * "creates the account without a password, so the invitation is not a
+ * credential" — and the invitee chooses their own. A password an administrator
+ * typed is a password an administrator knows, on an account that can read every
+ * physician's participation record for a customer.
  *
  * ## What the list does not show
  *
@@ -70,7 +89,14 @@ export function StaffAccounts(props: {
   const [rows, setRows] = useState<StaffAccount[] | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
   const [forbidden, setForbidden] = useState(false);
-  const [token, setToken] = useState<string | undefined>();
+  /*
+   * The whole invitation, not just its token: the link an operator has to hand
+   * over, and whether the platform already emailed it.
+   */
+  const [invitation, setInvitation] = useState<
+    { link: string; delivered: boolean } | undefined
+  >();
+  const [copied, setCopied] = useState(false);
 
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -103,7 +129,7 @@ export function StaffAccounts(props: {
   async function invite(): Promise<void> {
     setBusy(true);
     setProblem(undefined);
-    setToken(undefined);
+    setInvitation(undefined);
     try {
       const result = await client.adminInviteStaff({
         email: email.trim(),
@@ -116,7 +142,17 @@ export function StaffAccounts(props: {
           role === "super_admin" ? null : (props.customerId ?? emptyToNull(customerId)),
         departmentId: null,
       });
-      setToken(result.token);
+      setCopied(false);
+      /*
+       * Built here, from this page's own origin, because the console is the one
+       * place that knows where it is served from. The API builds the same link
+       * for the mail it sends — from an origin it trusts rather than one a
+       * caller named — and the two agree because both point at the console.
+       */
+      setInvitation({
+        link: `${window.location.origin}/#passwort-neu?token=${encodeURIComponent(result.token)}`,
+        delivered: result.delivered,
+      });
       setEmail("");
       setDisplayName("");
       await load();
@@ -167,12 +203,42 @@ export function StaffAccounts(props: {
         </Notice>
       )}
 
-      {token === undefined ? null : (
+      {/*
+        What an invitation actually produces (P40-05).
+
+        This used to render the bare token under a sentence beginning "Dieser
+        Link" — so an operator was told to hand over a link and shown a
+        43-character string that was not one. It was reported exactly that way:
+        an account created, a weird string shown, no way to give the person a
+        password, and the string tried as a password because nothing said what
+        else it could be.
+
+        Now it is the link, it says whether the invitation was emailed, and it
+        can be copied in one click.
+      */}
+      {invitation === undefined ? null : (
         <Notice tone="success" title={de.staff.inviteCreated}>
-          <p className="mb-2">{de.staff.inviteHandOver}</p>
-          {/* `break-all`: the token is 43 unbroken characters and would
-              otherwise push the panel wider than the viewport. */}
-          <code className="block break-all text-xs">{token}</code>
+          <p className="mb-2">
+            {invitation.delivered ? de.staff.inviteSent : de.staff.inviteHandOver}
+          </p>
+          <code className="mb-2 block break-all text-xs">{invitation.link}</code>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                void navigator.clipboard
+                  ?.writeText(invitation.link)
+                  .then(() => setCopied(true))
+                  // Silently: the link is on screen and selectable, so a
+                  // clipboard the browser refused is an inconvenience rather
+                  // than a failure worth an error box.
+                  .catch(() => undefined);
+              }}
+            >
+              {copied ? de.staff.inviteCopied : de.staff.inviteCopy}
+            </Button>
+            <span className="text-xs text-gray-600">{de.staff.inviteValidity}</span>
+          </div>
         </Notice>
       )}
 

@@ -616,6 +616,9 @@ describe("operator accounts", () => {
 
     expect(status).toBe(201);
     expect(body.token).toEqual(expect.any(String));
+    // Not sent: this suite configures no platform sender, and the invitation
+    // still has to come back so it can be handed over (P40-05).
+    expect(body.delivered).toBe(false);
   });
 
   it("creates the account without a password, so the invitation is not a credential", async () => {

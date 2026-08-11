@@ -22,7 +22,7 @@
  * what a person needs in order to check it before clicking.
  */
 
-import { RESET_VALID_MINUTES } from "@ds/domain";
+import { INVITE_VALID_DAYS, RESET_VALID_MINUTES } from "@ds/domain";
 import type { OutboundLetter } from "../../shared/mailer.js";
 
 export function passwordResetEmail(link: string): OutboundLetter {
@@ -77,6 +77,44 @@ export function participantResetEmail(link: string): OutboundLetter {
       "Wenn Sie das nicht angefordert haben, müssen Sie nichts tun — ohne diesen",
       "Link ändert sich an Ihrem Zugang nichts. Ihre bereits erworbenen",
       "Fortbildungspunkte sind davon in keinem Fall betroffen.",
+      "",
+      "Diese Nachricht wurde automatisch erzeugt. Bitte antworten Sie nicht",
+      "darauf.",
+    ].join("\n"),
+  };
+}
+
+/**
+ * An invitation to the console (P40-05).
+ *
+ * Separate from the reset copy because the reader is in a different situation:
+ * they have no account yet, they did not ask for this mail, and the useful
+ * thing to tell them is who it is from and what it is for. A reset mail says
+ * "you asked for this"; an invitation cannot.
+ *
+ * Still no name and no account details, for the reset copy's reasons — and
+ * still no mention of which role was granted. What somebody may do is decided
+ * on every request by their grant, not by a sentence in an email, and printing
+ * it here would only be a claim that could go stale.
+ */
+export function invitationEmail(link: string): OutboundLetter {
+  return {
+    to: "",
+    subject: "Ihr Zugang zur DS-Education-Verwaltung",
+    body: [
+      "Guten Tag,",
+      "",
+      "für Sie wurde ein Zugang zur DS-Education-Verwaltung angelegt. Über den",
+      "folgenden Link vergeben Sie Ihr Passwort und schließen die Einrichtung ab:",
+      "",
+      link,
+      "",
+      `Der Link ist ${String(INVITE_VALID_DAYS)} Tage gültig und kann nur ein einziges`,
+      "Mal verwendet werden. Falls er abgelaufen ist, wenden Sie sich bitte an die",
+      "Person, die Ihnen den Zugang eingerichtet hat.",
+      "",
+      "Wenn Sie damit nichts anfangen können, ignorieren Sie diese Nachricht",
+      "bitte — ohne den Link entsteht kein nutzbarer Zugang.",
       "",
       "Diese Nachricht wurde automatisch erzeugt. Bitte antworten Sie nicht",
       "darauf.",
