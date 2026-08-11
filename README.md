@@ -72,22 +72,81 @@ plumbing around it.
 Node 22 (`.nvmrc`), pnpm 10, Docker, and PHP only if you want to run the
 WordPress plugin's tests.
 
+There are two ways to run it, and the difference matters.
+
 ```bash
-pnpm install
-pnpm start             # everything: .env, containers, schema, all three tenants,
-                       # a console account — then prints what to open
-pnpm dev               # the app servers
+./run-on-local.sh      # the production containers, on this machine
 ```
 
-`pnpm start` is the whole setup. It checks the tools it needs and names the one
-that is missing, writes `.env` from `.env.example` if you have none (and
-generates a local `SECRETS_KMS_KEY`, so the encrypted-at-rest path behaves here
-the way it does in production), brings up Postgres, Redis, Keycloak and Mailpit,
-migrates, seeds all three tenants and creates a console super administrator —
-printing its password once. `pnpm start --keep` does the same without dropping
-the database.
+builds and runs the **same images the server runs**, with the same entrypoints
+and the same runtime configuration — then migrates, seeds all three tenants,
+creates a console account and prints what to open. It needs nothing but Docker.
 
-Then `pnpm dev`, and:
+```bash
+pnpm install
+pnpm start             # .env, dependencies, schema, tenants, a console account
+pnpm dev               # the apps from source, with watchers
+```
+
+runs the applications from source with hot reload. Faster to iterate in, and it
+never exercises the containers.
+
+| Want                                          | Use                      |
+| --------------------------------------------- | ------------------------ |
+| Write code, see it reload                     | `pnpm start && pnpm dev` |
+| Check it will start the way the server starts | `./run-on-local.sh`      |
+| No Node or pnpm installed                     | `./run-on-local.sh`      |
+
+Use both. Every deployment failure this project has had lived in the gap between
+"the code works" and "the image starts" — a variable the nginx entrypoint
+required and compose never set, a config value the API rejects at boot, a path
+resolved against the wrong directory. A Vite dev server cannot see any of them;
+`./run-on-local.sh` fails on all three in under a minute.
+
+```bash
+./run-on-local.sh --logs     follow the containers
+./run-on-local.sh --down     stop, keeping the data
+./run-on-local.sh --fresh    start again from an empty database
+```
+
+Both write `.env` from `.env.example` if you have none, generate a local
+`SECRETS_KMS_KEY` so the encrypted-at-rest path behaves the way it does in
+production, and name the one prerequisite that is missing rather than a generic
+"check your setup". `pnpm start --keep` skips dropping the database.
+
+### The containerised stack: one port block, 5539x
+
+`./run-on-local.sh` publishes everything on `localhost:5539x` — one range to
+remember, and nothing standard on a laptop is sitting there.
+
+| URL                                | What                                     |
+| ---------------------------------- | ---------------------------------------- |
+| `http://localhost:55390/health`    | the API — its version and commit         |
+| `http://localhost:55391`           | the admin console                        |
+| `http://localhost:55392/medice`    | the learner portal, MEDICE's tenant      |
+| `http://localhost:55392/ds`        | the learner portal, the DS test tenant   |
+| `http://localhost:55392/dsproject` | the neutral default tenant               |
+| `http://localhost:55393`           | the widget on its own                    |
+| `http://localhost:55394`           | Mailpit — every email the platform sends |
+| `localhost:55395`                  | PostgreSQL                               |
+| `localhost:55396`                  | Redis                                    |
+| `localhost:55397`                  | Keycloak                                 |
+| `localhost:55398`                  | Mailpit's SMTP port                      |
+
+**Inside the stack they reach each other by service name** — `postgres:5432`,
+`redis:6379`, `mailpit:1025` — on the compose network. The 5539x ports are for
+your browser and your `psql`, and nothing in the stack uses them.
+
+The one place that distinction bites is `DS_API_BASE`: it is written into
+`/config.js` and fetched by the _browser_, so it has to be `localhost:55390`
+rather than `api:3000`. `ALLOWED_ORIGINS` is the mirror image. Getting either
+wrong fails every request with CORS and leaves nothing in the API log —
+`pnpm check:local-ports` is what stops that reaching a commit.
+
+Move the whole block with `DS_LOCAL_API_PORT`, `DS_LOCAL_ADMIN_PORT` and the
+rest in `.env`.
+
+### The source stack: the ports `pnpm dev` has always used
 
 | URL                               | What                                     |
 | --------------------------------- | ---------------------------------------- |
@@ -98,6 +157,10 @@ Then `pnpm dev`, and:
 | `http://localhost:5173`           | the widget on its own                    |
 | `http://localhost:3000/health`    | the API                                  |
 | `http://localhost:8025`           | Mailpit — every email the platform sends |
+
+Both modes share one compose project, so switching re-creates the four
+dependency containers with the other port mapping. That is a few seconds and no
+data loss — `postgres-data` is a named volume.
 
 Mailpit is where password-reset, invitation and certificate emails land. Nothing
 in development reaches a real inbox.

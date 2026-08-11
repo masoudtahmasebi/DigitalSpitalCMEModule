@@ -41,7 +41,20 @@ import { fileURLToPath } from "node:url";
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const ENTRYPOINT = join(REPO, "infra/nginx/ds-runtime-config.sh");
-const COMPOSE = join(REPO, "infra/deploy/docker-compose.prod.yml");
+
+/**
+ * Every compose file that starts those images, not only production's (P48-01).
+ *
+ * `docker-compose.apps.yml` runs the same `admin` and `portal` images on a
+ * developer's machine — that is the whole point of it, since a container that
+ * will not start locally will not start on the server either. Which means it is
+ * a *second* place a required variable can be missing from, and a check that
+ * looked at one of the two would be green on the broken half (CLAUDE.md §9.1).
+ */
+const COMPOSE_FILES = [
+  join(REPO, "infra/deploy/docker-compose.prod.yml"),
+  join(REPO, "infra/docker-compose.apps.yml"),
+];
 
 /** The services whose image runs `ds-runtime-config.sh`. */
 const SERVICES = ["admin", "portal"];
@@ -87,13 +100,13 @@ function requiredVariables() {
  * loudly if it cannot find the service at all, so a rename cannot make it
  * silently pass.
  */
-function serviceEnvironment(service) {
-  const source = readFileSync(COMPOSE, "utf8");
+function serviceEnvironment(composeFile, service) {
+  const source = readFileSync(composeFile, "utf8");
   const lines = source.split("\n");
 
   const start = lines.findIndex((line) => line === `  ${service}:`);
   if (start === -1) {
-    problems.push(`${COMPOSE}: no service named \`${service}\``);
+    problems.push(`${composeFile}: no service named \`${service}\``);
     return new Set();
   }
 
@@ -118,16 +131,18 @@ function serviceEnvironment(service) {
 
 const required = requiredVariables();
 
-for (const service of SERVICES) {
-  const provided = serviceEnvironment(service);
-  for (const variable of required) {
-    if (!provided.has(variable)) {
-      problems.push(
-        `service \`${service}\` does not set ${variable}, which ` +
-          "ds-runtime-config.sh requires — the container will exit 1 at start, " +
-          "and because caddy depends on it the deploy will report a different " +
-          "service as the failure.",
-      );
+for (const composeFile of COMPOSE_FILES) {
+  for (const service of SERVICES) {
+    const provided = serviceEnvironment(composeFile, service);
+    for (const variable of required) {
+      if (!provided.has(variable)) {
+        problems.push(
+          `${composeFile}: service \`${service}\` does not set ${variable}, ` +
+            "which ds-runtime-config.sh requires — the container will exit 1 at " +
+            "start, and because other services depend on it the failure will be " +
+            "reported against a different one.",
+        );
+      }
     }
   }
 }
@@ -144,6 +159,6 @@ if (problems.length > 0) {
 }
 
 console.log(
-  `check-runtime-config: ${String(required.length)} required value(s), ` +
-    `provided by all ${String(SERVICES.length)} service(s)`,
+  `check-runtime-config: ${String(required.length)} required value(s), provided by ` +
+    `all ${String(SERVICES.length)} service(s) in ${String(COMPOSE_FILES.length)} compose file(s)`,
 );

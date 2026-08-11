@@ -1,0 +1,246 @@
+# The four application containers, on a developer's machine (P48-01).
+#
+# ## Why this file exists
+#
+# `infra/docker-compose.yml` starts the *dependencies* — Postgres, Redis,
+# Keycloak, Mailpit — and `pnpm dev` runs the applications from source with
+# watchers. That is the right loop for writing code and it has one blind spot,
+# which has now cost four rounds of debugging on the client's server:
+#
+#   **nothing local ran the production containers.**
+#
+# Every failure in P44 and P45 was in the gap between "the code works" and "the
+# image starts": a variable the entrypoint required and compose never set
+# (`DS_PROJECT_SLUG`), a config value the API rejects at boot (`S3_ENDPOINT`), a
+# path resolved against the wrong working directory. `pnpm dev` cannot see any
+# of them, because it never builds an image, never runs `ds-runtime-config.sh`
+# and never reads `docker-compose.prod.yml`.
+#
+# This file closes that gap. It uses the **same Dockerfile targets, the same
+# entrypoints and the same runtime configuration mechanism** as production, so a
+# container that will not start here will not start there either — and finding
+# that out costs a `./run-on-local.sh` instead of a failed deploy.
+#
+# ## Why it is a second file rather than a copy of the production one
+#
+# `docker-compose.prod.yml` is the deployment: Caddy, TLS, real hostnames,
+# secrets from `~/ds-education/`, and `pull_policy: never`. Reproducing that
+# locally would mean certificates, a hosts file and a second copy of every
+# environment variable — and the copy is what drifts.
+#
+# So this merges over `infra/docker-compose.yml` into the same compose project,
+# adding only the four application services. One database, one Mailpit, and
+# switching between `pnpm dev` and `./run-on-local.sh` keeps your data.
+#
+# ## One port block: 5539x
+#
+# Every service in this stack is published on `localhost:5539x`, dependencies
+# included. Two reasons, and the second is the one that matters day to day:
+#
+#   * **Nothing else on the machine is there.** 3000, 5173 and 5432 are the most
+#     contended ports on a developer's laptop; a five-digit block in the
+#     ephemeral range is not. "Port is already allocated" stops being the first
+#     thing this stack says to you.
+#   * **`pnpm dev` keeps its own ports.** `infra/docker-compose.yml` alone still
+#     publishes Postgres on 5432 and Mailpit on 8025, and the Vite servers still
+#     serve 5173–5175. This file only overrides those *when it is merged in*.
+#
+#     The two share one compose project, so switching modes re-creates the four
+#     dependency containers with the other port mapping. That is a few seconds
+#     and no data loss — `postgres-data` is a named volume and survives — but it
+#     is worth knowing before it looks like something went wrong.
+#
+#     The port variables are named `DS_LOCAL_*` for the same reason: `.env` may
+#     already carry a `POSTGRES_PORT` for the base stack, and reusing that name
+#     would move this block silently.
+#
+#   | Port  | Service                                    |
+#   | ----- | ------------------------------------------ |
+#   | 55390 | API                                        |
+#   | 55391 | admin console                              |
+#   | 55392 | learner portal                             |
+#   | 55393 | widget, standalone                         |
+#   | 55394 | Mailpit — every mail the platform sends    |
+#   | 55395 | PostgreSQL                                 |
+#   | 55396 | Redis                                      |
+#   | 55397 | Keycloak                                   |
+#   | 55398 | Mailpit SMTP, if you want to point something at it |
+#
+# ## How they reach each other, which is not through those ports
+#
+# Container to container uses **service names on their internal ports** —
+# `postgres:5432`, `redis:6379`, `mailpit:1025` — on the compose network. The
+# published 5539x ports exist for your browser and your `psql`, and nothing
+# inside the stack uses them.
+#
+# The one place that distinction bites is `DS_API_BASE`. It is read by a script
+# that writes `/config.js` for the *browser*, so it must be `localhost:55390`
+# and not `api:3000` — a browser has no idea what `api` is. `ALLOWED_ORIGINS` is
+# the mirror image: the API must allow the origins the browser sends, which are
+# the published ones. Get either wrong and every request fails CORS with no
+# server-side trace.
+#
+#   ./run-on-local.sh          build, start, migrate, seed, print what to open
+#   ./run-on-local.sh --fresh  the same, from an empty database
+#   ./run-on-local.sh --down   stop everything
+#
+# Not `docker compose -f … up` by hand: the migrations and the seeds are
+# separate one-shot containers, and a stack started without them is an API
+# answering 500 on every route with an empty schema behind it.
+
+name: ds-education
+
+services:
+  api:
+    image: ds-education/api:local
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: api
+    environment:
+      # `production`, and that is the point of this file. Development mode
+      # forgives things production does not — an absent `SECRETS_KMS_KEY` falls
+      # back to a plaintext cipher, for one — and a local stack that forgives
+      # them tells you nothing about whether the deploy will.
+      NODE_ENV: production
+      API_PORT: 3000
+
+      # Service names, not localhost: this runs inside the compose network.
+      # `ds_app` is deliberately not `ds_migrator` — it may not create a
+      # customer and it is subject to RLS (ADR-0002), exactly as in production.
+      DATABASE_URL: postgres://ds_app:ds_app_dev@postgres:5432/${POSTGRES_DB:-ds_education}
+      REDIS_URL: redis://redis:6379
+
+      # The browser's origins, not the containers'. The console on
+      # localhost:55391 makes a cross-origin call to localhost:55390, and an
+      # allow-list naming `api` would let none of them through — which presents
+      # as every request failing with no server-side trace.
+      ALLOWED_ORIGINS: http://localhost:${DS_LOCAL_ADMIN_PORT:-55391},http://localhost:${DS_LOCAL_PORTAL_PORT:-55392},http://localhost:${DS_LOCAL_WIDGET_PORT:-55393}
+
+      # Empty on localhost, and that is not laziness. A `Domain=localhost`
+      # cookie attribute stops the browser storing it at all, so every staff
+      # sign-in would appear to succeed and then immediately report the session
+      # as expired (ADR-0012).
+      STAFF_COOKIE_DOMAIN: ""
+
+      PORTAL_BASE_URL: http://localhost:${DS_LOCAL_PORTAL_PORT:-55392}
+
+      # Generated into `.env` by run-on-local.sh if absent. Required here
+      # because NODE_ENV is production — see the note above.
+      SECRETS_KMS_KEY: ${SECRETS_KMS_KEY:?run ./run-on-local.sh, which generates one into .env}
+
+      # The build, so the footers work locally too and a developer sees the
+      # same two numbers an operator does (P46-01, P47-01).
+      DS_COMMIT: ${DS_COMMIT:-}
+      DS_VERSION: ${DS_VERSION:-}
+
+      # The mock EIV endpoint, never the real one. `EIV_ALLOW_LIVE` is unset,
+      # so `apps/eiv-harness`' mock is the only thing reachable and a stray
+      # Punktemeldung cannot leave this machine (ADR-0005).
+      EIV_BASE_URL: ${EIV_BASE_URL:-http://127.0.0.1:4010}
+      EIV_WORKER_ENABLED: ${EIV_WORKER_ENABLED:-no}
+
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+    ports:
+      - "${DS_LOCAL_API_PORT:-55390}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  # The console, the portal and the widget are the **production images**,
+  # configured at container start by `ds-runtime-config.sh` — the same script,
+  # reading the same variables, as on the server. This is what makes P44-01
+  # reproducible locally: a value that entrypoint requires and this file does
+  # not set will crash-loop here exactly as it did there.
+  admin:
+    image: ds-education/admin:local
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: admin
+    environment:
+      DS_API_BASE: http://localhost:${DS_LOCAL_API_PORT:-55390}
+      DS_COMMIT: ${DS_COMMIT:-}
+      DS_VERSION: ${DS_VERSION:-}
+    ports:
+      - "${DS_LOCAL_ADMIN_PORT:-55391}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  portal:
+    image: ds-education/portal:local
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: portal
+    environment:
+      DS_API_BASE: http://localhost:${DS_LOCAL_API_PORT:-55390}
+      DS_COMMIT: ${DS_COMMIT:-}
+      DS_VERSION: ${DS_VERSION:-}
+    ports:
+      - "${DS_LOCAL_PORTAL_PORT:-55392}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  widget:
+    image: ds-education/widget:local
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: widget
+      args:
+        # Baked, not read at start: the widget is one script in somebody else's
+        # page and has no /config.js beside it (P46-01).
+        DS_COMMIT: ${DS_COMMIT:-}
+        DS_VERSION: ${DS_VERSION:-}
+    ports:
+      - "${DS_LOCAL_WIDGET_PORT:-55393}:80"
+
+  # ---------------------------------------------------------------------------
+  # The dependencies, republished into the same block
+  # ---------------------------------------------------------------------------
+  #
+  # Ports only. Everything else about these services is defined in
+  # `infra/docker-compose.yml` and compose merges this over it, so there is no
+  # second copy of an image tag, a healthcheck or an init script to drift.
+  #
+  # They are here because a stack scattered across 5432, 6379, 8025 and 8080 is
+  # four things to remember and four chances to collide with something else on
+  # the machine. `pnpm infra:up` uses the base file alone and keeps the standard
+  # ports, so the fast dev loop is unaffected.
+  postgres:
+    ports:
+      - "${DS_LOCAL_POSTGRES_PORT:-55395}:5432"
+
+  redis:
+    ports:
+      - "${DS_LOCAL_REDIS_PORT:-55396}:6379"
+
+  keycloak:
+    ports:
+      - "${DS_LOCAL_KEYCLOAK_PORT:-55397}:8080"
+
+  mailpit:
+    ports:
+      # The web interface, and the SMTP port beside it — a developer pointing
+      # something else at this Mailpit needs the second one, and hunting for it
+      # in a compose file is the kind of small friction that ends in somebody
+      # using a real mail server by accident.
+      - "${DS_LOCAL_MAILPIT_PORT:-55394}:8025"
+      - "${DS_LOCAL_MAILPIT_SMTP_PORT:-55398}:1025"

@@ -74,6 +74,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
           shellcheck infra/nginx/ds-runtime-config.sh
+          shellcheck -x run-on-local.sh
           (cd infra/deploy && shellcheck -x deploy.sh domains.sh domains.test.sh \
              deploy-vars.test.sh secrets.sh secrets.test.sh images.sh \
              images.test.sh paths.test.sh version.sh version.test.sh dsc)
@@ -103,6 +104,10 @@ jobs:
           # depth — a plausible number, lower than the last deploy's.
           ./infra/deploy/version.test.sh
           node scripts/check-runtime-config.mjs
+          # The local stack's ports, and the browser-facing URLs that have
+          # to name published ports rather than service names — a mistake
+          # whose only symptom is CORS failing in a browser.
+          node scripts/check-local-ports.mjs
 
       - name: Build
         run: pnpm build

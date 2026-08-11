@@ -34,11 +34,15 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 passed=0
 failed=0
 
-# The scripts an operator invokes directly, by whatever path they like.
+# The scripts an operator invokes directly, by whatever path they like —
+# including `run-on-local.sh` at the repository root, which a developer runs as
+# `./run-on-local.sh` from the root and as `DigitalSpitalCMEModule/run-on-local.sh`
+# from one directory up, and which must behave identically either way.
 # `*.test.sh` are excluded: they `cd` to their own directory on line 3, which is
 # the correct idiom for a test and not for a tool somebody types the full path
 # to.
-for script in deploy.sh dsc domains.sh secrets.sh images.sh; do
+for script in deploy.sh dsc domains.sh secrets.sh images.sh version.sh \
+             ../../run-on-local.sh; do
   # Comments are stripped first: several of them legitimately discuss relative
   # paths, and a check that flagged its own explanation would be turned off.
   # Heredoc bodies would need the same treatment if any of these grew one.
