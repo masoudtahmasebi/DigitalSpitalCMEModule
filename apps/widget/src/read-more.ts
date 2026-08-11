@@ -37,6 +37,8 @@
  * make every one of these tests need a browser.
  */
 
+import { lastWhitespaceIndex, stripTrailing } from "@ds/domain";
+
 /** Roughly four lines of the description column. */
 export const DESCRIPTION_LIMIT = 420;
 
@@ -64,12 +66,20 @@ export function readMoreCut(text: string, limit: number): ReadMoreCut {
   if (trimmed.length <= limit) return { head: trimmed, truncated: false };
 
   const window = trimmed.slice(0, limit + 1);
-  const boundary = window.search(/\s\S*$/);
+  // `lastWhitespaceIndex`, not `search(/\s\S*$/)`: the regex restarts at every
+  // offset and the input is a course description from the database (P49-01).
+  const boundary = lastWhitespaceIndex(window);
 
-  const head = (boundary > 0 ? window.slice(0, boundary) : trimmed.slice(0, limit))
-    // Trailing punctuation a sentence was cut before — a comma or an opening
-    // bracket left hanging in front of the toggle reads as a typo.
-    .replace(/[\s,;:(«„-]+$/, "");
+  // Trailing punctuation a sentence was cut before — a comma or an opening
+  // bracket left hanging in front of the toggle reads as a typo.
+  //
+  // `stripTrailing` and not `.replace(/[\s,;:(«„-]+$/, "")`, for the same
+  // reason as the boundary above: a set of characters rather than a pattern,
+  // so there is nothing to backtrack over (P49-01).
+  const head = stripTrailing(
+    boundary > 0 ? window.slice(0, boundary) : trimmed.slice(0, limit),
+    " \t\n\r,;:(«„-",
+  );
 
   return { head, truncated: true };
 }

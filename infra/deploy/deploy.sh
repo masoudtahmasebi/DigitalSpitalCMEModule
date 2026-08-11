@@ -88,6 +88,10 @@ log "Preflight"
 
 command -v docker >/dev/null || die "docker is not installed"
 docker compose version >/dev/null 2>&1 || die "docker compose v2 is not available"
+# Printed, not merely checked. When compose rejects a flag — `unknown flag:
+# --no-build`, P49-02 — the version is the first thing anybody asks for, and a
+# deploy log that already contains it saves a round trip.
+log "Using $(docker compose version --short 2>/dev/null || echo 'compose v2')"
 command -v openssl >/dev/null || die "openssl is not installed (needed to generate credentials)"
 command -v git >/dev/null || die "git is not installed (the deploy runs from a checkout)"
 
@@ -422,25 +426,50 @@ fi
 # Deliberately *after* the build — it needs the image — and *before* the backup,
 # so a refusal leaves the installation byte-for-byte as it was.
 log "Checking the API's configuration"
-config_check_output=""
-if ! config_check_output="$(compose run --rm --no-deps --no-build \
-  --entrypoint node api dist/check-config.js 2>&1)"; then
 
-  # A `--rollback` to a commit from before this entrypoint existed has no
-  # `dist/check-config.js`, and node says so. That is an old image, not a bad
-  # configuration, and turning a rollback into a failed deploy would break the
-  # one command that exists for when everything else has.
-  if [[ "$config_check_output" == *"Cannot find module"* ]]; then
+# No `--no-build`: `docker compose run` only grew that flag in a later v2, and
+# this host's compose rejected it with `unknown flag: --no-build` (P49-02). It
+# was belt-and-braces anyway — the image was built moments ago in step 2, and
+# `pull_policy: never` stops compose reaching for a registry that does not
+# exist. A flag that is redundant here and fatal on an older compose is not a
+# trade worth making.
+config_check_output=""
+config_check_status=0
+config_check_output="$(compose run --rm --no-deps \
+  --entrypoint node api dist/check-config.js 2>&1)" || config_check_status=$?
+
+# shellcheck source=./config-check.sh
+source "${SCRIPT_DIR}/config-check.sh"
+
+case "$(ds_classify_config_check "$config_check_status" "$config_check_output")" in
+  ok)
+    printf '%s\n' "$config_check_output"
+    ;;
+  old-image)
     log "  (this image predates the configuration check — skipping)"
-  else
+    ;;
+  invalid)
     printf '%s\n' "$config_check_output" >&2
     die "the API refuses this configuration — see the message above.
    Nothing has been changed: no backup taken, no migration run, no container
    swapped. Fix the value in ${CONFIG_FILE} and run this again."
-  fi
-else
-  printf '%s\n' "$config_check_output"
-fi
+    ;;
+  *)
+    # The check could not run. **Not** a reason to stop: the API still
+    # validates its own environment at boot, this script still refuses to swap
+    # a container that will not start, and `ds_dump_broken_services` still
+    # prints its log. Blocking here would let a deploy-tooling problem stop a
+    # deployment that is otherwise fine — which is exactly what
+    # `unknown flag: --no-build` did.
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "the configuration check could not run, so the deploy continues without it:" >&2
+    printf '%s\n' "$config_check_output" | sed 's/^/     /' >&2
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "If the API's configuration is wrong you will find out at step 5 instead," >&2
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "with the previous version still running. Worth fixing, not worth blocking on." >&2
+    ;;
+esac
 
 # ---------------------------------------------------------------------------
 # 3. Back up before touching the schema

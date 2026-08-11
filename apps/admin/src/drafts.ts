@@ -7,6 +7,8 @@
  * working everywhere except the last row of one screen.
  */
 
+import { stripTrailing } from "@ds/domain";
+
 /**
  * Swap two positions, returning a new array.
  *
@@ -49,16 +51,20 @@ export function nullable(value: string | undefined): string | null {
  * a slug anybody would have chosen.
  */
 export function slugify(title: string): string {
-  return title
+  const dashed = title
     .toLowerCase()
     .replace(/ä/g, "ae")
     .replace(/ö/g, "oe")
     .replace(/ü/g, "ue")
     .replace(/ß/g, "ss")
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+/, "")
-    .replace(/-+$/, "")
-    .slice(0, 100);
+    .replace(/^-+/u, "");
+
+  // `stripTrailing` rather than `.replace(/-+$/, "")`: a repetition anchored at
+  // the end alone backtracks quadratically, and the input here is a title an
+  // operator types (P49-01). The slice is last so a trailing dash produced by
+  // truncation goes too.
+  return stripTrailing(dashed.slice(0, 100), "-");
 }
 
 /**

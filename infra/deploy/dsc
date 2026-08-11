@@ -141,11 +141,12 @@ ds_as_migrator() {
     echo "      to close the gap." >&2
   fi
 
-  # `--no-build` makes the refusal explicit rather than relying on compose's
-  # pull_policy: a future compose that decides to build anyway would silently
-  # undo the whole point of this function.
+  # No `--no-build`: an older `docker compose run` does not have that flag and
+  # rejects the whole command with `unknown flag: --no-build` (P49-02). It was
+  # redundant here anyway — `ds_resolve_image_tag` has already established that
+  # this image is on the disk, and compose only builds when one is missing.
   exec env DS_COMMIT="$tag" \
-    docker compose -f "${SCRIPT_DIR}/docker-compose.prod.yml" run --rm --no-build \
+    docker compose -f "${SCRIPT_DIR}/docker-compose.prod.yml" run --rm \
     -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD_URL}@postgres:5432/${POSTGRES_DB}" \
     --entrypoint node api "$@"
 }

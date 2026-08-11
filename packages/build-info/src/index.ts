@@ -32,6 +32,8 @@
  * build this is" and "this build is called nothing" want different words on
  * screen, and an empty string in a footer reads as a rendering bug.
  */
+import { joinUrl } from "@ds/domain";
+
 export const UNKNOWN_BUILD = "unknown";
 
 export type BuildAgreement =
@@ -137,7 +139,11 @@ export async function fetchApiBuild(apiBase: string): Promise<ApiBuild> {
   const absent: ApiBuild = { version: UNKNOWN_BUILD, commit: UNKNOWN_BUILD };
 
   try {
-    const response = await fetch(`${apiBase.replace(/\/+$/u, "")}/health`, {
+    // `joinUrl`, not `apiBase.replace(/\/+$/, …)`. That regex anchors a
+    // repetition at the end of the string and is quadratic on a long run of
+    // slashes — CodeQL's "polynomial regular expression used on uncontrolled
+    // data", and `apiBase` arrives from /config.js (P49-01).
+    const response = await fetch(joinUrl(apiBase, "health"), {
       headers: { accept: "application/json" },
     });
     if (!response.ok) return absent;

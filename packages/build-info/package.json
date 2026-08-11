@@ -20,7 +20,9 @@
     "test": "vitest run",
     "lint": "echo \"linted by the root pass\""
   },
-  "dependencies": {},
+  "dependencies": {
+    "@ds/domain": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"

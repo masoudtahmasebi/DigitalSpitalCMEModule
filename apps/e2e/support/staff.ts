@@ -43,6 +43,9 @@ export function decodeBase32(encoded: string): Buffer {
   let value = 0;
   const out: number[] = [];
 
+  // Bounded for the same reason as `@ds/oidc`'s base64 padding (P49-01): base32
+  // padding is at most six characters, on a secret this suite generated itself.
+  // eslint-disable-next-line no-restricted-syntax -- bounded: base32 padding
   for (const character of encoded.toUpperCase().replace(/=+$/u, "")) {
     const index = BASE32.indexOf(character);
     if (index === -1) continue;

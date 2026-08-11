@@ -76,6 +76,35 @@ export default [
           message:
             "Named exports only (CLAUDE.md §5). Disable locally where a framework requires a default export.",
         },
+        {
+          // A repetition anchored at the end of the string — `/\/+$/`, `/-+$/`,
+          // `/\s*$/` — makes the engine restart its scan at every position, so
+          // the work is quadratic in the input's length. CodeQL calls it
+          // "polynomial regular expression used on uncontrolled data" and found
+          // four of them here in one pass (P49-01).
+          //
+          // `security/detect-unsafe-regex` above does *not* catch these: it
+          // looks for exponential blow-up, and this class is merely polynomial.
+          //
+          // For trimming a URL, `stripTrailingSlashes`/`joinUrl` in `@ds/domain`
+          // are the linear answers and the ones every call site should use. For
+          // anything else, a `while` loop over `charCodeAt` is four lines and
+          // obviously linear.
+          //
+          // Anchored at *both* ends is safe and stays legal: `^[a-z0-9]+$` has
+          // exactly one start position, so there is nothing for the engine to
+          // retry. Only a repetition anchored at the end **alone** can be
+          // restarted from every offset — hence the `:not` on a leading `^`.
+          //
+          // Getting that distinction wrong is what makes a rule get switched
+          // off: the first version flagged twelve `toMatch(/^[a-z]+$/)` in
+          // tests, none of which can backtrack.
+          selector: "Literal[regex.pattern=/[+*]\\$$/]:not([regex.pattern=/^\\^/])",
+          message:
+            "A repetition anchored at the end (`+$` or `*$`) backtracks quadratically. " +
+            "Use stripTrailingSlashes/joinUrl from @ds/domain for URLs, or a loop. " +
+            "Disable locally only where the input's length is bounded by construction.",
+        },
       ],
 
       "@typescript-eslint/no-unused-vars": [

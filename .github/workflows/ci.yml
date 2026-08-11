@@ -77,7 +77,8 @@ jobs:
           shellcheck -x run-on-local.sh
           (cd infra/deploy && shellcheck -x deploy.sh domains.sh domains.test.sh \
              deploy-vars.test.sh secrets.sh secrets.test.sh images.sh \
-             images.test.sh paths.test.sh version.sh version.test.sh dsc)
+             images.test.sh paths.test.sh version.sh version.test.sh \
+             config-check.sh config-check.test.sh dsc)
           ./infra/deploy/domains.test.sh
           # The URL encoder. A base64 password contains `/`, and an unencoded
           # `/` in a connection string's userinfo is what killed the first
@@ -103,6 +104,10 @@ jobs:
           # The release number. A shallow clone would make it the clone
           # depth — a plausible number, lower than the last deploy's.
           ./infra/deploy/version.test.sh
+          # Telling "the API refused this config" apart from "the check
+          # could not run". Reporting the first when it was the second sent
+          # an operator to edit a file that was correct.
+          ./infra/deploy/config-check.test.sh
           node scripts/check-runtime-config.mjs
           # The local stack's ports, and the browser-facing URLs that have
           # to name published ports rather than service names — a mistake

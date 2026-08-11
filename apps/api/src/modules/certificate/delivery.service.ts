@@ -32,7 +32,7 @@
  * certificate id and an outcome; what goes into the audit record is a count.
  */
 
-import { planDeliveryAttempt } from "@ds/domain";
+import { planDeliveryAttempt, stripTrailingSlashes } from "@ds/domain";
 import type { DeliveryChannel, OutboundMessage } from "@ds/plugin-api";
 import { SYSTEM_ACTOR, type AuditServicePort } from "../../audit/audit.service.js";
 import type {
@@ -264,7 +264,8 @@ export class CertificateDeliveryService {
    * never expires would also need.
    */
   private courseUrl(slug: string): string {
-    const base = this.options.portalBaseUrl.replace(/\/+$/, "");
+    // Not a regex: `\/+$` is quadratic on a long run of slashes (P49-01).
+    const base = stripTrailingSlashes(this.options.portalBaseUrl);
     // Unset means no portal is deployed. Returning `/kurs/slug` would put a
     // relative path in an email, which no mail client can resolve — the copy
     // drops the paragraph instead, and the attachment still arrives.
