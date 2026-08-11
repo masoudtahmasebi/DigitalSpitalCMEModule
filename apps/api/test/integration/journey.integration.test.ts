@@ -832,6 +832,27 @@ describe("5 · the participant earns the point", () => {
     expect(right.body.scorePercent).toBe(100);
   });
 
+  it("cannot be configured to hand the answer key back at all", async () => {
+    /*
+     * P56-01. The comment above says "a CME course never turns it on", and for
+     * five phases that was a comment: `reveal_correct_answers` is a column no
+     * route writes, and the API honoured it wherever it came from. QA set it
+     * on an accredited course with one UPDATE and got a boolean per question
+     * back — the whole Lernerfolgskontrolle in four rounds of unlimited
+     * retries, on a Fortbildung whose Anerkennung depends on it.
+     *
+     * The database refuses the combination now. This asserts that, on the
+     * journey's own course, which carries a VNR and four points — and it is
+     * the assertion that would have failed before the constraint existed.
+     */
+    const attempt = admin.query(
+      `UPDATE courses SET reveal_correct_answers = true WHERE slug = $1`,
+      [world.courseSlug],
+    );
+
+    await expect(attempt).rejects.toThrow(/courses_no_answer_key_for_points/u);
+  });
+
   it("submits the evaluation and completes with an EFN", async () => {
     const evaluation = await asLearner(`/courses/${world.courseSlug}/evaluation`);
     expect(evaluation.body.submitted).toBe(false);

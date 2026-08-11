@@ -56,7 +56,13 @@ export class CertificateController {
    */
   @Get("pdf")
   @RateLimit("certificatePdf")
-  @Header("content-type", "application/pdf")
+  /*
+   * No `@Header("content-type", …)` here (P56-02). `StreamableFile` below sets
+   * it for the success path, and a decorator sets it *before* the handler runs
+   * — so every refusal from this route went out as a problem document labelled
+   * `application/pdf`. The filter now sets the type on every error, and this
+   * route no longer has to claim one it may not produce.
+   */
   // No-store: this is a named physician's participation record, and a shared
   // proxy holding a copy is a disclosure the learner did not agree to.
   @Header("cache-control", "no-store, private")

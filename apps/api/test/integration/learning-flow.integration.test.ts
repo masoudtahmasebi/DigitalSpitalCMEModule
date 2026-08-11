@@ -1212,3 +1212,39 @@ describe("a whole video claimed on a fresh enrolment (P55-01)", () => {
     expect(body.watchedPercent).toBe(100);
   });
 });
+
+/**
+ * What a refusal from the PDF route is labelled as (P56-02).
+ *
+ * `GET /courses/{slug}/certificate/pdf` declares `content-type:
+ * application/pdf`, and a `@Header` decorator is applied *before* the handler
+ * runs — so every refusal from it went out as a problem document wearing a
+ * PDF's content type. A browser offers to save a broken file; a client that
+ * dispatches on the header hands a few hundred bytes of JSON to a renderer.
+ *
+ * This learner has watched everything and never certified anything, which is
+ * exactly how somebody reaches it in practice: opening the certificate link
+ * before the Zertifizierung is finished.
+ */
+describe("a refusal from a route that promises a PDF (P56-02)", () => {
+  it("is labelled as a problem document, not as a PDF", async () => {
+    const response = await fetch(`${baseUrl}/courses/${courseSlug}/certificate/pdf`, {
+      headers: { authorization: `Bearer ${await token()}`, "x-ds-project": projectSlug },
+    });
+
+    expect(response.status).not.toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/problem+json");
+    expect(response.headers.get("content-type")).not.toContain("application/pdf");
+  });
+
+  it("really is a problem document, not just a header saying so", async () => {
+    // Half a fix is a header that lies in the other direction.
+    const response = await fetch(`${baseUrl}/courses/${courseSlug}/certificate/pdf`, {
+      headers: { authorization: `Bearer ${await token()}`, "x-ds-project": projectSlug },
+    });
+
+    const body = (await response.json()) as { status: number; instance: string };
+    expect(body.status).toBe(response.status);
+    expect(body.instance).toContain(courseSlug);
+  });
+});

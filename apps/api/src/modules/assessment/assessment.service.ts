@@ -11,7 +11,12 @@
  * never placed on anything returned to a caller.
  */
 
-import { scoreQuiz, UnknownQuestionError, type Question } from "@ds/domain";
+import {
+  mayRevealCorrectAnswers,
+  scoreQuiz,
+  UnknownQuestionError,
+  type Question,
+} from "@ds/domain";
 import { AppError } from "../../shared/problem-details.js";
 import type { Db } from "../../db/tenant-db.js";
 import { LearningRepository } from "../learning/learning.repository.js";
@@ -171,9 +176,15 @@ export class AssessmentService {
       scorePercent: result.scorePercent,
       passed: result.passed,
       passThresholdPercent: enrolment.passThresholdPercent,
-      // Withheld unless the course explicitly reveals answers. With unlimited
-      // retries, per-question feedback is the answer key in slow motion.
-      ...(course.revealCorrectAnswers ? { perQuestion: result.perQuestion } : {}),
+      /*
+       * Withheld unless the course both asks for it *and* is allowed it
+       * (P56-01). With unlimited retries, per-question feedback is the answer
+       * key in slow motion — which is why a course awarding CME points may not
+       * reveal it however its column is set. The rule is `mayRevealCorrectAnswers`
+       * in `@ds/domain`, beside the scorer, because it is the same compliance
+       * question read from the other end.
+       */
+      ...(mayRevealCorrectAnswers(course) ? { perQuestion: result.perQuestion } : {}),
     };
   }
 }

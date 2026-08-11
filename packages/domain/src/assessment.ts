@@ -103,6 +103,41 @@ export function scoreQuiz(
 }
 
 /**
+ * Whether per-question correctness may be sent back to the learner (P56-01).
+ *
+ * ## Why this is a rule and not a setting
+ *
+ * `assessment.ts` has said since P4-02 that "no endpoint ever returns a
+ * correctness marker for a CME-certified course", and until this function
+ * existed that sentence was a comment. The API honoured
+ * `courses.reveal_correct_answers` on its own — a boolean that no route can
+ * set, but that a support script, a seed or a future admin field can — and a
+ * course carrying a VNR would then hand a physician one boolean per question,
+ * with unlimited retries. Four rounds of that is the answer key, and the
+ * Lernerfolgskontrolle it voids is a condition of the Anerkennung.
+ *
+ * QA proved it by flipping the column on a course worth CME points and getting
+ * `perQuestion` back (CLAUDE.md §9.3: a rule written is not a rule enforced).
+ *
+ * ## Why points and not "has a VNR"
+ *
+ * A course awards points or it does not, and that is the thing the
+ * accreditation attaches to. The VNR can arrive weeks after the course is
+ * authored (P7-07), so keying on it would leave a window in which the same
+ * course legitimately revealed answers and then stopped.
+ *
+ * Educational material that awards nothing may still reveal: there is no
+ * accredited assessment to protect, and immediate feedback is the point of it.
+ */
+export function mayRevealCorrectAnswers(course: {
+  readonly revealCorrectAnswers: boolean;
+  readonly cmePoints: number | null;
+}): boolean {
+  if (course.cmePoints !== null && course.cmePoints > 0) return false;
+  return course.revealCorrectAnswers;
+}
+
+/**
  * How many questions must be right — "Mind. 8 von 11 richtig" (layout page 08).
  *
  * ## Why this is here and not in the widget
