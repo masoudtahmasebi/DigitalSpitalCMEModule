@@ -171,6 +171,18 @@ export const de = {
     watchProgress: (achieved: number, required: number): string =>
       `${achieved} % der Videoinhalte angesehen (erforderlich: ${required} %).`,
     complete: "Fortbildung abgeschlossen",
+    /**
+     * Shown when the course is done but the point is not yet claimed (P51-01).
+     *
+     * The physician has finished — the banner above says so — and this line
+     * exists only to answer the question that immediately follows it: *and
+     * now?* Naming the tab is the whole point; "Ihre Zertifizierung ist noch
+     * offen" on its own is the correct-and-useless answer CLAUDE.md §9.4 is
+     * about. There is no deadline in this sentence because there is none: they
+     * may come back whenever they like.
+     */
+    certificationOpen:
+      "Für Ihre CME-Punkte fehlen noch Angaben. Sie finden sie unter „Zertifizierung“ und können sie jederzeit nachtragen.",
   },
 
   /**

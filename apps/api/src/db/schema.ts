@@ -342,7 +342,20 @@ export const enrolments = pgTable("enrolments", {
   cmeCategory: text("cme_category"),
   vnr: text("vnr"),
   lastContentId: uuid("last_content_id"),
+  /**
+   * Certified: watched, passed, evaluated, EFN on file, Punktemeldung queued.
+   * The moment a CME point is claimed on the physician's behalf.
+   */
   completedAt: timestamp("completed_at", { withTimezone: true }),
+  /**
+   * The Fortbildung itself finished — videos watched, Lernerfolgskontrolle
+   * passed (P51-01, migration 0037). Always earlier than or equal to
+   * `completedAt`, which additionally waits for the evaluation and the EFN.
+   *
+   * NULL on rows certified before the column existed; see the migration for
+   * why those are not backfilled.
+   */
+  courseCompletedAt: timestamp("course_completed_at", { withTimezone: true }),
   /**
    * The one name that is reported and printed.
    *

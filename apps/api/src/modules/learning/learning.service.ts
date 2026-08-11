@@ -12,6 +12,7 @@
  */
 
 import {
+  courseAvailability,
   courseChapterSequence,
   courseWatchCoverage,
   evaluateSequence,
@@ -25,6 +26,7 @@ import {
   rollupProgress,
   validateSegments,
   watchedPercent,
+  type AvailabilityWindow,
   type ContentProgressRecord,
   type ContentSegments,
   type CourseNode,
@@ -90,6 +92,12 @@ export class LearningService {
   constructor(
     private readonly repository: LearningRepositoryPort,
     private readonly media: MediaResolver = new PassthroughMediaResolver(),
+    /**
+     * Injectable so the course-completion stamp and the validity-window check
+     * can be tested at an instant of the test's choosing rather than at
+     * whatever "now" happens to be while the suite runs (P51).
+     */
+    private readonly clock: () => Date = () => new Date(),
   ) {}
 
   static fromDb(db: Db, media?: MediaResolver): LearningService {
@@ -168,12 +176,16 @@ export class LearningService {
     learner: LearnerContext,
     now: Date,
   ): Promise<ProgressResult> {
-    const { enrolment, content, stored } = await this.requireReachableContent(
+    const { course, enrolment, content, stored } = await this.requireReachableContent(
       slug,
       contentId,
       learner,
       ["video"],
     );
+
+    // P51-02. Before anything is written: an expired course accepts no more
+    // playback, however far through it the learner is.
+    this.requireCourseStillOffered(course, slug);
 
     if (content.durationSec === null || content.durationSec <= 0) {
       throw new AppError(
@@ -499,6 +511,55 @@ export class LearningService {
   }
 
   /**
+   * Refuse to advance a course that is outside its validity window (P51-02).
+   *
+   * ## Why this is not in `requireEnrolled`
+   *
+   * Because it must not apply to reads. A physician whose course has expired
+   * **keeps their enrolment and everything in it** — their progress, their
+   * quiz score, their certificate if they earned one. They can open the course
+   * and look at all of it. What they cannot do is add to it.
+   *
+   * Putting the check in `requireEnrolled` would have been one line instead of
+   * four call sites, and it would have made an expired course disappear from
+   * the learner's own history. That is the opposite of "keep the existing".
+   *
+   * ## Why a 409 and not a 404
+   *
+   * A 404 is what `enrol` gives somebody who has never taken this course: as
+   * far as they are concerned it does not exist, and saying otherwise
+   * enumerates the catalogue (§9.5). This caller is different — they are
+   * enrolled, they are looking at the course right now, and the thing that
+   * changed is the world, not their permissions. `conflict` says so.
+   *
+   * ## What the message has to do
+   *
+   * Tell them their work is not lost. The first thing anybody thinks when a
+   * button they have used for an hour stops working is that they have lost the
+   * hour (§9.4).
+   *
+   * And tell them *which* refusal this is. `courseAvailability` distinguishes
+   * "not open yet" from "closed", and a course an enrolled learner cannot
+   * advance because `validFrom` was moved into the future is not expired —
+   * telling them it is would send them looking for a deadline they never
+   * missed. That is a narrow case, but the alternative is a message that is
+   * confidently wrong, and the distinction already exists in the domain: it
+   * was written for exactly this and, until now, called by nothing (§9.3).
+   */
+  requireCourseStillOffered(course: AvailabilityWindow, slug: string): void {
+    const availability = courseAvailability(course, this.clock());
+    if (availability === "available") return;
+
+    throw new AppError(
+      "conflict",
+      `course slug=${slug} is ${availability}; refusing to advance it`,
+      availability === "not_yet"
+        ? "Diese Fortbildung ist noch nicht freigeschaltet. Ihre bisherigen Ergebnisse bleiben erhalten."
+        : "Der Teilnahmezeitraum dieser Fortbildung ist abgelaufen. Ihre bisherigen Ergebnisse bleiben erhalten.",
+    );
+  }
+
+  /**
    * Everything the compliance rules need to decide anything about a learner:
    * the course tree, their stored progress, and the rollup over both.
    *
@@ -599,6 +660,35 @@ export class LearningService {
     const rollup = rollupProgress(courseNode, toProgressRecords(stored, tree));
     const gates = evaluateSequence(courseChapterSequence(courseNode, rollup));
 
+    /*
+     * Record the moment the Fortbildung was finished (P51-01).
+     *
+     * `courseComplete` is always *derived* — the line above computes it from
+     * the stored rows every time — so this write is only ever about keeping the
+     * date, never about deciding the answer. That is what makes it safe to do
+     * from a read: if the write is lost, skipped or never reached, the state
+     * this method returns is unchanged and no gate moves.
+     *
+     * It lives here rather than in `recordProgress` and the quiz submission
+     * because those are two call sites for one rule, and a rule written twice
+     * is the shape CLAUDE.md §9.3 keeps catching. This is the single funnel
+     * through which every recomputation of the state passes.
+     *
+     * The trade-off, stated: a learner who passes the quiz and never loads
+     * their state again gets no timestamp until they next do. The widget
+     * refetches immediately after both writes, so in practice it lands within
+     * seconds — and a missing date is visibly missing, where a wrong date
+     * would not be.
+     */
+    const stampCourseCompletionAt =
+      figures.courseComplete && enrolment.courseCompletedAt === null
+        ? this.clock()
+        : undefined;
+    if (stampCourseCompletionAt !== undefined) {
+      await this.repository.markCourseCompleted(enrolment.id, stampCourseCompletionAt);
+    }
+    const courseCompletedAt = enrolment.courseCompletedAt ?? stampCourseCompletionAt;
+
     return {
       enrolmentId: enrolment.id,
       courseSlug: slug,
@@ -608,9 +698,12 @@ export class LearningService {
       quizPassed: figures.quizPassed,
       evaluationSubmitted,
       efnPresent,
+      courseComplete: figures.courseComplete,
       complete: figures.complete,
       outstanding: [...figures.outstanding],
+      outstandingForCourse: [...figures.outstandingForCourse],
       completedAt: enrolment.completedAt?.toISOString() ?? null,
+      courseCompletedAt: courseCompletedAt?.toISOString() ?? null,
       progress: figures.progress,
       moduleCompletion: figures.moduleCompletion,
       modules: buildModuleStates(tree, rollup, gates),
@@ -651,8 +744,10 @@ export function summariseEnrolment(input: {
   quizPassed: boolean;
   progress: CourseRollup["course"];
   moduleCompletion: CourseRollup["moduleCompletion"];
+  courseComplete: boolean;
   complete: boolean;
   outstanding: readonly EnrolmentState["outstanding"][number][];
+  outstandingForCourse: readonly EnrolmentState["outstanding"][number][];
 } {
   const courseNode = toCourseNode(input.tree);
   const records = toProgressRecords(input.stored, input.tree);
@@ -677,8 +772,10 @@ export function summariseEnrolment(input: {
     quizPassed,
     progress: rollup.course,
     moduleCompletion: rollup.moduleCompletion,
+    courseComplete: completion.courseComplete,
     complete: completion.complete,
     outstanding: completion.outstanding,
+    outstandingForCourse: completion.outstandingForCourse,
   };
 }
 

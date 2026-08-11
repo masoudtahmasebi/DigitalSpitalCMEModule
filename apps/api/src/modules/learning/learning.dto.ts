@@ -164,9 +164,28 @@ export const enrolmentStateSchema = z.object({
   evaluationSubmitted: z.boolean(),
   /** Whether an EFN is on file. The EFN itself is never returned (ADR-0004). */
   efnPresent: z.boolean(),
+  /**
+   * The Fortbildung itself is finished: videos watched, Lernerfolgskontrolle
+   * passed (P51-01). The evaluation and the EFN may still be outstanding — see
+   * `complete` for the stronger claim.
+   */
+  courseComplete: z.boolean(),
+  /**
+   * Certifiable: `courseComplete` *and* the evaluation and (where the course
+   * awards points) the EFN are on file. This is what gates the certificate and
+   * the Punktemeldung.
+   */
   complete: z.boolean(),
   outstanding: z.array(completionConditionSchema),
+  /** The subset of `outstanding` still holding the course itself back. */
+  outstandingForCourse: z.array(completionConditionSchema),
+  /** When the point was claimed. Null until everything is in. */
   completedAt: z.iso.datetime().nullable(),
+  /**
+   * When the course was finished. Null on enrolments certified before this was
+   * recorded — read `courseComplete`, not this, to decide whether it is done.
+   */
+  courseCompletedAt: z.iso.datetime().nullable(),
   progress: progressSummarySchema,
   moduleCompletion: z.object({
     completed: z.number().int().nonnegative(),

@@ -93,6 +93,7 @@ const enrolment: EnrolmentRow = {
   passThresholdPercent: 70,
   maxQuizAttempts: null,
   completedAt: null,
+  courseCompletedAt: null,
   cmePoints: 4,
 };
 
@@ -172,6 +173,7 @@ function build(
     markCompleted: async (id, at, attested) => {
       completedCalls.push({ id, at, attested });
     },
+    markCourseCompleted: async () => undefined,
   };
 
   const completionRepo: CompletionRepositoryPort = {

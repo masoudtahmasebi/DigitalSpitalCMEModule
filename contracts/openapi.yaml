@@ -3294,9 +3294,12 @@ components:
         - quizPassed
         - evaluationSubmitted
         - efnPresent
+        - courseComplete
         - complete
         - outstanding
+        - outstandingForCourse
         - completedAt
+        - courseCompletedAt
         - progress
         - moduleCompletion
         - modules
@@ -3320,11 +3323,42 @@ components:
         efnPresent:
           type: boolean
           description: Whether an EFN is on file. The EFN itself is never returned.
-        complete: { type: boolean }
+        courseComplete:
+          type: boolean
+          description: |
+            The Fortbildung itself is finished: the required share of the video
+            content is watched and the Lernerfolgskontrolle is passed.
+
+            The evaluation and the EFN may still be outstanding. A physician in
+            this state has *done the course* and is told so; `complete` below is
+            the stronger claim that gates the certificate.
+        complete:
+          type: boolean
+          description: |
+            Certifiable: `courseComplete`, and the Evaluationsbogen and — where
+            the course awards CME points — the EFN are on file. Only this gates
+            the Teilnahmebescheinigung and the EIV Punktemeldung.
         outstanding:
           type: array
+          description: Everything still missing, in the order the learner meets it.
           items: { $ref: "#/components/schemas/CompletionCondition" }
-        completedAt: { type: [string, "null"], format: date-time }
+        outstandingForCourse:
+          type: array
+          description: |
+            The subset of `outstanding` holding the course itself back — never
+            more than `watch` and `quiz`. Empty exactly when `courseComplete`.
+          items: { $ref: "#/components/schemas/CompletionCondition" }
+        completedAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the CME point was claimed. Null until `complete`.
+        courseCompletedAt:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            When the course was finished. Null on enrolments certified before
+            this was recorded, so read `courseComplete` — never this field — to
+            decide whether the course is done.
         progress:
           $ref: "#/components/schemas/ProgressSummary"
         moduleCompletion:
@@ -4383,8 +4417,10 @@ components:
           quizPassed,
           evaluationSubmitted,
           progressPercent,
+          courseComplete,
           complete,
           completedAt,
+          courseCompletedAt,
           eivState,
           eivAttempts,
           eivReportDueAt,
@@ -4399,8 +4435,20 @@ components:
         quizPassed: { type: boolean }
         evaluationSubmitted: { type: boolean }
         progressPercent: { type: integer, minimum: 0, maximum: 100 }
-        complete: { type: boolean }
+        courseComplete:
+          type: boolean
+          description: |
+            Videos watched and Lernerfolgskontrolle passed. A participant can
+            sit here for days before supplying the Evaluationsbogen and their
+            EFN; a list showing only `complete` reports them as drop-outs.
+        complete:
+          type: boolean
+          description: Certified — the point is earned and the Punktemeldung queued.
         completedAt: { type: [string, "null"], format: date-time }
+        courseCompletedAt:
+          type: [string, "null"]
+          format: date-time
+          description: Null on enrolments certified before the date was recorded.
         eivState: { $ref: "#/components/schemas/EivState" }
         eivAttempts: { type: integer, minimum: 0 }
         eivReportDueAt: { type: [string, "null"], format: date-time }

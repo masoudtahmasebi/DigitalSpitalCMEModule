@@ -85,6 +85,10 @@ export class AssessmentService {
       ["quiz"],
     );
 
+    // P51-02. An expired course accepts no further attempts — checked before
+    // the attempt counter, so a refused course never consumes one.
+    this.learning.requireCourseStillOffered(course, slug);
+
     const attemptsUsed = await this.repository.countAttempts(enrolment.id, contentId);
     if (enrolment.maxQuizAttempts !== null && attemptsUsed >= enrolment.maxQuizAttempts) {
       throw AppError.forbidden(

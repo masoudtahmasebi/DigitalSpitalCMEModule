@@ -22,7 +22,7 @@ import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
 import { Badge, Button, Notice, Table } from "./ui.js";
 
-type Filter = "all" | "complete" | "open" | "attention";
+type Filter = "all" | "complete" | "awaiting" | "open" | "attention";
 
 export function Participants(props: {
   client: ApiClient;
@@ -83,6 +83,7 @@ export function Participants(props: {
           [
             ["all", de.participants.filterAll],
             ["complete", de.participants.filterComplete],
+            ["awaiting", de.participants.filterAwaiting],
             ["open", de.participants.filterOpen],
             ["attention", de.participants.filterAttention],
           ] as const
@@ -115,6 +116,7 @@ export function Participants(props: {
             de.participants.columnQuiz,
             de.participants.columnEvaluation,
             de.participants.columnEfn,
+            de.participants.columnCourseComplete,
             de.participants.columnComplete,
             de.participants.columnEiv,
             de.participants.columnCertificate,
@@ -136,6 +138,7 @@ export function Participants(props: {
                 {/* Presence only. The EFN itself is never returned by the API. */}
                 {row.efnPresent ? de.participants.yes : de.participants.no}
               </td>
+              <td className="px-3 py-2">{courseCompletion(row)}</td>
               <td className="px-3 py-2">{formatDate(row.completedAt)}</td>
               <td className="px-3 py-2">
                 <Badge tone={eivTone(row.eivState)}>
@@ -157,13 +160,30 @@ function matches(row: ParticipantRow, filter: Filter): boolean {
   switch (filter) {
     case "complete":
       return row.complete;
+    // Finished the course, waiting only on the evaluation or the EFN (P51-01).
+    // The list somebody actually works through.
+    case "awaiting":
+      return row.courseComplete && !row.complete;
     case "open":
-      return !row.complete;
+      return !row.courseComplete;
     case "attention":
       return row.eivState === "needs_attention";
     default:
       return true;
   }
+}
+
+/**
+ * When the Fortbildung itself was finished.
+ *
+ * Three answers, not two. A row completed before migration 0037 is complete
+ * with no date, and printing "—" there would say "not finished" about somebody
+ * who has a certificate — so the word is shown instead of a date we never
+ * recorded. Inventing one would be worse (see the migration).
+ */
+function courseCompletion(row: ParticipantRow): string {
+  if (row.courseCompletedAt !== null) return formatDate(row.courseCompletedAt);
+  return row.courseComplete ? de.participants.completedUndated : "—";
 }
 
 function eivTone(state: ParticipantRow["eivState"]): "ok" | "warn" | "muted" {

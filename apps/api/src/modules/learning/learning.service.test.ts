@@ -147,6 +147,7 @@ const enrolment: EnrolmentRow = {
   passThresholdPercent: 70,
   maxQuizAttempts: null,
   completedAt: null,
+  courseCompletedAt: null,
   cmePoints: 4,
 };
 
@@ -187,6 +188,7 @@ function fakeRepository(
         passThresholdPercent: input.course.passThresholdPercent,
         maxQuizAttempts: input.course.maxQuizAttempts,
         completedAt: null,
+        courseCompletedAt: null,
         // Copied off the course, as the real repository does: the enrolment
         // records what the course was worth when it was taken, so re-pricing a
         // course later cannot rewrite a completed record.
@@ -204,6 +206,7 @@ function fakeRepository(
     hasEfn: async () => state.efn,
     hasEvaluationResponse: async () => state.evaluation,
     markCompleted: async () => undefined,
+    markCourseCompleted: async () => undefined,
     ...overrides,
   };
 

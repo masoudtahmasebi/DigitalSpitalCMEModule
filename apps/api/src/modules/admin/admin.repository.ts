@@ -80,6 +80,8 @@ export interface EnrolmentListRow {
   /** The enrolment's snapshot — see `EnrolmentRow` in the learning repository. */
   cmePoints: number | null;
   completedAt: Date | null;
+  /** When the course itself was finished (P51-01); null on older rows. */
+  courseCompletedAt: Date | null;
   attestedName: string | null;
   firstName: string | null;
   lastName: string | null;
@@ -351,6 +353,7 @@ export class AdminRepository implements AdminRepositoryPort {
         passThresholdPercent: enrolments.passThresholdPercent,
         cmePoints: enrolments.cmePoints,
         completedAt: enrolments.completedAt,
+        courseCompletedAt: enrolments.courseCompletedAt,
         attestedName: enrolments.attestedName,
         firstName: users.firstName,
         lastName: users.lastName,

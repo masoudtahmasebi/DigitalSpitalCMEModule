@@ -107,6 +107,7 @@ const enrolment: EnrolmentListRow = {
   requiredWatchPercent: 100,
   passThresholdPercent: 70,
   completedAt: null,
+  courseCompletedAt: null,
   cmePoints: 4,
   attestedName: null,
   firstName: "Anna",

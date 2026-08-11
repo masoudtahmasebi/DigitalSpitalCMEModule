@@ -135,6 +135,37 @@ already completed it in a way that was never reported.
 Moving this course onto a new platform is a change the Kammer must be told
 about. **Has that notification been sent?**
 
+### Q14 — Is a physician credited for a course they finished before the accreditation lapsed, if they file the paperwork after?
+
+Two rules the client set on 11.08 combine into a case we cannot decide.
+
+A physician has **finished the Fortbildung** once they have watched the videos
+and passed the Lernerfolgskontrolle. The Evaluationsbogen and the EFN can come
+later — that was the client's explicit instruction, and it matches how people
+actually use an on-demand course.
+
+Separately, once a course passes its validity date it stops accepting anything
+further: no playback, no attempts, no completion. Also the client's
+instruction.
+
+So: **a physician completes the course on 10 October, the accreditation lapses
+on 12 October, and they come back on 15 October to fill in the evaluation.** As
+built, they are refused and the CME point they earned cannot be claimed.
+
+**The question for the Ärztekammer:** for an on-demand Fortbildung, is the
+participation dated by **when the physician completed the course content**, or
+by **when the Teilnahmebescheinigung is issued**?
+
+- If it is the content, we should keep certification open after the validity
+  date for anyone who finished inside it. We already record that date, so this
+  is a small change.
+- If it is the issue date, the current behaviour is correct — but then the
+  physician needs warning _before_ the window shuts, not a refusal after it.
+
+This is the same underlying question as Q1 (_what counts as
+`Veranstaltungsende` for an on-demand course?_) and can be asked in the same
+message.
+
 ---
 
 ## For DigitalSpital (internal)

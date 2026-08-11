@@ -96,6 +96,7 @@ const enrolment: EnrolmentRow = {
   passThresholdPercent: 70,
   maxQuizAttempts: null,
   completedAt: null,
+  courseCompletedAt: null,
   cmePoints: 4,
 };
 
@@ -140,6 +141,7 @@ function build(
     hasEfn: async () => false,
     hasEvaluationResponse: async () => false,
     markCompleted: async () => undefined,
+    markCourseCompleted: async () => undefined,
   };
 
   const assessmentRepo: AssessmentRepositoryPort = {
@@ -416,6 +418,7 @@ describe("submit", () => {
       hasEfn: async () => false,
       hasEvaluationResponse: async () => false,
       markCompleted: async () => undefined,
+      markCourseCompleted: async () => undefined,
     };
 
     const assessmentRepo: AssessmentRepositoryPort = {

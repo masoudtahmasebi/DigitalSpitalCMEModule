@@ -851,8 +851,16 @@ export const de = {
     empty: "Für diese Fortbildung sind keine Teilnahmen erfasst.",
     export: "Als CSV exportieren",
     filterAll: "Alle",
-    filterComplete: "Abgeschlossen",
-    filterOpen: "Offen",
+    filterComplete: "Zertifiziert",
+    /**
+     * The group that exists because of P51-01, and the reason this filter was
+     * worth adding: these people have *finished the Fortbildung* and are
+     * waiting only on the Evaluationsbogen or their EFN. Under the old
+     * two-way split they were counted as "Offen" beside people who had not
+     * started, so the one list worth acting on could not be produced.
+     */
+    filterAwaiting: "Zertifizierung offen",
+    filterOpen: "In Bearbeitung",
     filterAttention: "Meldung prüfen",
 
     columnName: "Person",
@@ -862,7 +870,10 @@ export const de = {
     columnQuiz: "Lernerfolgskontrolle",
     columnEvaluation: "Evaluation",
     columnEfn: "EFN",
-    columnComplete: "Abschluss",
+    columnCourseComplete: "Fortbildung",
+    columnComplete: "Zertifiziert",
+    /** Course finished, but before the date was recorded (migration 0037). */
+    completedUndated: "abgeschlossen",
     columnEiv: "Punktemeldung",
     columnCertificate: "Bescheinigung",
 

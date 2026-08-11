@@ -32,9 +32,12 @@ function state(overrides: Partial<EnrolmentState> = {}): EnrolmentState {
     quizPassed: false,
     evaluationSubmitted: false,
     efnPresent: false,
+    courseComplete: false,
     complete: false,
     outstanding: [],
+    outstandingForCourse: [],
     completedAt: null,
+    courseCompletedAt: null,
     progress: {
       status: "in_progress",
       completedCount: 4,
@@ -132,18 +135,53 @@ describe("ProgressCard", () => {
     ).toBeTruthy();
   });
 
-  it("says the course is finished only once the server has recorded it", () => {
+  it("says nothing about completion while the course is still running", () => {
     render(<ProgressCard state={state()} onResume={undefined} />);
     expect(screen.queryByText("Fortbildung abgeschlossen")).toBeNull();
+  });
 
-    cleanup();
+  /*
+   * P51-01. The banner follows `courseComplete`, and these three cases are the
+   * whole rule: a physician who has watched the videos and passed the quiz is
+   * told they have finished, whether or not the paperwork is in.
+   *
+   * The middle case is the one that was broken. It would have been green on the
+   * old component only by accident — it never sets `completedAt` — which is why
+   * it asserts the follow-up sentence too: the acknowledgement without the
+   * "and now what" is the half that CLAUDE.md §9.4 says is not done.
+   */
+  it("says the course is finished as soon as the videos and quiz are done", () => {
+    render(<ProgressCard state={state({ courseComplete: true })} onResume={undefined} />);
+
+    expect(screen.getByText("Fortbildung abgeschlossen")).toBeTruthy();
+    expect(screen.getByText(/Zertifizierung/)).toBeTruthy();
+  });
+
+  it("drops the follow-up line once the point has been claimed", () => {
     render(
       <ProgressCard
-        state={state({ completedAt: "2026-09-10T08:00:00Z" })}
+        state={state({ courseComplete: true, completedAt: "2026-09-10T08:00:00Z" })}
         onResume={undefined}
       />,
     );
+
     expect(screen.getByText("Fortbildung abgeschlossen")).toBeTruthy();
+    expect(screen.queryByText(/Zertifizierung/)).toBeNull();
+  });
+
+  it("never announces completion on the strength of a certification date alone", () => {
+    // Defensive: `completedAt` set without `courseComplete` is a state the
+    // server cannot produce — certification implies course completion, and the
+    // domain has a property test for exactly that. If it ever does produce it,
+    // the banner must follow the condition, not the timestamp.
+    render(
+      <ProgressCard
+        state={state({ courseComplete: false, completedAt: "2026-09-10T08:00:00Z" })}
+        onResume={undefined}
+      />,
+    );
+
+    expect(screen.queryByText("Fortbildung abgeschlossen")).toBeNull();
   });
 
   it("offers 'starten' before anything is done and 'fortsetzen' after", () => {

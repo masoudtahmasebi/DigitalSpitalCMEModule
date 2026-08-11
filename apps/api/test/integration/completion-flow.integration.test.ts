@@ -496,6 +496,37 @@ describe("the road to a CME point", () => {
     expect(body).toBeUndefined();
   });
 
+  /*
+   * P51-01. Clear the course-completion date before certifying, which puts the
+   * next test on the path that actually broke.
+   *
+   * Two things arrive at the same row from two different clocks. `completed_at`
+   * is read at the edge when the request arrives; `course_completed_at` is
+   * stamped by the state recomputation *inside* that same request, and so is
+   * fractionally later. When it has already been recorded — which it has for
+   * any learner who looked at their progress after the quiz — the second write
+   * never happens and the ordering never comes up. When it has not, the
+   * completion writes a course-completion date later than the certification
+   * date, `enrolments_course_completed_before_completed` refuses the row, and
+   * the physician's completion fails at its final step with an internal error.
+   *
+   * NULL here is not contrived: it is the state of every enrolment that existed
+   * before migration 0037, and of any learner who submits the evaluation before
+   * passing the quiz and then completes without reloading.
+   */
+  it("can be certified with no course-completion date recorded, as an old row has", async () => {
+    await seedPool.query(
+      "UPDATE enrolments SET course_completed_at = NULL WHERE id = $1",
+      [enrolmentId],
+    );
+
+    const { rows } = await seedPool.query<{ course_completed_at: Date | null }>(
+      "SELECT course_completed_at FROM enrolments WHERE id = $1",
+      [enrolmentId],
+    );
+    expect(rows[0]!.course_completed_at).toBeNull();
+  });
+
   it("completes and queues the Punktemeldung", async () => {
     // The Punktemeldung form as the layout draws it (page 13): title, given
     // name, family name and the consent, in one request. What gets printed and
@@ -534,6 +565,24 @@ describe("the road to a CME point", () => {
       (rows[0]!.report_due_at.getTime() - rows[0]!.event_end_at.getTime()) / 86_400_000;
     expect(days).toBeGreaterThan(8);
     expect(days).toBeLessThan(9);
+  });
+
+  it("backfills the course-completion date it never had, at or before the certification", async () => {
+    // Certification implies the course was complete, so the row must not be
+    // left claiming otherwise — and the date it gets must not read as later
+    // than the certification, which is what the CHECK constraint says and what
+    // the previous test would have died of.
+    const { rows } = await seedPool.query<{
+      course_completed_at: Date | null;
+      completed_at: Date | null;
+    }>("SELECT course_completed_at, completed_at FROM enrolments WHERE id = $1", [
+      enrolmentId,
+    ]);
+
+    expect(rows[0]!.course_completed_at).not.toBeNull();
+    expect(rows[0]!.course_completed_at!.getTime()).toBeLessThanOrEqual(
+      rows[0]!.completed_at!.getTime(),
+    );
   });
 
   it("is idempotent — completing again does not restart the reporting clock", async () => {

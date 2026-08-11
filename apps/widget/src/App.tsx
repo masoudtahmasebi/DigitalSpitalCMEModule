@@ -139,6 +139,13 @@ export interface ProgressDetail {
   readonly modulesCompleted: number;
   readonly modulesTotal: number;
   readonly outstanding: readonly string[];
+  /**
+   * The Fortbildung itself is finished — videos and Lernerfolgskontrolle
+   * (P51-01). True before `complete` whenever the Evaluationsbogen or the EFN
+   * are still to come, which on this platform is the normal order of events.
+   */
+  readonly courseComplete: boolean;
+  /** Certified: the CME point is earned and reported. */
   readonly complete: boolean;
 }
 
@@ -651,6 +658,7 @@ function useAnnouncements(
       modulesCompleted: state.moduleCompletion.completed,
       modulesTotal: state.moduleCompletion.total,
       outstanding: state.outstanding,
+      courseComplete: state.courseComplete,
       complete: state.complete,
     });
 

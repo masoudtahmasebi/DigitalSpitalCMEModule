@@ -14,7 +14,7 @@
  * Everything runs inside the tenant transaction, so RLS scopes it (ADR-0002).
  */
 
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "../../db/tenant-db.js";
 import {
   chapters,
@@ -56,7 +56,15 @@ export interface EnrolmentRow {
   requiredWatchPercent: number;
   passThresholdPercent: number;
   maxQuizAttempts: number | null;
+  /** Certified: everything done, Punktemeldung queued. */
   completedAt: Date | null;
+  /**
+   * The Fortbildung itself finished — videos and quiz, without the evaluation
+   * or the EFN (P51-01). `null` also on rows certified before the column
+   * existed, so it is never read as "the course is not complete"; that answer
+   * comes from `summariseEnrolment`, which derives it from the stored rows.
+   */
+  courseCompletedAt: Date | null;
   /**
    * The course's points **as they were when this learner enrolled**.
    *
@@ -153,6 +161,7 @@ export interface LearningRepositoryPort {
     at: Date,
     attested: AttestedCompletion,
   ): Promise<void>;
+  markCourseCompleted(enrolmentId: string, at: Date): Promise<void>;
 }
 
 export class LearningRepository implements LearningRepositoryPort {
@@ -193,6 +202,7 @@ export class LearningRepository implements LearningRepositoryPort {
         passThresholdPercent: enrolments.passThresholdPercent,
         maxQuizAttempts: enrolments.maxQuizAttempts,
         completedAt: enrolments.completedAt,
+        courseCompletedAt: enrolments.courseCompletedAt,
         cmePoints: enrolments.cmePoints,
       })
       .from(enrolments)
@@ -254,6 +264,7 @@ export class LearningRepository implements LearningRepositoryPort {
         passThresholdPercent: enrolments.passThresholdPercent,
         maxQuizAttempts: enrolments.maxQuizAttempts,
         completedAt: enrolments.completedAt,
+        courseCompletedAt: enrolments.courseCompletedAt,
         cmePoints: enrolments.cmePoints,
       });
 
@@ -409,6 +420,26 @@ export class LearningRepository implements LearningRepositoryPort {
         completedAt: at,
         updatedAt: new Date(),
         /*
+         * Certification implies the course was complete, at or before this
+         * instant — so record that, and never let it read as later (P51-01).
+         *
+         * Two clocks meet here and they are not the same one. `at` is read at
+         * the edge when the request arrives; `course_completed_at` may have
+         * been stamped microseconds *after* that, by the `buildState` inside
+         * this very request, because `complete()` recomputes the state before
+         * it writes. For a learner who certifies without re-reading their
+         * state in between — finish the quiz, press the button — that ordering
+         * makes `course_completed_at > completed_at`, which is nonsense and
+         * which `enrolments_course_completed_before_completed` refuses. The
+         * whole completion then fails at its last step.
+         *
+         * `LEAST` resolves it in the truthful direction: whatever else is
+         * known, the course was finished no later than the moment it was
+         * certified. Found by disabling the P51-01 rule to check the tests
+         * could go red, which pushed every certification down this path.
+         */
+        courseCompletedAt: sql`LEAST(COALESCE(${enrolments.courseCompletedAt}, ${at}), ${at})`,
+        /*
          * The composed name and its parts are written together or not at all.
          * `enrolments_attested_name_present` (migration 0024) refuses the row
          * where parts exist and the reported name does not, and the reason it
@@ -432,5 +463,25 @@ export class LearningRepository implements LearningRepositoryPort {
           : { consentGivenAt: at, consentDocument: attested.consentDocument }),
       })
       .where(eq(enrolments.id, enrolmentId));
+  }
+
+  /**
+   * Record when the course itself was finished (P51-01).
+   *
+   * `IS NULL` in the `WHERE`, not just in the caller's check: two requests
+   * arriving together — the widget refetching state while a progress report is
+   * still in flight — would otherwise both see `null` and the second would
+   * overwrite the first with a later instant. The column then moves forward
+   * every time somebody reloads, which is not a completion date, it is a
+   * last-seen date.
+   *
+   * So the database decides, and the write is a no-op after the first. That
+   * also makes this safe to call unconditionally.
+   */
+  async markCourseCompleted(enrolmentId: string, at: Date): Promise<void> {
+    await this.db
+      .update(enrolments)
+      .set({ courseCompletedAt: at, updatedAt: new Date() })
+      .where(and(eq(enrolments.id, enrolmentId), isNull(enrolments.courseCompletedAt)));
   }
 }

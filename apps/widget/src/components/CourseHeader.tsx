@@ -151,11 +151,31 @@ export function ProgressCard(props: {
         }
       />
 
-      {props.state.completedAt === null ? null : (
-        <p className="mt-3 rounded-xl bg-green-50 px-4 py-2 text-center text-sm font-medium text-status-completed">
-          {de.overview.complete}
-        </p>
-      )}
+      {/*
+        The banner tracks `courseComplete`, not `completedAt` (P51-01).
+
+        A physician who has watched every video and passed the
+        Lernerfolgskontrolle **has finished the Fortbildung**, and this is the
+        screen that has to agree with them. It used to wait for `completedAt`,
+        which additionally requires the Evaluationsbogen and the EFN — so the
+        person who had just done all the actual work was shown no
+        acknowledgement at all, only a form.
+
+        The second line appears only in the gap between the two, and its whole
+        job is to say where to go next.
+      */}
+      {props.state.courseComplete ? (
+        <>
+          <p className="mt-3 rounded-xl bg-green-50 px-4 py-2 text-center text-sm font-medium text-status-completed">
+            {de.overview.complete}
+          </p>
+          {props.state.completedAt === null ? (
+            <p className="mt-2 text-center text-sm text-gray-700">
+              {de.overview.certificationOpen}
+            </p>
+          ) : null}
+        </>
+      ) : null}
     </>
   );
 }

@@ -14,7 +14,7 @@
 
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
@@ -649,6 +649,62 @@ describe("a course without CME points", () => {
 });
 
 /**
+ * The course is finished before the paperwork is, over HTTP (P51-01).
+ *
+ * `completion.test.ts` decides the rule and covers it exhaustively. This
+ * checks the thing that file cannot: that the API *asks* it, and that the two
+ * answers travel separately all the way to the wire. A response carrying
+ * `courseComplete` glued to `complete` would pass every domain test ever
+ * written (CLAUDE.md §9.7).
+ *
+ * Runs on the free course, which by this point in the file has its one video
+ * fully watched and no quiz — so `courseComplete` is already true and only the
+ * Evaluationsbogen is outstanding. That is exactly the state the change exists
+ * for, and before P51-01 the API called it incomplete and said nothing else.
+ */
+describe("course completion, reported separately from certification (P51-01)", () => {
+  it("reports the course complete while the evaluation is still outstanding", async () => {
+    const { status, body } = await call("GET", `/courses/${freeCourseSlug}/enrolment`);
+
+    expect(status).toBe(200);
+    expect(body.achievedWatchPercent).toBe(100);
+    expect(body.courseComplete).toBe(true);
+    // The point is not earned: there is still an Evaluationsbogen to fill in.
+    expect(body.complete).toBe(false);
+    expect(body.outstanding).toEqual(["evaluation"]);
+    // And nothing holding the *course* back.
+    expect(body.outstandingForCourse).toEqual([]);
+  });
+
+  it("stamps the date the course was finished, before any certification", async () => {
+    const { body } = await call("GET", `/courses/${freeCourseSlug}/enrolment`);
+
+    expect(body.courseCompletedAt).not.toBeNull();
+    expect(Number.isNaN(Date.parse(body.courseCompletedAt))).toBe(false);
+    // Certification has not happened, so its own timestamp must still be null.
+    expect(body.completedAt).toBeNull();
+  });
+
+  it("does not move the date once it is recorded", async () => {
+    // Read twice. The stamp is written from a read path, so a missing `IS NULL`
+    // in the UPDATE would turn a completion date into a last-seen date — and
+    // nothing on any screen would look wrong.
+    const first = await call("GET", `/courses/${freeCourseSlug}/enrolment`);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const second = await call("GET", `/courses/${freeCourseSlug}/enrolment`);
+
+    expect(second.body.courseCompletedAt).toBe(first.body.courseCompletedAt);
+  });
+
+  it("still refuses to complete, because the point needs the evaluation", async () => {
+    // The direction that must not have loosened. `courseComplete` is a label;
+    // it must not have become a gate.
+    const { status } = await call("POST", `/courses/${freeCourseSlug}/completion`);
+    expect(status).toBe(409);
+  });
+});
+
+/**
  * The validity window, through HTTP (P50-01).
  *
  * `availability.test.ts` covers the rule exhaustively and **every one of those
@@ -718,11 +774,7 @@ describe("a course outside its validity window (P50-01)", () => {
     expect(body.items.map((i: { slug: string }) => i.slug)).not.toContain(freeCourseSlug);
   });
 
-  it("keeps a learner who started while it was open", async () => {
-    // The deliberate half of the rule. Revoking a half-finished course is a
-    // worse outcome than a late completion, which EIV refuses at submission
-    // time anyway. If the Kammer requires a hard cut-off, this test is what
-    // changes with the behaviour.
+  it("keeps the enrolment of a learner who started while it was open", async () => {
     await setWindow(null, null);
     const enrolled = await call("PUT", `/courses/${freeCourseSlug}/enrolment`);
     expect(enrolled.status).toBe(200);
@@ -731,5 +783,130 @@ describe("a course outside its validity window (P50-01)", () => {
 
     const { status } = await call("PUT", `/courses/${freeCourseSlug}/enrolment`);
     expect(status).toBe(200);
+  });
+
+  /*
+   * P51-02: kept, but not advanced.
+   *
+   * The half above and the half below are one rule and they pull in opposite
+   * directions, which is why they are tested together. A physician whose course
+   * has expired still has everything they did — the record, the percentages,
+   * the certificate if they earned one — and can look at all of it. What they
+   * cannot do is add to it.
+   *
+   * Each write path gets its own case rather than one loop, because each is a
+   * separate call site of `requireCourseStillOffered` and the failure being
+   * guarded against is somebody adding a fifth path and not calling it
+   * (CLAUDE.md §9.3). A loop over a list would grow only when the list did.
+   */
+  describe("and a learner already on it (P51-02)", () => {
+    beforeEach(async () => {
+      await setWindow(null, null);
+      await call("PUT", `/courses/${freeCourseSlug}/enrolment`);
+      await setWindow("2020-01-01T00:00:00Z", "2020-12-31T23:59:59Z");
+    });
+
+    it("still lets them read their own state", async () => {
+      // The whole point of "keep the existing". If this is ever a 404 the
+      // learner's history has been taken away, not frozen.
+      const { status } = await call("GET", `/courses/${freeCourseSlug}/enrolment`);
+      expect(status).toBe(200);
+    });
+
+    it("refuses further playback", async () => {
+      const { status } = await call(
+        "POST",
+        `/courses/${freeCourseSlug}/contents/${freeVideoId}/progress`,
+        { segments: [{ startSec: 0, endSec: 10 }], lastPositionSec: 10 },
+      );
+
+      // 409, not 404: they are enrolled and looking at it. The world changed,
+      // their permissions did not.
+      expect(status).toBe(409);
+    });
+
+    it("tells them their results are kept, because that is the first fear", async () => {
+      const { body } = await call(
+        "POST",
+        `/courses/${freeCourseSlug}/contents/${freeVideoId}/progress`,
+        { segments: [{ startSec: 0, endSec: 10 }], lastPositionSec: 10 },
+      );
+
+      expect(body.detail).toMatch(/abgelaufen/u);
+      expect(body.detail).toMatch(/bleiben erhalten/u);
+    });
+
+    it("writes nothing when it refuses the playback", async () => {
+      /*
+       * The stored progress is cleared first, and that is not tidiness — it is
+       * what makes this test capable of failing. Written the obvious way, it
+       * read the watch percentage before and after against a video that was
+       * already 100 % watched by an earlier case, so both readings were 100
+       * whether or not the refused write had landed. It passed on a build with
+       * the check disabled (CLAUDE.md §9.1).
+       */
+      await seedPool.query(
+        `DELETE FROM content_progress
+          WHERE enrolment_id IN (
+            SELECT id FROM enrolments
+             WHERE course_id = (SELECT id FROM courses WHERE slug = $1))`,
+        [freeCourseSlug],
+      );
+
+      const before = await call("GET", `/courses/${freeCourseSlug}/enrolment`);
+      expect(before.body.achievedWatchPercent).toBe(0);
+
+      await call("POST", `/courses/${freeCourseSlug}/contents/${freeVideoId}/progress`, {
+        segments: [{ startSec: 0, endSec: 60 }],
+        lastPositionSec: 60,
+      });
+
+      const after = await call("GET", `/courses/${freeCourseSlug}/enrolment`);
+      expect(after.body.achievedWatchPercent).toBe(0);
+    });
+
+    it("says 'not yet' rather than 'expired' when the window has not opened", async () => {
+      // Reachable by moving `valid_from` forward on a course people are already
+      // taking. Narrow, but "Ihr Teilnahmezeitraum ist abgelaufen" would send a
+      // physician looking for a deadline they never missed — and the domain
+      // already distinguishes the two states.
+      await setWindow("2099-01-01T00:00:00Z", "2099-12-31T23:59:59Z");
+
+      const { status, body } = await call(
+        "POST",
+        `/courses/${freeCourseSlug}/contents/${freeVideoId}/progress`,
+        { segments: [{ startSec: 0, endSec: 10 }], lastPositionSec: 10 },
+      );
+
+      expect(status).toBe(409);
+      expect(body.detail).toMatch(/noch nicht freigeschaltet/u);
+      expect(body.detail).not.toMatch(/abgelaufen/u);
+    });
+
+    it("refuses the evaluation", async () => {
+      const { status } = await call("POST", `/courses/${freeCourseSlug}/evaluation`, {
+        answers: [],
+      });
+      expect(status).toBe(409);
+    });
+
+    it("refuses completion, for the window rather than the missing conditions", async () => {
+      /*
+       * The status alone proves nothing here: completion on this course is a
+       * 409 anyway while the Evaluationsbogen is outstanding, so a version of
+       * this test asserting only `409` stayed green with the window check
+       * removed. What separates the two refusals is the words, and the words
+       * are what the learner acts on — being sent to fill in a form that the
+       * next request refuses for an unmentioned reason is the failure.
+       */
+      const { status, body } = await call(
+        "POST",
+        `/courses/${freeCourseSlug}/completion`,
+      );
+
+      expect(status).toBe(409);
+      expect(body.detail).toMatch(/abgelaufen/u);
+      expect(body.detail).not.toMatch(/Evaluation/u);
+    });
   });
 });

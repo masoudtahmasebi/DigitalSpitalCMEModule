@@ -2191,10 +2191,40 @@ export interface components {
             evaluationSubmitted: boolean;
             /** @description Whether an EFN is on file. The EFN itself is never returned. */
             efnPresent: boolean;
+            /**
+             * @description The Fortbildung itself is finished: the required share of the video
+             *     content is watched and the Lernerfolgskontrolle is passed.
+             *
+             *     The evaluation and the EFN may still be outstanding. A physician in
+             *     this state has *done the course* and is told so; `complete` below is
+             *     the stronger claim that gates the certificate.
+             */
+            courseComplete: boolean;
+            /**
+             * @description Certifiable: `courseComplete`, and the Evaluationsbogen and — where
+             *     the course awards CME points — the EFN are on file. Only this gates
+             *     the Teilnahmebescheinigung and the EIV Punktemeldung.
+             */
             complete: boolean;
+            /** @description Everything still missing, in the order the learner meets it. */
             outstanding: components["schemas"]["CompletionCondition"][];
-            /** Format: date-time */
+            /**
+             * @description The subset of `outstanding` holding the course itself back — never
+             *     more than `watch` and `quiz`. Empty exactly when `courseComplete`.
+             */
+            outstandingForCourse: components["schemas"]["CompletionCondition"][];
+            /**
+             * Format: date-time
+             * @description When the CME point was claimed. Null until `complete`.
+             */
             completedAt: string | null;
+            /**
+             * Format: date-time
+             * @description When the course was finished. Null on enrolments certified before
+             *     this was recorded, so read `courseComplete` — never this field — to
+             *     decide whether the course is done.
+             */
+            courseCompletedAt: string | null;
             progress: components["schemas"]["ProgressSummary"];
             /** @description Feeds "Sie haben X von Y Modulen abgeschlossen". */
             moduleCompletion: {
@@ -2955,9 +2985,21 @@ export interface components {
             quizPassed: boolean;
             evaluationSubmitted: boolean;
             progressPercent: number;
+            /**
+             * @description Videos watched and Lernerfolgskontrolle passed. A participant can
+             *     sit here for days before supplying the Evaluationsbogen and their
+             *     EFN; a list showing only `complete` reports them as drop-outs.
+             */
+            courseComplete: boolean;
+            /** @description Certified — the point is earned and the Punktemeldung queued. */
             complete: boolean;
             /** Format: date-time */
             completedAt: string | null;
+            /**
+             * Format: date-time
+             * @description Null on enrolments certified before the date was recorded.
+             */
+            courseCompletedAt: string | null;
             eivState: components["schemas"]["EivState"];
             eivAttempts: number;
             /** Format: date-time */

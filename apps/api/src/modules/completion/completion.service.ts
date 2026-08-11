@@ -89,6 +89,10 @@ export class CompletionService {
   ): Promise<EnrolmentState> {
     const { course, enrolment } = await this.learning.requireEnrolled(slug, learner);
 
+    // P51-02. The evaluation is a statement about a course that is still
+    // running; once the window closes there is nothing left to advance.
+    this.learning.requireCourseStillOffered(course, slug);
+
     if (await this.repository.hasEvaluationResponse(enrolment.id)) {
       throw new AppError(
         "conflict",
@@ -169,6 +173,22 @@ export class CompletionService {
     const { course, enrolment } = await this.learning.requireEnrolled(slug, learner);
 
     if (enrolment.completedAt !== null) return this.learning.getState(slug, learner);
+
+    /*
+     * P51-02, and the one refusal in this change with a cost attached.
+     *
+     * After the idempotency check above, so an already-certified learner still
+     * gets their state back rather than an error about a course they finished.
+     * But a learner who completed the videos and the quiz *before* the window
+     * closed and comes back for the paperwork *after* is refused here, and the
+     * CME point they earned is not claimable through the product.
+     *
+     * That is what "keep the existing and do not let them go on" asks for, and
+     * it is deliberate rather than overlooked — see docs/show-stoppers.md S17,
+     * which is the question of whether the Kammer wants a grace period keyed to
+     * the course completion instead. The two-line change is here if so.
+     */
+    this.learning.requireCourseStillOffered(course, slug);
 
     /*
      * The EFN arrives with the rest of the form (layout page 13) rather than
