@@ -147,6 +147,14 @@ const enrolment: EnrolmentRow = {
   requiredWatchPercent: 100,
   passThresholdPercent: 70,
   maxQuizAttempts: null,
+  /**
+   * Long before every clock in this file, so the playback cases have
+   * wall-clock budget to spend (P55-01). A learner who enrolled a moment ago
+   * can only have watched a moment's worth; these cases are about the union
+   * arithmetic, and the plausibility guard gets its own case below — from a
+   * deliberately fresh enrolment, which is the shape that was unguarded.
+   */
+  createdAt: new Date("2026-01-01T00:00:00Z"),
   completedAt: null,
   courseCompletedAt: null,
   cmePoints: 4,
@@ -188,6 +196,7 @@ function fakeRepository(
         requiredWatchPercent: input.course.requiredWatchPercent,
         passThresholdPercent: input.course.passThresholdPercent,
         maxQuizAttempts: input.course.maxQuizAttempts,
+        createdAt: NOW,
         completedAt: null,
         courseCompletedAt: null,
         // Copied off the course, as the real repository does: the enrolment
@@ -539,6 +548,95 @@ describe("recordProgress", () => {
     expect(result.rejected).toHaveLength(1);
     expect(result.rejected[0]?.reason).toBe("faster_than_wallclock");
     expect(result.watchedPercent).toBe(0);
+  });
+
+  /*
+   * P55-01. The case the guard above did not cover, and the one a scripted
+   * client would actually use.
+   *
+   * The wall-clock budget used to be the video's own duration whenever no row
+   * existed for that content yet — so the *first* report on each video could
+   * claim the whole thing, and there is exactly one first report per video.
+   * Enrol, POST `[0, duration]`, and every video in the course is credited in
+   * five requests. Found by QA asking for it; no real player does it, which is
+   * why nothing had.
+   */
+  it("refuses a whole video claimed the instant the learner enrolled", async () => {
+    const { repository, written } = fakeRepository({
+      enrolment: { ...enrolment, createdAt: now },
+    });
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      { segments: [{ startSec: 0, endSec: 600 }] },
+      learner,
+      now,
+    );
+
+    expect(result.rejected[0]?.reason).toBe("faster_than_wallclock");
+    expect(result.watchedPercent).toBe(0);
+    // And nothing partial was credited either: the segment is refused whole.
+    expect(written[0]?.["watchedSegments"]).toEqual([]);
+  });
+
+  it("gives a first report the time since the learner was last seen, not zero", async () => {
+    /*
+     * The other direction, and the one that would break real learners if the
+     * budget were simply tightened to nothing. Somebody who enrolled twenty
+     * minutes ago and whose player reports once at the end of a ten-minute
+     * chapter has plainly had time for it.
+     */
+    const { repository } = fakeRepository({
+      enrolment: {
+        ...enrolment,
+        createdAt: new Date(now.getTime() - 20 * 60 * 1000),
+      },
+    });
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      { segments: [{ startSec: 0, endSec: 600 }] },
+      learner,
+      now,
+    );
+
+    expect(result.rejected).toHaveLength(0);
+    expect(result.watchedPercent).toBe(100);
+  });
+
+  it("measures from the newest progress row, not from the enrolment", async () => {
+    /*
+     * A learner who enrolled a month ago and watched chapter one a minute ago
+     * has one minute of budget for chapter two, not a month. Taking the
+     * enrolment date alone would reopen the same hole one video along.
+     */
+    const { repository } = fakeRepository({
+      enrolment: {
+        ...enrolment,
+        createdAt: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+      },
+      progress: [
+        progressRow({
+          contentId: VIDEO_2,
+          status: "completed",
+          watchedPercent: 100,
+          watchedSegments: [{ startSec: 0, endSec: 300 }],
+          updatedAt: new Date(now.getTime() - 60 * 1000),
+        }),
+      ],
+    });
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      { segments: [{ startSec: 0, endSec: 600 }] },
+      learner,
+      now,
+    );
+
+    expect(result.rejected[0]?.reason).toBe("faster_than_wallclock");
   });
 
   it("names rejected segments rather than dropping them silently", async () => {

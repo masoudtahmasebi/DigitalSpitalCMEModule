@@ -29,6 +29,7 @@ import { configureApp } from "../../src/configure-app.js";
 import { loadConfig } from "../../src/config/config.js";
 import { seedLearner } from "./support/seed-learner.js";
 import { requireEnv } from "./support/env.js";
+import { backdateLearnerClock } from "./support/backdate.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 
@@ -607,6 +608,10 @@ describe("what a learner has touched cannot be deleted", () => {
     // A learner enrols and watches, which is what creates the evidence.
     const enrol = await asLearner("PUT", `/courses/${courseSlug}/enrolment`);
     expect(enrol.status).toBe(200);
+
+    // …over a plausible stretch of time. The playback guard measures from the
+    // learner's last activity (P55-01) and this suite takes milliseconds.
+    await backdateLearnerClock(seedPool, 3600);
     enrolmentId = enrol.body.enrolmentId;
 
     const progress = await asLearner(

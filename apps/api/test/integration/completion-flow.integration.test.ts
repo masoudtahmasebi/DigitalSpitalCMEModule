@@ -28,6 +28,7 @@ import { configureApp } from "../../src/configure-app.js";
 import { loadConfig } from "../../src/config/config.js";
 import { seedLearner } from "./support/seed-learner.js";
 import { requireEnv } from "./support/env.js";
+import { backdateLearnerClock } from "./support/backdate.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 
@@ -448,6 +449,7 @@ describe("the road to a CME point", () => {
   });
 
   it("accepts the watched video", async () => {
+    await backdateLearnerClock(seedPool, 3600); // P55-01 — see the helper.
     const { body } = await call(
       "POST",
       `/courses/${courseSlug}/contents/${videoId}/progress`,

@@ -63,6 +63,14 @@ export interface EnrolmentRow {
   requiredWatchPercent: number;
   passThresholdPercent: number;
   maxQuizAttempts: number | null;
+  /**
+   * When the learner enrolled.
+   *
+   * Read by the playback wall-clock check (P55-01) as the floor for "how long
+   * could this person have been watching": before any content row exists, the
+   * enrolment is the earliest moment playback could have begun.
+   */
+  createdAt: Date;
   /** Certified: everything done, Punktemeldung queued. */
   completedAt: Date | null;
   /**
@@ -209,6 +217,7 @@ export class LearningRepository implements LearningRepositoryPort {
         requiredWatchPercent: enrolments.requiredWatchPercent,
         passThresholdPercent: enrolments.passThresholdPercent,
         maxQuizAttempts: enrolments.maxQuizAttempts,
+        createdAt: enrolments.createdAt,
         completedAt: enrolments.completedAt,
         courseCompletedAt: enrolments.courseCompletedAt,
         cmePoints: enrolments.cmePoints,
@@ -271,6 +280,7 @@ export class LearningRepository implements LearningRepositoryPort {
         requiredWatchPercent: enrolments.requiredWatchPercent,
         passThresholdPercent: enrolments.passThresholdPercent,
         maxQuizAttempts: enrolments.maxQuizAttempts,
+        createdAt: enrolments.createdAt,
         completedAt: enrolments.completedAt,
         courseCompletedAt: enrolments.courseCompletedAt,
         cmePoints: enrolments.cmePoints,

@@ -55,6 +55,7 @@ import {
 import { PARTICIPANT_COOKIE } from "../../src/auth/participant-cookie.js";
 import { signInStaff, type StaffSession } from "./support/staff-session.js";
 import { requireEnv } from "./support/env.js";
+import { backdateLearnerClock } from "./support/backdate.js";
 
 const run = promisify(execFile);
 
@@ -740,6 +741,10 @@ describe("5 · the participant earns the point", () => {
   });
 
   it("watches the video, and the union is what counts", async () => {
+    // The learner has been in the course a while (P55-01): the wall-clock
+    // guard measures from their last activity and this suite takes milliseconds.
+    await backdateLearnerClock(admin, 3600);
+
     // Sent as overlapping fragments, out of order, as a real player does. A
     // maximum-position implementation would credit 600 s from the last one
     // alone; the union credits what was actually seen.

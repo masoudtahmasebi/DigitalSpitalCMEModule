@@ -93,6 +93,8 @@ const enrolment: EnrolmentRow = {
   requiredWatchPercent: 100,
   passThresholdPercent: 70,
   maxQuizAttempts: null,
+  /** A day before `NOW` — see the note in `learning.service.test.ts` (P55-01). */
+  createdAt: new Date(NOW.getTime() - 24 * 60 * 60 * 1000),
   completedAt: null,
   courseCompletedAt: null,
   cmePoints: 4,

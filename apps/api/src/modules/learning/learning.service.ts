@@ -202,14 +202,45 @@ export class LearningService {
     const existing = stored.find((row) => row.contentId === contentId);
     const previousSegments = readSegments(existing?.watchedSegments);
 
-    // Wall-clock budget: how much playback could plausibly have happened since
-    // this content was last written. A first report gets the video's own
-    // duration as its budget rather than zero, since we have no earlier
-    // timestamp to measure from.
-    const elapsedWallClockSec =
-      existing === undefined
-        ? content.durationSec
-        : Math.max(0, (now.getTime() - existing.updatedAt.getTime()) / 1000);
+    /*
+     * Wall-clock budget: how much playback could plausibly have happened since
+     * this learner was last seen doing anything on this enrolment.
+     *
+     * ## Why the *enrolment* and not this content (P55-01)
+     *
+     * The first report for a video used to be given the video's own duration
+     * as its budget, on the reasoning that there was no earlier timestamp to
+     * measure from. There was: the learner enrolled at some point, and every
+     * other content they have touched carries a timestamp too.
+     *
+     * The consequence of the old reading was that the wall-clock check — the
+     * load-bearing half of the anti-skip rule, by `watch.ts`'s own header —
+     * did not apply to the one request that mattered most. A client could
+     * enrol and immediately `POST {"segments":[{"startSec":0,"endSec":1524}]}`
+     * and have the whole video credited, once per video. QA found it by
+     * asking; nobody had reported it, because a real player never does it.
+     *
+     * ## Why this does not refuse a legitimate client
+     *
+     * The budget is elapsed real time since the learner's last recorded
+     * activity, so it grows exactly as fast as a person can watch. A client
+     * that buffers a whole 25-minute chapter and reports once at the end still
+     * took 25 minutes to get there, and those 25 minutes are in the budget. A
+     * learner who leaves and comes back a week later has a week of budget. The
+     * only thing that cannot happen is claiming more playback than there has
+     * been time for — which is what the check already said it did.
+     *
+     * `createdAt` is the floor for a learner who has touched nothing yet: the
+     * moment they enrolled, which is the earliest playback could have begun.
+     */
+    const lastActivityAt = stored.reduce<Date>(
+      (latest, row) => (row.updatedAt > latest ? row.updatedAt : latest),
+      enrolment.createdAt,
+    );
+    const elapsedWallClockSec = Math.max(
+      0,
+      (now.getTime() - lastActivityAt.getTime()) / 1000,
+    );
 
     const validation = validateSegments(report.segments, {
       durationSec: content.durationSec,

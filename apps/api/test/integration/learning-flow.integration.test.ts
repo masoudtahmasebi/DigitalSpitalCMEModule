@@ -298,14 +298,26 @@ async function call(
 }
 
 /**
- * Rewrites the stored `updated_at` backwards so the next report's wall-clock
- * budget is generous. Without this the anti-tampering rule would (correctly)
- * reject a test that plays ten minutes of video in a few milliseconds.
+ * Moves the learner's clock backwards so the next report has wall-clock budget
+ * to spend. Without it the anti-tampering rule would (correctly) reject a test
+ * that plays ten minutes of video in a few milliseconds.
+ *
+ * **Both timestamps, since P55-01.** The budget is measured from the newest
+ * `content_progress.updated_at` *or*, when the learner has touched nothing
+ * yet, from `enrolments.created_at` — so moving only the first left every
+ * first-report case with a budget of zero. That is the rule working: this
+ * helper exists precisely to pretend time has passed, and it now has to
+ * pretend consistently.
  */
 async function backdateProgress(seconds: number): Promise<void> {
+  const interval = `($1 || ' seconds')::interval`;
+  await seedPool.query(`UPDATE content_progress SET updated_at = now() - ${interval}`, [
+    String(seconds),
+  ]);
   await seedPool.query(
-    `UPDATE content_progress SET updated_at = now() - ($1 || ' seconds')::interval`,
-    [String(seconds)],
+    `UPDATE enrolments SET created_at = now() - ${interval}
+      WHERE course_id IN (SELECT id FROM courses WHERE slug = ANY($2))`,
+    [String(seconds), [courseSlug, freeCourseSlug]],
   );
 }
 
@@ -406,6 +418,11 @@ describe("the learner journey", () => {
   });
 
   it("counts the union of watched intervals, not the furthest position", async () => {
+    // A learner who has been in this course a while (P55-01): the wall-clock
+    // budget is measured from their last activity, and these cases report more
+    // playback than the milliseconds this suite actually takes.
+    await backdateProgress(VIDEO_1_SEC * 2);
+
     // Watching 0–60 then seeking to 540–600 leaves 480 s unwatched, even though
     // the playhead reached the end. A max-position implementation would call
     // this 100 %.
@@ -450,6 +467,11 @@ describe("the learner journey", () => {
   });
 
   it("merges later intervals into the stored union across requests", async () => {
+    // A learner who has been in this course a while (P55-01): the wall-clock
+    // budget is measured from their last activity, and these cases report more
+    // playback than the milliseconds this suite actually takes.
+    await backdateProgress(VIDEO_1_SEC * 2);
+
     await backdateProgress(VIDEO_1_SEC * 2);
 
     const { body } = await call(
@@ -477,6 +499,11 @@ describe("the learner journey", () => {
   });
 
   it("unlocks module 2 and moves the resume target once module 1 is complete", async () => {
+    // A learner who has been in this course a while (P55-01): the wall-clock
+    // budget is measured from their last activity, and these cases report more
+    // playback than the milliseconds this suite actually takes.
+    await backdateProgress(VIDEO_1_SEC * 2);
+
     const { body } = await call("GET", `/courses/${courseSlug}/enrolment`);
 
     expect(body.modules[0].gate).toBe("completed");
@@ -490,6 +517,11 @@ describe("the learner journey", () => {
   });
 
   it("accepts progress on module 2 now that it is reachable", async () => {
+    // A learner who has been in this course a while (P55-01): the wall-clock
+    // budget is measured from their last activity, and these cases report more
+    // playback than the milliseconds this suite actually takes.
+    await backdateProgress(VIDEO_1_SEC * 2);
+
     await backdateProgress(VIDEO_2_SEC * 2);
 
     const { status, body } = await call(
@@ -503,6 +535,11 @@ describe("the learner journey", () => {
   });
 
   it("reaches 100 % coverage but still withholds completion", async () => {
+    // A learner who has been in this course a while (P55-01): the wall-clock
+    // budget is measured from their last activity, and these cases report more
+    // playback than the milliseconds this suite actually takes.
+    await backdateProgress(VIDEO_1_SEC * 2);
+
     const { body } = await call("GET", `/courses/${courseSlug}/enrolment`);
 
     expect(body.achievedWatchPercent).toBe(100);
@@ -620,6 +657,7 @@ describe("a course without CME points", () => {
   });
 
   it("still does not ask for one once everything watchable is watched", async () => {
+    await backdateProgress(600); // P55-01 — see the helper.
     // The interesting moment: the accredited course reaches this point with
     // "efn" outstanding and refuses to complete without it. This one has
     // nothing left but the Evaluationsbogen — no EFN is ever demanded, at any
@@ -664,6 +702,7 @@ describe("a course without CME points", () => {
  */
 describe("course completion, reported separately from certification (P51-01)", () => {
   it("reports the course complete while the evaluation is still outstanding", async () => {
+    await backdateProgress(600); // P55-01 — see the helper.
     const { status, body } = await call("GET", `/courses/${freeCourseSlug}/enrolment`);
 
     expect(status).toBe(200);
@@ -677,6 +716,7 @@ describe("course completion, reported separately from certification (P51-01)", (
   });
 
   it("stamps the date the course was finished, before any certification", async () => {
+    await backdateProgress(600); // P55-01 — see the helper.
     const { body } = await call("GET", `/courses/${freeCourseSlug}/enrolment`);
 
     expect(body.courseCompletedAt).not.toBeNull();
@@ -1087,5 +1127,88 @@ describe("a course that is still a draft (P53-01)", () => {
       expect(body.detail).toMatch(/derzeit nicht verfügbar/iu);
       expect(body.detail).not.toMatch(/Evaluation/u);
     });
+  });
+});
+
+/**
+ * The wall-clock floor on a first report, through HTTP (P55-01).
+ *
+ * `learning.service.test.ts` covers the rule against a fake repository. This
+ * covers the thing that suite cannot: that the budget is computed from rows
+ * the *database* holds — `enrolments.created_at` and the newest
+ * `content_progress.updated_at` — rather than from anything the request
+ * carries. The hole it closes was reachable with two HTTP calls and nothing
+ * else: enrol, then claim the whole video.
+ *
+ * **Last in the file, deliberately.** Every case here clears this enrolment's
+ * progress and moves its `created_at`, and the journey above it is cumulative
+ * — a block that reset the learner's history halfway through would fail eight
+ * later cases for reasons having nothing to do with them (CLAUDE.md §9.8, the
+ * ambient-state lesson, one layer out).
+ */
+describe("a whole video claimed on a fresh enrolment (P55-01)", () => {
+  beforeEach(async () => {
+    // A learner who has just this second enrolled and touched nothing.
+    await seedPool.query(
+      `DELETE FROM content_progress
+        WHERE enrolment_id IN (
+          SELECT id FROM enrolments
+           WHERE course_id = (SELECT id FROM courses WHERE slug = $1))`,
+      [courseSlug],
+    );
+    await call("PUT", `/courses/${courseSlug}/enrolment`);
+    await seedPool.query(
+      `UPDATE enrolments SET created_at = now()
+        WHERE course_id = (SELECT id FROM courses WHERE slug = $1)`,
+      [courseSlug],
+    );
+  });
+
+  it("refuses it, and credits nothing", async () => {
+    const { status, body } = await call(
+      "POST",
+      `/courses/${courseSlug}/contents/${video1Id}/progress`,
+      { segments: [{ startSec: 0, endSec: VIDEO_1_SEC }], lastPositionSec: VIDEO_1_SEC },
+    );
+
+    // 200 with a rejection, not 4xx: the report was well-formed and the server
+    // is telling the player what it credited. A player that had genuinely
+    // buffered ahead simply reports again once the time has passed.
+    expect(status).toBe(200);
+    expect(body.rejected[0]?.reason).toBe("faster_than_wallclock");
+    expect(body.watchedPercent).toBe(0);
+  });
+
+  it("stores nothing either — the refusal is not only in the response", async () => {
+    await call("POST", `/courses/${courseSlug}/contents/${video1Id}/progress`, {
+      segments: [{ startSec: 0, endSec: VIDEO_1_SEC }],
+      lastPositionSec: VIDEO_1_SEC,
+    });
+
+    const { body } = await call("GET", `/courses/${courseSlug}/enrolment`);
+    expect(body.achievedWatchPercent).toBe(0);
+  });
+
+  it("accepts what the elapsed time does cover", async () => {
+    /*
+     * The other half, and the reason this is a floor rather than a ban. Twenty
+     * minutes after enrolling, ten minutes of video is entirely possible — and
+     * a rule that refused it would break every player that reports at the end
+     * of a chapter instead of during it.
+     */
+    await seedPool.query(
+      `UPDATE enrolments SET created_at = now() - interval '20 minutes'
+        WHERE course_id = (SELECT id FROM courses WHERE slug = $1)`,
+      [courseSlug],
+    );
+
+    const { body } = await call(
+      "POST",
+      `/courses/${courseSlug}/contents/${video1Id}/progress`,
+      { segments: [{ startSec: 0, endSec: VIDEO_1_SEC }], lastPositionSec: VIDEO_1_SEC },
+    );
+
+    expect(body.rejected).toEqual([]);
+    expect(body.watchedPercent).toBe(100);
   });
 });
