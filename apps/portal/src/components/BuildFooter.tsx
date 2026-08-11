@@ -20,39 +20,44 @@
  */
 
 import { useEffect, useState } from "react";
-import { compareBuilds, fetchApiCommit } from "@ds/build-info";
+import { compareBuilds, describeBuild, fetchApiBuild } from "@ds/build-info";
 import { de } from "../locale/de.js";
 
 export function BuildFooter(props: {
   /** Undefined on the misconfigured branch, where the footer still helps. */
   readonly apiBase: string | undefined;
   readonly commit: string | undefined;
+  readonly version: string | undefined;
 }): React.JSX.Element {
-  const [apiCommit, setApiCommit] = useState<string | undefined>(undefined);
+  const [api, setApi] = useState<{ version: string; commit: string } | undefined>(
+    undefined,
+  );
 
   useEffect(() => {
     const apiBase = props.apiBase;
     if (apiBase === undefined || apiBase === "") return undefined;
 
     let cancelled = false;
-    void fetchApiCommit(apiBase).then((commit) => {
-      if (!cancelled) setApiCommit(commit);
+    void fetchApiBuild(apiBase).then((build) => {
+      if (!cancelled) setApi(build);
     });
     return () => {
       cancelled = true;
     };
   }, [props.apiBase]);
 
-  const build = compareBuilds(props.commit, apiCommit);
+  const build = compareBuilds(props.commit, api?.commit);
 
   return (
     <footer className="mt-10 border-t border-gray-200 pt-4 text-xs text-gray-400">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <span>
-          {de.build.portal} <code className="font-mono">{build.frontend}</code>
+          {de.build.portal}{" "}
+          <code className="font-mono">{describeBuild(props.version, props.commit)}</code>
         </span>
         <span>
-          {de.build.api} <code className="font-mono">{build.api}</code>
+          {de.build.api}{" "}
+          <code className="font-mono">{describeBuild(api?.version, api?.commit)}</code>
         </span>
         {build.agreement === "skew" ? (
           <span className="font-medium text-amber-700">{de.build.skew}</span>

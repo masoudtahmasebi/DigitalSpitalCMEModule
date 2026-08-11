@@ -76,7 +76,7 @@ jobs:
           shellcheck infra/nginx/ds-runtime-config.sh
           (cd infra/deploy && shellcheck -x deploy.sh domains.sh domains.test.sh \
              deploy-vars.test.sh secrets.sh secrets.test.sh images.sh \
-             images.test.sh paths.test.sh dsc)
+             images.test.sh paths.test.sh version.sh version.test.sh dsc)
           ./infra/deploy/domains.test.sh
           # The URL encoder. A base64 password contains `/`, and an unencoded
           # `/` in a connection string's userinfo is what killed the first
@@ -99,6 +99,9 @@ jobs:
           # `deploy.sh` read ../postgres/init-roles.sql relative to the
           # caller and died two thirds of the way through a deploy.
           ./infra/deploy/paths.test.sh
+          # The release number. A shallow clone would make it the clone
+          # depth — a plausible number, lower than the last deploy's.
+          ./infra/deploy/version.test.sh
           node scripts/check-runtime-config.mjs
 
       - name: Build

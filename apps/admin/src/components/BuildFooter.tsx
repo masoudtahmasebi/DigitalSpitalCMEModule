@@ -26,7 +26,12 @@
  */
 
 import { useEffect, useState } from "react";
-import { compareBuilds, fetchApiCommit, UNKNOWN_BUILD } from "@ds/build-info";
+import {
+  compareBuilds,
+  describeBuild,
+  fetchApiBuild,
+  UNKNOWN_BUILD,
+} from "@ds/build-info";
 import { de } from "../locale/de.js";
 
 export function BuildFooter(props: {
@@ -37,8 +42,11 @@ export function BuildFooter(props: {
    */
   readonly apiBase: string | undefined;
   readonly commit: string | undefined;
+  readonly version: string | undefined;
 }): React.JSX.Element {
-  const [apiCommit, setApiCommit] = useState<string | undefined>(undefined);
+  const [api, setApi] = useState<{ version: string; commit: string } | undefined>(
+    undefined,
+  );
 
   useEffect(() => {
     const apiBase = props.apiBase;
@@ -48,25 +56,30 @@ export function BuildFooter(props: {
     // `fetchApiCommit` never rejects, so there is no error branch to render —
     // an unreachable API answers `unknown`, which is the honest result and the
     // state somebody is most likely reading this in.
-    void fetchApiCommit(apiBase).then((commit) => {
-      if (!cancelled) setApiCommit(commit);
+    void fetchApiBuild(apiBase).then((build) => {
+      if (!cancelled) setApi(build);
     });
     return () => {
       cancelled = true;
     };
   }, [props.apiBase]);
 
-  const build = compareBuilds(props.commit, apiCommit);
+  const build = compareBuilds(props.commit, api?.commit);
 
   return (
     <footer className="border-t border-gray-200 px-5 py-3 text-xs text-gray-500">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-1">
         <span>
           {de.build.console}{" "}
-          <code className="font-mono text-gray-700">{build.frontend}</code>
+          <code className="font-mono text-gray-700">
+            {describeBuild(props.version, props.commit)}
+          </code>
         </span>
         <span>
-          {de.build.api} <code className="font-mono text-gray-700">{build.api}</code>
+          {de.build.api}{" "}
+          <code className="font-mono text-gray-700">
+            {describeBuild(api?.version, api?.commit)}
+          </code>
         </span>
         {build.agreement === "skew" ? (
           // Amber rather than red: the deployment is inconsistent, which is
@@ -74,7 +87,9 @@ export function BuildFooter(props: {
           // platform still works in is a red banner people learn to ignore.
           <span className="font-medium text-amber-700">{de.build.skew}</span>
         ) : null}
-        {build.agreement === "unknown" && apiCommit === UNKNOWN_BUILD ? (
+        {api !== undefined && api.commit === UNKNOWN_BUILD ? (
+          // The API answered and did not say — an image from before P46-01.
+          // Distinct from "not asked yet", which shows nothing at all.
           <span>{de.build.apiUnknown}</span>
         ) : null}
       </div>

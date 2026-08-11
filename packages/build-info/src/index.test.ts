@@ -8,7 +8,13 @@
  */
 
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { compareBuilds, fetchApiCommit, shortCommit, UNKNOWN_BUILD } from "./index.js";
+import {
+  compareBuilds,
+  describeBuild,
+  fetchApiBuild,
+  shortCommit,
+  UNKNOWN_BUILD,
+} from "./index.js";
 
 describe("shortCommit", () => {
   it("trims a commit to the seven characters the deploy log and docker images show", () => {
@@ -56,37 +62,71 @@ describe("compareBuilds", () => {
   });
 });
 
-describe("fetchApiCommit", () => {
+describe("describeBuild", () => {
+  it("puts the comparable half first and the exact half second", () => {
+    expect(describeBuild("1.0.482", "0a177c7aaaa")).toBe("v1.0.482 · 0a177c7");
+  });
+
+  it("falls back to the commit alone when there is no version", () => {
+    // An API deployed before P47-01 answers a commit and no version.
+    expect(describeBuild(undefined, "0a177c7aaaa")).toBe("0a177c7");
+    expect(describeBuild("unknown", "0a177c7aaaa")).toBe("0a177c7");
+  });
+
+  it("falls back to the version alone when there is no commit", () => {
+    expect(describeBuild("1.0.482", undefined)).toBe("v1.0.482");
+  });
+
+  it("says one word rather than two when it knows neither", () => {
+    // `vunknown · unknown` is noise where `unknown` is the whole message.
+    expect(describeBuild(undefined, undefined)).toBe(UNKNOWN_BUILD);
+  });
+});
+
+describe("fetchApiBuild", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("reads the commit out of /health", async () => {
+  it("reads both fields out of /health in one request", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ status: "ok", database: true, commit: "e258c8d" }),
+      json: () =>
+        Promise.resolve({
+          status: "ok",
+          database: true,
+          commit: "0a177c7",
+          version: "1.0.482",
+        }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    expect(await fetchApiCommit("https://api.example.com")).toBe("e258c8d");
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.com/health");
+    return fetchApiBuild("https://api.example.com").then((build) => {
+      expect(build).toEqual({ version: "1.0.482", commit: "0a177c7" });
+      // One request, not two: this runs on a public page.
+      expect(fetchMock.mock.calls).toHaveLength(1);
+      expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.com/health");
+    });
   });
 
   it("does not double the slash when the base carries one", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ commit: "e258c8d" }),
+      json: () => Promise.resolve({ commit: "0a177c7", version: "1.0.482" }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await fetchApiCommit("https://api.example.com/");
+    await fetchApiBuild("https://api.example.com/");
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.com/health");
   });
 
   it("answers unknown rather than throwing when the API is unreachable", async () => {
     // The state in which somebody is most likely to be reading the footer.
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connection refused")));
-    expect(await fetchApiCommit("https://api.example.com")).toBe(UNKNOWN_BUILD);
+    expect(await fetchApiBuild("https://api.example.com")).toEqual({
+      version: UNKNOWN_BUILD,
+      commit: UNKNOWN_BUILD,
+    });
   });
 
   it("answers unknown on a non-200, without parsing the body", async () => {
@@ -97,12 +137,12 @@ describe("fetchApiCommit", () => {
         json: () => Promise.reject(new Error("should not be called")),
       }),
     );
-    expect(await fetchApiCommit("https://api.example.com")).toBe(UNKNOWN_BUILD);
+    expect((await fetchApiBuild("https://api.example.com")).commit).toBe(UNKNOWN_BUILD);
   });
 
-  it("answers unknown when an older API omits the field", async () => {
-    // Precisely the deployment this feature is for: the API is a build from
-    // before `commit` was on /health.
+  it("answers unknown per field when an older API omits them", async () => {
+    // Precisely the deployment this exists for: an API from before these
+    // fields were on /health.
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -110,6 +150,9 @@ describe("fetchApiCommit", () => {
         json: () => Promise.resolve({ status: "ok", database: true }),
       }),
     );
-    expect(await fetchApiCommit("https://api.example.com")).toBe(UNKNOWN_BUILD);
+    expect(await fetchApiBuild("https://api.example.com")).toEqual({
+      version: UNKNOWN_BUILD,
+      commit: UNKNOWN_BUILD,
+    });
   });
 });

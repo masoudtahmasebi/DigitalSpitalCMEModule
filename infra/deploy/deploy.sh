@@ -219,6 +219,16 @@ fi
 # shellcheck source=./domains.sh
 source "${SCRIPT_DIR}/domains.sh"
 ds_derive_domains || die "BASE_DOMAIN is missing or malformed — see config.env.example"
+
+# The release number (P47-01). Derived here rather than passed in by the
+# workflow, so a deploy typed by hand and a deploy from GitHub Actions produce
+# the same value — two sources for "the version" that cannot be compared would
+# be worse than none.
+#
+# shellcheck source=./version.sh
+source "${SCRIPT_DIR}/version.sh"
+ds_derive_version "${SCRIPT_DIR}/../.." || die "could not derive a release version (see above)"
+log "Deploying version ${DS_VERSION}"
 ds_check_domains || die "the derived configuration is inconsistent (see above)"
 
 # Everything the stack cannot start without and cannot derive, checked here

@@ -126,10 +126,15 @@ export interface CourseCompleteDetail {
  * of an `any` nobody would notice going missing.
  */
 declare const __DS_WIDGET_BUILD__: string;
+declare const __DS_WIDGET_VERSION__: string;
 
 /** `unknown` when built without `DS_COMMIT` — a `pnpm dev` bundle. */
 const WIDGET_BUILD =
   typeof __DS_WIDGET_BUILD__ === "string" ? __DS_WIDGET_BUILD__ : "unknown";
+
+/** The release number (P47-01), same fallback and same reason. */
+const WIDGET_VERSION =
+  typeof __DS_WIDGET_VERSION__ === "string" ? __DS_WIDGET_VERSION__ : "unknown";
 
 export class DsLmsElement extends HTMLElement {
   #tokenProvider: TokenProvider | undefined;
@@ -203,6 +208,7 @@ export class DsLmsElement extends HTMLElement {
      * are exactly the states somebody asks "which build is this?" about.
      */
     this.dataset["dsBuild"] = WIDGET_BUILD;
+    this.dataset["dsVersion"] = WIDGET_VERSION;
 
     // Must run before anything reads the provider.
     this.#upgradeProperty("tokenProvider");

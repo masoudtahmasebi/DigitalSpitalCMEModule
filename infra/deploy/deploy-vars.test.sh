@@ -94,6 +94,16 @@ mapfile -t derived < <(
 )
 [[ ${#derived[@]} -gt 0 ]] || { echo "xx could not read the exports out of domains.sh" >&2; exit 1; }
 
+# What version.sh derives, read the same way and for the same reason (P47-01).
+# A second file that guarantees a variable is a second place this check has to
+# know about — listed here rather than inferred, so adding a third is a
+# deliberate act and not a silent widening of what counts as guaranteed.
+mapfile -t versioned < <(
+  sed -n '/^  export /p' version.sh | sed 's/^  export //' | tr ' ' '\n' | grep -E '^[A-Z]'
+)
+[[ ${#versioned[@]} -gt 0 ]] || { echo "xx could not read the exports out of version.sh" >&2; exit 1; }
+derived+=("${versioned[@]}")
+
 # What deploy.sh assigns itself, in any of the forms it uses.
 mapfile -t assigned < <(
   {
@@ -127,7 +137,7 @@ for name in "${referenced[@]}"; do
     printf 'xx deploy.sh reads ${%s} unguarded, and nothing guarantees it is set.\n' "$name" >&2
     printf '   Under `set -u` that aborts the deploy at the line that reads it —\n' >&2
     printf '   which, past the `--check` exit, is after the database has migrated.\n' >&2
-    printf '   Add it to REQUIRED_CONFIG, derive it in domains.sh, generate it in\n' >&2
+    printf '   Add it to REQUIRED_CONFIG, derive it in domains.sh or version.sh,\n   generate it in\n' >&2
     printf '   secrets.sh, or give the reference a default: ${%s:-}\n\n' "$name" >&2
   fi
 done

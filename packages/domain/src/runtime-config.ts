@@ -46,6 +46,8 @@ export interface RuntimeConfig {
    * treating it as a version skew.
    */
   readonly commit?: string | undefined;
+  /** The release number this bundle was deployed as (P47-01). */
+  readonly version?: string | undefined;
 }
 
 /**

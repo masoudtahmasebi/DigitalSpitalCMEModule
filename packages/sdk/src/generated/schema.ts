@@ -1961,6 +1961,18 @@ export interface components {
             /** @enum {string} */
             status: "ok" | "degraded";
             /**
+             * @description The release number this process was deployed as — `major.minor` from
+             *     the workspace's package.json, patch from the commit count, so it
+             *     increases with every deploy of new work (P47-01).
+             *
+             *     The commit below identifies the build exactly; this orders it.
+             *     `0a177c7` and `e258c8d` are unordered, so "is this newer than what I
+             *     saw yesterday" cannot be answered from a SHA alone.
+             *
+             *     `unknown` when the process was started without `DS_VERSION`.
+             */
+            version?: string;
+            /**
              * @description The git commit this API process was built from — the same value as
              *     `ds_build_info` on `/metrics`, and the same tag as its container
              *     image (P46-01).

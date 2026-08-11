@@ -25,6 +25,13 @@ export interface HealthStatus {
    * answered, which is a different fact (CLAUDE.md §9.4).
    */
   readonly commit: string;
+  /**
+   * The release number, which increases with every deploy of new work
+   * (P47-01). Same reasoning as `commit` for the `"unknown"` fallback: this is
+   * a fact about the deployment, not a knob, so an unset value must not be a
+   * boot failure.
+   */
+  readonly version: string;
 }
 
 @Injectable()
@@ -36,6 +43,7 @@ export class HealthService {
    * one field whose job is to answer "I do not know".
    */
   private readonly commit = process.env["DS_COMMIT"] ?? "unknown";
+  private readonly version = process.env["DS_VERSION"] ?? "unknown";
 
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
@@ -45,6 +53,11 @@ export class HealthService {
       .then(() => true)
       .catch(() => false);
 
-    return { status: database ? "ok" : "degraded", database, commit: this.commit };
+    return {
+      status: database ? "ok" : "degraded",
+      database,
+      commit: this.commit,
+      version: this.version,
+    };
   }
 }

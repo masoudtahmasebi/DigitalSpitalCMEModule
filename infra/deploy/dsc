@@ -56,6 +56,17 @@ ds_export_url_passwords
 # shellcheck source=./images.sh
 source "${SCRIPT_DIR}/images.sh"
 
+# The release number, so a container started through `dsc` reports the same one
+# a deploy would (P47-01). Not fatal here: `dsc` is also how somebody inspects a
+# broken checkout, and refusing to run `./dsc logs` because a version cannot be
+# derived would be a wrapper getting in the way of debugging itself.
+# shellcheck source=./version.sh
+source "${SCRIPT_DIR}/version.sh"
+ds_derive_version "${SCRIPT_DIR}/../.." 2>/dev/null || {
+  DS_VERSION="unknown"
+  export DS_VERSION
+}
+
 # The image tag is the commit this clone is on, exactly as deploy.sh computes
 # it. So `./dsc` describes the checkout you are standing in — which is the
 # right answer, and the reason a rollback is `git checkout` plus a redeploy.

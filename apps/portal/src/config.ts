@@ -75,3 +75,8 @@ export function readConfig(): PortalConfig | undefined {
 export function buildCommit(): string | undefined {
   return typeof window === "undefined" ? undefined : window.__DS_CONFIG__?.commit;
 }
+
+/** The release number this bundle was deployed as (P47-01). See `buildCommit`. */
+export function buildVersion(): string | undefined {
+  return typeof window === "undefined" ? undefined : window.__DS_CONFIG__?.version;
+}

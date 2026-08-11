@@ -51,6 +51,7 @@ export default defineConfig({
      * `unknown` under `pnpm dev`, where there is no image and no `DS_COMMIT`.
      */
     __DS_WIDGET_BUILD__: JSON.stringify(process.env["DS_COMMIT"] || "unknown"),
+    __DS_WIDGET_VERSION__: JSON.stringify(process.env["DS_VERSION"] || "unknown"),
   },
   build: {
     cssCodeSplit: false,

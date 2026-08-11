@@ -132,6 +132,7 @@ emit projectSlug "${DS_PROJECT_SLUG:-}" optional
 # commit, and refusing to start over a diagnostic field would be the P44-01
 # mistake again — a required value nothing supplies.
 emit commit "${DS_COMMIT:-}" optional
+emit version "${DS_VERSION:-}" optional
 
 # The portal's Keycloak client. Absent in the admin console's container, which
 # has not spoken to Keycloak since P12-06 (ADR-0012) — so these are optional

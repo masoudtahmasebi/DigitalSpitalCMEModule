@@ -33,7 +33,7 @@ import type {
   ParticipantList,
   ProjectSummary,
 } from "@ds/sdk";
-import { buildCommit, readConfig } from "./config.js";
+import { buildCommit, buildVersion, readConfig } from "./config.js";
 import { currentStaff, signOut, type StaffProfile } from "./staff-auth.js";
 import {
   createAdminClient,
@@ -302,7 +302,11 @@ function Shell(props: {
             build is this?" is most often asked. `apiBase` is undefined on the
             misconfigured branch; the footer then shows this bundle's commit
             and `unknown` for the API, which is the true answer. */}
-        <BuildFooter apiBase={props.apiBase} commit={buildCommit()} />
+        <BuildFooter
+          apiBase={props.apiBase}
+          commit={buildCommit()}
+          version={buildVersion()}
+        />
       </div>
     </div>
   );

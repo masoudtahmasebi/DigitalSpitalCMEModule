@@ -38,7 +38,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { de } from "./locale/de.js";
-import { buildCommit, readConfig } from "./config.js";
+import { buildCommit, buildVersion, readConfig } from "./config.js";
 import { cookieTokenProvider } from "./auth.js";
 import { parseRoute, routePath, type Route } from "./routes.js";
 import { WidgetMount } from "./components/WidgetMount.js";
@@ -542,7 +542,7 @@ function Shell(props: {
       {/* Rendered by Shell rather than passed in at each call site, so it
           cannot be missing from one — including the misconfigured and
           signed-out branches, which are exactly where the question is asked. */}
-      <BuildFooter apiBase={apiBase} commit={buildCommit()} />
+      <BuildFooter apiBase={apiBase} commit={buildCommit()} version={buildVersion()} />
     </div>
   );
 }

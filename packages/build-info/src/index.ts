@@ -50,6 +50,31 @@ export interface BuildComparison {
 }
 
 /**
+ * What a person reads: `v1.0.482 · 0a177c7` (P47-01).
+ *
+ * Both, and in that order. The version is the half that can be compared —
+ * "is this newer than what I saw yesterday" is unanswerable from a SHA — and
+ * the commit is the half that identifies the build exactly, which is what you
+ * need to `git checkout` it or find its image.
+ *
+ * The version alone when there is no commit, the commit alone when there is no
+ * version, and `unknown` when there is neither. A footer reading
+ * `vunknown · unknown` is noise where a single word is the whole message.
+ */
+export function describeBuild(
+  version: string | undefined,
+  commit: string | undefined,
+): string {
+  const release =
+    version === undefined || version.trim() === "" ? undefined : version.trim();
+  const build = shortCommit(commit);
+
+  if (release === undefined || release === UNKNOWN_BUILD) return build;
+  if (build === UNKNOWN_BUILD) return `v${release}`;
+  return `v${release} · ${build}`;
+}
+
+/**
  * Trim a commit to the length a person can compare at a glance.
  *
  * Seven characters, as `git log --oneline` and `deploy.sh`'s image tags use —
@@ -87,30 +112,52 @@ export function compareBuilds(
   return { agreement: frontend === api ? "match" : "skew", frontend, api };
 }
 
+export interface ApiBuild {
+  readonly version: string;
+  readonly commit: string;
+}
+
 /**
- * Ask the API which commit it is.
+ * Ask the API which build it is.
  *
  * `/health` and not a route of its own: it is already public, already routed by
  * the edge, and already what `deploy.sh` curls. Adding a second public endpoint
- * for a field this one can carry would be another thing to expose and review.
+ * for two fields this one can carry would be another thing to expose and review.
  *
- * Never throws. This is a diagnostic in a footer — an API that is down is
- * exactly when somebody is reading it, and a rejected promise that took the
- * page with it would remove the one element that could have explained why.
+ * Both fields in one call rather than two functions over the same request —
+ * `version` and `commit` are two halves of one answer and always wanted
+ * together, and a second fetch would double the traffic a public footer
+ * generates for no gain.
+ *
+ * Never throws. This is a diagnostic in a footer, and an API that is down is
+ * exactly when somebody is reading it: a rejected promise that took the page
+ * with it would remove the one element that could have explained why.
  */
-export async function fetchApiCommit(apiBase: string): Promise<string> {
+export async function fetchApiBuild(apiBase: string): Promise<ApiBuild> {
+  const absent: ApiBuild = { version: UNKNOWN_BUILD, commit: UNKNOWN_BUILD };
+
   try {
     const response = await fetch(`${apiBase.replace(/\/+$/u, "")}/health`, {
       headers: { accept: "application/json" },
     });
-    if (!response.ok) return UNKNOWN_BUILD;
+    if (!response.ok) return absent;
+
     const body: unknown = await response.json();
-    const commit =
-      typeof body === "object" && body !== null && "commit" in body
-        ? (body as { commit: unknown }).commit
-        : undefined;
-    return typeof commit === "string" ? commit : UNKNOWN_BUILD;
+    return { version: readString(body, "version"), commit: readString(body, "commit") };
   } catch {
-    return UNKNOWN_BUILD;
+    return absent;
   }
+}
+
+/**
+ * One field of the health body, or `unknown`.
+ *
+ * An API built before these fields existed omits them entirely, which is
+ * precisely the deployment this feature is for — so a missing field is a
+ * first-class answer rather than a parse failure.
+ */
+function readString(body: unknown, key: string): string {
+  if (typeof body !== "object" || body === null || !(key in body)) return UNKNOWN_BUILD;
+  const value = (body as Record<string, unknown>)[key];
+  return typeof value === "string" && value !== "" ? value : UNKNOWN_BUILD;
 }
