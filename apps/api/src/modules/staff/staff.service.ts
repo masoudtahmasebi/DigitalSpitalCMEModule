@@ -464,11 +464,39 @@ export class StaffService {
       { ...passwordResetEmail(resetUrl(token)), to: account.email },
     );
 
+    /*
+     * The outcome, the sender, and — when it failed — why (P46-02).
+     *
+     * This used to record `{ delivered, status }` and nothing else, which is
+     * enough to know a mail did not arrive and not enough to do anything about
+     * it. The reset endpoint answers 202 for every input by design (§9.5), so
+     * this row is the *only* record that the attempt happened, and it was
+     * dropping the two fields somebody actually needs:
+     *
+     *   - `host`, because "which SMTP was used?" has two possible answers on
+     *     this platform — the platform sender for console accounts and the
+     *     project's for participants — and an operator looking at a missing
+     *     mail cannot tell which path it took.
+     *   - `reason`, because `sendNow` classifies the failure and then had
+     *     nowhere to put it. `535 authentication failed` and `connection
+     *     refused` are different jobs, and both were recorded as `transient`.
+     *
+     * Never the token, never the password, and never the recipient address as a
+     * field of its own — the row is already keyed to `account.id`, so the
+     * address adds nothing and an audit log full of e-mail addresses is a
+     * different disclosure. `reason` comes from the SMTP server and may quote
+     * the address back; that is the server's text, kept because a truncated
+     * diagnostic is the thing this change exists to stop.
+     */
     await this.deps.audit.recordSystem({
       actor: { identity: "staff", id: account.id },
       action: "staff.password_reset_requested",
-      // The outcome, never the token and never the address.
-      detail: { delivered: outcome.status === "delivered", status: outcome.status },
+      detail: {
+        delivered: outcome.status === "delivered",
+        status: outcome.status,
+        host: sender.host ?? "",
+        ...(outcome.status === "delivered" ? {} : { reason: outcome.reason }),
+      },
     });
   }
 

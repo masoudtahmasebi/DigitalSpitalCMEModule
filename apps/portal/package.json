@@ -11,6 +11,7 @@
     "lint": "echo \"linted by the root pass\""
   },
   "dependencies": {
+    "@ds/build-info": "workspace:*",
     "@ds/domain": "workspace:*",
     "@ds/sdk": "workspace:*",
     "@ds/widget": "workspace:*",

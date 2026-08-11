@@ -38,6 +38,16 @@ export interface RuntimeConfig {
   readonly issuer?: string | undefined;
   readonly clientId?: string | undefined;
   readonly redirectUri?: string | undefined;
+  /**
+   * The commit this bundle was built from (P46-01).
+   *
+   * Absent under `pnpm dev`, where there is no image and therefore no
+   * `DS_COMMIT`. `@ds/build-info` renders that as `unknown` rather than
+   * treating it as a version skew.
+   */
+  readonly commit?: string | undefined;
+  /** The release number this bundle was deployed as (P47-01). */
+  readonly version?: string | undefined;
 }
 
 /**

@@ -39,6 +39,19 @@ export default defineConfig({
     // React reads this. Without it the development build's warning machinery
     // ships to production and roughly doubles the bundle.
     "process.env.NODE_ENV": JSON.stringify(process.env["NODE_ENV"] ?? "production"),
+    /*
+     * The commit this bundle was built from (P46-01).
+     *
+     * Baked at build time, unlike the console's and the portal's, which read
+     * theirs from `/config.js` at container start. The widget has no such file:
+     * it is one script loaded into a customer's page. A commit is a property of
+     * the build rather than of the environment, so this does not reintroduce
+     * the environment-specific image that P16-02 removed.
+     *
+     * `unknown` under `pnpm dev`, where there is no image and no `DS_COMMIT`.
+     */
+    __DS_WIDGET_BUILD__: JSON.stringify(process.env["DS_COMMIT"] || "unknown"),
+    __DS_WIDGET_VERSION__: JSON.stringify(process.env["DS_VERSION"] || "unknown"),
   },
   build: {
     cssCodeSplit: false,

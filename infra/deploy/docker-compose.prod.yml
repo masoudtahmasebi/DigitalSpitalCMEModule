@@ -129,6 +129,7 @@ services:
       # what it is rather than only the deploy log saying so once (P42-03).
       # Surfaced as `ds_build_info` on /metrics, which the edge does not route.
       DS_COMMIT: ${DS_COMMIT}
+      DS_VERSION: ${DS_VERSION}
       # `_URL` — the percent-encoded form. `openssl rand -base64 32` emits `/`,
       # and a `/` in a URL's userinfo terminates the authority component, so the
       # raw value produces a connection string the client rejects as invalid.
@@ -240,6 +241,12 @@ services:
     restart: unless-stopped
     environment:
       DS_API_BASE: ${DS_ADMIN_API_BASE}
+      # Which build this bundle is, shown in its own footer beside the
+      # API's (P46-01). Same value, same source as the image tag — so a
+      # frontend serving an older build than the API it calls is visible
+      # by looking at the page rather than by asking somebody with SSH.
+      DS_COMMIT: ${DS_COMMIT}
+      DS_VERSION: ${DS_VERSION}
     networks: [internal]
 
   # The platform's own learner frontend. A host adapter like the WordPress
@@ -257,6 +264,12 @@ services:
     restart: unless-stopped
     environment:
       DS_API_BASE: ${DS_PORTAL_API_BASE}
+      # Which build this bundle is, shown in its own footer beside the
+      # API's (P46-01). Same value, same source as the image tag — so a
+      # frontend serving an older build than the API it calls is visible
+      # by looking at the page rather than by asking somebody with SSH.
+      DS_COMMIT: ${DS_COMMIT}
+      DS_VERSION: ${DS_VERSION}
       # The portal's own Keycloak client — a learner-facing public client, not
       # the console's. The console has not spoken to Keycloak since P12-06
       # (ADR-0012), which is why only this service gets these three.
@@ -270,6 +283,13 @@ services:
       context: ../..
       dockerfile: Dockerfile
       target: widget
+      args:
+        # Baked in, unlike the console's and the portal's: the widget is one
+        # `.js` file in somebody else's page, with no /config.js beside it to
+        # read at container start (P46-01). It surfaces as `data-ds-build` on
+        # the mounted element.
+        DS_COMMIT: ${DS_COMMIT}
+        DS_VERSION: ${DS_VERSION}
     restart: unless-stopped
     networks: [internal]
 

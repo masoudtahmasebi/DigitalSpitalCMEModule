@@ -39,6 +39,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Console } from "./App.js";
 import type { StaffProfile } from "./staff-auth.js";
+import { de } from "./locale/de.js";
 
 afterEach(cleanup);
 
@@ -550,5 +551,81 @@ describe("one page frame, on every screen (P30-02)", () => {
     await waitFor(() =>
       expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Fortbildungen"),
     );
+  });
+});
+
+/**
+ * The build footer is *drawn*, not merely importable (P46-01).
+ *
+ * CLAUDE.md §9.7: `@ds/build-info` has thirteen unit tests and every one of
+ * them would stay green on a console that never rendered the component. The
+ * property that matters here is the wiring — that `Shell` puts it on the page,
+ * and that it reaches the API for the second number — so it needs its own test
+ * at the call site.
+ *
+ * Confirmed by deleting the `<BuildFooter …/>` line from `Shell` and watching
+ * both cases fail.
+ */
+describe("the build footer (P46-01)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete window.__DS_CONFIG__;
+  });
+
+  function stubHealth(commit: string, version = "1.0.480") {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ status: "ok", database: true, commit, version }),
+      }),
+    );
+  }
+
+  it("shows this bundle's commit, in the short form docker images prints", async () => {
+    window.__DS_CONFIG__ = {
+      apiBase: "http://api.test",
+      commit: "4601f19aaaaaaa",
+      version: "1.0.480",
+    };
+    stubHealth("4601f19aaaaaaa");
+
+    renderConsole();
+
+    // Version first because it is the half that can be compared, commit
+    // second because it is the half that identifies the build exactly.
+    expect(await screen.findByText("v1.0.480 · 4601f19")).toBeTruthy();
+  });
+
+  it("names a version skew in German — the case it exists for", async () => {
+    // A deploy that rebuilt the API and not the console. The console then shows
+    // a screen the API does not serve, and every report about it is a report
+    // about the wrong build (CLAUDE.md §9.9).
+    window.__DS_CONFIG__ = {
+      apiBase: "http://api.test",
+      commit: "4601f19aaaaaaa",
+      version: "1.0.480",
+    };
+    stubHealth("e258c8dbbbbbbb", "1.0.482");
+
+    renderConsole();
+
+    expect(await screen.findByText(de.build.skew)).toBeTruthy();
+  });
+
+  it("still renders when the API cannot be reached", async () => {
+    // The state somebody is most likely reading the footer in. The console's
+    // own build is still the useful half of the answer.
+    window.__DS_CONFIG__ = {
+      apiBase: "http://api.test",
+      commit: "4601f19aaaaaaa",
+      version: "1.0.480",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("refused")));
+
+    renderConsole();
+
+    expect(await screen.findByText("v1.0.480 · 4601f19")).toBeTruthy();
+    expect(screen.queryByText(de.build.skew)).toBeNull();
   });
 });

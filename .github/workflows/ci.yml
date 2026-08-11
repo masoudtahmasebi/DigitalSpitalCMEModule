@@ -74,9 +74,10 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
           shellcheck infra/nginx/ds-runtime-config.sh
+          shellcheck -x run-on-local.sh
           (cd infra/deploy && shellcheck -x deploy.sh domains.sh domains.test.sh \
              deploy-vars.test.sh secrets.sh secrets.test.sh images.sh \
-             images.test.sh dsc)
+             images.test.sh paths.test.sh version.sh version.test.sh dsc)
           ./infra/deploy/domains.test.sh
           # The URL encoder. A base64 password contains `/`, and an unencoded
           # `/` in a connection string's userinfo is what killed the first
@@ -95,7 +96,18 @@ jobs:
           # supplies. DS_PROJECT_SLUG was required by ds-runtime-config.sh,
           # provided by nothing, and crash-looped admin and portal — while the
           # deploy blamed the API, because caddy depends on all three.
+          # No path in an operator-invoked script may resolve against $PWD.
+          # `deploy.sh` read ../postgres/init-roles.sql relative to the
+          # caller and died two thirds of the way through a deploy.
+          ./infra/deploy/paths.test.sh
+          # The release number. A shallow clone would make it the clone
+          # depth — a plausible number, lower than the last deploy's.
+          ./infra/deploy/version.test.sh
           node scripts/check-runtime-config.mjs
+          # The local stack's ports, and the browser-facing URLs that have
+          # to name published ports rather than service names — a mistake
+          # whose only symptom is CORS failing in a browser.
+          node scripts/check-local-ports.mjs
 
       - name: Build
         run: pnpm build

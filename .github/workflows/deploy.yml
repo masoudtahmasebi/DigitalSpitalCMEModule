@@ -232,13 +232,45 @@ jobs:
             "cd ${REPO_DIR}/infra/deploy && \
              ./deploy.sh ${{ inputs.rollback_tag && format('--rollback {0}', inputs.rollback_tag) || '' }}"
 
-      - name: Smoke-test the deployment
+      - name: Smoke-test the deployment, and record what is now live
         run: |
           # From outside the host entirely, over public DNS and real TLS. The
           # deploy script already checked this from the host; this checks that
           # the internet agrees.
-          curl --fail --silent --show-error --max-time 20 \
-            "https://${{ steps.derive.outputs.api_domain }}/health" | tee /dev/stderr | grep -q '"status"'
+          health="$(curl --fail --silent --show-error --max-time 20 \
+            "https://${{ steps.derive.outputs.api_domain }}/health")"
+          echo "$health"
+          echo "$health" | grep -q '"status"'
+
+          # The version and commit the *running API* reports, not the ones this
+          # workflow believes it deployed (P47-01). Those are different claims,
+          # and only the first one is evidence: a deploy that swapped nothing
+          # would still let this job report the commit it was triggered for.
+          #
+          # `sed` rather than `jq`, which is not guaranteed on the runner image
+          # and would be a dependency for two field reads.
+          version="$(echo "$health" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
+          commit="$(echo "$health" | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p')"
+
+          {
+            echo "### Deployed"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Version | \`${version:-unknown}\` |"
+            echo "| Commit | \`${commit:-unknown}\` |"
+            echo "| API | https://${{ steps.derive.outputs.api_domain }} |"
+            echo
+            echo "The version increments with every deploy of new commits —"
+            echo "\`major.minor\` from package.json, patch from the commit count."
+            echo "It is shown in the console's and the portal's footer."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "$version" ] || [ "$version" = "unknown" ]; then
+            echo "::warning::The API reports no version. This is expected for the" \
+                 "first deploy that introduces P47-01 and a problem after that —" \
+                 "check that DS_VERSION reached the container."
+          fi
 
       - name: Report failure
         if: failure()

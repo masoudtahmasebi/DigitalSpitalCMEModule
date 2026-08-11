@@ -174,6 +174,23 @@ RUN pnpm --filter @ds/api --prod --node-linker=hoisted --legacy deploy /app-runt
 # being identical to the first.
 FROM deps AS build-web
 
+# The commit, for the widget alone (P46-01).
+#
+# The console and the portal learn theirs at *container start*, from
+# `ds-runtime-config.sh`, which is why one image of each runs in any
+# environment. The widget has no such channel: it is a single `.js` file served
+# by nginx and loaded into somebody else's page, with no `/config.js` beside it.
+#
+# Baking it in is nevertheless correct here, and does not reintroduce the
+# environment-specific image P16-02 removed — a commit is a property of the
+# *build*, not of the environment it runs in. Two deployments of the same commit
+# still get byte-identical bundles.
+#
+# Defaults to empty so a bare `docker build` works; the element then reports
+# `unknown`, which is the honest answer.
+ARG DS_COMMIT=""
+ENV DS_COMMIT=$DS_COMMIT
+
 RUN pnpm --filter @ds/admin... --filter @ds/portal... --filter @ds/widget... build
 
 # ---------------------------------------------------------------------------

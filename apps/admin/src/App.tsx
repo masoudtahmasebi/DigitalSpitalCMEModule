@@ -33,7 +33,7 @@ import type {
   ParticipantList,
   ProjectSummary,
 } from "@ds/sdk";
-import { readConfig } from "./config.js";
+import { buildCommit, buildVersion, readConfig } from "./config.js";
 import { currentStaff, signOut, type StaffProfile } from "./staff-auth.js";
 import {
   createAdminClient,
@@ -61,6 +61,7 @@ import { Certificates } from "./components/Certificates.js";
 import { StaffAccounts } from "./components/StaffAccounts.js";
 import { Security } from "./components/Security.js";
 import { SignIn } from "./components/SignIn.js";
+import { BuildFooter } from "./components/BuildFooter.js";
 import { forgetHash, NewPassword, tokenFromHash } from "./components/NewPassword.js";
 import { decode, encode, type Route } from "./routes.js";
 
@@ -125,7 +126,7 @@ export function App() {
 
   if (checking) {
     return (
-      <Shell>
+      <Shell apiBase={config.apiBase}>
         <Spinner label={de.auth.signingIn} />
       </Shell>
     );
@@ -146,7 +147,7 @@ export function App() {
    */
   if (resetToken !== undefined) {
     return (
-      <Shell>
+      <Shell apiBase={config.apiBase}>
         <NewPassword
           apiBase={config.apiBase}
           token={resetToken}
@@ -158,7 +159,7 @@ export function App() {
 
   if (profile === undefined) {
     return (
-      <Shell>
+      <Shell apiBase={config.apiBase}>
         <SignIn apiBase={config.apiBase} onSignedIn={setProfile} />
       </Shell>
     );
@@ -206,6 +207,12 @@ export function App() {
  */
 function Shell(props: {
   children: React.ReactNode;
+  /**
+   * Where the build footer asks the API for its commit. Undefined before the
+   * configuration has been read — the footer copes, and still reports this
+   * bundle's own build.
+   */
+  apiBase?: string | undefined;
   operator?: string;
   onSignOut?: () => void;
   /** The navigation column. Absent before sign-in, when there is nowhere to go. */
@@ -288,6 +295,18 @@ function Shell(props: {
             {props.children}
           </div>
         </main>
+
+        {/* Rendered by Shell rather than passed in at each of the five call
+            sites, so it cannot be forgotten on one — and specifically not on
+            the misconfigured and signed-out branches, which are where "which
+            build is this?" is most often asked. `apiBase` is undefined on the
+            misconfigured branch; the footer then shows this bundle's commit
+            and `unknown` for the API, which is the true answer. */}
+        <BuildFooter
+          apiBase={props.apiBase}
+          commit={buildCommit()}
+          version={buildVersion()}
+        />
       </div>
     </div>
   );
@@ -860,6 +879,7 @@ export function Console(props: {
    */
   const frame = (body: React.ReactNode) => (
     <Shell
+      apiBase={props.config.apiBase}
       nav={nav}
       scope={scope}
       menuOpen={menuOpen}

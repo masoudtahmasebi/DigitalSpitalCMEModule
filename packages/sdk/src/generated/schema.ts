@@ -1960,6 +1960,42 @@ export interface components {
         HealthStatus: {
             /** @enum {string} */
             status: "ok" | "degraded";
+            /**
+             * @description The release number this process was deployed as — `major.minor` from
+             *     the workspace's package.json, patch from the commit count, so it
+             *     increases with every deploy of new work (P47-01).
+             *
+             *     The commit below identifies the build exactly; this orders it.
+             *     `0a177c7` and `e258c8d` are unordered, so "is this newer than what I
+             *     saw yesterday" cannot be answered from a SHA alone.
+             *
+             *     `unknown` when the process was started without `DS_VERSION`.
+             */
+            version?: string;
+            /**
+             * @description The git commit this API process was built from — the same value as
+             *     `ds_build_info` on `/metrics`, and the same tag as its container
+             *     image (P46-01).
+             *
+             *     On `/health` rather than a route of its own because this one is
+             *     already public, already routed by the edge, and already what
+             *     `deploy.sh` curls to decide a deploy succeeded. A second public
+             *     endpoint would be a second thing to expose, review and route, for
+             *     an answer this one can carry in a field.
+             *
+             *     **Why it is exposed at all.** "The feature is missing" and "the
+             *     feature is not on the server you are looking at" are
+             *     indistinguishable from a browser, and the second has been the more
+             *     common of the two on this project (CLAUDE.md §9.9). Every frontend
+             *     shows it beside its own build, so the question is answered by
+             *     looking rather than by asking somebody with SSH.
+             *
+             *     `unknown` when the process was started without `DS_COMMIT` — a
+             *     local `pnpm dev`, or a container run by hand. Deliberately not
+             *     omitted: a missing field reads as an old build, and "I do not know"
+             *     is a different answer from "0.0.0".
+             */
+            commit?: string;
         };
         /**
          * @description The course list's three tabs.

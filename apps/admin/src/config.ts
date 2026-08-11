@@ -65,3 +65,23 @@ export function readConfig(): AdminConfig | undefined {
   const complete = Object.values(config).every((value) => value !== "");
   return complete ? config : undefined;
 }
+
+/**
+ * The commit this bundle was built from, for the footer (P46-01).
+ *
+ * **Deliberately not a field of `AdminConfig`.** `readConfig` returns
+ * `undefined` when any value is empty, and the console renders "misconfigured"
+ * — correctly, because every other value there is one without which nothing
+ * works. A commit is a diagnostic: absent under `pnpm dev`, where there is no
+ * image and so no `DS_COMMIT`. Putting it in that object would make a console
+ * that refuses to render because it does not know its own version number,
+ * which is the P44-01 shape exactly.
+ */
+export function buildCommit(): string | undefined {
+  return typeof window === "undefined" ? undefined : window.__DS_CONFIG__?.commit;
+}
+
+/** The release number this bundle was deployed as (P47-01). See `buildCommit`. */
+export function buildVersion(): string | undefined {
+  return typeof window === "undefined" ? undefined : window.__DS_CONFIG__?.version;
+}
