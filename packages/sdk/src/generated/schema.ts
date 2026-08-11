@@ -2046,7 +2046,10 @@ export interface components {
              *     from a parameter.
              *
              *     The card's call to action depends on it: _Zur Fortbildung_ when
-             *     absent, _Fortbildung fortsetzen_ when present and unfinished.
+             *     absent, _Fortbildung fortsetzen_ when present and the **course**
+             *     is unfinished. `courseComplete`, not `complete`, decides that —
+             *     there is nothing to resume once the videos and the quiz are done,
+             *     whether or not the Evaluationsbogen has been filled in (P52-05).
              *
              *     **Deliberately not a percentage.** A course percentage is the
              *     output of `rollupProgress` over the whole tree and there is exactly
@@ -2056,7 +2059,20 @@ export interface components {
              *     this person got". Both fields here are stored columns.
              */
             enrolment: {
-                /** @description `completed_at IS NOT NULL` — the course is finished. */
+                /**
+                 * @description The Fortbildung itself is finished — videos watched and
+                 *     Lernerfolgskontrolle passed (P52-05).
+                 *
+                 *     `course_completed_at IS NOT NULL`, falling back to
+                 *     `completed_at` for enrolments certified before migration 0037
+                 *     recorded the earlier date. Still a stored column, so the card
+                 *     keeps costing one query per page rather than one per row.
+                 */
+                courseComplete: boolean;
+                /**
+                 * @description `completed_at IS NOT NULL` — certified: the evaluation and the
+                 *     EFN are in and the CME point is claimed.
+                 */
                 complete: boolean;
             } | null;
         };
@@ -2772,6 +2788,24 @@ export interface components {
          */
         AdminCourseSummary: {
             slug: string;
+            /**
+             * @description Editorial state (P53-01).
+             *
+             *     A `draft` is invisible to every learner: absent from the catalogue,
+             *     404 on its detail route, refused by enrol. Courses are **created as
+             *     drafts** — before this existed, `POST /admin/courses` put an empty
+             *     course straight into the physicians' catalogue.
+             *
+             *     Deliberately on the admin schema only. The learner-facing
+             *     `CourseSummary` has no such field because a learner is never served
+             *     a draft at all, and a `status: "published"` on every card would be a
+             *     constant dressed as information.
+             *
+             *     Distinct from `validFrom`/`validTo`, which say when an accredited
+             *     course runs rather than whether it is finished being written.
+             * @enum {string}
+             */
+            status: "draft" | "published";
             title: string;
             description: string | null;
             /**
@@ -2905,6 +2939,15 @@ export interface components {
          *     `null` clears a nullable text field.
          */
         AdminCourseUpdate: {
+            /**
+             * @description Publish or retract (P53-01). The one field here that changes *who
+             *     can see* the course rather than what it says.
+             *
+             *     Retracting behaves like an expired validity window: existing
+             *     enrolments keep their record and can no longer advance.
+             * @enum {string}
+             */
+            status?: "draft" | "published";
             title?: string;
             description?: string | null;
             /** @enum {string} */

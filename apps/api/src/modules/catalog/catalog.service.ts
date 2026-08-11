@@ -17,7 +17,7 @@ import {
   type CourseRow,
   type CourseTreeRows,
 } from "./catalog.repository.js";
-import { isCourseOffered } from "@ds/domain";
+import { courseAvailability, isCourseOffered } from "@ds/domain";
 
 import type {
   CourseDetail,
@@ -129,7 +129,18 @@ export class CatalogService {
      * bookmarked URL that never went through the list.
      */
     if (!isCourseOffered(tree.course, this.now())) {
-      throw AppError.notFound(`course slug=${slug} is outside its validity window`);
+      /*
+       * One message for a draft and for an expired course, and one status.
+       *
+       * `courseAvailability` distinguishes them and the *learner* must not:
+       * telling somebody "this course is still being written" confirms that a
+       * course by that slug exists and is coming, which is a fact about an
+       * unannounced product (§9.5). The internal string below says which, for
+       * the log.
+       */
+      throw AppError.notFound(
+        `course slug=${slug} is not offered: ${courseAvailability(tree.course, this.now())}`,
+      );
     }
 
     const enrolled = await this.repository.findEnrolments([tree.course.id], userId);
@@ -141,7 +152,7 @@ export class CatalogService {
 function toSummary(
   row: CourseRow,
   aggregate: { moduleCount: number; totalDurationSec: number },
-  enrolment: { complete: boolean } | null,
+  enrolment: { courseComplete: boolean; complete: boolean } | null,
 ): CourseSummary {
   return {
     id: row.id,
@@ -162,7 +173,7 @@ function toSummary(
 
 function toDetail(
   tree: CourseTreeRows,
-  enrolment: { complete: boolean } | null,
+  enrolment: { courseComplete: boolean; complete: boolean } | null,
 ): CourseDetail {
   const { course } = tree;
 

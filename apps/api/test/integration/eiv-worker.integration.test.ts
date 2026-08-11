@@ -63,8 +63,8 @@ beforeAll(async () => {
   );
   courseId = await insert(
     `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
-                          pass_threshold_percent, vnr, vnr_password_enc)
-     VALUES ($1,$2,$3,$4,100,70,$5,$6) RETURNING id`,
+                          pass_threshold_percent, vnr, vnr_password_enc, status)
+     VALUES ($1,$2,$3,$4,100,70,$5,$6,'published') RETURNING id`,
     [
       customerId,
       projectId,

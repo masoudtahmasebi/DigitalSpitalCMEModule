@@ -102,8 +102,8 @@ beforeAll(async () => {
   courseSlug = `kurs-${RUN}`;
   const courseId = await insert(
     `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
-                          pass_threshold_percent)
-     VALUES ($1,$2,$3,$4,90,70) RETURNING id`,
+                          pass_threshold_percent, status)
+     VALUES ($1,$2,$3,$4,90,70,'published') RETURNING id`,
     [customerId, projectId, courseSlug, "ADHS Akademie adult"],
   );
 

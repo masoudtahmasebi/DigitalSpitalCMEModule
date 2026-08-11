@@ -32,6 +32,8 @@ export const courseDeliveryType = pgEnum("course_delivery_type", [
   "live",
   "praesenz",
 ]);
+/** Editorial state (P53-01). A draft is invisible to learners. */
+export const courseStatus = pgEnum("course_status", ["draft", "published"]);
 export const contentKind = pgEnum("content_kind", [
   "video",
   "text",
@@ -182,6 +184,15 @@ export const courses = pgTable("courses", {
   cmeCategory: text("cme_category"),
   eventLocation: text("event_location"),
   organizer: text("organizer"),
+  /**
+   * Editorial state (P53-01, migration 0038).
+   *
+   * `draft` by default: a course created in the console is invisible to
+   * learners until somebody publishes it. Separate from the validity window
+   * below, which says *when an accredited course runs* rather than whether it
+   * is finished being written.
+   */
+  status: courseStatus("status").notNull().default("draft"),
   validFrom: timestamp("valid_from", { withTimezone: true }),
   validTo: timestamp("valid_to", { withTimezone: true }),
   requiredWatchPercent: integer("required_watch_percent").notNull().default(100),

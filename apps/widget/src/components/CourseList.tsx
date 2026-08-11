@@ -502,7 +502,23 @@ function CourseCard(props: {
    * learner almost always wants, and giving both equal weight would make them
    * read the labels every time.
    */
-  const inProgress = course.enrolment !== null && !course.enrolment.complete;
+  /*
+   * `courseComplete`, not `complete` (P52-05).
+   *
+   * A physician who has watched every video and passed the
+   * Lernerfolgskontrolle has **nothing to resume**, whether or not they have
+   * filled in the Evaluationsbogen. Keying this on `complete` — which
+   * additionally waits for the evaluation and the EFN — offered them
+   * "Fortbildung fortsetzen" and described a finished course as in progress.
+   *
+   * P51-01 fixed exactly this on the course-detail screen and stopped there.
+   * The catalogue is the screen a returning learner sees first.
+   */
+  const inProgress = course.enrolment !== null && !course.enrolment.courseComplete;
+  const certificationOpen =
+    course.enrolment !== null &&
+    course.enrolment.courseComplete &&
+    !course.enrolment.complete;
 
   return (
     <article className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.08)] sm:flex-row">
@@ -548,7 +564,7 @@ function CourseCard(props: {
             fields: `enrolment` is the caller's row, or null. */}
         <div className="mt-5 flex flex-wrap gap-3">
           <Button onClick={() => props.onOpen("start")}>
-            {course.enrolment !== null && course.enrolment.complete
+            {course.enrolment !== null && course.enrolment.courseComplete
               ? de.catalog.review
               : de.catalog.open}
           </Button>
@@ -558,6 +574,18 @@ function CourseCard(props: {
             </Button>
           ) : null}
         </div>
+
+        {/*
+          The one state the card could not previously express: finished, but
+          the point not yet claimed. Without it a physician who stopped before
+          the Evaluationsbogen sees a card that looks identical to a course
+          they have fully certified, and no reason to open it again.
+        */}
+        {certificationOpen ? (
+          <p className="mt-3 text-sm font-medium text-brand-700">
+            {de.catalog.certificationOpen}
+          </p>
+        ) : null}
       </div>
     </article>
   );

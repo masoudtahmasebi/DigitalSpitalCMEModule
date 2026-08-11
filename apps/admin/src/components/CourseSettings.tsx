@@ -86,8 +86,49 @@ export function CourseSettings(props: {
     }
   }
 
+  /*
+   * Publishing is its own action, not a field in the form (P53-01).
+   *
+   * A checkbox among twenty inputs saved by one button makes "is this course
+   * visible to physicians" indistinguishable from "did I fix a typo", and the
+   * two want different amounts of thought. It is also the one control here
+   * whose effect is immediate and outward-facing, so it says what will happen
+   * before it happens rather than reporting it afterwards.
+   */
+  async function setStatus(status: "draft" | "published"): Promise<void> {
+    setBusy(true);
+    setProblem(undefined);
+    setSaved(false);
+    try {
+      props.onSaved(await props.client.adminUpdateCourse(course.slug, { status }));
+      setSaved(true);
+    } catch (error) {
+      setProblem(describeError(error, de.error.generic));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const isDraft = course.status === "draft";
+
   return (
     <div className="space-y-8">
+      <section className="space-y-4">
+        <h3 className="text-base font-semibold text-gray-900">{de.course.visibility}</h3>
+
+        <Notice tone={isDraft ? "warning" : "success"}>
+          {isDraft ? de.course.draftExplained : de.course.publishedExplained}
+        </Notice>
+
+        <Button
+          variant={isDraft ? "primary" : "secondary"}
+          disabled={busy}
+          onClick={() => void setStatus(isDraft ? "published" : "draft")}
+        >
+          {isDraft ? de.course.publish : de.course.unpublish}
+        </Button>
+      </section>
+
       <section className="space-y-4">
         <h3 className="text-base font-semibold text-gray-900">{de.course.compliance}</h3>
 

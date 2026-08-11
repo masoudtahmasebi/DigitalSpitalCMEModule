@@ -77,8 +77,8 @@ beforeAll(async () => {
   );
   courseId = await insert(
     `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
-                          pass_threshold_percent, vnr, vnr_password_enc)
-     VALUES ($1,$2,$3,$4,100,70,$5,$6) RETURNING id`,
+                          pass_threshold_percent, vnr, vnr_password_enc, status)
+     VALUES ($1,$2,$3,$4,100,70,$5,$6,'published') RETURNING id`,
     [
       customerId,
       projectId,
@@ -201,8 +201,8 @@ describe("asking the authority about the event (P31-02)", () => {
     const slug = `eiv-admin-novnr-${suffix}`;
     await seedPool.query(
       `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
-                            pass_threshold_percent)
-       SELECT customer_id, project_id, $2, 'No VNR', 100, 70 FROM courses WHERE id = $1`,
+                            pass_threshold_percent, status)
+       SELECT customer_id, project_id, $2, 'No VNR', 100, 70, 'published' FROM courses WHERE id = $1`,
       [courseId, slug],
     );
 

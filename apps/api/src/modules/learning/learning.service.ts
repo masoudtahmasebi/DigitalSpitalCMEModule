@@ -27,6 +27,7 @@ import {
   validateSegments,
   watchedPercent,
   type AvailabilityWindow,
+  type CourseAvailability,
   type ContentProgressRecord,
   type ContentSegments,
   type CourseNode,
@@ -134,8 +135,12 @@ export class LearningService {
       course.id,
       learner.userId,
     );
-    if (existingEnrolment === undefined && !isCourseOffered(course, new Date())) {
-      throw AppError.notFound(`course slug=${slug} is outside its validity window`);
+    if (existingEnrolment === undefined && !isCourseOffered(course, this.clock())) {
+      // Covers a draft as well as a closed window (P53-01): both mean "not
+      // offered", and neither is a distinction a stranger is entitled to.
+      throw AppError.notFound(
+        `course slug=${slug} is not offered: ${courseAvailability(course, this.clock())}`,
+      );
     }
 
     const enrolment =
@@ -553,9 +558,7 @@ export class LearningService {
     throw new AppError(
       "conflict",
       `course slug=${slug} is ${availability}; refusing to advance it`,
-      availability === "not_yet"
-        ? "Diese Fortbildung ist noch nicht freigeschaltet. Ihre bisherigen Ergebnisse bleiben erhalten."
-        : "Der Teilnahmezeitraum dieser Fortbildung ist abgelaufen. Ihre bisherigen Ergebnisse bleiben erhalten.",
+      messageFor(availability),
     );
   }
 
@@ -811,6 +814,29 @@ function isComplianceContent(
   kind: "video" | "text" | "quiz" | "details";
 } {
   return content.kind !== "material";
+}
+
+/**
+ * What to tell a learner who cannot advance a course they are enrolled on.
+ *
+ * Three causes and three sentences. A draft is reachable here only when a
+ * course somebody had already started was **unpublished** — an operator
+ * retracting it — and telling that learner it has "expired" would be a plain
+ * untruth about a date they could go and check.
+ *
+ * All three end the same way, because all three prompt the same fear: that the
+ * hour of study just went with it.
+ */
+function messageFor(availability: CourseAvailability): string {
+  const kept = " Ihre bisherigen Ergebnisse bleiben erhalten.";
+  switch (availability) {
+    case "draft":
+      return "Diese Fortbildung ist derzeit nicht verfügbar." + kept;
+    case "not_yet":
+      return "Diese Fortbildung ist noch nicht freigeschaltet." + kept;
+    default:
+      return "Der Teilnahmezeitraum dieser Fortbildung ist abgelaufen." + kept;
+  }
 }
 
 /** Maps flat rows into the tree shape `@ds/domain` consumes. */

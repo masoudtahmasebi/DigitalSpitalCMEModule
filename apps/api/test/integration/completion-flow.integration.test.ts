@@ -114,9 +114,9 @@ beforeAll(async () => {
                           scientific_lead_name, scientific_lead_title,
                           certificate_issue_place,
                           stamp_image, stamp_image_mime,
-                          signature_image, signature_image_mime)
+                          signature_image, signature_image_mime, status)
      VALUES ($1,$2,$3,$4,100,70,$5,4,'D',$6,'online',$7,$8,'Prof. Dr. med.','Iserlohn',
-             $9,'image/png',$9,'image/png') RETURNING id`,
+             $9,'image/png',$9,'image/png','published') RETURNING id`,
     [
       customerId,
       projectId,

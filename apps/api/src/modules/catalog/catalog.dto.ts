@@ -48,7 +48,17 @@ export const courseSummarySchema = z.object({
    */
   enrolment: z
     .object({
-      /** `completed_at IS NOT NULL` — the course is finished. */
+      /**
+       * The Fortbildung itself is finished (P52-05).
+       *
+       * `course_completed_at IS NOT NULL`, or `completed_at` for rows that
+       * predate migration 0037. This is what the card must read to decide
+       * whether there is anything left to resume — a physician who has watched
+       * every video and passed the quiz has nothing to continue, whether or
+       * not they have filled in the Evaluationsbogen yet.
+       */
+      courseComplete: z.boolean(),
+      /** `completed_at IS NOT NULL` — certified, the CME point is claimed. */
       complete: z.boolean(),
     })
     .nullable(),

@@ -34,6 +34,8 @@ import type { ProgressRow } from "../learning/learning.repository.js";
 export interface AdminCourseRow {
   id: string;
   slug: string;
+  /** Editorial state (P53-01): `draft` is invisible to every learner. */
+  status: "draft" | "published";
   title: string;
   // Presentation — what the learner-facing layout draws (P13-01).
   description: string | null;
@@ -173,6 +175,8 @@ export interface AdminRepositoryPort {
 }
 
 export interface CoursePatch {
+  /** Publish or retract (P53-01). */
+  status?: "draft" | "published";
   title?: string;
   description?: string | null;
   deliveryType?: "on_demand" | "live" | "praesenz";
@@ -212,6 +216,7 @@ export interface CertificateAssetPatch {
 const COURSE_COLUMNS = {
   id: courses.id,
   slug: courses.slug,
+  status: courses.status,
   title: courses.title,
   description: courses.description,
   deliveryType: courses.deliveryType,

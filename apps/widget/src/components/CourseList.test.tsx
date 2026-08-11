@@ -216,7 +216,7 @@ describe("the call to action comes from the server, not from the card", () => {
 
   it("offers to resume an unfinished enrolment", async () => {
     const listCourses = vi.fn(async () => ({
-      items: [course("k1", { enrolment: { complete: false } })],
+      items: [course("k1", { enrolment: { courseComplete: false, complete: false } })],
       total: 1,
       page: 1,
       perPage: 10,
@@ -238,7 +238,7 @@ describe("the call to action comes from the server, not from the card", () => {
 
   it("does not say 'fortsetzen' about a course already finished", async () => {
     const listCourses = vi.fn(async () => ({
-      items: [course("k1", { enrolment: { complete: true } })],
+      items: [course("k1", { enrolment: { courseComplete: true, complete: true } })],
       total: 1,
       page: 1,
       perPage: 10,
@@ -256,5 +256,85 @@ describe("the call to action comes from the server, not from the card", () => {
     expect(
       await screen.findByRole("button", { name: "Fortbildung ansehen" }),
     ).toBeDefined();
+  });
+
+  /*
+   * The state between the two (P52-05).
+   *
+   * A physician who has watched every video and passed the
+   * Lernerfolgskontrolle, and has not yet filled in the Evaluationsbogen. The
+   * card used to describe them as mid-course and offer "fortsetzen", because
+   * it read `complete` — which waits for the paperwork. P51-01 fixed exactly
+   * this on the course-detail screen and stopped there; the catalogue is what
+   * a returning learner sees first.
+   */
+  const finishedNotCertified = { courseComplete: true, complete: false };
+
+  it("does not offer to resume a course whose content is finished", async () => {
+    const listCourses = vi.fn(async () => ({
+      items: [course("k1", { enrolment: finishedNotCertified })],
+      total: 1,
+      page: 1,
+      perPage: 10,
+      facets: { thema: [], altersgruppe: [] },
+    }));
+
+    render(
+      <CourseList
+        client={{ listCourses } as unknown as ApiClient}
+        branding={{}}
+        onOpen={() => {}}
+      />,
+    );
+
+    // There is nothing left to resume: every video is watched and the quiz is
+    // passed. Offering it is an instruction that leads nowhere.
+    expect(
+      await screen.findByRole("button", { name: "Fortbildung ansehen" }),
+    ).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Fortbildung fortsetzen" })).toBeNull();
+  });
+
+  it("says the certification is still open, so there is a reason to go back", async () => {
+    const listCourses = vi.fn(async () => ({
+      items: [course("k1", { enrolment: finishedNotCertified })],
+      total: 1,
+      page: 1,
+      perPage: 10,
+      facets: { thema: [], altersgruppe: [] },
+    }));
+
+    render(
+      <CourseList
+        client={{ listCourses } as unknown as ApiClient}
+        branding={{}}
+        onOpen={() => {}}
+      />,
+    );
+
+    expect(await screen.findByText(/Zertifizierung noch offen/u)).toBeDefined();
+  });
+
+  it("says nothing about certification once the point is claimed", async () => {
+    // The line exists to prompt an unfinished action. On a certified course it
+    // would be noise on every card the learner has ever completed.
+    const listCourses = vi.fn(async () => ({
+      items: [course("k1", { enrolment: { courseComplete: true, complete: true } })],
+      total: 1,
+      page: 1,
+      perPage: 10,
+      facets: { thema: [], altersgruppe: [] },
+    }));
+
+    render(
+      <CourseList
+        client={{ listCourses } as unknown as ApiClient}
+        branding={{}}
+        onOpen={() => {}}
+      />,
+    );
+
+    await screen.findByRole("button", { name: "Fortbildung ansehen" });
+    expect(screen.queryByText(/Zertifizierung noch offen/u)).toBeNull();
   });
 });

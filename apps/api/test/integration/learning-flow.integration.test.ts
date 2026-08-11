@@ -98,8 +98,8 @@ beforeAll(async () => {
   const courseId = await insert(
     // 4 CME points, which is what makes the EFN a condition of completion: a
     // course awarding none reports nothing to EIV-FOBI and so needs no EFN.
-    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent, cme_points)
-     VALUES ($1,$2,$3,$4,100,70,4) RETURNING id`,
+    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent, cme_points, status)
+     VALUES ($1,$2,$3,$4,100,70,4,'published') RETURNING id`,
     [customerId, projectId, courseSlug, "Learning flow course"],
   );
 
@@ -180,8 +180,8 @@ beforeAll(async () => {
    */
   freeCourseSlug = `lf-free-${suffix}`;
   const freeCourseId = await insert(
-    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent, cme_points)
-     VALUES ($1,$2,$3,$4,100,70,NULL) RETURNING id`,
+    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent, cme_points, status)
+     VALUES ($1,$2,$3,$4,100,70,NULL,'published') RETURNING id`,
     [customerId, projectId, freeCourseSlug, "Fortbildung ohne Punkte"],
   );
   const freeModule = await insert(
@@ -906,6 +906,185 @@ describe("a course outside its validity window (P50-01)", () => {
 
       expect(status).toBe(409);
       expect(body.detail).toMatch(/abgelaufen/u);
+      expect(body.detail).not.toMatch(/Evaluation/u);
+    });
+  });
+});
+
+/**
+ * Editorial state, through HTTP (P53-01).
+ *
+ * Found by QA doing the obvious thing: `POST /admin/courses` as a super
+ * administrator, then `GET /courses` as a learner. The empty course was there
+ * — listed, openable and enrollable — because nothing had ever asked whether a
+ * course was finished being written. The console was authoring in front of the
+ * physicians.
+ *
+ * The window suite above is the same shape and is deliberately not extended to
+ * cover this: `valid_from`/`valid_to` say *when an accredited course runs*, and
+ * `status` says *whether anybody may see it yet*. They are separately settable
+ * and a course can be wrong on either axis, so each gets its own cases.
+ *
+ * The status is moved with SQL for the same reason the window was: the console
+ * is one writer of it, and a course whose status came from a seed or a support
+ * script has to behave identically.
+ */
+describe("a course that is still a draft (P53-01)", () => {
+  async function setStatus(status: "draft" | "published"): Promise<void> {
+    await seedPool.query("UPDATE courses SET status = $2 WHERE slug = $1", [
+      freeCourseSlug,
+      status,
+    ]);
+  }
+
+  afterAll(async () => {
+    await setStatus("published");
+  });
+
+  it("is listed while published — the reading that makes the rest evidence", async () => {
+    // Without this case every assertion below passes on a catalogue that is
+    // simply empty, which is the failure mode CLAUDE.md §9.1 is about.
+    await setStatus("published");
+
+    const { body } = await call("GET", "/courses?perPage=50");
+    expect(body.items.map((i: { slug: string }) => i.slug)).toContain(freeCourseSlug);
+  });
+
+  it("disappears from the catalogue the moment it is retracted", async () => {
+    await setStatus("draft");
+
+    const { body } = await call("GET", "/courses?perPage=50");
+    expect(body.items.map((i: { slug: string }) => i.slug)).not.toContain(freeCourseSlug);
+    // The total has to agree with the page, or paging offers a course the list
+    // does not contain.
+    expect(body.total).toBe(body.items.length);
+  });
+
+  it("answers 404 on the detail route, which a shared link reaches directly", async () => {
+    await setStatus("draft");
+
+    const { status } = await call("GET", `/courses/${freeCourseSlug}`);
+    // 404 and not 403: an unpublished course must not be distinguishable from
+    // one that does not exist, or the status code enumerates what a customer
+    // is working on (§9.5).
+    expect(status).toBe(404);
+  });
+
+  it("takes no new learner", async () => {
+    await setStatus("draft");
+    await seedPool.query(
+      "DELETE FROM enrolments WHERE course_id = (SELECT id FROM courses WHERE slug = $1)",
+      [freeCourseSlug],
+    );
+
+    const { status } = await call("PUT", `/courses/${freeCourseSlug}/enrolment`);
+    expect(status).toBe(404);
+  });
+
+  it("appears again when it is published, without a restart or a cache flush", async () => {
+    // The transition is the product feature — "publish" is a button an operator
+    // presses and then looks at the site. A test that only ever retracted would
+    // pass on an implementation that could never publish anything.
+    await setStatus("draft");
+    const hidden = await call("GET", "/courses?perPage=50");
+    expect(hidden.body.items.map((i: { slug: string }) => i.slug)).not.toContain(
+      freeCourseSlug,
+    );
+
+    await setStatus("published");
+
+    const shown = await call("GET", "/courses?perPage=50");
+    expect(shown.body.items.map((i: { slug: string }) => i.slug)).toContain(
+      freeCourseSlug,
+    );
+    expect((await call("GET", `/courses/${freeCourseSlug}`)).status).toBe(200);
+    expect((await call("PUT", `/courses/${freeCourseSlug}/enrolment`)).status).toBe(200);
+  });
+
+  /*
+   * Retraction, for somebody already on it. Same rule as the expired window and
+   * the same reason it is tested separately: an operator who pulls a course
+   * back to fix a chapter must not delete the record of a physician who is
+   * half-way through it — and must not let them carry on accumulating watch
+   * time against material that is being rewritten underneath them.
+   */
+  describe("and a learner who enrolled before it was retracted", () => {
+    beforeEach(async () => {
+      await setStatus("published");
+      await call("PUT", `/courses/${freeCourseSlug}/enrolment`);
+      await setStatus("draft");
+    });
+
+    it("still lets them read their own state", async () => {
+      const { status } = await call("GET", `/courses/${freeCourseSlug}/enrolment`);
+      expect(status).toBe(200);
+    });
+
+    it("refuses further playback", async () => {
+      const { status } = await call(
+        "POST",
+        `/courses/${freeCourseSlug}/contents/${freeVideoId}/progress`,
+        { segments: [{ startSec: 0, endSec: 10 }], lastPositionSec: 10 },
+      );
+      expect(status).toBe(409);
+    });
+
+    it("does not tell them their Teilnahmezeitraum expired, because it did not", async () => {
+      /*
+       * The status alone proves nothing — an expired course answers 409 here
+       * too, so this case stayed green with `"draft"` mapped to the expiry
+       * message. The words are the whole difference: a physician told their
+       * participation window has run out goes looking for a deadline they
+       * never missed, and there is nothing they can do about it. "Derzeit
+       * nicht verfügbar" is the truthful one, and it is temporary.
+       */
+      const { body } = await call(
+        "POST",
+        `/courses/${freeCourseSlug}/contents/${freeVideoId}/progress`,
+        { segments: [{ startSec: 0, endSec: 10 }], lastPositionSec: 10 },
+      );
+
+      expect(body.detail).toMatch(/derzeit nicht verfügbar/iu);
+      expect(body.detail).toMatch(/bleiben erhalten/u);
+      expect(body.detail).not.toMatch(/abgelaufen/u);
+    });
+
+    it("writes nothing when it refuses the playback", async () => {
+      await seedPool.query(
+        `DELETE FROM content_progress
+          WHERE enrolment_id IN (
+            SELECT id FROM enrolments
+             WHERE course_id = (SELECT id FROM courses WHERE slug = $1))`,
+        [freeCourseSlug],
+      );
+
+      const before = await call("GET", `/courses/${freeCourseSlug}/enrolment`);
+      expect(before.body.achievedWatchPercent).toBe(0);
+
+      await call("POST", `/courses/${freeCourseSlug}/contents/${freeVideoId}/progress`, {
+        segments: [{ startSec: 0, endSec: 60 }],
+        lastPositionSec: 60,
+      });
+
+      const after = await call("GET", `/courses/${freeCourseSlug}/enrolment`);
+      expect(after.body.achievedWatchPercent).toBe(0);
+    });
+
+    it("refuses the evaluation", async () => {
+      const { status } = await call("POST", `/courses/${freeCourseSlug}/evaluation`, {
+        answers: [],
+      });
+      expect(status).toBe(409);
+    });
+
+    it("refuses completion, for the retraction rather than the missing conditions", async () => {
+      const { status, body } = await call(
+        "POST",
+        `/courses/${freeCourseSlug}/completion`,
+      );
+
+      expect(status).toBe(409);
+      expect(body.detail).toMatch(/derzeit nicht verfügbar/iu);
       expect(body.detail).not.toMatch(/Evaluation/u);
     });
   });

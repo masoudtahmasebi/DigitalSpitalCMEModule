@@ -172,8 +172,8 @@ async function seedCourse(
     [projectSlug],
   );
   await insert(
-    `INSERT INTO courses (customer_id, project_id, slug, title, delivery_type)
-     VALUES ($1,$2,$3,$4,'on_demand') RETURNING id`,
+    `INSERT INTO courses (customer_id, project_id, slug, title, delivery_type, status)
+     VALUES ($1,$2,$3,$4,'on_demand','published') RETURNING id`,
     [customerId, rows[0]?.id, slug, "Kurs"],
   );
   return slug;

@@ -76,8 +76,8 @@ async function seedTenant(label: string): Promise<SeededTenant> {
   const {
     rows: [course],
   } = await seedPool.query<{ id: string }>(
-    `INSERT INTO courses (customer_id, project_id, slug, title)
-     VALUES ($1, $2, $3, $4) RETURNING id`,
+    `INSERT INTO courses (customer_id, project_id, slug, title, status)
+     VALUES ($1, $2, $3, $4, 'published') RETURNING id`,
     [customer!.id, project!.id, `${label}-course-${suffix}`, `${label} course`],
   );
 

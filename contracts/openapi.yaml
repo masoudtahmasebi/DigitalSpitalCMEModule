@@ -3081,14 +3081,17 @@ components:
           # document's other nullable fields already use and which the SDK
           # generator honours.
           type: ["object", "null"]
-          required: [complete]
+          required: [courseComplete, complete]
           description: |
             The **caller's own** standing on this course, or `null` if they
             have not enrolled. Taken from the validated token's user id, never
             from a parameter.
 
             The card's call to action depends on it: _Zur Fortbildung_ when
-            absent, _Fortbildung fortsetzen_ when present and unfinished.
+            absent, _Fortbildung fortsetzen_ when present and the **course**
+            is unfinished. `courseComplete`, not `complete`, decides that —
+            there is nothing to resume once the videos and the quiz are done,
+            whether or not the Evaluationsbogen has been filled in (P52-05).
 
             **Deliberately not a percentage.** A course percentage is the
             output of `rollupProgress` over the whole tree and there is exactly
@@ -3097,9 +3100,21 @@ components:
             approximation that invites would be a second answer to "how far has
             this person got". Both fields here are stored columns.
           properties:
+            courseComplete:
+              type: boolean
+              description: |
+                The Fortbildung itself is finished — videos watched and
+                Lernerfolgskontrolle passed (P52-05).
+
+                `course_completed_at IS NOT NULL`, falling back to
+                `completed_at` for enrolments certified before migration 0037
+                recorded the earlier date. Still a stored column, so the card
+                keeps costing one query per page rather than one per row.
             complete:
               type: boolean
-              description: "`completed_at IS NOT NULL` — the course is finished."
+              description: |
+                `completed_at IS NOT NULL` — certified: the evaluation and the
+                EFN are in and the CME point is claimed.
 
     CourseDetail:
       allOf:
@@ -4129,6 +4144,7 @@ components:
       required:
         [
           slug,
+          status,
           title,
           description,
           deliveryType,
@@ -4153,6 +4169,24 @@ components:
         ]
       properties:
         slug: { type: string }
+        status:
+          type: string
+          enum: [draft, published]
+          description: |
+            Editorial state (P53-01).
+
+            A `draft` is invisible to every learner: absent from the catalogue,
+            404 on its detail route, refused by enrol. Courses are **created as
+            drafts** — before this existed, `POST /admin/courses` put an empty
+            course straight into the physicians' catalogue.
+
+            Deliberately on the admin schema only. The learner-facing
+            `CourseSummary` has no such field because a learner is never served
+            a draft at all, and a `status: "published"` on every card would be a
+            constant dressed as information.
+
+            Distinct from `validFrom`/`validTo`, which say when an accredited
+            course runs rather than whether it is finished being written.
         title: { type: string }
         description: { type: [string, "null"] }
         deliveryType:
@@ -4328,6 +4362,15 @@ components:
         A PATCH: every field optional, an absent field means "leave alone".
         `null` clears a nullable text field.
       properties:
+        status:
+          type: string
+          enum: [draft, published]
+          description: |
+            Publish or retract (P53-01). The one field here that changes *who
+            can see* the course rather than what it says.
+
+            Retracting behaves like an expired validity window: existing
+            enrolments keep their record and can no longer advance.
         title: { type: string, minLength: 1, maxLength: 300 }
         description: { type: [string, "null"], maxLength: 5000 }
         deliveryType: { type: string, enum: [on_demand, live, praesenz] }

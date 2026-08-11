@@ -711,6 +711,24 @@ export const de = {
     validityHint: "Aus dem Anerkennungsbescheid der Ärztekammer.",
 
     settings: "Einstellungen",
+    /**
+     * The publish section (P53-01).
+     *
+     * "Sichtbarkeit" rather than "Status": an operator asks whether physicians
+     * can see the course, not what its status field says.
+     */
+    visibility: "Sichtbarkeit",
+    draftExplained:
+      "Diese Fortbildung ist ein Entwurf. Teilnehmende sehen sie nicht — sie erscheint nicht im Katalog und kann nicht geöffnet werden. Neue Fortbildungen sind immer Entwürfe, bis Sie sie veröffentlichen.",
+    publishedExplained:
+      "Diese Fortbildung ist veröffentlicht und für Teilnehmende sichtbar.",
+    publish: "Veröffentlichen",
+    /**
+     * Not "Löschen" and not "Deaktivieren": retracting keeps every enrolment
+     * and every result. It stops the course being offered, which is the same
+     * thing an abgelaufener Teilnahmezeitraum does (P51-02).
+     */
+    unpublish: "Zurückziehen (Entwurf)",
     compliance: "Nachweisregeln",
     certificate: "Teilnahmebescheinigung",
     save: "Speichern",

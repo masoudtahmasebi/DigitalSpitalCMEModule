@@ -229,7 +229,10 @@ export async function seedDsDefault(
     const courseId = await upsert(
       pool,
       `INSERT INTO courses (
-         customer_id, project_id, slug, title, description, delivery_type,
+         -- 'published': a seeded course is meant to be visible. The column
+         -- defaults to 'draft' (P53-01), which is right for a course created
+         -- in the console and wrong for one the seed exists to publish.
+         customer_id, project_id, slug, title, description, delivery_type, status,
          thema, altersgruppe, cme_points, cme_category, vnr, accreditation_body,
          event_location, organizer, required_watch_percent,
          pass_threshold_percent, reveal_correct_answers,
@@ -237,7 +240,7 @@ export async function seedDsDefault(
          certificate_issue_place, stamp_image, stamp_image_mime,
          signature_image, signature_image_mime
        ) VALUES (
-         $1,$2,$3,$4,$5,'on_demand',
+         $1,$2,$3,$4,$5,'on_demand','published',
          ARRAY['Lorem'], ARRAY['Erwachsene'],
          -- No points, no VNR, no accreditation body. A course with points is a
          -- course the EIV worker will try to report; this one is complete and

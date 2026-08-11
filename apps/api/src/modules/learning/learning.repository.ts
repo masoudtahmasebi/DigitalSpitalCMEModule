@@ -15,6 +15,7 @@
  */
 
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import type { CourseStatus } from "@ds/domain";
 import type { Db } from "../../db/tenant-db.js";
 import {
   chapters,
@@ -39,6 +40,12 @@ export interface CourseComplianceRow {
   cmePoints: number | null;
   cmeCategory: string | null;
   vnr: string | null;
+  /**
+   * Editorial state (P53-01). A draft takes no learners at all — read here for
+   * the same reason as the window below: `enrol` is reachable from a bookmark
+   * that never passed the catalogue.
+   */
+  status: CourseStatus;
   /**
    * The validity window (P50-01). Both optional; both null on most courses.
    *
@@ -179,6 +186,7 @@ export class LearningRepository implements LearningRepositoryPort {
         cmePoints: courses.cmePoints,
         cmeCategory: courses.cmeCategory,
         vnr: courses.vnr,
+        status: courses.status,
         validFrom: courses.validFrom,
         validTo: courses.validTo,
       })

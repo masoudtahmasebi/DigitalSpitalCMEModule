@@ -53,6 +53,16 @@ export const de = {
     open: "Zur Fortbildung",
     /** Already finished — the course stays open for the certificate and the Mediathek. */
     review: "Fortbildung ansehen",
+    /**
+     * The card's one-line state for a course that is finished but not yet
+     * certified (P52-05).
+     *
+     * Short, because it shares a card with a title, a description and two
+     * buttons — and it only has to do one thing: give a reason to open a
+     * course the learner has already been through. The detail screen says what
+     * is missing.
+     */
+    certificationOpen: "Abgeschlossen – Zertifizierung noch offen",
     back: "Zurück zur Übersicht",
 
     /**

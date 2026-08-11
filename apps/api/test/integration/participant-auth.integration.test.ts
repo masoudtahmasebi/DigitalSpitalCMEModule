@@ -172,8 +172,8 @@ async function seedTenant(label: string, passwordHash: string): Promise<Tenant> 
   const courseSlug = `course-${label}-${suffix}`;
   await pool.query(
     `INSERT INTO courses (customer_id, project_id, slug, title,
-                          required_watch_percent, pass_threshold_percent)
-     VALUES ($1,$2,$3,$4,100,70)`,
+                          required_watch_percent, pass_threshold_percent, status)
+     VALUES ($1,$2,$3,$4,100,70,'published')`,
     [customerId, projectId, courseSlug, `Kurs ${label}`],
   );
 

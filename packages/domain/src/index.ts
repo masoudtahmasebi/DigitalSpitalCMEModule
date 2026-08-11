@@ -11,7 +11,11 @@ export {
   invalidAvailabilityWindow,
   isCourseOffered,
 } from "./availability.js";
-export type { AvailabilityWindow, CourseAvailability } from "./availability.js";
+export type {
+  AvailabilityWindow,
+  CourseAvailability,
+  CourseStatus,
+} from "./availability.js";
 
 export {
   joinUrl,

@@ -47,6 +47,7 @@ const JPEG =
 const course: AdminCourseRow = {
   id: COURSE_ID,
   slug: "adhs-akademie-adult",
+  status: "published",
   title: "ADHS Akademie adult",
   description: null,
   deliveryType: "on_demand",

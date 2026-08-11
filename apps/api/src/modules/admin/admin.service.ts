@@ -105,6 +105,7 @@ export class AdminService {
       const missing = this.certificateGaps(row);
       return {
         slug: row.slug,
+        status: row.status,
         title: row.title,
         ...presentationOf(row),
         vnr: row.vnr,
@@ -128,6 +129,7 @@ export class AdminService {
 
     return {
       slug: row.slug,
+      status: row.status,
       title: row.title,
       ...presentationOf(row),
       vnr: row.vnr,
@@ -175,6 +177,10 @@ export class AdminService {
     }
 
     const patch: CoursePatch = {};
+
+    // Publish or retract. First, because it is the one field on this form
+    // that changes who can see the course rather than what it says (P53-01).
+    assign(patch, "status", update.status);
 
     // Presentation — everything the learner-facing layout draws (P13-01).
     assign(patch, "title", update.title);

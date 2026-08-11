@@ -610,6 +610,26 @@ describe("3 · the operator builds a course", () => {
     // back down, under any key.
     expect(JSON.stringify(assets.body)).not.toContain(PLACEHOLDER_PNG);
   });
+
+  /**
+   * Everything above happened in front of nobody, and that is the point
+   * (P53-01): a course is created as a draft and is invisible until somebody
+   * publishes it. It was not true until this ticket — QA created a course
+   * through this same endpoint and found it in the learner catalogue
+   * immediately, empty.
+   *
+   * Asserted here, where the course is fully authored and still hidden. The
+   * publish itself belongs to §5, where there is a participant to be hidden
+   * from.
+   */
+  it("has been a draft the whole time it was being written", async () => {
+    const course = await asStaff(`/admin/courses/${world.courseSlug}`, {
+      headers: { "x-ds-project": world.projectSlug },
+    });
+
+    expect(course.status).toBe(200);
+    expect(course.body.status).toBe("draft");
+  });
 });
 
 describe("4 · the operator creates a participant", () => {
@@ -670,6 +690,31 @@ describe("4 · the operator creates a participant", () => {
 });
 
 describe("5 · the participant earns the point", () => {
+  /**
+   * The publish, from both sides (P53-01).
+   *
+   * One case rather than two because the pair is the claim: the same request,
+   * by the same signed-in physician, answers differently either side of an
+   * operator pressing publish. Asserting only the "after" would pass on the
+   * platform this ticket fixes, where the course was visible the moment it was
+   * created (CLAUDE.md §9.1).
+   */
+  it("cannot see the course until the operator publishes it", async () => {
+    const hidden = await asLearner("/courses");
+    expect(hidden.status).toBe(200);
+    expect(hidden.body.items.map((item: { slug: string }) => item.slug)).not.toContain(
+      world.courseSlug,
+    );
+
+    const published = await asStaff(`/admin/courses/${world.courseSlug}`, {
+      method: "PATCH",
+      headers: { "x-ds-project": world.projectSlug },
+      body: body({ status: "published" }),
+    });
+    expect(published.status, JSON.stringify(published.body)).toBe(200);
+    expect(published.body.status).toBe("published");
+  });
+
   it("sees the course in the catalogue", async () => {
     const catalogue = await asLearner("/courses");
 

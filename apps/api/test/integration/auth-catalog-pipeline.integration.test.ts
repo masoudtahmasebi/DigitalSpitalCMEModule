@@ -116,8 +116,8 @@ beforeAll(async () => {
   // Real, non-hardcoded values — the point of asserting on them below is that
   // they are the *course's* configuration, not a widget constant (P5-06).
   await seedPool.query(
-    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'published')`,
     [customerId, project!.id, courseSlug, "Pipeline course", 100, 70],
   );
 
@@ -162,8 +162,8 @@ beforeAll(async () => {
   );
 
   await seedPool.query(
-    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'published')`,
     [otherCustomerId, otherProject!.id, otherCourseSlug, "Other course", 100, 70],
   );
 

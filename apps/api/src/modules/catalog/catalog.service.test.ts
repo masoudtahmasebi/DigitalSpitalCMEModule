@@ -8,6 +8,7 @@ import type { CatalogRepositoryPort, CourseRow } from "./catalog.repository.js";
 const adhs: CourseRow = {
   id: "f47ac10b-58cc-4372-a567-0e02b2c3d479",
   slug: "adhs-akademie-adult",
+  status: "published",
   title: "ADHS Akademie adult",
   description: "Fortbildung zu ADHS bei Erwachsenen",
   heroImageUrl: "https://cdn.example.org/adhs-akademie-adult-hero.png",
@@ -401,7 +402,8 @@ describe("the card's call to action reflects the caller's own enrolment", () => 
 
   it("reports an unfinished enrolment, which is what 'fortsetzen' means", async () => {
     const repo = fakeRepository({
-      findEnrolments: async () => new Map([[adhs.id, { complete: false }]]),
+      findEnrolments: async () =>
+        new Map([[adhs.id, { courseComplete: false, complete: false }]]),
     });
 
     const result = await new CatalogService(repo).listCourses(
@@ -409,7 +411,14 @@ describe("the card's call to action reflects the caller's own enrolment", () => 
       LEARNER,
     );
 
-    expect(result.items[0]?.enrolment).toEqual({ complete: false });
+    // Both milestones, because the card draws from both (P51-01): `complete`
+    // is certified, `courseComplete` is "videos and quiz done, Zertifizierung
+    // still open" — and a card that knew only the first called that person
+    // unfinished.
+    expect(result.items[0]?.enrolment).toEqual({
+      courseComplete: false,
+      complete: false,
+    });
   });
 
   it("asks only about the courses on this page, for this learner", async () => {
@@ -433,11 +442,12 @@ describe("the card's call to action reflects the caller's own enrolment", () => 
 
   it("carries the same field on the detail response", async () => {
     const repo = fakeRepository({
-      findEnrolments: async () => new Map([[adhs.id, { complete: true }]]),
+      findEnrolments: async () =>
+        new Map([[adhs.id, { courseComplete: true, complete: true }]]),
     });
 
     const detail = await new CatalogService(repo).getCourseBySlug(adhs.slug, LEARNER);
 
-    expect(detail.enrolment).toEqual({ complete: true });
+    expect(detail.enrolment).toEqual({ courseComplete: true, complete: true });
   });
 });
