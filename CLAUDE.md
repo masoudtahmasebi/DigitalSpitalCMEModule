@@ -288,7 +288,72 @@ the endpoint answered 202 (P40-03). The same mistake is documented on
 `runInTenant`. If a method can return an all-null shape, that shape must not be
 indistinguishable from a legitimate "unset".
 
-### 9.7 Fix the class, not the instance
+### 9.7 The test that passes on the broken system
+
+A test can cover a function exhaustively and prove nothing about the product,
+because **nothing checks that the function is called.**
+
+- `routes.test.ts` round-trips every screen through `encode`/`decode` and would
+  have passed unchanged on the console that ignored both — where the address bar
+  never moved (P42-01). The property that mattered was the wiring, and it needed
+  its own tests in `App.test.tsx`.
+- The same shape as §9.3 one layer up: there, a rule nothing calls; here, a test
+  of a rule nothing calls.
+
+**Check:** for anything pure and separately tested, name the caller. If the test
+would still be green with the call site deleted, the call site is untested.
+
+### 9.8 If a person can be somewhere, it has an address
+
+Any state a person can be _in_ and cannot link to, return to, or reload into is
+three defects at once, and they arrive together: back leaves the application,
+F5 loses your place, and "look at this" is a screenshot instead of a URL.
+
+The console kept its screen in React state for nine phases and nobody wrote it
+down as a bug, because each symptom on its own reads as a browser being awkward
+(P42-01).
+
+**Check:** for every screen, ask _can I send this to somebody?_ Fragments, not
+paths, wherever a static bundle is served by a server that knows one route —
+a deep path 404s on reload, which is the case the URL exists for.
+
+And when routing is added, **state that outlives a test is a failure attributed
+to the wrong code**: the jsdom URL leaked between cases and surfaced as "Neue
+Fortbildung is not on the page". `localStorage` had already taught this in
+P22-08. Reset every ambient store in `afterEach`, not only the one that broke.
+
+### 9.9 A report about a running system is a report about a commit
+
+"The feature is missing" and "the feature is not on the server you are looking
+at" are indistinguishable from a browser — and the second is the more common of
+the two on this project, because work lands on a branch and deploys are manual.
+
+- Forgot-password was reported absent three times while built, tested and merged
+  to the branch (P40, P42-03).
+- `/medice` answered `{"kind":"unknown"}` correctly: the seed exists in the
+  repository and had never been run on that host (P42-02).
+
+**So:** before debugging anything reported from a URL, establish **which build**
+and **which data** are behind it. `ds_build_info{commit=…}` on `/metrics`
+answers the first; the tenant paths `deploy.sh` prints answer the second.
+
+**The corollary, which is the part that keeps being forgotten:** the
+repository's state is not the installation's state. A seed, a migration or a
+setting that exists here exists there only if somebody ran it.
+
+### 9.10 Correct is not the same as usable
+
+A component can answer exactly right and leave the person with nothing to do.
+
+The portal's "Diesen Bereich gibt es nicht" is as good as it can safely get —
+naming the tenants that do exist would hand any visitor a list of the platform's
+customers (§9.5). The answer belongs somewhere else: the deploy now prints the
+tenant paths, to an operator who is already trusted (P42-02).
+
+**Check:** when a refusal is correct and unhelpful, do not weaken the refusal.
+Find the audience that is already entitled to the answer and put it there.
+
+### 9.11 Fix the class, not the instance
 
 When a report arrives, the question is not "where is this bug" but **"what else
 has this shape, and what would have found it?"** Three of the entries above
@@ -297,6 +362,20 @@ whose failure mode is stated in their own names.
 
 `pnpm verify` is the local equivalent of CI and must stay that way. A check that
 runs only in CI is a check the person writing the code does not run.
+
+### 9.12 The standing list, when a report arrives
+
+In order, before touching code:
+
+1. **Which build and which data?** (§9.9) — a live report may be about neither
+   the branch nor the seed you are reading.
+2. **What else has this shape?** (§9.11) — one report is a sample.
+3. **Would a test have caught it, and would that test have been green on the
+   broken system?** (§9.1, §9.7)
+4. **Does the fix belong in a script?** If four roles × nine screens is the
+   question, a person clicking is the wrong instrument.
+5. **Break it and watch the check go red.** Two green runs is not proof —
+   P32-01 recorded "verified by running twice" and the third run failed.
 
 ---
 
