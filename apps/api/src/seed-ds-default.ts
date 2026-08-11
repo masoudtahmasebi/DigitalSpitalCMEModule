@@ -24,9 +24,11 @@
  */
 
 import { openSeedPool, seedDsDefault } from "@ds/seed";
+import { assertSchemaCurrent, migrationDatabaseUrl } from "./schema-freshness.js";
 
 async function main(): Promise<void> {
   const ifMissing = process.argv.includes("--if-missing");
+  await assertSchemaCurrent(migrationDatabaseUrl());
   const pool = openSeedPool("the default DS customer");
   try {
     // eslint-disable-next-line no-console -- this is a CLI; its output is the point

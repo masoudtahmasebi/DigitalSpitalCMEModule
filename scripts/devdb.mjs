@@ -31,6 +31,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -47,16 +48,72 @@ function fail(message) {
   process.exit(1);
 }
 
-function psql(url, args) {
-  const result = spawnSync(
-    "psql",
-    [url, "-v", "ON_ERROR_STOP=1", "--no-psqlrc", "-q", ...args],
-    {
-      encoding: "utf8",
-    },
-  );
-  if (result.status !== 0) fail(`psql failed:\n${result.stderr ?? ""}`);
+/**
+ * Whether the host has a `psql` binary of its own (P44-04).
+ *
+ * It usually does not. `postgresql-client` is not something Node, pnpm or
+ * Docker pull in, so a developer with a clean machine and a working
+ * `pnpm infra:up` still met
+ *
+ *     devdb: cannot reach PostgreSQL
+ *
+ * with a Postgres container running perfectly beside them — the diagnosis was
+ * "your database is down" and the cause was a missing client. Setting up local
+ * development should not require installing a database client to talk to a
+ * database that arrived in a container.
+ *
+ * So the container's own `psql` is the fallback. Same binary, same version as
+ * the server, nothing to install.
+ */
+const HOST_PSQL = spawnSync("psql", ["--version"], { stdio: "ignore" }).status === 0;
+
+/**
+ * Run SQL, either from the host's client or inside the postgres container.
+ *
+ * `input` is `{ sql }` or `{ file }`. A file is read here and piped rather than
+ * passed as a path, because in the container path the file lives on the *host*
+ * and `-f /repo/infra/...` would be a path the container cannot see — the kind
+ * of difference between two code paths that only shows up on the machine that
+ * takes the second one.
+ */
+function psql(url, input, extra = []) {
+  const sql = "file" in input ? readFileSync(input.file, "utf8") : input.sql;
+  const flags = ["-v", "ON_ERROR_STOP=1", "--no-psqlrc", "-q", ...extra, "-f", "-"];
+
+  const result = HOST_PSQL
+    ? spawnSync("psql", [url, ...flags], { encoding: "utf8", input: sql })
+    : spawnSync(
+        "docker",
+        [
+          "compose",
+          "-f",
+          join(REPO, "infra/docker-compose.yml"),
+          "exec",
+          "-T",
+          "postgres",
+          "psql",
+          // Inside the container the server is on its own loopback, whatever
+          // host:port the developer reaches it by.
+          containerUrl(url),
+          ...flags,
+        ],
+        { cwd: REPO, encoding: "utf8", input: sql },
+      );
+
+  if (result.status !== 0) {
+    fail(
+      `psql failed${HOST_PSQL ? "" : " (via the postgres container)"}:\n` +
+        `${result.stderr ?? ""}`,
+    );
+  }
   return (result.stdout ?? "").trim();
+}
+
+function containerUrl(url) {
+  const inner = new URL(url);
+  inner.hostname = "127.0.0.1";
+  inner.port = "5432";
+  return inner.toString();
 }
 
 function run(command, args, env = {}) {
@@ -87,27 +144,28 @@ if (!["127.0.0.1", "localhost", "::1"].includes(host)) {
   );
 }
 
-const alive = spawnSync("psql", [SUPERUSER, "-tAc", "SELECT 1"], { encoding: "utf8" });
-if (alive.status !== 0) {
-  fail(
-    "cannot reach PostgreSQL. docker compose -f infra/docker-compose.yml up -d postgres redis",
-  );
+// Reachability, through whichever client we are going to use — asking with one
+// and then working with the other is how a check passes on a system the work
+// cannot run on (CLAUDE.md §9.1).
+try {
+  psql(SUPERUSER, { sql: "SELECT 1" }, ["-tA"]);
+} catch {
+  fail("cannot reach PostgreSQL. Run: pnpm infra:up");
 }
 
 if (!keep) {
-  psql(SUPERUSER, [
-    "-c",
-    `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-      WHERE datname = '${DB_NAME}' AND pid <> pg_backend_pid()`,
-  ]);
-  psql(SUPERUSER, ["-c", `DROP DATABASE IF EXISTS ${DB_NAME}`]);
-  psql(SUPERUSER, ["-c", `CREATE DATABASE ${DB_NAME}`]);
+  psql(SUPERUSER, {
+    sql: `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+           WHERE datname = '${DB_NAME}' AND pid <> pg_backend_pid()`,
+  });
+  psql(SUPERUSER, { sql: `DROP DATABASE IF EXISTS ${DB_NAME}` });
+  psql(SUPERUSER, { sql: `CREATE DATABASE ${DB_NAME}` });
   console.warn(`devdb: recreated ${DB_NAME}`);
 }
 
 const target = new URL(SUPERUSER);
 target.pathname = `/${DB_NAME}`;
-psql(target.toString(), ["-f", join(REPO, "infra/postgres/init-roles.sql")]);
+psql(target.toString(), { file: join(REPO, "infra/postgres/init-roles.sql") });
 
 const appUrl = `postgres://ds_app:ds_app_dev@${target.host}/${DB_NAME}`;
 const migratorUrl = `postgres://ds_migrator:ds_migrator_dev@${target.host}/${DB_NAME}`;

@@ -153,6 +153,68 @@ export async function runMigrations(
   }
 }
 
+/**
+ * Which migrations this build carries that the database has not applied — the
+ * read-only half of `runMigrations` (P43-02).
+ *
+ * ## Why anything other than the migrator needs to ask
+ *
+ * Only `deploy.sh` runs migrations. Every *other* image entrypoint —
+ * the seeds, the erasure tool — is launched by hand against whatever schema
+ * happens to be there, and a schema older than the code fails deep inside a
+ * statement, as a constraint name:
+ *
+ * ```
+ * Seeding the DS tenant failed: new row for relation "projects"
+ *   violates check constraint "projects_identity_provider_check"
+ * ```
+ *
+ * That is a true sentence about a database eleven migrations behind the image
+ * writing to it, and it reads as a bug in the seed. It cost a full debugging
+ * round: the value `'local'` has been legal since `0030_local_participants`,
+ * and the constraint refusing it was the one `0019` wrote.
+ *
+ * So the entrypoints ask this first and refuse by *name*: the answer "your
+ * database is at 0029 and this image expects 0041" is one an operator can act
+ * on, and the constraint violation is not.
+ *
+ * Returns the pending filenames in application order. An absent
+ * `schema_migrations` table means nothing has ever been applied, which is a
+ * pending list of everything rather than an error — a fresh database is a
+ * legitimate state, just not one a seed may write to.
+ */
+export async function pendingMigrations(
+  options: Pick<MigrationOptions, "connectionString" | "migrationsDir">,
+): Promise<readonly string[]> {
+  const pool = new pg.Pool({ connectionString: options.connectionString });
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- a path from the caller's own configuration, not from a request
+    const files = (await readdir(options.migrationsDir))
+      .filter((name) => name.endsWith(".sql"))
+      .sort();
+
+    // `to_regclass` rather than catching the undefined-table error: this runs
+    // on a pool that other statements will reuse, and a failed query inside a
+    // transaction would poison it.
+    const { rows: ledger } = await pool.query<{ present: string | null }>(
+      "SELECT to_regclass('public.schema_migrations')::text AS present",
+    );
+    // Two spellings of absent, and both mean the same thing here: no row at all
+    // (impossible, but the type says so) and a NULL `to_regclass` (the table
+    // does not exist).
+    const ledgerTable = ledger[0]?.present;
+    if (ledgerTable === undefined || ledgerTable === null) return files;
+
+    const { rows } = await pool.query<{ filename: string }>(
+      "SELECT filename FROM schema_migrations",
+    );
+    const applied = new Set(rows.map((row) => row.filename));
+    return files.filter((file) => !applied.has(file));
+  } finally {
+    await pool.end();
+  }
+}
+
 async function applyPending(
   pool: pg.Pool,
   migrationsDir: string,

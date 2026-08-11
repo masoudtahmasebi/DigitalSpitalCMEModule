@@ -46,6 +46,7 @@ import {
   participantPassword,
   PLACEHOLDER_IMAGE,
   resetCourseContent,
+  resolveCustomerId,
   seedParticipant,
   seedPortalProject,
   upsert,
@@ -163,14 +164,19 @@ const QUESTION_COUNT = 5;
 export async function seedDsDemo(pool: pg.Pool): Promise<string> {
   try {
     await pool.query("BEGIN");
-    await enterTenant(pool, CUSTOMER_ID);
+    // See `resolveCustomerId`: adopt whatever already holds this slug.
+    const tenantId = await resolveCustomerId(pool, {
+      id: CUSTOMER_ID,
+      slug: CUSTOMER_SLUG,
+    });
+    await enterTenant(pool, tenantId);
 
     const customerId = await upsert(
       pool,
       `INSERT INTO customers (id, slug, name) VALUES ($1,$2,$3)
        ON CONFLICT (id) DO UPDATE SET slug = EXCLUDED.slug, name = EXCLUDED.name, updated_at = now()
        RETURNING id`,
-      [CUSTOMER_ID, CUSTOMER_SLUG, "DigitalSpital (Testkunde)"],
+      [tenantId, CUSTOMER_SLUG, "DigitalSpital (Testkunde)"],
     );
 
     const departmentId = await upsert(

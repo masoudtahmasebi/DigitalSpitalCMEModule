@@ -441,6 +441,35 @@ connects as `ds_migrator`, and that connection string is built from two files
 three releases and never worked — it refused with `MIGRATION_DATABASE_URL is not
 set` before opening a connection.
 
+### Two refusals you may meet, and what they mean (P43)
+
+**`this database is N migration(s) behind the image`.** Only `deploy.sh` runs
+migrations, and the seeds are separate entrypoints in the same image — so a
+clone that has been pulled since the last successful deploy carries seed code
+newer than the schema it is writing to. Migrate first; `./deploy.sh` does it
+after taking a backup, which is the supported path.
+
+Before this check existed, that situation failed as a constraint name instead —
+`violates check constraint "projects_identity_provider_check"` — which is a true
+sentence about a database eleven versions old and reads as a broken seed.
+
+**`No ds-education/api image on this host`.** `./dsc` deliberately does not
+build: there is no registry (ADR-0013), images are built by `./deploy.sh`, and a
+wrapper that quietly spent forty seconds compiling would produce a container
+from whatever commit the clone happens to be on rather than the one serving
+traffic. Where an older image _is_ present it uses that and says so:
+
+```
+note: this clone is at ebab45b, but the API image on this host is
+      old9999 — using that one, because it is what is running.
+```
+
+Which is the right image for a seed: it writes rows the running API reads.
+
+A seed also **adopts a customer that already holds its slug** rather than
+failing on the unique index, so creating the tenant in the console first and
+seeding afterwards is a supported order.
+
 It refuses to run again while an **active super administrator** exists — after
 that the ordinary invitation flow is the only way to add one. `--force` exists
 for a genuine lockout and records itself in `admin_audit_log`.

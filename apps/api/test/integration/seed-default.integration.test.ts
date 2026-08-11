@@ -61,15 +61,15 @@ afterAll(async () => {
  * test putting the database into the state a *first* deploy meets, which is the
  * only state `onlyIfMissing` behaves differently in.
  */
-async function dropDefaultTenant(): Promise<void> {
-  const courses = `SELECT id FROM courses WHERE customer_id = '${CUSTOMER_ID}'`;
+async function dropDefaultTenant(customerId: string = CUSTOMER_ID): Promise<void> {
+  const courses = `SELECT id FROM courses WHERE customer_id = '${customerId}'`;
   const modules = `SELECT id FROM modules WHERE course_id IN (${courses})`;
   const chapters = `SELECT id FROM chapters WHERE module_id IN (${modules})`;
   const contents = `SELECT id FROM contents WHERE chapter_id IN (${chapters})`;
   const identities = `SELECT i.id FROM user_identities i
                         JOIN user_customers uc ON uc.user_id = i.user_id
-                       WHERE uc.customer_id = '${CUSTOMER_ID}'`;
-  const users = `SELECT user_id FROM user_customers WHERE customer_id = '${CUSTOMER_ID}'`;
+                       WHERE uc.customer_id = '${customerId}'`;
+  const users = `SELECT user_id FROM user_customers WHERE customer_id = '${customerId}'`;
 
   await admin.query("BEGIN");
   for (const statement of [
@@ -83,16 +83,16 @@ async function dropDefaultTenant(): Promise<void> {
     `DELETE FROM modules WHERE course_id IN (${courses})`,
     `DELETE FROM course_experts WHERE course_id IN (${courses})`,
     `DELETE FROM evaluations WHERE course_id IN (${courses})`,
-    `DELETE FROM courses WHERE customer_id = '${CUSTOMER_ID}'`,
+    `DELETE FROM courses WHERE customer_id = '${customerId}'`,
     `DELETE FROM learner_credentials WHERE user_identity_id IN (${identities})`,
     `DELETE FROM learner_sessions WHERE user_id IN (${users})`,
     `DELETE FROM user_identities WHERE user_id IN (${users})`,
-    `DELETE FROM user_roles WHERE customer_id = '${CUSTOMER_ID}'`,
+    `DELETE FROM user_roles WHERE customer_id = '${customerId}'`,
     `DELETE FROM users WHERE id IN (${users})`,
-    `DELETE FROM user_customers WHERE customer_id = '${CUSTOMER_ID}'`,
-    `DELETE FROM projects WHERE customer_id = '${CUSTOMER_ID}'`,
-    `DELETE FROM departments WHERE customer_id = '${CUSTOMER_ID}'`,
-    `DELETE FROM customers WHERE id = '${CUSTOMER_ID}'`,
+    `DELETE FROM user_customers WHERE customer_id = '${customerId}'`,
+    `DELETE FROM projects WHERE customer_id = '${customerId}'`,
+    `DELETE FROM departments WHERE customer_id = '${customerId}'`,
+    `DELETE FROM customers WHERE id = '${customerId}'`,
   ]) {
     await admin.query(statement);
   }
@@ -269,5 +269,77 @@ describe("the report", () => {
     const report = await seedDsDefault(seeder);
 
     expect(report).toMatch(PRINTED_PASSWORD);
+  });
+});
+
+/**
+ * The collision that made every seed non-idempotent in exactly one respect
+ * (P43-01).
+ *
+ * An operator created the tenant in the console before running the seed, which
+ * is the obvious order to do it in and the one the console invites. The seed
+ * then died on its very first write:
+ *
+ * ```
+ * Seeding the MEDICE course failed:
+ *   duplicate key value violates unique constraint "customers_slug_key"
+ * ```
+ *
+ * Every `INSERT … ON CONFLICT (id) DO UPDATE` in this package was written to be
+ * re-runnable, and `id` is the one unique key the collision cannot happen on:
+ * the ids are fixed constants, so a *second* row under the same slug is by
+ * definition a different id. The clause named the key that never fires.
+ *
+ * `resolveCustomerId` adopts the existing customer instead, and that is what is
+ * asserted here — by effect, on a row this test creates the way the console
+ * would: with a random id.
+ */
+describe("a customer somebody already created under this slug", () => {
+  const CUSTOMER_SLUG = "dscustomer";
+
+  it("is filled in rather than collided with", async () => {
+    await dropDefaultTenant();
+    const foreignId = randomUUID();
+
+    try {
+      await admin.query("INSERT INTO customers (id, slug, name) VALUES ($1,$2,$3)", [
+        foreignId,
+        CUSTOMER_SLUG,
+        "Made in the console",
+      ]);
+
+      // The assertion that would have failed before: this call threw.
+      await seedDsDefault(seeder);
+
+      const { rows: customers } = await admin.query<{ id: string }>(
+        "SELECT id FROM customers WHERE slug = $1",
+        [CUSTOMER_SLUG],
+      );
+      expect(customers).toHaveLength(1);
+      expect(customers[0]?.id).toBe(foreignId);
+
+      // Adopted, not merely tolerated: the content has to land under the id the
+      // operator's tenant actually has, or the console shows an empty customer
+      // beside a course nobody can reach.
+      const { rows: courses } = await admin.query<{ n: string }>(
+        "SELECT count(*) AS n FROM courses WHERE customer_id = $1",
+        [foreignId],
+      );
+      expect(Number(courses[0]?.n ?? "0")).toBe(1);
+    } finally {
+      await dropDefaultTenant(foreignId);
+    }
+  });
+
+  it("still uses the fixed id when nothing holds the slug", async () => {
+    await dropDefaultTenant();
+
+    await seedDsDefault(seeder);
+
+    const { rows } = await admin.query<{ id: string }>(
+      "SELECT id FROM customers WHERE slug = $1",
+      [CUSTOMER_SLUG],
+    );
+    expect(rows[0]?.id).toBe(CUSTOMER_ID);
   });
 });

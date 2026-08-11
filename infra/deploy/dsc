@@ -53,6 +53,9 @@ ds_derive_domains
 source "${SCRIPT_DIR}/secrets.sh"
 ds_export_url_passwords
 
+# shellcheck source=./images.sh
+source "${SCRIPT_DIR}/images.sh"
+
 # The image tag is the commit this clone is on, exactly as deploy.sh computes
 # it. So `./dsc` describes the checkout you are standing in — which is the
 # right answer, and the reason a rollback is `git checkout` plus a redeploy.
@@ -88,8 +91,50 @@ export DS_COMMIT
 #
 # Both start a one-shot container and touch no running service — the reason
 # `dsc` refuses to deploy still holds.
+#
+# ## Why it does not build (P43-03)
+#
+# It used to, without ever saying so. `docker compose run` builds a service
+# whose image is absent, and the image tag is `${DS_COMMIT}` — the commit this
+# clone is on — so a `git pull` was enough to make `./dsc seed medice` spend
+# forty seconds compiling the whole API before it did anything. That is a
+# deploy's work, from the wrapper whose header says it deliberately does not
+# deploy, and it produces an image built from a commit that is not the one
+# running: the container it starts is then a *different build* from the API
+# beside it, which is the one confusion this stack can least afford
+# (CLAUDE.md §9.9).
+#
+# So: use an image that is already on the disk, and never build one. Preferring
+# HEAD's, falling back to whatever the running API is, because a seed's job is
+# to write rows the running API will read and the running API's schema is the
+# one they have to fit.
 ds_as_migrator() {
-  exec docker compose -f "${SCRIPT_DIR}/docker-compose.prod.yml" run --rm \
+  local tag
+  if ! tag="$(ds_resolve_image_tag "${SCRIPT_DIR}/docker-compose.prod.yml" "${DS_COMMIT}")"; then
+    echo "No ds-education/api image on this host, and there is no registry to" >&2
+    echo "pull one from (ADR-0013). Build and deploy first:" >&2
+    echo >&2
+    echo "    ./deploy.sh" >&2
+    echo >&2
+    echo "This wrapper deliberately does not build — a 40-second image build is" >&2
+    echo "a deploy's work, and it would run whatever commit this clone happens" >&2
+    echo "to be on rather than what is serving traffic." >&2
+    exit 3
+  fi
+
+  if [[ "$tag" != "${DS_COMMIT}" ]]; then
+    # Not a warning to be skimmed: it is the difference between "the seed did
+    # not work" and "the seed ran against a build from a different commit".
+    echo "note: this clone is at ${DS_COMMIT}, but the API image on this host is" >&2
+    echo "      ${tag} — using that one, because it is what is running. Deploy" >&2
+    echo "      to close the gap." >&2
+  fi
+
+  # `--no-build` makes the refusal explicit rather than relying on compose's
+  # pull_policy: a future compose that decides to build anyway would silently
+  # undo the whole point of this function.
+  exec env DS_COMMIT="$tag" \
+    docker compose -f "${SCRIPT_DIR}/docker-compose.prod.yml" run --rm --no-build \
     -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD_URL}@postgres:5432/${POSTGRES_DB}" \
     --entrypoint node api "$@"
 }

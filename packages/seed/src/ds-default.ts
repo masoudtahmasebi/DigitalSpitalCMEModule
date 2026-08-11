@@ -57,6 +57,7 @@ import {
   participantPassword,
   PLACEHOLDER_IMAGE,
   resetCourseContent,
+  resolveCustomerId,
   seedParticipant,
   seedPortalProject,
   upsert,
@@ -145,11 +146,18 @@ export async function seedDsDefault(
 
   try {
     await pool.query("BEGIN");
-    await enterTenant(pool, CUSTOMER_ID);
+    // See `resolveCustomerId`: adopt whatever already holds this slug, so a
+    // deploy onto an installation where somebody made "dscustomer" by hand
+    // fills that one in rather than dying on the unique index.
+    const tenantId = await resolveCustomerId(pool, {
+      id: CUSTOMER_ID,
+      slug: CUSTOMER_SLUG,
+    });
+    await enterTenant(pool, tenantId);
 
     if (onlyIfMissing) {
       const { rowCount } = await pool.query("SELECT 1 FROM customers WHERE id = $1", [
-        CUSTOMER_ID,
+        tenantId,
       ]);
       if (rowCount !== null && rowCount > 0) {
         await pool.query("ROLLBACK");
@@ -162,7 +170,7 @@ export async function seedDsDefault(
       `INSERT INTO customers (id, slug, name) VALUES ($1,$2,$3)
        ON CONFLICT (id) DO UPDATE SET slug = EXCLUDED.slug, name = EXCLUDED.name, updated_at = now()
        RETURNING id`,
-      [CUSTOMER_ID, CUSTOMER_SLUG, CUSTOMER_NAME],
+      [tenantId, CUSTOMER_SLUG, CUSTOMER_NAME],
     );
 
     const departmentId = await upsert(
