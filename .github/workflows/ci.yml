@@ -76,7 +76,7 @@ jobs:
           shellcheck infra/nginx/ds-runtime-config.sh
           (cd infra/deploy && shellcheck -x deploy.sh domains.sh domains.test.sh \
              deploy-vars.test.sh secrets.sh secrets.test.sh images.sh \
-             images.test.sh dsc)
+             images.test.sh paths.test.sh dsc)
           ./infra/deploy/domains.test.sh
           # The URL encoder. A base64 password contains `/`, and an unencoded
           # `/` in a connection string's userinfo is what killed the first
@@ -95,6 +95,10 @@ jobs:
           # supplies. DS_PROJECT_SLUG was required by ds-runtime-config.sh,
           # provided by nothing, and crash-looped admin and portal — while the
           # deploy blamed the API, because caddy depends on all three.
+          # No path in an operator-invoked script may resolve against $PWD.
+          # `deploy.sh` read ../postgres/init-roles.sql relative to the
+          # caller and died two thirds of the way through a deploy.
+          ./infra/deploy/paths.test.sh
           node scripts/check-runtime-config.mjs
 
       - name: Build

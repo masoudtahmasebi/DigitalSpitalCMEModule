@@ -396,6 +396,43 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 2b. Ask the image whether it can start, before anything is changed
+# ---------------------------------------------------------------------------
+#
+# The API validates its whole environment at boot and refuses on anything it
+# cannot use. That refusal used to arrive after four images were built, a backup
+# was taken, migrations were applied and the stack was swapped — as
+# `container ds-education-api-1 is unhealthy`, with the actual sentence
+# (`S3_ENDPOINT: must start with https://`) reachable only through `docker logs`.
+#
+# This runs the same `loadConfig` in a one-shot container with the same
+# `environment:` block, and nothing else. `--no-deps` because configuration
+# validation needs no database. A bad value now costs a build and stops here.
+#
+# Deliberately *after* the build — it needs the image — and *before* the backup,
+# so a refusal leaves the installation byte-for-byte as it was.
+log "Checking the API's configuration"
+config_check_output=""
+if ! config_check_output="$(compose run --rm --no-deps --no-build \
+  --entrypoint node api dist/check-config.js 2>&1)"; then
+
+  # A `--rollback` to a commit from before this entrypoint existed has no
+  # `dist/check-config.js`, and node says so. That is an old image, not a bad
+  # configuration, and turning a rollback into a failed deploy would break the
+  # one command that exists for when everything else has.
+  if [[ "$config_check_output" == *"Cannot find module"* ]]; then
+    log "  (this image predates the configuration check — skipping)"
+  else
+    printf '%s\n' "$config_check_output" >&2
+    die "the API refuses this configuration — see the message above.
+   Nothing has been changed: no backup taken, no migration run, no container
+   swapped. Fix the value in ${CONFIG_FILE} and run this again."
+  fi
+else
+  printf '%s\n' "$config_check_output"
+fi
+
+# ---------------------------------------------------------------------------
 # 3. Back up before touching the schema
 # ---------------------------------------------------------------------------
 if [[ "$RUN_MIGRATIONS" == "1" ]]; then
@@ -435,7 +472,7 @@ if [[ "$RUN_MIGRATIONS" == "1" ]]; then
   log "Ensuring database roles"
   compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
     psql -v ON_ERROR_STOP=1 -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
-    < ../postgres/init-roles.sql
+    < "${SCRIPT_DIR}/../postgres/init-roles.sql"
 
   log "Running migrations"
   # As ds_migrator, never as the superuser: `ALTER DEFAULT PRIVILEGES FOR ROLE
