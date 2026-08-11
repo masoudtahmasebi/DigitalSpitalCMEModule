@@ -54,7 +54,8 @@
     "test:e2e": "node scripts/run-e2e.mjs",
     "check:roles": "node scripts/role-matrix.mjs",
     "check:rules": "node scripts/unused-rules.mjs",
-    "check:sdk": "node scripts/check-sdk.mjs"
+    "check:sdk": "node scripts/check-sdk.mjs",
+    "check:seed-structure": "node scripts/check-seed-structure.mjs"
   },
   "devDependencies": {
     "@ds/config": "workspace:*",

@@ -126,15 +126,22 @@ describe("a first installation", () => {
       department: string;
       project: string;
       course: string;
-      module: string;
+      modules: string;
+      module_titles: string;
       chapters: string;
       questions: string;
     }>(
+      // `string_agg` over the modules rather than a scalar subquery: the course
+      // has two of them since P52-03, and `(SELECT title FROM modules …)` threw
+      // "more than one row returned by a subquery used as an expression" the
+      // moment it gained the second. The aggregate says what is there rather
+      // than assuming how many there are.
       `SELECT (SELECT name FROM customers WHERE id = $1)                                      AS customer,
               (SELECT name FROM departments WHERE customer_id = $1)                           AS department,
               (SELECT name FROM projects WHERE customer_id = $1)                              AS project,
               (SELECT title FROM courses WHERE customer_id = $1)                              AS course,
-              (SELECT title FROM modules WHERE customer_id = $1)                              AS module,
+              (SELECT count(*) FROM modules WHERE customer_id = $1)                            AS modules,
+              (SELECT string_agg(title, ', ' ORDER BY ordinal) FROM modules WHERE customer_id = $1) AS module_titles,
               (SELECT count(*) FROM chapters WHERE customer_id = $1)                          AS chapters,
               (SELECT count(*) FROM quiz_questions WHERE customer_id = $1)                    AS questions`,
       [CUSTOMER_ID],
@@ -146,8 +153,13 @@ describe("a first installation", () => {
     expect(rows[0]?.customer).toBe("DSCustomer");
     expect(rows[0]?.department).toBe("DSOrganisation");
     expect(rows[0]?.project).toBe("DSProject");
-    expect(rows[0]?.module).toBe("DSModule");
     expect(rows[0]?.course).toContain("DSCourse");
+
+    // Two modules, and the DSModule naming kept — the point of this tenant is
+    // that an operator can tell at a glance which level they are looking at
+    // (P52-03).
+    expect(Number(rows[0]?.modules)).toBe(2);
+    expect(rows[0]?.module_titles).toBe("DSModule 1, DSModule 2");
     expect(Number(rows[0]?.chapters)).toBe(5);
     expect(Number(rows[0]?.questions)).toBe(5);
   });
@@ -217,16 +229,17 @@ describe("without onlyIfMissing", () => {
     await seedDsDefault(seeder, { revealPassword: false });
     await seedDsDefault(seeder, { revealPassword: false });
 
-    // One course and one module after two runs. `courses` upserts on
+    // One course and *two* modules after two runs — the number the seed
+    // defines, not a number that grew. `courses` upserts on
     // `(project_id, slug)`; `modules` has no such key and relies on
-    // `resetCourseContent` having deleted it first, which is the half a
-    // re-run would expose.
+    // `resetCourseContent` having deleted them first, which is the half a
+    // re-run would expose: a broken reset shows up here as four.
     expect(await countCourses()).toBe(1);
     const { rows } = await admin.query<{ n: string }>(
       "SELECT count(*) AS n FROM modules WHERE customer_id = $1",
       [CUSTOMER_ID],
     );
-    expect(Number(rows[0]?.n)).toBe(1);
+    expect(Number(rows[0]?.n)).toBe(2);
   });
 });
 

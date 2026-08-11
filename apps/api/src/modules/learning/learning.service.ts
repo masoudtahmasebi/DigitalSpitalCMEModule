@@ -625,10 +625,24 @@ export class LearningService {
     const gate = gates.get(chapterId);
 
     if (gate?.status === "locked") {
+      /*
+       * "der vorherigen Kapitel", not "der vorherigen Module" (P52-03).
+       *
+       * The gate is a chapter sequence: a locked chapter is waiting for the
+       * chapter before it, which is usually in the same module. The old wording
+       * told a learner to finish previous *modules* — advice that is wrong
+       * whenever the thing blocking them is one chapter up, and which sends
+       * them looking at the wrong part of the course.
+       *
+       * It read correctly for as long as every module held exactly one chapter,
+       * because then the two sentences described the same thing. No seeded
+       * course had a multi-chapter module until this ticket, so nothing could
+       * show it being wrong (§9.1).
+       */
       throw new AppError(
         "gate_locked",
         `chapter=${chapterId} is locked${gate.blockedBy === undefined ? "" : ` by ${gate.blockedBy}`}`,
-        "Diese Inhalte werden nach Abschluss der vorherigen Module freigeschaltet.",
+        "Diese Inhalte werden nach Abschluss der vorherigen Kapitel freigeschaltet.",
       );
     }
   }
