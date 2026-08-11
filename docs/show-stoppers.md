@@ -59,8 +59,8 @@ wants action today.
 
 | #       | Item                                                                               | Blocks           | Needed by | Owner              |
 | ------- | ---------------------------------------------------------------------------------- | ---------------- | --------- | ------------------ |
-| S12     | **"Originalstempel" may invalidate an emailed certificate**                        | M3 · 30.08       | **14.08** | ÄKWL               |
-| S15     | **Live API key hardcoded in the MEDICE plugin — rotate it**                        | —                | **today** | MEDICE             |
+| ~~S12~~ | ~~"Originalstempel" may invalidate an emailed certificate~~                        | **CLOSED 11.08** | —         | —                  |
+| ~~S15~~ | ~~Live API key hardcoded in the MEDICE plugin~~ — **rotated by MEDICE 11.08**      | **CLOSED 11.08** | —         | —                  |
 | S18     | **Offline refresh token exposed — revoke, and stop requesting `offline_access`**   | —                | **today** | MEDICE             |
 | S17     | **Token `aud` is `account`; add an audience mapper or no learner can log in**      | M1 · 09.08       | **31.07** | MEDICE dev         |
 | S2      | **The WP plugin stores no token.** Decide how it will — lifespan now known (600 s) | M1 · 09.08       | **31.07** | MEDICE dev         |
@@ -182,7 +182,23 @@ depends on the answer arriving first.
 
 ---
 
-## S12 · "Originalstempel" may invalidate an emailed certificate
+## S12 · "Originalstempel" — **CLOSED 11.08: an emailed PDF is acceptable**
+
+> **Answered by the client on 11.08.2026: yes, an emailed PDF satisfies the
+> requirement.**
+>
+> So the certificate path as built is the shipping one: a PDF the physician
+> downloads from the portal, or receives by email through
+> `CertificateDeliveryScheduler`, carrying the course's stamp and the
+> scientific lead's signature as images. No physical stamp, no postal path, no
+> change to `certificate.service.ts`.
+>
+> What this does **not** relax: `missingCertificateFields` still refuses to
+> issue a certificate whose required fields are absent, and the stamp and
+> signature seeded today are 1×1 placeholder PNGs. The real assets still have
+> to replace them before anything ships — that is S6's residue, not S12's.
+
+## S12 (original analysis) · "Originalstempel" may invalidate an emailed certificate
 
 > **First, a point of fact that came up on 27.07 and is worth settling in
 > writing: the certificate is not produced by the Ärztekammer or by EIV. It is

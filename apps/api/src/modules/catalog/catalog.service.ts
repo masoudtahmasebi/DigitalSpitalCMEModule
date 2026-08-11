@@ -17,6 +17,8 @@ import {
   type CourseRow,
   type CourseTreeRows,
 } from "./catalog.repository.js";
+import { isCourseOffered } from "@ds/domain";
+
 import type {
   CourseDetail,
   CourseListQuery,
@@ -26,7 +28,17 @@ import type {
 } from "./catalog.dto.js";
 
 export class CatalogService {
-  constructor(private readonly repository: CatalogRepositoryPort) {}
+  /**
+   * `now` is injected so the validity window (P50-01) is testable at its
+   * boundaries. Defaulted for every production caller, because threading a
+   * clock through four controllers to change nothing would be ceremony — the
+   * rule that *decides* is pure and takes time as an argument, which is where
+   * CLAUDE.md §4 invariant 4 actually applies.
+   */
+  constructor(
+    private readonly repository: CatalogRepositoryPort,
+    private readonly now: () => Date = () => new Date(),
+  ) {}
 
   /**
    * The composition entry point controllers use.
@@ -49,8 +61,10 @@ export class CatalogService {
       ...(query.deliveryType === undefined ? {} : { deliveryType: query.deliveryType }),
     };
 
+    const readAt = this.now();
     const { rows, total, durations } = await this.repository.listCourses({
       ...selection,
+      now: readAt,
       limit: query.perPage,
       offset: (query.page - 1) * query.perPage,
     });
@@ -81,7 +95,10 @@ export class CatalogService {
        * Each facet excludes only its own axis, so the value currently chosen
        * still appears and can be swapped for a sibling.
        */
-      facets: await this.repository.facets(selection),
+      // The same `now` the page query used. Counting facets at a different
+      // instant than the list would let a boundary between the two calls
+      // produce a count that does not describe the page.
+      facets: await this.repository.facets({ ...selection, now: readAt }),
     };
   }
 
@@ -97,6 +114,22 @@ export class CatalogService {
 
     if (tree === undefined) {
       throw AppError.notFound(`course slug=${slug} not visible in this tenant`);
+    }
+
+    /*
+     * A course outside its validity window is not offered (P50-01).
+     *
+     * 404 and not 403, for the same reason the tenant check above is: a course
+     * somebody cannot have is indistinguishable from one that does not exist,
+     * and a distinct status would let anybody enumerate which VNRs this
+     * installation has retired (§9.5).
+     *
+     * This is the *second* place the rule is applied — the list query filters
+     * in SQL — and both are needed, because a detail page is reachable by a
+     * bookmarked URL that never went through the list.
+     */
+    if (!isCourseOffered(tree.course, this.now())) {
+      throw AppError.notFound(`course slug=${slug} is outside its validity window`);
     }
 
     const enrolled = await this.repository.findEnrolments([tree.course.id], userId);

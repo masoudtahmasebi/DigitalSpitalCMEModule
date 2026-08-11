@@ -43,6 +43,8 @@ const course: CourseComplianceRow = {
   cmePoints: 4,
   cmeCategory: "D",
   vnr: "9999999999999999999",
+  validFrom: null,
+  validTo: null,
 };
 
 /** Two modules, one chapter each; module 1 has a video, module 2 video + quiz. */

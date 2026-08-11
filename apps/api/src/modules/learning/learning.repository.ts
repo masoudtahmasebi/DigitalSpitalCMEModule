@@ -39,6 +39,14 @@ export interface CourseComplianceRow {
   cmePoints: number | null;
   cmeCategory: string | null;
   vnr: string | null;
+  /**
+   * The validity window (P50-01). Both optional; both null on most courses.
+   *
+   * Read here rather than only in the catalogue because a bookmarked URL
+   * reaches `enrol` without ever passing the list.
+   */
+  validFrom: Date | null;
+  validTo: Date | null;
 }
 
 export interface EnrolmentRow {
@@ -162,6 +170,8 @@ export class LearningRepository implements LearningRepositoryPort {
         cmePoints: courses.cmePoints,
         cmeCategory: courses.cmeCategory,
         vnr: courses.vnr,
+        validFrom: courses.validFrom,
+        validTo: courses.validTo,
       })
       .from(courses)
       .where(eq(courses.slug, slug))

@@ -647,3 +647,89 @@ describe("a course without CME points", () => {
     expect(body.detail).not.toMatch(/EFN/iu);
   });
 });
+
+/**
+ * The validity window, through HTTP (P50-01).
+ *
+ * `availability.test.ts` covers the rule exhaustively and **every one of those
+ * tests would stay green on a platform that never called it** — which is
+ * CLAUDE.md §9.7, and the reason this suite exists. What is asserted here is
+ * the wiring: that the catalogue query, the detail route and `enrol` each ask.
+ *
+ * The window is moved with SQL rather than through the console, deliberately.
+ * The console is one writer; a course whose dates were set by a seed, a
+ * migration or a support script has to behave identically, and driving the UI
+ * would only prove the path the UI takes.
+ */
+describe("a course outside its validity window (P50-01)", () => {
+  async function setWindow(from: string | null, to: string | null): Promise<void> {
+    await seedPool.query(
+      "UPDATE courses SET valid_from = $2, valid_to = $3 WHERE slug = $1",
+      [freeCourseSlug, from, to],
+    );
+  }
+
+  afterAll(async () => {
+    // Every other case in this file assumes the course is offered.
+    await setWindow(null, null);
+  });
+
+  it("is offered when it carries no window at all — the ordinary case", async () => {
+    await setWindow(null, null);
+
+    const { body } = await call("GET", "/courses?perPage=50");
+    expect(body.items.map((i: { slug: string }) => i.slug)).toContain(freeCourseSlug);
+  });
+
+  it("disappears from the catalogue once the window has closed", async () => {
+    await setWindow("2020-01-01T00:00:00Z", "2020-12-31T23:59:59Z");
+
+    const { body } = await call("GET", "/courses?perPage=50");
+    expect(body.items.map((i: { slug: string }) => i.slug)).not.toContain(freeCourseSlug);
+    // The total has to agree with the page, or paging shows a course the list
+    // does not contain.
+    expect(body.total).toBe(body.items.length);
+  });
+
+  it("answers 404 on the detail route, which a bookmark reaches directly", async () => {
+    await setWindow("2020-01-01T00:00:00Z", "2020-12-31T23:59:59Z");
+
+    const { status } = await call("GET", `/courses/${freeCourseSlug}`);
+    // 404 and not 403: a retired course must not be distinguishable from one
+    // that never existed, or the status code enumerates them (§9.5).
+    expect(status).toBe(404);
+  });
+
+  it("takes no new learner once the window has closed", async () => {
+    await setWindow("2020-01-01T00:00:00Z", "2020-12-31T23:59:59Z");
+    await seedPool.query(
+      "DELETE FROM enrolments WHERE course_id = (SELECT id FROM courses WHERE slug = $1)",
+      [freeCourseSlug],
+    );
+
+    const { status } = await call("PUT", `/courses/${freeCourseSlug}/enrolment`);
+    expect(status).toBe(404);
+  });
+
+  it("is hidden before the window opens, not only after it closes", async () => {
+    await setWindow("2099-01-01T00:00:00Z", "2099-12-31T23:59:59Z");
+
+    const { body } = await call("GET", "/courses?perPage=50");
+    expect(body.items.map((i: { slug: string }) => i.slug)).not.toContain(freeCourseSlug);
+  });
+
+  it("keeps a learner who started while it was open", async () => {
+    // The deliberate half of the rule. Revoking a half-finished course is a
+    // worse outcome than a late completion, which EIV refuses at submission
+    // time anyway. If the Kammer requires a hard cut-off, this test is what
+    // changes with the behaviour.
+    await setWindow(null, null);
+    const enrolled = await call("PUT", `/courses/${freeCourseSlug}/enrolment`);
+    expect(enrolled.status).toBe(200);
+
+    await setWindow("2020-01-01T00:00:00Z", "2020-12-31T23:59:59Z");
+
+    const { status } = await call("PUT", `/courses/${freeCourseSlug}/enrolment`);
+    expect(status).toBe(200);
+  });
+});

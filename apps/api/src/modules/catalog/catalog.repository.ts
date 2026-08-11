@@ -12,7 +12,7 @@
  * the P10-02 suite asserts.
  */
 
-import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/tenant-db.js";
 import {
   chapters,
@@ -82,6 +82,15 @@ export interface CourseListFilter {
   altersgruppe?: string;
   /** A set, because one tab can group several — see `catalog.dto.ts`. */
   deliveryType?: readonly ("on_demand" | "live" | "praesenz")[];
+  /**
+   * The instant the catalogue is being read at (P50-01).
+   *
+   * Required, not defaulted to `new Date()`: this is infrastructure and the
+   * clock belongs to the caller, the same way it does in `@ds/domain`. A
+   * default here would make "what did the catalogue look like at 23:59?"
+   * untestable, and the boundary is exactly what needs testing.
+   */
+  now: Date;
   limit: number;
   offset: number;
 }
@@ -328,6 +337,28 @@ export class CatalogRepository implements CatalogRepositoryPort {
  */
 function whereFor(selection: CourseSelection) {
   const conditions = [];
+
+  /*
+   * Only courses currently being offered (P50-01).
+   *
+   * `isCourseOffered` in `@ds/domain` is the rule; this is the same rule in
+   * SQL, and it is here rather than as a filter over fetched rows because
+   * paging and the facet counts both have to agree with it — a total that
+   * counted expired courses would page a list that does not contain them.
+   *
+   * That makes two implementations of one rule, which this repository normally
+   * refuses. It is the ADR-0002 trade again: the predicate that *decides* is
+   * the domain function, this narrows what leaves the database, and
+   * `catalog.service.ts` applies the domain function to what comes back — so a
+   * disagreement between them cannot show a course that the rule says is
+   * closed.
+   *
+   * `IS NULL OR` on both ends, because validity is optional and the common
+   * case is a course with neither date. Getting that wrong would empty the
+   * catalogue rather than filter it.
+   */
+  conditions.push(or(isNull(courses.validFrom), lte(courses.validFrom, selection.now)));
+  conditions.push(or(isNull(courses.validTo), gte(courses.validTo, selection.now)));
 
   if (selection.deliveryType !== undefined) {
     conditions.push(inArray(courses.deliveryType, [...selection.deliveryType]));
