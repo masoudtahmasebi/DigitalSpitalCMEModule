@@ -460,3 +460,32 @@ export async function seedParticipant(
 
   return { userId };
 }
+
+/**
+ * Does this course already have a content tree? (P65-03.)
+ *
+ * The question `--if-missing` should have been asking. Everything else these
+ * seeds write is an idempotent `ON CONFLICT DO UPDATE` upsert — customer,
+ * department, both projects, the course, the experts — and running those again
+ * converges the tenant's structure without destroying anything.
+ *
+ * Exactly one part is destructive: `resetCourseContent`, which deletes the
+ * modules, chapters and contents, and with them `content_progress`,
+ * `quiz_attempts` and `quiz_answers`. So that is the only thing the flag
+ * withholds, and it withholds it on the only condition that matters — whether
+ * there is content to lose.
+ */
+export async function courseHasContent(
+  pool: pg.Pool,
+  courseId: string,
+): Promise<boolean> {
+  const { rows } = await pool.query<{ n: string }>(
+    `SELECT count(*)::text AS n
+       FROM contents c
+       JOIN chapters ch ON ch.id = c.chapter_id
+       JOIN modules m   ON m.id = ch.module_id
+      WHERE m.course_id = $1`,
+    [courseId],
+  );
+  return (rows[0]?.n ?? "0") !== "0";
+}

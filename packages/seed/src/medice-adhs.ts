@@ -41,6 +41,7 @@ import {
   enterTenant,
   participantPassword,
   PLACEHOLDER_IMAGE,
+  courseHasContent,
   resetCourseContent,
   resolveCustomerId,
   seedParticipant,
@@ -260,25 +261,6 @@ export async function seedMediceAdhs(
     });
     await enterTenant(pool, tenantId);
 
-    /*
-     * The whole point of `--if-missing`: return before the first write.
-     *
-     * Checked here rather than at the top because `enterTenant` has to set the
-     * RLS context before `customers` is readable at all — read on the bare
-     * connection this matches zero rows and the seed would rebuild the tenant
-     * every deploy, which is exactly the destructive behaviour the flag exists
-     * to prevent (CLAUDE.md §9.6).
-     */
-    if (onlyIfMissing) {
-      const { rowCount } = await pool.query("SELECT 1 FROM customers WHERE id = $1", [
-        tenantId,
-      ]);
-      if (rowCount !== null && rowCount > 0) {
-        await pool.query("ROLLBACK");
-        return "MEDICE already exists; nothing was written.";
-      }
-    }
-
     const customerId = await upsert(
       pool,
       `INSERT INTO customers (id, slug, name) VALUES ($1,$2,$3)
@@ -433,7 +415,10 @@ export async function seedMediceAdhs(
       ],
     );
 
-    await resetCourseContent(pool, courseId);
+    const rebuildContent = !onlyIfMissing || !(await courseHasContent(pool, courseId));
+    if (rebuildContent) {
+      await resetCourseContent(pool, courseId);
+    }
 
     // Replaced wholesale like the modules: a seed that appended would add a
     // second copy of every expert on each run.
@@ -455,109 +440,129 @@ export async function seedMediceAdhs(
       );
     }
 
-    let quizContentId: string | undefined;
+    /*
+     * The content tree — the one destructive part of this seed (P65-03).
+     *
+     * `resetCourseContent` above deletes modules, chapters and contents, and
+     * with them `content_progress`, `quiz_attempts` and `quiz_answers`. That
+     * is what an unattended deploy must never do, and it is the *only* thing
+     * it must never do: every other statement in this function is an upsert
+     * that converges the tenant's structure.
+     *
+     * The first version of `--if-missing` got this wrong in a way worth
+     * remembering. It returned early when the *customer* row existed — and on
+     * the installation it was written for, MEDICE the customer had existed for
+     * months while the `medice` **portal project** never had. So the deploy
+     * ran the seed, the guard said "already exists", and `/medice` went on
+     * answering "Diesen Bereich gibt es nicht". A guard that skipped
+     * everything because one row was present, including the row that was
+     * absent.
+     */
+    if (rebuildContent) {
+      let quizContentId: string | undefined;
 
-    for (const [moduleOrdinal, module] of MODULES.entries()) {
-      const moduleId = await upsert(
-        pool,
-        `INSERT INTO modules (customer_id, course_id, ordinal, title, subtitle)
-         VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-        [customerId, courseId, moduleOrdinal, module.title, module.subtitle],
-      );
-
-      for (const [chapterOrdinal, chapter] of module.chapters.entries()) {
-        const chapterId = await upsert(
+      for (const [moduleOrdinal, module] of MODULES.entries()) {
+        const moduleId = await upsert(
           pool,
-          `INSERT INTO chapters (customer_id, module_id, ordinal, title)
-           VALUES ($1,$2,$3,$4) RETURNING id`,
-          [customerId, moduleId, chapterOrdinal, chapter.title],
+          `INSERT INTO modules (customer_id, course_id, ordinal, title, subtitle)
+           VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+          [customerId, courseId, moduleOrdinal, module.title, module.subtitle],
         );
 
-        // Two renditions and a poster, so the seeded course exercises the
-        // player's format negotiation rather than the single-source path only.
-        // HLS is listed first: the browser takes the first `type` it can play,
-        // so Safari gets the adaptive stream and everything else falls through
-        // to the MP4 (`orderSources` in @ds/domain).
-        const mediaBase = `https://media.example.org/${COURSE_SLUG}/${moduleOrdinal + 1}`;
-        await pool.query(
-          `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title,
-                                 media_sources, poster_url, duration_sec)
-           VALUES ($1,$2,0,'video',$3,$4::jsonb,$5,$6)`,
-          [
-            customerId,
-            chapterId,
-            chapter.videoTitle,
-            JSON.stringify([
-              {
-                url: `${mediaBase}.m3u8`,
-                mimeType: "application/vnd.apple.mpegurl",
-                label: "Automatisch",
-              },
-              { url: `${mediaBase}-720.mp4`, mimeType: "video/mp4", label: "720p" },
-              { url: `${mediaBase}-360.mp4`, mimeType: "video/mp4", label: "360p" },
-            ]),
-            `${mediaBase}.jpg`,
-            chapter.durationSec,
-          ],
-        );
-
-        // Mediathek download per module, matching the layout's "Materialien zu
-        // Modul N" grouping.
-        await pool.query(
-          // `body` is the Mediathek card's description (page-05). Seeded so the
-          // grid renders at its real height rather than as a row of title-only
-          // cards that look nothing like the layout.
-          `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, body, file_url, mime_type, file_size)
-           VALUES ($1,$2,8,'material',$3,$4,$5,'application/pdf',524288)`,
-          [
-            customerId,
-            chapterId,
-            `Patienteninformation ${module.title} (PDF)`,
-            "Begleitmaterial zum Modul, geeignet zur Weitergabe an Patientinnen " +
-              "und Patienten. Platzhaltertext — der endgültige Inhalt wird von " +
-              "MEDICE bereitgestellt.",
-            `https://media.example.org/${COURSE_SLUG}/${moduleOrdinal + 1}.pdf`,
-          ],
-        );
-
-        // One Lernerfolgskontrolle, at the end of the last module.
-        if (moduleOrdinal === MODULES.length - 1) {
-          quizContentId = await upsert(
+        for (const [chapterOrdinal, chapter] of module.chapters.entries()) {
+          const chapterId = await upsert(
             pool,
-            `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title)
-             VALUES ($1,$2,9,'quiz',$3) RETURNING id`,
-            [customerId, chapterId, "Lernerfolgskontrolle"],
+            `INSERT INTO chapters (customer_id, module_id, ordinal, title)
+             VALUES ($1,$2,$3,$4) RETURNING id`,
+            [customerId, moduleId, chapterOrdinal, chapter.title],
           );
-        }
-      }
-    }
 
-    if (quizContentId !== undefined) {
-      for (let i = 0; i < QUESTION_COUNT; i += 1) {
-        const questionId = await upsert(
-          pool,
-          `INSERT INTO quiz_questions (customer_id, content_id, ordinal, kind, prompt)
-           VALUES ($1,$2,$3,'single',$4) RETURNING id`,
-          [
-            customerId,
-            quizContentId,
-            i,
-            `Frage ${i + 1} – Platzhalter (Text von MEDICE)`,
-          ],
-        );
-
-        for (let option = 0; option < 4; option += 1) {
+          // Two renditions and a poster, so the seeded course exercises the
+          // player's format negotiation rather than the single-source path only.
+          // HLS is listed first: the browser takes the first `type` it can play,
+          // so Safari gets the adaptive stream and everything else falls through
+          // to the MP4 (`orderSources` in @ds/domain).
+          const mediaBase = `https://media.example.org/${COURSE_SLUG}/${moduleOrdinal + 1}`;
           await pool.query(
-            `INSERT INTO quiz_options (customer_id, question_id, ordinal, label, is_correct)
-             VALUES ($1,$2,$3,$4,$5)`,
+            `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title,
+                                   media_sources, poster_url, duration_sec)
+             VALUES ($1,$2,0,'video',$3,$4::jsonb,$5,$6)`,
             [
               customerId,
-              questionId,
-              option,
-              `Antwortoption ${String.fromCharCode(65 + option)}`,
-              option === 0,
+              chapterId,
+              chapter.videoTitle,
+              JSON.stringify([
+                {
+                  url: `${mediaBase}.m3u8`,
+                  mimeType: "application/vnd.apple.mpegurl",
+                  label: "Automatisch",
+                },
+                { url: `${mediaBase}-720.mp4`, mimeType: "video/mp4", label: "720p" },
+                { url: `${mediaBase}-360.mp4`, mimeType: "video/mp4", label: "360p" },
+              ]),
+              `${mediaBase}.jpg`,
+              chapter.durationSec,
             ],
           );
+
+          // Mediathek download per module, matching the layout's "Materialien zu
+          // Modul N" grouping.
+          await pool.query(
+            // `body` is the Mediathek card's description (page-05). Seeded so the
+            // grid renders at its real height rather than as a row of title-only
+            // cards that look nothing like the layout.
+            `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, body, file_url, mime_type, file_size)
+             VALUES ($1,$2,8,'material',$3,$4,$5,'application/pdf',524288)`,
+            [
+              customerId,
+              chapterId,
+              `Patienteninformation ${module.title} (PDF)`,
+              "Begleitmaterial zum Modul, geeignet zur Weitergabe an Patientinnen " +
+                "und Patienten. Platzhaltertext — der endgültige Inhalt wird von " +
+                "MEDICE bereitgestellt.",
+              `https://media.example.org/${COURSE_SLUG}/${moduleOrdinal + 1}.pdf`,
+            ],
+          );
+
+          // One Lernerfolgskontrolle, at the end of the last module.
+          if (moduleOrdinal === MODULES.length - 1) {
+            quizContentId = await upsert(
+              pool,
+              `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title)
+               VALUES ($1,$2,9,'quiz',$3) RETURNING id`,
+              [customerId, chapterId, "Lernerfolgskontrolle"],
+            );
+          }
+        }
+      }
+
+      if (quizContentId !== undefined) {
+        for (let i = 0; i < QUESTION_COUNT; i += 1) {
+          const questionId = await upsert(
+            pool,
+            `INSERT INTO quiz_questions (customer_id, content_id, ordinal, kind, prompt)
+             VALUES ($1,$2,$3,'single',$4) RETURNING id`,
+            [
+              customerId,
+              quizContentId,
+              i,
+              `Frage ${i + 1} – Platzhalter (Text von MEDICE)`,
+            ],
+          );
+
+          for (let option = 0; option < 4; option += 1) {
+            await pool.query(
+              `INSERT INTO quiz_options (customer_id, question_id, ordinal, label, is_correct)
+               VALUES ($1,$2,$3,$4,$5)`,
+              [
+                customerId,
+                questionId,
+                option,
+                `Antwortoption ${String.fromCharCode(65 + option)}`,
+                option === 0,
+              ],
+            );
+          }
         }
       }
     }
@@ -641,6 +646,7 @@ export async function seedMediceAdhs(
  * needs to read this: the VNR password is used server-side only and is never
  * returned by any API.
  */
+
 function seededVnrPassword(): Buffer {
   const cipher = createSecretCipher(
     process.env["NODE_ENV"] ?? "development",
