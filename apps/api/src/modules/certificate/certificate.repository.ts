@@ -47,7 +47,11 @@ export interface CertificateRepositoryPort {
     courseSlug: string,
     userId: string,
   ): Promise<CertificateSourceRow | undefined>;
+  /** The same row for a caller that knows the enrolment and not the learner. */
+  findSourceByEnrolment(enrolmentId: string): Promise<CertificateSourceRow | undefined>;
   findCertificate(enrolmentId: string): Promise<CertificateRow | undefined>;
+  /** The enrolment a certificate row belongs to — the delivery sweep's way in. */
+  findEnrolmentIdByCertificate(certificateId: string): Promise<string | undefined>;
   issue(input: {
     customerId: string;
     enrolmentId: string;
@@ -57,6 +61,39 @@ export interface CertificateRepositoryPort {
   }): Promise<CertificateRow>;
 }
 
+/**
+ * Every field a certificate is rendered from, in one place.
+ *
+ * Shared by the two finders below (P59-01) so a document rendered for the
+ * download and one rendered for the e-mail cannot differ in what they carry.
+ */
+const certificateSourceColumns = {
+  enrolmentId: enrolments.id,
+  completedAt: enrolments.completedAt,
+  // From the enrolment, not the course: these were snapshotted when the
+  // learner enrolled, and the certificate must state what was in force
+  // then rather than whatever the course says today.
+  vnr: enrolments.vnr,
+  cmePoints: enrolments.cmePoints,
+  cmeCategory: enrolments.cmeCategory,
+  attestedName: enrolments.attestedName,
+  courseTitle: courses.title,
+  eventLocation: courses.eventLocation,
+  organizer: courses.organizer,
+  accreditationBody: courses.accreditationBody,
+  // Signing assets read live: replacing a stamp should fix every future
+  // download, and a stamp is not part of what the learner earned.
+  scientificLeadName: courses.scientificLeadName,
+  scientificLeadTitle: courses.scientificLeadTitle,
+  certificateIssuePlace: courses.certificateIssuePlace,
+  stampImage: courses.stampImage,
+  stampImageMime: courses.stampImageMime,
+  signatureImage: courses.signatureImage,
+  signatureImageMime: courses.signatureImageMime,
+  firstName: users.firstName,
+  lastName: users.lastName,
+} as const;
+
 export class CertificateRepository implements CertificateRepositoryPort {
   constructor(private readonly db: Db) {}
 
@@ -65,32 +102,7 @@ export class CertificateRepository implements CertificateRepositoryPort {
     userId: string,
   ): Promise<CertificateSourceRow | undefined> {
     const [row] = await this.db
-      .select({
-        enrolmentId: enrolments.id,
-        completedAt: enrolments.completedAt,
-        // From the enrolment, not the course: these were snapshotted when the
-        // learner enrolled, and the certificate must state what was in force
-        // then rather than whatever the course says today.
-        vnr: enrolments.vnr,
-        cmePoints: enrolments.cmePoints,
-        cmeCategory: enrolments.cmeCategory,
-        attestedName: enrolments.attestedName,
-        courseTitle: courses.title,
-        eventLocation: courses.eventLocation,
-        organizer: courses.organizer,
-        accreditationBody: courses.accreditationBody,
-        // Signing assets read live: replacing a stamp should fix every future
-        // download, and a stamp is not part of what the learner earned.
-        scientificLeadName: courses.scientificLeadName,
-        scientificLeadTitle: courses.scientificLeadTitle,
-        certificateIssuePlace: courses.certificateIssuePlace,
-        stampImage: courses.stampImage,
-        stampImageMime: courses.stampImageMime,
-        signatureImage: courses.signatureImage,
-        signatureImageMime: courses.signatureImageMime,
-        firstName: users.firstName,
-        lastName: users.lastName,
-      })
+      .select(certificateSourceColumns)
       .from(enrolments)
       .innerJoin(courses, eq(courses.id, enrolments.courseId))
       .innerJoin(users, eq(users.id, enrolments.userId))
@@ -98,6 +110,39 @@ export class CertificateRepository implements CertificateRepositoryPort {
       .limit(1);
 
     return row as CertificateSourceRow | undefined;
+  }
+
+  /**
+   * The same source row, found by enrolment (P59-01).
+   *
+   * The completion path and the delivery sweep both know an enrolment id and
+   * neither has a course slug or a signed-in learner. It selects the identical
+   * column list rather than a subset: two certificate readers that saw
+   * different fields would eventually render two different documents for one
+   * participation.
+   */
+  async findSourceByEnrolment(
+    enrolmentId: string,
+  ): Promise<CertificateSourceRow | undefined> {
+    const [row] = await this.db
+      .select(certificateSourceColumns)
+      .from(enrolments)
+      .innerJoin(courses, eq(courses.id, enrolments.courseId))
+      .innerJoin(users, eq(users.id, enrolments.userId))
+      .where(eq(enrolments.id, enrolmentId))
+      .limit(1);
+
+    return row as CertificateSourceRow | undefined;
+  }
+
+  async findEnrolmentIdByCertificate(certificateId: string): Promise<string | undefined> {
+    const [row] = await this.db
+      .select({ enrolmentId: certificates.enrolmentId })
+      .from(certificates)
+      .where(eq(certificates.id, certificateId))
+      .limit(1);
+
+    return row?.enrolmentId;
   }
 
   async findCertificate(enrolmentId: string): Promise<CertificateRow | undefined> {

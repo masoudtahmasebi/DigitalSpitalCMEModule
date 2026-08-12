@@ -60,6 +60,72 @@ export class CertificateService {
   }
 
   /**
+   * Which enrolment a certificate row belongs to (P59-02).
+   *
+   * The delivery sweep claims a certificate id; everything that renders one is
+   * keyed on the enrolment. Resolved inside the tenant scope, so a claim that
+   * named another customer's row finds nothing.
+   */
+  async enrolmentIdFor(certificateId: string): Promise<string | undefined> {
+    return this.repository.findEnrolmentIdByCertificate(certificateId);
+  }
+
+  /**
+   * Issue and render for an enrolment, without a signed-in learner (P59-01).
+   *
+   * Used by two callers that know an enrolment and nothing else: the
+   * completion, which issues the certificate the moment it is earned, and the
+   * delivery sweep, which needs the bytes to attach to the e-mail.
+   *
+   * **Returns `undefined` instead of throwing.** Every refusal `download`
+   * raises is a message for a person looking at a screen — a missing name they
+   * can fix, an authoring gap they should report. Neither caller here has a
+   * screen: the completion must stand whether or not a PDF can be produced
+   * (the physician earned the point either way), and the delivery sweep must
+   * be able to send the covering e-mail rather than crash the batch. Both log
+   * what happened; nothing about the learner's entitlement changes.
+   */
+  async issueForEnrolment(
+    enrolmentId: string,
+    customerId: string,
+    now: Date,
+  ): Promise<RenderedCertificate | undefined> {
+    const source = await this.repository.findSourceByEnrolment(enrolmentId);
+    if (source === undefined || source.completedAt === null) return undefined;
+
+    const data = this.assemble(source, source.completedAt);
+    if (missingCertificateFields(data).length > 0) return undefined;
+
+    const assets: CertificateAssets = {
+      stampImage: source.stampImage,
+      stampImageMime: source.stampImageMime,
+      signatureImage: source.signatureImage,
+      signatureImageMime: source.signatureImageMime,
+      issuePlace: source.certificateIssuePlace,
+    };
+
+    let bytes: Uint8Array;
+    try {
+      bytes = await this.render(data, assets);
+    } catch (error) {
+      if (error instanceof CertificateAssetsMissingError) return undefined;
+      throw error;
+    }
+
+    // Same write as `download`, and idempotent for the same reason: whichever
+    // of the two happens first mints the token, and the other finds it.
+    await this.repository.issue({
+      customerId,
+      enrolmentId,
+      participantName: data.participantName,
+      downloadToken: randomBytes(32).toString("hex"),
+      issuedAt: now,
+    });
+
+    return { filename: filenameFor(data), bytes };
+  }
+
+  /**
    * Issue (idempotently) and render the certificate.
    *
    * Refuses unless the course is genuinely complete: the certificate is the

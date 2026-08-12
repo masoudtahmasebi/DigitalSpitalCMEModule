@@ -631,6 +631,31 @@ describe("the road to a CME point", () => {
     expect(days).toBeLessThan(9);
   });
 
+  it("issues the certificate at completion, before anybody asks for it", async () => {
+    /*
+     * P59-01, and it has to be asserted **here** rather than in "the
+     * Teilnahmebescheinigung" block below.
+     *
+     * That block's `records the issue exactly once` runs after the preview and
+     * the download, and creating the row lazily on first read is exactly the
+     * defect: it passed unchanged on a platform where a physician who finished
+     * a course and closed the tab was never emailed anything, because the
+     * delivery sweep claims `status = 'issued'` and there was no row to claim
+     * (CLAUDE.md §9.7 — name the caller).
+     *
+     * So: no certificate endpoint has been called at this point in the file,
+     * and the row must already exist.
+     */
+    const { rows } = await seedPool.query<{ status: string; issued_at: Date | null }>(
+      "SELECT status, issued_at FROM certificates WHERE enrolment_id = $1",
+      [enrolmentId],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe("issued");
+    expect(rows[0]!.issued_at).not.toBeNull();
+  });
+
   it("backfills the course-completion date it never had, at or before the certification", async () => {
     // Certification implies the course was complete, so the row must not be
     // left claiming otherwise — and the date it gets must not read as later

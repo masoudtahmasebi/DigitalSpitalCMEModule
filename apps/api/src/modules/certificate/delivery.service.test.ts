@@ -13,7 +13,10 @@
 
 import { describe, expect, it } from "vitest";
 import type { DeliveryChannel, DeliveryOutcome, OutboundMessage } from "@ds/plugin-api";
-import { CertificateDeliveryService } from "./delivery.service.js";
+import {
+  CertificateDeliveryService,
+  type CertificateAttachmentPort,
+} from "./delivery.service.js";
 import type {
   ClaimedDelivery,
   DeliveryRepositoryPort,
@@ -57,10 +60,19 @@ function row(over: Partial<DueDelivery> = {}): DueDelivery {
   };
 }
 
+const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46]); // "%PDF"
+
 function build(
   rows: DueDelivery[],
   outcome: DeliveryOutcome = { status: "delivered", reference: "<id@example.de>" },
   portalBaseUrl = "https://fortbildung.example.de/",
+  // Defaults to a render that succeeds, because that is the ordinary case in
+  // production — `delivery.scheduler.ts` always passes a `CertificateAttachments`.
+  // A test harness that left it unwired would have made every assertion below
+  // describe a message the product never sends (P59-02).
+  attachments: CertificateAttachmentPort | undefined = {
+    renderFor: async () => ({ filename: "Teilnahmebescheinigung.pdf", bytes: PDF }),
+  },
 ) {
   const sent: OutboundMessage[] = [];
   const audits: Array<{ customerId: string; entry: AuditEntry }> = [];
@@ -100,11 +112,17 @@ function build(
     recordSystem: async () => undefined,
   };
 
-  const service = new CertificateDeliveryService(repository, channel, audit, {
-    batchSize: 25,
-    leaseSeconds: 600,
-    portalBaseUrl,
-  });
+  const service = new CertificateDeliveryService(
+    repository,
+    channel,
+    audit,
+    {
+      batchSize: 25,
+      leaseSeconds: 600,
+      portalBaseUrl,
+    },
+    attachments,
+  );
 
   return { service, sent, audits, written };
 }
@@ -226,6 +244,61 @@ describe("the email's contents", () => {
     expect(body).not.toContain("/kurs/");
     expect(body).not.toContain("herunterladen");
     expect(body).toContain("im Anhang");
+  });
+
+  it("attaches the certificate the copy promises", async () => {
+    // The defect P59-02 fixed: the sentence "Ihre Teilnahmebescheinigung finden
+    // Sie im Anhang dieser E-Mail" shipped for five phases on a message with
+    // one text/plain part. These two assertions belong in one case because the
+    // property is that they agree, not that either holds alone.
+    const { service, sent } = build([row()]);
+    await service.sweep(NOW);
+
+    expect(sent[0]?.body).toContain("im Anhang");
+    expect(sent[0]?.attachments).toEqual([
+      {
+        filename: "Teilnahmebescheinigung.pdf",
+        mediaType: "application/pdf",
+        bytes: PDF,
+      },
+    ]);
+  });
+
+  it("drops the sentence about the attachment when there is none", async () => {
+    // A render can fail — a course whose stamp was never uploaded. The covering
+    // message still goes out, because the learner can download the document
+    // either way; what must not go out is a promise of an enclosure that is not
+    // there.
+    const { service, sent } = build(
+      [row()],
+      undefined,
+      "https://fortbildung.example.de/",
+      {
+        renderFor: async () => undefined,
+      },
+    );
+    await service.sweep(NOW);
+
+    expect(sent[0]?.attachments).toBeUndefined();
+    expect(sent[0]?.body).not.toContain("im Anhang");
+    // And the link is still there, so the message is still actionable.
+    expect(sent[0]?.body).toContain(
+      "https://fortbildung.example.de/kurs/adhs-akademie-adult",
+    );
+  });
+
+  it("renders once per attempt rather than reusing a stored file", async () => {
+    // The row records what was earned; the PDF is a view of it. A retry a day
+    // later must carry a document that agrees with the record as it stands.
+    let renders = 0;
+    const { service } = build([row()], undefined, "https://fortbildung.example.de/", {
+      renderFor: async () => {
+        renders += 1;
+        return { filename: "Teilnahmebescheinigung.pdf", bytes: PDF };
+      },
+    });
+    await service.sweep(NOW);
+    expect(renders).toBe(1);
   });
 
   it("carries no EFN and no score", async () => {

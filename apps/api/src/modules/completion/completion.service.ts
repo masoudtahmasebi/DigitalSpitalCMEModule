@@ -29,6 +29,7 @@ import {
 } from "../learning/learning.repository.js";
 import { LearningService, type LearnerContext } from "../learning/learning.service.js";
 import type { EnrolmentState } from "../learning/learning.dto.js";
+import { CertificateService } from "../certificate/certificate.service.js";
 import {
   CompletionRepository,
   type CompletionRepositoryPort,
@@ -39,6 +40,16 @@ import type {
   EvaluationSubmission,
 } from "./completion.dto.js";
 
+/**
+ * What the completion needs from the certificate module: issue this one, now.
+ *
+ * A port rather than the class, so `completion.service.test.ts` stays a test of
+ * the completion rules and does not have to stand up a PDF renderer.
+ */
+export interface CertificateIssuerPort {
+  issueForEnrolment(enrolmentId: string, customerId: string, now: Date): Promise<unknown>;
+}
+
 const EVALUATION_KINDS = ["scale", "single", "multi", "text"] as const;
 type EvaluationKind = (typeof EVALUATION_KINDS)[number];
 
@@ -46,12 +57,19 @@ export class CompletionService {
   constructor(
     private readonly repository: CompletionRepositoryPort,
     private readonly learning: LearningService,
+    /**
+     * Optional so the service's own tests can leave it out — every case in
+     * them is about the completion rules, and none is about a PDF. `fromDb`
+     * always supplies one, so nothing in production runs without it.
+     */
+    private readonly certificates?: CertificateIssuerPort,
   ) {}
 
   static fromDb(db: Db): CompletionService {
     return new CompletionService(
       new CompletionRepository(db),
       new LearningService(new LearningRepository(db)),
+      CertificateService.fromDb(db),
     );
   }
 
@@ -277,8 +295,39 @@ export class CompletionService {
     await this.learning.markCompleted(enrolment.id, now, attestedFrom(input));
 
     await this.queueSubmission(course.vnr, enrolment.id, learner, now);
+    await this.issueCertificate(enrolment.id, learner, now);
 
     return { ...state, completedAt: now.toISOString() };
+  }
+
+  /**
+   * Issue the certificate the moment it is earned (P59-01).
+   *
+   * ## Why the completion does this rather than the download
+   *
+   * The `certificates` row used to be created only when somebody first
+   * *fetched* the PDF. Everything downstream keys on that row: the delivery
+   * sweep claims `status = 'issued'`, so a physician who finished a course and
+   * closed the tab was never emailed anything — the whole durable delivery
+   * pipeline (P8-03) could only ever run for people who had already downloaded
+   * the certificate themselves, which is precisely the population that did not
+   * need the e-mail. QA completed a course and watched the queue stay empty.
+   *
+   * ## Why a failure here does not fail the completion
+   *
+   * The physician has met every condition; the point is earned and the
+   * Punktemeldung is queued above. A course missing its stamp, or a name we
+   * cannot compose, is an authoring gap — the same trade `queueSubmission`
+   * makes one line up. `issueForEnrolment` answers `undefined` rather than
+   * throwing for exactly those cases, and the download route still explains
+   * them properly to somebody looking at a screen.
+   */
+  private async issueCertificate(
+    enrolmentId: string,
+    learner: LearnerContext,
+    now: Date,
+  ): Promise<void> {
+    await this.certificates?.issueForEnrolment(enrolmentId, learner.customerId, now);
   }
 
   /**

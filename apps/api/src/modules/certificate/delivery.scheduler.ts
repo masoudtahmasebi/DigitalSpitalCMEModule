@@ -37,6 +37,7 @@ import { createSecretCipher } from "../../shared/secret-cipher.js";
 import { pluginRegistry } from "../../plugins.js";
 import { DeliveryRepository } from "./delivery.repository.js";
 import { CertificateDeliveryService } from "./delivery.service.js";
+import { CertificateAttachments } from "./delivery.attachment.js";
 
 @Injectable()
 export class CertificateDeliveryScheduler implements OnModuleInit, OnModuleDestroy {
@@ -69,6 +70,8 @@ export class CertificateDeliveryScheduler implements OnModuleInit, OnModuleDestr
         leaseSeconds: config.CERTIFICATE_DELIVERY_INTERVAL_SEC * 2,
         portalBaseUrl: config.PORTAL_BASE_URL,
       },
+      // The attachment the e-mail is about (P59-02).
+      new CertificateAttachments(pool, this.logger),
     );
   }
 
