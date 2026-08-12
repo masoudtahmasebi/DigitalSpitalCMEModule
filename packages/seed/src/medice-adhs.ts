@@ -280,8 +280,25 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
 
     const courseId = await upsert(
       pool,
+      /*
+       * Seeded as a **draft**, and that is the truthful state (P63-02).
+       *
+       * The course is fully authored and accredited on paper — VNR, Kammer,
+       * Veranstalter, stamp, signature, all below. What it does not have is the
+       * VNR password, and a seed cannot supply one: that credential
+       * authenticates DigitalSpital to the Ärztekammer's accreditation
+       * interface, so a generated value would authenticate to nothing and turn
+       * a refusal naming a field into a 401 from a remote system.
+       *
+       * `courses_published_cme_is_complete` therefore refuses this row as
+       * published, which is the constraint doing its job on us. The two steps
+       * that publish it are printed in this seed's summary.
+       *
+       * `status` is absent from the DO UPDATE below on purpose: once an
+       * operator has set the password and published, a re-run of the seed must
+       * not take the course back off the catalogue.
+       */
       `INSERT INTO courses (
-         -- 'published' explicitly: the column defaults to 'draft' (P53-01).
          customer_id, project_id, slug, title, description, delivery_type, status,
          thema, altersgruppe, vnr, accreditation_body, cme_points, cme_category,
          event_location, organizer, valid_from, valid_to,
@@ -290,7 +307,7 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
          scientific_lead_name, scientific_lead_title, certificate_issue_place,
          stamp_image, stamp_image_mime, signature_image, signature_image_mime
        ) VALUES (
-         $1,$2,$3,$4,$5,'on_demand','published',
+         $1,$2,$3,$4,$5,'on_demand','draft',
          ARRAY['ADHS'], ARRAY['Erwachsene'], $6, $7, 4, 'D',
          'online', $8, $9, $10,
          100, 70, NULL,
@@ -516,8 +533,17 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
       "readings (layout says 80, MEDICE-292 says 100). See",
       "docs/show-stoppers.md before treating it as settled.",
       "",
-      "No VNR password is seeded. Set courses.vnr_password_enc via the admin",
-      "path before the EIV worker can authenticate.",
+      "ADHS Akademie adult is seeded as a DRAFT and is not yet visible to",
+      "participants. Two steps publish it, in this order:",
+      "",
+      "  1. Verwaltung → Fortbildungen → ADHS Akademie adult → VNR-Passwort.",
+      "     This is the credential the Punktemeldung authenticates with. It",
+      "     comes from EIV-FOBI, it is write-only, and nothing else can supply",
+      "     it — which is why the seed leaves the course in draft rather than",
+      "     publishing a course that cannot report.",
+      "  2. Veröffentlichen, on the same screen.",
+      "",
+      "Step 2 refuses until step 1 is done, and names the field it is missing.",
       "",
       "Stamp and signature are 1x1 placeholder PNGs so a certificate renders",
       "locally. Replace them with the real assets of the course's",

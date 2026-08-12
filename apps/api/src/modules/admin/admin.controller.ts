@@ -60,6 +60,7 @@ import { APP_CONFIG } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { createSecretCipher } from "../../shared/secret-cipher.js";
 import { AdminService } from "./admin.service.js";
+import { allSeekable } from "./media-check.service.js";
 import { participantsToCsv } from "./participant-csv.js";
 import {
   adminCourseUpdateSchema,
@@ -146,10 +147,19 @@ export class AdminController {
    * entitled to it. It reports rather than refusing: a host healthy at publish
    * time can be wedged an hour later.
    */
+  /**
+   * Can every source in this course be seeked? (P62-03, P63-04.)
+   *
+   * `seekable` is the answer and the list is the evidence, in that order. A
+   * five-module course probes fifteen URLs, and a response that was only the
+   * list would make an operator read fifteen rows to learn one thing —
+   * `allSeekable` exists to say it, and until P63-04 nothing called it.
+   */
   @Get("courses/:slug/media-check")
   @Roles("department_admin", "customer_admin", "super_admin")
   async checkMedia(@Param("slug") slug: string, @TenantDb() db: Db) {
-    return { sources: await this.service(db).checkCourseMedia(slug) };
+    const sources = await this.service(db).checkCourseMedia(slug);
+    return { seekable: allSeekable(sources), sources };
   }
 
   @Put("courses/:slug/certificate-assets")

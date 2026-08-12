@@ -361,8 +361,23 @@ export async function seedDsDemo(pool: pg.Pool): Promise<string> {
       `  customer  ${CUSTOMER_SLUG}   (DigitalSpital, Testkunde)`,
       `  project   ${PROJECT_SLUG}   (Keycloak channel)`,
       `  project   ${PORTAL_PROJECT_SLUG}        (portal channel, local sign-in)`,
-      `  courses   ${CME_COURSE_SLUG}   3 CME-Punkte, ${String(QUESTION_COUNT)} Fragen`,
-      `            ${FREE_COURSE_SLUG}   keine Punkte, keine VNR, kein Quiz`,
+      `  courses   ${CME_COURSE_SLUG}   3 CME-Punkte, ${String(QUESTION_COUNT)} Fragen — ENTWURF`,
+      `            ${FREE_COURSE_SLUG}   keine Punkte, keine VNR, kein Quiz — veröffentlicht`,
+      "",
+      `${CME_COURSE_SLUG} is a draft and will not appear in the catalogue.`,
+      "Two steps publish it, in this order:",
+      "",
+      "  1. Verwaltung → Fortbildungen → DS Demo – Fortbildung mit",
+      "     CME-Punkten → VNR-Passwort. Any value works for this tenant: the",
+      "     VNR is a dummy and the only endpoint it may reach is the local",
+      "     mock. The seed still does not set one, because a seeded credential",
+      "     that authenticates to nothing turns a refusal naming a field into",
+      "     a 401 from a remote system.",
+      "  2. Veröffentlichen, on the same screen.",
+      "",
+      "Step 2 refuses until step 1 is done, and names the field it is missing —",
+      `which is itself worth seeing once. ${FREE_COURSE_SLUG} needs neither`,
+      "step and is clickable now.",
       "",
       `Portal sign-in at /${PORTAL_PROJECT_SLUG}:`,
       `  E-Mail    ${PARTICIPANT_EMAIL}`,
@@ -423,11 +438,11 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
        scientific_lead_name, scientific_lead_title, certificate_issue_place,
        stamp_image, stamp_image_mime, signature_image, signature_image_mime
      ) VALUES (
-       $1,$2,$3,$4,$5,'on_demand','published',
+       $1,$2,$3,$4,$5,'on_demand',$17,
        ARRAY['Demo'], ARRAY['Erwachsene'], $6, $7, $8, $9,
        'online', 'DigitalSpital GmbH', $10, $11,
        100, 70, NULL,
-       true, $12, $13,
+       $18, $12, $13,
        $14, $15, 'Münster',
        $16, 'image/png', $16, 'image/png'
      )
@@ -449,6 +464,10 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
        stamp_image_mime = EXCLUDED.stamp_image_mime,
        signature_image = EXCLUDED.signature_image,
        signature_image_mime = EXCLUDED.signature_image_mime,
+       -- status is deliberately absent: publishing is an operator decision and
+       -- a re-run of the seed must not undo it. reveal_correct_answers above is
+       -- not — it is a condition of the Anerkennung, so a re-run repairs a row
+       -- an older seed wrote with the answer key on.
        updated_at = now()
      RETURNING id`,
     [
@@ -477,6 +496,34 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
       "Muster-Leitung",
       "Dr. med.",
       PLACEHOLDER_IMAGE,
+      /*
+       * `draft` for the accredited course, and it is not a limitation of the
+       * seed (P63-02).
+       *
+       * A course awarding CME points may not be `published` while its VNR
+       * password is unset — `courses_published_cme_is_complete`. A seed cannot
+       * furnish that password: it authenticates DigitalSpital to a real
+       * accreditation interface, and a generated one would authenticate to
+       * nothing, turning a refusal that names a field into a 401 from a remote
+       * system. So the truthful seeded state is a fully authored draft, and
+       * `describeDsDemo` names the two steps that publish it.
+       *
+       * The point-free course has no Punktemeldung to be incomplete for and is
+       * published immediately, which is what keeps the demo tenant clickable
+       * the moment the seed finishes.
+       */
+      accredited ? "draft" : "published",
+      /*
+       * The answer key, refused on an accredited course since migration 0039
+       * (P56-01): with unlimited retries, per-question feedback *is* the answer
+       * key and the Lernerfolgskontrolle is a condition of the Anerkennung.
+       *
+       * This was a literal `true` for both courses, which is why the seed had
+       * been unable to run since 0039 landed — see P63-01. Derived from the
+       * accreditation now, so the next constraint on this column cannot be
+       * satisfied for one course and violated for the other.
+       */
+      !accredited,
     ],
   );
 }

@@ -119,6 +119,7 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
   adminGetCourse: (c) => c.adminGetCourse("adhs"),
   adminUpdateCourse: (c) => c.adminUpdateCourse("adhs", {}),
   adminSetCertificateAssets: (c) => c.adminSetCertificateAssets("adhs", {}),
+  adminCheckCourseMedia: (c) => c.adminCheckCourseMedia("adhs"),
   adminGetFont: (c) => c.adminGetFont(),
   adminSetFont: (c) => c.adminSetFont({ familyName: "X", fileBase64: "AA==" }),
   adminClearFont: (c) => c.adminClearFont(),

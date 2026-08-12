@@ -58,6 +58,8 @@ export type AdminCourseSummary = components["schemas"]["AdminCourseSummary"];
 export type AdminCourseDetail = components["schemas"]["AdminCourseDetail"];
 export type AdminCourseUpdate = components["schemas"]["AdminCourseUpdate"];
 export type CertificateAssetUpload = components["schemas"]["CertificateAssetUpload"];
+export type MediaCheckReport = components["schemas"]["MediaCheckReport"];
+export type MediaCheckResult = components["schemas"]["MediaCheckResult"];
 export type ParticipantRow = components["schemas"]["ParticipantRow"];
 export type ParticipantList = components["schemas"]["ParticipantList"];
 export type EivState = components["schemas"]["EivState"];
@@ -463,6 +465,16 @@ export function createClient(options: ClientOptions) {
       upload: CertificateAssetUpload,
     ): Promise<AdminCourseDetail> =>
       request(`${adminCourse(slug)}/certificate-assets`, json(upload, "PUT")),
+
+    /**
+     * Ask every video host in this course for one byte.
+     *
+     * Slow by nature — one request per distinct URL, over the network the
+     * learner will use — so the console calls it on a button rather than on
+     * mount.
+     */
+    adminCheckCourseMedia: (slug: string): Promise<MediaCheckReport> =>
+      request(`${adminCourse(slug)}/media-check`),
 
     /** The project's white-label font: metadata only, never the bytes. */
     adminGetFont: (): Promise<FontState> => request("/admin/branding/font"),
