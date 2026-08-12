@@ -392,6 +392,25 @@ describe("removing and resetting a second factor", () => {
     expect(canRemoveOwnSecondFactor("required")).toBe(false);
   });
 
+  it("still refuses a customer administrator under a required policy", () => {
+    // They do not own that policy, so for them the refusal is the whole point.
+    expect(canRemoveOwnSecondFactor("required", "customer_admin")).toBe(false);
+    expect(canRemoveOwnSecondFactor("required", "department_admin")).toBe(false);
+    expect(canRemoveOwnSecondFactor("required", "course_editor")).toBe(false);
+  });
+
+  it("allows a super administrator even under required (P66-02)", () => {
+    /*
+     * Not a hole. A super administrator sets the platform policy, so `required`
+     * never prevented this — it made them relax the policy, remove the factor
+     * and set it back, through a screen that does not say the dance exists.
+     * A stolen session could already do the same two requests.
+     */
+    expect(canRemoveOwnSecondFactor("required", "super_admin")).toBe(true);
+    expect(canRemoveOwnSecondFactor("optional", "super_admin")).toBe(true);
+    expect(canRemoveOwnSecondFactor("disabled", "super_admin")).toBe(true);
+  });
+
   it("allows it under optional and disabled", () => {
     expect(canRemoveOwnSecondFactor("optional")).toBe(true);
     expect(canRemoveOwnSecondFactor("disabled")).toBe(true);

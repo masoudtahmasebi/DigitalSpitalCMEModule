@@ -977,6 +977,69 @@ describe("5 · the participant earns the point", () => {
   });
 });
 
+/**
+ * 5b · One browser, both credentials (P66-01).
+ *
+ * Reported from production as "enrolment fails while I am logged in", and the
+ * mechanism is worth stating because nothing about it is visible from either
+ * app: **the console and the portal call the same API host.** An operator
+ * signed in at `verwaltung.…` sends `ds_staff_session` on every request the
+ * portal makes at `fortbildung.…`, because the cookie belongs to `api.…` and
+ * the browser attaches it to both.
+ *
+ * The staff plane ran first, saw its cookie, and required its CSRF header —
+ * which a participant app has no way to hold. So every unsafe method the portal
+ * sent answered 403, and only the unsafe ones, because CSRF is checked on those
+ * alone. Reading a course worked; enrolling in it did not.
+ *
+ * The suite could not have caught it: `asStaff` and `asLearner` send one cookie
+ * each, which is the one shape a real browser does not produce.
+ */
+describe("5b · the operator who is also looking at the portal", () => {
+  /** Exactly what a browser sends: both cookies, no staff CSRF header. */
+  function asLearnerWithStaffCookieToo(path: string, init: Init = {}) {
+    return call(path, {
+      ...init,
+      headers: {
+        cookie: `${PARTICIPANT_COOKIE}=${world.participantCookie}; ${staff.cookie}`,
+        "x-ds-project": world.projectSlug,
+        ...init.headers,
+      },
+    });
+  }
+
+  it("reads a course, which always worked", async () => {
+    const { status } = await asLearnerWithStaffCookieToo(`/courses/${world.courseSlug}`);
+    expect(status).toBe(200);
+  });
+
+  it("enrols, which is the request that used to answer 403", async () => {
+    const { status, body: state } = await asLearnerWithStaffCookieToo(
+      `/courses/${world.courseSlug}/enrolment`,
+      { method: "PUT" },
+    );
+
+    expect(status).toBe(200);
+    expect(state.courseSlug).toBe(world.courseSlug);
+  });
+
+  it("still refuses a staff mutation with no CSRF token", async () => {
+    /*
+     * The half that must not move. Deferring to the learner plane is right only
+     * because there *is* another credential to try; a genuine staff request
+     * with no CSRF header still has to be refused, or the fix would be a way to
+     * bypass CSRF by omitting the header.
+     */
+    const { status } = await call(`/admin/courses/${world.courseSlug}`, {
+      method: "PATCH",
+      headers: { cookie: staff.cookie, "x-ds-project": world.projectSlug },
+      body: body({ title: "Von einer CSRF-Anfrage geändert" }),
+    });
+
+    expect(status).toBe(403);
+  });
+});
+
 describe("6 · the operator sees it", () => {
   it("reports the participation, and exports it as CSV", async () => {
     const scoped = { "x-ds-project": world.projectSlug };

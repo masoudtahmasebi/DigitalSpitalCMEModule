@@ -1136,7 +1136,10 @@ export class StaffService {
     grants: readonly StaffGrant[];
   }): Promise<{ readonly ok: boolean; readonly reason?: string }> {
     const policy = await this.policyFor(input.grants);
-    if (!canRemoveOwnSecondFactor(policy)) {
+    // The role decides the exception, not the policy: a super administrator
+    // owns the platform policy, so `required` never stopped them — it only made
+    // them relax it, remove the factor and set it back (P66-02).
+    if (!canRemoveOwnSecondFactor(policy, broadestRole(input.grants))) {
       return { ok: false, reason: "the second factor is mandatory for your account" };
     }
 
