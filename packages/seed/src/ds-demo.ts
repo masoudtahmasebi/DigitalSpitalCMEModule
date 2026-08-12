@@ -47,6 +47,7 @@ import {
   enterTenant,
   participantPassword,
   PLACEHOLDER_IMAGE,
+  courseHasContent,
   resetCourseContent,
   resolveCustomerId,
   seedParticipant,
@@ -217,24 +218,6 @@ export async function seedDsDemo(
     });
     await enterTenant(pool, tenantId);
 
-    /*
-     * `--if-missing`: return before the first write (P65-01).
-     *
-     * After `enterTenant`, not before: `customers` is under RLS and read on the
-     * bare connection it matches zero rows — so the check would always say
-     * "missing" and the seed would rebuild the tenant on every deploy, deleting
-     * learner progress each time (CLAUDE.md §9.6).
-     */
-    if (onlyIfMissing) {
-      const { rowCount } = await pool.query("SELECT 1 FROM customers WHERE id = $1", [
-        tenantId,
-      ]);
-      if (rowCount !== null && rowCount > 0) {
-        await pool.query("ROLLBACK");
-        return "The DS test tenant already exists; nothing was written.";
-      }
-    }
-
     const customerId = await upsert(
       pool,
       `INSERT INTO customers (id, slug, name) VALUES ($1,$2,$3)
@@ -331,21 +314,39 @@ export async function seedDsDemo(
       accreditationBody: null,
     });
 
-    await seedContent(pool, {
-      customerId,
-      courseId: cmeCourseId,
-      slug: CME_COURSE_SLUG,
-      modules: CME_MODULES,
-      withQuiz: true,
-    });
-
-    await seedContent(pool, {
-      customerId,
-      courseId: freeCourseId,
-      slug: FREE_COURSE_SLUG,
-      modules: FREE_MODULES,
-      withQuiz: false,
-    });
+    /*
+     * The content tree — the one destructive part of this seed (P65-03).
+     *
+     * `seedContent` calls `resetCourseContent`, which deletes modules, chapters
+     * and contents, and with them `content_progress`, `quiz_attempts` and
+     * `quiz_answers`. Everything above is an upsert that converges the tenant's
+     * structure, so this is the only thing `--if-missing` withholds — and it
+     * withholds it per course, on whether that course has content to lose.
+     *
+     * The first version of the flag returned early when the *customer* row
+     * existed, which skipped the projects and the courses too. On the
+     * installation it was written for that meant the deploy ran the seed and
+     * changed nothing, because the customer had been there for months and the
+     * portal project never had.
+     */
+    for (const course of [
+      { id: cmeCourseId, slug: CME_COURSE_SLUG, modules: CME_MODULES, withQuiz: true },
+      {
+        id: freeCourseId,
+        slug: FREE_COURSE_SLUG,
+        modules: FREE_MODULES,
+        withQuiz: false,
+      },
+    ]) {
+      if (onlyIfMissing && (await courseHasContent(pool, course.id))) continue;
+      await seedContent(pool, {
+        customerId,
+        courseId: course.id,
+        slug: course.slug,
+        modules: course.modules,
+        withQuiz: course.withQuiz,
+      });
+    }
 
     /*
      * The evaluation is on **both** courses, including the point-free one.

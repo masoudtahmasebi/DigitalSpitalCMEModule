@@ -180,20 +180,15 @@ describe("what the seeds leave behind", () => {
     expect(rows[0]?.enc.equals(mine)).toBe(true);
   }, 60_000);
 
-  it("writes nothing at all on a second run with --if-missing", async () => {
+  it("leaves learner-facing content alone on a second run with --if-missing", async () => {
     /*
-     * The property the deploy now depends on (P65-01).
+     * The property `deploy.sh` depends on (P65-01), stated the way P65-03
+     * corrected it.
      *
-     * `deploy.sh` runs these seeds on every push. Without `--if-missing` that
-     * would rebuild the course content tree each time — `resetCourseContent`
-     * deletes modules, chapters and contents, and `content_progress` rows point
-     * at contents. Every learner's progress, gone on every deploy, silently.
-     *
-     * So this asserts by *effect* rather than by reading the flag: a row is
-     * changed by hand, both seeds run with the flag, and the change has to still
-     * be there. A seed that quietly ignored the option would fail here — which
-     * is what `seed-default.integration.test.ts` learned to do about the same
-     * flag, for the same reason.
+     * The destructive part of these seeds is `resetCourseContent`: it deletes
+     * modules, chapters and contents, and `content_progress` rows point at
+     * contents. Running that on every push would delete every learner's
+     * progress, silently. So `--if-missing` withholds *that*, and nothing else.
      */
     await admin.query(
       "UPDATE courses SET title = $1 WHERE slug = 'adhs-akademie-adult'",
@@ -206,30 +201,54 @@ describe("what the seeds leave behind", () => {
     for (const run of [seedMediceAdhs, seedDsDemo]) {
       const seeder = openSeeder();
       try {
-        const summary = await run(seeder, { onlyIfMissing: true });
-        expect(summary).toContain("nothing was written");
+        await run(seeder, { onlyIfMissing: true, revealPassword: false });
       } finally {
         await seeder.end();
       }
     }
 
-    const { rows: after } = await admin.query<{ title: string }>(
-      "SELECT title FROM courses WHERE slug = 'adhs-akademie-adult'",
-    );
-    expect(after[0]?.title).toBe("Von Hand geändert");
-
-    // And the content tree is untouched — the thing whose loss would be
-    // invisible until a learner opened the course.
+    // The content tree is untouched — the loss that would be invisible until a
+    // learner opened the course.
     const { rows: contents } = await admin.query<{ n: string }>(
       "SELECT count(*)::text AS n FROM contents",
     );
     expect(contents[0]?.n).toBe(before[0]?.n);
 
-    // Put it back, so a later case in this file is not reading a changed row.
     await admin.query(
       "UPDATE courses SET title = $1 WHERE slug = 'adhs-akademie-adult'",
       ["ADHS Akademie adult"],
     );
+  }, 60_000);
+
+  it("still creates a portal project that is missing, even with --if-missing", async () => {
+    /*
+     * The bug P65-03 fixes, as a test, and the reason it is worth one.
+     *
+     * `--if-missing` first meant "return if the customer row exists". On the
+     * production installation the MEDICE *customer* had existed for months and
+     * the `medice` **portal project** never had — so the deploy ran the seed,
+     * the guard said "already exists", and `https://…/medice` went on answering
+     * "Diesen Bereich gibt es nicht". A guard that skipped everything because
+     * one row was present, including the row that was absent.
+     *
+     * So: delete the portal project, run with the flag, and it has to come
+     * back. Under the old guard this fails.
+     */
+    await admin.query("DELETE FROM projects WHERE slug = 'medice'");
+
+    const seeder = openSeeder();
+    try {
+      await seedMediceAdhs(seeder, { onlyIfMissing: true, revealPassword: false });
+    } finally {
+      await seeder.end();
+    }
+
+    const { rows } = await admin.query<{ slug: string; provider: string }>(
+      "SELECT slug, identity_provider AS provider FROM projects WHERE slug = 'medice'",
+    );
+    expect(rows[0]?.slug).toBe("medice");
+    // Local sign-in, which is what makes it a path on the portal at all.
+    expect(rows[0]?.provider).toBe("local");
   }, 60_000);
 
   it("never reveals the answer key on an accredited course", async () => {
