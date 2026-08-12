@@ -202,6 +202,27 @@ for name in "${compose_bare[@]}"; do
   fi
 done
 
+# ---------------------------------------------------------------------------
+# The console's CSP names the object storage bucket (P67-01)
+# ---------------------------------------------------------------------------
+#
+# Deriving `S3_ORIGIN` and passing it to Caddy is worth nothing if the policy
+# does not name it, and nothing above can tell: the reference check verifies
+# that every `{$VAR}` the Caddyfile *uses* is provided, which stays green when a
+# placeholder is deleted.
+#
+# So this asserts the direction that actually broke. A course video goes from
+# the browser straight to the bucket with a presigned PUT (P23-01); without this
+# origin the browser blocks it before a byte moves, nothing reaches a server,
+# and the only evidence is a line in the operator's console. Reported as "the
+# video upload to s3 does not even work".
+if ! grep -q "connect-src 'self' {\$API_DOMAIN_URL} {\$S3_ORIGIN}" Caddyfile; then
+  failed=$((failed + 1))
+  printf 'xx the admin CSP does not name {$S3_ORIGIN} in connect-src.\n' >&2
+  printf '   Every upload from the console is then blocked by the browser\n' >&2
+  printf '   before a request is made, with nothing in any server log.\n\n' >&2
+fi
+
 if [[ "$failed" == "0" ]]; then
   printf '\n%s shell + %s compose references checked, all guaranteed\n' \
     "${#referenced[@]}" "${#compose_bare[@]}"

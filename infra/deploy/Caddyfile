@@ -99,7 +99,18 @@ import /etc/caddy/sites/*.caddy
 	# platform's own staff plane (ADR-0012, P12-06) and never calls a realm, so
 	# listing one would be a permission granted to a request that is not made —
 	# and the first person to reuse this policy elsewhere would inherit it.
-	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' {$API_DOMAIN_URL}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+	#
+	# It *does* name the object storage bucket, because a course video is
+	# uploaded by the browser straight to it with a presigned PUT the API mints
+	# (P23-01, P67-01). The API never sees the bytes, which is the point — 2 GB
+	# through a Node process is a Node process falling over. Without this origin
+	# every upload is blocked before a byte moves, and the only evidence is a
+	# console message in the operator's browser.
+	#
+	# `S3_ORIGIN` is derived from `S3_ENDPOINT` by domains.sh, and empty when no
+	# bucket is configured — which collapses the directive back to what it was
+	# and is correct: no bucket, no uploads.
+	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' {$API_DOMAIN_URL} {$S3_ORIGIN}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 	reverse_proxy admin:80
 }

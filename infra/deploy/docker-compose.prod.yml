@@ -96,6 +96,12 @@ services:
       # longer reach the API at all — a failure that looks like the API being
       # down and is actually a header.
       API_DOMAIN_URL: ${API_DOMAIN_URL}
+      # The object storage origin, for the console's CSP connect-src. A course
+      # video goes from the browser straight to the bucket with a presigned PUT
+      # (P23-01), so the browser opens a connection to a host that is not ours.
+      # Derived from S3_ENDPOINT by domains.sh; empty when no bucket is
+      # configured.
+      S3_ORIGIN: ${S3_ORIGIN:-}
       # The portal's CSP connect-src. Derived from KEYCLOAK_ISSUER by
       # domains.sh — the origin of the realm the portal signs learners in
       # against — rather than being a second place to write the same host.
