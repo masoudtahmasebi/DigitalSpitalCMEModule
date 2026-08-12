@@ -165,9 +165,10 @@ if [[ "${1:-}" == "seed" ]]; then
   case "${1:-}" in
     default) seed_entrypoint=dist/seed-ds-default.js ;;
     ds) seed_entrypoint=dist/seed-ds.js ;;
+    ds-test) seed_entrypoint=dist/seed-ds-test.js ;;
     medice) seed_entrypoint=dist/seed-medice.js ;;
     *)
-      echo "usage: ./dsc seed {default|ds|medice} [--if-missing]" >&2
+      echo "usage: ./dsc seed {default|ds|ds-test|medice} [--if-missing]" >&2
       echo >&2
       echo "  default  DSCustomer — the one a deploy creates for itself" >&2
       echo "  ds       the DS test tenant, two demo courses" >&2

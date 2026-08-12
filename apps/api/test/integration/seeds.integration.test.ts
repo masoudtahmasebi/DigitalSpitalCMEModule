@@ -46,7 +46,7 @@ import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Pool } from "pg";
-import { seedDsDefault, seedDsDemo, seedMediceAdhs } from "@ds/seed";
+import { seedDsDefault, seedDsDemo, seedDsTest, seedMediceAdhs } from "@ds/seed";
 import { requireEnv } from "./support/env.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
@@ -61,6 +61,9 @@ const SEEDS: ReadonlyArray<[string, (pool: Pool) => Promise<string>]> = [
   ["ds-default", (pool) => seedDsDefault(pool, { revealPassword: false })],
   ["ds", seedDsDemo],
   ["medice", seedMediceAdhs],
+  // Returns credentials rather than a report — the caller is a test harness,
+  // not an operator reading stdout — so it is adapted to the shared shape here.
+  ["ds-test", async (pool: Pool) => JSON.stringify(await seedDsTest(pool))],
 ];
 
 /**
