@@ -29,6 +29,7 @@ import { configureApp } from "../../src/configure-app.js";
 import { loadConfig } from "../../src/config/config.js";
 import { seedLearner } from "./support/seed-learner.js";
 import { requireEnv } from "./support/env.js";
+import { publishAccredited } from "./support/accredited-course.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 
@@ -103,9 +104,14 @@ beforeAll(async () => {
   const courseId = await insert(
     `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
                           pass_threshold_percent, status)
-     VALUES ($1,$2,$3,$4,90,70,'published') RETURNING id`,
+     VALUES ($1,$2,$3,$4,90,70,'draft') RETURNING id`,
     [customerId, projectId, courseSlug, "ADHS Akademie adult"],
   );
+  // Furnished before publishing, because P13-01's first case PATCHes
+  // `cmePoints: 6` onto this course — which turns a published point-free course
+  // into a published CME course, and `courses_published_cme_is_complete` refuses
+  // that unless the accreditation fields are already there (P62-02).
+  await publishAccredited(seedPool, courseId);
 
   const { id: adminId } = await seedLearner(seedPool, {
     realm: issuer,

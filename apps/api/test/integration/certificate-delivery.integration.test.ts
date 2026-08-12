@@ -27,6 +27,7 @@ import { CertificateDeliveryService } from "../../src/modules/certificate/delive
 import { CertificateAttachments } from "../../src/modules/certificate/delivery.attachment.js";
 import { seedLearner } from "./support/seed-learner.js";
 import { requireEnv } from "./support/env.js";
+import { publishAccredited } from "./support/accredited-course.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 const DATABASE_URL = requireEnv("DATABASE_URL");
@@ -93,7 +94,7 @@ beforeAll(async () => {
                           stamp_image, stamp_image_mime,
                           signature_image, signature_image_mime, status)
      VALUES ($1,$2,$3,$4,100,70,$5,4,'D',$6,'online',$7,$8,'Prof. Dr. med.','Iserlohn',
-             $9,'image/png',$9,'image/png','published') RETURNING id`,
+             $9,'image/png',$9,'image/png','draft') RETURNING id`,
     [
       customerId,
       projectId,
@@ -106,6 +107,10 @@ beforeAll(async () => {
       PLACEHOLDER_IMAGE,
     ],
   );
+  // Draft-then-publish: `courses_published_cme_is_complete` refuses a published
+  // point-awarding course with no VNR password, which is the one field this
+  // fixture never set (P62-02). COALESCE leaves everything above untouched.
+  await publishAccredited(seedPool, courseId);
 
   // The same course without its certificate assets — an authoring gap, and the
   // one case where the e-mail must go out carrying nothing.

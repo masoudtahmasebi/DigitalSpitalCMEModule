@@ -75,7 +75,11 @@ const course: AdminCourseRow = {
   certificateIssuePlace: "Iserlohn",
   hasStampImage: true,
   hasSignatureImage: true,
-  hasVnrPassword: false,
+  // Complete, because it is published and awards points — P62-02 refuses that
+  // combination without a VNR password, and a fixture describing a course that
+  // could never have produced a Punktemeldung would make every case below
+  // assert against an impossible row.
+  hasVnrPassword: true,
   eivPunkteBasis: true,
   eivPunkteLernerfolg: true,
 };
@@ -146,6 +150,7 @@ function build(
 
   const repository: AdminRepositoryPort = {
     listCourses: async () => [row],
+    listCourseMediaUrls: async () => [],
     findCourse: async (slug) => (slug === row.slug ? row : undefined),
     countEnrolments: async () => new Map([[row.id, { total: 1, completed: 0 }]]),
     updateCourse: async (_id, patch) => {
@@ -741,5 +746,101 @@ describe("the white-label font is decided by its bytes", () => {
 
     expect(error.kind).toBe("not_found");
     expect(fontPatches).toEqual([]);
+  });
+});
+
+/**
+ * The publish precondition (P62-02).
+ *
+ * The guarantee is a CHECK constraint and lives in migration 0042 — it covers
+ * the seeds and `psql`, neither of which passes through this service. What is
+ * asserted here is the half the constraint cannot do: **naming the fields to
+ * the person clicking Veröffentlichen**, before the write, in German.
+ *
+ * `publishBlockers` is the rule and is exhaustively tested in `@ds/domain`.
+ * These cases exist because a rule nothing calls is not a rule (CLAUDE.md
+ * §9.3), and because `afterPatch` — the translation from "row plus patch" to
+ * "the row as it will be" — is this service's own logic and is where the
+ * mistakes live.
+ */
+describe("publishing a course that awards CME points", () => {
+  const incomplete = { hasVnrPassword: false, status: "draft" as const };
+
+  it("refuses, and names what is missing in German", async () => {
+    const { service, patches } = build({ course: incomplete });
+
+    await expect(
+      service.updateCourse("adhs-akademie-adult", { status: "published" }, actor),
+    ).rejects.toThrow(/vnrPassword is unset/);
+
+    // And nothing was written: a refused publish must not half-apply the rest
+    // of the form.
+    expect(patches).toHaveLength(0);
+  });
+
+  it("puts the German field name in the message the author reads", async () => {
+    const { service } = build({ course: incomplete });
+
+    await service
+      .updateCourse("adhs-akademie-adult", { status: "published" }, actor)
+      .then(
+        () => expect.fail("expected a refusal"),
+        (error: unknown) => {
+          // `clientDetail` is the one that reaches a screen; `reason` is for
+          // the log and names the field in English.
+          expect(String((error as { clientDetail?: string }).clientDetail)).toContain(
+            "VNR-Passwort",
+          );
+        },
+      );
+  });
+
+  it("allows a request that supplies the missing field and publishes at once", async () => {
+    /*
+     * The case that makes `afterPatch` necessary rather than decorative.
+     *
+     * An author filling in the last field and pressing Veröffentlichen sends
+     * both in one request. Checking the *stored* row would refuse exactly the
+     * request that fixes the problem — the rule has to be asked about the
+     * target state.
+     */
+    const { service, patches } = build({ course: incomplete });
+
+    await service.updateCourse(
+      "adhs-akademie-adult",
+      { status: "published", vnrPassword: "s3cret" },
+      actor,
+    );
+
+    expect(patches[0]?.status).toBe("published");
+  });
+
+  it("does not refuse a course that awards no points", async () => {
+    // No certificate and no Meldung, so nothing to be incomplete for.
+    const { service, patches } = build({
+      course: { ...incomplete, cmePoints: null, vnr: null },
+    });
+
+    await service.updateCourse("adhs-akademie-adult", { status: "published" }, actor);
+    expect(patches[0]?.status).toBe("published");
+  });
+
+  it("does not refuse an edit that leaves the course a draft", async () => {
+    // Half-authored is the normal state of a course being written, and an
+    // author who cannot save a draft cannot author.
+    const { service, patches } = build({ course: incomplete });
+
+    await service.updateCourse("adhs-akademie-adult", { title: "Neuer Titel" }, actor);
+    expect(patches[0]?.title).toBe("Neuer Titel");
+  });
+
+  it("refuses an edit that clears a field on an already published course", async () => {
+    // Publishing is not the only transition that can break the invariant, and
+    // this is the case a publish-time-only guard would miss.
+    const { service } = build();
+
+    await expect(
+      service.updateCourse("adhs-akademie-adult", { organizer: null }, actor),
+    ).rejects.toThrow(/organizer is unset/);
   });
 });

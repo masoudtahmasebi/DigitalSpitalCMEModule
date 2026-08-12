@@ -15,17 +15,20 @@
  * the rollup input is identical — only the fetch is batched.
  */
 
-import { count, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../../db/tenant-db.js";
 import {
   auditLog,
   certificates,
+  chapters,
   contentProgress,
+  contents,
   courses,
   efnProfiles,
   eivSubmissions,
   enrolments,
   evaluationResponses,
+  modules,
   projects,
   users,
 } from "../../db/schema.js";
@@ -139,6 +142,8 @@ export interface ProjectFontPatch {
 }
 
 export interface AdminRepositoryPort {
+  /** Every media URL on a course, in playing order (P62-03). */
+  listCourseMediaUrls(courseId: string): Promise<string[]>;
   listCourses(): Promise<AdminCourseRow[]>;
   findCourse(slug: string): Promise<AdminCourseRow | undefined>;
   countEnrolments(
@@ -257,6 +262,34 @@ const PROJECT_FONT_COLUMNS = {
 
 export class AdminRepository implements AdminRepositoryPort {
   constructor(private readonly db: Db) {}
+
+  /**
+   * Every media URL on a course, in playing order (P62-03).
+   *
+   * Ordered by module, chapter and content so the report an operator reads
+   * follows the course rather than the physical row order. Inside the tenant
+   * transaction like every other read here, so a slug from another customer
+   * simply yields nothing (CLAUDE.md §9.6).
+   */
+  async listCourseMediaUrls(courseId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ sources: contents.mediaSources })
+      .from(contents)
+      .innerJoin(chapters, eq(chapters.id, contents.chapterId))
+      .innerJoin(modules, eq(modules.id, chapters.moduleId))
+      .where(and(eq(modules.courseId, courseId), eq(contents.kind, "video")))
+      .orderBy(modules.ordinal, chapters.ordinal, contents.ordinal);
+
+    const urls: string[] = [];
+    for (const row of rows) {
+      if (!Array.isArray(row.sources)) continue;
+      for (const source of row.sources) {
+        const url = (source as { url?: unknown }).url;
+        if (typeof url === "string" && url !== "") urls.push(url);
+      }
+    }
+    return urls;
+  }
 
   async listCourses(): Promise<AdminCourseRow[]> {
     return this.db.select(COURSE_COLUMNS).from(courses).orderBy(courses.title);

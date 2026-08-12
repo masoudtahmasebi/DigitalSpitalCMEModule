@@ -58,6 +58,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WatchedSegment } from "@ds/domain";
 import type { ApiClient, LessonContent } from "@ds/sdk";
+import { isSessionExpired } from "../session.js";
 import { de } from "../locale/de.js";
 import { coalesce, WatchTracker } from "../watch-tracker.js";
 import { VideoPlayer, type PlaybackState } from "./VideoPlayer.js";
@@ -72,6 +73,8 @@ export function LessonScreen(props: {
   courseSlug: string;
   lesson: LessonContent;
   onProgress: () => void;
+  /** The session ended and no flush will succeed again (P62-05). */
+  onAuthLost: () => void;
   /** Set true by the chrome's **Fortbildung pausieren**. */
   paused: boolean;
   onPlayback: (state: PlaybackState) => void;
@@ -84,6 +87,7 @@ export function LessonScreen(props: {
       courseSlug={courseSlug}
       lesson={lesson}
       onProgress={onProgress}
+      onAuthLost={props.onAuthLost}
       paused={props.paused}
       onPlayback={props.onPlayback}
     />
@@ -97,13 +101,15 @@ function VideoLesson(props: {
   courseSlug: string;
   lesson: LessonContent;
   onProgress: () => void;
+  /** The session ended and no flush will succeed again (P62-05). */
+  onAuthLost: () => void;
   paused: boolean;
   onPlayback: (state: PlaybackState) => void;
 }) {
   const trackerRef = useRef(new WatchTracker());
   const positionRef = useRef(props.lesson.lastPositionSec);
 
-  const { client, courseSlug, lesson, onProgress } = props;
+  const { client, courseSlug, lesson, onProgress, onAuthLost } = props;
 
   // All three are the server's, replaced on every response — never adjusted
   // locally. The ceiling is here rather than derived from `covered` so that the
@@ -149,14 +155,27 @@ function VideoLesson(props: {
       // the limit, so the limit comes from the same answer as the union.
       setSeekCeilingSec(result.seekCeilingSec);
       onProgress();
-    } catch {
-      // Deliberately silent. A failed heartbeat is not something a learner can
-      // act on, and an error banner mid-video would alarm them about a request
-      // the next flush retries anyway. The intervals are lost, not the watch:
-      // the server recomputes the union from everything ever reported, so a
-      // learner who keeps watching still converges on the true percentage.
+    } catch (error) {
+      /*
+       * Silent for a transient failure, loud for an expired session (P62-05).
+       *
+       * The original reasoning still holds for a network blip: a learner
+       * cannot act on it, the next flush retries, and the server recomputes
+       * the union from everything ever reported, so watching on converges on
+       * the truth.
+       *
+       * **A 401 breaks every step of that.** The SDK has already spent its one
+       * refresh attempt (P5-02), so this one is unrecoverable; the next flush
+       * fails identically, and it does so for as long as the learner keeps
+       * watching. QA measured it: a 60-second token, a module playing on, and
+       * every flush from expiry onwards refused — while the screen still said
+       * "Ihr Fortschritt wird automatisch gespeichert". Twenty-five minutes of
+       * a physician's evening, credited as nothing, with a reassurance on
+       * screen the whole time.
+       */
+      if (isSessionExpired(error)) onAuthLost();
     }
-  }, [client, courseSlug, lesson.id, onProgress]);
+  }, [client, courseSlug, lesson.id, onProgress, onAuthLost]);
 
   useEffect(() => {
     const timer = setInterval(() => void flush(), FLUSH_INTERVAL_MS);

@@ -356,3 +356,68 @@ describe("a customer somebody already created under this slug", () => {
     expect(rows[0]?.id).toBe(CUSTOMER_ID);
   });
 });
+
+/**
+ * The invariant every seed has to respect (P62-02).
+ *
+ * `courses_published_cme_is_complete` is a CHECK, so a seed that violated it
+ * would fail loudly. This asserts the *product* property rather than the
+ * constraint's existence: **no seeded course is published, awards CME points
+ * and missing something the certificate or the Punktemeldung reads.**
+ *
+ * It is here rather than in `scripts/` because the question needs a database
+ * with the seeds actually run — which is precisely CLAUDE.md §9.9's point. Two
+ * courses on the QA installation failed this and were demoted by migration
+ * 0042; without an assertion the next seed to add one would go unnoticed until
+ * a physician finished it.
+ */
+describe("what the seeds leave publishable", () => {
+  it("publishes no CME course that could not produce a certificate", async () => {
+    const { rows } = await admin.query<{ slug: string; missing: string }>(`
+      SELECT slug,
+             concat_ws(', ',
+               CASE WHEN vnr IS NULL OR btrim(vnr) = '' THEN 'vnr' END,
+               CASE WHEN vnr_password_enc IS NULL THEN 'vnrPassword' END,
+               CASE WHEN cme_category IS NULL OR btrim(cme_category) = '' THEN 'cmeCategory' END,
+               CASE WHEN accreditation_body IS NULL OR btrim(accreditation_body) = '' THEN 'accreditationBody' END,
+               CASE WHEN organizer IS NULL OR btrim(organizer) = '' THEN 'organizer' END,
+               CASE WHEN event_location IS NULL OR btrim(event_location) = '' THEN 'eventLocation' END,
+               CASE WHEN scientific_lead_name IS NULL OR btrim(scientific_lead_name) = '' THEN 'scientificLeadName' END,
+               CASE WHEN certificate_issue_place IS NULL OR btrim(certificate_issue_place) = '' THEN 'certificateIssuePlace' END,
+               CASE WHEN stamp_image IS NULL THEN 'stampImage' END,
+               CASE WHEN signature_image IS NULL THEN 'signatureImage' END
+             ) AS missing
+        FROM courses
+       WHERE status = 'published' AND cme_points IS NOT NULL AND cme_points > 0
+    `);
+
+    const broken = rows.filter((row) => row.missing !== "");
+    // Named, not counted: "1 course is incomplete" sends somebody looking.
+    expect(broken.map((row) => `${row.slug}: ${row.missing}`)).toEqual([]);
+  });
+
+  it("refuses such a course at the database, whatever writes it", async () => {
+    /*
+     * The guarantee, exercised on the connection that bypasses every service:
+     * a superuser writing directly, which is what a seed, a migration and an
+     * operator with `psql` all are. The row is built here rather than borrowed
+     * from the seed so the case does not depend on what a previous `describe`
+     * left behind.
+     */
+    const { rows } = await admin.query<{ id: string; customer_id: string }>(
+      "SELECT id, customer_id FROM projects LIMIT 1",
+    );
+    const project = rows[0];
+    expect(project).toBeDefined();
+
+    await expect(
+      admin.query(
+        `INSERT INTO courses (customer_id, project_id, slug, title,
+                              required_watch_percent, pass_threshold_percent,
+                              cme_points, status)
+         VALUES ($1,$2,$3,$4,100,70,4,'published')`,
+        [project!.customer_id, project!.id, `p62-broken-${Date.now()}`, "Unvollständig"],
+      ),
+    ).rejects.toThrow(/courses_published_cme_is_complete/);
+  });
+});

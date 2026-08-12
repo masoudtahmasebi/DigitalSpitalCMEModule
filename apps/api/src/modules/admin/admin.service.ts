@@ -29,13 +29,17 @@
  */
 
 import {
+  describePublishBlockers,
   invalidAvailabilityWindow,
   missingCertificateFields,
+  publishBlockers,
   sniffFontFormat,
   type CertificateField,
   type FontRejection,
+  type PublishCandidate,
 } from "@ds/domain";
 import { AppError } from "../../shared/problem-details.js";
+import { MediaCheckService, type MediaCheckResult } from "./media-check.service.js";
 import type { Db } from "../../db/tenant-db.js";
 import type { SecretCipher } from "../../shared/secret-cipher.js";
 import {
@@ -90,6 +94,8 @@ export class AdminService {
     private readonly repository: AdminRepositoryPort,
     private readonly learning: LearningRepositoryPort,
     private readonly cipher: SecretCipher,
+    /** Injected so the media probe can be exercised without a network (P62-03). */
+    private readonly mediaCheck: MediaCheckService = new MediaCheckService(),
   ) {}
 
   static fromDb(db: Db, cipher: SecretCipher): AdminService {
@@ -252,6 +258,33 @@ export class AdminService {
       patch.vnrPasswordEnc = this.cipher.encrypt(update.vnrPassword);
     }
 
+    /*
+     * The publish precondition (P62-02).
+     *
+     * Run against the row **as it will be after this patch**, not as it is:
+     * one request can both fill in the VNR and publish, and checking the
+     * stored row would refuse that. `publishBlockers` is asked about the
+     * target state, which is why it takes a status rather than inferring one.
+     *
+     * This is not the guarantee — `courses_published_cme_is_complete` is, and
+     * it covers the seeds, a migration and an operator with `psql`, none of
+     * which pass through here. This exists so the person clicking
+     * Veröffentlichen gets the list of fields instead of a constraint name in
+     * a 500 (CLAUDE.md §9.4).
+     */
+    const blockers = publishBlockers(afterPatch(row, patch));
+    if (blockers.length > 0) {
+      throw new AppError(
+        "conflict",
+        `refused: course=${slug} awards CME points and cannot be published while ` +
+          `${blockers.join(", ")} ${blockers.length === 1 ? "is" : "are"} unset`,
+        `Diese Fortbildung vergibt CME-Punkte und kann noch nicht veröffentlicht ` +
+          `werden. Es fehlt: ${describePublishBlockers(blockers)}. Ohne diese ` +
+          `Angaben lässt sich weder eine Teilnahmebescheinigung erstellen noch ` +
+          `eine Punktemeldung an die Ärztekammer senden.`,
+      );
+    }
+
     await this.repository.updateCourse(row.id, patch);
 
     await this.repository.audit({
@@ -284,6 +317,19 @@ export class AdminService {
    * which is a worse place to discover it — and the whole point of restricting
    * to PNG and JPEG is that neither is executable.
    */
+  /**
+   * Ask this course's media host whether a browser could seek (P62-03).
+   *
+   * The caller `MediaCheckService` exists for. Reporting only — it refuses no
+   * publish, because a host can be healthy at publish time and wedged an hour
+   * later, and a gate that implied otherwise would be a promise nothing keeps.
+   */
+  async checkCourseMedia(slug: string): Promise<readonly MediaCheckResult[]> {
+    const row = await this.requireCourse(slug);
+    const urls = await this.repository.listCourseMediaUrls(row.id);
+    return this.mediaCheck.check(urls);
+  }
+
   async setCertificateAssets(
     slug: string,
     upload: CertificateAssetUpload,
@@ -767,5 +813,58 @@ function presentationOf(row: {
     // date input from it, which needs a string it can slice.
     validFrom: row.validFrom?.toISOString() ?? null,
     validTo: row.validTo?.toISOString() ?? null,
+  };
+}
+
+/**
+ * The course as it will be once this patch lands (P62-02).
+ *
+ * `publishBlockers` has to be asked about the **target** state, because one
+ * request can legitimately supply the VNR and publish in the same call —
+ * checking the stored row would refuse exactly the request that fixes the
+ * problem.
+ *
+ * `??` rather than `undefined` checks throughout: `CoursePatch` uses
+ * `undefined` for "not in this request" and `null` for "clear it", and the two
+ * must not be conflated. A cleared field is a missing field.
+ */
+function afterPatch(row: AdminCourseRow, patch: CoursePatch): PublishCandidate {
+  const pick = <K extends string>(
+    key: K,
+    patched: string | null | undefined,
+    current: string | null,
+  ): string | null => (patched === undefined ? current : patched);
+
+  return {
+    status: patch.status ?? row.status,
+    cmePoints: patch.cmePoints === undefined ? row.cmePoints : patch.cmePoints,
+    vnr: pick("vnr", patch.vnr, row.vnr),
+    // A patch that sets the password can only set it — there is no "clear the
+    // VNR password" on this form — so the flag is true if it was true or is
+    // being written now.
+    hasVnrPassword: row.hasVnrPassword || patch.vnrPasswordEnc !== undefined,
+    cmeCategory: pick("cmeCategory", patch.cmeCategory, row.cmeCategory),
+    accreditationBody: pick(
+      "accreditationBody",
+      patch.accreditationBody,
+      row.accreditationBody,
+    ),
+    organizer: pick("organizer", patch.organizer, row.organizer),
+    eventLocation: pick("eventLocation", patch.eventLocation, row.eventLocation),
+    scientificLeadName: pick(
+      "scientificLeadName",
+      patch.scientificLeadName,
+      row.scientificLeadName,
+    ),
+    certificateIssuePlace: pick(
+      "certificateIssuePlace",
+      patch.certificateIssuePlace,
+      row.certificateIssuePlace,
+    ),
+    // The signing assets are not on this form — they arrive through
+    // `PUT /admin/courses/{slug}/certificate-assets`, which has its own guard.
+    // Reading the stored flags here is therefore correct rather than lazy.
+    hasStampImage: row.hasStampImage,
+    hasSignatureImage: row.hasSignatureImage,
   };
 }

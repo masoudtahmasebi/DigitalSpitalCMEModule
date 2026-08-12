@@ -222,6 +222,23 @@ describe("the progress panel", () => {
     expect(screen.getByText("Ihr Fortschritt wird automatisch gespeichert")).toBeTruthy();
   });
 
+  /*
+   * P62-05's assertion deliberately does **not** live here, and the absence is
+   * written down rather than left to be discovered.
+   *
+   * When the session lapses this line is replaced by "Ihre Sitzung ist
+   * abgelaufen …". Driving that from a test needs a real flush, which needs the
+   * element to have ticked while playing — and jsdom has no media pipeline:
+   * `paused`, `currentTime` and `seeking` are inert, the watch tracker never
+   * records an interval, and the flush returns before it can fail. Stubbing
+   * enough of the element to get past that would be a test of the stubs.
+   *
+   * So the decision is unit-tested where it is pure — `isSessionExpired` in
+   * `src/session.test.ts`, including every status that must *not* trigger it —
+   * and the wiring from a 401 to the sentence was verified in a real browser
+   * across a real token expiry. That run is in docs/backlog/P62.md.
+   */
+
   it("omits the timeline for a lesson that has none", () => {
     renderPlayer({
       lesson: lesson({ kind: "text", sources: [], durationSec: null, id: "v3" }),

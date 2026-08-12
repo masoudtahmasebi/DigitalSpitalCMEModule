@@ -24,6 +24,7 @@ import { configureApp } from "../../src/configure-app.js";
 import { loadConfig } from "../../src/config/config.js";
 import { seedLearner } from "./support/seed-learner.js";
 import { requireEnv } from "./support/env.js";
+import { publishAccredited } from "./support/accredited-course.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 
@@ -99,9 +100,12 @@ beforeAll(async () => {
     // 4 CME points, which is what makes the EFN a condition of completion: a
     // course awarding none reports nothing to EIV-FOBI and so needs no EFN.
     `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent, cme_points, status)
-     VALUES ($1,$2,$3,$4,100,70,4,'published') RETURNING id`,
+     VALUES ($1,$2,$3,$4,100,70,4,'draft') RETURNING id`,
     [customerId, projectId, courseSlug, "Learning flow course"],
   );
+  // Draft first, then furnished and published: a course awarding points cannot
+  // be `published` and missing its VNR, stamp or signature (P62-02).
+  await publishAccredited(seedPool, courseId);
 
   // Module 1 → chapter 1 → video (600 s); module 2 → chapter 2 → video (400 s) + quiz.
   const module1 = await insert(

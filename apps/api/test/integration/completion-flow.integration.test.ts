@@ -29,6 +29,7 @@ import { loadConfig } from "../../src/config/config.js";
 import { seedLearner } from "./support/seed-learner.js";
 import { requireEnv } from "./support/env.js";
 import { backdateLearnerClock } from "./support/backdate.js";
+import { publishAccredited } from "./support/accredited-course.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 
@@ -119,7 +120,7 @@ beforeAll(async () => {
                           stamp_image, stamp_image_mime,
                           signature_image, signature_image_mime, status)
      VALUES ($1,$2,$3,$4,100,70,$5,4,'D',$6,'online',$7,$8,'Prof. Dr. med.','Iserlohn',
-             $9,'image/png',$9,'image/png','published') RETURNING id`,
+             $9,'image/png',$9,'image/png','draft') RETURNING id`,
     [
       customerId,
       projectId,
@@ -132,6 +133,11 @@ beforeAll(async () => {
       PLACEHOLDER_IMAGE,
     ],
   );
+  // Inserted as a draft and published here, because a point-awarding course
+  // cannot be `published` while any field the certificate or the Punktemeldung
+  // reads is unset (P62-02). The helper fills in only what is still null — the
+  // organiser and the lead above are this suite's, and stay.
+  await publishAccredited(seedPool, courseId);
 
   // One module, one chapter, one video then one quiz — the smallest course
   // that still exercises every gate.

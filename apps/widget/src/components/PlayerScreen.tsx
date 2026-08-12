@@ -82,6 +82,14 @@ export function PlayerScreen(props: {
     ended: false,
   });
   const [paused, setPaused] = useState(false);
+  /**
+   * The session lapsed and nothing more will be credited (P62-05).
+   *
+   * One-way: a 401 arrives after the SDK has already spent its single refresh
+   * attempt, so there is no state in which it goes back to false without a
+   * reload — which is exactly what the message asks for.
+   */
+  const [authLost, setAuthLost] = useState(false);
   const [tab, setTab] = useState<ContentTab>("summary");
 
   const here = locateContent(course, lesson.id);
@@ -137,11 +145,25 @@ export function PlayerScreen(props: {
           <p className="text-sm font-semibold text-brand-700">
             {de.player.courseProgress(state.progress.percent)}
           </p>
-          <p className="text-xs text-gray-500">{de.player.autosave}</p>
+          {/*
+            The autosave promise, or the truth (P62-05).
+
+            "Ihr Fortschritt wird automatisch gespeichert" is a promise, and
+            once the session has lapsed it is a false one that stays on screen
+            for as long as the physician keeps watching. QA measured a
+            60-second token against a module playing on: every flush from
+            expiry onwards refused, and this line never changed.
+          */}
+          {authLost ? (
+            <p className="text-xs font-semibold text-red-700">{de.player.sessionEnded}</p>
+          ) : (
+            <p className="text-xs text-gray-500">{de.player.autosave}</p>
+          )}
         </div>
       </section>
 
       <LessonScreen
+        onAuthLost={() => setAuthLost(true)}
         client={props.client}
         courseSlug={props.courseSlug}
         lesson={lesson}

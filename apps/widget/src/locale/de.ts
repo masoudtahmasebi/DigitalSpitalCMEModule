@@ -214,6 +214,17 @@ export const de = {
     courseProgress: (percent: number): string =>
       `${percent} % der Fortbildung absolviert`,
     autosave: "Ihr Fortschritt wird automatisch gespeichert",
+    /**
+     * When the promise above has stopped being true (P62-05).
+     *
+     * Three things, in the order a person needs them: what happened, what it
+     * costs, and what to do. "Sitzung abgelaufen" alone would be a status; a
+     * physician watching a 25-minute Fortbildung needs to know their time is
+     * no longer being counted, and that a reload fixes it.
+     */
+    sessionEnded:
+      "Ihre Sitzung ist abgelaufen — Ihr Fortschritt wird derzeit nicht gespeichert. " +
+      "Bitte laden Sie die Seite neu und melden Sie sich erneut an.",
     pause: "Fortbildung pausieren",
     back: "Zurück zur Übersicht",
 
@@ -293,6 +304,22 @@ export const de = {
      */
     seekLocked:
       "Vorspulen ist nicht möglich. Für die Fortbildungspunkte muss das Video vollständig angesehen werden.",
+    /**
+     * The *other* reason a seek does not happen (P62-03).
+     *
+     * A media host that does not answer `Range` with `206` leaves the browser
+     * unable to seek at all, and the playhead snaps back exactly as it does
+     * when the anti-skip gate refuses. Two causes, one symptom — and the
+     * sentence above is on screen, so a misconfigured server reads as a
+     * working feature and nobody investigates.
+     *
+     * So this says whose fault it is and what to do. "Nicht möglich" would
+     * have been true and useless; a learner told they may not skip ahead does
+     * not report a broken video server.
+     */
+    seekUnsupported:
+      "Dieses Video kann nicht gespult werden — der Videoserver unterstützt das nicht. " +
+      "Die Wiedergabe von vorn funktioniert weiterhin. Bitte melden Sie das dem Veranstalter.",
     /** The slider's value when the range is capped: "14:35 von 25:45, freigegeben bis 12:30". */
     seekValueLimited: (position: string, duration: string, limit: string): string =>
       `${position} von ${duration}, freigegeben bis ${limit}`,

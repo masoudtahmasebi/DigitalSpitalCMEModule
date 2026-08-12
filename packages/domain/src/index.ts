@@ -123,6 +123,13 @@ export { sniffFontFormat } from "./font-file.js";
 export type { FontFormat, FontRejection, FontSniffResult } from "./font-file.js";
 
 export {
+  awardsCmePoints,
+  describePublishBlockers,
+  publishBlockers,
+} from "./publishing.js";
+export type { PublishBlocker, PublishCandidate } from "./publishing.js";
+
+export {
   certificateArchiveKey,
   courseAssetKey,
   customerPrefix,
