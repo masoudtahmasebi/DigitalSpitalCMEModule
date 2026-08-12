@@ -169,7 +169,10 @@ async function handle(
     return;
   }
 
-  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
+  const url = new URL(
+    request.url ?? "/",
+    `http://${request.headers.host ?? "127.0.0.1"}`,
+  );
   const path = decodeURIComponent(url.pathname);
 
   if (!path.startsWith(`/${STORE_BUCKET}`)) {
@@ -207,7 +210,13 @@ async function handle(
       response.end();
       return;
     default:
-      refuse(response, cors, refusals, 501, `${request.method ?? "?"} is not implemented`);
+      refuse(
+        response,
+        cors,
+        refusals,
+        501,
+        `${request.method ?? "?"} is not implemented`,
+      );
   }
 }
 
@@ -247,7 +256,13 @@ async function put(
    */
   const declared = request.headers["content-length"];
   if (declared !== undefined && Number(declared) !== body.length) {
-    refuse(response, cors, refusals, 400, `${key}: declared ${declared}, got ${body.length}`);
+    refuse(
+      response,
+      cors,
+      refusals,
+      400,
+      `${key}: declared ${declared}, got ${body.length}`,
+    );
     return;
   }
 
@@ -255,7 +270,10 @@ async function put(
     body,
     contentType: String(request.headers["content-type"] ?? "application/octet-stream"),
   });
-  response.writeHead(200, { ...cors, etag: `"${createHash("md5").update(body).digest("hex")}"` });
+  response.writeHead(200, {
+    ...cors,
+    etag: `"${createHash("md5").update(body).digest("hex")}"`,
+  });
   response.end();
 }
 
@@ -300,7 +318,13 @@ function get(
   const from = range[1] === "" ? 0 : Number(range[1]);
   const to = range[2] === "" ? object.body.length - 1 : Number(range[2]);
   if (from > to || to >= object.body.length) {
-    refuse(response, cors, refusals, 416, `${key}: range ${from}-${to} of ${object.body.length}`);
+    refuse(
+      response,
+      cors,
+      refusals,
+      416,
+      `${key}: range ${from}-${to} of ${object.body.length}`,
+    );
     return;
   }
 
@@ -357,13 +381,20 @@ function verifySignature(request: IncomingMessage, url: URL, key: string): strin
   const credential = query.get("X-Amz-Credential");
   const expires = query.get("X-Amz-Expires");
   const signedHeaders = query.get("X-Amz-SignedHeaders");
-  if (amzDate === null || credential === null || expires === null || signedHeaders === null) {
+  if (
+    amzDate === null ||
+    credential === null ||
+    expires === null ||
+    signedHeaders === null
+  ) {
     return "the request is missing one of X-Amz-Date, -Credential, -Expires, -SignedHeaders";
   }
 
   const [accessKeyId, dateStamp, region] = credential.split("/");
-  if (accessKeyId !== STORE_ACCESS_KEY_ID) return `unknown access key ${String(accessKeyId)}`;
-  if (region !== STORE_REGION) return `signed for region ${String(region)}, not ${STORE_REGION}`;
+  if (accessKeyId !== STORE_ACCESS_KEY_ID)
+    return `unknown access key ${String(accessKeyId)}`;
+  if (region !== STORE_REGION)
+    return `signed for region ${String(region)}, not ${STORE_REGION}`;
 
   /*
    * The expiry, enforced.
@@ -419,7 +450,9 @@ function verifySignature(request: IncomingMessage, url: URL, key: string): strin
   for (const part of [String(dateStamp), STORE_REGION, "s3", "aws4_request"]) {
     signingKey = createHmac("sha256", signingKey).update(part, "utf8").digest();
   }
-  const expected = createHmac("sha256", signingKey).update(stringToSign, "utf8").digest("hex");
+  const expected = createHmac("sha256", signingKey)
+    .update(stringToSign, "utf8")
+    .digest("hex");
 
   const a = Buffer.from(expected, "utf8");
   const b = Buffer.from(presented, "utf8");

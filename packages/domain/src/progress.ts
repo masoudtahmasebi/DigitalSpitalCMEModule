@@ -99,9 +99,9 @@ export function rollupProgress(
 
       const chapterTotal = chapter.contents.length;
       chapters[chapter.id] = summarise(chapterCompleted, chapterTotal, () =>
-        chapter.contents.some(
-          (content) =>
-            (byContentId.get(content.id)?.status ?? "not_started") !== "not_started",
+        anyStartedIn(
+          byContentId,
+          chapter.contents.map((content) => content.id),
         ),
       );
 
@@ -110,10 +110,10 @@ export function rollupProgress(
     }
 
     modules[module.id] = summarise(moduleCompleted, moduleTotal, () =>
-      module.chapters.some((chapter) =>
-        chapter.contents.some(
-          (content) =>
-            (byContentId.get(content.id)?.status ?? "not_started") !== "not_started",
+      anyStartedIn(
+        byContentId,
+        module.chapters.flatMap((chapter) =>
+          chapter.contents.map((content) => content.id),
         ),
       ),
     );
@@ -122,10 +122,33 @@ export function rollupProgress(
     courseTotal += moduleTotal;
   }
 
-  const courseSummary = summarise(
-    courseCompleted,
-    courseTotal,
-    () => courseCompleted > 0,
+  /*
+   * "Started" means the same thing at every level (P68-02).
+   *
+   * It did not. Modules and chapters ask whether **any content** has left
+   * `not_started`; the course asked whether any content had been *completed* —
+   * so a physician who had watched half of a one-module course was reported as
+   * `not_started` by the course summary and `in_progress` by the module inside
+   * it, from the same rollup, in the same response.
+   *
+   * The visible consequence was small and exactly the kind of thing nobody
+   * files: the hero button said **Fortbildung starten** next to a panel saying
+   * "50 % der Videoinhalte angesehen". The rule underneath is not small —
+   * CLAUDE.md §4 invariant 6 is that there is one rollup path, and two levels
+   * of one rollup disagreeing about what a word means is that invariant being
+   * false inside a single function.
+   *
+   * One predicate now, passed to all three levels.
+   */
+  const courseSummary = summarise(courseCompleted, courseTotal, () =>
+    anyStartedIn(
+      byContentId,
+      course.modules.flatMap((module) =>
+        module.chapters.flatMap((chapter) =>
+          chapter.contents.map((content) => content.id),
+        ),
+      ),
+    ),
   );
 
   const moduleCompletion: ModuleCompletion = {
@@ -136,6 +159,21 @@ export function rollupProgress(
   };
 
   return { course: courseSummary, moduleCompletion, modules, chapters, contents };
+}
+
+/**
+ * Has anything in this subtree been touched?
+ *
+ * One implementation for the course, the module and the chapter — see the
+ * comment at the course summary for what three copies of it cost.
+ */
+function anyStartedIn(
+  byContentId: ReadonlyMap<string, ContentProgressRecord>,
+  contentIds: readonly string[],
+): boolean {
+  return contentIds.some(
+    (id) => (byContentId.get(id)?.status ?? "not_started") !== "not_started",
+  );
 }
 
 /**

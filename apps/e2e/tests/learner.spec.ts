@@ -79,6 +79,34 @@ test.describe("the seam between the portal and the widget", () => {
     expect(mounted.apiBase).not.toBe("");
   });
 
+  /**
+   * The root is still closed — the assertion that keeps `support/shadow.ts`
+   * honest (P68-02).
+   *
+   * The journey suite opens the widget's shadow root, for its own browser only,
+   * so it can click a play button and type a quiz answer. That is a harness
+   * affordance and not a product change — but it would become a product change
+   * the day somebody "fixed" `element.ts` to use an open root and nothing
+   * noticed, because every test that could have noticed is running with the
+   * patch installed.
+   *
+   * This test runs **without** it. `<ds-lms>` renders inside a customer's
+   * WordPress page, where an open root means that page's scripts and styles can
+   * reach into a physician's Fortbildung; the isolation is the feature.
+   */
+  test("keeps its shadow root closed to the page it is embedded in", async ({ page }) => {
+    const reachable = await page.evaluate(
+      () => document.querySelector("ds-lms")?.shadowRoot ?? null,
+    );
+
+    expect(
+      reachable,
+      "the widget's shadow root is reachable from the host page — the isolation " +
+        "<ds-lms> exists for is gone, and the journey suite's init script is no " +
+        "longer only a harness affordance",
+    ).toBeNull();
+  });
+
   test("the widget actually calls the API, with the session attached", async ({
     page,
   }) => {

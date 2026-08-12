@@ -102,12 +102,40 @@ export async function seedDsTest(pool: pg.Pool): Promise<DsTestCredentials> {
       [customerId, "default", "Testabteilung"],
     );
 
-    await seedPortalProject(pool, {
+    const projectId = await seedPortalProject(pool, {
       customerId,
       departmentId,
       slug: PORTAL_PROJECT_SLUG,
       name: "DS Test (Portal)",
     });
+
+    /*
+     * A privacy notice, so the consent box exists (P68-02).
+     *
+     * `CompletionScreen` draws the Einwilligung only when the project has both
+     * a notice and a version — with neither there is nothing to consent *to*,
+     * and claiming a consent nobody was shown would be worse than not asking.
+     * That is right, and it means a tenant without one never exercises the
+     * consent path at all.
+     *
+     * The Punktemeldung is an Art. 6(1)(a) transmission of a named physician's
+     * data to their Ärztekammer, and Art. 7(1) puts the burden of proving
+     * consent on us — so the checkbox and the `consent_document` it records are
+     * compliance machinery, not a form control. The journey suite has to be
+     * able to reach them, so this tenant carries a notice like a real one.
+     */
+    await pool.query(
+      `UPDATE projects
+          SET branding = branding || $2::jsonb, updated_at = now()
+        WHERE id = $1`,
+      [
+        projectId,
+        JSON.stringify({
+          privacyPolicyUrl: "https://digitalspital.com/datenschutz",
+          privacyPolicyVersion: "ds-test-1",
+        }),
+      ],
+    );
 
     /*
      * One operator, `customer_admin`, with a password.

@@ -54,6 +54,7 @@
     "db:dev:seed": "node scripts/devdb.mjs --keep",
     "test:integration:ci": "turbo run test:integration",
     "test:e2e": "node scripts/run-e2e.mjs",
+    "test:smoke": "node scripts/run-smoke.mjs",
     "check:roles": "node scripts/role-matrix.mjs",
     "check:rules": "node scripts/unused-rules.mjs",
     "check:sdk": "node scripts/check-sdk.mjs",

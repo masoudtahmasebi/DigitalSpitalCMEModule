@@ -66,6 +66,7 @@
  */
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { signInToConsole, menu } from "../support/console.js";
 import { openWidgetShadowRoots } from "../support/shadow.js";
@@ -146,6 +147,7 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       await signInToConsole(operator, {
         email: target.staffEmail,
         password: target.staffPassword,
+        baseUrl: target.admin,
       });
 
       /*
@@ -182,9 +184,9 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * "nur jetzt sichtbar" ever stops printing a usable credential, this
        * fails here rather than at a sign-in three acts later.
        */
-      await expect(
-        operator.getByText("Passwort – nur jetzt sichtbar"),
-      ).toBeVisible({ timeout: 15_000 });
+      await expect(operator.getByText("Passwort – nur jetzt sichtbar")).toBeVisible({
+        timeout: 15_000,
+      });
       const temporaryPassword = await readIssuedPassword(
         operator.locator("dl").filter({ hasText: "Passwort" }),
       );
@@ -196,9 +198,17 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       await operator.getByRole("button", { name: "Neue Fortbildung" }).first().click();
       await operator.getByRole("textbox", { name: "Titel" }).fill(COURSE);
 
+      /*
+       * The Kürzel the console derived, read off the screen rather than
+       * recomputed here — `slugify` expands the umlaut in "Fortbildung" and the
+       * API refuses anything else, so a broken derivation is a 422 an operator
+       * cannot act on.
+       */
       const courseSlug = await operator
         .getByRole("textbox", { name: "Kürzel" })
         .inputValue();
+      expect(courseSlug).toMatch(/^e2e-fortbildung-[a-z0-9]+$/u);
+
       await operator.getByRole("button", { name: "Fortbildung anlegen" }).click();
 
       // The editor opens on the structure tab, which is where the author's next
@@ -319,7 +329,9 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       // ===================================================================
       // Act 6 · The Evaluationsbogen, which the Bescheid requires
       // ===================================================================
-      await operator.getByRole("button", { name: "Evaluationsbogen", exact: true }).click();
+      await operator
+        .getByRole("button", { name: "Evaluationsbogen", exact: true })
+        .click();
       await operator.getByRole("button", { name: "Frage hinzufügen" }).click();
       await operator
         .locator('[id^="evaluation-"][id$="-prompt"]')
@@ -332,7 +344,9 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       // ===================================================================
       // Act 7 · Points and category — what the Anerkennungsbescheid says
       // ===================================================================
-      await operator.getByRole("button", { name: "Inhalte & Darstellung", exact: true }).click();
+      await operator
+        .getByRole("button", { name: "Inhalte & Darstellung", exact: true })
+        .click();
       await operator.getByLabel("CME-Punkte").fill("4");
       await operator.getByLabel("Kategorie").fill("D");
       await operator.getByRole("button", { name: "Speichern" }).click();
@@ -356,7 +370,9 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       // Stamp and signature, which the Bescheid requires on every certificate.
       // Uploaded rather than seeded, because the console's own asset path is
       // the one an operator uses and the one that can break.
-      await operator.locator("#asset-Stempel-der-wissenschaftlichen-Leitung").setInputFiles(STAMP);
+      await operator
+        .locator("#asset-Stempel-der-wissenschaftlichen-Leitung")
+        .setInputFiles(STAMP);
       await operator
         .locator("#asset-Unterschrift-der-wissenschaftlichen-Leitung")
         .setInputFiles(SIGNATURE);
@@ -376,7 +392,9 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        */
       await operator.getByRole("button", { name: "Veröffentlichen" }).click();
       await expect(
-        operator.getByText("Diese Fortbildung ist veröffentlicht und für Teilnehmende sichtbar."),
+        operator.getByText(
+          "Diese Fortbildung ist veröffentlicht und für Teilnehmende sichtbar.",
+        ),
       ).toBeVisible({ timeout: 20_000 });
 
       // ===================================================================
@@ -389,8 +407,13 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * a workaround, because the limiter has its own coverage in the API
        * suites and a browser test that has to stay under five is a test that
        * gets deleted the first time somebody adds a sixth.
+       *
+       * **Only on the local rig.** Against a deployment the limiter is that
+       * installation's, protecting real physicians' accounts, and a smoke test
+       * that reached in and cleared it would be changing the machine it exists
+       * to observe. This run signs in twice, which is under the limit.
        */
-      await forgetSignInAttempts();
+      if (target.kind === "local") await forgetSignInAttempts();
       await learner.goto(`${target.portal}/${target.tenant}`);
       await learner.getByLabel("E-Mail-Adresse").fill(LEARNER_EMAIL);
       await learner.getByLabel("Passwort").fill(temporaryPassword);
@@ -428,6 +451,195 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         learner.getByText(COURSE),
         "the published Fortbildung is not in the physician's catalogue",
       ).toBeVisible({ timeout: 30_000 });
+
+      await learner.getByRole("button", { name: "Zur Fortbildung" }).first().click();
+      await expect(learner.getByRole("heading", { name: COURSE })).toBeVisible({
+        timeout: 20_000,
+      });
+
+      /*
+       * Enrolling. This is the request that answered 403 in production for
+       * anybody with the console open in another tab (P66-01), and it is a POST
+       * from a page whose sibling tab holds a staff session — which is why this
+       * journey deliberately runs both people in one browser context.
+       */
+      // Two of them on the screen — the hero's and the sticky progress bar's,
+      // both the same action by design (the resume button scrolling off the top
+      // is what the sticky one exists for). The hero's is the one a physician
+      // reads first.
+      await learner.getByRole("button", { name: "Fortbildung starten" }).first().click();
+      const play = learner.getByRole("button", { name: "Abspielen" }).first();
+      await expect(play, "enrolment did not reach the player").toBeVisible({
+        timeout: 30_000,
+      });
+
+      // ===================================================================
+      // Act 11 · She watches, pauses, and the progress is really saved
+      // ===================================================================
+      const video = learner.locator("video").first();
+      await play.click();
+
+      /*
+       * Real playback, at 1×, on the clock.
+       *
+       * Nothing here fakes a `timeupdate` or posts a segment directly: the
+       * player plays, the tracker observes, and the API credits the union of
+       * what was actually watched. That is the whole reason the fixture is
+       * eight seconds long — see `fixtures/README.md`.
+       */
+      await expect
+        .poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime), {
+          message:
+            "the video never played — check the codec and the bucket's Range support",
+          timeout: 30_000,
+        })
+        .toBeGreaterThan(3);
+
+      await learner.getByRole("button", { name: "Pause", exact: true }).first().click();
+      await expect
+        .poll(() => video.evaluate((element: HTMLVideoElement) => element.paused))
+        .toBe(true);
+
+      /*
+       * And now the part a component test cannot see: the segments reaching the
+       * API. The widget flushes on its own fifteen-second cadence, so this
+       * waits for the product's own timing rather than forcing one — a flush
+       * this suite triggered would not be evidence that the flush happens.
+       *
+       * The percentage is the server's answer, not the client's belief: the
+       * player renders the union the API credited.
+       */
+      await expect(
+        learner.getByText(/[1-9]\d* % angesehen/u).first(),
+        "watched time never reached the API — nothing credited the segments",
+      ).toBeVisible({ timeout: 40_000 });
+
+      // ===================================================================
+      // Act 12 · It survives a reload — the assertion this exists for
+      // ===================================================================
+      await learner.reload();
+      await expect(
+        learner.getByText(/[1-9]\d* % der Videoinhalte angesehen/u),
+        "progress did not survive a reload",
+      ).toBeVisible({ timeout: 30_000 });
+
+      // Back into the lesson and on to the end of it.
+      await learner
+        .getByRole("button", { name: "Fortbildung fortsetzen" })
+        .first()
+        .click();
+      await learner.getByRole("button", { name: "Abspielen" }).first().click();
+      await expect
+        .poll(() => video.evaluate((element: HTMLVideoElement) => element.ended), {
+          message: "the video never reached its end",
+          timeout: 60_000,
+        })
+        .toBe(true);
+
+      /*
+       * The gate. `requiredWatchPercent` is at its real value, so this opens
+       * only because the whole eight seconds were genuinely watched — the
+       * button that replaces "Fortbildung pausieren" once the server agrees.
+       */
+      await expect(
+        learner.getByRole("button", { name: "Lernerfolgskontrolle beginnen" }),
+        "the watch gate never opened, after the video played to its end",
+      ).toBeVisible({ timeout: 60_000 });
+
+      // ===================================================================
+      // Act 13 · The Abschlussprüfung
+      // ===================================================================
+      await learner
+        .getByRole("button", { name: "Lernerfolgskontrolle beginnen" })
+        .click();
+      await learner.getByRole("button", { name: "Abschlussprüfung starten" }).click();
+
+      // One question, and the right answer is the first option — the one act 5
+      // marked "richtig".
+      await learner.getByRole("radio").first().check();
+      await learner.getByRole("button", { name: "Antworten absenden" }).click();
+
+      await expect(
+        learner.getByText("Abschlussprüfung bestanden!"),
+        "the quiz was not passed with the answer the operator marked correct",
+      ).toBeVisible({ timeout: 30_000 });
+
+      // ===================================================================
+      // Act 14 · Evaluation, EFN, and the Punktemeldung form
+      // ===================================================================
+      await learner.getByRole("button", { name: "CME-Punkte geltend machen" }).click();
+
+      // The Evaluationsbogen the Bescheid requires. One question, written in
+      // act 6 — its scale is a radio group.
+      await expect(learner.getByText("Wie bewerten Sie diese Fortbildung?")).toBeVisible({
+        timeout: 30_000,
+      });
+      /*
+       * `force`, and it is not papering over anything: the scale's radios are
+       * `sr-only` inputs inside their own labels, which is the right way to
+       * build a styled radio group — the input is the control, a keyboard user
+       * focuses it and presses space, and the label is what a mouse hits.
+       * Playwright refuses the click only because the label is on top.
+       */
+      await learner.getByRole("radio").last().check({ force: true });
+      await learner.getByRole("button", { name: "Evaluation absenden" }).click();
+
+      await expect(learner.getByText("Herzlichen Glückwunsch!")).toBeVisible({
+        timeout: 30_000,
+      });
+
+      await learner.getByLabel("Vorname").fill("Erika");
+      await learner.getByLabel("Nachname").fill(`Musterärztin ${RUN}`);
+      await learner.getByLabel("EFN-Nummer").fill(EFN);
+      /*
+       * The Einwilligung, which exists because the DS Test project carries a
+       * privacy notice (P68-01). The Punktemeldung sends a named physician's
+       * data to their Ärztekammer — an Art. 6(1)(a) consent whose proof is on
+       * us — so the box and the `consent_document` behind it are compliance
+       * machinery, and a tenant with no notice would never exercise them.
+       */
+      await learner.getByRole("checkbox").first().check({ force: true });
+      await learner.getByRole("button", { name: "Daten übermitteln" }).click();
+
+      /*
+       * Submitting takes her to Zertifizierung, where the three
+       * Voraussetzungen are now ticked and the Bescheinigung is offered. The
+       * banner is the server's verdict, not the form's: `courseComplete` comes
+       * back on the enrolment, so this asserts the API agreed rather than that
+       * a button was pressed.
+       */
+      await expect(
+        learner.getByText("Fortbildung abgeschlossen"),
+        "the completion form did not close the Fortbildung",
+      ).toBeVisible({ timeout: 30_000 });
+
+      // ===================================================================
+      // Act 15 · The Teilnahmebescheinigung, as a real PDF
+      // ===================================================================
+      /*
+       * The end of the journey and the only artefact the physician keeps. It is
+       * asserted as bytes rather than as a button that did not error: a
+       * renderer that fails on a missing stamp produces an empty download, and
+       * "the click worked" would have been green for it.
+       */
+      const download = await Promise.all([
+        learner.waitForEvent("download", { timeout: 60_000 }),
+        learner
+          .getByRole("button", { name: "Teilnahmebescheinigung herunterladen" })
+          .click(),
+      ]).then(([event]) => event);
+
+      const file = await download.path();
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- a path Playwright wrote in its own temp directory
+      const bytes = await readFile(file);
+      expect(
+        bytes.subarray(0, 5).toString("latin1"),
+        "the Teilnahmebescheinigung did not arrive as a PDF",
+      ).toBe("%PDF-");
+      // A one-page PDF with a stamp, a signature and two barcodes is tens of
+      // kilobytes. A few hundred bytes would be an error document with a
+      // header on it.
+      expect(bytes.length).toBeGreaterThan(2_000);
     } finally {
       await context.close();
     }

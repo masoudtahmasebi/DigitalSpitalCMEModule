@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { courseWatchCoverage } from "./coverage.js";
+import { watchedPercent } from "./watch.js";
 import type { CourseNode } from "./types.js";
 
 /** Two videos of deliberately unequal length, so weighting is observable. */
@@ -25,6 +26,57 @@ function course(): CourseNode {
     ],
   };
 }
+
+/**
+ * The course figure and the per-content figure are the same number (P68-02).
+ *
+ * They were not. `watchedPercent` snapped the union to the content's bounds
+ * with `BOUNDARY_TOLERANCE_SEC` — a `<video>` cannot report its own endpoints
+ * exactly — and this function summed raw seconds without it. One completed
+ * eight-second video was therefore 100 % on the player and 99 % at the gate,
+ * and `requiredWatchPercent` defaults to 100: the module showed complete, the
+ * quiz unlocked, and the Punktemeldung form said "Es fehlt noch: die
+ * vollständige Videowiedergabe" with nothing left to watch.
+ *
+ * The segment below is what a real browser reports for a video played from
+ * start to finish, taken from a run of the journey suite.
+ */
+describe("courseWatchCoverage agrees with watchedPercent", () => {
+  const oneVideo = {
+    id: "c",
+    modules: [
+      {
+        id: "m",
+        ordinal: 0,
+        chapters: [
+          {
+            id: "k",
+            ordinal: 0,
+            contents: [{ id: "v", kind: "video" as const, durationSec: 8 }],
+          },
+        ],
+      },
+    ],
+  };
+
+  it("credits a video watched end to end as fully watched, at both levels", () => {
+    const segments = [{ startSec: 0.010357, endSec: 8 }];
+
+    expect(watchedPercent(segments, 8)).toBe(100);
+    expect(courseWatchCoverage(oneVideo, [{ contentId: "v", segments }]).percent).toBe(
+      100,
+    );
+  });
+
+  it("still refuses a video that was genuinely not finished", () => {
+    const segments = [{ startSec: 0, endSec: 6 }];
+
+    expect(watchedPercent(segments, 8)).toBe(75);
+    expect(courseWatchCoverage(oneVideo, [{ contentId: "v", segments }]).percent).toBe(
+      75,
+    );
+  });
+});
 
 describe("courseWatchCoverage weights by duration", () => {
   it("reports 100 % when every video is fully covered", () => {

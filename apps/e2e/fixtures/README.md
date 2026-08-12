@@ -24,7 +24,7 @@ fire `timeupdate` — a silent failure that looks exactly like a broken player.
 VP8 in WebM is what this browser can actually play.
 
 That is also why `docs/qa/` §9 records the same finding: the MP4 the platform
-serves to physicians is correct, and is not the file to test the *harness* with.
+serves to physicians is correct, and is not the file to test the _harness_ with.
 
 ## Why the frames say what they say
 

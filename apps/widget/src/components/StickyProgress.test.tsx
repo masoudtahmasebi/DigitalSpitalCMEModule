@@ -70,16 +70,38 @@ describe("StickyProgress", () => {
     expect(reopened).toBe(document.activeElement);
   });
 
-  it("offers 'starten' before anything is done and 'fortsetzen' after", () => {
+  /**
+   * The label follows the server's `status`, not a completed count (P68-02).
+   *
+   * It followed `completedCount === 0`, and a physician who had watched half of
+   * the first module and come back the next evening was offered **Fortbildung
+   * starten** — an invitation to begin something they were in the middle of,
+   * beside a panel reading "50 % der Videoinhalte angesehen". The middle case
+   * below is the one that separates the two rules, and it is the ordinary one.
+   */
+  it("offers 'starten' only before anything is started", () => {
     const { rerender } = render(
       <StickyProgress
-        state={state({ progress: { completedCount: 0, totalCount: 11 } } as never)}
+        state={state({
+          progress: { status: "not_started", completedCount: 0, totalCount: 11 },
+        } as never)}
         onResume={() => undefined}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { expanded: false }));
     expect(screen.getByRole("button", { name: "Fortbildung starten" })).toBeTruthy();
+
+    // Started, nothing finished — the case the old rule got wrong.
+    rerender(
+      <StickyProgress
+        state={state({
+          progress: { status: "in_progress", completedCount: 0, totalCount: 11 },
+        } as never)}
+        onResume={() => undefined}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Fortbildung fortsetzen" })).toBeTruthy();
 
     rerender(<StickyProgress state={state()} onResume={() => undefined} />);
     expect(screen.getByRole("button", { name: "Fortbildung fortsetzen" })).toBeTruthy();

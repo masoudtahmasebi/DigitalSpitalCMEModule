@@ -21,7 +21,7 @@
  */
 
 import type { CourseNode } from "./types.js";
-import { watchedSeconds, type WatchedSegment } from "./watch.js";
+import { watchedSecondsWithin, type WatchedSegment } from "./watch.js";
 
 /** The stored segments for one piece of video content. */
 export interface ContentSegments {
@@ -61,9 +61,17 @@ export function courseWatchCoverage(
         }
 
         totalSec += duration;
-        // Capped: overlapping reports must never let one video contribute more
-        // than its own length and push overall coverage past 100 %.
-        watchedSec += Math.min(watchedSeconds(stored.get(content.id) ?? []), duration);
+        /*
+         * The **same** seconds the per-content percentage is built on.
+         *
+         * It used to be raw `watchedSeconds`, capped here. That cap is still
+         * applied — inside `watchedSecondsWithin` — but the endpoint tolerance
+         * was not, and its absence is what made this figure disagree with the
+         * one on the player. A learner who had watched a video from end to end
+         * was 100 % there and 99 % here, and 99 does not complete a course
+         * whose `requiredWatchPercent` is 100. See `watchedSecondsWithin`.
+         */
+        watchedSec += watchedSecondsWithin(stored.get(content.id) ?? [], duration);
       }
     }
   }

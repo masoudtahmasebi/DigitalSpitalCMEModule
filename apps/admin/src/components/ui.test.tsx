@@ -34,9 +34,7 @@ afterEach(cleanup);
 
 describe("a control with no visible label", () => {
   it("takes its accessible name from aria-label — TextInput", () => {
-    render(
-      <TextInput id="t" aria-label="URL" value="" onChange={() => undefined} />,
-    );
+    render(<TextInput id="t" aria-label="URL" value="" onChange={() => undefined} />);
 
     expect(screen.getByRole("textbox", { name: "URL" })).toBeDefined();
   });

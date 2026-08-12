@@ -245,6 +245,37 @@ export class AuthGuard implements CanActivate {
  * authentication paths cannot diverge on *authorization* even though they are
  * deliberately separate on authentication.
  */
+
+/**
+ * The participant plane's own routes, matched on the path.
+ *
+ * `request.path` is Express's parsed pathname, so a query string cannot smuggle
+ * a match and `//auth/participant` cannot dodge one. Anchored with the trailing
+ * slash so a future `/auth/participants-admin` is not swept in by accident.
+ */
+function participantPlanePath(request: Request): boolean {
+  return request.path.startsWith("/auth/participant/");
+}
+
+/**
+ * The staff plane's own surface: `/admin/**`, and nothing else.
+ *
+ * Checked rather than assumed — every call the console makes is under this
+ * prefix, including the sign-in and the session refresh (`/admin/auth/…`), and
+ * the widget and the portal call none of it.
+ */
+function staffPlanePath(request: Request): boolean {
+  return request.path.startsWith("/admin/");
+}
+
+/** A bearer token or the portal's session cookie — either one is a learner. */
+function hasLearnerCredential(request: Request): boolean {
+  return (
+    extractBearer(request.headers.authorization) !== undefined ||
+    readCookie(request.headers.cookie, PARTICIPANT_COOKIE) !== undefined
+  );
+}
+
 async function authenticateStaffPlane(
   deps: AuthGuardDeps,
   request: Request,
@@ -253,31 +284,57 @@ async function authenticateStaffPlane(
   if (service === undefined) return false;
 
   /*
-   * `X-DS-Project` means this is a participant-plane request (P68-02).
+   * `/auth/participant/*` belongs to the participant plane (P68-02).
    *
-   * The console never sends it — it scopes itself with `X-DS-Customer`, or with
-   * nothing at all on the platform screens. The portal and the widget send it
-   * on every call, because the project *is* how a learner request names its
-   * tenant. So the header is not a hint: it is the caller stating which plane
-   * it is on, and the staff plane has no business answering.
+   * Both apps talk to the same API host, so `ds_staff_session` rides along on
+   * every request the *portal* makes when an operator has the console open in
+   * another tab. CSRF is not checked on a GET, so `GET /auth/participant/me`
+   * — which is the portal's entire test for "am I signed in" — succeeded on a
+   * staff cookie, and the portal drew a **signed-in catalogue** for somebody
+   * who could not enrol in anything on it. P66-01 fixed the same collision for
+   * unsafe methods; this is the safe half, and it fails in the more misleading
+   * direction (CLAUDE.md §9.2).
    *
-   * Without this, an operator with the console open in another tab was
-   * *authenticated* on the portal. Both apps talk to the same API host, so
-   * `ds_staff_session` rides along on the portal's requests; CSRF is not
-   * checked on a GET, so `GET /auth/participant/me` succeeded and the portal —
-   * whose only test for "am I signed in" that is — drew a signed-in catalogue
-   * for somebody who could not enrol in anything on it. P66-01 fixed the same
-   * collision for unsafe methods; this is the safe half, and it fails in the
-   * more misleading direction.
+   * ## Why the path and not a header
    *
-   * Deferring rather than refusing, and before the session is resolved: a
-   * request that names a project is simply not this plane's, and the learner
-   * path below will accept or refuse it on its own terms.
+   * The obvious discriminator looks like `X-DS-Project`: the portal sends it on
+   * every call and the console scopes itself with `X-DS-Customer`. It is not
+   * one — `resolveStaffTenant` accepts `X-DS-Project` as a staff tenant scope,
+   * and `hierarchy.integration.test.ts` drives whole screens through it. Using
+   * it here would have 401'd a department administrator's console.
    *
-   * Adding the header to a genuine console request can only turn a success into
-   * a 401 — it grants nothing — so this cannot be turned into an escalation.
+   * The path is unambiguous and needs no client to cooperate: these four routes
+   * mint, read and end a *participant* session, and no staff caller has any
+   * business at them. `ParticipantAuthController` asserts the same rule on the
+   * principal it ends up with, which is defence in depth rather than a second
+   * implementation — this decides which plane authenticates, that one checks
+   * which plane did.
    */
-  if (typeof request.headers[PROJECT_HEADER] === "string") return false;
+  if (participantPlanePath(request)) return false;
+
+  /*
+   * Outside `/admin/**`, a learner credential wins (P68-02).
+   *
+   * The same collision, one layer out. A physician using the portal while an
+   * operator's console is open in another tab sends **both** cookies on every
+   * request, and the staff plane resolved first — so `GET /courses/…/contents/…`
+   * was answered for the *operator*, who holds no enrolment, and the widget
+   * showed "Diese Fortbildung wurde nicht gefunden" in the middle of a
+   * Fortbildung the learner was half way through.
+   *
+   * The rule that resolves it has to be about the request, not about the
+   * credential, because both planes legitimately use `X-DS-Project` as a tenant
+   * scope — `resolveStaffTenant` accepts it and `hierarchy.integration.test.ts`
+   * drives whole console screens through it, so keying on the header would have
+   * signed every department administrator out.
+   *
+   * The route namespace is the honest discriminator: every call the console
+   * makes is under `/admin/`, and the learner surface is everything else. So on
+   * the learner surface, a request that carries a learner credential is a
+   * learner's — and the staff plane keeps serving the same routes for a caller
+   * who has no learner credential at all, which is what it did before.
+   */
+  if (!staffPlanePath(request) && hasLearnerCredential(request)) return false;
 
   const result = await authenticateStaff({
     method: request.method,
@@ -311,11 +368,7 @@ async function authenticateStaffPlane(
      * meant and is refused exactly as before — so the protection is unchanged
      * for the requests it exists to protect.
      */
-    const hasLearnerCredential =
-      extractBearer(request.headers.authorization) !== undefined ||
-      readCookie(request.headers.cookie, PARTICIPANT_COOKIE) !== undefined;
-
-    if (result.reason === "csrf" && hasLearnerCredential) return false;
+    if (result.reason === "csrf" && hasLearnerCredential(request)) return false;
 
     await deps.audit.recordSystem({
       actor: SYSTEM_ACTOR,

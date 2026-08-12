@@ -33,16 +33,9 @@
  * to wonder whether the fix is even deployed.
  */
 
-import {
-  ADMIN_BASE,
-  API_BASE,
-  PORTAL_BASE,
-} from "./stack.js";
-import {
-  DS_TEST_STAFF_EMAIL,
-  DS_TEST_STAFF_PASSWORD,
-  DS_TEST_TENANT,
-} from "./world.js";
+import { stripTrailingSlashes } from "@ds/domain";
+import { ADMIN_BASE, API_BASE, PORTAL_BASE } from "./stack.js";
+import { DS_TEST_STAFF_EMAIL, DS_TEST_STAFF_PASSWORD, DS_TEST_TENANT } from "./world.js";
 
 export interface Target {
   readonly kind: "local" | "deployed";
@@ -67,7 +60,9 @@ export function currentTarget(): Target {
   const admin = process.env["E2E_ADMIN_URL"];
   const api = process.env["E2E_API_URL"];
 
-  const named = [portal, admin, api].filter((value) => value !== undefined && value !== "");
+  const named = [portal, admin, api].filter(
+    (value) => value !== undefined && value !== "",
+  );
   if (named.length === 0) {
     return {
       kind: "local",
@@ -107,8 +102,13 @@ export function currentTarget(): Target {
   };
 }
 
+/**
+ * `@ds/domain`'s, not a local regex: an anchored `/+$` backtracks quadratically
+ * and the lint rule that says so is right — a URL out of the environment is not
+ * bounded by construction.
+ */
 function trimSlash(url: string): string {
-  return url.replace(/\/+$/u, "");
+  return stripTrailingSlashes(url);
 }
 
 /**

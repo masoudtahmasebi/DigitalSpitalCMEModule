@@ -157,6 +157,43 @@ function snapToBounds(
 }
 
 /**
+ * Seconds covered, with the endpoint tolerance applied and capped at the
+ * content's own length.
+ *
+ * ## Why this exists rather than two callers doing it themselves
+ *
+ * It was two callers doing it themselves, and they disagreed (P68-02).
+ * `watchedPercent` snapped the union to the content's bounds before measuring;
+ * `courseWatchCoverage` summed raw `watchedSeconds` across the course and did
+ * not. So one physician's single completed video was **100 % per content and
+ * 99 % per course**, from the same stored segments, in the same response.
+ *
+ * The consequence was not cosmetic. `requiredWatchPercent` defaults to 100, and
+ * the course-level figure is what the completion gate compares against — so a
+ * learner who watched every frame saw the module marked complete, the
+ * Lernerfolgskontrolle unlocked, the player reporting 100 % angesehen, and then
+ * "Es fehlt noch: die vollständige Videowiedergabe" on the Punktemeldung form,
+ * with nothing left to watch. There was no way out of that state.
+ *
+ * `BOUNDARY_TOLERANCE_SEC` exists precisely because a `<video>` cannot report
+ * its own endpoints exactly; applying it in one place and not the other made
+ * the tolerance itself the source of the inconsistency. CLAUDE.md §4 invariant
+ * 6 — one rollup path — now holds for this number too.
+ */
+export function watchedSecondsWithin(
+  segments: readonly WatchedSegment[],
+  durationSec: number,
+): number {
+  if (!Number.isFinite(durationSec) || durationSec <= 0) return 0;
+
+  const merged = snapToBounds(mergeWatchedSegments(segments), durationSec);
+  return Math.min(
+    merged.reduce((total, s) => total + (s.endSec - s.startSec), 0),
+    durationSec,
+  );
+}
+
+/**
  * Integer percentage 0–100 of the content actually watched.
  *
  * Deliberately floors rather than rounds. At MEDICE's `requiredWatchPercent`
@@ -174,12 +211,7 @@ export function watchedPercent(
 ): number {
   if (!Number.isFinite(durationSec) || durationSec <= 0) return 0;
 
-  const merged = snapToBounds(mergeWatchedSegments(segments), durationSec);
-  const covered = Math.min(
-    merged.reduce((total, s) => total + (s.endSec - s.startSec), 0),
-    durationSec,
-  );
-  return Math.floor((covered / durationSec) * 100);
+  return Math.floor((watchedSecondsWithin(segments, durationSec) / durationSec) * 100);
 }
 
 /**

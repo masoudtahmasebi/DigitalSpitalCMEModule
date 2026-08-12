@@ -35,7 +35,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const CADDYFILE = fileURLToPath(new URL("../../../infra/deploy/Caddyfile", import.meta.url));
+const CADDYFILE = fileURLToPath(
+  new URL("../../../infra/deploy/Caddyfile", import.meta.url),
+);
 
 /**
  * The policy `{$ADMIN_DOMAIN}` or `{$PORTAL_DOMAIN}` serves, with placeholders
@@ -72,9 +74,12 @@ export function cspFromCaddyfile(
     );
   }
 
-  return header[1]!.replace(/\{\$([A-Z0-9_]+)\}/gu, (_, name: string) => values[name] ?? "")
-    // An expanded-to-nothing placeholder leaves a double space, which is legal
-    // in a policy but reads as a mistake in a failure message.
-    .replace(/\s{2,}/gu, " ")
-    .trim();
+  return (
+    header[1]!
+      .replace(/\{\$([A-Z0-9_]+)\}/gu, (_, name: string) => values[name] ?? "")
+      // An expanded-to-nothing placeholder leaves a double space, which is legal
+      // in a policy but reads as a mistake in a failure message.
+      .replace(/\s{2,}/gu, " ")
+      .trim()
+  );
 }
