@@ -148,6 +148,28 @@ export const de = {
     name: "Name",
     email: "E-Mail-Adresse",
     role: "Rolle",
+    /*
+     * Setting a password directly (P64-01).
+     *
+     * The hint is the load-bearing part: the form's behaviour changes with a
+     * field left empty, and until it said so the answer to "how do I create an
+     * account with a password" was not on the screen at all.
+     */
+    password: "Passwort (optional)",
+    passwordHint:
+      "Wird ein Passwort eingetragen, ist das Konto sofort nutzbar und es wird kein Einladungslink erzeugt. Bleibt das Feld leer, wird stattdessen eine Einladung erstellt. Mindestens 12 Zeichen; das Passwort darf die E-Mail-Adresse nicht enthalten.",
+    createWithPassword: "Konto mit Passwort anlegen",
+    createdTitle: "Konto angelegt",
+    createdBody: (email: string): string =>
+      `${email} kann sich ab sofort mit dem vergebenen Passwort anmelden. Es wurde kein Einladungslink erzeugt.`,
+
+    setPassword: "Passwort setzen",
+    setPasswordFor: (email: string): string => `Passwort für ${email} setzen`,
+    newPassword: "Neues Passwort",
+    newPasswordHint:
+      "Mindestens 12 Zeichen. Alle offenen Sitzungen und Einladungslinks dieses Kontos werden dabei ungültig.",
+    settingPassword: "Wird gesetzt …",
+
     roleHint: "Bestimmt, was dieses Konto anlegen und ändern darf.",
     roleCourseEditor: "Nur Fortbildungen",
     roleDepartmentAdmin: "Abteilung",

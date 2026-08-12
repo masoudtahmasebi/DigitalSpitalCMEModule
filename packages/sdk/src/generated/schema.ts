@@ -1184,13 +1184,58 @@ export interface paths {
         get: operations["adminListStaff"];
         put?: never;
         /**
-         * Invite an operator
-         * @description Creates the account with **no password** and returns a single-use token.
-         *     The token is returned rather than emailed; the operator passes the link
-         *     on. Until it is redeemed the account cannot sign in, so an un-redeemed
-         *     invitation is not a credential.
+         * Create an operator, with a password or with an invitation
+         * @description Two paths, chosen by whether `password` is present.
+         *
+         *     **With `password`** the account is usable immediately, no token is
+         *     minted, and `status` comes back as `created` with `token: null`. This is
+         *     the path for "make an account and hand somebody the password", which
+         *     needs no mail server and no invitee action.
+         *
+         *     **Without it** the account is created with no password at all and a
+         *     single-use invitation token is returned. Until that token is redeemed
+         *     the account cannot sign in, so an un-redeemed invitation is not a
+         *     credential. The token is returned rather than only emailed, so an
+         *     invitation is never lost because a mail server was down.
+         *
+         *     A password is checked against the same policy the invitee's own choice
+         *     goes through — an administrator cannot set a weaker password than the
+         *     person could — and a rejection is a 422 naming the rule.
          */
         post: operations["adminInviteStaff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/staff/{id}/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set or change an operator's password
+         * @description The administrative path, for "create an account and hand somebody the
+         *     password" and for "this operator is locked out". Self-service reset
+         *     covers neither: it needs a working sender and it needs the operator to
+         *     still be able to read the mailbox.
+         *
+         *     Permitted to exactly whoever may already change the account's scope —
+         *     being able to set a password is being able to act as the account, so it
+         *     must not reach further than being able to define it. A `customer_admin`
+         *     can set a password inside their own customer and cannot touch a
+         *     `super_admin`.
+         *
+         *     Setting a password revokes every session the account holds and every
+         *     outstanding invitation or reset link, so the new password is the only
+         *     way in.
+         */
+        post: operations["adminSetStaffPassword"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3270,6 +3315,12 @@ export interface components {
             /** Format: email */
             email: string;
             displayName: string;
+            /**
+             * @description Present to create the account with this password and no
+             *     invitation link; absent to invite. Never returned by any
+             *     endpoint.
+             */
+            password?: string;
         };
         /**
          * @description Carries no password hash and no TOTP secret — only whether a second
@@ -6856,13 +6907,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        status: string;
-                        token: string;
+                        /** @enum {string} */
+                        status: "invited" | "created";
+                        /**
+                         * @description The invitation token, or `null` when a password was set
+                         *     and there is no link to hand over.
+                         */
+                        token: string | null;
+                        /** @description Whether the invitation mail was sent. */
+                        delivered?: boolean;
                     };
                 };
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminSetStaffPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The operator account's id. */
+                id: components["parameters"]["StaffId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    password: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Set. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
         };
     };

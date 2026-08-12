@@ -40,6 +40,8 @@
  * refusal to touch a database it should not — see `openSeedPool`.
  */
 
+import { randomBytes } from "node:crypto";
+import { createSecretCipher } from "@ds/secrets";
 import type pg from "pg";
 import {
   enterTenant,
@@ -361,24 +363,10 @@ export async function seedDsDemo(pool: pg.Pool): Promise<string> {
       `  customer  ${CUSTOMER_SLUG}   (DigitalSpital, Testkunde)`,
       `  project   ${PROJECT_SLUG}   (Keycloak channel)`,
       `  project   ${PORTAL_PROJECT_SLUG}        (portal channel, local sign-in)`,
-      `  courses   ${CME_COURSE_SLUG}   3 CME-Punkte, ${String(QUESTION_COUNT)} Fragen — ENTWURF`,
-      `            ${FREE_COURSE_SLUG}   keine Punkte, keine VNR, kein Quiz — veröffentlicht`,
+      `  courses   ${CME_COURSE_SLUG}   3 CME-Punkte, ${String(QUESTION_COUNT)} Fragen`,
+      `            ${FREE_COURSE_SLUG}   keine Punkte, keine VNR, kein Quiz`,
       "",
-      `${CME_COURSE_SLUG} is a draft and will not appear in the catalogue.`,
-      "Two steps publish it, in this order:",
-      "",
-      "  1. Verwaltung → Fortbildungen → DS Demo – Fortbildung mit",
-      "     CME-Punkten → VNR-Passwort. Any value works for this tenant: the",
-      "     VNR is a dummy and the only endpoint it may reach is the local",
-      "     mock. The seed still does not set one, because a seeded credential",
-      "     that authenticates to nothing turns a refusal naming a field into",
-      "     a 401 from a remote system.",
-      "  2. Veröffentlichen, on the same screen.",
-      "",
-      "Step 2 refuses until step 1 is done, and names the field it is missing —",
-      `which is itself worth seeing once. ${FREE_COURSE_SLUG} needs neither`,
-      "step and is clickable now.",
-      "",
+      "Both courses are published and clickable now.",
       `Portal sign-in at /${PORTAL_PROJECT_SLUG}:`,
       `  E-Mail    ${PARTICIPANT_EMAIL}`,
       password.supplied
@@ -436,7 +424,8 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
        required_watch_percent, pass_threshold_percent, max_quiz_attempts,
        reveal_correct_answers, learning_objectives, target_audience,
        scientific_lead_name, scientific_lead_title, certificate_issue_place,
-       stamp_image, stamp_image_mime, signature_image, signature_image_mime
+       stamp_image, stamp_image_mime, signature_image, signature_image_mime,
+       vnr_password_enc
      ) VALUES (
        $1,$2,$3,$4,$5,'on_demand',$17,
        ARRAY['Demo'], ARRAY['Erwachsene'], $6, $7, $8, $9,
@@ -444,7 +433,8 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
        100, 70, NULL,
        $18, $12, $13,
        $14, $15, 'Münster',
-       $16, 'image/png', $16, 'image/png'
+       $16, 'image/png', $16, 'image/png',
+       $19
      )
      ON CONFLICT (project_id, slug) DO UPDATE SET
        title = EXCLUDED.title,
@@ -464,6 +454,9 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
        stamp_image_mime = EXCLUDED.stamp_image_mime,
        signature_image = EXCLUDED.signature_image,
        signature_image_mime = EXCLUDED.signature_image_mime,
+       -- Only when there is not one already: an operator who set the real
+       -- credential through the console must not have it replaced by a re-run.
+       vnr_password_enc = COALESCE(courses.vnr_password_enc, EXCLUDED.vnr_password_enc),
        -- status is deliberately absent: publishing is an operator decision and
        -- a re-run of the seed must not undo it. reveal_correct_answers above is
        -- not — it is a condition of the Anerkennung, so a re-run repairs a row
@@ -512,7 +505,7 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
        * published immediately, which is what keeps the demo tenant clickable
        * the moment the seed finishes.
        */
-      accredited ? "draft" : "published",
+      "published",
       /*
        * The answer key, refused on an accredited course since migration 0039
        * (P56-01): with unlimited retries, per-question feedback *is* the answer
@@ -524,8 +517,49 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
        * satisfied for one course and violated for the other.
        */
       !accredited,
+      // Only an accredited course has a Punktemeldung to authenticate, and the
+      // constraint only asks for one there.
+      accredited ? seededVnrPassword() : null,
     ],
   );
+}
+
+/**
+ * The VNR password a seed writes, so the course can be published (P64-02).
+ *
+ * ## Why a seed sets one at all
+ *
+ * `courses_published_cme_is_complete` refuses a published, point-awarding
+ * course whose `vnr_password_enc` is null. Leaving it null therefore meant the
+ * seeded course was a draft, the catalogue was empty, and `/medice` looked
+ * broken to everybody who opened it. A tenant nobody can look at is not a
+ * seeded tenant.
+ *
+ * ## Why that is safe, and where the real guard is
+ *
+ * This value authenticates nothing. It goes with the seeded VNR, which is a
+ * documented placeholder — `0000000000000000000` for MEDICE unless
+ * `SEED_MEDICE_VNR` overrides it, and a fictional Ärztekammer for the DS demo.
+ * A Punktemeldung carrying it would be refused by EIV-FOBI, and it cannot reach
+ * EIV-FOBI in the first place: the deploy refuses a live `EIV_BASE_URL` without
+ * `EIV_ALLOW_LIVE=yes` (ADR-0005). The credential that matters is the real one,
+ * and the real one is set through the console's write-only field, which
+ * overwrites this.
+ *
+ * ## Why it is random rather than a constant
+ *
+ * A constant in the repository is a credential in the repository — gitleaks is
+ * right to fail on those, and "it is only a placeholder" is how a real one
+ * eventually gets committed next to it. Nobody needs to read this value: the
+ * VNR password is used server-side only and is never returned by any API, so
+ * there is nothing to print and nothing to remember.
+ */
+function seededVnrPassword(): Buffer {
+  const cipher = createSecretCipher(
+    process.env["NODE_ENV"] ?? "development",
+    process.env["SECRETS_KMS_KEY"] ?? "",
+  );
+  return cipher.encrypt(randomBytes(24).toString("base64url"));
 }
 
 interface ContentSeed {

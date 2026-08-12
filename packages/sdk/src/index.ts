@@ -669,10 +669,20 @@ export function createClient(options: ClientOptions) {
      * tells the inviter to hand the link over or that it is already in an
      * inbox.
      */
+    /**
+     * Create an operator: with a password, or with an invitation link.
+     *
+     * `token` is `null` when `input.password` was given — there is no link to
+     * hand over, because the account already has a password.
+     */
     adminInviteStaff: (
       input: StaffInvitation,
-    ): Promise<{ status: string; token: string; delivered: boolean }> =>
+    ): Promise<{ status: string; token: string | null; delivered: boolean }> =>
       request("/admin/staff", json(input)),
+
+    /** Set or change an operator's password. Revokes their sessions. */
+    adminSetStaffPassword: (id: string, password: string): Promise<void> =>
+      request(`/admin/staff/${seg(id)}/password`, json({ password })),
 
     adminSetStaffScope: (id: string, scope: StaffScope): Promise<void> =>
       request(`/admin/staff/${seg(id)}/scope`, json(scope)),

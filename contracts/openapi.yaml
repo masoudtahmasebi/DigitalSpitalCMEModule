@@ -1675,12 +1675,24 @@ paths:
     post:
       tags: [admin]
       operationId: adminInviteStaff
-      summary: Invite an operator
+      summary: Create an operator, with a password or with an invitation
       description: |
-        Creates the account with **no password** and returns a single-use token.
-        The token is returned rather than emailed; the operator passes the link
-        on. Until it is redeemed the account cannot sign in, so an un-redeemed
-        invitation is not a credential.
+        Two paths, chosen by whether `password` is present.
+
+        **With `password`** the account is usable immediately, no token is
+        minted, and `status` comes back as `created` with `token: null`. This is
+        the path for "make an account and hand somebody the password", which
+        needs no mail server and no invitee action.
+
+        **Without it** the account is created with no password at all and a
+        single-use invitation token is returned. Until that token is redeemed
+        the account cannot sign in, so an un-redeemed invitation is not a
+        credential. The token is returned rather than only emailed, so an
+        invitation is never lost because a mail server was down.
+
+        A password is checked against the same policy the invitee's own choice
+        goes through — an administrator cannot set a weaker password than the
+        person could — and a rejection is a 422 naming the rule.
       requestBody:
         required: true
         content:
@@ -1695,10 +1707,56 @@ paths:
                 type: object
                 required: [status, token]
                 properties:
-                  status: { type: string }
-                  token: { type: string }
+                  status:
+                    type: string
+                    enum: [invited, created]
+                  token:
+                    type: [string, "null"]
+                    description: |
+                      The invitation token, or `null` when a password was set
+                      and there is no link to hand over.
+                  delivered:
+                    type: boolean
+                    description: Whether the invitation mail was sent.
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/staff/{id}/password:
+    post:
+      tags: [admin]
+      operationId: adminSetStaffPassword
+      summary: Set or change an operator's password
+      description: |
+        The administrative path, for "create an account and hand somebody the
+        password" and for "this operator is locked out". Self-service reset
+        covers neither: it needs a working sender and it needs the operator to
+        still be able to read the mailbox.
+
+        Permitted to exactly whoever may already change the account's scope —
+        being able to set a password is being able to act as the account, so it
+        must not reach further than being able to define it. A `customer_admin`
+        can set a password inside their own customer and cannot touch a
+        `super_admin`.
+
+        Setting a password revokes every session the account holds and every
+        outstanding invitation or reset link, so the new password is the only
+        way in.
+      parameters: [{ $ref: "#/components/parameters/StaffId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        "204": { description: Set. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
   /admin/staff/{id}/scope:
@@ -4826,6 +4884,14 @@ components:
           properties:
             email: { type: string, format: email, maxLength: 320 }
             displayName: { type: string, minLength: 1, maxLength: 200 }
+            password:
+              type: string
+              minLength: 1
+              maxLength: 200
+              description: |
+                Present to create the account with this password and no
+                invitation link; absent to invite. Never returned by any
+                endpoint.
 
     StaffAccount:
       type: object

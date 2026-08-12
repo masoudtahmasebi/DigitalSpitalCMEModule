@@ -123,31 +123,62 @@ describe.each(SEEDS)("./dsc seed %s", (name, run) => {
 
 describe("what the seeds leave behind", () => {
   /*
-   * Not a restatement of the constraints — those are the database's job and it
-   * does it. This asserts the *decision* P63-02 made, which is the thing a
-   * later edit would silently reverse: the accredited courses arrive as drafts
-   * because no seed can furnish a VNR password, and the point-free ones do not.
+   * The property the client reported as "nothing works": a seeded tenant whose
+   * catalogue is empty is not a seeded tenant (P64-02).
+   *
+   * P63-02 seeded the accredited courses as drafts, because no seed could
+   * furnish a VNR password. That was truthful and it made `/medice` show
+   * nothing. The seed now writes a placeholder credential — see
+   * `seededVnrPassword` — so this asserts what somebody opening the portal
+   * actually gets.
    */
-  it("leaves a course awarding CME points as a draft", async () => {
+  it("leaves every seeded course published and visible", async () => {
     const { rows } = await admin.query<{ slug: string; status: string }>(
       `SELECT slug, status FROM courses
-        WHERE cme_points IS NOT NULL AND cme_points > 0
-          AND slug IN ('adhs-akademie-adult', 'ds-cme-demo')
+        WHERE slug IN ('adhs-akademie-adult', 'ds-cme-demo', 'ds-ohne-punkte')
         ORDER BY slug`,
     );
 
     expect(rows).toEqual([
-      { slug: "adhs-akademie-adult", status: "draft" },
-      { slug: "ds-cme-demo", status: "draft" },
+      { slug: "adhs-akademie-adult", status: "published" },
+      { slug: "ds-cme-demo", status: "published" },
+      { slug: "ds-ohne-punkte", status: "published" },
     ]);
   });
 
-  it("publishes a course awarding none, which has nothing to be incomplete for", async () => {
-    const { rows } = await admin.query<{ status: string }>(
-      "SELECT status FROM courses WHERE slug = 'ds-ohne-punkte'",
+  it("stores the seeded VNR password as ciphertext, not as a column of plaintext", async () => {
+    // The seed encrypts through the same cipher the API uses. A byte pattern
+    // here would satisfy the constraint and then fail at decrypt time inside
+    // the EIV worker — a failure attributed to the cipher rather than the seed.
+    const { rows } = await admin.query<{ enc: Buffer | null }>(
+      "SELECT vnr_password_enc AS enc FROM courses WHERE slug = 'adhs-akademie-adult'",
     );
-    expect(rows[0]?.status).toBe("published");
+    expect(rows[0]?.enc).toBeInstanceOf(Buffer);
+    expect((rows[0]?.enc?.byteLength ?? 0) > 16).toBe(true);
   });
+
+  it("does not overwrite a VNR password an operator already set", async () => {
+    // The re-run property that matters most here: `deploy.sh` runs a seed on
+    // every deploy, and replacing the real credential with a placeholder would
+    // break every Punktemeldung from the next deploy onwards, silently.
+    const mine = Buffer.from("operator-set-this-value-not-the-seed");
+    await admin.query("UPDATE courses SET vnr_password_enc = $1 WHERE slug = $2", [
+      mine,
+      "adhs-akademie-adult",
+    ]);
+
+    const seeder = openSeeder();
+    try {
+      await seedMediceAdhs(seeder);
+    } finally {
+      await seeder.end();
+    }
+
+    const { rows } = await admin.query<{ enc: Buffer }>(
+      "SELECT vnr_password_enc AS enc FROM courses WHERE slug = 'adhs-akademie-adult'",
+    );
+    expect(rows[0]?.enc.equals(mine)).toBe(true);
+  }, 60_000);
 
   it("never reveals the answer key on an accredited course", async () => {
     // P63-01: this was `true` for both DS demo courses, which is why the seed

@@ -25,13 +25,17 @@
  * running this does not quietly manufacture an answer to a question the
  * Ärztekammer has not given (CLAUDE.md §7).
  *
- * **No VNR password.** The EIV worker cannot authenticate until one is set out
- * of band, which is correct: a seed that could file a Punktemeldung is a seed
- * that can file a wrong one.
+ * **The VNR and the VNR password are placeholders.** Both are needed for the
+ * course to be publishable at all, and neither authenticates anything: a
+ * Punktemeldung carrying them is refused by EIV-FOBI, and cannot reach it
+ * without `EIV_ALLOW_LIVE=yes` (ADR-0005). The real pair is set through the
+ * console, and a re-run of this seed does not overwrite them.
  *
  * Idempotent, keyed on the slugs: re-running updates rather than duplicating.
  */
 
+import { randomBytes } from "node:crypto";
+import { createSecretCipher } from "@ds/secrets";
 import type pg from "pg";
 import {
   enterTenant,
@@ -281,22 +285,23 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
     const courseId = await upsert(
       pool,
       /*
-       * Seeded as a **draft**, and that is the truthful state (P63-02).
+       * Published, with a placeholder VNR password (P64-02).
        *
-       * The course is fully authored and accredited on paper — VNR, Kammer,
-       * Veranstalter, stamp, signature, all below. What it does not have is the
-       * VNR password, and a seed cannot supply one: that credential
-       * authenticates DigitalSpital to the Ärztekammer's accreditation
-       * interface, so a generated value would authenticate to nothing and turn
-       * a refusal naming a field into a 401 from a remote system.
+       * `courses_published_cme_is_complete` refuses a published, point-awarding
+       * course whose `vnr_password_enc` is null. P63-02 answered that by
+       * seeding a draft, which was truthful and made `/medice` an empty
+       * catalogue — a tenant nobody can look at is not a seeded tenant.
        *
-       * `courses_published_cme_is_complete` therefore refuses this row as
-       * published, which is the constraint doing its job on us. The two steps
-       * that publish it are printed in this seed's summary.
+       * So the seed writes one. It authenticates nothing: it goes with the
+       * placeholder VNR above, a Punktemeldung carrying it would be refused by
+       * EIV-FOBI, and it cannot reach EIV-FOBI at all without
+       * `EIV_ALLOW_LIVE=yes` (ADR-0005). The real credential is set through the
+       * console's write-only field, and the DO UPDATE below will not overwrite
+       * it on a re-run.
        *
-       * `status` is absent from the DO UPDATE below on purpose: once an
-       * operator has set the password and published, a re-run of the seed must
-       * not take the course back off the catalogue.
+       * `status` is absent from the DO UPDATE on purpose: a re-run must not
+       * take a course an operator deliberately unpublished back onto the
+       * catalogue.
        */
       `INSERT INTO courses (
          customer_id, project_id, slug, title, description, delivery_type, status,
@@ -305,15 +310,17 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
          required_watch_percent, pass_threshold_percent, max_quiz_attempts,
          reveal_correct_answers, learning_objectives, target_audience,
          scientific_lead_name, scientific_lead_title, certificate_issue_place,
-         stamp_image, stamp_image_mime, signature_image, signature_image_mime
+         stamp_image, stamp_image_mime, signature_image, signature_image_mime,
+         vnr_password_enc
        ) VALUES (
-         $1,$2,$3,$4,$5,'on_demand','draft',
+         $1,$2,$3,$4,$5,'on_demand','published',
          ARRAY['ADHS'], ARRAY['Erwachsene'], $6, $7, 4, 'D',
          'online', $8, $9, $10,
          100, 70, NULL,
          false, $11, $12,
          $13, $14, $15,
-         $16, 'image/png', $16, 'image/png'
+         $16, 'image/png', $16, 'image/png',
+         $17
        )
        ON CONFLICT (project_id, slug) DO UPDATE SET
          title = EXCLUDED.title,
@@ -331,6 +338,9 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
          stamp_image_mime = EXCLUDED.stamp_image_mime,
          signature_image = EXCLUDED.signature_image,
          signature_image_mime = EXCLUDED.signature_image_mime,
+         -- Only when there is not one already: an operator who set the real
+         -- credential through the console must not have it replaced by a re-run.
+         vnr_password_enc = COALESCE(courses.vnr_password_enc, EXCLUDED.vnr_password_enc),
          updated_at = now()
        RETURNING id`,
       [
@@ -364,6 +374,9 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
         "Prof. Dr. med.",
         "Iserlohn",
         PLACEHOLDER_IMAGE,
+        // Placeholder, and overwritten by the console's write-only field the
+        // moment a real one is set. See `seededVnrPassword`.
+        seededVnrPassword(),
       ],
     );
 
@@ -533,17 +546,13 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
       "readings (layout says 80, MEDICE-292 says 100). See",
       "docs/show-stoppers.md before treating it as settled.",
       "",
-      "ADHS Akademie adult is seeded as a DRAFT and is not yet visible to",
-      "participants. Two steps publish it, in this order:",
+      "ADHS Akademie adult is PUBLISHED and visible to participants now.",
       "",
-      "  1. Verwaltung → Fortbildungen → ADHS Akademie adult → VNR-Passwort.",
-      "     This is the credential the Punktemeldung authenticates with. It",
-      "     comes from EIV-FOBI, it is write-only, and nothing else can supply",
-      "     it — which is why the seed leaves the course in draft rather than",
-      "     publishing a course that cannot report.",
-      "  2. Veröffentlichen, on the same screen.",
-      "",
-      "Step 2 refuses until step 1 is done, and names the field it is missing.",
+      "The seeded VNR and VNR password are placeholders and authenticate",
+      "nothing. Before any real Punktemeldung, set both under",
+      "Verwaltung -> Fortbildungen -> ADHS Akademie adult: the VNR from the",
+      "Anerkennungsbescheid, and the VNR-Passwort from EIV-FOBI. A re-run of",
+      "this seed will not overwrite a password you set there.",
       "",
       "Stamp and signature are 1x1 placeholder PNGs so a certificate renders",
       "locally. Replace them with the real assets of the course's",
@@ -553,4 +562,34 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
     await pool.query("ROLLBACK").catch(() => undefined);
     throw error;
   }
+}
+
+/**
+ * The placeholder VNR password, so the course can be published (P64-02).
+ *
+ * ## Why a seed sets one
+ *
+ * `courses_published_cme_is_complete` refuses a published, point-awarding
+ * course whose `vnr_password_enc` is null. Leaving it null left the course a
+ * draft and `/medice` an empty catalogue — and a tenant nobody can look at is
+ * not a seeded tenant.
+ *
+ * ## Why it is safe
+ *
+ * It authenticates nothing, and it goes with a VNR that authenticates nothing.
+ * The guard that matters is `EIV_ALLOW_LIVE`, not the absence of this value.
+ *
+ * ## Why random rather than a constant
+ *
+ * A constant here is a credential in the repository, and "it is only a
+ * placeholder" is how a real one eventually gets committed beside it. Nothing
+ * needs to read this: the VNR password is used server-side only and is never
+ * returned by any API.
+ */
+function seededVnrPassword(): Buffer {
+  const cipher = createSecretCipher(
+    process.env["NODE_ENV"] ?? "development",
+    process.env["SECRETS_KMS_KEY"] ?? "",
+  );
+  return cipher.encrypt(randomBytes(24).toString("base64url"));
 }

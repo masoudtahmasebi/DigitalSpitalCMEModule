@@ -105,6 +105,17 @@ export function StaffAccounts(props: {
   const [busy, setBusy] = useState(false);
 
   /*
+   * The password an administrator sets directly (P64-01).
+   *
+   * Empty means "invite instead", which keeps the invitation path exactly as it
+   * was: a form with one optional field, not two forms. `created` is what came
+   * back the last time, so the screen can confirm the account exists and has
+   * this password rather than showing an invitation box with nothing in it.
+   */
+  const [password, setPassword] = useState("");
+  const [created, setCreated] = useState<string | undefined>();
+
+  /*
    * A super admin belongs to no customer, so an invitation to any other role
    * has to name one. `admin_user_roles_scope_matches_role` refuses a
    * customer-scoped grant without a customer id, and the first version of this
@@ -135,6 +146,10 @@ export function StaffAccounts(props: {
         email: email.trim(),
         displayName: displayName.trim(),
         role,
+        // Omitted entirely when blank, rather than sent as "": the API's two
+        // paths are chosen by the field's presence, and an empty string is a
+        // password somebody typed nothing into, not a request to invite.
+        ...(password === "" ? {} : { password }),
         // `super_admin` spans customers and takes none. Every other role is
         // scoped: to the customer the inviter is acting within, or — when the
         // inviter is a super admin inside none — to the one they picked.
@@ -143,18 +158,29 @@ export function StaffAccounts(props: {
         departmentId: null,
       });
       setCopied(false);
-      /*
-       * Built here, from this page's own origin, because the console is the one
-       * place that knows where it is served from. The API builds the same link
-       * for the mail it sends — from an origin it trusts rather than one a
-       * caller named — and the two agree because both point at the console.
-       */
-      setInvitation({
-        link: `${window.location.origin}/#passwort-neu?token=${encodeURIComponent(result.token)}`,
-        delivered: result.delivered,
-      });
+      setCreated(undefined);
+      setInvitation(undefined);
+
+      if (result.token === null) {
+        // A password was set, so there is no link and nothing to hand over
+        // except the password the administrator already has. Saying which
+        // account it was is the whole confirmation (CLAUDE.md §9.4).
+        setCreated(email.trim());
+      } else {
+        /*
+         * Built here, from this page's own origin, because the console is the
+         * one place that knows where it is served from. The API builds the same
+         * link for the mail it sends — from an origin it trusts rather than one
+         * a caller named — and the two agree because both point at the console.
+         */
+        setInvitation({
+          link: `${window.location.origin}/#passwort-neu?token=${encodeURIComponent(result.token)}`,
+          delivered: result.delivered,
+        });
+      }
       setEmail("");
       setDisplayName("");
+      setPassword("");
       await load();
     } catch (error) {
       setProblem(describeError(error, de.staff.inviteFailed));
@@ -216,6 +242,12 @@ export function StaffAccounts(props: {
         Now it is the link, it says whether the invitation was emailed, and it
         can be copied in one click.
       */}
+      {created === undefined ? null : (
+        <Notice tone="success" title={de.staff.createdTitle}>
+          {de.staff.createdBody(created)}
+        </Notice>
+      )}
+
       {invitation === undefined ? null : (
         <Notice tone="success" title={de.staff.inviteCreated}>
           <p className="mb-2">
@@ -305,6 +337,21 @@ export function StaffAccounts(props: {
                       }
                     />
                   ) : null}
+                  {/*
+                    Change this operator's password (P64-01).
+
+                    On every row including your own: changing your own password
+                    is an ordinary thing to want, the API permits it, and a
+                    control hidden on the row where it works would be the mirror
+                    of the second-factor defect above.
+                  */}
+                  <SetPassword
+                    accountId={account.id}
+                    email={account.email}
+                    onSet={(next) =>
+                      act(() => client.adminSetStaffPassword(account.id, next))
+                    }
+                  />
                   {disabled ? (
                     <Button
                       variant="secondary"
@@ -354,6 +401,31 @@ export function StaffAccounts(props: {
             <Select id="staff-role" value={role} options={ROLES} onChange={setRole} />
           </Field>
 
+          {/*
+            The optional password (P64-01).
+
+            One form with an optional field rather than two forms, because the
+            decision is "do I already know what this person's password should
+            be?" and not a different kind of account. The hint says what happens
+            in each case, at the point somebody is deciding (CLAUDE.md §9.4) —
+            an empty field that silently changes the outcome is exactly the
+            thing that had people asking how to create an account with a
+            password.
+          */}
+          <Field
+            label={de.staff.password}
+            htmlFor="staff-password"
+            hint={de.staff.passwordHint}
+          >
+            <TextInput
+              id="staff-password"
+              type="password"
+              value={password}
+              maxLength={200}
+              onChange={setPassword}
+            />
+          </Field>
+
           {mustChooseCustomer ? (
             <Field
               label={de.staff.customer}
@@ -382,7 +454,11 @@ export function StaffAccounts(props: {
               (mustChooseCustomer && customerId === "")
             }
           >
-            {busy ? de.staff.inviting : de.staff.invite}
+            {busy
+              ? de.staff.inviting
+              : password === ""
+                ? de.staff.invite
+                : de.staff.createWithPassword}
           </Button>
         </div>
       </Panel>
@@ -392,4 +468,78 @@ export function StaffAccounts(props: {
 
 function emptyToNull(value: string): string | null {
   return value.trim() === "" ? null : value;
+}
+
+/**
+ * The per-row password change (P64-01).
+ *
+ * Inline rather than a modal, on `ConfirmButton`'s reasoning: a modal has to
+ * trap focus, restore it and handle Escape, and getting any of that subtly
+ * wrong makes the console unusable by keyboard — for one field.
+ *
+ * The field is `type="password"` so a shoulder-surfer in an open-plan office
+ * does not read it off the screen, and it is cleared as soon as the change
+ * succeeds so it does not sit in the DOM afterwards. The administrator knows
+ * what they typed; nothing needs to show it back.
+ */
+function SetPassword(props: {
+  accountId: string;
+  email: string;
+  onSet: (password: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  if (!open) {
+    return (
+      <Button
+        variant="secondary"
+        ariaLabel={de.staff.setPasswordFor(props.email)}
+        onClick={() => setOpen(true)}
+      >
+        {de.staff.setPassword}
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <Field
+        label={de.staff.newPassword}
+        htmlFor={`staff-pw-${props.accountId}`}
+        hint={de.staff.newPasswordHint}
+      >
+        <TextInput
+          id={`staff-pw-${props.accountId}`}
+          type="password"
+          value={value}
+          maxLength={200}
+          onChange={setValue}
+        />
+      </Field>
+      <Button
+        disabled={busy || value === ""}
+        onClick={() => {
+          setBusy(true);
+          void props.onSet(value).finally(() => {
+            setBusy(false);
+            setValue("");
+            setOpen(false);
+          });
+        }}
+      >
+        {busy ? de.staff.settingPassword : de.common.save}
+      </Button>
+      <Button
+        variant="secondary"
+        onClick={() => {
+          setValue("");
+          setOpen(false);
+        }}
+      >
+        {de.common.cancel}
+      </Button>
+    </div>
+  );
 }

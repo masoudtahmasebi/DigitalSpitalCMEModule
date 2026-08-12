@@ -163,6 +163,7 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
       customerId: ID,
       departmentId: null,
     }),
+  adminSetStaffPassword: (c) => c.adminSetStaffPassword(ID, "korrekt-pferd-batterie"),
   adminSetStaffScope: (c) =>
     c.adminSetStaffScope(ID, {
       role: "course_editor",
