@@ -262,6 +262,34 @@ async function authenticateStaffPlane(
   if (result.kind === "none") return false;
 
   if (result.kind === "rejected") {
+    /*
+     * A staff cookie without a staff CSRF header is not always a staff request
+     * (P66-01).
+     *
+     * Both apps call the **same API host**. An operator signed into the console
+     * at `verwaltung.…` therefore sends `ds_staff_session` on every request the
+     * *portal* makes at `fortbildung.…`, because the cookie belongs to
+     * `api.…` and the browser attaches it to both. The portal is a participant
+     * app: it has no staff CSRF token and never will.
+     *
+     * So this plane used to reject every unsafe method the portal sent — and
+     * only the unsafe ones, because CSRF is checked on those alone. Reading a
+     * course worked and enrolling in it answered 403, for any person who
+     * happened to have the console open in another tab. Reported from
+     * production as "enrolment fails while I am logged in".
+     *
+     * When there is another credential on the request, a failed staff CSRF
+     * check means "this was not a staff request", and the right move is to
+     * defer rather than to refuse. When there is not, it means what it always
+     * meant and is refused exactly as before — so the protection is unchanged
+     * for the requests it exists to protect.
+     */
+    const hasLearnerCredential =
+      extractBearer(request.headers.authorization) !== undefined ||
+      readCookie(request.headers.cookie, PARTICIPANT_COOKIE) !== undefined;
+
+    if (result.reason === "csrf" && hasLearnerCredential) return false;
+
     await deps.audit.recordSystem({
       actor: SYSTEM_ACTOR,
       action: "staff.request_rejected",

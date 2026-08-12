@@ -424,11 +424,34 @@ export function secondFactorStep(
  * choose otherwise — and under `disabled` the factor is already not being used,
  * so removing the stored secret is tidying up rather than a security decision.
  *
+ * ## The exception, and why it is not a hole (P66-02)
+ *
+ * A **super administrator is not bound by `required`**, because they are the
+ * role that sets it. The platform policy is theirs to change: they can move it
+ * to `optional`, remove the factor, and move it back, and the audit log records
+ * all three. So the refusal never prevented the outcome — it made it a
+ * three-step dance through a screen that does not say the dance exists, which
+ * is P38-07's finding repeating (*"true, and left the one person able to change
+ * that rule with no idea they could"*).
+ *
+ * The security question is whether this helps an attacker holding a stolen
+ * super-administrator session. It does not: that session can already relax the
+ * policy and then remove the factor. The guard cost the legitimate owner their
+ * access and cost an attacker two requests.
+ *
+ * Everybody else stays bound. A `customer_admin` under a `required` customer
+ * policy cannot remove their own — they do not own that policy, and for them
+ * the refusal is the whole point.
+ *
  * An *administrator* resetting somebody else's factor is a different question
  * with a different answer, because the case it exists for is a lost device: see
  * `canResetSecondFactorOf`.
  */
-export function canRemoveOwnSecondFactor(policy: SecondFactorPolicy): boolean {
+export function canRemoveOwnSecondFactor(
+  policy: SecondFactorPolicy,
+  role?: StaffRole,
+): boolean {
+  if (role === "super_admin") return true;
   return policy !== "required";
 }
 

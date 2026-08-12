@@ -1088,10 +1088,24 @@ describe("the second factor is a policy, not a constant (P22-02)", () => {
     expect((first.body as { status: string }).status).toBe("totp_enrolment_required");
   });
 
-  it("refuses an operator removing their own factor while it is mandatory", async () => {
-    // Otherwise "mandatory" is a suggestion.
+  it("lets a super administrator remove their own factor under a required policy (P66-02)", async () => {
+    /*
+     * This asserted 403 until P66-02, on the reasoning that otherwise
+     * "mandatory" is a suggestion. For a super administrator it always was one:
+     * they own the platform policy, so `required` never prevented the outcome —
+     * it made them relax the policy, remove the factor and set it back, through
+     * a screen that does not say the dance exists. A stolen session could
+     * already do exactly that.
+     *
+     * The rule that keeps `required` meaningful is everybody else, asserted
+     * exhaustively where it is pure — `canRemoveOwnSecondFactor` in
+     * `packages/domain`, over every role and every policy. Reproducing it here
+     * would need a signed-in customer administrator with an enrolled factor,
+     * which is a lot of fixture for a property already pinned at the rule with
+     * its caller named.
+     */
     const result = await asStaff(superSession, "DELETE", "/admin/auth/second-factor");
-    expect(result.status).toBe(403);
+    expect(result.status).toBe(200);
   });
 
   it("lets a super admin read the policies", async () => {
