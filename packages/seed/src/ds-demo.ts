@@ -54,6 +54,7 @@ import {
   upsert,
 } from "./lib.js";
 import { describeDemoStaff, seedDemoStaff } from "./staff.js";
+import type { TenantSeedOptions } from "./medice-adhs.js";
 
 /**
  * Fixed, for the same reason as MEDICE's: `customers`' own RLS policy checks
@@ -202,7 +203,11 @@ const QUESTION_COUNT = 5;
  * inside the API image, and which stream the summary belongs on is the
  * entrypoint's business, not this function's.
  */
-export async function seedDsDemo(pool: pg.Pool): Promise<string> {
+export async function seedDsDemo(
+  pool: pg.Pool,
+  options: TenantSeedOptions = {},
+): Promise<string> {
+  const onlyIfMissing = options.onlyIfMissing ?? false;
   try {
     await pool.query("BEGIN");
     // See `resolveCustomerId`: adopt whatever already holds this slug.
@@ -211,6 +216,24 @@ export async function seedDsDemo(pool: pg.Pool): Promise<string> {
       slug: CUSTOMER_SLUG,
     });
     await enterTenant(pool, tenantId);
+
+    /*
+     * `--if-missing`: return before the first write (P65-01).
+     *
+     * After `enterTenant`, not before: `customers` is under RLS and read on the
+     * bare connection it matches zero rows — so the check would always say
+     * "missing" and the seed would rebuild the tenant on every deploy, deleting
+     * learner progress each time (CLAUDE.md §9.6).
+     */
+    if (onlyIfMissing) {
+      const { rowCount } = await pool.query("SELECT 1 FROM customers WHERE id = $1", [
+        tenantId,
+      ]);
+      if (rowCount !== null && rowCount > 0) {
+        await pool.query("ROLLBACK");
+        return "The DS test tenant already exists; nothing was written.";
+      }
+    }
 
     const customerId = await upsert(
       pool,

@@ -180,6 +180,58 @@ describe("what the seeds leave behind", () => {
     expect(rows[0]?.enc.equals(mine)).toBe(true);
   }, 60_000);
 
+  it("writes nothing at all on a second run with --if-missing", async () => {
+    /*
+     * The property the deploy now depends on (P65-01).
+     *
+     * `deploy.sh` runs these seeds on every push. Without `--if-missing` that
+     * would rebuild the course content tree each time — `resetCourseContent`
+     * deletes modules, chapters and contents, and `content_progress` rows point
+     * at contents. Every learner's progress, gone on every deploy, silently.
+     *
+     * So this asserts by *effect* rather than by reading the flag: a row is
+     * changed by hand, both seeds run with the flag, and the change has to still
+     * be there. A seed that quietly ignored the option would fail here — which
+     * is what `seed-default.integration.test.ts` learned to do about the same
+     * flag, for the same reason.
+     */
+    await admin.query(
+      "UPDATE courses SET title = $1 WHERE slug = 'adhs-akademie-adult'",
+      ["Von Hand geändert"],
+    );
+    const { rows: before } = await admin.query<{ n: string }>(
+      "SELECT count(*)::text AS n FROM contents",
+    );
+
+    for (const run of [seedMediceAdhs, seedDsDemo]) {
+      const seeder = openSeeder();
+      try {
+        const summary = await run(seeder, { onlyIfMissing: true });
+        expect(summary).toContain("nothing was written");
+      } finally {
+        await seeder.end();
+      }
+    }
+
+    const { rows: after } = await admin.query<{ title: string }>(
+      "SELECT title FROM courses WHERE slug = 'adhs-akademie-adult'",
+    );
+    expect(after[0]?.title).toBe("Von Hand geändert");
+
+    // And the content tree is untouched — the thing whose loss would be
+    // invisible until a learner opened the course.
+    const { rows: contents } = await admin.query<{ n: string }>(
+      "SELECT count(*)::text AS n FROM contents",
+    );
+    expect(contents[0]?.n).toBe(before[0]?.n);
+
+    // Put it back, so a later case in this file is not reading a changed row.
+    await admin.query(
+      "UPDATE courses SET title = $1 WHERE slug = 'adhs-akademie-adult'",
+      ["ADHS Akademie adult"],
+    );
+  }, 60_000);
+
   it("never reveals the answer key on an accredited course", async () => {
     // P63-01: this was `true` for both DS demo courses, which is why the seed
     // could not run. The constraint refuses it — and refusing is not the same

@@ -214,7 +214,41 @@ const MODULES: readonly ModuleSeed[] = [
 /** 11 single-choice questions, per MEDICE. Placeholder text. */
 const QUESTION_COUNT = 11;
 
-export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
+/**
+ * How this seed behaves when the tenant already exists.
+ *
+ * `onlyIfMissing` is what makes it safe to run unattended (P65-01). Without it
+ * the seed rebuilds the course's content tree unconditionally —
+ * `resetCourseContent` deletes modules, chapters and contents, and with them
+ * every learner's progress against that course. That is correct for an operator
+ * deliberately reloading a fixture and catastrophic for a deploy that runs on
+ * every push.
+ *
+ * With it, the seed reads one row and returns before its first write once the
+ * customer exists. So the deploy that creates this tenant on an installation
+ * that has never had it writes nothing at all on the next two hundred deploys.
+ *
+ * This is the fix for the failure that has now been reported three times:
+ * `/medice` answering `{"kind":"unknown"}` on a host where the seed exists in
+ * the repository and had simply never been run (CLAUDE.md §9.9's corollary).
+ * A seed the deploy cannot safely run is a seed somebody has to remember, and
+ * nobody did.
+ *
+ * `revealPassword` is off for the same unattended caller: its stdout is a
+ * GitHub Actions log, and a demo participant's password in a build log is a
+ * credential that outlives every rotation.
+ */
+export interface TenantSeedOptions {
+  readonly onlyIfMissing?: boolean;
+  readonly revealPassword?: boolean;
+}
+
+export async function seedMediceAdhs(
+  pool: pg.Pool,
+  options: TenantSeedOptions = {},
+): Promise<string> {
+  const onlyIfMissing = options.onlyIfMissing ?? false;
+  const revealPassword = options.revealPassword ?? true;
   try {
     await pool.query("BEGIN");
 
@@ -225,6 +259,25 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
       slug: CUSTOMER_SLUG,
     });
     await enterTenant(pool, tenantId);
+
+    /*
+     * The whole point of `--if-missing`: return before the first write.
+     *
+     * Checked here rather than at the top because `enterTenant` has to set the
+     * RLS context before `customers` is readable at all — read on the bare
+     * connection this matches zero rows and the seed would rebuild the tenant
+     * every deploy, which is exactly the destructive behaviour the flag exists
+     * to prevent (CLAUDE.md §9.6).
+     */
+    if (onlyIfMissing) {
+      const { rowCount } = await pool.query("SELECT 1 FROM customers WHERE id = $1", [
+        tenantId,
+      ]);
+      if (rowCount !== null && rowCount > 0) {
+        await pool.query("ROLLBACK");
+        return "MEDICE already exists; nothing was written.";
+      }
+    }
 
     const customerId = await upsert(
       pool,
@@ -533,7 +586,9 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
       `  E-Mail    ${PARTICIPANT_EMAIL}`,
       password.supplied
         ? "  Passwort  as supplied in SEED_PARTICIPANT_PASSWORD"
-        : `  Passwort  ${password.plaintext}`,
+        : revealPassword
+          ? `  Passwort  ${password.plaintext}`
+          : "  Passwort  generiert — im Konsolenbereich Zugänge neu setzen",
       "",
       password.supplied
         ? ""
