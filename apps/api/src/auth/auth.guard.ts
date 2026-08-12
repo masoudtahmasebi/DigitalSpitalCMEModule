@@ -252,6 +252,33 @@ async function authenticateStaffPlane(
   const service = deps.staffService;
   if (service === undefined) return false;
 
+  /*
+   * `X-DS-Project` means this is a participant-plane request (P68-02).
+   *
+   * The console never sends it — it scopes itself with `X-DS-Customer`, or with
+   * nothing at all on the platform screens. The portal and the widget send it
+   * on every call, because the project *is* how a learner request names its
+   * tenant. So the header is not a hint: it is the caller stating which plane
+   * it is on, and the staff plane has no business answering.
+   *
+   * Without this, an operator with the console open in another tab was
+   * *authenticated* on the portal. Both apps talk to the same API host, so
+   * `ds_staff_session` rides along on the portal's requests; CSRF is not
+   * checked on a GET, so `GET /auth/participant/me` succeeded and the portal —
+   * whose only test for "am I signed in" that is — drew a signed-in catalogue
+   * for somebody who could not enrol in anything on it. P66-01 fixed the same
+   * collision for unsafe methods; this is the safe half, and it fails in the
+   * more misleading direction.
+   *
+   * Deferring rather than refusing, and before the session is resolved: a
+   * request that names a project is simply not this plane's, and the learner
+   * path below will accept or refuse it on its own terms.
+   *
+   * Adding the header to a genuine console request can only turn a success into
+   * a 401 — it grants nothing — so this cannot be turned into an escalation.
+   */
+  if (typeof request.headers[PROJECT_HEADER] === "string") return false;
+
   const result = await authenticateStaff({
     method: request.method,
     cookieHeader: request.headers.cookie,

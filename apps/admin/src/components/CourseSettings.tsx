@@ -41,14 +41,29 @@ export function CourseSettings(props: {
   const [problem, setProblem] = useState<string | undefined>();
   const [saved, setSaved] = useState(false);
 
-  // A different course means a different form. Without this, navigating
-  // between courses would show the previous one's unsaved edits.
+  /*
+   * A different course means a different form. Without this, navigating
+   * between courses would show the previous one's unsaved edits.
+   *
+   * Keyed on the **slug**, not on the object (P68-02), and here the difference
+   * was destructive rather than cosmetic. Every write on this screen hands the
+   * updated course up to the parent, which sends a new object back down — so
+   * uploading the Stempel discarded everything typed above it. An operator
+   * filling in VNR, Veranstalter, Ort and wissenschaftliche Leitung, then
+   * attaching the stamp, then pressing Speichern, saved a **blank form** over
+   * their own work, and the screen reported success.
+   *
+   * Nothing could have found that except driving the screen: each piece works,
+   * and it is the order a person actually uses them in that breaks. The journey
+   * suite does them in that order, which is how this surfaced.
+   */
   useEffect(() => {
     setForm(initialForm(course));
     setAcknowledge(false);
     setVnrPassword("");
     setSaved(false);
-  }, [course]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- identity is not the question; which course is
+  }, [course.slug]);
 
   const threshold = Number(form.passThresholdPercent);
   const belowAccredited =

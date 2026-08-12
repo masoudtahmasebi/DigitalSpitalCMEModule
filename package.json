@@ -40,6 +40,7 @@
     "db:seed": "tsx db/seed/adhs.ts",
     "db:seed:default": "tsx db/seed/ds-default.ts",
     "db:seed:ds": "tsx db/seed/ds-demo.ts",
+    "db:seed:ds-test": "tsx db/seed/ds-test.ts",
     "check:env": "node scripts/env-audit.mjs",
     "check:local-ports": "node scripts/check-local-ports.mjs",
     "check:runtime-config": "node scripts/check-runtime-config.mjs",

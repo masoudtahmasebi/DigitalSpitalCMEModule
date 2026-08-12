@@ -48,6 +48,18 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "off",
     actionTimeout: 15_000,
+    /*
+     * The one HTTPS origin in this rig is the harness's own object store, on a
+     * certificate generated for this run (`support/tls.ts`). It is served over
+     * TLS on purpose — the portal's deployed policy is `media-src 'self'
+     * https:`, and a bucket on plain HTTP would be blocked by the very policy
+     * this suite now applies.
+     *
+     * This does not weaken what is under test: a Content-Security-Policy is
+     * evaluated on the URL's scheme, not on the certificate behind it. Nothing
+     * else here is HTTPS, so there is no other refusal this can hide.
+     */
+    ignoreHTTPSErrors: true,
   },
   projects: [
     {

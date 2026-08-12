@@ -53,12 +53,27 @@ export function CoursePresentation(props: {
   const [saved, setSaved] = useState(false);
   const [problem, setProblem] = useState<string | undefined>();
 
-  // A different course means a different form, or navigating between two would
-  // show the previous one's unsaved edits.
+  /*
+   * A different course means a different form, or navigating between two would
+   * show the previous one's unsaved edits.
+   *
+   * Keyed on the **slug**, not on the object (P68-02). It was on the object,
+   * and the consequence was that this screen never confirmed a save: `save`
+   * sets `saved`, then hands the updated course up to the parent, which sends
+   * a new object down — a new identity, so this effect fired and cleared the
+   * confirmation in the same commit. The operator saw the button go idle and
+   * nothing else.
+   *
+   * That is the failure mode CLAUDE.md §9.4 is about, in its quietest form: the
+   * write succeeded, the screen said nothing, and the only way to find out was
+   * to reload and look. Found by the journey suite, which asked for the
+   * sentence the screen owes and did not get one.
+   */
   useEffect(() => {
     setForm(initialForm(course));
     setSaved(false);
-  }, [course]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- identity is not the question; which course is
+  }, [course.slug]);
 
   function set<K extends keyof ReturnType<typeof initialForm>>(
     key: K,

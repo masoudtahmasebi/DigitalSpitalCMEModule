@@ -51,6 +51,18 @@ export const COURSE_EDITOR_EMAIL = "redaktion@ds.example";
 
 export const EFN = "123456789012345";
 
+/**
+ * The DS Test tenant, which the journey suite authors inside (P68-01).
+ *
+ * Its operator is a `customer_admin`, not a super administrator, and the values
+ * here are the seed's own defaults — the same account that exists on the
+ * deployed installation, so `journey.spec.ts` runs unchanged against both.
+ * `support/target.ts` is where the two are chosen between.
+ */
+export const DS_TEST_TENANT = "dstest";
+export const DS_TEST_STAFF_EMAIL = "e2e@dstest.example";
+export const DS_TEST_STAFF_PASSWORD = "ds-test-operator-2026";
+
 /** 32 bytes, padded rather than pasted — see the journey suite for why. */
 export const KMS_KEY = Buffer.alloc(32, "ds-e2e-kms-key-not-a-secret").toString("base64");
 
@@ -94,10 +106,24 @@ export interface Prepared {
 
 /** Drop, create, migrate and seed. Cheap enough to do before every run. */
 export function prepareDatabase(repo: string, superuser: string): Prepared {
-  const host = new URL(superuser).host;
+  const { host, hostname } = new URL(superuser);
 
-  if (!["127.0.0.1:5432", "localhost:5432", "[::1]:5432"].includes(host)) {
-    throw new Error(`refusing to rebuild a database on ${host}: local clusters only`);
+  /*
+   * Loopback only, and on the *hostname* rather than on host-and-port.
+   *
+   * The guard exists because this function begins with `DROP DATABASE`, and a
+   * `POSTGRES_SUPERUSER_URL` pointed at a shared cluster would be a very short
+   * incident. What it must not also do is decide which **port** a developer's
+   * Postgres listens on: this rig runs one on 5433 alongside the system's, and
+   * the first version of this check refused it with a message about "local
+   * clusters" while looking at a cluster that could not be more local.
+   *
+   * A narrower guard that refuses a legitimate setup gets widened by whoever
+   * hits it, usually by deleting it. Checking the thing it is actually about
+   * keeps it.
+   */
+  if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(hostname)) {
+    throw new Error(`refusing to rebuild a database on ${host}: loopback clusters only`);
   }
 
   psql(superuser, [
@@ -124,6 +150,14 @@ export function prepareDatabase(repo: string, superuser: string): Prepared {
     MIGRATION_DATABASE_URL: migrationUrl,
     SEED_PARTICIPANT_PASSWORD: PARTICIPANT_PASSWORD,
     SEED_STAFF_PASSWORD: STAFF_PASSWORD,
+  });
+
+  // The tenant the journey suite writes into. Seeded by the same command the
+  // deploy runs, so what the browser drives here is what exists there.
+  run("pnpm", ["db:seed:ds-test"], repo, {
+    DATABASE_URL: databaseUrl,
+    MIGRATION_DATABASE_URL: migrationUrl,
+    SEED_TEST_STAFF_PASSWORD: DS_TEST_STAFF_PASSWORD,
   });
 
   return { databaseUrl, migrationUrl, superuserUrl: target.toString() };
