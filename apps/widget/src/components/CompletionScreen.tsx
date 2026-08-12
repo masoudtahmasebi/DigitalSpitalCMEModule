@@ -70,6 +70,15 @@ export function CompletionScreen(props: {
   const [givenName, setGivenName] = useState("");
   const [familyName, setFamilyName] = useState("");
   const [efn, setEfn] = useState("");
+  /**
+   * The Muster's "Anschrift:" line (P60-03).
+   *
+   * Optional, and it stays optional: the Anerkennungsbescheid's minimum field
+   * list does not include it (docs/show-stoppers.md S12), so a physician who
+   * does not want to give a postal address must still be able to finish. The
+   * certificate draws the line either way.
+   */
+  const [address, setAddress] = useState("");
   const [consented, setConsented] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | undefined>();
@@ -162,6 +171,10 @@ export function CompletionScreen(props: {
         ...(title === "" || title === NO_TITLE ? {} : { attestedTitle: title }),
         attestedGivenName: givenName.trim(),
         attestedFamilyName: familyName.trim(),
+        // Omitted entirely when empty rather than sent as "": the API treats an
+        // absent field as "not supplied in this request", and an empty string
+        // would be a value.
+        ...(address.trim() === "" ? {} : { attestedAddress: address.trim() }),
         ...(efnNeeded ? { efn } : {}),
         ...(consentAvailable && consented ? { consentDocument: policyVersion } : {}),
       });
@@ -253,6 +266,28 @@ export function CompletionScreen(props: {
             />
           </Field>
         </div>
+
+        <Field label={de.completion.addressLabel} htmlFor="ds-lms-address">
+          <input
+            id="ds-lms-address"
+            value={address}
+            maxLength={200}
+            autoComplete="street-address"
+            placeholder={de.completion.addressPlaceholder}
+            aria-describedby="ds-lms-address-hint"
+            onChange={(event) => setAddress(event.target.value)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2.5 text-sm"
+          />
+          {/*
+            Said at the point somebody looks for it (CLAUDE.md §9.4): the field
+            has no asterisk, and "why is this here and may I skip it" is the
+            question a physician asks about a postal address on a form that
+            otherwise only wants their EFN.
+          */}
+          <p id="ds-lms-address-hint" className="mt-1.5 text-xs text-gray-500">
+            {de.completion.addressHint}
+          </p>
+        </Field>
 
         {efnNeeded ? (
           <Field label={de.completion.efnLabel} htmlFor="ds-lms-efn" required>

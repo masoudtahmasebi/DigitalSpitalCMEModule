@@ -147,3 +147,80 @@ describe("correcting a stored EFN", () => {
     expect(client.setEfn).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The Anschrift (P60-03).
+ *
+ * The renderer has had an "Anschrift:" line since P8 and nothing ever supplied
+ * a value — CLAUDE.md §9.3, a rule written is not a rule enforced. These cases
+ * are about the half that closes it: the screen asks, and what it asks for
+ * reaches the request in the shape the API expects.
+ */
+describe("the postal address", () => {
+  const filled = () => stateWith({ efnPresent: true });
+
+  function fillNames(): void {
+    fireEvent.change(screen.getByLabelText(/Vorname/), { target: { value: "Anna" } });
+    fireEvent.change(screen.getByLabelText(/Nachname/), { target: { value: "Müller" } });
+  }
+
+  it("is offered, and says it may be left empty", async () => {
+    // An unlabelled optional field on a form that otherwise wants only an EFN
+    // invites the question "must I?" — so the answer is at the field.
+    const client = clientWith();
+    renderScreen(client, filled());
+
+    const field = await screen.findByLabelText(/Anschrift/);
+    expect(field).toBeTruthy();
+    expect((field as HTMLInputElement).required).toBe(false);
+    expect(screen.getByText(/ohne Angabe bleibt die Zeile leer/i)).toBeTruthy();
+  });
+
+  it("sends what was typed", async () => {
+    const client = clientWith();
+    renderScreen(client, filled());
+
+    fillNames();
+    fireEvent.change(await screen.findByLabelText(/Anschrift/), {
+      target: { value: "Musterstraße 1, 58638 Iserlohn" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Daten übermitteln/ }));
+
+    await waitFor(() => {
+      expect(client.completeCourse).toHaveBeenCalledWith(
+        "adhs-akademie-adult",
+        expect.objectContaining({ attestedAddress: "Musterstraße 1, 58638 Iserlohn" }),
+      );
+    });
+  });
+
+  it("omits the field entirely when it was left empty", async () => {
+    // Not `""`. The API reads an absent field as "not supplied in this
+    // request" and leaves whatever is stored; an empty string is a value, and
+    // would blank an address a learner gave on an earlier attempt.
+    const client = clientWith();
+    renderScreen(client, filled());
+
+    fillNames();
+    fireEvent.click(screen.getByRole("button", { name: /Daten übermitteln/ }));
+
+    await waitFor(() => {
+      expect(client.completeCourse).toHaveBeenCalled();
+    });
+    const [, payload] = (
+      client.completeCourse as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls[0]!;
+    expect(Object.keys(payload as object)).not.toContain("attestedAddress");
+  });
+
+  it("does not make the address a condition of finishing", async () => {
+    // S12 is open with the ÄKWL. Until it is answered, a physician who does not
+    // want to give a postal address must still be able to claim their points.
+    const client = clientWith();
+    renderScreen(client, filled());
+
+    fillNames();
+    const submit = screen.getByRole("button", { name: /Daten übermitteln/ });
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+  });
+});

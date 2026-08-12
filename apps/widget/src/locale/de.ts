@@ -549,6 +549,16 @@ export const de = {
     familyNameLabel: "Nachname",
     familyNamePlaceholder: "z.B. Mustermann",
 
+    addressLabel: "Anschrift",
+    addressPlaceholder: "z.B. Musterstraße 1, 58638 Iserlohn",
+    /**
+     * Why the field is there and why it may be left empty. The Muster has an
+     * "Anschrift:" line; the Bescheid does not require it (S12), so the
+     * honest thing is to ask and accept nothing.
+     */
+    addressHint:
+      "Optional. Wird auf der Teilnahmebescheinigung ausgewiesen; " +
+      "ohne Angabe bleibt die Zeile leer.",
     efnLabel: "EFN-Nummer",
     /**
      * **The layout says eighteen.** Page 13 reads "Die 18-stellige EFN" and
