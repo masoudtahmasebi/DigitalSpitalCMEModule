@@ -140,6 +140,52 @@ check "'none' survives as the opt-out" "none" "$actual"
 rejects_check "a bare hostname as the apex destination" \
   eval 'APEX_REDIRECT_URL=fortbildung.digitalspital.com'
 
+# ---------------------------------------------------------------------------
+# The object storage origin in the console's CSP (P67-01)
+# ---------------------------------------------------------------------------
+#
+# Reported as "the video upload to s3 does not even work". The presigned PUT was
+# correct; the browser refused to open the connection, because the console's
+# `connect-src` named only itself and the API. Nothing reached a server, so
+# nothing was in any log — the only evidence was a line in the operator's
+# browser console.
+
+actual=$(
+  source ./domains.sh
+  BASE_DOMAIN=digitalspital.com
+  S3_ENDPOINT=https://nbg1.your-objectstorage.com
+  ds_derive_domains
+  printf '%s' "$S3_ORIGIN"
+)
+check "the bucket origin is derived from S3_ENDPOINT" \
+  "https://nbg1.your-objectstorage.com" "$actual"
+
+# The failure this shape actually has: an endpoint carrying a path. A CSP names
+# origins, and the whole URL in a `connect-src` is a directive the browser reads
+# as a path match — which fails in exactly the way this exists to prevent.
+actual=$(
+  source ./domains.sh
+  BASE_DOMAIN=digitalspital.com
+  S3_ENDPOINT=https://nbg1.your-objectstorage.com/dscme
+  ds_derive_domains
+  printf '%s' "$S3_ORIGIN"
+)
+check "a path on the endpoint is stripped" \
+  "https://nbg1.your-objectstorage.com" "$actual"
+
+actual=$(
+  source ./domains.sh
+  BASE_DOMAIN=digitalspital.com
+  ds_derive_domains
+  printf '%s' "${S3_ORIGIN:-<empty>}"
+)
+check "no bucket configured leaves the directive alone" "<empty>" "$actual"
+
+# And the check that would have caught the deployed configuration: an origin
+# that does not match the endpoint the presigned URL points at.
+rejects_check "an S3_ORIGIN that does not match S3_ENDPOINT" \
+  eval 'S3_ENDPOINT=https://nbg1.your-objectstorage.com; S3_ORIGIN=https://elsewhere.example'
+
 rm -f /tmp/ds-domains-happy.txt
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"

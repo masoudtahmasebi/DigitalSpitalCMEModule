@@ -37,6 +37,16 @@
 # Idempotent: running it twice changes nothing, because every assignment is
 # guarded by `:-`. That matters because deploy.sh sources the env file and then
 # calls this, and a rollback path may do both again.
+# `https://host:port/path?x` → `https://host:port` (P67-01).
+#
+# A CSP names origins, never paths. `S3_ENDPOINT` is a full endpoint URL and
+# putting it in a `connect-src` verbatim would be a directive the browser reads
+# as a *path* match — which fails, silently, in exactly the way this helper
+# exists to prevent.
+origin_of() {
+  printf '%s' "$1" | sed -E 's#^([A-Za-z][A-Za-z0-9+.-]*://[^/]+).*#\1#'
+}
+
 ds_derive_domains() {
   if [[ -z "${BASE_DOMAIN:-}" ]]; then
     echo "BASE_DOMAIN is not set. It is the one domain everything else derives from," >&2
@@ -105,6 +115,33 @@ ds_derive_domains() {
   # console picks one in the interface (P22-03). There used to be a single
   # `PROJECT_SLUG` naming a customer — `medice-adhs` — in a file that describes
   # an installation meant to serve many.
+
+  # The bucket the console uploads to, as a CSP origin (P67-01).
+  #
+  # A course video is uploaded **by the browser, straight to object storage**,
+  # with a presigned PUT the API mints (P23-01). The API never sees the bytes,
+  # which is the point — a 2 GB file through a Node process is a Node process
+  # falling over.
+  #
+  # The browser therefore opens a connection to a host that is not ours, and the
+  # console's CSP has to say so. It did not, so every upload was blocked before
+  # a byte moved:
+  #
+  #     Connecting to 'https://nbg1.your-objectstorage.com/…' violates the
+  #     following Content Security Policy directive: "connect-src 'self'
+  #     https://api.digitalspital.com".
+  #
+  # Derived from `S3_ENDPOINT` rather than written again, because the origin the
+  # policy allows and the origin the presigned URL points at are the same fact.
+  # Two copies would drift the first time the bucket moves region, and the
+  # symptom would be this one — in the browser, with nothing in any server log.
+  #
+  # Empty when there is no object storage configured, which collapses the
+  # directive back to what it was and is correct: no bucket, no uploads.
+  if [[ -n "${S3_ENDPOINT:-}" ]]; then
+    : "${S3_ORIGIN:=$(origin_of "${S3_ENDPOINT}")}"
+  fi
+  : "${S3_ORIGIN:=}"
 
   # No Keycloak origin in the portal's CSP, because the portal never contacts a
   # Keycloak. It has not run an OIDC flow since P21-03: a federated tenant gets
@@ -187,6 +224,16 @@ ds_check_domains() {
   # browser with nothing in any server log.
   [[ "${API_DOMAIN_URL:-}" == "https://${API_DOMAIN}" ]] || complain \
     "API_DOMAIN_URL (${API_DOMAIN_URL:-unset}) does not match https://${API_DOMAIN}"
+
+  # The bucket origin in the console's CSP (P67-01). A mismatch blocks every
+  # upload in the browser, before any request reaches a server — so there is
+  # nothing in any log and the console reports a connection that never happened.
+  if [[ -n "${S3_ENDPOINT:-}" ]]; then
+    local expected_s3_origin
+    expected_s3_origin="$(origin_of "${S3_ENDPOINT}")"
+    [[ "${S3_ORIGIN:-}" == "${expected_s3_origin}" ]] || complain \
+      "S3_ORIGIN (${S3_ORIGIN:-unset}) does not match the origin of S3_ENDPOINT (${expected_s3_origin})"
+  fi
 
   # The frontends' containers refuse to start without a project slug, which is
   # a container restart loop rather than a message. Said here instead.
