@@ -53,6 +53,16 @@ export const de = {
     open: "Zur Fortbildung",
     /** Already finished — the course stays open for the certificate and the Mediathek. */
     review: "Fortbildung ansehen",
+    /**
+     * The card's one-line state for a course that is finished but not yet
+     * certified (P52-05).
+     *
+     * Short, because it shares a card with a title, a description and two
+     * buttons — and it only has to do one thing: give a reason to open a
+     * course the learner has already been through. The detail screen says what
+     * is missing.
+     */
+    certificationOpen: "Abgeschlossen – Zertifizierung noch offen",
     back: "Zurück zur Übersicht",
 
     /**
@@ -171,6 +181,18 @@ export const de = {
     watchProgress: (achieved: number, required: number): string =>
       `${achieved} % der Videoinhalte angesehen (erforderlich: ${required} %).`,
     complete: "Fortbildung abgeschlossen",
+    /**
+     * Shown when the course is done but the point is not yet claimed (P51-01).
+     *
+     * The physician has finished — the banner above says so — and this line
+     * exists only to answer the question that immediately follows it: *and
+     * now?* Naming the tab is the whole point; "Ihre Zertifizierung ist noch
+     * offen" on its own is the correct-and-useless answer CLAUDE.md §9.4 is
+     * about. There is no deadline in this sentence because there is none: they
+     * may come back whenever they like.
+     */
+    certificationOpen:
+      "Für Ihre CME-Punkte fehlen noch Angaben. Sie finden sie unter „Zertifizierung“ und können sie jederzeit nachtragen.",
   },
 
   /**
@@ -192,6 +214,17 @@ export const de = {
     courseProgress: (percent: number): string =>
       `${percent} % der Fortbildung absolviert`,
     autosave: "Ihr Fortschritt wird automatisch gespeichert",
+    /**
+     * When the promise above has stopped being true (P62-05).
+     *
+     * Three things, in the order a person needs them: what happened, what it
+     * costs, and what to do. "Sitzung abgelaufen" alone would be a status; a
+     * physician watching a 25-minute Fortbildung needs to know their time is
+     * no longer being counted, and that a reload fixes it.
+     */
+    sessionEnded:
+      "Ihre Sitzung ist abgelaufen — Ihr Fortschritt wird derzeit nicht gespeichert. " +
+      "Bitte laden Sie die Seite neu und melden Sie sich erneut an.",
     pause: "Fortbildung pausieren",
     back: "Zurück zur Übersicht",
 
@@ -271,6 +304,22 @@ export const de = {
      */
     seekLocked:
       "Vorspulen ist nicht möglich. Für die Fortbildungspunkte muss das Video vollständig angesehen werden.",
+    /**
+     * The *other* reason a seek does not happen (P62-03).
+     *
+     * A media host that does not answer `Range` with `206` leaves the browser
+     * unable to seek at all, and the playhead snaps back exactly as it does
+     * when the anti-skip gate refuses. Two causes, one symptom — and the
+     * sentence above is on screen, so a misconfigured server reads as a
+     * working feature and nobody investigates.
+     *
+     * So this says whose fault it is and what to do. "Nicht möglich" would
+     * have been true and useless; a learner told they may not skip ahead does
+     * not report a broken video server.
+     */
+    seekUnsupported:
+      "Dieses Video kann nicht gespult werden — der Videoserver unterstützt das nicht. " +
+      "Die Wiedergabe von vorn funktioniert weiterhin. Bitte melden Sie das dem Veranstalter.",
     /** The slider's value when the range is capped: "14:35 von 25:45, freigegeben bis 12:30". */
     seekValueLimited: (position: string, duration: string, limit: string): string =>
       `${position} von ${duration}, freigegeben bis ${limit}`,
@@ -527,6 +576,16 @@ export const de = {
     familyNameLabel: "Nachname",
     familyNamePlaceholder: "z.B. Mustermann",
 
+    addressLabel: "Anschrift",
+    addressPlaceholder: "z.B. Musterstraße 1, 58638 Iserlohn",
+    /**
+     * Why the field is there and why it may be left empty. The Muster has an
+     * "Anschrift:" line; the Bescheid does not require it (S12), so the
+     * honest thing is to ask and accept nothing.
+     */
+    addressHint:
+      "Optional. Wird auf der Teilnahmebescheinigung ausgewiesen; " +
+      "ohne Angabe bleibt die Zeile leer.",
     efnLabel: "EFN-Nummer",
     /**
      * **The layout says eighteen.** Page 13 reads "Die 18-stellige EFN" and
@@ -539,6 +598,19 @@ export const de = {
     efnHint: "Die 15-stellige EFN finden Sie auf Ihrem Arztausweis",
     efnInvalid: "Die EFN muss aus genau 15 Ziffern bestehen.",
     efnSaved: "Ihre EFN ist hinterlegt.",
+    /**
+     * The stored EFN, shown back (P54-02).
+     *
+     * "Ihre EFN ist hinterlegt" was true and useless: it told a physician that
+     * *a* number would be reported for them without saying which, so a digit
+     * mistyped months ago stayed invisible until the Kammer credited the wrong
+     * account. Printed in full rather than masked — a masked EFN cannot be
+     * checked, which is the only reason to show it at all.
+     */
+    efnStored: (efn: string): string => `Ihre hinterlegte EFN: ${efn}`,
+    efnCorrect: "EFN korrigieren",
+    efnCorrectSave: "EFN speichern",
+    efnCorrectCancel: "Abbrechen",
 
     /** Split so the Datenschutzerklärung can be a link, as the layout draws it. */
     consentBefore:

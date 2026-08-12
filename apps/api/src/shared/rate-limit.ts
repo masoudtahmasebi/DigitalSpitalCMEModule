@@ -50,6 +50,18 @@ export const RATE_LIMIT_RULES = {
   completion: { limit: 5, windowSec: 60 },
   /** Cheap to serve, but a write of personal data. */
   efnWrite: { limit: 10, windowSec: 60 },
+  /**
+   * The read is separate and far more generous (P57-01).
+   *
+   * It shared `efnWrite`'s bucket at first, and the completion screen asks on
+   * every mount — so a physician reloading the page while correcting a typo
+   * spent the same ten-per-minute budget the correction itself needs, and was
+   * told to try again later in the middle of fixing the one field that matters.
+   * Being throttled out of reading your own identifier is the wrong end of the
+   * trade: the read is idempotent, returns one field, and can only ever return
+   * the caller's own.
+   */
+  efnRead: { limit: 60, windowSec: 60 },
   /** Generous on purpose — see the note above. */
   progress: { limit: 600, windowSec: 60 },
   /**

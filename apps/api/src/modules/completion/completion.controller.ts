@@ -1,12 +1,22 @@
 /**
  * Completion HTTP surface (P6, P1-06, P7). Interface layer — ADR-0006.
  *
- * The EFN route lives here rather than on a course, because an EFN belongs to
- * the physician, not to a participation (ADR-0004). It is write-only: there is
- * deliberately no GET.
+ * The EFN routes live here rather than on a course, because an EFN belongs to
+ * the physician, not to a participation (ADR-0004). Read and write are both
+ * strictly self-service — the subject is always the authenticated principal
+ * and never a path parameter (P54-02).
  */
 
-import { Body, Controller, Get, HttpCode, Param, Post, Put } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Post,
+  Put,
+} from "@nestjs/common";
 import { Roles } from "../../auth/roles.decorator.js";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
@@ -15,6 +25,13 @@ import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
 import { CompletionService } from "./completion.service.js";
+import {
+  certificateArchiveFor,
+  type CertificateArchivePort,
+} from "../certificate/certificate.archive.js";
+import { APP_CONFIG } from "../../db/tokens.js";
+import type { AppConfig } from "../../config/config.js";
+import { JsonLogger } from "../../observability/logger.js";
 import {
   completionInputSchema,
   efnInputSchema,
@@ -30,6 +47,17 @@ const LEARNER_ROLES = [
 
 @Controller()
 export class CompletionController {
+  /**
+   * The archive the completion's certificate is written to (P60-01). Built
+   * once — it holds a presigner and no request state — and `undefined` when
+   * the deployment has no bucket.
+   */
+  private readonly archive: CertificateArchivePort | undefined;
+
+  constructor(@Inject(APP_CONFIG) config: AppConfig) {
+    this.archive = certificateArchiveFor(config, new JsonLogger("warn"));
+  }
+
   @Get("courses/:slug/evaluation")
   @Roles(...LEARNER_ROLES)
   async getEvaluation(
@@ -68,9 +96,34 @@ export class CompletionController {
   }
 
   /**
-   * Write-only by design: 204 with no body, and no GET counterpart. Once
-   * stored the EFN is reported to the Ärztekammer and never read back out
-   * through the API (ADR-0004).
+   * The caller's own EFN, or `{"efn": null}` (P54-02).
+   *
+   * This route reverses the "write-only" rule that stood until P54; the
+   * reasoning for both directions is on `CompletionService.getEfn` and in
+   * ADR-0004's amendment, and the one line that matters is here: **the subject
+   * is the principal, never a parameter.** Adding a `:userId` to this path
+   * would turn a self-service field into an EFN lookup service, which is the
+   * thing the old rule was protecting.
+   *
+   * Rate-limited on its own bucket, not the write's (P57-01): the completion
+   * screen asks on every mount, and sharing the write's ten-per-minute budget
+   * meant a physician reloading while correcting a typo was refused in the
+   * middle of the correction. Still metered — a route touching `efn_profiles`
+   * should not be the one unlimited path into that table.
+   */
+  @Get("profile/efn")
+  @RateLimit("efnRead")
+  @Roles(...LEARNER_ROLES)
+  async getEfn(
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ): Promise<{ efn: string | null; required: boolean }> {
+    return CompletionService.fromDb(db).getEfn(context(principal));
+  }
+
+  /**
+   * Store or correct the EFN. 204 with no body — the value the caller just
+   * sent is not echoed, and `GET profile/efn` above is the way to read it back.
    */
   @Put("profile/efn")
   @HttpCode(204)
@@ -118,7 +171,7 @@ export class CompletionController {
 
     // The clock is read at the edge and passed inward; the deadline arithmetic
     // in `@ds/domain` never reads one of its own.
-    return CompletionService.fromDb(db).complete(
+    return CompletionService.fromDb(db, this.archive).complete(
       slug,
       parsed.data,
       context(principal),

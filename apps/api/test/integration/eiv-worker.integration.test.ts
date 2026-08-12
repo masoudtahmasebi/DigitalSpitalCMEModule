@@ -23,6 +23,7 @@ import { EivAccreditationReporter } from "@ds/eiv-client";
 import { EivAlertRepository } from "../../src/modules/eiv/eiv-alert.repository.js";
 import { EivAlertService } from "../../src/modules/eiv/eiv-alert.service.js";
 import { seedLearner } from "./support/seed-learner.js";
+import { eivDeadlines } from "@ds/domain";
 import { requireEnv } from "./support/env.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
@@ -63,8 +64,8 @@ beforeAll(async () => {
   );
   courseId = await insert(
     `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
-                          pass_threshold_percent, vnr, vnr_password_enc)
-     VALUES ($1,$2,$3,$4,100,70,$5,$6) RETURNING id`,
+                          pass_threshold_percent, vnr, vnr_password_enc, status)
+     VALUES ($1,$2,$3,$4,100,70,$5,$6,'published') RETURNING id`,
     [
       customerId,
       projectId,
@@ -406,8 +407,18 @@ describe("the deadline alarm finds what it needs to find", () => {
     const service = alertService();
     await service.sweep(new Date());
 
-    // Twenty hours later, the same row is inside the 12-hour threshold.
-    const later = new Date(Date.now() + 20 * 3_600_000);
+    /*
+     * Six hours before the deadline, which is inside the 12-hour threshold.
+     *
+     * The instant is computed from `eivDeadlines` rather than written as "20
+     * hours later" (P58-02): the deadline is the *end of a Berlin day*, so how
+     * far away it is depends on the time of day the suite runs — and the
+     * fixed offset this case used to carry only landed inside the threshold
+     * for part of the day. What is asserted here is the escalation, not the
+     * arithmetic; the arithmetic has its own exhaustive tests.
+     */
+    const deadline = eivDeadlines({ eventEndAt, now: new Date() }).reportDueAt;
+    const later = new Date(deadline.getTime() - 6 * 3_600_000);
     const raised = mine(await service.sweep(later), [enrolmentId]);
 
     expect(raised).toHaveLength(1);

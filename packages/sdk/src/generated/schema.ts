@@ -1873,7 +1873,19 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * The caller's own EFN
+         * @description Answers for the **authenticated principal only** — there is no
+         *     parameter naming a subject, and no endpoint anywhere returns another
+         *     person's EFN (ADR-0004, amended by P54-02). `null` when none is stored,
+         *     which is also the answer after erasure.
+         *
+         *     It exists so a physician can check the identifier the platform will
+         *     report on their behalf. A wrong EFN is accepted by EIV-FOBI and credits
+         *     the wrong account, so being unable to read it back is how a typo
+         *     survives to the Kammer.
+         */
+        get: operations["getEfn"];
         /**
          * Store the learner's EFN
          * @description The EFN (Einheitliche Fortbildungsnummer) is 15 digits and is the key
@@ -1958,8 +1970,28 @@ export interface components {
             instance?: string;
         };
         HealthStatus: {
-            /** @enum {string} */
+            /**
+             * @description `degraded` when **any** dependency below is unreachable.
+             *
+             *     `/health` answers 200 either way — it is a diagnostic, and the body
+             *     is the answer. `/health/ready` answers **503** when this is
+             *     `degraded`, which is what a load balancer and the container
+             *     healthcheck read (P52-01). `/health/live` ignores dependencies
+             *     entirely, so a Redis outage cannot restart-loop the fleet.
+             * @enum {string}
+             */
             status: "ok" | "degraded";
+            /** @description Postgres answered `SELECT 1`. */
+            database: boolean;
+            /**
+             * @description Redis answered `PING` (P52-01).
+             *
+             *     Not checked at all before: `/health` reported `ok` with Redis
+             *     stopped, the container healthcheck read the 200 as healthy, and a
+             *     deploy could go green on an API that could neither cache JWKS nor
+             *     count a rate limit. A gate that cannot go red is not a gate.
+             */
+            redis: boolean;
             /**
              * @description The release number this process was deployed as — `major.minor` from
              *     the workspace's package.json, patch from the commit count, so it
@@ -2026,7 +2058,10 @@ export interface components {
              *     from a parameter.
              *
              *     The card's call to action depends on it: _Zur Fortbildung_ when
-             *     absent, _Fortbildung fortsetzen_ when present and unfinished.
+             *     absent, _Fortbildung fortsetzen_ when present and the **course**
+             *     is unfinished. `courseComplete`, not `complete`, decides that —
+             *     there is nothing to resume once the videos and the quiz are done,
+             *     whether or not the Evaluationsbogen has been filled in (P52-05).
              *
              *     **Deliberately not a percentage.** A course percentage is the
              *     output of `rollupProgress` over the whole tree and there is exactly
@@ -2036,7 +2071,20 @@ export interface components {
              *     this person got". Both fields here are stored columns.
              */
             enrolment: {
-                /** @description `completed_at IS NOT NULL` — the course is finished. */
+                /**
+                 * @description The Fortbildung itself is finished — videos watched and
+                 *     Lernerfolgskontrolle passed (P52-05).
+                 *
+                 *     `course_completed_at IS NOT NULL`, falling back to
+                 *     `completed_at` for enrolments certified before migration 0037
+                 *     recorded the earlier date. Still a stored column, so the card
+                 *     keeps costing one query per page rather than one per row.
+                 */
+                courseComplete: boolean;
+                /**
+                 * @description `completed_at IS NOT NULL` — certified: the evaluation and the
+                 *     EFN are in and the CME point is claimed.
+                 */
                 complete: boolean;
             } | null;
         };
@@ -2191,10 +2239,40 @@ export interface components {
             evaluationSubmitted: boolean;
             /** @description Whether an EFN is on file. The EFN itself is never returned. */
             efnPresent: boolean;
+            /**
+             * @description The Fortbildung itself is finished: the required share of the video
+             *     content is watched and the Lernerfolgskontrolle is passed.
+             *
+             *     The evaluation and the EFN may still be outstanding. A physician in
+             *     this state has *done the course* and is told so; `complete` below is
+             *     the stronger claim that gates the certificate.
+             */
+            courseComplete: boolean;
+            /**
+             * @description Certifiable: `courseComplete`, and the Evaluationsbogen and — where
+             *     the course awards CME points — the EFN are on file. Only this gates
+             *     the Teilnahmebescheinigung and the EIV Punktemeldung.
+             */
             complete: boolean;
+            /** @description Everything still missing, in the order the learner meets it. */
             outstanding: components["schemas"]["CompletionCondition"][];
-            /** Format: date-time */
+            /**
+             * @description The subset of `outstanding` holding the course itself back — never
+             *     more than `watch` and `quiz`. Empty exactly when `courseComplete`.
+             */
+            outstandingForCourse: components["schemas"]["CompletionCondition"][];
+            /**
+             * Format: date-time
+             * @description When the CME point was claimed. Null until `complete`.
+             */
             completedAt: string | null;
+            /**
+             * Format: date-time
+             * @description When the course was finished. Null on enrolments certified before
+             *     this was recorded, so read `courseComplete` — never this field — to
+             *     decide whether the course is done.
+             */
+            courseCompletedAt: string | null;
             progress: components["schemas"]["ProgressSummary"];
             /** @description Feeds "Sie haben X von Y Modulen abgeschlossen". */
             moduleCompletion: {
@@ -2576,6 +2654,19 @@ export interface components {
             /** @description Nachname. Supplied together with `attestedGivenName`. */
             attestedFamilyName?: string;
             /**
+             * @description The postal address for the certificate's "Anschrift:" line
+             *     (P60-03). One field, because it is printed on one line and never
+             *     parsed.
+             *
+             *     Optional, and it stays optional: the Anerkennungsbescheid's
+             *     minimum field list does not include it, so a physician who does
+             *     not want to give a postal address must still be able to finish.
+             *     The certificate draws the line either way — filled when this is
+             *     supplied, blank when it is not, exactly as the paper Muster would
+             *     be handed over.
+             */
+            attestedAddress?: string;
+            /**
              * @description The Einheitliche Fortbildungsnummer, arriving with the rest of the
              *     form rather than through a separate request.
              *
@@ -2722,6 +2813,24 @@ export interface components {
          */
         AdminCourseSummary: {
             slug: string;
+            /**
+             * @description Editorial state (P53-01).
+             *
+             *     A `draft` is invisible to every learner: absent from the catalogue,
+             *     404 on its detail route, refused by enrol. Courses are **created as
+             *     drafts** — before this existed, `POST /admin/courses` put an empty
+             *     course straight into the physicians' catalogue.
+             *
+             *     Deliberately on the admin schema only. The learner-facing
+             *     `CourseSummary` has no such field because a learner is never served
+             *     a draft at all, and a `status: "published"` on every card would be a
+             *     constant dressed as information.
+             *
+             *     Distinct from `validFrom`/`validTo`, which say when an accredited
+             *     course runs rather than whether it is finished being written.
+             * @enum {string}
+             */
+            status: "draft" | "published";
             title: string;
             description: string | null;
             /**
@@ -2855,6 +2964,15 @@ export interface components {
          *     `null` clears a nullable text field.
          */
         AdminCourseUpdate: {
+            /**
+             * @description Publish or retract (P53-01). The one field here that changes *who
+             *     can see* the course rather than what it says.
+             *
+             *     Retracting behaves like an expired validity window: existing
+             *     enrolments keep their record and can no longer advance.
+             * @enum {string}
+             */
+            status?: "draft" | "published";
             title?: string;
             description?: string | null;
             /** @enum {string} */
@@ -2955,9 +3073,21 @@ export interface components {
             quizPassed: boolean;
             evaluationSubmitted: boolean;
             progressPercent: number;
+            /**
+             * @description Videos watched and Lernerfolgskontrolle passed. A participant can
+             *     sit here for days before supplying the Evaluationsbogen and their
+             *     EFN; a list showing only `complete` reports them as drop-outs.
+             */
+            courseComplete: boolean;
+            /** @description Certified — the point is earned and the Punktemeldung queued. */
             complete: boolean;
             /** Format: date-time */
             completedAt: string | null;
+            /**
+             * Format: date-time
+             * @description Null on enrolments certified before the date was recorded.
+             */
+            courseCompletedAt: string | null;
             eivState: components["schemas"]["EivState"];
             eivAttempts: number;
             /** Format: date-time */
@@ -2970,8 +3100,30 @@ export interface components {
             rows: components["schemas"]["ParticipantRow"][];
         };
         EfnInput: {
-            /** @description 15 digits. Never returned by any endpoint once stored. */
+            /**
+             * @description 15 digits. Returned only by `GET /profile/efn`, and only to the
+             *     physician it belongs to (ADR-0004, amended by P54-02).
+             */
             efn: string;
+        };
+        EfnState: {
+            /**
+             * @description The caller's own EFN, or `null` when none is stored. Never another
+             *     person's — this endpoint takes no subject parameter.
+             */
+            efn: string | null;
+            /**
+             * @description Whether an EFN is needed at all: true when any of the caller's
+             *     enrolments **in this project's customer** awards CME points
+             *     (P57-01). A course awarding none reports nothing to EIV-FOBI, so
+             *     there is nothing an EFN would identify and asking for one would
+             *     collect a physician's identifier for no purpose (ADR-0004).
+             *
+             *     It describes the courses, not the gap — it stays true once an EFN
+             *     is supplied. A client that wants to prompt asks for
+             *     `required && efn === null`.
+             */
+            required: boolean;
         };
         CourseListResponse: {
             items: components["schemas"]["CourseSummary"][];
@@ -5778,6 +5930,19 @@ export interface operations {
                     "application/json": {
                         /** Format: uuid */
                         userId: string;
+                        /**
+                         * @description The identity provider's own `sub` for this session. The
+                         *     only value that ties a session here to a user in the
+                         *     customer's realm, which is what a support conversation
+                         *     about a broken federated sign-in needs (P54-01).
+                         */
+                        subject: string;
+                        /**
+                         * @description The caller's own address, when the identity provider
+                         *     releases it. Absent rather than null when it does not —
+                         *     a null would read as "we hold none".
+                         */
+                        email?: string;
                         /** Format: uuid */
                         customerId: string;
                         role: string;
@@ -8605,6 +8770,57 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getEfn: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's EFN, or null. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EfnState"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     setEfn: {

@@ -10,11 +10,12 @@
  * id always comes from the validated token, never from the request.
  */
 
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import type { Db } from "../../db/tenant-db.js";
 import {
   efnProfiles,
   eivSubmissions,
+  enrolments,
   evaluationResponses,
   evaluations,
 } from "../../db/schema.js";
@@ -38,6 +39,8 @@ export interface CompletionRepositoryPort {
   }): Promise<void>;
   saveEfn(userId: string, efn: string): Promise<void>;
   findEfn(userId: string): Promise<string | undefined>;
+  /** Whether any enrolment of this learner, in this tenant, awards CME points. */
+  hasPointBearingEnrolment(userId: string): Promise<boolean>;
   hasEivSubmission(enrolmentId: string): Promise<boolean>;
   queueEivSubmission(input: {
     customerId: string;
@@ -115,6 +118,30 @@ export class CompletionRepository implements CompletionRepositoryPort {
       .limit(1);
 
     return row?.efn;
+  }
+
+  /**
+   * Does this learner have anything here that needs an EFN? (P57-01)
+   *
+   * Read through the tenant-scoped connection, so it answers for the customer
+   * whose portal the request came through and no other. A physician enrolled
+   * with two customers is asked the question twice and gets two honest
+   * answers, rather than one answer assembled from data this request may not
+   * see (ADR-0002).
+   *
+   * `cme_points` is read off the **enrolment**, not the course: the enrolment
+   * snapshots what the course was worth when it was taken (P3-01), so
+   * re-pricing a course later cannot retroactively change whether somebody was
+   * asked for their EFN.
+   */
+  async hasPointBearingEnrolment(userId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: enrolments.id })
+      .from(enrolments)
+      .where(and(eq(enrolments.userId, userId), gt(enrolments.cmePoints, 0)))
+      .limit(1);
+
+    return row !== undefined;
   }
 
   async hasEivSubmission(enrolmentId: string): Promise<boolean> {

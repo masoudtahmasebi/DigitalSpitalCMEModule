@@ -40,12 +40,31 @@
 export type CourseAvailability =
   /** Being offered: in the catalogue, and open to new enrolments. */
   | "available"
+  /** Still being written. Never offered, at any date (P53-01). */
+  | "draft"
   /** The window has not opened yet. */
   | "not_yet"
   /** The window has closed. The course is no longer offered. */
   | "ended";
 
+/** Editorial state. A draft is invisible to learners whatever its dates say. */
+export type CourseStatus = "draft" | "published";
+
 export interface AvailabilityWindow {
+  /**
+   * Whether the course has been published (P53-01).
+   *
+   * Optional, and **absent means published** — which is the opposite of the
+   * database's default, deliberately. Every caller of this function is asking
+   * on behalf of a learner about a course row that has the column; the
+   * optionality exists so the dozens of existing test fixtures that predate
+   * the column keep describing what they meant, rather than silently becoming
+   * drafts and making every one of those tests pass for a new reason.
+   *
+   * The column itself defaults to `draft`, because there the risk runs the
+   * other way: a *new course* nobody has finished writing must not be visible.
+   */
+  readonly status?: CourseStatus | undefined;
   /** Inclusive. `null` means "offered from the beginning of time". */
   readonly validFrom: Date | null;
   /** Inclusive. `null` means "offered indefinitely". */
@@ -64,6 +83,14 @@ export function courseAvailability(
   window: AvailabilityWindow,
   now: Date,
 ): CourseAvailability {
+  /*
+   * Checked first, and before any date arithmetic: a draft is not offered on
+   * any day, so "when" is not a question worth asking about it. Answering
+   * `not_yet` for an unpublished course would also tell a learner to come
+   * back, which is advice about a course that may never exist.
+   */
+  if (window.status === "draft") return "draft";
+
   const instant = now.getTime();
 
   if (window.validFrom !== null && instant < window.validFrom.getTime()) {

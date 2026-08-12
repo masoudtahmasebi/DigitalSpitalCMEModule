@@ -29,6 +29,7 @@ import { configureApp } from "../../src/configure-app.js";
 import { loadConfig } from "../../src/config/config.js";
 import { seedLearner } from "./support/seed-learner.js";
 import { requireEnv } from "./support/env.js";
+import { backdateLearnerClock } from "./support/backdate.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 
@@ -586,9 +587,31 @@ describe("what a learner has touched cannot be deleted", () => {
   let enrolmentId = "";
 
   beforeAll(async () => {
+    /*
+     * Publish it first, and check that it needed publishing (P53-01).
+     *
+     * Everything above this point was authored against a draft — created that
+     * way, invisible to learners the whole time — so the enrol below is a 404
+     * until an operator publishes. The refusal is asserted rather than assumed
+     * because this is the only place in the suite where the draft state has an
+     * observable consequence, and a bare `PATCH` here would leave the platform
+     * this ticket fixes passing the whole file (CLAUDE.md §9.1).
+     */
+    const early = await asLearner("PUT", `/courses/${courseSlug}/enrolment`);
+    expect(early.status).toBe(404);
+
+    const published = await asAdmin("PATCH", `/admin/courses/${courseSlug}`, {
+      status: "published",
+    });
+    expect(published.status, JSON.stringify(published.body)).toBe(200);
+
     // A learner enrols and watches, which is what creates the evidence.
     const enrol = await asLearner("PUT", `/courses/${courseSlug}/enrolment`);
     expect(enrol.status).toBe(200);
+
+    // …over a plausible stretch of time. The playback guard measures from the
+    // learner's last activity (P55-01) and this suite takes milliseconds.
+    await backdateLearnerClock(seedPool, 3600);
     enrolmentId = enrol.body.enrolmentId;
 
     const progress = await asLearner(

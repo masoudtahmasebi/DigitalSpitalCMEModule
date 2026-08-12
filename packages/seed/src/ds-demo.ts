@@ -102,7 +102,20 @@ interface ModuleSeed {
 }
 
 /**
- * Three modules for the CME course.
+ * Three modules for the CME course, every one of them with **several
+ * chapters** (P52-03).
+ *
+ * The chapter counts are the point. Until P52-03 every module in every seeded
+ * course but one held a single chapter, which meant the sequence gate was only
+ * ever exercised *between* modules and never *within* one — and the two are
+ * different code paths in `courseChapterSequence`. A fixture that cannot
+ * produce "chapter 2 is locked until chapter 1 is done" is a fixture that
+ * cannot show the gate working or failing.
+ *
+ * It also immediately found a real defect in `seedContent` below, which put a
+ * quiz in every chapter of the last module and questions in only the last of
+ * them. Invisible while last modules had one chapter; a 500 for any learner
+ * opening the others.
  *
  * Durations are odd numbers on purpose. A course's total time is computed from
  * its videos rather than typed by an author, and round numbers hide a
@@ -114,6 +127,11 @@ const CME_MODULES: readonly ModuleSeed[] = [
     subtitle: "Was diese Demo zeigt · Aufbau · Navigation",
     chapters: [
       { title: "Kapitel 1 – Überblick", videoTitle: "Einführung", durationSec: 733 },
+      {
+        title: "Kapitel 2 – Aufbau",
+        videoTitle: "Aufbau der Fortbildung",
+        durationSec: 419,
+      },
     ],
   },
   {
@@ -122,24 +140,44 @@ const CME_MODULES: readonly ModuleSeed[] = [
     chapters: [
       { title: "Kapitel 1 – Wiedergabe", videoTitle: "Wiedergabe", durationSec: 1147 },
       { title: "Kapitel 2 – Fortschritt", videoTitle: "Fortschritt", durationSec: 512 },
+      {
+        title: "Kapitel 3 – Wiederaufnahme",
+        videoTitle: "Wiederaufnahme",
+        durationSec: 377,
+      },
     ],
   },
   {
     title: "Modul 3 – Abschluss",
     subtitle: "Lernerfolgskontrolle · Evaluation · Zertifikat",
     chapters: [
-      { title: "Kapitel 1 – Abschluss", videoTitle: "Abschluss", durationSec: 946 },
+      {
+        title: "Kapitel 1 – Zusammenfassung",
+        videoTitle: "Zusammenfassung",
+        durationSec: 946,
+      },
+      // The quiz lands here, in the last chapter of the last module, and
+      // nowhere else.
+      { title: "Kapitel 2 – Abschluss", videoTitle: "Abschluss", durationSec: 604 },
     ],
   },
 ];
 
-/** Two modules for the point-free course, and deliberately no quiz. */
+/**
+ * Two modules for the point-free course, two chapters each, and deliberately
+ * no quiz.
+ *
+ * Also multi-chapter (P52-03): the gate does not care whether a course awards
+ * points, so the course that awards none is where a gate bug would survive
+ * longest if this one were left shallow.
+ */
 const FREE_MODULES: readonly ModuleSeed[] = [
   {
     title: "Modul 1 – Ohne Zertifizierung",
     subtitle: "Eine Fortbildung, die keine CME-Punkte vergibt",
     chapters: [
       { title: "Kapitel 1 – Einführung", videoTitle: "Einführung", durationSec: 421 },
+      { title: "Kapitel 2 – Einordnung", videoTitle: "Einordnung", durationSec: 293 },
     ],
   },
   {
@@ -147,6 +185,7 @@ const FREE_MODULES: readonly ModuleSeed[] = [
     subtitle: "Weiterführende Inhalte",
     chapters: [
       { title: "Kapitel 1 – Vertiefung", videoTitle: "Vertiefung", durationSec: 688 },
+      { title: "Kapitel 2 – Ausblick", videoTitle: "Ausblick", durationSec: 351 },
     ],
   },
 ];
@@ -375,7 +414,8 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
   return upsert(
     pool,
     `INSERT INTO courses (
-       customer_id, project_id, slug, title, description, delivery_type,
+       -- 'published' explicitly: the column defaults to 'draft' (P53-01).
+       customer_id, project_id, slug, title, description, delivery_type, status,
        thema, altersgruppe, vnr, accreditation_body, cme_points, cme_category,
        event_location, organizer, valid_from, valid_to,
        required_watch_percent, pass_threshold_percent, max_quiz_attempts,
@@ -383,7 +423,7 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
        scientific_lead_name, scientific_lead_title, certificate_issue_place,
        stamp_image, stamp_image_mime, signature_image, signature_image_mime
      ) VALUES (
-       $1,$2,$3,$4,$5,'on_demand',
+       $1,$2,$3,$4,$5,'on_demand','published',
        ARRAY['Demo'], ARRAY['Erwachsene'], $6, $7, $8, $9,
        'online', 'DigitalSpital GmbH', $10, $11,
        100, 70, NULL,
@@ -511,7 +551,25 @@ async function seedContent(pool: pg.Pool, seed: ContentSeed): Promise<void> {
         ],
       );
 
-      if (seed.withQuiz && moduleOrdinal === seed.modules.length - 1) {
+      /*
+       * The Lernerfolgskontrolle goes in the **last chapter of the last
+       * module**, and nowhere else (P52-03).
+       *
+       * This used to test the module only. With every last module holding one
+       * chapter that was the same thing, so it was right by coincidence for as
+       * long as the coincidence held. The moment module 3 gained a second
+       * chapter it produced two quiz contents, gave questions to whichever came
+       * last, and left the other empty — and an empty quiz is not a cosmetic
+       * problem: `assessment.service.ts` throws `content=… is a quiz with no
+       * questions configured`, so a learner who opened it got a 500 on the last
+       * screen of the course.
+       *
+       * Found by deepening the fixtures rather than by a report, which is the
+       * whole argument for fixtures that are shaped like real courses.
+       */
+      const isLastModule = moduleOrdinal === seed.modules.length - 1;
+      const isLastChapter = chapterOrdinal === module.chapters.length - 1;
+      if (seed.withQuiz && isLastModule && isLastChapter) {
         quizContentId = await upsert(
           pool,
           `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title)

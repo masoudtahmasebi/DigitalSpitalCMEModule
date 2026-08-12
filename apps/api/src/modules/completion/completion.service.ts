@@ -29,6 +29,8 @@ import {
 } from "../learning/learning.repository.js";
 import { LearningService, type LearnerContext } from "../learning/learning.service.js";
 import type { EnrolmentState } from "../learning/learning.dto.js";
+import { CertificateService } from "../certificate/certificate.service.js";
+import type { CertificateArchivePort } from "../certificate/certificate.archive.js";
 import {
   CompletionRepository,
   type CompletionRepositoryPort,
@@ -39,6 +41,16 @@ import type {
   EvaluationSubmission,
 } from "./completion.dto.js";
 
+/**
+ * What the completion needs from the certificate module: issue this one, now.
+ *
+ * A port rather than the class, so `completion.service.test.ts` stays a test of
+ * the completion rules and does not have to stand up a PDF renderer.
+ */
+export interface CertificateIssuerPort {
+  issueForEnrolment(enrolmentId: string, customerId: string, now: Date): Promise<unknown>;
+}
+
 const EVALUATION_KINDS = ["scale", "single", "multi", "text"] as const;
 type EvaluationKind = (typeof EVALUATION_KINDS)[number];
 
@@ -46,12 +58,19 @@ export class CompletionService {
   constructor(
     private readonly repository: CompletionRepositoryPort,
     private readonly learning: LearningService,
+    /**
+     * Optional so the service's own tests can leave it out — every case in
+     * them is about the completion rules, and none is about a PDF. `fromDb`
+     * always supplies one, so nothing in production runs without it.
+     */
+    private readonly certificates?: CertificateIssuerPort,
   ) {}
 
-  static fromDb(db: Db): CompletionService {
+  static fromDb(db: Db, archive?: CertificateArchivePort): CompletionService {
     return new CompletionService(
       new CompletionRepository(db),
       new LearningService(new LearningRepository(db)),
+      CertificateService.fromDb(db, archive),
     );
   }
 
@@ -88,6 +107,10 @@ export class CompletionService {
     learner: LearnerContext,
   ): Promise<EnrolmentState> {
     const { course, enrolment } = await this.learning.requireEnrolled(slug, learner);
+
+    // P51-02. The evaluation is a statement about a course that is still
+    // running; once the window closes there is nothing left to advance.
+    this.learning.requireCourseStillOffered(course, slug);
 
     if (await this.repository.hasEvaluationResponse(enrolment.id)) {
       throw new AppError(
@@ -155,6 +178,63 @@ export class CompletionService {
   }
 
   /**
+   * The learner's own EFN, or null (P54-02).
+   *
+   * ## Why this exists, having deliberately not existed
+   *
+   * The EFN was write-only for six phases and the reasoning was sound: it is a
+   * physician's identifier at their Kammer, and an endpoint that returns one is
+   * an endpoint that can leak one. What that reasoning left out is the person
+   * who typed it. A physician who supplied an EFN months ago, on a different
+   * device, has no way to see what the platform will report on their behalf —
+   * and no way to notice a typo until the Kammer credits somebody else's
+   * account, which is the failure ADR-0004 itself calls the worst available
+   * because it looks like success.
+   *
+   * GDPR Art. 15 makes the answer available on request in any case. The choice
+   * was never whether the subject may see it, only whether they see it in the
+   * product or by writing to a mailbox.
+   *
+   * ## What keeps it from being the leak the old rule feared
+   *
+   * **The subject is not a parameter.** `learner.userId` comes off the
+   * validated principal. There is no shape of this request that names another
+   * person, so there is nothing to enumerate and nothing for a broken
+   * authorisation check to widen — the only account reachable is the one
+   * already signed in.
+   *
+   * ## `required`, and what it is not
+   *
+   * `{"efn": null}` alone cannot tell "we do not need one from you" from "we
+   * need one and you have not given it" — and only the server knows which,
+   * because it turns on whether any of this learner's enrolments awards CME
+   * points (P57-01). A course without points reports nothing to EIV-FOBI, so
+   * there is nothing an EFN would identify and demanding one would collect a
+   * physician's identifier for no purpose (ADR-0004).
+   *
+   * It describes the **courses**, not the gap: `required` stays true after an
+   * EFN is supplied, because the requirement did not go away. A client that
+   * wants to prompt asks for `required && efn === null`, which is one
+   * expression and cannot drift from the server's meaning of either half.
+   *
+   * The admin surface is unchanged: `participantRowSchema` still reports
+   * `efnPresent: boolean` and nothing anywhere returns another person's EFN.
+   * A customer admin holds a grant over a *tenant*; an EFN belongs to a
+   * *physician*, who may hold enrolments at several customers (docs/gdpr.md
+   * §9). Those are different scopes and only the narrower one is opened here.
+   */
+  async getEfn(
+    learner: LearnerContext,
+  ): Promise<{ efn: string | null; required: boolean }> {
+    const [efn, required] = await Promise.all([
+      this.repository.findEfn(learner.userId),
+      this.repository.hasPointBearingEnrolment(learner.userId),
+    ]);
+
+    return { efn: efn ?? null, required };
+  }
+
+  /**
    * Finalise the course and queue the Punktemeldung.
    *
    * Idempotent: a second call returns the same completed state and does not
@@ -169,6 +249,22 @@ export class CompletionService {
     const { course, enrolment } = await this.learning.requireEnrolled(slug, learner);
 
     if (enrolment.completedAt !== null) return this.learning.getState(slug, learner);
+
+    /*
+     * P51-02, and the one refusal in this change with a cost attached.
+     *
+     * After the idempotency check above, so an already-certified learner still
+     * gets their state back rather than an error about a course they finished.
+     * But a learner who completed the videos and the quiz *before* the window
+     * closed and comes back for the paperwork *after* is refused here, and the
+     * CME point they earned is not claimable through the product.
+     *
+     * That is what "keep the existing and do not let them go on" asks for, and
+     * it is deliberate rather than overlooked — see docs/show-stoppers.md S17,
+     * which is the question of whether the Kammer wants a grace period keyed to
+     * the course completion instead. The two-line change is here if so.
+     */
+    this.learning.requireCourseStillOffered(course, slug);
 
     /*
      * The EFN arrives with the rest of the form (layout page 13) rather than
@@ -200,8 +296,39 @@ export class CompletionService {
     await this.learning.markCompleted(enrolment.id, now, attestedFrom(input));
 
     await this.queueSubmission(course.vnr, enrolment.id, learner, now);
+    await this.issueCertificate(enrolment.id, learner, now);
 
     return { ...state, completedAt: now.toISOString() };
+  }
+
+  /**
+   * Issue the certificate the moment it is earned (P59-01).
+   *
+   * ## Why the completion does this rather than the download
+   *
+   * The `certificates` row used to be created only when somebody first
+   * *fetched* the PDF. Everything downstream keys on that row: the delivery
+   * sweep claims `status = 'issued'`, so a physician who finished a course and
+   * closed the tab was never emailed anything — the whole durable delivery
+   * pipeline (P8-03) could only ever run for people who had already downloaded
+   * the certificate themselves, which is precisely the population that did not
+   * need the e-mail. QA completed a course and watched the queue stay empty.
+   *
+   * ## Why a failure here does not fail the completion
+   *
+   * The physician has met every condition; the point is earned and the
+   * Punktemeldung is queued above. A course missing its stamp, or a name we
+   * cannot compose, is an authoring gap — the same trade `queueSubmission`
+   * makes one line up. `issueForEnrolment` answers `undefined` rather than
+   * throwing for exactly those cases, and the download route still explains
+   * them properly to somebody looking at a screen.
+   */
+  private async issueCertificate(
+    enrolmentId: string,
+    learner: LearnerContext,
+    now: Date,
+  ): Promise<void> {
+    await this.certificates?.issueForEnrolment(enrolmentId, learner.customerId, now);
   }
 
   /**
@@ -291,6 +418,7 @@ function attestedFrom(input: CompletionInput): AttestedCompletion {
     title: null,
     givenName: null,
     familyName: null,
+    address: input.attestedAddress ?? null,
     consentDocument: input.consentDocument ?? null,
   };
 
@@ -317,6 +445,7 @@ function attestedFrom(input: CompletionInput): AttestedCompletion {
     title: composed.parts.title ?? null,
     givenName: composed.parts.givenName,
     familyName: composed.parts.familyName,
+    address: input.attestedAddress ?? null,
     consentDocument: input.consentDocument ?? null,
   };
 }

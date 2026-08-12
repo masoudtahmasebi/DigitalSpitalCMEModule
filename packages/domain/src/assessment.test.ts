@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  mayRevealCorrectAnswers,
   minimumCorrectAnswers,
   scoreQuiz,
   UnknownQuestionError,
@@ -194,5 +195,51 @@ describe("minimumCorrectAnswers", () => {
 
   it("has no answer for a threshold nothing can reach", () => {
     expect(minimumCorrectAnswers(11, 101)).toBeNull();
+  });
+});
+
+/*
+ * P56-01. The rule that was a comment for five phases.
+ *
+ * `assessment.ts` said "no endpoint ever returns a correctness marker for a
+ * CME-certified course" and nothing checked it: the API honoured the course's
+ * own `revealCorrectAnswers` column, and QA turned that on for an accredited
+ * course and got a boolean per question back.
+ */
+describe("mayRevealCorrectAnswers", () => {
+  it("refuses for a course that awards CME points, whatever the setting says", () => {
+    expect(mayRevealCorrectAnswers({ revealCorrectAnswers: true, cmePoints: 4 })).toBe(
+      false,
+    );
+  });
+
+  it("refuses for a single point, because one point is still accredited", () => {
+    expect(mayRevealCorrectAnswers({ revealCorrectAnswers: true, cmePoints: 1 })).toBe(
+      false,
+    );
+  });
+
+  it("allows it for material that awards nothing and asks for it", () => {
+    // The case the setting exists for: educational content with no accredited
+    // assessment to protect, where immediate feedback is the whole point.
+    expect(mayRevealCorrectAnswers({ revealCorrectAnswers: true, cmePoints: null })).toBe(
+      true,
+    );
+  });
+
+  it("still withholds when a point-free course has not asked", () => {
+    // Otherwise this function would have quietly turned the default on.
+    expect(
+      mayRevealCorrectAnswers({ revealCorrectAnswers: false, cmePoints: null }),
+    ).toBe(false);
+  });
+
+  it("treats zero points as point-free rather than as accredited", () => {
+    // `cmePoints: 0` is not a shape the console can produce — the schema is
+    // `positive()` — but a seed or a migration could, and "0 points" plainly
+    // means nothing is being certified.
+    expect(mayRevealCorrectAnswers({ revealCorrectAnswers: true, cmePoints: 0 })).toBe(
+      true,
+    );
   });
 });

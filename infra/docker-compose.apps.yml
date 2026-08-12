@@ -148,13 +148,24 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    # `/health/ready`, not `/health` (P52-01).
+    #
+    # `/health` answers 200 with a `degraded` body when a dependency is down,
+    # which is deliberate and documented in health.controller.ts — but `r.ok`
+    # reads a 200 as healthy, so this probe passed with Redis dead. Compose
+    # then reported the API healthy, `depends_on` was satisfied and the deploy
+    # went green on a container that could not validate a token or count a
+    # rate limit. Found by stopping Redis and watching the probe stay green.
+    #
+    # Readiness answers 503 for exactly this question, and this is what it is
+    # for.
     healthcheck:
       test:
         [
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 5s
       timeout: 5s

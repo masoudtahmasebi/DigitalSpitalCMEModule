@@ -19,7 +19,7 @@
 
 import { EivError, EIV_PASSWORD_KEY, type EivFailureKind } from "@ds/eiv-client";
 import type { AccreditationReporter } from "@ds/plugin-api";
-import { planEivAttempt, type EivAttemptFailure } from "@ds/domain";
+import { eivDeadlines, planEivAttempt, type EivAttemptFailure } from "@ds/domain";
 import { SYSTEM_ACTOR, type AuditServicePort } from "../../audit/audit.service.js";
 import type {
   ClaimedSubmission,
@@ -191,12 +191,35 @@ export class EivService {
 
       const firstSubmittedAt = row.firstSubmittedAt ?? now;
 
+      /*
+       * Recomputed, not taken from `plan` (P58-01).
+       *
+       * The correction window opens when the first Meldung lands, so on a
+       * first attempt `plan.deadlines` — computed *before* this submission,
+       * from a row with no `firstSubmittedAt` — has no correction window to
+       * report. Storing that undefined left `correction_window_ends_at` NULL
+       * on every successfully submitted row, permanently: a submitted row is
+       * never swept again, so nothing came back to fill it in.
+       *
+       * The consequence was quiet. Nothing *decided* from the column, because
+       * the domain recomputes; but the column is the record an operator reads,
+       * an export carries and a support query answers from, and NULL there
+       * reads as "no correction window" when in fact one closes in seven days.
+       * That is the shape CLAUDE.md §9.6 names — an all-null answer that is
+       * indistinguishable from "unset".
+       */
+      const deadlines = eivDeadlines({
+        eventEndAt: row.eventEndAt,
+        firstSubmittedAt,
+        now,
+      });
+
       await this.repository.recordSuccess({
         claim,
         reference: push.reference,
         attemptCount,
         firstSubmittedAt,
-        correctionWindowEndsAt: plan.deadlines.correctionWindowEndsAt,
+        correctionWindowEndsAt: deadlines.correctionWindowEndsAt,
       });
 
       await this.audit.recordForCustomer(row.customerId, {

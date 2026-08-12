@@ -1172,9 +1172,22 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [userId, customerId, role]
+                required: [userId, subject, customerId, role]
                 properties:
                   userId: { type: string, format: uuid }
+                  subject:
+                    type: string
+                    description: |
+                      The identity provider's own `sub` for this session. The
+                      only value that ties a session here to a user in the
+                      customer's realm, which is what a support conversation
+                      about a broken federated sign-in needs (P54-01).
+                  email:
+                    type: string
+                    description: |
+                      The caller's own address, when the identity provider
+                      releases it. Absent rather than null when it does not —
+                      a null would read as "we hold none".
                   customerId: { type: string, format: uuid }
                   role: { type: string }
                   mustChangePassword: { type: boolean }
@@ -2709,6 +2722,30 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
   /profile/efn:
+    get:
+      tags: [completion]
+      operationId: getEfn
+      summary: The caller's own EFN
+      description: |
+        Answers for the **authenticated principal only** — there is no
+        parameter naming a subject, and no endpoint anywhere returns another
+        person's EFN (ADR-0004, amended by P54-02). `null` when none is stored,
+        which is also the answer after erasure.
+
+        It exists so a physician can check the identifier the platform will
+        report on their behalf. A wrong EFN is accepted by EIV-FOBI and credits
+        the wrong account, so being unable to read it back is how a typo
+        survives to the Kammer.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+      responses:
+        "200":
+          description: The caller's EFN, or null.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EfnState" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
     put:
       tags: [completion]
       operationId: setEfn
@@ -2968,11 +3005,31 @@ components:
 
     HealthStatus:
       type: object
-      required: [status]
+      required: [status, database, redis]
       properties:
         status:
           type: string
           enum: [ok, degraded]
+          description: |
+            `degraded` when **any** dependency below is unreachable.
+
+            `/health` answers 200 either way — it is a diagnostic, and the body
+            is the answer. `/health/ready` answers **503** when this is
+            `degraded`, which is what a load balancer and the container
+            healthcheck read (P52-01). `/health/live` ignores dependencies
+            entirely, so a Redis outage cannot restart-loop the fleet.
+        database:
+          type: boolean
+          description: Postgres answered `SELECT 1`.
+        redis:
+          type: boolean
+          description: |
+            Redis answered `PING` (P52-01).
+
+            Not checked at all before: `/health` reported `ok` with Redis
+            stopped, the container healthcheck read the 200 as healthy, and a
+            deploy could go green on an API that could neither cache JWKS nor
+            count a rate limit. A gate that cannot go red is not a gate.
         version:
           type: string
           description: |
@@ -3061,14 +3118,17 @@ components:
           # document's other nullable fields already use and which the SDK
           # generator honours.
           type: ["object", "null"]
-          required: [complete]
+          required: [courseComplete, complete]
           description: |
             The **caller's own** standing on this course, or `null` if they
             have not enrolled. Taken from the validated token's user id, never
             from a parameter.
 
             The card's call to action depends on it: _Zur Fortbildung_ when
-            absent, _Fortbildung fortsetzen_ when present and unfinished.
+            absent, _Fortbildung fortsetzen_ when present and the **course**
+            is unfinished. `courseComplete`, not `complete`, decides that —
+            there is nothing to resume once the videos and the quiz are done,
+            whether or not the Evaluationsbogen has been filled in (P52-05).
 
             **Deliberately not a percentage.** A course percentage is the
             output of `rollupProgress` over the whole tree and there is exactly
@@ -3077,9 +3137,21 @@ components:
             approximation that invites would be a second answer to "how far has
             this person got". Both fields here are stored columns.
           properties:
+            courseComplete:
+              type: boolean
+              description: |
+                The Fortbildung itself is finished — videos watched and
+                Lernerfolgskontrolle passed (P52-05).
+
+                `course_completed_at IS NOT NULL`, falling back to
+                `completed_at` for enrolments certified before migration 0037
+                recorded the earlier date. Still a stored column, so the card
+                keeps costing one query per page rather than one per row.
             complete:
               type: boolean
-              description: "`completed_at IS NOT NULL` — the course is finished."
+              description: |
+                `completed_at IS NOT NULL` — certified: the evaluation and the
+                EFN are in and the CME point is claimed.
 
     CourseDetail:
       allOf:
@@ -3294,9 +3366,12 @@ components:
         - quizPassed
         - evaluationSubmitted
         - efnPresent
+        - courseComplete
         - complete
         - outstanding
+        - outstandingForCourse
         - completedAt
+        - courseCompletedAt
         - progress
         - moduleCompletion
         - modules
@@ -3320,11 +3395,42 @@ components:
         efnPresent:
           type: boolean
           description: Whether an EFN is on file. The EFN itself is never returned.
-        complete: { type: boolean }
+        courseComplete:
+          type: boolean
+          description: |
+            The Fortbildung itself is finished: the required share of the video
+            content is watched and the Lernerfolgskontrolle is passed.
+
+            The evaluation and the EFN may still be outstanding. A physician in
+            this state has *done the course* and is told so; `complete` below is
+            the stronger claim that gates the certificate.
+        complete:
+          type: boolean
+          description: |
+            Certifiable: `courseComplete`, and the Evaluationsbogen and — where
+            the course awards CME points — the EFN are on file. Only this gates
+            the Teilnahmebescheinigung and the EIV Punktemeldung.
         outstanding:
           type: array
+          description: Everything still missing, in the order the learner meets it.
           items: { $ref: "#/components/schemas/CompletionCondition" }
-        completedAt: { type: [string, "null"], format: date-time }
+        outstandingForCourse:
+          type: array
+          description: |
+            The subset of `outstanding` holding the course itself back — never
+            more than `watch` and `quiz`. Empty exactly when `courseComplete`.
+          items: { $ref: "#/components/schemas/CompletionCondition" }
+        completedAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the CME point was claimed. Null until `complete`.
+        courseCompletedAt:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            When the course was finished. Null on enrolments certified before
+            this was recorded, so read `courseComplete` — never this field — to
+            decide whether the course is done.
         progress:
           $ref: "#/components/schemas/ProgressSummary"
         moduleCompletion:
@@ -3877,6 +3983,21 @@ components:
           minLength: 1
           maxLength: 100
           description: Nachname. Supplied together with `attestedGivenName`.
+        attestedAddress:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: |
+            The postal address for the certificate's "Anschrift:" line
+            (P60-03). One field, because it is printed on one line and never
+            parsed.
+
+            Optional, and it stays optional: the Anerkennungsbescheid's
+            minimum field list does not include it, so a physician who does
+            not want to give a postal address must still be able to finish.
+            The certificate draws the line either way — filled when this is
+            supplied, blank when it is not, exactly as the paper Muster would
+            be handed over.
         efn:
           type: string
           pattern: "^[0-9]{15}$"
@@ -4075,6 +4196,7 @@ components:
       required:
         [
           slug,
+          status,
           title,
           description,
           deliveryType,
@@ -4099,6 +4221,24 @@ components:
         ]
       properties:
         slug: { type: string }
+        status:
+          type: string
+          enum: [draft, published]
+          description: |
+            Editorial state (P53-01).
+
+            A `draft` is invisible to every learner: absent from the catalogue,
+            404 on its detail route, refused by enrol. Courses are **created as
+            drafts** — before this existed, `POST /admin/courses` put an empty
+            course straight into the physicians' catalogue.
+
+            Deliberately on the admin schema only. The learner-facing
+            `CourseSummary` has no such field because a learner is never served
+            a draft at all, and a `status: "published"` on every card would be a
+            constant dressed as information.
+
+            Distinct from `validFrom`/`validTo`, which say when an accredited
+            course runs rather than whether it is finished being written.
         title: { type: string }
         description: { type: [string, "null"] }
         deliveryType:
@@ -4274,6 +4414,15 @@ components:
         A PATCH: every field optional, an absent field means "leave alone".
         `null` clears a nullable text field.
       properties:
+        status:
+          type: string
+          enum: [draft, published]
+          description: |
+            Publish or retract (P53-01). The one field here that changes *who
+            can see* the course rather than what it says.
+
+            Retracting behaves like an expired validity window: existing
+            enrolments keep their record and can no longer advance.
         title: { type: string, minLength: 1, maxLength: 300 }
         description: { type: [string, "null"], maxLength: 5000 }
         deliveryType: { type: string, enum: [on_demand, live, praesenz] }
@@ -4383,8 +4532,10 @@ components:
           quizPassed,
           evaluationSubmitted,
           progressPercent,
+          courseComplete,
           complete,
           completedAt,
+          courseCompletedAt,
           eivState,
           eivAttempts,
           eivReportDueAt,
@@ -4399,8 +4550,20 @@ components:
         quizPassed: { type: boolean }
         evaluationSubmitted: { type: boolean }
         progressPercent: { type: integer, minimum: 0, maximum: 100 }
-        complete: { type: boolean }
+        courseComplete:
+          type: boolean
+          description: |
+            Videos watched and Lernerfolgskontrolle passed. A participant can
+            sit here for days before supplying the Evaluationsbogen and their
+            EFN; a list showing only `complete` reports them as drop-outs.
+        complete:
+          type: boolean
+          description: Certified — the point is earned and the Punktemeldung queued.
         completedAt: { type: [string, "null"], format: date-time }
+        courseCompletedAt:
+          type: [string, "null"]
+          format: date-time
+          description: Null on enrolments certified before the date was recorded.
         eivState: { $ref: "#/components/schemas/EivState" }
         eivAttempts: { type: integer, minimum: 0 }
         eivReportDueAt: { type: [string, "null"], format: date-time }
@@ -4424,7 +4587,33 @@ components:
         efn:
           type: string
           pattern: "^[0-9]{15}$"
-          description: 15 digits. Never returned by any endpoint once stored.
+          description: |
+            15 digits. Returned only by `GET /profile/efn`, and only to the
+            physician it belongs to (ADR-0004, amended by P54-02).
+
+    EfnState:
+      type: object
+      required: [efn, required]
+      properties:
+        efn:
+          type: string
+          nullable: true
+          pattern: "^[0-9]{15}$"
+          description: |
+            The caller's own EFN, or `null` when none is stored. Never another
+            person's — this endpoint takes no subject parameter.
+        required:
+          type: boolean
+          description: |
+            Whether an EFN is needed at all: true when any of the caller's
+            enrolments **in this project's customer** awards CME points
+            (P57-01). A course awarding none reports nothing to EIV-FOBI, so
+            there is nothing an EFN would identify and asking for one would
+            collect a physician's identifier for no purpose (ADR-0004).
+
+            It describes the courses, not the gap — it stays true once an EFN
+            is supplied. A client that wants to prompt asks for
+            `required && efn === null`.
 
     CourseListResponse:
       type: object

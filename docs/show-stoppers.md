@@ -253,6 +253,34 @@ matters at all.
 
 ## S2 · The WordPress plugin does **not** persist a token — **ANSWERED 28.07, and the answer is the bad one**
 
+> **12.08 — measured rather than argued (P62-04).** The dev realm was set to a
+> 60-second access-token lifespan and a module watched across the expiry.
+>
+> - **Playback continues.** The video carries no credential.
+> - **Progress stops being credited, completely.** Every flush from expiry
+>   onwards answers `401`, about twice per fifteen-second interval, for as long
+>   as the learner keeps watching. `content_progress.watched_percent` stays
+>   where it was.
+> - **The API is correct at every step.** `AUTH_CLOCK_TOLERANCE_SEC = 5`, so a
+>   token is honoured five seconds past `exp` and refused after.
+> - **The widget was not.** It said "Ihr Fortschritt wird automatisch
+>   gespeichert" throughout. That is **P62-05**, now fixed: the learner is told
+>   the session ended and that a reload restores it.
+>
+> **The minimum lifespan we can tolerate: 30 minutes**, because the MEDICE
+> modules run to about 25 and a lapse mid-module costs the unflushed intervals.
+> 60 minutes is comfortable.
+>
+> **What we need from MEDICE, in order of preference:** a refresh token the
+> plugin can hand the widget (the SDK's `onUnauthorized` hook already exists
+> and is used exactly once per 401); or the realm's access-token lifespan
+> raised to 30 minutes for this client; or an explicit acceptance that
+> physicians will reload periodically and lose up to fifteen seconds of watch
+> time each time.
+>
+> P62-05 makes the loss visible. It does not prevent it, and no widget change
+> can — this is the one thing on the list that is genuinely MEDICE's to answer.
+
 The plugin source arrived on 28.07 and it settles this. It also overturns the
 developer's description, which is why it moved from "unconfirmed" to a blocker.
 
@@ -1140,6 +1168,52 @@ seeded around the seam and obvious to one that walked through it.
 
 ---
 
+## S28 · A physician who finishes the course but not the paperwork before the window closes loses the point
+
+- **Owner:** ÄKWL (with MEDICE) · **Blocks:** nothing today · **Raised:** 11.08
+
+Two decisions taken on 11.08 combine into a case nobody has ruled on.
+
+1. **Course completion no longer waits for the paperwork** (P51-01). A
+   physician has finished the Fortbildung when they have watched the required
+   share of the videos and passed the Lernerfolgskontrolle. The
+   Evaluationsbogen and the EFN may follow later — days later — and only then
+   is the point claimed and the Punktemeldung filed.
+
+2. **An expired course stops accepting anything** (P51-02). Past `valid_to`,
+   the enrolment and everything in it is kept and readable, but no further
+   playback, quiz attempt, evaluation or completion is accepted.
+
+The gap between them: somebody finishes the course on the 10th, the
+accreditation lapses on the 12th, they come back on the 15th to fill in the
+evaluation — and the platform refuses. **They did the work inside the window
+and cannot be credited for it.** Right now there is no way for an operator to
+grant it either; it would need a support intervention that does not exist.
+
+This is implemented as instructed and flagged rather than softened, because
+both readings have a real cost and neither is ours to pick:
+
+| If the Kammer says                                              | Then                                                                                                |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Participation is what counts, and it happened inside the window | Certification should stay open after `valid_to` for anyone whose `course_completed_at` is inside it |
+| The accreditation covers the whole act, paperwork included      | Current behaviour is right, and the learner needs warning **before** the window closes, not after   |
+
+**The question for ÄKWL:** for an on-demand Fortbildung, is the participation
+dated by when the physician completed the course content, or by when the
+Teilnahmebescheinigung is issued? This is the same underlying question as Q1
+(_what is `Veranstaltungsende`?_) and could be asked in the same message.
+
+**If the answer is the first row**, the change is small and localised: the
+`requireCourseStillOffered` call in `CompletionService.complete` becomes
+conditional on `course_completed_at` falling inside the window. The date is
+recorded for exactly this reason — see migration `0037`.
+
+**Either way, one thing should be built regardless:** a physician who has
+finished the course and not the paperwork should be told the window is closing
+while they can still act. Today they find out by being refused.
+
+---
+
 ## What is not blocked
 
 The API is built and the learner journey runs end to end — catalog, gated
@@ -1164,3 +1238,39 @@ to sign.
 emailed or downloaded PDF cannot satisfy the Originalstempel clause, no amount
 of code fixes it — MEDICE signs by hand, and the platform's job becomes
 producing the sheet they sign. One question to `zertifizierung@aekwl.de`.
+
+---
+
+## S24 · What is `fortbildungsnummer`? — **raised 12.08 (P62-02)**
+
+**Owner: MEDICE / ÄKWL.**
+
+`courses.fortbildungsnummer` has existed since `0001_init`, is editable in the
+admin console, and renders exactly one line on the learner's Zertifizierung tab.
+
+**Nothing else reads it.** Not the Teilnahmebescheinigung, which carries the
+**VNR** as text and as two barcodes; not the Punktemeldung, which sends the VNR
+and the EFN. The Anerkennungsbescheid (ÄKWL, 18.06.2026) names a VNR and no
+second number.
+
+So one of two things is true, and they have different consequences:
+
+1. **It is another name for the VNR**, drawn separately on the layout. Then the
+   column should go and the tab should render `vnr` — otherwise an operator can
+   enter two different numbers for one course and the platform will show one
+   and report the other.
+2. **It is a distinct Kammer reference** nobody has described to us. Then it
+   needs a definition, and possibly a place on the certificate.
+
+### Why it survived nine QA sections
+
+It is NULL on every seeded course, and the tab **omits the line entirely** when
+it is null. An absent value renders as an absence rather than an error, so there
+was never anything to notice. It is excluded from P62-02's publish precondition
+for exactly that reason: requiring a field whose meaning is unknown would be
+inventing a rule (CLAUDE.md §7).
+
+### What we need
+
+One sentence from MEDICE or the ÄKWL: _"Fortbildungsnummer is / is not the
+VNR."_ Everything else follows.

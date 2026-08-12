@@ -55,6 +55,7 @@ import {
 import { PARTICIPANT_COOKIE } from "../../src/auth/participant-cookie.js";
 import { signInStaff, type StaffSession } from "./support/staff-session.js";
 import { requireEnv } from "./support/env.js";
+import { backdateLearnerClock } from "./support/backdate.js";
 
 const run = promisify(execFile);
 
@@ -610,6 +611,86 @@ describe("3 · the operator builds a course", () => {
     // back down, under any key.
     expect(JSON.stringify(assets.body)).not.toContain(PLACEHOLDER_PNG);
   });
+
+  /**
+   * The refusal, and then the field it asked for (P62-02).
+   *
+   * Everything above is in place — VNR, Kammer, Veranstalter, stamp, signature
+   * — and the course still may not go live, because the one credential that is
+   * write-only and therefore easy to forget is not set. Before P62-02 this
+   * PATCH answered 200, the course went into the catalogue, and the operator
+   * found out eight days later that every Punktemeldung had been abandoned
+   * `missing_vnr_password`.
+   *
+   * Asserted as a pair, deliberately: the refusal *and* the German sentence
+   * naming the missing field. A 409 saying nothing useful is the same defect
+   * one layer along (CLAUDE.md §9.4).
+   */
+  it("is refused publication while the VNR password is unset, and told which field", async () => {
+    const refused = await asStaff(`/admin/courses/${world.courseSlug}`, {
+      method: "PATCH",
+      headers: { "x-ds-project": world.projectSlug },
+      body: body({ status: "published" }),
+    });
+
+    expect(refused.status, JSON.stringify(refused.body)).toBe(409);
+    expect(refused.body.detail).toContain("VNR-Passwort");
+    // The field name, never the value — there is no value yet, and there will
+    // never be one in a problem-details body.
+    expect(JSON.stringify(refused.body)).not.toContain(VNR_PASSWORD);
+  });
+
+  it("takes the password through the console, and never hands it back", async () => {
+    const response = await asStaff(`/admin/courses/${world.courseSlug}`, {
+      method: "PATCH",
+      headers: { "x-ds-project": world.projectSlug },
+      body: body({ vnrPassword: VNR_PASSWORD }),
+    });
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    // Invariant 7: write-only. Not in this response, not in the read.
+    expect(JSON.stringify(response.body)).not.toContain(VNR_PASSWORD);
+
+    const readBack = await asStaff(`/admin/courses/${world.courseSlug}`, {
+      headers: { "x-ds-project": world.projectSlug },
+    });
+    expect(JSON.stringify(readBack.body)).not.toContain(VNR_PASSWORD);
+  });
+
+  it("stores it as ciphertext, not as a password in a column", async () => {
+    const { rows } = await admin.query<{ enc: Buffer }>(
+      "SELECT vnr_password_enc AS enc FROM courses WHERE slug = $1",
+      [world.courseSlug],
+    );
+
+    const stored = rows[0]?.enc;
+    expect(stored).toBeInstanceOf(Buffer);
+    // AES-GCM, because the journey runs with a real SECRETS_KMS_KEY. The
+    // plaintext must not appear anywhere in the bytes — which is the assertion
+    // that would have failed had the fallback plaintext cipher been in use.
+    expect(stored?.toString("latin1")).not.toContain(VNR_PASSWORD);
+    expect(stored?.byteLength).toBeGreaterThan(VNR_PASSWORD.length);
+  });
+
+  /**
+   * Everything above happened in front of nobody, and that is the point
+   * (P53-01): a course is created as a draft and is invisible until somebody
+   * publishes it. It was not true until this ticket — QA created a course
+   * through this same endpoint and found it in the learner catalogue
+   * immediately, empty.
+   *
+   * Asserted here, where the course is fully authored and still hidden. The
+   * publish itself belongs to §5, where there is a participant to be hidden
+   * from.
+   */
+  it("has been a draft the whole time it was being written", async () => {
+    const course = await asStaff(`/admin/courses/${world.courseSlug}`, {
+      headers: { "x-ds-project": world.projectSlug },
+    });
+
+    expect(course.status).toBe(200);
+    expect(course.body.status).toBe("draft");
+  });
 });
 
 describe("4 · the operator creates a participant", () => {
@@ -670,6 +751,31 @@ describe("4 · the operator creates a participant", () => {
 });
 
 describe("5 · the participant earns the point", () => {
+  /**
+   * The publish, from both sides (P53-01).
+   *
+   * One case rather than two because the pair is the claim: the same request,
+   * by the same signed-in physician, answers differently either side of an
+   * operator pressing publish. Asserting only the "after" would pass on the
+   * platform this ticket fixes, where the course was visible the moment it was
+   * created (CLAUDE.md §9.1).
+   */
+  it("cannot see the course until the operator publishes it", async () => {
+    const hidden = await asLearner("/courses");
+    expect(hidden.status).toBe(200);
+    expect(hidden.body.items.map((item: { slug: string }) => item.slug)).not.toContain(
+      world.courseSlug,
+    );
+
+    const published = await asStaff(`/admin/courses/${world.courseSlug}`, {
+      method: "PATCH",
+      headers: { "x-ds-project": world.projectSlug },
+      body: body({ status: "published" }),
+    });
+    expect(published.status, JSON.stringify(published.body)).toBe(200);
+    expect(published.body.status).toBe("published");
+  });
+
   it("sees the course in the catalogue", async () => {
     const catalogue = await asLearner("/courses");
 
@@ -695,6 +801,10 @@ describe("5 · the participant earns the point", () => {
   });
 
   it("watches the video, and the union is what counts", async () => {
+    // The learner has been in the course a while (P55-01): the wall-clock
+    // guard measures from their last activity and this suite takes milliseconds.
+    await backdateLearnerClock(admin, 3600);
+
     // Sent as overlapping fragments, out of order, as a real player does. A
     // maximum-position implementation would credit 600 s from the last one
     // alone; the union credits what was actually seen.
@@ -780,6 +890,27 @@ describe("5 · the participant earns the point", () => {
     expect(right.body.passed).toBe(true);
     expect(right.body.attemptNumber).toBe(2);
     expect(right.body.scorePercent).toBe(100);
+  });
+
+  it("cannot be configured to hand the answer key back at all", async () => {
+    /*
+     * P56-01. The comment above says "a CME course never turns it on", and for
+     * five phases that was a comment: `reveal_correct_answers` is a column no
+     * route writes, and the API honoured it wherever it came from. QA set it
+     * on an accredited course with one UPDATE and got a boolean per question
+     * back — the whole Lernerfolgskontrolle in four rounds of unlimited
+     * retries, on a Fortbildung whose Anerkennung depends on it.
+     *
+     * The database refuses the combination now. This asserts that, on the
+     * journey's own course, which carries a VNR and four points — and it is
+     * the assertion that would have failed before the constraint existed.
+     */
+    const attempt = admin.query(
+      `UPDATE courses SET reveal_correct_answers = true WHERE slug = $1`,
+      [world.courseSlug],
+    );
+
+    await expect(attempt).rejects.toThrow(/courses_no_answer_key_for_points/u);
   });
 
   it("submits the evaluation and completes with an EFN", async () => {
@@ -900,6 +1031,20 @@ describe("6 · the operator sees it", () => {
  * So this act walks the path an operator walks: set the password on the course
  * through the console's write-only field, confirm the API never gives it back,
  * and let the worker take it from there.
+ *
+ * ## What P62-02 changed about this act
+ *
+ * That misconfiguration can no longer be reached by an operator: a course
+ * awarding CME points cannot be `published` while its VNR password is unset,
+ * refused first by `publishBlockers` and guaranteed by
+ * `courses_published_cme_is_complete`. Act 3 now asserts that refusal, which is
+ * where the story of this act begins.
+ *
+ * The worker's `missing_vnr_password` branch is still worth exercising end to
+ * end, because the state has not become impossible — only unreachable from the
+ * console. A live course demoted to draft and stripped of its password by hand
+ * still produces it, and that is what the first case below constructs, in SQL,
+ * because SQL is now the only thing that can.
  */
 describe("7 · the Punktemeldung reaches the Ärztekammer", () => {
   let kammer: MockServer;
@@ -912,10 +1057,24 @@ describe("7 · the Punktemeldung reaches the Ärztekammer", () => {
     await kammer?.close();
   });
 
-  it("refuses to report while the course has no VNR password", async () => {
-    // The state the course is in after act 3: accredited, with a VNR, and no
-    // credential to authenticate with. The worker must not treat that as a
-    // transport problem and retry it forever.
+  it("refuses to report when the course has lost its VNR password", async () => {
+    /*
+     * Constructed in SQL, and the SQL is the point.
+     *
+     * `vnrPassword` is `z.string().min(1)` on the wire, so the console cannot
+     * clear it; the CHECK forbids a published point-awarding course without it;
+     * so the only remaining route to this state is a demotion plus a hand-run
+     * UPDATE. One statement, because the constraint is evaluated per row per
+     * statement and clearing the password before the demotion would be refused.
+     *
+     * The worker must not treat this as a transport problem and retry it
+     * forever — the whole 8-day window would go on a course nobody is fixing.
+     */
+    await admin.query(
+      "UPDATE courses SET status = 'draft', vnr_password_enc = NULL WHERE slug = $1",
+      [world.courseSlug],
+    );
+
     const abandoned = await sweep();
 
     expect(abandoned).toMatchObject({ abandoned: 1, submitted: 0 });
@@ -929,36 +1088,20 @@ describe("7 · the Punktemeldung reaches the Ärztekammer", () => {
     });
   });
 
-  it("takes the password through the console, and never hands it back", async () => {
-    const response = await asStaff(`/admin/courses/${world.courseSlug}`, {
+  it("is put back the way it came, through the console", async () => {
+    // Both fields in one request, which is the shape that matters: an operator
+    // fixing this supplies the password and re-publishes at once, and a guard
+    // reading the *stored* row rather than the patched one would refuse it.
+    const repaired = await asStaff(`/admin/courses/${world.courseSlug}`, {
       method: "PATCH",
       headers: { "x-ds-project": world.projectSlug },
-      body: body({ vnrPassword: VNR_PASSWORD }),
+      body: body({ vnrPassword: VNR_PASSWORD, status: "published" }),
     });
 
-    expect(response.status, JSON.stringify(response.body)).toBe(200);
-    // Invariant 7: write-only. Not in this response, not in the read.
-    expect(JSON.stringify(response.body)).not.toContain(VNR_PASSWORD);
-
-    const readBack = await asStaff(`/admin/courses/${world.courseSlug}`, {
-      headers: { "x-ds-project": world.projectSlug },
-    });
-    expect(JSON.stringify(readBack.body)).not.toContain(VNR_PASSWORD);
-  });
-
-  it("stores it as ciphertext, not as a password in a column", async () => {
-    const { rows } = await admin.query<{ enc: Buffer }>(
-      "SELECT vnr_password_enc AS enc FROM courses WHERE slug = $1",
-      [world.courseSlug],
-    );
-
-    const stored = rows[0]?.enc;
-    expect(stored).toBeInstanceOf(Buffer);
-    // AES-GCM, because the journey runs with a real SECRETS_KMS_KEY. The
-    // plaintext must not appear anywhere in the bytes — which is the assertion
-    // that would have failed had the fallback plaintext cipher been in use.
-    expect(stored?.toString("latin1")).not.toContain(VNR_PASSWORD);
-    expect(stored?.byteLength).toBeGreaterThan(VNR_PASSWORD.length);
+    expect(repaired.status, JSON.stringify(repaired.body)).toBe(200);
+    expect(repaired.body.status).toBe("published");
+    // Invariant 7: write-only, on the way back out as much as on the way in.
+    expect(JSON.stringify(repaired.body)).not.toContain(VNR_PASSWORD);
   });
 
   it("submits the participation, shaped as the real interface requires", async () => {

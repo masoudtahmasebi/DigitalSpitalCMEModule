@@ -29,21 +29,47 @@ This split is the reason erasure works the way it does — see §5.
 
 Everything in one table, because the honest version of this document is short.
 
-| Data                                    | Where                                                                      | Why it exists                                                                                                                                                                                       |
-| --------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity-provider subject + realm       | `user_identities`                                                          | The stable identity. Not a name; an opaque id issued by the customer's own IdP. Moved out of `users` by P21-01 so one physician learning with two customers is one person, not two (§2.1).          |
-| Name, e-mail                            | `users`                                                                    | Written from the token's claims. Name is printed on the Teilnahmebescheinigung; e-mail is for the future certificate delivery.                                                                      |
-| Which customers a person learns with    | `user_customers`                                                           | A membership, and the only tenant-scoped part of a person. A customer admin sees that someone learns with them and learns nothing about where else they learn.                                      |
-| Attested name                           | `enrolments.attested_name`                                                 | What the learner confirmed should be printed, which may differ from a stale Keycloak profile.                                                                                                       |
-| Attested name, in parts                 | `enrolments.attested_title`, `attested_given_name`, `attested_family_name` | The three fields layout page 13 captures. Composed into `attested_name` by one function in `@ds/domain`; kept apart so a correction does not have to re-parse a string. Cleared by `erase_subject`. |
-| Punktemeldung consent                   | `enrolments.consent_given_at`, `consent_document`                          | When the learner ticked the consent box and which privacy notice they agreed to. Art. 7(1) — see §3. **Survives erasure by design**; it names nobody once the name and EFN are gone.                |
-| **EFN**                                 | `efn_profiles`                                                             | The 15-digit Fortbildungsnummer. The key the Ärztekammer credits points against. **Write-only through the API** — there is no endpoint that returns it (ADR-0004).                                  |
-| Watched intervals, quiz answers, scores | `content_progress`, `quiz_attempts`, `quiz_answers`                        | The compliance evidence. A CME point is only defensible if what earned it is recorded.                                                                                                              |
-| Evaluation answers                      | `evaluation_responses`                                                     | Required for the Anerkennung. Free-text answers are the one place a physician may type something about a patient — treated accordingly in §5.                                                       |
-| Completion, VNR, points                 | `enrolments`                                                               | The participation record.                                                                                                                                                                           |
-| Punktemeldung state                     | `eiv_submissions`                                                          | Including the EFN as submitted, every attempt and every failure. Append-only in effect: the row is the evidence a statutory report was made.                                                        |
-| Certificate state                       | `certificates`                                                             | Status and the name printed. Not the PDF — it is rendered on demand.                                                                                                                                |
-| Admin actions                           | `audit_log`                                                                | Ids, counts and field names. Never a name, an EFN or an answer.                                                                                                                                     |
+| Data                                    | Where                                                                      | Why it exists                                                                                                                                                                                                                                 |
+| --------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity-provider subject + realm       | `user_identities`                                                          | The stable identity. Not a name; an opaque id issued by the customer's own IdP. Moved out of `users` by P21-01 so one physician learning with two customers is one person, not two (§2.1).                                                    |
+| Name, e-mail                            | `users`                                                                    | Written from the token's claims. Name is printed on the Teilnahmebescheinigung; e-mail is for the future certificate delivery.                                                                                                                |
+| Which customers a person learns with    | `user_customers`                                                           | A membership, and the only tenant-scoped part of a person. A customer admin sees that someone learns with them and learns nothing about where else they learn.                                                                                |
+| Attested address                        | `enrolments.attested_address`                                              | The Muster's "Anschrift:" line, supplied with the Punktemeldung form (P60-03). Optional — the Bescheid does not require it — and printed on the certificate when given. Cleared by `erase_subject`.                                           |
+| Attested name                           | `enrolments.attested_name`                                                 | What the learner confirmed should be printed, which may differ from a stale Keycloak profile.                                                                                                                                                 |
+| Attested name, in parts                 | `enrolments.attested_title`, `attested_given_name`, `attested_family_name` | The three fields layout page 13 captures. Composed into `attested_name` by one function in `@ds/domain`; kept apart so a correction does not have to re-parse a string. Cleared by `erase_subject`.                                           |
+| Punktemeldung consent                   | `enrolments.consent_given_at`, `consent_document`                          | When the learner ticked the consent box and which privacy notice they agreed to. Art. 7(1) — see §3. **Survives erasure by design**; it names nobody once the name and EFN are gone.                                                          |
+| **EFN**                                 | `efn_profiles`                                                             | The 15-digit Fortbildungsnummer. The key the Ärztekammer credits points against. **Readable only by its own subject**: `GET /profile/efn` answers for the authenticated principal and nothing else returns an EFN (ADR-0004, amended P54-02). |
+| Watched intervals, quiz answers, scores | `content_progress`, `quiz_attempts`, `quiz_answers`                        | The compliance evidence. A CME point is only defensible if what earned it is recorded.                                                                                                                                                        |
+| Evaluation answers                      | `evaluation_responses`                                                     | Required for the Anerkennung. Free-text answers are the one place a physician may type something about a patient — treated accordingly in §5.                                                                                                 |
+| Completion, VNR, points                 | `enrolments`                                                               | The participation record.                                                                                                                                                                                                                     |
+| Punktemeldung state                     | `eiv_submissions`                                                          | Including the EFN as submitted, every attempt and every failure. Append-only in effect: the row is the evidence a statutory report was made.                                                                                                  |
+| Certificate state                       | `certificates`                                                             | Status and the name printed. The serving path renders on demand (P59). **Since P60-01 the issued bytes are also archived in object storage** — see §2.2 — and the row holds the key and a SHA-256, never a URL.                               |
+| Admin actions                           | `audit_log`                                                                | Ids, counts and field names. Never a name, an EFN or an answer.                                                                                                                                                                               |
+
+### 2.2 The one artefact outside the database (P60-01)
+
+Every other item above is a column, and `erase_subject` can redact a column.
+The **archived Teilnahmebescheinigung** is an object in a bucket carrying the
+participant's name, their Anschrift and their EFN on its face — the platform's
+first personal data somewhere SQL cannot reach.
+
+It exists because a rendered document answers "show me my certificate" and only
+the stored bytes answer "prove what was issued on 12.08.2026": a re-render years
+later has different fonts, a replaced stamp and possibly a lapsed
+accreditation. The Kammer, an audit or a dispute asks the second question.
+
+Three consequences, all implemented rather than intended:
+
+- **The key is customer-first**, `<customer>/certificates/<course>/<id>.pdf`,
+  checked by a CHECK constraint against the row's own `customer_id`. A bucket
+  has no RLS, so the isolation has to be the key.
+- **Erasure reaches it.** `erase_subject` writes the key to `object_erasures`
+  before clearing the row that names it, and the API deletes the object — in
+  the erasure request itself, and again on boot for anything a storage outage
+  left behind. `deleted_at` is stamped only after the bucket confirms, so an
+  obligation cannot be discharged by being forgotten.
+- **Retention follows the certificate**, not a separate clock: the object is
+  kept exactly as long as the participation record it evidences (§4).
 
 ### 2.1 One person, many customers
 
@@ -172,13 +198,16 @@ it is a decision for MEDICE, not for the platform.
 ### Auskunft (Art. 15)
 
 Every figure a learner is entitled to see is already on their own screen — the
-API has no data about a learner that the learner cannot read, with two
-exceptions:
+API has no data about a learner that the learner cannot read, with one
+exception:
 
-- the **EFN**, which is write-only by design (ADR-0004) and which the subject
-  supplied in the first place;
 - the **audit log**, which records administrative actions rather than the
   learner's own activity.
+
+The EFN used to be the second exception. It is not any more: `GET /profile/efn`
+returns the caller's own (P54-02), because a physician who cannot see the
+identifier we will report on their behalf cannot notice a typo in it before the
+Kammer credits somebody else.
 
 A formal Auskunft is therefore a database export against one `user_id`,
 performed by the processor on the controller's request. There is deliberately no
@@ -279,14 +308,14 @@ Not applicable to the compliance processing, which rests on Art. 6(1)(c).
 
 ## 6. Where the data is, and who else touches it
 
-|                         |                                                                                                                                                                                                            |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hosting**             | Hetzner Cloud, Germany. AV-Vertrag with Hetzner required.                                                                                                                                                  |
-| **Database**            | PostgreSQL on the same host, on an internal Docker network with no published port.                                                                                                                         |
-| **Identity**            | Keycloak, the customer's own realm. The platform never sees a password and never stores a token.                                                                                                           |
-| **Object storage (S3)** | Course media only. Keys are prefixed per customer and the prefix is checked on every resolve, so a key belonging to one customer cannot be signed for another. **No personal data.**                       |
-| **EIV-FOBI**            | Receives VNR + EFN. This is the intended disclosure — the whole point of the platform — and the recipient is a separate controller.                                                                        |
-| **E-mail**              | Not yet. When certificate delivery ships it uses the **customer's own SMTP**, so the message never transits a DigitalSpital mail service. Credentials are encrypted at rest and never returned by any API. |
+|                         |                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Hosting**             | Hetzner Cloud, Germany. AV-Vertrag with Hetzner required.                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Database**            | PostgreSQL on the same host, on an internal Docker network with no published port.                                                                                                                                                                                                                                                                                                                                                                               |
+| **Identity**            | Keycloak, the customer's own realm. The platform never sees a password and never stores a token.                                                                                                                                                                                                                                                                                                                                                                 |
+| **Object storage (S3)** | Course media only. Keys are prefixed per customer and the prefix is checked on every resolve, so a key belonging to one customer cannot be signed for another. **No personal data.**                                                                                                                                                                                                                                                                             |
+| **EIV-FOBI**            | Receives VNR + EFN. This is the intended disclosure — the whole point of the platform — and the recipient is a separate controller.                                                                                                                                                                                                                                                                                                                              |
+| **E-mail**              | The **customer's own SMTP**, so the message never transits a DigitalSpital mail service. Credentials are encrypted at rest and never returned by any API. Since P59-02 the message carries the Teilnahmebescheinigung as a PDF attachment — a name, a course title, a VNR and a points figure, rendered per attempt and never stored. The body still carries no EFN and no score, and the link is to the authenticated course page, never a bearer download URL. |
 
 **No third-party frontend requests at all.** No font CDN, no analytics, no tag
 manager, no embedded video platform. The white-label typeface is uploaded by

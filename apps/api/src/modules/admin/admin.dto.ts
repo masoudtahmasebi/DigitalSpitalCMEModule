@@ -22,6 +22,11 @@ const percent = z.number().int().min(0).max(100);
 
 export const adminCourseSummarySchema = z.object({
   slug: z.string(),
+  /**
+   * Editorial state (P53-01). `draft` means no learner can see this course:
+   * not listed, 404 on the detail route, refused by enrol.
+   */
+  status: z.enum(["draft", "published"]),
   title: z.string(),
   description: z.string().nullable(),
   deliveryType: z.enum(["on_demand", "live", "praesenz"]),
@@ -97,6 +102,17 @@ export const adminCourseDetailSchema = adminCourseSummarySchema.extend({
  * operator can edit.
  */
 export const adminCourseUpdateSchema = z.object({
+  /**
+   * Publish or retract the course (P53-01).
+   *
+   * The one field on this form that changes who can see the course rather than
+   * what it says. A new course is created as a draft — invisible to learners,
+   * not listed, 404 on its detail route — and stays that way until somebody
+   * sets this. Setting it back to `draft` retracts it: existing enrolments
+   * keep their record and can no longer advance, exactly as an expired
+   * validity window behaves (P51-02).
+   */
+  status: z.enum(["draft", "published"]).optional(),
   title: z.string().trim().min(1).max(300).optional(),
   description: z.string().max(5000).nullable().optional(),
   /** Which catalogue tab the course appears under. */
@@ -234,8 +250,18 @@ export const participantRowSchema = z.object({
   quizPassed: z.boolean(),
   evaluationSubmitted: z.boolean(),
   progressPercent: percent,
+  /**
+   * The Fortbildung is finished — videos and quiz (P51-01). A participant can
+   * sit here for days before supplying the Evaluationsbogen and their EFN, and
+   * a list that showed only `complete` reported those people as if they had
+   * dropped out.
+   */
+  courseComplete: z.boolean(),
+  /** Certified: the point is earned and the Punktemeldung is queued. */
   complete: z.boolean(),
   completedAt: z.iso.datetime().nullable(),
+  /** Null on enrolments certified before the date was recorded. */
+  courseCompletedAt: z.iso.datetime().nullable(),
   eivState: eivStateSchema,
   eivAttempts: z.number().int().nonnegative(),
   eivReportDueAt: z.iso.datetime().nullable(),

@@ -1,8 +1,9 @@
 # ADR-0004 — EFN is stored in our PostgreSQL as system of record
 
-- **Status:** Accepted
+- **Status:** Accepted, amended 2026-08-11 (see _Amendment — the subject may read
+  their own EFN_)
 - **Date:** 2026-07-27
-- **Ticket:** P1-05, P7-04
+- **Ticket:** P1-05, P7-04, P54-02
 - **Deciders:** Masoud Tahmasebi
 
 ## Context
@@ -83,6 +84,40 @@ because it looks like success.
 - If MEDICE later populates EFNs in Keycloak or Salesforce, there will be two
   values that can disagree. A reconciliation rule will be needed at that point;
   it is not needed now.
+
+## Amendment — the subject may read their own EFN
+
+- **Date:** 2026-08-11 · **Ticket:** P54-02 · **Decider:** Masoud Tahmasebi
+
+This ADR said the EFN is "treated as personal data", and the implementation read
+that as **write-only**: `PUT /profile/efn` existed, no `GET` did, and
+`docs/gdpr.md` §2 recorded "there is no endpoint that returns it". That is now
+narrowed.
+
+**`GET /profile/efn` returns the caller's own EFN, or `null`.** Nothing else
+changes: no endpoint returns anyone else's, the admin console still reports
+`efnPresent: boolean`, and no EFN reaches a log, an error message or an audit
+entry.
+
+**Why the reversal.** Write-only protected the value and abandoned the person
+who supplied it. A physician who typed their EFN once, months ago, on another
+device could not see what the platform would report on their behalf — and could
+not spot a typo before the Kammer credited the wrong account, which this ADR
+already names as the worst failure available because it looks like success. The
+subject can compel the answer under GDPR Art. 15 in any case; the only question
+was whether they get it from the product or from a mailbox.
+
+**What keeps the old fear addressed.** The subject of the read is the
+authenticated principal and can never be a parameter. There is no shape of the
+request that names another person, so there is nothing to enumerate and no
+authorisation check whose failure would widen it. A `customer_admin` holds a
+grant over a _tenant_; an EFN belongs to a _physician_, who may hold enrolments
+at several customers (docs/gdpr.md §9) — different scopes, and only the narrower
+one is opened.
+
+**Consequence for erasure:** unchanged. The row is still deleted on erasure and
+the reported copy still becomes fifteen zeroes; a read after erasure answers
+`null`, which is the truth.
 
 ## Alternatives considered
 

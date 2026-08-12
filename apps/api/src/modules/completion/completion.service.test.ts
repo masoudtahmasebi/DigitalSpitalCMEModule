@@ -42,6 +42,7 @@ const course: CourseComplianceRow = {
   cmePoints: 4,
   cmeCategory: "D",
   vnr: "9999999999999999999",
+  status: "published" as const,
   validFrom: null,
   validTo: null,
 };
@@ -92,7 +93,10 @@ const enrolment: EnrolmentRow = {
   requiredWatchPercent: 100,
   passThresholdPercent: 70,
   maxQuizAttempts: null,
+  /** A day before `NOW` — see the note in `learning.service.test.ts` (P55-01). */
+  createdAt: new Date(NOW.getTime() - 24 * 60 * 60 * 1000),
   completedAt: null,
+  courseCompletedAt: null,
   cmePoints: 4,
 };
 
@@ -145,6 +149,10 @@ function build(
     completedAt?: Date | null;
     hasEiv?: boolean;
     vnr?: string | null;
+    /** Records which user id the repository was asked about (P54-02). */
+    onFindEfn?: (userId: string) => void;
+    /** Whether any enrolment awards CME points (P57-01). */
+    pointBearing?: boolean;
   } = {},
 ) {
   const queued: Array<Record<string, unknown>> = [];
@@ -172,6 +180,7 @@ function build(
     markCompleted: async (id, at, attested) => {
       completedCalls.push({ id, at, attested });
     },
+    markCourseCompleted: async () => undefined,
   };
 
   const completionRepo: CompletionRepositoryPort = {
@@ -183,7 +192,11 @@ function build(
     saveEfn: async (_userId, value) => {
       savedEfn.push(value);
     },
-    findEfn: async () => efn,
+    findEfn: async (userId) => {
+      options.onFindEfn?.(userId);
+      return efn;
+    },
+    hasPointBearingEnrolment: async () => options.pointBearing ?? true,
     hasEivSubmission: async () => options.hasEiv ?? false,
     queueEivSubmission: async (input) => {
       queued.push({ ...input });
@@ -319,6 +332,69 @@ describe("setEfn", () => {
   });
 });
 
+/*
+ * P54-02. The read reverses six phases of "write-only", so what is asserted
+ * here is not that it returns a string — it is the two properties that make
+ * returning one defensible.
+ */
+describe("getEfn", () => {
+  it("returns the caller's own stored EFN", async () => {
+    const { service } = build({ efn: EFN });
+
+    await expect(service.getEfn(learner)).resolves.toEqual({ efn: EFN, required: true });
+  });
+
+  it("answers null rather than omitting the field when none is stored", async () => {
+    // A missing key and `null` read differently to a client: one is "we did not
+    // look", the other is "there is none, you have not supplied one yet". The
+    // screen that asks this draws a form in the second case.
+    const { service } = build();
+
+    await expect(service.getEfn(learner)).resolves.toEqual({
+      efn: null,
+      required: true,
+    });
+  });
+
+  /*
+   * P57-01. `{"efn": null}` on its own cannot tell "we do not need one" from
+   * "we need one and you have not given it", and only the server knows which.
+   */
+  it("says an EFN is not required when nothing this learner takes awards points", async () => {
+    const { service } = build({ pointBearing: false });
+
+    await expect(service.getEfn(learner)).resolves.toEqual({
+      efn: null,
+      required: false,
+    });
+  });
+
+  it("keeps saying it is required after one has been supplied", async () => {
+    // `required` describes the courses, not the gap. A client prompts on
+    // `required && efn === null`; flipping this to false once an EFN exists
+    // would make "is an EFN needed here" unanswerable for anybody who has one.
+    const { service } = build({ efn: EFN, pointBearing: true });
+
+    await expect(service.getEfn(learner)).resolves.toEqual({ efn: EFN, required: true });
+  });
+
+  it("asks about the principal's own user id and nothing else", async () => {
+    /*
+     * The property the whole amendment rests on. `getEfn` takes a
+     * `LearnerContext` and no subject, so there is no argument through which a
+     * caller could name somebody else — this asserts the service does not
+     * invent one. If a future overload adds a `userId` parameter, this test is
+     * where it has to be justified.
+     */
+    const asked: string[] = [];
+    const { service } = build({ efn: EFN, onFindEfn: (userId) => asked.push(userId) });
+
+    await service.getEfn(learner);
+
+    expect(asked).toEqual([learner.userId]);
+  });
+});
+
 describe("complete", () => {
   const ready = {
     progress: satisfiedProgress,
@@ -369,12 +445,14 @@ describe("complete", () => {
       {
         id: ENROLMENT_ID,
         at: NOW,
-        // Nothing attested: the certificate falls back to the profile name.
+        // Nothing attested: the certificate falls back to the profile name,
+        // and the Anschrift line is drawn blank (P60-03).
         attested: {
           name: null,
           title: null,
           givenName: null,
           familyName: null,
+          address: null,
           consentDocument: null,
         },
       },

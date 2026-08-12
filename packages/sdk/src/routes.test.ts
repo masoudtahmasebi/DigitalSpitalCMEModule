@@ -109,6 +109,7 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
   getMaterials: (c) => c.getMaterials("adhs"),
   getEvaluation: (c) => c.getEvaluation("adhs"),
   submitEvaluation: (c) => c.submitEvaluation("adhs", { answers: [] }),
+  getEfn: (c) => c.getEfn(),
   setEfn: (c) => c.setEfn("123456789012345"),
   completeCourse: (c) => c.completeCourse("adhs", {}),
   getCertificate: (c) => c.getCertificate("adhs"),

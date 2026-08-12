@@ -36,11 +36,27 @@ export interface CertificateInput {
   readonly participantName: string;
   /**
    * Present on the Muster ("Anschrift:") but absent from the Bescheid's list of
-   * minimum required fields, so it is optional and the platform does not
-   * collect it. The renderer leaves the line blank when it is absent, matching
-   * the paper form.
+   * minimum required fields, so it is optional. The learner supplies it with
+   * the rest of the Punktemeldung form and may leave it empty (P60-03); the
+   * renderer draws the line either way, because the Muster has it and a form
+   * missing a line it should have looks altered.
    */
   readonly participantAddress?: string;
+  /**
+   * The Einheitliche Fortbildungsnummer, printed on the document (P60-02).
+   *
+   * Optional rather than mandatory, and deliberately: a course awarding no CME
+   * points reports nothing to EIV-FOBI and never asks for an EFN, so there is
+   * nothing to print. Where the course *does* award points the completion gate
+   * has already required one, so it is present exactly when it means something
+   * — which is why the renderer omits the line rather than drawing an empty
+   * one (CLAUDE.md §9.4: an empty field reads as an unfinished feature).
+   *
+   * This overrides the reading in ADR-0004 that kept the EFN off the printed
+   * document; MEDICE asked for it on the certificate. The EFN still never
+   * reaches a log, an audit `detail`, or any other person's response.
+   */
+  readonly efn?: string;
   /**
    * The Wissenschaftliche Leitung whose stamp and signature validate the
    * document. Mandatory — a certificate without it is not valid per the
@@ -115,9 +131,11 @@ export type CertificateField =
 /**
  * The mandatory fields (per the Bescheid) that are absent or empty.
  *
- * `participantAddress` is intentionally excluded: it appears on the Muster but
- * not in the Bescheid's minimum list, so its absence does not make a
- * certificate incomplete.
+ * `participantAddress` and `efn` are intentionally excluded: neither is in the
+ * Bescheid's minimum list, and both are legitimately absent — an address the
+ * learner did not supply, an EFN a point-free course never asked for. Their
+ * absence does not make a certificate incomplete, and treating it as though it
+ * did would refuse a document somebody has earned.
  *
  * The stamp and signature *images* are likewise not checked here — this
  * function is pure and never sees bytes. The renderer refuses separately if

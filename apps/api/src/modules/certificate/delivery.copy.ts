@@ -37,6 +37,15 @@ export interface CertificateEmailInput {
    * against, so it renders as text or 404s.
    */
   readonly courseUrl: string;
+  /**
+   * Whether the PDF is really on the message (P59-02).
+   *
+   * The sentence promising an attachment used to be unconditional, and for
+   * five phases nothing was attached. It is a parameter now so the two cannot
+   * drift again: the same value decides the sentence and the attachment, and a
+   * render that failed drops the sentence rather than lying about it.
+   */
+  readonly attached: boolean;
 }
 
 export function certificateEmail(input: CertificateEmailInput): {
@@ -49,7 +58,9 @@ export function certificateEmail(input: CertificateEmailInput): {
       `Guten Tag ${input.participantName},`,
       "",
       `vielen Dank für Ihre Teilnahme an der Fortbildung „${input.courseTitle}“.`,
-      "Ihre Teilnahmebescheinigung finden Sie im Anhang dieser E-Mail.",
+      ...(input.attached
+        ? ["Ihre Teilnahmebescheinigung finden Sie im Anhang dieser E-Mail."]
+        : []),
       "",
       ...(input.courseUrl === ""
         ? []

@@ -126,15 +126,22 @@ describe("a first installation", () => {
       department: string;
       project: string;
       course: string;
-      module: string;
+      modules: string;
+      module_titles: string;
       chapters: string;
       questions: string;
     }>(
+      // `string_agg` over the modules rather than a scalar subquery: the course
+      // has two of them since P52-03, and `(SELECT title FROM modules …)` threw
+      // "more than one row returned by a subquery used as an expression" the
+      // moment it gained the second. The aggregate says what is there rather
+      // than assuming how many there are.
       `SELECT (SELECT name FROM customers WHERE id = $1)                                      AS customer,
               (SELECT name FROM departments WHERE customer_id = $1)                           AS department,
               (SELECT name FROM projects WHERE customer_id = $1)                              AS project,
               (SELECT title FROM courses WHERE customer_id = $1)                              AS course,
-              (SELECT title FROM modules WHERE customer_id = $1)                              AS module,
+              (SELECT count(*) FROM modules WHERE customer_id = $1)                            AS modules,
+              (SELECT string_agg(title, ', ' ORDER BY ordinal) FROM modules WHERE customer_id = $1) AS module_titles,
               (SELECT count(*) FROM chapters WHERE customer_id = $1)                          AS chapters,
               (SELECT count(*) FROM quiz_questions WHERE customer_id = $1)                    AS questions`,
       [CUSTOMER_ID],
@@ -146,8 +153,13 @@ describe("a first installation", () => {
     expect(rows[0]?.customer).toBe("DSCustomer");
     expect(rows[0]?.department).toBe("DSOrganisation");
     expect(rows[0]?.project).toBe("DSProject");
-    expect(rows[0]?.module).toBe("DSModule");
     expect(rows[0]?.course).toContain("DSCourse");
+
+    // Two modules, and the DSModule naming kept — the point of this tenant is
+    // that an operator can tell at a glance which level they are looking at
+    // (P52-03).
+    expect(Number(rows[0]?.modules)).toBe(2);
+    expect(rows[0]?.module_titles).toBe("DSModule 1, DSModule 2");
     expect(Number(rows[0]?.chapters)).toBe(5);
     expect(Number(rows[0]?.questions)).toBe(5);
   });
@@ -217,16 +229,17 @@ describe("without onlyIfMissing", () => {
     await seedDsDefault(seeder, { revealPassword: false });
     await seedDsDefault(seeder, { revealPassword: false });
 
-    // One course and one module after two runs. `courses` upserts on
+    // One course and *two* modules after two runs — the number the seed
+    // defines, not a number that grew. `courses` upserts on
     // `(project_id, slug)`; `modules` has no such key and relies on
-    // `resetCourseContent` having deleted it first, which is the half a
-    // re-run would expose.
+    // `resetCourseContent` having deleted them first, which is the half a
+    // re-run would expose: a broken reset shows up here as four.
     expect(await countCourses()).toBe(1);
     const { rows } = await admin.query<{ n: string }>(
       "SELECT count(*) AS n FROM modules WHERE customer_id = $1",
       [CUSTOMER_ID],
     );
-    expect(Number(rows[0]?.n)).toBe(1);
+    expect(Number(rows[0]?.n)).toBe(2);
   });
 });
 
@@ -341,5 +354,70 @@ describe("a customer somebody already created under this slug", () => {
       [CUSTOMER_SLUG],
     );
     expect(rows[0]?.id).toBe(CUSTOMER_ID);
+  });
+});
+
+/**
+ * The invariant every seed has to respect (P62-02).
+ *
+ * `courses_published_cme_is_complete` is a CHECK, so a seed that violated it
+ * would fail loudly. This asserts the *product* property rather than the
+ * constraint's existence: **no seeded course is published, awards CME points
+ * and missing something the certificate or the Punktemeldung reads.**
+ *
+ * It is here rather than in `scripts/` because the question needs a database
+ * with the seeds actually run — which is precisely CLAUDE.md §9.9's point. Two
+ * courses on the QA installation failed this and were demoted by migration
+ * 0042; without an assertion the next seed to add one would go unnoticed until
+ * a physician finished it.
+ */
+describe("what the seeds leave publishable", () => {
+  it("publishes no CME course that could not produce a certificate", async () => {
+    const { rows } = await admin.query<{ slug: string; missing: string }>(`
+      SELECT slug,
+             concat_ws(', ',
+               CASE WHEN vnr IS NULL OR btrim(vnr) = '' THEN 'vnr' END,
+               CASE WHEN vnr_password_enc IS NULL THEN 'vnrPassword' END,
+               CASE WHEN cme_category IS NULL OR btrim(cme_category) = '' THEN 'cmeCategory' END,
+               CASE WHEN accreditation_body IS NULL OR btrim(accreditation_body) = '' THEN 'accreditationBody' END,
+               CASE WHEN organizer IS NULL OR btrim(organizer) = '' THEN 'organizer' END,
+               CASE WHEN event_location IS NULL OR btrim(event_location) = '' THEN 'eventLocation' END,
+               CASE WHEN scientific_lead_name IS NULL OR btrim(scientific_lead_name) = '' THEN 'scientificLeadName' END,
+               CASE WHEN certificate_issue_place IS NULL OR btrim(certificate_issue_place) = '' THEN 'certificateIssuePlace' END,
+               CASE WHEN stamp_image IS NULL THEN 'stampImage' END,
+               CASE WHEN signature_image IS NULL THEN 'signatureImage' END
+             ) AS missing
+        FROM courses
+       WHERE status = 'published' AND cme_points IS NOT NULL AND cme_points > 0
+    `);
+
+    const broken = rows.filter((row) => row.missing !== "");
+    // Named, not counted: "1 course is incomplete" sends somebody looking.
+    expect(broken.map((row) => `${row.slug}: ${row.missing}`)).toEqual([]);
+  });
+
+  it("refuses such a course at the database, whatever writes it", async () => {
+    /*
+     * The guarantee, exercised on the connection that bypasses every service:
+     * a superuser writing directly, which is what a seed, a migration and an
+     * operator with `psql` all are. The row is built here rather than borrowed
+     * from the seed so the case does not depend on what a previous `describe`
+     * left behind.
+     */
+    const { rows } = await admin.query<{ id: string; customer_id: string }>(
+      "SELECT id, customer_id FROM projects LIMIT 1",
+    );
+    const project = rows[0];
+    expect(project).toBeDefined();
+
+    await expect(
+      admin.query(
+        `INSERT INTO courses (customer_id, project_id, slug, title,
+                              required_watch_percent, pass_threshold_percent,
+                              cme_points, status)
+         VALUES ($1,$2,$3,$4,100,70,4,'published')`,
+        [project!.customer_id, project!.id, `p62-broken-${Date.now()}`, "Unvollständig"],
+      ),
+    ).rejects.toThrow(/courses_published_cme_is_complete/);
   });
 });

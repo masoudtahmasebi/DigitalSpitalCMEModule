@@ -407,7 +407,16 @@ export function createClient(options: ClientOptions) {
       submission: EvaluationSubmission,
     ): Promise<EnrolmentState> => request(`${course(slug)}/evaluation`, json(submission)),
 
-    /** Write-only. There is deliberately no `getEfn` — see ADR-0004. */
+    /**
+     * The caller's own EFN, or `null` (P54-02).
+     *
+     * Takes no argument, and that is the design rather than a convenience:
+     * the subject is the session's, so there is no parameter through which a
+     * caller could ask about anybody else (ADR-0004, amended).
+     */
+    getEfn: (): Promise<{ efn: string | null; required: boolean }> =>
+      request("/profile/efn"),
+
     setEfn: (efn: string): Promise<void> =>
       request("/profile/efn", {
         method: "PUT",

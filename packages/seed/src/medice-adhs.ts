@@ -281,7 +281,8 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
     const courseId = await upsert(
       pool,
       `INSERT INTO courses (
-         customer_id, project_id, slug, title, description, delivery_type,
+         -- 'published' explicitly: the column defaults to 'draft' (P53-01).
+         customer_id, project_id, slug, title, description, delivery_type, status,
          thema, altersgruppe, vnr, accreditation_body, cme_points, cme_category,
          event_location, organizer, valid_from, valid_to,
          required_watch_percent, pass_threshold_percent, max_quiz_attempts,
@@ -289,7 +290,7 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
          scientific_lead_name, scientific_lead_title, certificate_issue_place,
          stamp_image, stamp_image_mime, signature_image, signature_image_mime
        ) VALUES (
-         $1,$2,$3,$4,$5,'on_demand',
+         $1,$2,$3,$4,$5,'on_demand','published',
          ARRAY['ADHS'], ARRAY['Erwachsene'], $6, $7, 4, 'D',
          'online', $8, $9, $10,
          100, 70, NULL,

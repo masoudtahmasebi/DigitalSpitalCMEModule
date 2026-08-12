@@ -46,6 +46,7 @@ const course: CourseComplianceRow = {
   cmePoints: 4,
   cmeCategory: "D",
   vnr: "9999999999999999999",
+  status: "published" as const,
   validFrom: null,
   validTo: null,
 };
@@ -95,7 +96,10 @@ const enrolment: EnrolmentRow = {
   requiredWatchPercent: 100,
   passThresholdPercent: 70,
   maxQuizAttempts: null,
+  /** A day before `NOW` — see the note in `learning.service.test.ts` (P55-01). */
+  createdAt: new Date("2026-07-27T10:00:00Z"),
   completedAt: null,
+  courseCompletedAt: null,
   cmePoints: 4,
 };
 
@@ -140,6 +144,7 @@ function build(
     hasEfn: async () => false,
     hasEvaluationResponse: async () => false,
     markCompleted: async () => undefined,
+    markCourseCompleted: async () => undefined,
   };
 
   const assessmentRepo: AssessmentRepositoryPort = {
@@ -253,12 +258,36 @@ describe("submit", () => {
     expect(result.perQuestion).toBeUndefined();
   });
 
-  it("includes per-question correctness when the course does reveal answers", async () => {
+  it("includes per-question correctness for a course that awards no points", async () => {
+    // The case the setting exists for: educational material with no accredited
+    // assessment to protect, where immediate feedback is the point of it.
     const result = await build({
-      courseOverrides: { revealCorrectAnswers: true },
+      courseOverrides: { revealCorrectAnswers: true, cmePoints: null },
     }).service.submit(course.slug, QUIZ, allCorrect, learner);
 
     expect(result.perQuestion).toEqual({ [Q1]: true, [Q2]: true });
+  });
+
+  it("withholds it for an accredited course even when the column says otherwise", async () => {
+    /*
+     * P56-01, and the case this file previously asserted the *other* way: the
+     * old version of the test above set `revealCorrectAnswers` on a course
+     * worth 4 CME points and expected the answer key back, which is what the
+     * service did.
+     *
+     * The database now refuses to store that combination
+     * (`courses_no_answer_key_for_points`), so this state is unreachable
+     * through the product — which is exactly why it is worth a test here. A
+     * constraint added later can be dropped later; the rule is
+     * `mayRevealCorrectAnswers`, and this is the assertion that the service
+     * asks it rather than reading the column.
+     */
+    const result = await build({
+      courseOverrides: { revealCorrectAnswers: true, cmePoints: 4 },
+    }).service.submit(course.slug, QUIZ, allCorrect, learner);
+
+    expect(result.perQuestion).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain(Q1);
   });
 
   it("never returns the correct option ids, even on a wrong answer", async () => {
@@ -416,6 +445,7 @@ describe("submit", () => {
       hasEfn: async () => false,
       hasEvaluationResponse: async () => false,
       markCompleted: async () => undefined,
+      markCourseCompleted: async () => undefined,
     };
 
     const assessmentRepo: AssessmentRepositoryPort = {

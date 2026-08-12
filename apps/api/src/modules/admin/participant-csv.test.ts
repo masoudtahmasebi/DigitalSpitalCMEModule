@@ -12,8 +12,10 @@ function row(overrides: Partial<ParticipantRow> = {}): ParticipantRow {
     quizPassed: true,
     evaluationSubmitted: true,
     progressPercent: 100,
+    courseComplete: true,
     complete: true,
     completedAt: "2026-07-28T14:35:00.000Z",
+    courseCompletedAt: "2026-07-28T14:30:00.000Z",
     eivState: "submitted",
     eivAttempts: 1,
     eivReportDueAt: "2026-08-05T21:59:59.000Z",
@@ -99,6 +101,28 @@ describe("what the export does and does not contain", () => {
     const csv = participantsToCsv([row(), row(), row()]);
     // Trailing CRLF produces one empty trailing element.
     expect(csv.split("\r\n").filter((line) => line !== "")).toHaveLength(5);
+  });
+
+  /*
+   * The header row and the data rows are two hand-written lists in one file,
+   * and nothing but this test makes them agree. Adding a column to one and not
+   * the other shifts every cell to its right — so "Zertifiziert" reads the
+   * completion date, "Meldefrist" reads the certificate state, and the file is
+   * still a perfectly well-formed CSV that opens without complaint.
+   *
+   * Found while adding the two P51-01 columns, which is exactly the edit that
+   * causes it. Every other test here checks that some string is *somewhere* in
+   * the output, and all of them stay green through a total misalignment.
+   */
+  it("gives every data row exactly as many cells as the header", () => {
+    const csv = participantsToCsv([row(), row({ email: null, completedAt: null })]);
+    const [, header, ...dataRows] = csv.split("\r\n").filter((line) => line !== "");
+
+    const headerCells = header?.split(";").length;
+    expect(headerCells).toBeGreaterThan(0);
+    for (const line of dataRows) {
+      expect(line.split(";")).toHaveLength(headerCells as number);
+    }
   });
 
   it("renders dates in German local time, not UTC", () => {

@@ -28,6 +28,8 @@ import { configureApp } from "../../src/configure-app.js";
 import { loadConfig } from "../../src/config/config.js";
 import { seedLearner } from "./support/seed-learner.js";
 import { requireEnv } from "./support/env.js";
+import { backdateLearnerClock } from "./support/backdate.js";
+import { publishAccredited } from "./support/accredited-course.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 
@@ -56,6 +58,8 @@ const VNR = "9999999999999999999";
 const EFN = "123456789012345";
 /** What the learner confirms at completion — deliberately not the token's name. */
 const ATTESTED_NAME = "Dr. med. Anna Müller";
+/** The Muster's "Anschrift:" line, supplied with the Punktemeldung (P60-03). */
+const ATTESTED_ADDRESS = "Musterstraße 1, 58638 Iserlohn";
 const VIDEO_SEC = 300;
 
 /** 1×1 PNG, stored as the course's stamp and signature. */
@@ -114,9 +118,9 @@ beforeAll(async () => {
                           scientific_lead_name, scientific_lead_title,
                           certificate_issue_place,
                           stamp_image, stamp_image_mime,
-                          signature_image, signature_image_mime)
+                          signature_image, signature_image_mime, status)
      VALUES ($1,$2,$3,$4,100,70,$5,4,'D',$6,'online',$7,$8,'Prof. Dr. med.','Iserlohn',
-             $9,'image/png',$9,'image/png') RETURNING id`,
+             $9,'image/png',$9,'image/png','draft') RETURNING id`,
     [
       customerId,
       projectId,
@@ -129,6 +133,11 @@ beforeAll(async () => {
       PLACEHOLDER_IMAGE,
     ],
   );
+  // Inserted as a draft and published here, because a point-awarding course
+  // cannot be `published` while any field the certificate or the Punktemeldung
+  // reads is unset (P62-02). The helper fills in only what is still null — the
+  // organiser and the lead above are this suite's, and stay.
+  await publishAccredited(seedPool, courseId);
 
   // One module, one chapter, one video then one quiz — the smallest course
   // that still exercises every gate.
@@ -448,6 +457,7 @@ describe("the road to a CME point", () => {
   });
 
   it("accepts the watched video", async () => {
+    await backdateLearnerClock(seedPool, 3600); // P55-01 — see the helper.
     const { body } = await call(
       "POST",
       `/courses/${courseSlug}/contents/${videoId}/progress`,
@@ -489,11 +499,104 @@ describe("the road to a CME point", () => {
     expect(status).toBe(409);
   });
 
+  it("says an EFN is required, because this course awards points", async () => {
+    /*
+     * P57-01. `{"efn": null}` cannot tell "we do not need one from you" from
+     * "we need one and you have not given it", and only the server knows
+     * which — it turns on whether any of this learner's enrolments awards CME
+     * points, which the client cannot see.
+     */
+    const { body } = await call("GET", "/profile/efn");
+
+    expect(body.required).toBe(true);
+  });
+
+  it("answers null before an EFN has been supplied", async () => {
+    /*
+     * P54-02, and it runs *before* the write on purpose: the whole read is
+     * one field, so a test that only ever asked after storing would pass on an
+     * endpoint that returned a hardcoded value. Null is also what the screen
+     * needs to tell "you have not given us one" from "we did not look".
+     */
+    const { status, body } = await call("GET", "/profile/efn");
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ efn: null, required: true });
+  });
+
   it("stores the EFN and returns no body", async () => {
     const { status, body } = await call("PUT", "/profile/efn", { efn: EFN });
 
     expect(status).toBe(204);
     expect(body).toBeUndefined();
+  });
+
+  it("reads back the EFN it just stored", async () => {
+    const { status, body } = await call("GET", "/profile/efn");
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ efn: EFN, required: true });
+  });
+
+  it("tells the customer admin no EFN is required, because they take no course", async () => {
+    // The other half of `required` (P57-01), and the case that separates it
+    // from "is one stored": this account has no enrolment at all, so nothing
+    // about them needs an EFN — a screen prompting them for one would be
+    // asking for a physician's identifier from somebody who is not taking
+    // anything.
+    const { body } = await callAs(ADMIN_SUB, "GET", "/profile/efn");
+
+    expect(body).toEqual({ efn: null, required: false });
+  });
+
+  it("gives a customer admin their own EFN, not the learner's", async () => {
+    /*
+     * The property the ADR amendment rests on, and the one case that would
+     * catch the mistake worth catching.
+     *
+     * `ADMIN_SUB` holds `customer_admin` over the same tenant as the learner
+     * whose EFN was stored two cases ago. If this endpoint were tenant-scoped
+     * like every other read on the console — the obvious way to write it — the
+     * admin would get `123456789012345` back and the platform would have an
+     * EFN lookup service. It is scoped to the *person*, so they get their own,
+     * and they have none.
+     */
+    const { status, body } = await callAs(ADMIN_SUB, "GET", "/profile/efn");
+
+    expect(status).toBe(200);
+    expect(body.efn).toBeNull();
+    expect(JSON.stringify(body)).not.toContain(EFN);
+  });
+
+  /*
+   * P51-01. Clear the course-completion date before certifying, which puts the
+   * next test on the path that actually broke.
+   *
+   * Two things arrive at the same row from two different clocks. `completed_at`
+   * is read at the edge when the request arrives; `course_completed_at` is
+   * stamped by the state recomputation *inside* that same request, and so is
+   * fractionally later. When it has already been recorded — which it has for
+   * any learner who looked at their progress after the quiz — the second write
+   * never happens and the ordering never comes up. When it has not, the
+   * completion writes a course-completion date later than the certification
+   * date, `enrolments_course_completed_before_completed` refuses the row, and
+   * the physician's completion fails at its final step with an internal error.
+   *
+   * NULL here is not contrived: it is the state of every enrolment that existed
+   * before migration 0037, and of any learner who submits the evaluation before
+   * passing the quiz and then completes without reloading.
+   */
+  it("can be certified with no course-completion date recorded, as an old row has", async () => {
+    await seedPool.query(
+      "UPDATE enrolments SET course_completed_at = NULL WHERE id = $1",
+      [enrolmentId],
+    );
+
+    const { rows } = await seedPool.query<{ course_completed_at: Date | null }>(
+      "SELECT course_completed_at FROM enrolments WHERE id = $1",
+      [enrolmentId],
+    );
+    expect(rows[0]!.course_completed_at).toBeNull();
   });
 
   it("completes and queues the Punktemeldung", async () => {
@@ -505,6 +608,7 @@ describe("the road to a CME point", () => {
       attestedTitle: "Dr. med.",
       attestedGivenName: "Anna",
       attestedFamilyName: "Müller",
+      attestedAddress: ATTESTED_ADDRESS,
       consentDocument: "datenschutz-2026-01",
     });
 
@@ -534,6 +638,82 @@ describe("the road to a CME point", () => {
       (rows[0]!.report_due_at.getTime() - rows[0]!.event_end_at.getTime()) / 86_400_000;
     expect(days).toBeGreaterThan(8);
     expect(days).toBeLessThan(9);
+  });
+
+  it("issues the certificate at completion, before anybody asks for it", async () => {
+    /*
+     * P59-01, and it has to be asserted **here** rather than in "the
+     * Teilnahmebescheinigung" block below.
+     *
+     * That block's `records the issue exactly once` runs after the preview and
+     * the download, and creating the row lazily on first read is exactly the
+     * defect: it passed unchanged on a platform where a physician who finished
+     * a course and closed the tab was never emailed anything, because the
+     * delivery sweep claims `status = 'issued'` and there was no row to claim
+     * (CLAUDE.md §9.7 — name the caller).
+     *
+     * So: no certificate endpoint has been called at this point in the file,
+     * and the row must already exist.
+     */
+    const { rows } = await seedPool.query<{ status: string; issued_at: Date | null }>(
+      "SELECT status, issued_at FROM certificates WHERE enrolment_id = $1",
+      [enrolmentId],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe("issued");
+    expect(rows[0]!.issued_at).not.toBeNull();
+  });
+
+  it("issues the certificate on completion, not on a successful Punktemeldung", async () => {
+    /*
+     * P60-04, and the reason it is written down rather than assumed.
+     *
+     * QA read the flow as "no certificate until EIV has accepted the
+     * Meldung", which is a reasonable reading and is **not** what this
+     * platform does. The two are deliberately independent:
+     *
+     * - a point-free course reports nothing to EIV-FOBI, so there would be
+     *   nothing to wait for and the certificate would never arrive;
+     * - a Kammer outage would withhold documents physicians have earned, for
+     *   as long as it lasted.
+     *
+     * The physician earns the document by finishing the course. The
+     * Punktemeldung is the platform's obligation to the Kammer, not a
+     * condition on theirs.
+     *
+     * So: the submission is still `queued` — the worker has not run in this
+     * suite — and the certificate is already issued.
+     */
+    const submission = await seedPool.query<{ status: string }>(
+      "SELECT status FROM eiv_submissions WHERE enrolment_id = $1",
+      [enrolmentId],
+    );
+    const certificate = await seedPool.query<{ status: string }>(
+      "SELECT status FROM certificates WHERE enrolment_id = $1",
+      [enrolmentId],
+    );
+
+    expect(submission.rows[0]!.status).toBe("queued");
+    expect(certificate.rows[0]!.status).toBe("issued");
+  });
+
+  it("backfills the course-completion date it never had, at or before the certification", async () => {
+    // Certification implies the course was complete, so the row must not be
+    // left claiming otherwise — and the date it gets must not read as later
+    // than the certification, which is what the CHECK constraint says and what
+    // the previous test would have died of.
+    const { rows } = await seedPool.query<{
+      course_completed_at: Date | null;
+      completed_at: Date | null;
+    }>("SELECT course_completed_at, completed_at FROM enrolments WHERE id = $1", [
+      enrolmentId,
+    ]);
+
+    expect(rows[0]!.course_completed_at).not.toBeNull();
+    expect(rows[0]!.course_completed_at!.getTime()).toBeLessThanOrEqual(
+      rows[0]!.completed_at!.getTime(),
+    );
   });
 
   it("is idempotent — completing again does not restart the reporting clock", async () => {
@@ -580,6 +760,35 @@ describe("the Teilnahmebescheinigung", () => {
     // The participation date is the completion instant — for an on-demand
     // course there is no other date the certificate could mean.
     expect(body.completedAt).not.toBeNull();
+    // The Muster's own two participant fields (P60-02, P60-03). The EFN is on
+    // the certificate on MEDICE's instruction; the Anschrift is whatever the
+    // learner gave with the Punktemeldung form.
+    expect(body.efn).toBe(EFN);
+    expect(body.participantAddress).toBe(ATTESTED_ADDRESS);
+  });
+
+  it("omits both when there is nothing to print, rather than drawing empty fields", async () => {
+    /*
+     * The certificate must not carry an "EFN:" line with nothing after it.
+     * A point-free course never asks for one, and an address is optional —
+     * an empty labelled field on a legal document reads as a form somebody
+     * failed to complete (CLAUDE.md §9.4).
+     *
+     * Exercised on the assembled data rather than by rendering, because
+     * "absent" is the property and a PDF cannot be asked whether a line is
+     * missing.
+     */
+    await seedPool.query("UPDATE enrolments SET attested_address = NULL WHERE id = $1", [
+      enrolmentId,
+    ]);
+
+    const { body } = await call("GET", `/courses/${courseSlug}/certificate`);
+    expect(body.participantAddress).toBeUndefined();
+
+    await seedPool.query("UPDATE enrolments SET attested_address = $2 WHERE id = $1", [
+      enrolmentId,
+      ATTESTED_ADDRESS,
+    ]);
   });
 
   it("templates the creditability sentence from the course's own values", async () => {

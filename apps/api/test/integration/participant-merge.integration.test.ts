@@ -128,8 +128,8 @@ async function one(sql: string, values: unknown[]): Promise<string> {
 async function seedCourse(projectId: string, slug: string): Promise<string> {
   return one(
     `INSERT INTO courses (customer_id, project_id, slug, title, delivery_type,
-                          required_watch_percent, pass_threshold_percent)
-     VALUES ($1,$2,$3,$4,'on_demand',80,70) RETURNING id`,
+                          required_watch_percent, pass_threshold_percent, status)
+     VALUES ($1,$2,$3,$4,'on_demand',80,70,'published') RETURNING id`,
     [customerId, projectId, slug, `Kurs ${slug}`],
   );
 }

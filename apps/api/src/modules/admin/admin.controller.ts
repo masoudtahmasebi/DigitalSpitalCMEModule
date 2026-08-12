@@ -138,6 +138,20 @@ export class AdminController {
    * and adding a multipart parser would add a file-upload attack surface for
    * one endpoint.
    */
+  /**
+   * Can a browser seek this course's videos? (P62-03)
+   *
+   * An operator route because the answer names a URL — §9.5 keeps that away
+   * from a learner and §9.10 says it belongs with the audience already
+   * entitled to it. It reports rather than refusing: a host healthy at publish
+   * time can be wedged an hour later.
+   */
+  @Get("courses/:slug/media-check")
+  @Roles("department_admin", "customer_admin", "super_admin")
+  async checkMedia(@Param("slug") slug: string, @TenantDb() db: Db) {
+    return { sources: await this.service(db).checkCourseMedia(slug) };
+  }
+
   @Put("courses/:slug/certificate-assets")
   @RateLimit("adminUpload")
   @Roles("customer_admin", "super_admin")

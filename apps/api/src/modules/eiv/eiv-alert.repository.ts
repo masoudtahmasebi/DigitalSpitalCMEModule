@@ -50,15 +50,26 @@ export class EivAlertRepository implements EivAlertRepositoryPort {
     const { rows } = await this.pool.query<{
       enrolment_id: string;
       customer_id: string;
-      report_due_at: Date;
+      event_end_at: Date;
+      first_submitted_at: Date | null;
       status: string;
       attempt_count: number;
     }>("SELECT * FROM unreported_eiv_submissions($1, $2)", [now, LOOKBACK_DAYS]);
 
+    /*
+     * The deadline is **not** read from `report_due_at` (P58-02). The
+     * submission sweep recomputes it from `event_end_at`, and a second answer
+     * living in a column is how the alerter came to shout "overdue" about a
+     * row the submitter was about to send perfectly legitimately. What comes
+     * back here are the inputs; the service applies `eivDeadlines`.
+     */
     return rows.map((row) => ({
       enrolmentId: row.enrolment_id,
       customerId: row.customer_id,
-      reportDueAt: row.report_due_at,
+      eventEndAt: row.event_end_at,
+      ...(row.first_submitted_at === null
+        ? {}
+        : { firstSubmittedAt: row.first_submitted_at }),
       status: row.status,
       attemptCount: row.attempt_count,
     }));

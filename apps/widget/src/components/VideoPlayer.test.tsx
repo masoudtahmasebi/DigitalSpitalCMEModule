@@ -448,3 +448,60 @@ describe("reporting upward", () => {
     ]);
   });
 });
+
+/**
+ * Which refusal the learner is looking at (P62-03).
+ *
+ * "The server will not seek" and "you have not watched that far" produce the
+ * identical snap-back. Section 9 spent an hour on the wrong one, with the
+ * anti-skip sentence on screen the whole time — a misconfigured host reading
+ * as a working feature is the worst possible failure mode for a check, because
+ * it recruits the product into the lie.
+ *
+ * jsdom has no media pipeline, so `video.seekable` is stubbed. That is the
+ * honest boundary of what a component test can assert here: the *wiring* from
+ * the element's report to the sentence. Whether a given host actually answers
+ * `206` is the admin check's question, not this one.
+ */
+describe("a host that cannot seek at all", () => {
+  function withSeekable(length: number) {
+    const { container, props } = renderPlayer({
+      seekCeilingSec: 200,
+      watchedSegments: [{ startSec: 0, endSec: 200 }],
+    });
+    const video = container.querySelector("video");
+    if (video === null) throw new Error("no video element");
+    Object.defineProperty(video, "seekable", {
+      configurable: true,
+      get: () => ({ length }),
+    });
+    Object.defineProperty(video, "readyState", { configurable: true, get: () => 1 });
+    Object.defineProperty(video, "buffered", {
+      configurable: true,
+      get: () => ({ length: 0 }),
+    });
+    fireEvent.progress(video);
+    return { container, props };
+  }
+
+  it("says it is the server, not the learner", () => {
+    withSeekable(0);
+    expect(screen.getByText(/der Videoserver unterstützt das nicht/)).toBeTruthy();
+    // And not the accreditation wording, which would send the learner away
+    // believing the product is working.
+    expect(screen.queryByText(/Vorspulen ist nicht möglich/)).toBeNull();
+  });
+
+  it("tells them what to do about it", () => {
+    // A refusal a learner cannot act on is a refusal that generates a support
+    // ticket about the wrong thing (CLAUDE.md §9.4).
+    withSeekable(0);
+    expect(screen.getByText(/melden Sie das dem Veranstalter/)).toBeTruthy();
+  });
+
+  it("keeps the accreditation wording when seeking works and the gate bites", () => {
+    withSeekable(1);
+    expect(screen.getByText(/Vorspulen ist nicht möglich/)).toBeTruthy();
+    expect(screen.queryByText(/der Videoserver unterstützt das nicht/)).toBeNull();
+  });
+});

@@ -64,6 +64,11 @@ let projectSlug: string;
 let customerId: string;
 let courseSlug: string;
 
+/** The second tenant: same issuer, different customer — see the fixture. */
+let otherCustomerId: string;
+let otherProjectSlug: string;
+let otherCourseSlug: string;
+
 const GRANTED_SUB = "sub-with-grant";
 const UNGRANTED_SUB = "sub-without-grant";
 
@@ -82,6 +87,8 @@ beforeAll(async () => {
   const suffix = randomUUID().slice(0, 8);
   projectSlug = `pipeline-project-${suffix}`;
   courseSlug = `pipeline-course-${suffix}`;
+  otherProjectSlug = `pipeline-other-project-${suffix}`;
+  otherCourseSlug = `pipeline-other-course-${suffix}`;
 
   const {
     rows: [customer],
@@ -109,9 +116,55 @@ beforeAll(async () => {
   // Real, non-hardcoded values — the point of asserting on them below is that
   // they are the *course's* configuration, not a widget constant (P5-06).
   await seedPool.query(
-    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'published')`,
     [customerId, project!.id, courseSlug, "Pipeline course", 100, 70],
+  );
+
+  /*
+   * A **second customer**, with its own project on the same issuer and its own
+   * course (P52-04).
+   *
+   * The same realm deliberately: two customers federated from one Keycloak is
+   * the arrangement where a mistake is easiest to make and hardest to see,
+   * because the token verifies perfectly and only the *grant* separates them.
+   * Two issuers would make the test pass for the wrong reason — the signature
+   * check would catch it before authorisation ever ran.
+   */
+  const {
+    rows: [otherCustomer],
+  } = await seedPool.query<{ id: string }>(
+    "INSERT INTO customers (slug, name) VALUES ($1, $2) RETURNING id",
+    [`pipeline-other-${suffix}`, "Pipeline Other GmbH"],
+  );
+  otherCustomerId = otherCustomer!.id;
+
+  const {
+    rows: [otherDepartment],
+  } = await seedPool.query<{ id: string }>(
+    "INSERT INTO departments (customer_id, slug, name) VALUES ($1, $2, $3) RETURNING id",
+    [otherCustomerId, "default", "Default"],
+  );
+
+  const {
+    rows: [otherProject],
+  } = await seedPool.query<{ id: string }>(
+    `INSERT INTO projects (customer_id, department_id, slug, name, keycloak_issuer, keycloak_audience)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [
+      otherCustomerId,
+      otherDepartment!.id,
+      otherProjectSlug,
+      "Pipeline other project",
+      issuer,
+      AUDIENCE,
+    ],
+  );
+
+  await seedPool.query(
+    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'published')`,
+    [otherCustomerId, otherProject!.id, otherCourseSlug, "Other course", 100, 70],
   );
 
   // Pre-provision the "granted" learner and their role — `provisionOrUpdate`
@@ -299,6 +352,66 @@ describe("GET /courses/:slug", () => {
     };
     expect(body.requiredWatchPercent).toBe(100);
     expect(body.passThresholdPercent).toBe(70);
+  });
+
+  /*
+   * Cross-tenant reads over the bearer path (P52-04).
+   *
+   * Every one of these was checked by hand during a QA pass and none of them
+   * was pinned by anything: the suite had exactly one customer, so "tenant A
+   * cannot read tenant B" was unfalsifiable here. The session path has had
+   * these tests since P21-03 (`participant-auth`); the federated path did not,
+   * and that is the path MEDICE's physicians actually arrive on.
+   *
+   * A security property verified by clicking is a security property that
+   * regresses silently (CLAUDE.md §9.7).
+   */
+  it("404s another tenant's course slug, for a token that is otherwise valid", async () => {
+    const token = await mint(GRANTED_SUB);
+
+    const response = await fetch(`${baseUrl}/courses/${otherCourseSlug}`, {
+      headers: { authorization: `Bearer ${token}`, "x-ds-project": projectSlug },
+    });
+
+    // 404 and not 403: a course in another tenant must be indistinguishable
+    // from one that does not exist, or the status code enumerates the
+    // platform's customers (§9.5).
+    expect(response.status).toBe(404);
+  });
+
+  it("does not name the other tenant's course in the refusal", async () => {
+    const token = await mint(GRANTED_SUB);
+    const response = await fetch(`${baseUrl}/courses/${otherCourseSlug}`, {
+      headers: { authorization: `Bearer ${token}`, "x-ds-project": projectSlug },
+    });
+
+    // The slug is the caller's own input, so echoing it back proves nothing on
+    // its own — the title is the thing only the server knows.
+    expect(await response.text()).not.toContain("Other course");
+  });
+
+  it("403s a token presented against the other tenant's project", async () => {
+    // Same issuer, same audience, same signature — everything verifies. The
+    // only thing standing between this learner and another customer's
+    // catalogue is the grant, which is exactly what makes it worth a test.
+    const token = await mint(GRANTED_SUB);
+
+    const response = await fetch(`${baseUrl}/courses`, {
+      headers: { authorization: `Bearer ${token}`, "x-ds-project": otherProjectSlug },
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it("never returns the other tenant's course in a list", async () => {
+    const token = await mint(GRANTED_SUB);
+    const response = await fetch(`${baseUrl}/courses`, {
+      headers: { authorization: `Bearer ${token}`, "x-ds-project": projectSlug },
+    });
+
+    const body = (await response.json()) as { items: Array<{ slug: string }> };
+    expect(body.items.map((c) => c.slug)).toContain(courseSlug);
+    expect(body.items.map((c) => c.slug)).not.toContain(otherCourseSlug);
   });
 
   it("404s an unknown slug rather than disclosing existence with a 403", async () => {

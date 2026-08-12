@@ -100,6 +100,28 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     const path = safePath(request);
 
     /*
+     * The content type of a refusal is the filter's to set (P56-02).
+     *
+     * `res.json()` sets `application/json` only when nothing has set one
+     * already — and a route that declares its own does. `GET
+     * /courses/{slug}/certificate/pdf` carries `@Header("content-type",
+     * "application/pdf")`, which Express applies *before* the handler runs, so
+     * every refusal from that route arrived as a problem document labelled as
+     * a PDF. A browser asked to open it offers to download a broken file; a
+     * client that dispatches on the content type sees a PDF and hands 337
+     * bytes of JSON to a renderer.
+     *
+     * Set here rather than removed there, because the shape is the class:
+     * any route that declares a content type has the same bug the moment it
+     * throws, and the filter is the one place that knows the response is no
+     * longer what the route promised.
+     *
+     * `application/problem+json` is what `contracts/openapi.yaml` has said
+     * since the first line of it — this is the API starting to agree.
+     */
+    response.setHeader("content-type", "application/problem+json; charset=utf-8");
+
+    /*
      * A schema rejection is normalised into an `AppError` here rather than
      * falling through to the 500 branch.
      *

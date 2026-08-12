@@ -43,6 +43,7 @@ import {
   renderCertificatePdf,
   type CertificateAssets,
 } from "./certificate.renderer.js";
+import type { CertificateArchivePort } from "./certificate.archive.js";
 
 export interface RenderedCertificate {
   readonly filename: string;
@@ -53,10 +54,88 @@ export class CertificateService {
   constructor(
     private readonly repository: CertificateRepositoryPort,
     private readonly render = renderCertificatePdf,
+    /**
+     * Where the issued bytes are kept (P60-01). Optional because object storage
+     * is optional: a deployment without it still issues, downloads and e-mails
+     * certificates, and simply has no archive to verify against later.
+     */
+    private readonly archive?: CertificateArchivePort,
   ) {}
 
-  static fromDb(db: Db): CertificateService {
-    return new CertificateService(new CertificateRepository(db));
+  static fromDb(db: Db, archive?: CertificateArchivePort): CertificateService {
+    return new CertificateService(
+      new CertificateRepository(db),
+      renderCertificatePdf,
+      archive,
+    );
+  }
+
+  /**
+   * Which enrolment a certificate row belongs to (P59-02).
+   *
+   * The delivery sweep claims a certificate id; everything that renders one is
+   * keyed on the enrolment. Resolved inside the tenant scope, so a claim that
+   * named another customer's row finds nothing.
+   */
+  async enrolmentIdFor(certificateId: string): Promise<string | undefined> {
+    return this.repository.findEnrolmentIdByCertificate(certificateId);
+  }
+
+  /**
+   * Issue and render for an enrolment, without a signed-in learner (P59-01).
+   *
+   * Used by two callers that know an enrolment and nothing else: the
+   * completion, which issues the certificate the moment it is earned, and the
+   * delivery sweep, which needs the bytes to attach to the e-mail.
+   *
+   * **Returns `undefined` instead of throwing.** Every refusal `download`
+   * raises is a message for a person looking at a screen — a missing name they
+   * can fix, an authoring gap they should report. Neither caller here has a
+   * screen: the completion must stand whether or not a PDF can be produced
+   * (the physician earned the point either way), and the delivery sweep must
+   * be able to send the covering e-mail rather than crash the batch. Both log
+   * what happened; nothing about the learner's entitlement changes.
+   */
+  async issueForEnrolment(
+    enrolmentId: string,
+    customerId: string,
+    now: Date,
+  ): Promise<RenderedCertificate | undefined> {
+    const source = await this.repository.findSourceByEnrolment(enrolmentId);
+    if (source === undefined || source.completedAt === null) return undefined;
+
+    const data = this.assemble(source, source.completedAt);
+    if (missingCertificateFields(data).length > 0) return undefined;
+
+    const assets: CertificateAssets = {
+      stampImage: source.stampImage,
+      stampImageMime: source.stampImageMime,
+      signatureImage: source.signatureImage,
+      signatureImageMime: source.signatureImageMime,
+      issuePlace: source.certificateIssuePlace,
+    };
+
+    let bytes: Uint8Array;
+    try {
+      bytes = await this.render(data, assets);
+    } catch (error) {
+      if (error instanceof CertificateAssetsMissingError) return undefined;
+      throw error;
+    }
+
+    // Same write as `download`, and idempotent for the same reason: whichever
+    // of the two happens first mints the token, and the other finds it.
+    const row = await this.repository.issue({
+      customerId,
+      enrolmentId,
+      participantName: data.participantName,
+      downloadToken: randomBytes(32).toString("hex"),
+      issuedAt: now,
+    });
+
+    await this.archiveOnce(row, source.courseId, customerId, bytes, now);
+
+    return { filename: filenameFor(data), bytes };
   }
 
   /**
@@ -125,7 +204,7 @@ export class CertificateService {
 
     // Recorded after a successful render, so a failed render never leaves a
     // certificate marked issued that nobody can download.
-    await this.repository.issue({
+    const row = await this.repository.issue({
       customerId: learner.customerId,
       enrolmentId: source.enrolmentId,
       participantName: data.participantName,
@@ -135,7 +214,57 @@ export class CertificateService {
       issuedAt: now,
     });
 
+    await this.archiveOnce(row, source.courseId, learner.customerId, bytes, now);
+
     return { filename: filenameFor(data), bytes };
+  }
+
+  /**
+   * Put the issued bytes in object storage, at most once (P60-01).
+   *
+   * ## Why "once", and why it is the *first* render that is kept
+   *
+   * The archive answers "what did we issue", and there is one answer. A second
+   * render — a retry of the delivery, a physician re-downloading next year —
+   * may legitimately differ: a stamp has been replaced, the layout has moved
+   * on. Overwriting would quietly replace the evidence with a reconstruction,
+   * so the row's `pdf_object_key` is the guard here and `WHERE … IS NULL` is
+   * the guard in SQL.
+   *
+   * ## Why a failure is silent to the caller
+   *
+   * Both callers are compliance paths that must not fail on an infrastructure
+   * problem: a completion the physician has earned, and a delivery sweep that
+   * must not drop a batch. `CertificateArchive` answers `undefined` and logs;
+   * the row simply stays unarchived, which is a state the schema can express
+   * and an operator can query for. Pretending otherwise — writing the key
+   * before the bucket confirmed — is the one thing that would make the archive
+   * worthless.
+   */
+  private async archiveOnce(
+    row: { id: string; pdfObjectKey: string | null },
+    courseId: string,
+    customerId: string,
+    bytes: Uint8Array,
+    now: Date,
+  ): Promise<void> {
+    if (this.archive === undefined) return;
+    if (row.pdfObjectKey !== null) return;
+
+    const stored = await this.archive.store({
+      customerId,
+      courseId,
+      certificateId: row.id,
+      bytes,
+    });
+    if (stored === undefined) return;
+
+    await this.repository.recordArchive({
+      certificateId: row.id,
+      objectKey: stored.objectKey,
+      sha256: stored.sha256,
+      at: now,
+    });
   }
 
   /** The certificate's data without rendering it — for the admin console (P9). */
@@ -164,6 +293,12 @@ export class CertificateService {
       // (docs/requirements/medice-adhs.md §6.5). Blank counts as absent: a
       // whitespace-only attestation must not blank out a name we do have.
       participantName: blankToUndefined(source.attestedName) ?? fullName(source),
+      // Both optional, both drawn only when there is something to draw
+      // (P60-02, P60-03). `blankToUndefined` rather than `?? undefined`: a
+      // whitespace-only address would print an "Anschrift:" line that looks
+      // filled in and is not.
+      ...maybe("participantAddress", blankToUndefined(source.attestedAddress)),
+      ...maybe("efn", blankToUndefined(source.efn)),
       scientificLeadName: leadWithTitle(source),
     });
   }
@@ -176,6 +311,20 @@ function fullName(source: CertificateSourceRow): string {
 function blankToUndefined(value: string | null): string | undefined {
   const trimmed = value?.trim() ?? "";
   return trimmed === "" ? undefined : trimmed;
+}
+
+/**
+ * `{ key: value }` when there is a value, `{}` when there is not.
+ *
+ * `exactOptionalPropertyTypes` is on, so `{ efn: undefined }` is not the same
+ * as an absent `efn` and the compiler is right to say so — an optional field
+ * present-but-undefined is a field somebody set to nothing on purpose.
+ */
+function maybe<K extends string>(
+  key: K,
+  value: string | undefined,
+): Record<K, string> | Record<string, never> {
+  return value === undefined ? {} : ({ [key]: value } as Record<K, string>);
 }
 
 function leadWithTitle(source: CertificateSourceRow): string {

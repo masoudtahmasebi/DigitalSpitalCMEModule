@@ -23,14 +23,20 @@ import { AppError } from "./problem-details.js";
 interface Captured {
   status: number;
   body: Record<string, unknown>;
+  /** What the filter set, not what the route had declared (P56-02). */
+  headers: Record<string, string>;
 }
 
 function hostFor(url: string, method = "GET"): { host: ArgumentsHost; sent: Captured } {
-  const sent: Captured = { status: 0, body: {} };
+  const sent: Captured = { status: 0, body: {}, headers: {} };
 
   const response = {
     status(code: number) {
       sent.status = code;
+      return this;
+    },
+    setHeader(name: string, value: string) {
+      sent.headers[name.toLowerCase()] = value;
       return this;
     },
     json(body: Record<string, unknown>) {
@@ -155,5 +161,53 @@ describe("the internal reason stays internal", () => {
     const logged = captureLogs(() => filter.catch(new Error("boom"), host));
 
     expect(logged).toContain(String(sent.body["correlationId"]));
+  });
+});
+
+/*
+ * P56-02. The certificate route declares `content-type: application/pdf`, and
+ * Express applies a `@Header` decorator before the handler runs — so every
+ * refusal from it went out as a problem document labelled as a PDF. A browser
+ * offers to save a broken file; a client that dispatches on the content type
+ * hands 337 bytes of JSON to a PDF renderer.
+ *
+ * The filter owns the type of a refusal, because it is the one place that
+ * knows the response is no longer what the route promised.
+ */
+describe("the content type of a refusal", () => {
+  it("is problem+json for an AppError, whatever the route had declared", () => {
+    const { host, sent } = hostFor("/courses/adhs/certificate/pdf");
+
+    new ProblemDetailsFilter(new JsonLogger("debug", () => undefined)).catch(
+      AppError.notFound("nothing here"),
+      host,
+    );
+
+    expect(sent.headers["content-type"]).toBe("application/problem+json; charset=utf-8");
+  });
+
+  it("is problem+json for a framework exception too", () => {
+    const { host, sent } = hostFor("/courses/adhs/certificate/pdf");
+
+    new ProblemDetailsFilter(new JsonLogger("debug", () => undefined)).catch(
+      new HttpException("nope", 418),
+      host,
+    );
+
+    expect(sent.headers["content-type"]).toBe("application/problem+json; charset=utf-8");
+  });
+
+  it("is problem+json for an unexpected failure, where the risk is highest", () => {
+    // A 500 from a route promising a PDF is the case somebody debugs from a
+    // browser, and the browser will have offered to download the error.
+    const { host, sent } = hostFor("/courses/adhs/certificate/pdf");
+
+    new ProblemDetailsFilter(new JsonLogger("debug", () => undefined)).catch(
+      new Error("boom"),
+      host,
+    );
+
+    expect(sent.status).toBe(500);
+    expect(sent.headers["content-type"]).toBe("application/problem+json; charset=utf-8");
   });
 });

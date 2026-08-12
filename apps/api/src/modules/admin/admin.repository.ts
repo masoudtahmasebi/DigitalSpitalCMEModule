@@ -15,17 +15,20 @@
  * the rollup input is identical — only the fetch is batched.
  */
 
-import { count, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../../db/tenant-db.js";
 import {
   auditLog,
   certificates,
+  chapters,
   contentProgress,
+  contents,
   courses,
   efnProfiles,
   eivSubmissions,
   enrolments,
   evaluationResponses,
+  modules,
   projects,
   users,
 } from "../../db/schema.js";
@@ -34,6 +37,8 @@ import type { ProgressRow } from "../learning/learning.repository.js";
 export interface AdminCourseRow {
   id: string;
   slug: string;
+  /** Editorial state (P53-01): `draft` is invisible to every learner. */
+  status: "draft" | "published";
   title: string;
   // Presentation — what the learner-facing layout draws (P13-01).
   description: string | null;
@@ -80,6 +85,8 @@ export interface EnrolmentListRow {
   /** The enrolment's snapshot — see `EnrolmentRow` in the learning repository. */
   cmePoints: number | null;
   completedAt: Date | null;
+  /** When the course itself was finished (P51-01); null on older rows. */
+  courseCompletedAt: Date | null;
   attestedName: string | null;
   firstName: string | null;
   lastName: string | null;
@@ -135,6 +142,8 @@ export interface ProjectFontPatch {
 }
 
 export interface AdminRepositoryPort {
+  /** Every media URL on a course, in playing order (P62-03). */
+  listCourseMediaUrls(courseId: string): Promise<string[]>;
   listCourses(): Promise<AdminCourseRow[]>;
   findCourse(slug: string): Promise<AdminCourseRow | undefined>;
   countEnrolments(
@@ -171,6 +180,8 @@ export interface AdminRepositoryPort {
 }
 
 export interface CoursePatch {
+  /** Publish or retract (P53-01). */
+  status?: "draft" | "published";
   title?: string;
   description?: string | null;
   deliveryType?: "on_demand" | "live" | "praesenz";
@@ -210,6 +221,7 @@ export interface CertificateAssetPatch {
 const COURSE_COLUMNS = {
   id: courses.id,
   slug: courses.slug,
+  status: courses.status,
   title: courses.title,
   description: courses.description,
   deliveryType: courses.deliveryType,
@@ -250,6 +262,34 @@ const PROJECT_FONT_COLUMNS = {
 
 export class AdminRepository implements AdminRepositoryPort {
   constructor(private readonly db: Db) {}
+
+  /**
+   * Every media URL on a course, in playing order (P62-03).
+   *
+   * Ordered by module, chapter and content so the report an operator reads
+   * follows the course rather than the physical row order. Inside the tenant
+   * transaction like every other read here, so a slug from another customer
+   * simply yields nothing (CLAUDE.md §9.6).
+   */
+  async listCourseMediaUrls(courseId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ sources: contents.mediaSources })
+      .from(contents)
+      .innerJoin(chapters, eq(chapters.id, contents.chapterId))
+      .innerJoin(modules, eq(modules.id, chapters.moduleId))
+      .where(and(eq(modules.courseId, courseId), eq(contents.kind, "video")))
+      .orderBy(modules.ordinal, chapters.ordinal, contents.ordinal);
+
+    const urls: string[] = [];
+    for (const row of rows) {
+      if (!Array.isArray(row.sources)) continue;
+      for (const source of row.sources) {
+        const url = (source as { url?: unknown }).url;
+        if (typeof url === "string" && url !== "") urls.push(url);
+      }
+    }
+    return urls;
+  }
 
   async listCourses(): Promise<AdminCourseRow[]> {
     return this.db.select(COURSE_COLUMNS).from(courses).orderBy(courses.title);
@@ -351,6 +391,7 @@ export class AdminRepository implements AdminRepositoryPort {
         passThresholdPercent: enrolments.passThresholdPercent,
         cmePoints: enrolments.cmePoints,
         completedAt: enrolments.completedAt,
+        courseCompletedAt: enrolments.courseCompletedAt,
         attestedName: enrolments.attestedName,
         firstName: users.firstName,
         lastName: users.lastName,

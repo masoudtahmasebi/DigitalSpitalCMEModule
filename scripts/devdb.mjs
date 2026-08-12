@@ -179,6 +179,25 @@ for (const seed of ["db:seed", "db:seed:ds", "db:seed:default"]) {
   run("pnpm", [seed], env);
 }
 
+/*
+ * Check the shape of what was just seeded (P52-03).
+ *
+ * Here rather than in `pnpm verify`, for one reason: verify has to run on a
+ * laptop with no Postgres, and every other check in it is static. A check that
+ * needs a database belongs where a database has just been filled — which is
+ * this line, three seeds after it was empty.
+ *
+ * And here rather than only in CI, because a check that runs only in CI is a
+ * check the person writing the code does not run (CLAUDE.md §9.11).
+ */
+run("node", [join(REPO, "scripts/check-seed-structure.mjs")], {
+  // The superuser connection, not `appUrl`: `courses` is tenant-scoped, and
+  // `ds_app` with no `app.customer_id` set sees zero rows however well the
+  // seeds ran. Passing appUrl here is exactly the mistake the first version of
+  // this line made, and the checker reported an empty database (§9.6).
+  DATABASE_URL: target.toString(),
+});
+
 console.warn("");
 console.warn(`devdb: ${DB_NAME} ready — medice, ds and dscustomer seeded.`);
 console.warn("  A staff account is not created here. To make one:");

@@ -215,6 +215,21 @@ COPY --from=build-api --chown=node:node /app-runtime ./
 # run against migrations from a different commit.
 COPY --from=build-api --chown=node:node /repo/db/migrations ./dist/migrations
 
+# The development Keycloak stub does not ship (P52-02).
+#
+# `pnpm deploy` above copies the whole compiled `dist/`, so without this line
+# the image contains a program that mints a signed bearer token for any subject
+# asked of it. It refuses to start under NODE_ENV=production and this stage
+# sets exactly that — but a defence that depends on one environment variable
+# staying set is not one to rely on alone for a token minter, and the honest
+# thing is for the file not to be there at all.
+#
+# `USER node` is already in effect and owns these paths, so this needs no
+# privilege. Deliberately not `rm -f`: if the build layout ever changes so that
+# this file is somewhere else, the build should fail loudly here rather than
+# quietly start shipping it again.
+RUN rm ./dist/dev-keycloak.js ./dist/dev-keycloak.js.map 2>/dev/null || rm ./dist/dev-keycloak.js
+
 # The API serves HTTP; TLS is Caddy's job (see infra/deploy).
 EXPOSE 3000
 

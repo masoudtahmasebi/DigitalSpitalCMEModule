@@ -256,8 +256,32 @@ export class ParticipantAuthController {
      */
     const credential = await this.service().credentialState(principal.userId);
 
+    /*
+     * `email` and `subject` are here because the person reading the screen has
+     * no other way to answer "which account am I signed in as" (P54-01).
+     *
+     * The portal draws a header for a physician who may hold accounts at more
+     * than one customer and, on the Keycloak plane, may have been signed in by
+     * WordPress without ever seeing a form on our side. `userId` is ours and
+     * means nothing to them; the address they typed is the thing they
+     * recognise.
+     *
+     * Both are the caller's own and cannot be anything else: they come off the
+     * validated principal, not from a parameter, so there is nothing to point
+     * at somebody else's account. `subject` is the identity provider's `sub`,
+     * which is what a support conversation about a broken federated login
+     * needs — it is the only value that ties a session here to a user in
+     * MEDICE's realm.
+     *
+     * `email` is optional on the principal: a Keycloak realm need not release
+     * the claim. Omitted rather than sent as `null`, for the same reason
+     * `mustChangePassword` is omitted below — an empty field reads as "we hold
+     * nothing", and a missing one reads as "this plane does not have that".
+     */
     return {
       userId: principal.userId,
+      subject: principal.subject,
+      ...(principal.email === undefined ? {} : { email: principal.email }),
       customerId: principal.customerId,
       role: principal.role,
       ...(credential === undefined ? {} : { mustChangePassword: credential.mustChange }),

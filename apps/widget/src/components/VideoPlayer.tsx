@@ -158,6 +158,15 @@ export function VideoPlayer(props: VideoPlayerProps) {
     ended: false,
   });
   const [buffered, setBuffered] = useState<ReadonlyArray<readonly [number, number]>>([]);
+  /**
+   * Whether the element can seek at all (P62-03).
+   *
+   * `true` until metadata says otherwise, so the ordinary case never flickers
+   * a warning. A host that does not answer `Range` with `206` leaves
+   * `video.seekable` empty, and the browser then refuses every seek — which
+   * looks exactly like the anti-skip gate working and is not.
+   */
+  const [seekable, setSeekable] = useState(true);
 
   const { onPlayback, onTick, onStop } = props;
 
@@ -309,6 +318,9 @@ export function VideoPlayer(props: VideoPlayerProps) {
       ranges.push([video.buffered.start(i), video.buffered.end(i)]);
     }
     setBuffered(ranges);
+    // `seekable` is only meaningful once the browser has the headers; before
+    // that it is legitimately empty and would raise a false alarm.
+    if (video.readyState >= 1) setSeekable(video.seekable.length > 0);
   };
 
   const handleError = () => {
@@ -614,6 +626,7 @@ export function VideoPlayer(props: VideoPlayerProps) {
         buffered={buffered}
         watchedSegments={props.watchedSegments}
         seekLimitSec={seekLimit}
+        seekable={seekable}
         captionsAvailable={props.captionsUrl !== null}
         captionsOn={captionsOn}
         fullscreen={fullscreen}
@@ -665,6 +678,8 @@ function Controls(props: {
   state: PlaybackState;
   duration: number;
   buffered: ReadonlyArray<readonly [number, number]>;
+  /** See `SeekBar`: false when the host will not serve a Range request. */
+  seekable: boolean;
   watchedSegments: readonly WatchedSegment[];
   seekLimitSec: number;
   captionsAvailable: boolean;
@@ -691,6 +706,7 @@ function Controls(props: {
         buffered={props.buffered}
         watchedSegments={props.watchedSegments}
         seekLimitSec={props.seekLimitSec}
+        seekable={props.seekable}
         onSeek={props.onSeek}
       />
 
@@ -834,6 +850,15 @@ function SeekBar(props: {
   buffered: ReadonlyArray<readonly [number, number]>;
   watchedSegments: readonly WatchedSegment[];
   seekLimitSec: number;
+  /**
+   * False when the element reports no seekable range at all (P62-03).
+   *
+   * That is a property of the **server**, not of the learner: a host that does
+   * not answer `Range` with `206` makes seeking impossible, and the playhead
+   * snaps back exactly as it does when the gate refuses. Passed in rather than
+   * read here so the one place that watches the element owns the fact.
+   */
+  seekable: boolean;
   onSeek: (positionSec: number) => void;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
@@ -879,7 +904,7 @@ function SeekBar(props: {
                 clockTime(props.durationSec),
               )
         }
-        aria-describedby={limited ? noteId : undefined}
+        aria-describedby={limited || !props.seekable ? noteId : undefined}
         onClick={(event) => seekFromPointer(event.clientX)}
         onKeyDown={(event) => {
           const step =
@@ -951,7 +976,19 @@ function SeekBar(props: {
         notice would still be on screen for the learner who has watched the
         whole video, telling them off for nothing.
       */}
-      {limited ? (
+      {/*
+        Which refusal this is, in the words of the person holding it
+        (CLAUDE.md §9.4). "The server will not seek" and "you have not watched
+        that far" produce the identical snap-back, and the second is the one a
+        learner assumes — so an unseekable host has to say so itself, and it
+        takes precedence: when nothing can be sought, the accreditation rule is
+        not what is stopping them.
+      */}
+      {!props.seekable ? (
+        <p id={noteId} className="text-xs text-amber-800">
+          {de.media.seekUnsupported}
+        </p>
+      ) : limited ? (
         <p id={noteId} className="text-xs text-gray-600">
           {de.media.seekLocked}
         </p>

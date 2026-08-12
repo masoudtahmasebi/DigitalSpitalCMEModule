@@ -32,6 +32,8 @@ export const courseDeliveryType = pgEnum("course_delivery_type", [
   "live",
   "praesenz",
 ]);
+/** Editorial state (P53-01). A draft is invisible to learners. */
+export const courseStatus = pgEnum("course_status", ["draft", "published"]);
 export const contentKind = pgEnum("content_kind", [
   "video",
   "text",
@@ -182,6 +184,15 @@ export const courses = pgTable("courses", {
   cmeCategory: text("cme_category"),
   eventLocation: text("event_location"),
   organizer: text("organizer"),
+  /**
+   * Editorial state (P53-01, migration 0038).
+   *
+   * `draft` by default: a course created in the console is invisible to
+   * learners until somebody publishes it. Separate from the validity window
+   * below, which says *when an accredited course runs* rather than whether it
+   * is finished being written.
+   */
+  status: courseStatus("status").notNull().default("draft"),
   validFrom: timestamp("valid_from", { withTimezone: true }),
   validTo: timestamp("valid_to", { withTimezone: true }),
   requiredWatchPercent: integer("required_watch_percent").notNull().default(100),
@@ -342,7 +353,20 @@ export const enrolments = pgTable("enrolments", {
   cmeCategory: text("cme_category"),
   vnr: text("vnr"),
   lastContentId: uuid("last_content_id"),
+  /**
+   * Certified: watched, passed, evaluated, EFN on file, Punktemeldung queued.
+   * The moment a CME point is claimed on the physician's behalf.
+   */
   completedAt: timestamp("completed_at", { withTimezone: true }),
+  /**
+   * The Fortbildung itself finished — videos watched, Lernerfolgskontrolle
+   * passed (P51-01, migration 0037). Always earlier than or equal to
+   * `completedAt`, which additionally waits for the evaluation and the EFN.
+   *
+   * NULL on rows certified before the column existed; see the migration for
+   * why those are not backfilled.
+   */
+  courseCompletedAt: timestamp("course_completed_at", { withTimezone: true }),
   /**
    * The one name that is reported and printed.
    *
@@ -354,6 +378,8 @@ export const enrolments = pgTable("enrolments", {
   attestedTitle: text("attested_title"),
   attestedGivenName: text("attested_given_name"),
   attestedFamilyName: text("attested_family_name"),
+  /** The postal address for the certificate's "Anschrift:" line (P60-03). */
+  attestedAddress: text("attested_address"),
   /** GDPR Art. 7(1): when the Punktemeldung consent was given, and to what. */
   consentGivenAt: timestamp("consent_given_at", { withTimezone: true }),
   consentDocument: text("consent_document"),
@@ -471,6 +497,13 @@ export const certificates = pgTable("certificates", {
   deliveryFirstAttemptAt: timestamp("delivery_first_attempt_at", { withTimezone: true }),
   /** One of `DeliveryAbandonReason`. Non-null means the queue has stopped. */
   deliveryAbandonedReason: text("delivery_abandoned_reason"),
+  /**
+   * The archived PDF (P60-01): the bytes as issued, kept for verification.
+   * All three together or none — `certificates_archive_all_or_nothing`.
+   */
+  pdfObjectKey: text("pdf_object_key"),
+  pdfSha256: text("pdf_sha256"),
+  pdfArchivedAt: timestamp("pdf_archived_at", { withTimezone: true }),
   ...timestamps,
 });
 

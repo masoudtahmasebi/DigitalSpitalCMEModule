@@ -17,8 +17,16 @@
  * `@ds/domain` is the real rule and it runs server-side. `autoComplete="off"`
  * matters: an EFN is the key a physician's CME points are credited against, and
  * letting a browser store it for autofill on an unrelated site is a disclosure
- * nobody asked for. It is never read back — no endpoint returns it (ADR-0004) —
- * so once submitted this screen can only say that one is on file.
+ * nobody asked for.
+ *
+ * **A stored EFN is now shown back, and can be corrected** (P54-02). This
+ * screen used to say only "Ihre EFN ist hinterlegt", because no endpoint
+ * returned one — which meant a physician who had mistyped a digit months
+ * earlier could read a reassuring sentence about the wrong number, and the
+ * first sign of it would be points credited to somebody else's account. The
+ * value comes from `GET /profile/efn`, which answers for the session and takes
+ * no subject, and the correction goes back through `PUT /profile/efn` while the
+ * course is still open.
  *
  * **The layout says eighteen digits and the platform validates fifteen.** That
  * is unresolved (S21) and is deliberately not papered over: the hint says
@@ -39,7 +47,7 @@
  * not exist.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Branding } from "@ds/domain";
 import type { ApiClient, EnrolmentState } from "@ds/sdk";
 import { de } from "../locale/de.js";
@@ -62,9 +70,21 @@ export function CompletionScreen(props: {
   const [givenName, setGivenName] = useState("");
   const [familyName, setFamilyName] = useState("");
   const [efn, setEfn] = useState("");
+  /**
+   * The Muster's "Anschrift:" line (P60-03).
+   *
+   * Optional, and it stays optional: the Anerkennungsbescheid's minimum field
+   * list does not include it (docs/show-stoppers.md S12), so a physician who
+   * does not want to give a postal address must still be able to finish. The
+   * certificate draws the line either way.
+   */
+  const [address, setAddress] = useState("");
   const [consented, setConsented] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | undefined>();
+  /** The EFN already on file, once read back. `undefined` while unknown. */
+  const [storedEfn, setStoredEfn] = useState<string | undefined>();
+  const [correcting, setCorrecting] = useState(false);
 
   const { client, courseSlug, state, branding } = props;
 
@@ -73,14 +93,65 @@ export function CompletionScreen(props: {
   // Both or neither — `parseBranding` accepts them as a pair.
   const consentAvailable = policyUrl !== undefined && policyVersion !== undefined;
 
-  const efnNeeded = !state.efnPresent;
+  const efnNeeded = !state.efnPresent || correcting;
   const efnValid = EFN_PATTERN.test(efn);
+
+  /*
+   * Read the stored EFN back so the screen can show *which* number will be
+   * reported, rather than only that one exists (P54-02).
+   *
+   * Only when there is one to read: asking otherwise would spend a request on
+   * a certain `null`. A failure here is deliberately silent — the physician's
+   * task on this screen is to submit their completion, and a message about a
+   * read that only decorated the page would be noise in front of it.
+   */
+  useEffect(() => {
+    if (!state.efnPresent) {
+      setStoredEfn(undefined);
+      return;
+    }
+
+    let live = true;
+    void client
+      .getEfn()
+      .then((result) => {
+        if (live) setStoredEfn(result.efn ?? undefined);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      live = false;
+    };
+  }, [client, state.efnPresent]);
 
   const ready =
     givenName.trim() !== "" &&
     familyName.trim() !== "" &&
     (!efnNeeded || efnValid) &&
     (!consentAvailable || consented);
+
+  /*
+   * A correction is sent on its own, before the completion.
+   *
+   * `completeCourse` carries an EFN only when none is stored — that is the
+   * one-form-one-request rule at the top of this file, and it holds. Changing
+   * a *stored* EFN is a different act with a different failure mode, so it
+   * goes through `PUT /profile/efn` and reports its own outcome.
+   */
+  async function saveCorrection(): Promise<void> {
+    setBusy(true);
+    setProblem(undefined);
+    try {
+      await client.setEfn(efn);
+      setStoredEfn(efn);
+      setEfn("");
+      setCorrecting(false);
+    } catch (error) {
+      report(error);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function report(error: unknown): void {
     setProblem(
@@ -100,6 +171,10 @@ export function CompletionScreen(props: {
         ...(title === "" || title === NO_TITLE ? {} : { attestedTitle: title }),
         attestedGivenName: givenName.trim(),
         attestedFamilyName: familyName.trim(),
+        // Omitted entirely when empty rather than sent as "": the API treats an
+        // absent field as "not supplied in this request", and an empty string
+        // would be a value.
+        ...(address.trim() === "" ? {} : { attestedAddress: address.trim() }),
         ...(efnNeeded ? { efn } : {}),
         ...(consentAvailable && consented ? { consentDocument: policyVersion } : {}),
       });
@@ -192,6 +267,28 @@ export function CompletionScreen(props: {
           </Field>
         </div>
 
+        <Field label={de.completion.addressLabel} htmlFor="ds-lms-address">
+          <input
+            id="ds-lms-address"
+            value={address}
+            maxLength={200}
+            autoComplete="street-address"
+            placeholder={de.completion.addressPlaceholder}
+            aria-describedby="ds-lms-address-hint"
+            onChange={(event) => setAddress(event.target.value)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2.5 text-sm"
+          />
+          {/*
+            Said at the point somebody looks for it (CLAUDE.md §9.4): the field
+            has no asterisk, and "why is this here and may I skip it" is the
+            question a physician asks about a postal address on a form that
+            otherwise only wants their EFN.
+          */}
+          <p id="ds-lms-address-hint" className="mt-1.5 text-xs text-gray-500">
+            {de.completion.addressHint}
+          </p>
+        </Field>
+
         {efnNeeded ? (
           <Field label={de.completion.efnLabel} htmlFor="ds-lms-efn" required>
             <input
@@ -213,8 +310,46 @@ export function CompletionScreen(props: {
             ) : null}
           </Field>
         ) : (
-          <p className="text-sm text-status-completed">{de.completion.efnSaved}</p>
+          <div className="text-sm text-status-completed">
+            <p>
+              {storedEfn === undefined
+                ? de.completion.efnSaved
+                : de.completion.efnStored(storedEfn)}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setCorrecting(true);
+                setEfn(storedEfn ?? "");
+              }}
+              className="mt-1 text-xs text-gray-600 underline"
+            >
+              {de.completion.efnCorrect}
+            </button>
+          </div>
         )}
+
+        {correcting ? (
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              onClick={saveCorrection}
+              disabled={!efnValid || busy}
+            >
+              {de.completion.efnCorrectSave}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setCorrecting(false);
+                setEfn("");
+              }}
+              disabled={busy}
+            >
+              {de.completion.efnCorrectCancel}
+            </Button>
+          </div>
+        ) : null}
 
         {consentAvailable ? (
           <label className="flex items-start gap-3 text-sm leading-relaxed text-gray-800">

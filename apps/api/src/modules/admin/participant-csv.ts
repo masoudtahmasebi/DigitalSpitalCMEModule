@@ -47,8 +47,10 @@ const COLUMNS = [
   "Video angesehen %",
   "Lernerfolgskontrolle bestanden",
   "Evaluation abgegeben",
-  "Abgeschlossen",
-  "Abschlussdatum",
+  "Fortbildung abgeschlossen",
+  "Datum Fortbildungsabschluss",
+  "Zertifiziert",
+  "Zertifizierungsdatum",
   "Punktemeldung",
   "Meldeversuche",
   "Meldefrist",
@@ -87,6 +89,12 @@ export function participantsToCsv(rows: readonly ParticipantRow[]): string {
         String(row.watchedPercent),
         yesNo(row.quizPassed),
         yesNo(row.evaluationSubmitted),
+        // Two milestones, two columns (P51-01). One "Abgeschlossen" column
+        // reported everybody still owing an Evaluationsbogen as unfinished,
+        // which for a course whose paperwork trails the study by days is most
+        // of the list on any given morning.
+        yesNo(row.courseComplete),
+        germanDateTime(row.courseCompletedAt),
         yesNo(row.complete),
         germanDateTime(row.completedAt),
         EIV_LABELS[row.eivState],

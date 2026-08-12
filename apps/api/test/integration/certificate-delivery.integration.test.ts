@@ -24,8 +24,10 @@ import { AuditService } from "../../src/audit/audit.service.js";
 import { PlaintextSecretCipher } from "../../src/shared/secret-cipher.js";
 import { DeliveryRepository } from "../../src/modules/certificate/delivery.repository.js";
 import { CertificateDeliveryService } from "../../src/modules/certificate/delivery.service.js";
+import { CertificateAttachments } from "../../src/modules/certificate/delivery.attachment.js";
 import { seedLearner } from "./support/seed-learner.js";
 import { requireEnv } from "./support/env.js";
+import { publishAccredited } from "./support/accredited-course.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 const DATABASE_URL = requireEnv("DATABASE_URL");
@@ -33,11 +35,18 @@ const DATABASE_URL = requireEnv("DATABASE_URL");
 const SMTP_PASSWORD = "integration-smtp-password";
 const cipher = new PlaintextSecretCipher("test");
 
+/** 1×1 PNG — a real image, which is what the renderer's magic-byte check wants. */
+const PLACEHOLDER_IMAGE = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
 let seedPool: Pool;
 let appPool: Pool;
 
 let customerId: string;
 let courseId: string;
+let bareCourseId: string;
 let suffix: string;
 
 beforeAll(async () => {
@@ -72,11 +81,44 @@ beforeAll(async () => {
       "MEDICE",
     ],
   );
+  // Furnished with everything the Bescheid requires, because the message this
+  // sweep sends is *about* the PDF: a course missing its VNR or its stamp
+  // renders nothing, and every assertion below would then be describing the
+  // fallback rather than the ordinary case (P59-02).
   courseId = await insert(
     `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
-                          pass_threshold_percent)
-     VALUES ($1,$2,$3,$4,100,70) RETURNING id`,
-    [customerId, projectId, `cert-course-${suffix}`, "ADHS Akademie adult"],
+                          pass_threshold_percent, vnr, cme_points, cme_category,
+                          organizer, event_location, accreditation_body,
+                          scientific_lead_name, scientific_lead_title,
+                          certificate_issue_place,
+                          stamp_image, stamp_image_mime,
+                          signature_image, signature_image_mime, status)
+     VALUES ($1,$2,$3,$4,100,70,$5,4,'D',$6,'online',$7,$8,'Prof. Dr. med.','Iserlohn',
+             $9,'image/png',$9,'image/png','draft') RETURNING id`,
+    [
+      customerId,
+      projectId,
+      `cert-course-${suffix}`,
+      "ADHS Akademie adult",
+      "2760552025919300018",
+      "Medice Arzneimittel Pütter GmbH & Co. KG, Iserlohn",
+      "Ärztekammer Westfalen-Lippe",
+      "Muster-Leitung",
+      PLACEHOLDER_IMAGE,
+    ],
+  );
+  // Draft-then-publish: `courses_published_cme_is_complete` refuses a published
+  // point-awarding course with no VNR password, which is the one field this
+  // fixture never set (P62-02). COALESCE leaves everything above untouched.
+  await publishAccredited(seedPool, courseId);
+
+  // The same course without its certificate assets — an authoring gap, and the
+  // one case where the e-mail must go out carrying nothing.
+  bareCourseId = await insert(
+    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
+                          pass_threshold_percent, status)
+     VALUES ($1,$2,$3,$4,100,70,'published') RETURNING id`,
+    [customerId, projectId, `cert-course-bare-${suffix}`, "Kurs ohne Stempel"],
   );
 
   // The sweep is global by design — it drains every tenant's queue. Other
@@ -104,7 +146,7 @@ async function insert(sql: string, values: unknown[]): Promise<string> {
 
 /** An issued certificate waiting to be delivered. */
 async function queueCertificate(
-  over: { email?: string | null; attemptCount?: number } = {},
+  over: { email?: string | null; attemptCount?: number; bare?: boolean } = {},
 ): Promise<{ certificateId: string; userId: string }> {
   const unique = randomUUID().slice(0, 8);
 
@@ -116,11 +158,18 @@ async function queueCertificate(
     lastName: "Mustermann",
   });
 
+  // `vnr`, `cme_points` and `cme_category` are snapshotted onto the enrolment
+  // (P3-01) and the certificate is rendered from the snapshot, not the course —
+  // so a fixture that leaves them null renders nothing, whatever the course row
+  // says.
   const enrolmentId = await insert(
     `INSERT INTO enrolments (customer_id, course_id, user_id, required_watch_percent,
-                             pass_threshold_percent, completed_at)
-     VALUES ($1,$2,$3,100,70,now()) RETURNING id`,
-    [customerId, courseId, userId],
+                             pass_threshold_percent, completed_at, vnr, cme_points,
+                             cme_category)
+     VALUES ($1,$2,$3,100,70,now(),$4,$5,$6) RETURNING id`,
+    over.bare === true
+      ? [customerId, bareCourseId, userId, null, null, null]
+      : [customerId, courseId, userId, "2760552025919300018", 4, "D"],
   );
 
   const certificateId = await insert(
@@ -153,6 +202,11 @@ function build(outcome: DeliveryOutcome = { status: "delivered", reference: "<a@
       leaseSeconds: 600,
       portalBaseUrl: "https://fortbildung.example.de",
     },
+    // The real adapter, not a stub. It is the caller the unit tests cannot
+    // name: it opens the claimed row's tenant scope with `runInTenant` and
+    // renders through `CertificateService`, and both of those are things only
+    // a real database can be wrong about (CLAUDE.md §9.7, §9.6).
+    new CertificateAttachments(appPool, { warn: () => undefined }),
   );
 
   return { service, sent };
@@ -259,6 +313,45 @@ describe("a successful delivery", () => {
     );
     // The token is the certificate's non-enumerable id, not a URL credential.
     expect(sent[0]?.body).not.toContain(row.download_token);
+  });
+
+  it("carries the certificate the copy promises, rendered inside the tenant", async () => {
+    /*
+     * P59-02, and the assertion that could only be made here.
+     *
+     * The unit test proves `compose` attaches whatever the port returns. What
+     * it cannot prove is that the port returns anything against a real
+     * database: `CertificateAttachments` reads `certificates` and `enrolments`,
+     * both under FORCE ROW LEVEL SECURITY, and a read on the bare pool matches
+     * zero rows and looks exactly like "this course has no certificate"
+     * (CLAUDE.md §9.6). Missing `runInTenant` here is a silent no-attachment,
+     * not an error.
+     */
+    await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    const attachment = sent[0]?.attachments?.[0];
+    expect(attachment?.mediaType).toBe("application/pdf");
+    expect(attachment?.filename).toContain("Teilnahmebescheinigung");
+    expect(Buffer.from(attachment!.bytes).subarray(0, 5).toString()).toBe("%PDF-");
+    expect(sent[0]?.body).toContain("im Anhang");
+  });
+
+  it("still sends when the course has no stamp, without promising an enclosure", async () => {
+    // An authoring gap must not hold back the covering message: the learner can
+    // download the document from their account either way, and an e-mail saying
+    // "finden Sie im Anhang" over an empty envelope is worse than one that does
+    // not mention it.
+    const { certificateId } = await queueCertificate({ bare: true });
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    const message = sent.find((m) => m.body.includes("Kurs ohne Stempel"));
+    expect(message).toBeDefined();
+    expect(message?.attachments).toBeUndefined();
+    expect(message?.body).not.toContain("im Anhang");
+    expect((await certificateRow(certificateId)).status).toBe("delivered");
   });
 });
 

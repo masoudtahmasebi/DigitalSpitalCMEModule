@@ -71,6 +71,58 @@ describe("courseAvailability", () => {
   });
 });
 
+/**
+ * A draft is not offered, on any day (P53-01).
+ *
+ * The whole block exists because the failure it guards is silent: a course
+ * created in the console was listed, openable and enrollable with no modules
+ * and no accreditation, because there was no editorial state for the rule to
+ * read. Every case here asserts the *absence* of an offer.
+ */
+describe("draft courses", () => {
+  it("is never offered, even inside its window", () => {
+    expect(courseAvailability({ status: "draft", ...OPEN }, FROM)).toBe("draft");
+    expect(courseAvailability({ status: "draft", ...OPEN }, TO)).toBe("draft");
+  });
+
+  it("is never offered with no window at all", () => {
+    // The ordinary shape of a freshly created course: no dates, not finished.
+    expect(
+      courseAvailability(
+        { status: "draft", validFrom: null, validTo: null },
+        new Date("2026-01-01Z"),
+      ),
+    ).toBe("draft");
+  });
+
+  it("says draft rather than not_yet, because there is no date to wait for", () => {
+    // `not_yet` is an instruction to come back. For an unpublished course that
+    // is advice about something which may never exist.
+    expect(
+      courseAvailability({ status: "draft", validFrom: TO, validTo: FROM }, FROM),
+    ).toBe("draft");
+  });
+
+  it("offers a published course exactly as before", () => {
+    expect(courseAvailability({ status: "published", ...OPEN }, FROM)).toBe("available");
+    expect(
+      courseAvailability({ status: "published", ...OPEN }, new Date("2030-01-01Z")),
+    ).toBe("ended");
+  });
+
+  it("treats an absent status as published", () => {
+    // The fixtures written before the column existed meant "a normal course",
+    // and they still do. The database's default is the opposite, and the
+    // module header says why the two point different ways.
+    expect(courseAvailability(OPEN, FROM)).toBe("available");
+  });
+
+  it("keeps isCourseOffered false for a draft", () => {
+    expect(isCourseOffered({ status: "draft", ...OPEN }, FROM)).toBe(false);
+    expect(isCourseOffered({ status: "published", ...OPEN }, FROM)).toBe(true);
+  });
+});
+
 describe("isCourseOffered", () => {
   it("is true only for available", () => {
     expect(isCourseOffered(OPEN, FROM)).toBe(true);

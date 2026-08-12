@@ -63,12 +63,26 @@ export interface DeliveryServiceOptions {
   readonly portalBaseUrl: string;
 }
 
+/**
+ * The certificate itself, for the one thing this e-mail is about (P59-02).
+ *
+ * A port, because the sweep must not depend on how a PDF is made — and because
+ * a render that fails cannot be allowed to stop the covering message going
+ * out: the implementation answers `undefined` rather than throwing.
+ */
+export interface CertificateAttachmentPort {
+  renderFor(
+    claim: ClaimedDelivery,
+  ): Promise<{ filename: string; bytes: Uint8Array } | undefined>;
+}
+
 export class CertificateDeliveryService {
   constructor(
     private readonly repository: DeliveryRepositoryPort,
     private readonly channel: DeliveryChannel,
     private readonly audit: AuditServicePort,
     private readonly options: DeliveryServiceOptions,
+    private readonly attachments?: CertificateAttachmentPort,
   ) {}
 
   async sweep(now: Date): Promise<DeliverySweepResult> {
@@ -131,7 +145,11 @@ export class CertificateDeliveryService {
 
     const attemptCount = row.attemptCount + 1;
     const firstAttemptAt = row.firstAttemptAt ?? now;
-    const message = this.compose(row);
+    // Rendered per attempt rather than stored: the row records what was earned
+    // and the PDF is a view of it, so a retry a day later carries a document
+    // that agrees with the record as it stands (P59-02).
+    const attachment = await this.attachments?.renderFor(claim);
+    const message = this.compose(row, attachment);
 
     const outcome = await this.channel.deliver(message);
 
@@ -216,11 +234,15 @@ export class CertificateDeliveryService {
    * place a physician's data can end up, and every field in it has to earn its
    * way there (P8-03 acceptance criteria).
    */
-  private compose(row: DueDelivery): OutboundMessage {
+  private compose(
+    row: DueDelivery,
+    attachment: { filename: string; bytes: Uint8Array } | undefined,
+  ): OutboundMessage {
     const { subject, body } = certificateEmail({
       participantName: row.participantName,
       courseTitle: row.courseTitle,
       courseUrl: this.courseUrl(row.courseSlug),
+      attached: attachment !== undefined,
     });
 
     return {
@@ -235,6 +257,32 @@ export class CertificateDeliveryService {
       from: formatSender(row.fromAddress, row.fromName),
       subject: headerSafe(subject),
       body,
+      /*
+       * The certificate itself (P59-02).
+       *
+       * The copy has said "Ihre Teilnahmebescheinigung finden Sie im Anhang
+       * dieser E-Mail" since P8-03 and nothing was ever attached: `compose`
+       * built `to`, `from`, `subject`, `body` and a transport, and
+       * `OutboundMessage.attachments` — which the SMTP channel has always
+       * forwarded — was left unset. QA read the sent message and found one
+       * `text/plain` part.
+       *
+       * When the render fails the message still goes, with the sentence about
+       * the attachment dropped rather than left lying: an e-mail that says
+       * "your certificate is attached" and carries nothing is worse than one
+       * that points at the download page.
+       */
+      ...(attachment === undefined
+        ? {}
+        : {
+            attachments: [
+              {
+                filename: attachment.filename,
+                mediaType: "application/pdf",
+                bytes: attachment.bytes,
+              },
+            ],
+          }),
       transport: {
         host: row.smtpHost ?? "",
         port: String(row.smtpPort ?? ""),

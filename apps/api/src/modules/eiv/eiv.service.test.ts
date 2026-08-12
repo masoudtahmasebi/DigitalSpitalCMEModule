@@ -97,12 +97,40 @@ describe("a successful submission", () => {
   });
 
   it("stamps the correction window from the first submission", async () => {
+    /*
+     * P58-01. This case is older than the behaviour it now asserts: it was
+     * named for the correction window and expected `undefined`, because the
+     * service passed the window computed *before* the submission — which, on a
+     * first attempt, has no first-submission instant to compute from. Every
+     * successfully submitted row therefore carried a NULL correction window
+     * for ever, since a submitted row is never swept again.
+     *
+     * Seven days from the submission, to the end of that day in Berlin, which
+     * is the rule `eivDeadlines` states and the Bescheid's correction window.
+     */
     const { service, successes } = build([base]);
 
     await service.sweep(NOW);
 
     expect(successes[0]?.["firstSubmittedAt"]).toEqual(NOW);
-    expect(successes[0]?.["correctionWindowEndsAt"]).toBeUndefined();
+    expect(successes[0]?.["correctionWindowEndsAt"]).toEqual(
+      new Date("2026-07-08T21:59:59.999Z"),
+    );
+  });
+
+  it("keeps the window anchored to the first submission on a later attempt", async () => {
+    // A retry must not push the correction deadline out: the Ärztekammer's
+    // window opens when the *first* Meldung lands, and a row that resubmitted
+    // on day three does not get ten days to correct.
+    const firstSubmittedAt = new Date("2026-06-28T09:00:00Z");
+    const { service, successes } = build([{ ...base, firstSubmittedAt }]);
+
+    await service.sweep(NOW);
+
+    expect(successes[0]?.["firstSubmittedAt"]).toEqual(firstSubmittedAt);
+    expect(successes[0]?.["correctionWindowEndsAt"]).toEqual(
+      new Date("2026-07-05T21:59:59.999Z"),
+    );
   });
 
   it("audits the submission without the EFN or the password", async () => {

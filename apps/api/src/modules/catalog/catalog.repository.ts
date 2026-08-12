@@ -13,6 +13,7 @@
  */
 
 import { and, asc, count, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import type { CourseStatus } from "@ds/domain";
 import type { Db } from "../../db/tenant-db.js";
 import {
   chapters,
@@ -42,6 +43,8 @@ export interface CourseRow {
   accreditationBody: string | null;
   organizer: string | null;
   eventLocation: string | null;
+  /** Editorial state (P53-01). `findCourseTree` selects the whole row. */
+  status: CourseStatus;
   validFrom: Date | null;
   validTo: Date | null;
   requiredWatchPercent: number;
@@ -116,7 +119,7 @@ export interface CatalogRepositoryPort {
   findEnrolments(
     courseIds: readonly string[],
     userId: string,
-  ): Promise<Map<string, { complete: boolean }>>;
+  ): Promise<Map<string, { courseComplete: boolean; complete: boolean }>>;
 }
 
 export class CatalogRepository implements CatalogRepositoryPort {
@@ -133,18 +136,44 @@ export class CatalogRepository implements CatalogRepositoryPort {
   async findEnrolments(
     courseIds: readonly string[],
     userId: string,
-  ): Promise<Map<string, { complete: boolean }>> {
+  ): Promise<Map<string, { courseComplete: boolean; complete: boolean }>> {
     if (courseIds.length === 0) return new Map();
 
     const rows = await this.db
-      .select({ courseId: enrolments.courseId, completedAt: enrolments.completedAt })
+      .select({
+        courseId: enrolments.courseId,
+        completedAt: enrolments.completedAt,
+        courseCompletedAt: enrolments.courseCompletedAt,
+      })
       .from(enrolments)
       .where(
         and(inArray(enrolments.courseId, [...courseIds]), eq(enrolments.userId, userId)),
       );
 
     return new Map(
-      rows.map((row) => [row.courseId, { complete: row.completedAt !== null }]),
+      rows.map((row) => [
+        row.courseId,
+        {
+          /*
+           * Two timestamps, no rollup (P52-05).
+           *
+           * The card cannot afford `summariseEnrolment` — that reads the whole
+           * course tree and every progress row, and this method exists to
+           * answer a page of cards in one query. `course_completed_at`
+           * (migration 0037) is what makes the weaker milestone answerable at
+           * the same cost as the stronger one: a stamped column, not a
+           * derivation.
+           *
+           * `completedAt` is the fallback for rows certified before 0037
+           * existed, which carry no course-completion date. Certification
+           * implies the course was finished, so reading it as finished is
+           * true — and without this clause those learners would see a course
+           * they hold a certificate for described as unfinished.
+           */
+          courseComplete: row.courseCompletedAt !== null || row.completedAt !== null,
+          complete: row.completedAt !== null,
+        },
+      ]),
     );
   }
 
@@ -357,6 +386,17 @@ function whereFor(selection: CourseSelection) {
    * case is a course with neither date. Getting that wrong would empty the
    * catalogue rather than filter it.
    */
+  /*
+   * Drafts never reach a learner (P53-01).
+   *
+   * Beside the window rather than folded into it: the two answer different
+   * questions — "is this finished being written" and "is the accreditation
+   * running" — and a course can fail either independently. A course created
+   * in the console starts as a draft, which is what stops an operator
+   * building it in front of the physicians.
+   */
+  conditions.push(eq(courses.status, "published"));
+
   conditions.push(or(isNull(courses.validFrom), lte(courses.validFrom, selection.now)));
   conditions.push(or(isNull(courses.validTo), gte(courses.validTo, selection.now)));
 

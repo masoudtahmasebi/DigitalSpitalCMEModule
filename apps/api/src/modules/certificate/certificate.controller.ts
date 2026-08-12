@@ -12,7 +12,7 @@
  * carries the per-customer credentials.
  */
 
-import { Controller, Get, Header, Param, StreamableFile } from "@nestjs/common";
+import { Controller, Get, Header, Inject, Param, StreamableFile } from "@nestjs/common";
 import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { Roles } from "../../auth/roles.decorator.js";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
@@ -20,6 +20,13 @@ import type { Principal } from "../../auth/principal.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
 import { CertificateService } from "./certificate.service.js";
+import {
+  certificateArchiveFor,
+  type CertificateArchivePort,
+} from "./certificate.archive.js";
+import { APP_CONFIG } from "../../db/tokens.js";
+import type { AppConfig } from "../../config/config.js";
+import { JsonLogger } from "../../observability/logger.js";
 
 const LEARNER_ROLES = [
   "learner",
@@ -30,6 +37,17 @@ const LEARNER_ROLES = [
 
 @Controller("courses/:slug/certificate")
 export class CertificateController {
+  /**
+   * Built once, from configuration, and reused: it holds a presigner and a
+   * logger and no request state. `undefined` when the deployment has no
+   * bucket, which is a supported configuration (P60-01).
+   */
+  private readonly archive: CertificateArchivePort | undefined;
+
+  constructor(@Inject(APP_CONFIG) config: AppConfig) {
+    this.archive = certificateArchiveFor(config, new JsonLogger("warn"));
+  }
+
   /** The certificate's fields, for rendering a preview before download. */
   @Get()
   @Roles(...LEARNER_ROLES)
@@ -38,7 +56,7 @@ export class CertificateController {
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ) {
-    return CertificateService.fromDb(db).preview(slug, {
+    return CertificateService.fromDb(db, this.archive).preview(slug, {
       customerId: principal.customerId,
       userId: principal.userId,
     });
@@ -56,7 +74,13 @@ export class CertificateController {
    */
   @Get("pdf")
   @RateLimit("certificatePdf")
-  @Header("content-type", "application/pdf")
+  /*
+   * No `@Header("content-type", …)` here (P56-02). `StreamableFile` below sets
+   * it for the success path, and a decorator sets it *before* the handler runs
+   * — so every refusal from this route went out as a problem document labelled
+   * `application/pdf`. The filter now sets the type on every error, and this
+   * route no longer has to claim one it may not produce.
+   */
   // No-store: this is a named physician's participation record, and a shared
   // proxy holding a copy is a disclosure the learner did not agree to.
   @Header("cache-control", "no-store, private")
@@ -66,7 +90,7 @@ export class CertificateController {
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ): Promise<StreamableFile> {
-    const certificate = await CertificateService.fromDb(db).download(
+    const certificate = await CertificateService.fromDb(db, this.archive).download(
       slug,
       { customerId: principal.customerId, userId: principal.userId },
       new Date(),

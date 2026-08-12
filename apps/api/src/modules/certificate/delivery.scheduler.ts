@@ -37,6 +37,9 @@ import { createSecretCipher } from "../../shared/secret-cipher.js";
 import { pluginRegistry } from "../../plugins.js";
 import { DeliveryRepository } from "./delivery.repository.js";
 import { CertificateDeliveryService } from "./delivery.service.js";
+import { CertificateAttachments } from "./delivery.attachment.js";
+import { certificateArchiveFor } from "./certificate.archive.js";
+import { objectErasureFor } from "./object-erasure.service.js";
 
 @Injectable()
 export class CertificateDeliveryScheduler implements OnModuleInit, OnModuleDestroy {
@@ -46,7 +49,7 @@ export class CertificateDeliveryScheduler implements OnModuleInit, OnModuleDestr
   private readonly service: CertificateDeliveryService | undefined;
 
   constructor(
-    @Inject(PG_POOL) pool: Pool,
+    @Inject(PG_POOL) private readonly pool: Pool,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {
     const channel = pluginRegistry().find("deliveryChannel");
@@ -69,6 +72,12 @@ export class CertificateDeliveryScheduler implements OnModuleInit, OnModuleDestr
         leaseSeconds: config.CERTIFICATE_DELIVERY_INTERVAL_SEC * 2,
         portalBaseUrl: config.PORTAL_BASE_URL,
       },
+      // The attachment the e-mail is about (P59-02).
+      new CertificateAttachments(
+        pool,
+        this.logger,
+        certificateArchiveFor(this.config, this.logger),
+      ),
     );
   }
 
@@ -95,6 +104,20 @@ export class CertificateDeliveryScheduler implements OnModuleInit, OnModuleDestr
     this.logger.log(
       `certificate delivery sweeping every ${this.config.CERTIFICATE_DELIVERY_INTERVAL_SEC}s`,
     );
+
+    /*
+     * One drain of the object-erasure queue at boot (P60-01).
+     *
+     * The ordinary case is discharged in the erasure request itself; this is
+     * what picks up whatever a bucket outage left behind. Not a timer,
+     * deliberately: erasures are rare, and a sweep that runs every five
+     * minutes to find nothing is a sweep whose failures nobody reads. A
+     * restart is a frequent enough retry for an obligation that is already
+     * recorded and cannot be lost.
+     */
+    void objectErasureFor(this.pool, this.config, this.logger)
+      ?.drain()
+      .catch(() => undefined);
   }
 
   onModuleDestroy(): void {

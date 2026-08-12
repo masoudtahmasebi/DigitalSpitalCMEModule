@@ -12,6 +12,7 @@
  */
 
 import {
+  courseAvailability,
   courseChapterSequence,
   courseWatchCoverage,
   evaluateSequence,
@@ -25,6 +26,8 @@ import {
   rollupProgress,
   validateSegments,
   watchedPercent,
+  type AvailabilityWindow,
+  type CourseAvailability,
   type ContentProgressRecord,
   type ContentSegments,
   type CourseNode,
@@ -90,6 +93,12 @@ export class LearningService {
   constructor(
     private readonly repository: LearningRepositoryPort,
     private readonly media: MediaResolver = new PassthroughMediaResolver(),
+    /**
+     * Injectable so the course-completion stamp and the validity-window check
+     * can be tested at an instant of the test's choosing rather than at
+     * whatever "now" happens to be while the suite runs (P51).
+     */
+    private readonly clock: () => Date = () => new Date(),
   ) {}
 
   static fromDb(db: Db, media?: MediaResolver): LearningService {
@@ -126,8 +135,12 @@ export class LearningService {
       course.id,
       learner.userId,
     );
-    if (existingEnrolment === undefined && !isCourseOffered(course, new Date())) {
-      throw AppError.notFound(`course slug=${slug} is outside its validity window`);
+    if (existingEnrolment === undefined && !isCourseOffered(course, this.clock())) {
+      // Covers a draft as well as a closed window (P53-01): both mean "not
+      // offered", and neither is a distinction a stranger is entitled to.
+      throw AppError.notFound(
+        `course slug=${slug} is not offered: ${courseAvailability(course, this.clock())}`,
+      );
     }
 
     const enrolment =
@@ -168,12 +181,16 @@ export class LearningService {
     learner: LearnerContext,
     now: Date,
   ): Promise<ProgressResult> {
-    const { enrolment, content, stored } = await this.requireReachableContent(
+    const { course, enrolment, content, stored } = await this.requireReachableContent(
       slug,
       contentId,
       learner,
       ["video"],
     );
+
+    // P51-02. Before anything is written: an expired course accepts no more
+    // playback, however far through it the learner is.
+    this.requireCourseStillOffered(course, slug);
 
     if (content.durationSec === null || content.durationSec <= 0) {
       throw new AppError(
@@ -185,14 +202,45 @@ export class LearningService {
     const existing = stored.find((row) => row.contentId === contentId);
     const previousSegments = readSegments(existing?.watchedSegments);
 
-    // Wall-clock budget: how much playback could plausibly have happened since
-    // this content was last written. A first report gets the video's own
-    // duration as its budget rather than zero, since we have no earlier
-    // timestamp to measure from.
-    const elapsedWallClockSec =
-      existing === undefined
-        ? content.durationSec
-        : Math.max(0, (now.getTime() - existing.updatedAt.getTime()) / 1000);
+    /*
+     * Wall-clock budget: how much playback could plausibly have happened since
+     * this learner was last seen doing anything on this enrolment.
+     *
+     * ## Why the *enrolment* and not this content (P55-01)
+     *
+     * The first report for a video used to be given the video's own duration
+     * as its budget, on the reasoning that there was no earlier timestamp to
+     * measure from. There was: the learner enrolled at some point, and every
+     * other content they have touched carries a timestamp too.
+     *
+     * The consequence of the old reading was that the wall-clock check — the
+     * load-bearing half of the anti-skip rule, by `watch.ts`'s own header —
+     * did not apply to the one request that mattered most. A client could
+     * enrol and immediately `POST {"segments":[{"startSec":0,"endSec":1524}]}`
+     * and have the whole video credited, once per video. QA found it by
+     * asking; nobody had reported it, because a real player never does it.
+     *
+     * ## Why this does not refuse a legitimate client
+     *
+     * The budget is elapsed real time since the learner's last recorded
+     * activity, so it grows exactly as fast as a person can watch. A client
+     * that buffers a whole 25-minute chapter and reports once at the end still
+     * took 25 minutes to get there, and those 25 minutes are in the budget. A
+     * learner who leaves and comes back a week later has a week of budget. The
+     * only thing that cannot happen is claiming more playback than there has
+     * been time for — which is what the check already said it did.
+     *
+     * `createdAt` is the floor for a learner who has touched nothing yet: the
+     * moment they enrolled, which is the earliest playback could have begun.
+     */
+    const lastActivityAt = stored.reduce<Date>(
+      (latest, row) => (row.updatedAt > latest ? row.updatedAt : latest),
+      enrolment.createdAt,
+    );
+    const elapsedWallClockSec = Math.max(
+      0,
+      (now.getTime() - lastActivityAt.getTime()) / 1000,
+    );
 
     const validation = validateSegments(report.segments, {
       durationSec: content.durationSec,
@@ -499,6 +547,53 @@ export class LearningService {
   }
 
   /**
+   * Refuse to advance a course that is outside its validity window (P51-02).
+   *
+   * ## Why this is not in `requireEnrolled`
+   *
+   * Because it must not apply to reads. A physician whose course has expired
+   * **keeps their enrolment and everything in it** — their progress, their
+   * quiz score, their certificate if they earned one. They can open the course
+   * and look at all of it. What they cannot do is add to it.
+   *
+   * Putting the check in `requireEnrolled` would have been one line instead of
+   * four call sites, and it would have made an expired course disappear from
+   * the learner's own history. That is the opposite of "keep the existing".
+   *
+   * ## Why a 409 and not a 404
+   *
+   * A 404 is what `enrol` gives somebody who has never taken this course: as
+   * far as they are concerned it does not exist, and saying otherwise
+   * enumerates the catalogue (§9.5). This caller is different — they are
+   * enrolled, they are looking at the course right now, and the thing that
+   * changed is the world, not their permissions. `conflict` says so.
+   *
+   * ## What the message has to do
+   *
+   * Tell them their work is not lost. The first thing anybody thinks when a
+   * button they have used for an hour stops working is that they have lost the
+   * hour (§9.4).
+   *
+   * And tell them *which* refusal this is. `courseAvailability` distinguishes
+   * "not open yet" from "closed", and a course an enrolled learner cannot
+   * advance because `validFrom` was moved into the future is not expired —
+   * telling them it is would send them looking for a deadline they never
+   * missed. That is a narrow case, but the alternative is a message that is
+   * confidently wrong, and the distinction already exists in the domain: it
+   * was written for exactly this and, until now, called by nothing (§9.3).
+   */
+  requireCourseStillOffered(course: AvailabilityWindow, slug: string): void {
+    const availability = courseAvailability(course, this.clock());
+    if (availability === "available") return;
+
+    throw new AppError(
+      "conflict",
+      `course slug=${slug} is ${availability}; refusing to advance it`,
+      messageFor(availability),
+    );
+  }
+
+  /**
    * Everything the compliance rules need to decide anything about a learner:
    * the course tree, their stored progress, and the rollup over both.
    *
@@ -564,10 +659,24 @@ export class LearningService {
     const gate = gates.get(chapterId);
 
     if (gate?.status === "locked") {
+      /*
+       * "der vorherigen Kapitel", not "der vorherigen Module" (P52-03).
+       *
+       * The gate is a chapter sequence: a locked chapter is waiting for the
+       * chapter before it, which is usually in the same module. The old wording
+       * told a learner to finish previous *modules* — advice that is wrong
+       * whenever the thing blocking them is one chapter up, and which sends
+       * them looking at the wrong part of the course.
+       *
+       * It read correctly for as long as every module held exactly one chapter,
+       * because then the two sentences described the same thing. No seeded
+       * course had a multi-chapter module until this ticket, so nothing could
+       * show it being wrong (§9.1).
+       */
       throw new AppError(
         "gate_locked",
         `chapter=${chapterId} is locked${gate.blockedBy === undefined ? "" : ` by ${gate.blockedBy}`}`,
-        "Diese Inhalte werden nach Abschluss der vorherigen Module freigeschaltet.",
+        "Diese Inhalte werden nach Abschluss der vorherigen Kapitel freigeschaltet.",
       );
     }
   }
@@ -599,6 +708,35 @@ export class LearningService {
     const rollup = rollupProgress(courseNode, toProgressRecords(stored, tree));
     const gates = evaluateSequence(courseChapterSequence(courseNode, rollup));
 
+    /*
+     * Record the moment the Fortbildung was finished (P51-01).
+     *
+     * `courseComplete` is always *derived* — the line above computes it from
+     * the stored rows every time — so this write is only ever about keeping the
+     * date, never about deciding the answer. That is what makes it safe to do
+     * from a read: if the write is lost, skipped or never reached, the state
+     * this method returns is unchanged and no gate moves.
+     *
+     * It lives here rather than in `recordProgress` and the quiz submission
+     * because those are two call sites for one rule, and a rule written twice
+     * is the shape CLAUDE.md §9.3 keeps catching. This is the single funnel
+     * through which every recomputation of the state passes.
+     *
+     * The trade-off, stated: a learner who passes the quiz and never loads
+     * their state again gets no timestamp until they next do. The widget
+     * refetches immediately after both writes, so in practice it lands within
+     * seconds — and a missing date is visibly missing, where a wrong date
+     * would not be.
+     */
+    const stampCourseCompletionAt =
+      figures.courseComplete && enrolment.courseCompletedAt === null
+        ? this.clock()
+        : undefined;
+    if (stampCourseCompletionAt !== undefined) {
+      await this.repository.markCourseCompleted(enrolment.id, stampCourseCompletionAt);
+    }
+    const courseCompletedAt = enrolment.courseCompletedAt ?? stampCourseCompletionAt;
+
     return {
       enrolmentId: enrolment.id,
       courseSlug: slug,
@@ -608,9 +746,12 @@ export class LearningService {
       quizPassed: figures.quizPassed,
       evaluationSubmitted,
       efnPresent,
+      courseComplete: figures.courseComplete,
       complete: figures.complete,
       outstanding: [...figures.outstanding],
+      outstandingForCourse: [...figures.outstandingForCourse],
       completedAt: enrolment.completedAt?.toISOString() ?? null,
+      courseCompletedAt: courseCompletedAt?.toISOString() ?? null,
       progress: figures.progress,
       moduleCompletion: figures.moduleCompletion,
       modules: buildModuleStates(tree, rollup, gates),
@@ -651,8 +792,10 @@ export function summariseEnrolment(input: {
   quizPassed: boolean;
   progress: CourseRollup["course"];
   moduleCompletion: CourseRollup["moduleCompletion"];
+  courseComplete: boolean;
   complete: boolean;
   outstanding: readonly EnrolmentState["outstanding"][number][];
+  outstandingForCourse: readonly EnrolmentState["outstanding"][number][];
 } {
   const courseNode = toCourseNode(input.tree);
   const records = toProgressRecords(input.stored, input.tree);
@@ -677,8 +820,10 @@ export function summariseEnrolment(input: {
     quizPassed,
     progress: rollup.course,
     moduleCompletion: rollup.moduleCompletion,
+    courseComplete: completion.courseComplete,
     complete: completion.complete,
     outstanding: completion.outstanding,
+    outstandingForCourse: completion.outstandingForCourse,
   };
 }
 
@@ -700,6 +845,29 @@ function isComplianceContent(
   kind: "video" | "text" | "quiz" | "details";
 } {
   return content.kind !== "material";
+}
+
+/**
+ * What to tell a learner who cannot advance a course they are enrolled on.
+ *
+ * Three causes and three sentences. A draft is reachable here only when a
+ * course somebody had already started was **unpublished** — an operator
+ * retracting it — and telling that learner it has "expired" would be a plain
+ * untruth about a date they could go and check.
+ *
+ * All three end the same way, because all three prompt the same fear: that the
+ * hour of study just went with it.
+ */
+function messageFor(availability: CourseAvailability): string {
+  const kept = " Ihre bisherigen Ergebnisse bleiben erhalten.";
+  switch (availability) {
+    case "draft":
+      return "Diese Fortbildung ist derzeit nicht verfügbar." + kept;
+    case "not_yet":
+      return "Diese Fortbildung ist noch nicht freigeschaltet." + kept;
+    default:
+      return "Der Teilnahmezeitraum dieser Fortbildung ist abgelaufen." + kept;
+  }
 }
 
 /** Maps flat rows into the tree shape `@ds/domain` consumes. */

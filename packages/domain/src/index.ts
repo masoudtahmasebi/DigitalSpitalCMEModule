@@ -11,7 +11,11 @@ export {
   invalidAvailabilityWindow,
   isCourseOffered,
 } from "./availability.js";
-export type { AvailabilityWindow, CourseAvailability } from "./availability.js";
+export type {
+  AvailabilityWindow,
+  CourseAvailability,
+  CourseStatus,
+} from "./availability.js";
 
 export {
   joinUrl,
@@ -119,6 +123,14 @@ export { sniffFontFormat } from "./font-file.js";
 export type { FontFormat, FontRejection, FontSniffResult } from "./font-file.js";
 
 export {
+  awardsCmePoints,
+  describePublishBlockers,
+  publishBlockers,
+} from "./publishing.js";
+export type { PublishBlocker, PublishCandidate } from "./publishing.js";
+
+export {
+  certificateArchiveKey,
   courseAssetKey,
   customerPrefix,
   InvalidStorageKeyError,
@@ -144,7 +156,12 @@ export type {
 export { courseChapterSequence, rollupProgress } from "./progress.js";
 export type { CourseRollup, ModuleCompletion, ProgressSummary } from "./progress.js";
 
-export { minimumCorrectAnswers, scoreQuiz, UnknownQuestionError } from "./assessment.js";
+export {
+  mayRevealCorrectAnswers,
+  minimumCorrectAnswers,
+  scoreQuiz,
+  UnknownQuestionError,
+} from "./assessment.js";
 export type { Answer, Question, QuestionKind, QuizResult } from "./assessment.js";
 
 export {

@@ -105,12 +105,38 @@ const LOREM =
  * course seeded with `duration_sec` of 60 would be completable in a minute and
  * would tell an operator nothing about how the gate behaves.
  */
-const CHAPTERS: ReadonlyArray<{ title: string; durationSec: number }> = [
-  { title: "DSChapter 1 – Lorem ipsum", durationSec: 900 },
-  { title: "DSChapter 2 – Dolor sit amet", durationSec: 1200 },
-  { title: "DSChapter 3 – Consetetur sadipscing", durationSec: 780 },
-  { title: "DSChapter 4 – Sed diam nonumy", durationSec: 1500 },
-  { title: "DSChapter 5 – At vero eos", durationSec: 660 },
+/**
+ * Two modules, chapters under each (P52-03).
+ *
+ * It was one module of five chapters, which exercised the gate *within* a
+ * module and never *between* two — the mirror image of the other seeds, which
+ * had several modules of one chapter each and exercised only the reverse.
+ * Neither shape produced a course where both transitions happen, and both
+ * transitions are separate branches in `courseChapterSequence`.
+ *
+ * `DSModule` keeps its name, numbered, because the point of this tenant is
+ * that the words on screen say DSCustomer / DSOrganisation / DSProject /
+ * DSModule and a reader can tell instantly which fixture they are looking at.
+ */
+const MODULES: ReadonlyArray<{
+  readonly title: string;
+  readonly chapters: ReadonlyArray<{ title: string; durationSec: number }>;
+}> = [
+  {
+    title: `${MODULE_NAME} 1`,
+    chapters: [
+      { title: "DSChapter 1 – Lorem ipsum", durationSec: 900 },
+      { title: "DSChapter 2 – Dolor sit amet", durationSec: 1200 },
+      { title: "DSChapter 3 – Consetetur sadipscing", durationSec: 780 },
+    ],
+  },
+  {
+    title: `${MODULE_NAME} 2`,
+    chapters: [
+      { title: "DSChapter 4 – Sed diam nonumy", durationSec: 1500 },
+      { title: "DSChapter 5 – At vero eos", durationSec: 660 },
+    ],
+  },
 ];
 
 const QUESTION_COUNT = 5;
@@ -203,7 +229,10 @@ export async function seedDsDefault(
     const courseId = await upsert(
       pool,
       `INSERT INTO courses (
-         customer_id, project_id, slug, title, description, delivery_type,
+         -- 'published': a seeded course is meant to be visible. The column
+         -- defaults to 'draft' (P53-01), which is right for a course created
+         -- in the console and wrong for one the seed exists to publish.
+         customer_id, project_id, slug, title, description, delivery_type, status,
          thema, altersgruppe, cme_points, cme_category, vnr, accreditation_body,
          event_location, organizer, required_watch_percent,
          pass_threshold_percent, reveal_correct_answers,
@@ -211,7 +240,7 @@ export async function seedDsDefault(
          certificate_issue_place, stamp_image, stamp_image_mime,
          signature_image, signature_image_mime
        ) VALUES (
-         $1,$2,$3,$4,$5,'on_demand',
+         $1,$2,$3,$4,$5,'on_demand','published',
          ARRAY['Lorem'], ARRAY['Erwachsene'],
          -- No points, no VNR, no accreditation body. A course with points is a
          -- course the EIV worker will try to report; this one is complete and
@@ -258,68 +287,90 @@ export async function seedDsDefault(
       [customerId, courseId, LOREM],
     );
 
-    const moduleId = await upsert(
-      pool,
-      `INSERT INTO modules (customer_id, course_id, ordinal, title, subtitle)
-       VALUES ($1,$2,0,$3,$4) RETURNING id`,
-      [customerId, courseId, MODULE_NAME, "Lorem ipsum · dolor sit amet · consetetur"],
-    );
-
     let quizContentId: string | undefined;
 
-    for (const [ordinal, chapter] of CHAPTERS.entries()) {
-      const chapterId = await upsert(
+    // `flatIndex` numbers chapters across the whole course, so the media paths
+    // and the `DSMaterial N` labels stay the sequence they were before the
+    // course gained a second module. A per-module counter would have renamed
+    // half the fixture's files for no reason anybody could see.
+    let flatIndex = 0;
+
+    for (const [moduleOrdinal, module] of MODULES.entries()) {
+      const moduleId = await upsert(
         pool,
-        `INSERT INTO chapters (customer_id, module_id, ordinal, title)
-         VALUES ($1,$2,$3,$4) RETURNING id`,
-        [customerId, moduleId, ordinal, chapter.title],
+        `INSERT INTO modules (customer_id, course_id, ordinal, title, subtitle)
+         VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        [
+          customerId,
+          courseId,
+          moduleOrdinal,
+          module.title,
+          "Lorem ipsum · dolor sit amet · consetetur",
+        ],
       );
 
-      const mediaBase = `https://media.example.org/${COURSE_SLUG}/${ordinal + 1}`;
-      await pool.query(
-        `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title,
+      for (const [chapterOrdinal, chapter] of module.chapters.entries()) {
+        const ordinal = flatIndex;
+        flatIndex += 1;
+
+        const chapterId = await upsert(
+          pool,
+          `INSERT INTO chapters (customer_id, module_id, ordinal, title)
+           VALUES ($1,$2,$3,$4) RETURNING id`,
+          [customerId, moduleId, chapterOrdinal, chapter.title],
+        );
+
+        const mediaBase = `https://media.example.org/${COURSE_SLUG}/${ordinal + 1}`;
+        await pool.query(
+          `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title,
                                media_sources, poster_url, duration_sec)
          VALUES ($1,$2,0,'video',$3,$4::jsonb,$5,$6)`,
-        [
-          customerId,
-          chapterId,
-          chapter.title,
-          JSON.stringify([
-            {
-              url: `${mediaBase}.m3u8`,
-              mimeType: "application/vnd.apple.mpegurl",
-              label: "Automatisch",
-            },
-            { url: `${mediaBase}-720.mp4`, mimeType: "video/mp4", label: "720p" },
-          ]),
-          `${mediaBase}.jpg`,
-          chapter.durationSec,
-        ],
-      );
+          [
+            customerId,
+            chapterId,
+            chapter.title,
+            JSON.stringify([
+              {
+                url: `${mediaBase}.m3u8`,
+                mimeType: "application/vnd.apple.mpegurl",
+                label: "Automatisch",
+              },
+              { url: `${mediaBase}-720.mp4`, mimeType: "video/mp4", label: "720p" },
+            ]),
+            `${mediaBase}.jpg`,
+            chapter.durationSec,
+          ],
+        );
 
-      // One download per chapter, with a description — the Mediathek card
-      // renders it (#62), and a grid of title-only cards looks nothing like
-      // the layout an operator is comparing against.
-      await pool.query(
-        `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, body,
+        // One download per chapter, with a description — the Mediathek card
+        // renders it (#62), and a grid of title-only cards looks nothing like
+        // the layout an operator is comparing against.
+        await pool.query(
+          `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, body,
                                file_url, mime_type, file_size)
          VALUES ($1,$2,8,'material',$3,$4,$5,'application/pdf',262144)`,
-        [
-          customerId,
-          chapterId,
-          `DSMaterial ${String(ordinal + 1)} (PDF)`,
-          LOREM,
-          `${mediaBase}.pdf`,
-        ],
-      );
-
-      if (ordinal === CHAPTERS.length - 1) {
-        quizContentId = await upsert(
-          pool,
-          `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title)
-           VALUES ($1,$2,9,'quiz',$3) RETURNING id`,
-          [customerId, chapterId, "Lernerfolgskontrolle"],
+          [
+            customerId,
+            chapterId,
+            `DSMaterial ${String(ordinal + 1)} (PDF)`,
+            LOREM,
+            `${mediaBase}.pdf`,
+          ],
         );
+
+        // Last chapter of the last module, and nowhere else. A quiz content
+        // with no questions is a 500 for whoever opens it.
+        if (
+          moduleOrdinal === MODULES.length - 1 &&
+          chapterOrdinal === module.chapters.length - 1
+        ) {
+          quizContentId = await upsert(
+            pool,
+            `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title)
+             VALUES ($1,$2,9,'quiz',$3) RETURNING id`,
+            [customerId, chapterId, "Lernerfolgskontrolle"],
+          );
+        }
       }
     }
 
@@ -380,7 +431,8 @@ export async function seedDsDefault(
       `  organisation ${DEPARTMENT_NAME}  (slug ${DEPARTMENT_SLUG})`,
       `  project      ${PROJECT_NAME}       (slug ${PROJECT_SLUG})`,
       `  course       DSCourse         (slug ${COURSE_SLUG})`,
-      `  module       ${MODULE_NAME}, ${String(CHAPTERS.length)} chapters, ${String(QUESTION_COUNT)} questions`,
+      `  modules      ${MODULES.map((m) => `${m.title} (${String(m.chapters.length)} chapters)`).join(", ")}`,
+      `  quiz         ${String(QUESTION_COUNT)} questions, in the last chapter of the last module`,
       "",
       `Portal sign-in at /${PROJECT_SLUG}:`,
       `  E-Mail    ${PARTICIPANT_EMAIL}`,
