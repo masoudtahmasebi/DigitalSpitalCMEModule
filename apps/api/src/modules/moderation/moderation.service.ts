@@ -23,6 +23,7 @@ import {
 } from "@ds/domain";
 import type { AuditServicePort } from "../../audit/audit.service.js";
 import { AppError } from "../../shared/problem-details.js";
+import type { ObjectErasureResult } from "../certificate/object-erasure.service.js";
 import {
   SubmissionStillOpenError,
   type CertificateRow,
@@ -36,11 +37,25 @@ export interface ModeratorContext {
   readonly staffUserId: string;
 }
 
+/** Just the sweep, so the moderation service does not depend on a presigner. */
+export interface ObjectErasurePort {
+  drain(): Promise<ObjectErasureResult>;
+}
+
 export class ModerationService {
   constructor(
     private readonly repository: ModerationRepositoryPort,
     private readonly erasure: SubjectErasureRepository,
     private readonly audit: AuditServicePort,
+    /**
+     * Discharges the object deletions `erase_subject` queued (P60-01).
+     *
+     * Optional so the service's own tests need no bucket, and so a deployment
+     * without object storage — where nothing was ever archived — carries no
+     * dead machinery. When it is absent the rows simply stay outstanding,
+     * which is the honest state and is queryable.
+     */
+    private readonly objectErasure?: ObjectErasurePort,
   ) {}
 
   listLearners(courseSlug: string | undefined): Promise<readonly LearnerSummary[]> {
@@ -135,6 +150,17 @@ export class ModerationService {
       subject: enrolment.userId,
       detail: { enrolments: result.enrolments },
     });
+
+    /*
+     * The archived PDFs, which SQL cannot delete (P60-01).
+     *
+     * After the audit record rather than before: the erasure has happened and
+     * is recorded whatever the bucket does. A failure here leaves the rows
+     * outstanding in `object_erasures` and they are retried on the next
+     * erasure and on boot — an obligation that survives, rather than an
+     * exception that would tell the operator their completed erasure failed.
+     */
+    await this.objectErasure?.drain().catch(() => undefined);
 
     return result;
   }

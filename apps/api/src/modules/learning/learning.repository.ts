@@ -145,6 +145,8 @@ export interface AttestedCompletion {
   readonly title: string | null;
   readonly givenName: string | null;
   readonly familyName: string | null;
+  /** The Anschrift for the certificate, or `null` when none was given. */
+  readonly address: string | null;
   /** The privacy notice agreed to, or `null` when no consent was captured. */
   readonly consentDocument: string | null;
 }
@@ -471,6 +473,18 @@ export class LearningRepository implements LearningRepositoryPort {
               attestedGivenName: attested.givenName,
               attestedFamilyName: attested.familyName,
             }),
+        /*
+         * The Anschrift is written independently of the name (P60-03), because
+         * it is independently optional: a learner may attest a name and give no
+         * address, or supply an address on a later correction without
+         * re-stating their name. No constraint couples the two, unlike the name
+         * and its parts above.
+         *
+         * `null` means "not supplied in this request" and leaves what is there,
+         * matching how the name behaves — an omitted field is never an
+         * instruction to erase one.
+         */
+        ...(attested.address === null ? {} : { attestedAddress: attested.address }),
         /*
          * GDPR Art. 7(1). Written in the same statement as the completion it
          * authorises, so there is no window in which a Punktemeldung is queued

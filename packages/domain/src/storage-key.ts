@@ -81,6 +81,51 @@ export function courseAssetKey(input: {
 }
 
 /**
+ * The key an issued Teilnahmebescheinigung is archived under (P60-01).
+ *
+ * `<customerId>/certificates/<courseId>/<certificateId>.pdf` — the same
+ * customer-first shape as `courseAssetKey`, so `keyBelongsToCustomer` and
+ * `customerPrefix` cover it without knowing it exists, and a lifecycle rule or
+ * a bucket policy written for one covers the other.
+ *
+ * ## Why the archive exists at all when the PDF is rendered on demand
+ *
+ * The rendered document is a *view* of the record; the archive is what the
+ * record looked like when the physician was told they had earned it. Those two
+ * answer different questions. "Show me my certificate" wants the view. "Prove
+ * what MEDICE issued on 12.08.2026" — a Kammer query, an audit, a dispute
+ * years later — wants the bytes that existed then, and a re-render cannot
+ * supply it: fonts change, the layout changes, a course's stamp gets replaced.
+ *
+ * ## Why the certificate id and not the enrolment id
+ *
+ * One certificate row, one archived object, and the row already carries the id.
+ * Keying on the enrolment would invite a second object for the same enrolment
+ * the first time somebody regenerates, and then "which one did we send" has two
+ * answers.
+ */
+export function certificateArchiveKey(input: {
+  customerId: string;
+  courseId: string;
+  certificateId: string;
+}): string {
+  if (!UUID.test(input.customerId)) {
+    throw new InvalidStorageKeyError("customerId is not a uuid");
+  }
+  if (!UUID.test(input.courseId)) {
+    throw new InvalidStorageKeyError("courseId is not a uuid");
+  }
+  if (!UUID.test(input.certificateId)) {
+    throw new InvalidStorageKeyError("certificateId is not a uuid");
+  }
+
+  return (
+    `${input.customerId.toLowerCase()}/certificates/` +
+    `${input.courseId.toLowerCase()}/${input.certificateId.toLowerCase()}.pdf`
+  );
+}
+
+/**
  * Is this stored value an object-storage key, or an ordinary URL?
  *
  * Both are supported on purpose. A customer who already serves their media

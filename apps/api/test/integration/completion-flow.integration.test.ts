@@ -57,6 +57,8 @@ const VNR = "9999999999999999999";
 const EFN = "123456789012345";
 /** What the learner confirms at completion — deliberately not the token's name. */
 const ATTESTED_NAME = "Dr. med. Anna Müller";
+/** The Muster's "Anschrift:" line, supplied with the Punktemeldung (P60-03). */
+const ATTESTED_ADDRESS = "Musterstraße 1, 58638 Iserlohn";
 const VIDEO_SEC = 300;
 
 /** 1×1 PNG, stored as the course's stamp and signature. */
@@ -600,6 +602,7 @@ describe("the road to a CME point", () => {
       attestedTitle: "Dr. med.",
       attestedGivenName: "Anna",
       attestedFamilyName: "Müller",
+      attestedAddress: ATTESTED_ADDRESS,
       consentDocument: "datenschutz-2026-01",
     });
 
@@ -654,6 +657,39 @@ describe("the road to a CME point", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.status).toBe("issued");
     expect(rows[0]!.issued_at).not.toBeNull();
+  });
+
+  it("issues the certificate on completion, not on a successful Punktemeldung", async () => {
+    /*
+     * P60-04, and the reason it is written down rather than assumed.
+     *
+     * QA read the flow as "no certificate until EIV has accepted the
+     * Meldung", which is a reasonable reading and is **not** what this
+     * platform does. The two are deliberately independent:
+     *
+     * - a point-free course reports nothing to EIV-FOBI, so there would be
+     *   nothing to wait for and the certificate would never arrive;
+     * - a Kammer outage would withhold documents physicians have earned, for
+     *   as long as it lasted.
+     *
+     * The physician earns the document by finishing the course. The
+     * Punktemeldung is the platform's obligation to the Kammer, not a
+     * condition on theirs.
+     *
+     * So: the submission is still `queued` — the worker has not run in this
+     * suite — and the certificate is already issued.
+     */
+    const submission = await seedPool.query<{ status: string }>(
+      "SELECT status FROM eiv_submissions WHERE enrolment_id = $1",
+      [enrolmentId],
+    );
+    const certificate = await seedPool.query<{ status: string }>(
+      "SELECT status FROM certificates WHERE enrolment_id = $1",
+      [enrolmentId],
+    );
+
+    expect(submission.rows[0]!.status).toBe("queued");
+    expect(certificate.rows[0]!.status).toBe("issued");
   });
 
   it("backfills the course-completion date it never had, at or before the certification", async () => {
@@ -718,6 +754,35 @@ describe("the Teilnahmebescheinigung", () => {
     // The participation date is the completion instant — for an on-demand
     // course there is no other date the certificate could mean.
     expect(body.completedAt).not.toBeNull();
+    // The Muster's own two participant fields (P60-02, P60-03). The EFN is on
+    // the certificate on MEDICE's instruction; the Anschrift is whatever the
+    // learner gave with the Punktemeldung form.
+    expect(body.efn).toBe(EFN);
+    expect(body.participantAddress).toBe(ATTESTED_ADDRESS);
+  });
+
+  it("omits both when there is nothing to print, rather than drawing empty fields", async () => {
+    /*
+     * The certificate must not carry an "EFN:" line with nothing after it.
+     * A point-free course never asks for one, and an address is optional —
+     * an empty labelled field on a legal document reads as a form somebody
+     * failed to complete (CLAUDE.md §9.4).
+     *
+     * Exercised on the assembled data rather than by rendering, because
+     * "absent" is the property and a PDF cannot be asked whether a line is
+     * missing.
+     */
+    await seedPool.query("UPDATE enrolments SET attested_address = NULL WHERE id = $1", [
+      enrolmentId,
+    ]);
+
+    const { body } = await call("GET", `/courses/${courseSlug}/certificate`);
+    expect(body.participantAddress).toBeUndefined();
+
+    await seedPool.query("UPDATE enrolments SET attested_address = $2 WHERE id = $1", [
+      enrolmentId,
+      ATTESTED_ADDRESS,
+    ]);
   });
 
   it("templates the creditability sentence from the course's own values", async () => {

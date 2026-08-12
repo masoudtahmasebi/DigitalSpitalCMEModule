@@ -445,12 +445,14 @@ describe("complete", () => {
       {
         id: ENROLMENT_ID,
         at: NOW,
-        // Nothing attested: the certificate falls back to the profile name.
+        // Nothing attested: the certificate falls back to the profile name,
+        // and the Anschrift line is drawn blank (P60-03).
         attested: {
           name: null,
           title: null,
           givenName: null,
           familyName: null,
+          address: null,
           consentDocument: null,
         },
       },

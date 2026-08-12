@@ -378,6 +378,8 @@ export const enrolments = pgTable("enrolments", {
   attestedTitle: text("attested_title"),
   attestedGivenName: text("attested_given_name"),
   attestedFamilyName: text("attested_family_name"),
+  /** The postal address for the certificate's "Anschrift:" line (P60-03). */
+  attestedAddress: text("attested_address"),
   /** GDPR Art. 7(1): when the Punktemeldung consent was given, and to what. */
   consentGivenAt: timestamp("consent_given_at", { withTimezone: true }),
   consentDocument: text("consent_document"),
@@ -495,6 +497,13 @@ export const certificates = pgTable("certificates", {
   deliveryFirstAttemptAt: timestamp("delivery_first_attempt_at", { withTimezone: true }),
   /** One of `DeliveryAbandonReason`. Non-null means the queue has stopped. */
   deliveryAbandonedReason: text("delivery_abandoned_reason"),
+  /**
+   * The archived PDF (P60-01): the bytes as issued, kept for verification.
+   * All three together or none — `certificates_archive_all_or_nothing`.
+   */
+  pdfObjectKey: text("pdf_object_key"),
+  pdfSha256: text("pdf_sha256"),
+  pdfArchivedAt: timestamp("pdf_archived_at", { withTimezone: true }),
   ...timestamps,
 });
 

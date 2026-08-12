@@ -7,7 +7,16 @@
  * and never a path parameter (P54-02).
  */
 
-import { Body, Controller, Get, HttpCode, Param, Post, Put } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Post,
+  Put,
+} from "@nestjs/common";
 import { Roles } from "../../auth/roles.decorator.js";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
@@ -16,6 +25,13 @@ import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
 import { CompletionService } from "./completion.service.js";
+import {
+  certificateArchiveFor,
+  type CertificateArchivePort,
+} from "../certificate/certificate.archive.js";
+import { APP_CONFIG } from "../../db/tokens.js";
+import type { AppConfig } from "../../config/config.js";
+import { JsonLogger } from "../../observability/logger.js";
 import {
   completionInputSchema,
   efnInputSchema,
@@ -31,6 +47,17 @@ const LEARNER_ROLES = [
 
 @Controller()
 export class CompletionController {
+  /**
+   * The archive the completion's certificate is written to (P60-01). Built
+   * once — it holds a presigner and no request state — and `undefined` when
+   * the deployment has no bucket.
+   */
+  private readonly archive: CertificateArchivePort | undefined;
+
+  constructor(@Inject(APP_CONFIG) config: AppConfig) {
+    this.archive = certificateArchiveFor(config, new JsonLogger("warn"));
+  }
+
   @Get("courses/:slug/evaluation")
   @Roles(...LEARNER_ROLES)
   async getEvaluation(
@@ -144,7 +171,7 @@ export class CompletionController {
 
     // The clock is read at the edge and passed inward; the deadline arithmetic
     // in `@ds/domain` never reads one of its own.
-    return CompletionService.fromDb(db).complete(
+    return CompletionService.fromDb(db, this.archive).complete(
       slug,
       parsed.data,
       context(principal),

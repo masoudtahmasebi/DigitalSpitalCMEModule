@@ -47,9 +47,15 @@ import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
-import { PG_POOL } from "../../db/tokens.js";
+import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
 import type { Pool } from "pg";
 import { AuditService } from "../../audit/audit.service.js";
+import type { AppConfig } from "../../config/config.js";
+import { JsonLogger } from "../../observability/logger.js";
+import {
+  objectErasureFor,
+  ObjectErasureService,
+} from "../certificate/object-erasure.service.js";
 import {
   ModerationRepository,
   SubjectErasureRepository,
@@ -95,7 +101,18 @@ const Erasure = z.object({
 
 @Controller("admin")
 export class ModerationController {
-  constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
+  /**
+   * Built once from configuration; `undefined` without object storage, in
+   * which case nothing was ever archived and there is nothing to delete.
+   */
+  private readonly objectErasure: ObjectErasureService | undefined;
+
+  constructor(
+    @Inject(PG_POOL) private readonly pool: Pool,
+    @Inject(APP_CONFIG) config: AppConfig,
+  ) {
+    this.objectErasure = objectErasureFor(pool, config, new JsonLogger("info"));
+  }
 
   @Get("learners")
   @Roles(...RECORD_READERS)
@@ -187,6 +204,7 @@ export class ModerationController {
       new ModerationRepository(db),
       new SubjectErasureRepository(this.pool),
       new AuditService(this.pool),
+      this.objectErasure,
     );
   }
 }

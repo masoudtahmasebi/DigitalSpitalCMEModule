@@ -34,6 +34,7 @@ Everything in one table, because the honest version of this document is short.
 | Identity-provider subject + realm       | `user_identities`                                                          | The stable identity. Not a name; an opaque id issued by the customer's own IdP. Moved out of `users` by P21-01 so one physician learning with two customers is one person, not two (§2.1).                                                    |
 | Name, e-mail                            | `users`                                                                    | Written from the token's claims. Name is printed on the Teilnahmebescheinigung; e-mail is for the future certificate delivery.                                                                                                                |
 | Which customers a person learns with    | `user_customers`                                                           | A membership, and the only tenant-scoped part of a person. A customer admin sees that someone learns with them and learns nothing about where else they learn.                                                                                |
+| Attested address                        | `enrolments.attested_address`                                              | The Muster's "Anschrift:" line, supplied with the Punktemeldung form (P60-03). Optional — the Bescheid does not require it — and printed on the certificate when given. Cleared by `erase_subject`.                                           |
 | Attested name                           | `enrolments.attested_name`                                                 | What the learner confirmed should be printed, which may differ from a stale Keycloak profile.                                                                                                                                                 |
 | Attested name, in parts                 | `enrolments.attested_title`, `attested_given_name`, `attested_family_name` | The three fields layout page 13 captures. Composed into `attested_name` by one function in `@ds/domain`; kept apart so a correction does not have to re-parse a string. Cleared by `erase_subject`.                                           |
 | Punktemeldung consent                   | `enrolments.consent_given_at`, `consent_document`                          | When the learner ticked the consent box and which privacy notice they agreed to. Art. 7(1) — see §3. **Survives erasure by design**; it names nobody once the name and EFN are gone.                                                          |
@@ -42,8 +43,33 @@ Everything in one table, because the honest version of this document is short.
 | Evaluation answers                      | `evaluation_responses`                                                     | Required for the Anerkennung. Free-text answers are the one place a physician may type something about a patient — treated accordingly in §5.                                                                                                 |
 | Completion, VNR, points                 | `enrolments`                                                               | The participation record.                                                                                                                                                                                                                     |
 | Punktemeldung state                     | `eiv_submissions`                                                          | Including the EFN as submitted, every attempt and every failure. Append-only in effect: the row is the evidence a statutory report was made.                                                                                                  |
-| Certificate state                       | `certificates`                                                             | Status and the name printed. Not the PDF — it is rendered on demand, for the download and for each delivery attempt alike (P59). The row is created when the course is completed, not when somebody first downloads it (P59-01).              |
+| Certificate state                       | `certificates`                                                             | Status and the name printed. The serving path renders on demand (P59). **Since P60-01 the issued bytes are also archived in object storage** — see §2.2 — and the row holds the key and a SHA-256, never a URL.                               |
 | Admin actions                           | `audit_log`                                                                | Ids, counts and field names. Never a name, an EFN or an answer.                                                                                                                                                                               |
+
+### 2.2 The one artefact outside the database (P60-01)
+
+Every other item above is a column, and `erase_subject` can redact a column.
+The **archived Teilnahmebescheinigung** is an object in a bucket carrying the
+participant's name, their Anschrift and their EFN on its face — the platform's
+first personal data somewhere SQL cannot reach.
+
+It exists because a rendered document answers "show me my certificate" and only
+the stored bytes answer "prove what was issued on 12.08.2026": a re-render years
+later has different fonts, a replaced stamp and possibly a lapsed
+accreditation. The Kammer, an audit or a dispute asks the second question.
+
+Three consequences, all implemented rather than intended:
+
+- **The key is customer-first**, `<customer>/certificates/<course>/<id>.pdf`,
+  checked by a CHECK constraint against the row's own `customer_id`. A bucket
+  has no RLS, so the isolation has to be the key.
+- **Erasure reaches it.** `erase_subject` writes the key to `object_erasures`
+  before clearing the row that names it, and the API deletes the object — in
+  the erasure request itself, and again on boot for anything a storage outage
+  left behind. `deleted_at` is stamped only after the bucket confirms, so an
+  obligation cannot be discharged by being forgotten.
+- **Retention follows the certificate**, not a separate clock: the object is
+  kept exactly as long as the participation record it evidences (§4).
 
 ### 2.1 One person, many customers
 

@@ -173,3 +173,48 @@ describe("image handling", () => {
     ).resolves.toBeDefined();
   });
 });
+
+/**
+ * The two participant fields the Muster asks for and the platform did not hold
+ * until P60.
+ *
+ * pdf-lib does not expose the drawn text for reading back, so these assert on
+ * the property that *is* observable without a text extractor: a document with
+ * the field is longer than the same document without it, and the difference is
+ * present exactly when the field is. Crude, and it is the assertion that goes
+ * red if the line is dropped — which is the point (CLAUDE.md §9.1).
+ */
+describe("the EFN and the Anschrift", () => {
+  it("draws the EFN when there is one, and nothing when there is not", async () => {
+    const without = await renderCertificatePdf(data, assets);
+    const with_ = await renderCertificatePdf(
+      buildCertificateData({ ...data, efn: "800276123456789" }),
+      assets,
+    );
+
+    expect(with_.length).toBeGreaterThan(without.length);
+  });
+
+  it("draws the Anschrift line either way, filled only when supplied", async () => {
+    // The line is always there — the Muster has it, and a form missing a line
+    // it should have looks altered — so an address makes the page longer by
+    // its own text and not by a new label.
+    const blank = await renderCertificatePdf(data, assets);
+    const filled = await renderCertificatePdf(
+      buildCertificateData({
+        ...data,
+        participantAddress: "Musterstraße 1, 58638 Iserlohn",
+      }),
+      assets,
+    );
+
+    expect(filled.length).toBeGreaterThan(blank.length);
+  });
+
+  it("still renders when neither is present — a point-free course has no EFN", async () => {
+    // The one case that must not become a refusal: `missingCertificateFields`
+    // deliberately excludes both, so a document without them is complete.
+    const bytes = await renderCertificatePdf(data, assets);
+    expect(Buffer.from(bytes.subarray(0, 5)).toString()).toBe("%PDF-");
+  });
+});

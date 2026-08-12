@@ -89,6 +89,20 @@ export const completionInputSchema = z
     attestedGivenName: namePart.optional(),
     attestedFamilyName: namePart.optional(),
     /**
+     * The Muster's "Anschrift:" line (P60-03).
+     *
+     * Optional and it stays optional: the Bescheid's minimum field list does
+     * not include it (docs/show-stoppers.md S12), so a learner who does not
+     * want to give a postal address must still be able to finish. When it is
+     * absent the certificate draws the line blank, exactly as the paper form
+     * would be handed over.
+     *
+     * One field rather than street / postcode / city, because it is printed
+     * on one line and never parsed. Newlines are stripped by `trim()` at the
+     * edges only, so `max(200)` is what bounds it — the column agrees.
+     */
+    attestedAddress: z.string().trim().min(1).max(200).optional(),
+    /**
      * 15 digits — see `efnInputSchema`. Optional here because a learner may
      * have supplied it earlier through the correction endpoint.
      */

@@ -30,6 +30,7 @@ import { runInTenant } from "../../db/tenant-db.js";
 import { CertificateService } from "./certificate.service.js";
 import type { CertificateAttachmentPort } from "./delivery.service.js";
 import type { ClaimedDelivery } from "./delivery.repository.js";
+import type { CertificateArchivePort } from "./certificate.archive.js";
 
 export interface AttachmentLogger {
   warn(message: string): void;
@@ -39,6 +40,13 @@ export class CertificateAttachments implements CertificateAttachmentPort {
   constructor(
     private readonly pool: Pool,
     private readonly logger: AttachmentLogger,
+    /**
+     * Passed on so a retry that renders for an unarchived certificate also
+     * archives it (P60-01) — the completion is the usual archiver, but a row
+     * issued before P60, or one whose bucket was down that day, gets its
+     * chance here rather than staying unarchived forever.
+     */
+    private readonly archive?: CertificateArchivePort,
   ) {}
 
   async renderFor(
@@ -51,7 +59,7 @@ export class CertificateAttachments implements CertificateAttachmentPort {
         // tell the delivery worker apart from a person (see TenantContext).
         { customerId: claim.customerId, role: "system" },
         async (db) => {
-          const certificates = CertificateService.fromDb(db);
+          const certificates = CertificateService.fromDb(db, this.archive);
           // The enrolment is looked up from the certificate row inside the same
           // scope, so nothing crosses a tenant boundary to get here.
           const enrolmentId = await certificates.enrolmentIdFor(claim.certificateId);

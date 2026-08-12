@@ -120,9 +120,29 @@ export async function renderCertificatePdf(
   left(`Name / Vorname: ${data.participantName}`, regular, 11);
   y -= 22;
   // Rendered even when empty: the Muster has the line, and a form missing a
-  // line it should have looks altered.
+  // line it should have looks altered. It is filled whenever the learner gave
+  // an address (P60-03) and blank when they did not.
   left(`Anschrift: ${data.participantAddress ?? ""}`, regular, 11);
-  y -= 40;
+  y -= 22;
+
+  /*
+   * The EFN (P60-02), on MEDICE's instruction.
+   *
+   * Not on the Muster and not in the Bescheid's minimum list, so it is drawn
+   * only when there is one: a point-free course reports nothing to EIV-FOBI
+   * and never asks for an EFN, and an empty "EFN:" on a legal document reads
+   * as a field somebody forgot to complete (CLAUDE.md §9.4).
+   *
+   * Placed with the participant, not with the VNR, because it identifies the
+   * physician rather than the Veranstaltung — and because the Ärztekammer's
+   * two barcode fields carry the instruction not to overprint them.
+   */
+  if (data.efn !== undefined && data.efn.trim() !== "") {
+    left(`EFN: ${data.efn}`, regular, 11);
+    y -= 22;
+  }
+
+  y -= 18;
 
   left(`an der Fortbildungsmaßnahme zum Thema: ${data.courseTitle}`, regular, 11);
   y -= 34;

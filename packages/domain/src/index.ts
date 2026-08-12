@@ -123,6 +123,7 @@ export { sniffFontFormat } from "./font-file.js";
 export type { FontFormat, FontRejection, FontSniffResult } from "./font-file.js";
 
 export {
+  certificateArchiveKey,
   courseAssetKey,
   customerPrefix,
   InvalidStorageKeyError,

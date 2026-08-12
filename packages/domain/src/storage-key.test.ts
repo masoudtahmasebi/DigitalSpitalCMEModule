@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  certificateArchiveKey,
   courseAssetKey,
   customerPrefix,
   InvalidStorageKeyError,
@@ -161,5 +162,60 @@ describe("customerPrefix", () => {
   it("refuses a non-uuid rather than returning a prefix that matches everything", () => {
     expect(() => customerPrefix("")).toThrow(InvalidStorageKeyError);
     expect(() => customerPrefix("../")).toThrow(InvalidStorageKeyError);
+  });
+});
+
+describe("certificateArchiveKey", () => {
+  const CERTIFICATE = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+
+  it("is customer-first, then course, then the certificate", () => {
+    // Per customer and per course, so an operator answering "what did we issue
+    // for this Fortbildung" can list one prefix.
+    expect(
+      certificateArchiveKey({
+        customerId: CUSTOMER,
+        courseId: COURSE,
+        certificateId: CERTIFICATE,
+      }),
+    ).toBe(`${CUSTOMER}/certificates/${COURSE}/${CERTIFICATE}.pdf`);
+  });
+
+  it("is covered by the isolation checks written for course assets", () => {
+    // The property that matters: nothing had to learn about certificates for
+    // the tenant check to hold, because the shape is the same.
+    const key = certificateArchiveKey({
+      customerId: CUSTOMER,
+      courseId: COURSE,
+      certificateId: CERTIFICATE,
+    });
+    expect(keyBelongsToCustomer(key, CUSTOMER)).toBe(true);
+    expect(keyBelongsToCustomer(key, OTHER_CUSTOMER)).toBe(false);
+    expect(key.startsWith(customerPrefix(CUSTOMER))).toBe(true);
+  });
+
+  it("refuses anything that is not a uuid rather than building a key from it", () => {
+    for (const bad of ["", "..", "../../etc", "not-a-uuid"]) {
+      expect(() =>
+        certificateArchiveKey({
+          customerId: bad,
+          courseId: COURSE,
+          certificateId: CERTIFICATE,
+        }),
+      ).toThrow(InvalidStorageKeyError);
+      expect(() =>
+        certificateArchiveKey({
+          customerId: CUSTOMER,
+          courseId: bad,
+          certificateId: CERTIFICATE,
+        }),
+      ).toThrow(InvalidStorageKeyError);
+      expect(() =>
+        certificateArchiveKey({
+          customerId: CUSTOMER,
+          courseId: COURSE,
+          certificateId: bad,
+        }),
+      ).toThrow(InvalidStorageKeyError);
+    }
   });
 });

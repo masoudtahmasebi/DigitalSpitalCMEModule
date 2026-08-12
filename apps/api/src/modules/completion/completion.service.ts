@@ -30,6 +30,7 @@ import {
 import { LearningService, type LearnerContext } from "../learning/learning.service.js";
 import type { EnrolmentState } from "../learning/learning.dto.js";
 import { CertificateService } from "../certificate/certificate.service.js";
+import type { CertificateArchivePort } from "../certificate/certificate.archive.js";
 import {
   CompletionRepository,
   type CompletionRepositoryPort,
@@ -65,11 +66,11 @@ export class CompletionService {
     private readonly certificates?: CertificateIssuerPort,
   ) {}
 
-  static fromDb(db: Db): CompletionService {
+  static fromDb(db: Db, archive?: CertificateArchivePort): CompletionService {
     return new CompletionService(
       new CompletionRepository(db),
       new LearningService(new LearningRepository(db)),
-      CertificateService.fromDb(db),
+      CertificateService.fromDb(db, archive),
     );
   }
 
@@ -417,6 +418,7 @@ function attestedFrom(input: CompletionInput): AttestedCompletion {
     title: null,
     givenName: null,
     familyName: null,
+    address: input.attestedAddress ?? null,
     consentDocument: input.consentDocument ?? null,
   };
 
@@ -443,6 +445,7 @@ function attestedFrom(input: CompletionInput): AttestedCompletion {
     title: composed.parts.title ?? null,
     givenName: composed.parts.givenName,
     familyName: composed.parts.familyName,
+    address: input.attestedAddress ?? null,
     consentDocument: input.consentDocument ?? null,
   };
 }

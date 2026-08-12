@@ -2654,6 +2654,19 @@ export interface components {
             /** @description Nachname. Supplied together with `attestedGivenName`. */
             attestedFamilyName?: string;
             /**
+             * @description The postal address for the certificate's "Anschrift:" line
+             *     (P60-03). One field, because it is printed on one line and never
+             *     parsed.
+             *
+             *     Optional, and it stays optional: the Anerkennungsbescheid's
+             *     minimum field list does not include it, so a physician who does
+             *     not want to give a postal address must still be able to finish.
+             *     The certificate draws the line either way — filled when this is
+             *     supplied, blank when it is not, exactly as the paper Muster would
+             *     be handed over.
+             */
+            attestedAddress?: string;
+            /**
              * @description The Einheitliche Fortbildungsnummer, arriving with the rest of the
              *     form rather than through a separate request.
              *
