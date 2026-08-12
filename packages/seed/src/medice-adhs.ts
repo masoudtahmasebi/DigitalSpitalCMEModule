@@ -25,13 +25,17 @@
  * running this does not quietly manufacture an answer to a question the
  * Ärztekammer has not given (CLAUDE.md §7).
  *
- * **No VNR password.** The EIV worker cannot authenticate until one is set out
- * of band, which is correct: a seed that could file a Punktemeldung is a seed
- * that can file a wrong one.
+ * **The VNR and the VNR password are placeholders.** Both are needed for the
+ * course to be publishable at all, and neither authenticates anything: a
+ * Punktemeldung carrying them is refused by EIV-FOBI, and cannot reach it
+ * without `EIV_ALLOW_LIVE=yes` (ADR-0005). The real pair is set through the
+ * console, and a re-run of this seed does not overwrite them.
  *
  * Idempotent, keyed on the slugs: re-running updates rather than duplicating.
  */
 
+import { randomBytes } from "node:crypto";
+import { createSecretCipher } from "@ds/secrets";
 import type pg from "pg";
 import {
   enterTenant,
@@ -210,7 +214,41 @@ const MODULES: readonly ModuleSeed[] = [
 /** 11 single-choice questions, per MEDICE. Placeholder text. */
 const QUESTION_COUNT = 11;
 
-export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
+/**
+ * How this seed behaves when the tenant already exists.
+ *
+ * `onlyIfMissing` is what makes it safe to run unattended (P65-01). Without it
+ * the seed rebuilds the course's content tree unconditionally —
+ * `resetCourseContent` deletes modules, chapters and contents, and with them
+ * every learner's progress against that course. That is correct for an operator
+ * deliberately reloading a fixture and catastrophic for a deploy that runs on
+ * every push.
+ *
+ * With it, the seed reads one row and returns before its first write once the
+ * customer exists. So the deploy that creates this tenant on an installation
+ * that has never had it writes nothing at all on the next two hundred deploys.
+ *
+ * This is the fix for the failure that has now been reported three times:
+ * `/medice` answering `{"kind":"unknown"}` on a host where the seed exists in
+ * the repository and had simply never been run (CLAUDE.md §9.9's corollary).
+ * A seed the deploy cannot safely run is a seed somebody has to remember, and
+ * nobody did.
+ *
+ * `revealPassword` is off for the same unattended caller: its stdout is a
+ * GitHub Actions log, and a demo participant's password in a build log is a
+ * credential that outlives every rotation.
+ */
+export interface TenantSeedOptions {
+  readonly onlyIfMissing?: boolean;
+  readonly revealPassword?: boolean;
+}
+
+export async function seedMediceAdhs(
+  pool: pg.Pool,
+  options: TenantSeedOptions = {},
+): Promise<string> {
+  const onlyIfMissing = options.onlyIfMissing ?? false;
+  const revealPassword = options.revealPassword ?? true;
   try {
     await pool.query("BEGIN");
 
@@ -221,6 +259,25 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
       slug: CUSTOMER_SLUG,
     });
     await enterTenant(pool, tenantId);
+
+    /*
+     * The whole point of `--if-missing`: return before the first write.
+     *
+     * Checked here rather than at the top because `enterTenant` has to set the
+     * RLS context before `customers` is readable at all — read on the bare
+     * connection this matches zero rows and the seed would rebuild the tenant
+     * every deploy, which is exactly the destructive behaviour the flag exists
+     * to prevent (CLAUDE.md §9.6).
+     */
+    if (onlyIfMissing) {
+      const { rowCount } = await pool.query("SELECT 1 FROM customers WHERE id = $1", [
+        tenantId,
+      ]);
+      if (rowCount !== null && rowCount > 0) {
+        await pool.query("ROLLBACK");
+        return "MEDICE already exists; nothing was written.";
+      }
+    }
 
     const customerId = await upsert(
       pool,
@@ -280,15 +337,34 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
 
     const courseId = await upsert(
       pool,
+      /*
+       * Published, with a placeholder VNR password (P64-02).
+       *
+       * `courses_published_cme_is_complete` refuses a published, point-awarding
+       * course whose `vnr_password_enc` is null. P63-02 answered that by
+       * seeding a draft, which was truthful and made `/medice` an empty
+       * catalogue — a tenant nobody can look at is not a seeded tenant.
+       *
+       * So the seed writes one. It authenticates nothing: it goes with the
+       * placeholder VNR above, a Punktemeldung carrying it would be refused by
+       * EIV-FOBI, and it cannot reach EIV-FOBI at all without
+       * `EIV_ALLOW_LIVE=yes` (ADR-0005). The real credential is set through the
+       * console's write-only field, and the DO UPDATE below will not overwrite
+       * it on a re-run.
+       *
+       * `status` is absent from the DO UPDATE on purpose: a re-run must not
+       * take a course an operator deliberately unpublished back onto the
+       * catalogue.
+       */
       `INSERT INTO courses (
-         -- 'published' explicitly: the column defaults to 'draft' (P53-01).
          customer_id, project_id, slug, title, description, delivery_type, status,
          thema, altersgruppe, vnr, accreditation_body, cme_points, cme_category,
          event_location, organizer, valid_from, valid_to,
          required_watch_percent, pass_threshold_percent, max_quiz_attempts,
          reveal_correct_answers, learning_objectives, target_audience,
          scientific_lead_name, scientific_lead_title, certificate_issue_place,
-         stamp_image, stamp_image_mime, signature_image, signature_image_mime
+         stamp_image, stamp_image_mime, signature_image, signature_image_mime,
+         vnr_password_enc
        ) VALUES (
          $1,$2,$3,$4,$5,'on_demand','published',
          ARRAY['ADHS'], ARRAY['Erwachsene'], $6, $7, 4, 'D',
@@ -296,7 +372,8 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
          100, 70, NULL,
          false, $11, $12,
          $13, $14, $15,
-         $16, 'image/png', $16, 'image/png'
+         $16, 'image/png', $16, 'image/png',
+         $17
        )
        ON CONFLICT (project_id, slug) DO UPDATE SET
          title = EXCLUDED.title,
@@ -314,6 +391,9 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
          stamp_image_mime = EXCLUDED.stamp_image_mime,
          signature_image = EXCLUDED.signature_image,
          signature_image_mime = EXCLUDED.signature_image_mime,
+         -- Only when there is not one already: an operator who set the real
+         -- credential through the console must not have it replaced by a re-run.
+         vnr_password_enc = COALESCE(courses.vnr_password_enc, EXCLUDED.vnr_password_enc),
          updated_at = now()
        RETURNING id`,
       [
@@ -347,6 +427,9 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
         "Prof. Dr. med.",
         "Iserlohn",
         PLACEHOLDER_IMAGE,
+        // Placeholder, and overwritten by the console's write-only field the
+        // moment a real one is set. See `seededVnrPassword`.
+        seededVnrPassword(),
       ],
     );
 
@@ -503,7 +586,9 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
       `  E-Mail    ${PARTICIPANT_EMAIL}`,
       password.supplied
         ? "  Passwort  as supplied in SEED_PARTICIPANT_PASSWORD"
-        : `  Passwort  ${password.plaintext}`,
+        : revealPassword
+          ? `  Passwort  ${password.plaintext}`
+          : "  Passwort  generiert — im Konsolenbereich Zugänge neu setzen",
       "",
       password.supplied
         ? ""
@@ -516,8 +601,13 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
       "readings (layout says 80, MEDICE-292 says 100). See",
       "docs/show-stoppers.md before treating it as settled.",
       "",
-      "No VNR password is seeded. Set courses.vnr_password_enc via the admin",
-      "path before the EIV worker can authenticate.",
+      "ADHS Akademie adult is PUBLISHED and visible to participants now.",
+      "",
+      "The seeded VNR and VNR password are placeholders and authenticate",
+      "nothing. Before any real Punktemeldung, set both under",
+      "Verwaltung -> Fortbildungen -> ADHS Akademie adult: the VNR from the",
+      "Anerkennungsbescheid, and the VNR-Passwort from EIV-FOBI. A re-run of",
+      "this seed will not overwrite a password you set there.",
       "",
       "Stamp and signature are 1x1 placeholder PNGs so a certificate renders",
       "locally. Replace them with the real assets of the course's",
@@ -527,4 +617,34 @@ export async function seedMediceAdhs(pool: pg.Pool): Promise<string> {
     await pool.query("ROLLBACK").catch(() => undefined);
     throw error;
   }
+}
+
+/**
+ * The placeholder VNR password, so the course can be published (P64-02).
+ *
+ * ## Why a seed sets one
+ *
+ * `courses_published_cme_is_complete` refuses a published, point-awarding
+ * course whose `vnr_password_enc` is null. Leaving it null left the course a
+ * draft and `/medice` an empty catalogue — and a tenant nobody can look at is
+ * not a seeded tenant.
+ *
+ * ## Why it is safe
+ *
+ * It authenticates nothing, and it goes with a VNR that authenticates nothing.
+ * The guard that matters is `EIV_ALLOW_LIVE`, not the absence of this value.
+ *
+ * ## Why random rather than a constant
+ *
+ * A constant here is a credential in the repository, and "it is only a
+ * placeholder" is how a real one eventually gets committed beside it. Nothing
+ * needs to read this: the VNR password is used server-side only and is never
+ * returned by any API.
+ */
+function seededVnrPassword(): Buffer {
+  const cipher = createSecretCipher(
+    process.env["NODE_ENV"] ?? "development",
+    process.env["SECRETS_KMS_KEY"] ?? "",
+  );
+  return cipher.encrypt(randomBytes(24).toString("base64url"));
 }

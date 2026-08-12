@@ -155,6 +155,33 @@ export const RATE_LIMIT_RULES = {
    */
   customerCreate: { limit: 10, windowSec: 60 },
   /**
+   * Creating an operator account (P64-01).
+   *
+   * Split out of `customerCreate`, which it used to share. The two are not the
+   * same act: creating a customer mints a tenant boundary and nobody does it in
+   * bulk, while onboarding a department's operators is a dozen accounts in a
+   * few minutes and is exactly what this screen is for. Sharing one bucket of
+   * ten meant a legitimate onboarding ran out, and refused the eleventh person
+   * for a reason about customers.
+   */
+  staffCreate: { limit: 30, windowSec: 60 },
+  /**
+   * Setting an operator's password (P64-01).
+   *
+   * Its own bucket, not `customerCreate`, and the reason is worth stating: they
+   * are different acts with different volumes. An administrator onboarding a
+   * team sets several passwords in a minute and creates no customers, and a
+   * shared bucket made the two starve each other — which showed up first as
+   * *unrelated* tests failing with 429, several cases after the ones that spent
+   * it.
+   *
+   * Not the sign-in limiter either. There, a limit is a security control
+   * against guessing; here the caller is already an authenticated administrator
+   * whom `canGrant` has already permitted, and the limit only stops a script
+   * from running away.
+   */
+  staffPasswordSet: { limit: 30, windowSec: 60 },
+  /**
    * Erasing a subject is irreversible, cross-tenant, and something an operator
    * does a handful of times a year. There is no version of "erase fifty
    * subjects quickly" that is not either a mistake or an attack.

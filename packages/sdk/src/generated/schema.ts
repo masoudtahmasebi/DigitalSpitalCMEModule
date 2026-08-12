@@ -473,6 +473,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/courses/{slug}/media-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Does every video host answer a Range request?
+         * @description Asks each distinct media URL in the course for **one byte** —
+         *     `Range: bytes=0-0` — and reports what came back.
+         *
+         *     The finding this exists for is that **`200` is a failure**. A host that
+         *     ignores the header answers the whole file with a `200`, looks healthy to
+         *     every other check ever written, and produces a player whose scrub bar
+         *     does nothing. To a learner that is indistinguishable from the anti-skip
+         *     gate refusing a seek on the accreditation's behalf, and the two need
+         *     different people to fix them.
+         *
+         *     One byte rather than a HEAD, because a HEAD tells you nothing about
+         *     whether ranges are honoured; one byte rather than the file, because
+         *     downloading a 700 MB module to answer a configuration question is its
+         *     own outage. Each distinct URL is asked once.
+         *
+         *     `s3://` references are not probed: the API signs those itself against an
+         *     S3-compatible bucket, which is Range-capable by definition, and probing
+         *     would mint a signature to throw away.
+         */
+        get: operations["adminCheckCourseMedia"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/branding/font": {
         parameters: {
             query?: never;
@@ -1147,13 +1184,58 @@ export interface paths {
         get: operations["adminListStaff"];
         put?: never;
         /**
-         * Invite an operator
-         * @description Creates the account with **no password** and returns a single-use token.
-         *     The token is returned rather than emailed; the operator passes the link
-         *     on. Until it is redeemed the account cannot sign in, so an un-redeemed
-         *     invitation is not a credential.
+         * Create an operator, with a password or with an invitation
+         * @description Two paths, chosen by whether `password` is present.
+         *
+         *     **With `password`** the account is usable immediately, no token is
+         *     minted, and `status` comes back as `created` with `token: null`. This is
+         *     the path for "make an account and hand somebody the password", which
+         *     needs no mail server and no invitee action.
+         *
+         *     **Without it** the account is created with no password at all and a
+         *     single-use invitation token is returned. Until that token is redeemed
+         *     the account cannot sign in, so an un-redeemed invitation is not a
+         *     credential. The token is returned rather than only emailed, so an
+         *     invitation is never lost because a mail server was down.
+         *
+         *     A password is checked against the same policy the invitee's own choice
+         *     goes through — an administrator cannot set a weaker password than the
+         *     person could — and a rejection is a 422 naming the rule.
          */
         post: operations["adminInviteStaff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/staff/{id}/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set or change an operator's password
+         * @description The administrative path, for "create an account and hand somebody the
+         *     password" and for "this operator is locked out". Self-service reset
+         *     covers neither: it needs a working sender and it needs the operator to
+         *     still be able to read the mailbox.
+         *
+         *     Permitted to exactly whoever may already change the account's scope —
+         *     being able to set a password is being able to act as the account, so it
+         *     must not reach further than being able to define it. A `customer_admin`
+         *     can set a password inside their own customer and cannot touch a
+         *     `super_admin`.
+         *
+         *     Setting a password revokes every session the account holds and every
+         *     outstanding invitation or reset link, so the new password is the only
+         *     way in.
+         */
+        post: operations["adminSetStaffPassword"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2289,6 +2371,35 @@ export interface components {
         };
         /** @enum {string} */
         ContentKind: "video" | "text" | "quiz" | "details" | "material";
+        MediaCheckReport: {
+            /**
+             * @description True when every source can be sought. The answer, with `sources` as
+             *     the evidence — a five-module course probes fifteen URLs and an
+             *     operator should not have to read fifteen rows to learn one thing.
+             */
+            seekable: boolean;
+            sources: components["schemas"]["MediaCheckResult"][];
+        };
+        MediaCheckResult: {
+            url: string;
+            /**
+             * @description `seekable` — answered 206 with a Content-Range.
+             *     `no_range` — answered, but ignored the header. The dangerous one.
+             *     `unreachable` — answered with an error status.
+             *     `failed` — the request itself did not complete.
+             *     `signed_by_us` — an `s3://` reference, not probed.
+             * @enum {string}
+             */
+            verdict: "seekable" | "no_range" | "unreachable" | "failed" | "signed_by_us";
+            /** @description The HTTP status, where the host answered at all. */
+            status?: number | null;
+            /**
+             * @description A short English explanation for an operator. Never the error's own
+             *     message: a fetch failure can quote the URL, and a signed URL carries
+             *     a credential in its query string.
+             */
+            detail?: string | null;
+        };
         /**
          * @description One playable rendition. A browser takes the first `<source>` whose
          *     `type` it can play and silently skips the rest, so the **order of the
@@ -3204,6 +3315,12 @@ export interface components {
             /** Format: email */
             email: string;
             displayName: string;
+            /**
+             * @description Present to create the account with this password and no
+             *     invitation link; absent to invite. Never returned by any
+             *     endpoint.
+             */
+            password?: string;
         };
         /**
          * @description Carries no password hash and no TOTP secret — only whether a second
@@ -5221,6 +5338,60 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
         };
     };
+    adminCheckCourseMedia: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The verdict, and the evidence behind it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaCheckReport"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     adminGetFont: {
         parameters: {
             query?: never;
@@ -6736,13 +6907,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        status: string;
-                        token: string;
+                        /** @enum {string} */
+                        status: "invited" | "created";
+                        /**
+                         * @description The invitation token, or `null` when a password was set
+                         *     and there is no link to hand over.
+                         */
+                        token: string | null;
+                        /** @description Whether the invitation mail was sent. */
+                        delivered?: boolean;
                     };
                 };
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminSetStaffPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The operator account's id. */
+                id: components["parameters"]["StaffId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    password: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Set. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
         };
     };

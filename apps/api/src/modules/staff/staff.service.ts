@@ -32,6 +32,7 @@ import {
   canResetSecondFactorOf,
   DEFAULT_CUSTOMER_SECOND_FACTOR,
   canGrant,
+  checkPassword,
   inviteStatus,
   resetStatus,
   sessionStatus,
@@ -570,7 +571,9 @@ export class StaffService {
      */
     inviteUrl?: (token: string) => string,
   ): Promise<
-    | { kind: "invited"; token: string; delivered: boolean }
+    // `adminUserId` so a caller that also wants to set a password has the row
+    // to set it on, without a second lookup by address (P64-01).
+    | { kind: "invited"; adminUserId: string; token: string; delivered: boolean }
     | { kind: "refused"; reason: string }
   > {
     const target: StaffScope = {
@@ -650,7 +653,72 @@ export class StaffService {
       detail: { role: input.role, scoped: input.customerId !== null, delivered },
     });
 
-    return { kind: "invited", token, delivered };
+    return { kind: "invited", adminUserId, token, delivered };
+  }
+
+  /**
+   * Set an operator's password directly, without an invitation link (P64-01).
+   *
+   * ## Why this exists
+   *
+   * Operator accounts used to be invitation-only: an administrator created the
+   * account, the console showed a single-use link, and the invitee chose their
+   * own password. That is a good default and it was the *only* path, which made
+   * two ordinary jobs impossible — "create an account and hand somebody the
+   * password" and "this operator is locked out, give them a new one". The
+   * self-service reset covers neither: it needs a working SMTP sender and it
+   * needs the operator to still be able to read the mailbox.
+   *
+   * ## Who may do it
+   *
+   * Exactly who may already change the account's scope: `canGrant` against the
+   * account's existing grants. A `customer_admin` can set the password of an
+   * operator inside their own customer; they cannot touch a `super_admin`,
+   * because they could not have granted that role. Same rule as `setScope`, and
+   * for the same reason — being able to set someone's password is being able to
+   * act as them, so it must not reach further than being able to define them.
+   *
+   * ## What it does besides setting the hash
+   *
+   * Revokes every session the account holds, and revokes any outstanding
+   * invitation or reset token. Both matter: a password change that left old
+   * sessions alive would not lock out whoever prompted it, and a live invite
+   * link would be a second credential for an account that now has a password.
+   */
+  async setAccountPassword(
+    adminUserId: string,
+    password: string,
+    actor: StaffScope & { readonly id: string },
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const accounts = await this.deps.repository.listAccounts();
+    const account = accounts.find((candidate) => candidate.id === adminUserId);
+    if (account === undefined) return { ok: false, reason: "not_found" };
+
+    const isSelf = account.id === actor.id;
+    for (const existing of account.grants) {
+      const check = canGrant(actor, scopeOf(existing), { targetIsSelf: isSelf });
+      if (!check.ok) return { ok: false, reason: check.reason };
+    }
+
+    // The account's own address is an identifier the password may not contain
+    // — the same check the invitee's own choice goes through, so an
+    // administrator cannot set a weaker password than the person could.
+    const verdict = checkPassword(password, { identifiers: [account.email] });
+    if (!verdict.ok) return { ok: false, reason: `password_${verdict.reason}` };
+
+    await this.deps.repository.setPassword(adminUserId, await hashPassword(password));
+    await this.deps.repository.revokeAllSessions(adminUserId, this.deps.now());
+    await this.deps.repository.revokeCredentialTokens(adminUserId);
+
+    await this.deps.audit.recordSystem({
+      actor: { identity: "staff", id: actor.id },
+      action: "staff.password_set_by_admin",
+      subject: adminUserId,
+      // That it happened and who did it. Never the password, and not the
+      // address either — the account id is enough to find the row.
+      detail: { self: isSelf },
+    });
+    return { ok: true };
   }
 
   /**

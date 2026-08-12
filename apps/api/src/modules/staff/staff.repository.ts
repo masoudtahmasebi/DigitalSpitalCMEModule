@@ -127,6 +127,14 @@ export interface StaffRepositoryPort {
   touchSession(sessionId: string, at: Date): Promise<void>;
   revokeSession(sessionId: string, at: Date): Promise<void>;
   revokeAllSessions(adminUserId: string, at: Date): Promise<void>;
+  /**
+   * Revoke every outstanding invitation and reset link for an account.
+   *
+   * Called when an administrator sets the password directly (P64-01): a live
+   * invite link would otherwise be a second credential for an account that now
+   * has a password, and whoever holds it could set the password again.
+   */
+  revokeCredentialTokens(adminUserId: string): Promise<void>;
 
   /** Stores an encrypted secret before it is confirmed. Does not enrol. */
   stageTotpSecret(adminUserId: string, secretEnc: Buffer): Promise<void>;
@@ -441,6 +449,14 @@ export class StaffRepository implements StaffRepositoryPort {
     await this.pool.query(
       `UPDATE admin_sessions SET revoked_at = $2 WHERE id = $1 AND revoked_at IS NULL`,
       [sessionId, at],
+    );
+  }
+
+  async revokeCredentialTokens(adminUserId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE admin_credential_tokens SET revoked_at = now()
+        WHERE admin_user_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL`,
+      [adminUserId],
     );
   }
 

@@ -40,6 +40,8 @@
  * refusal to touch a database it should not — see `openSeedPool`.
  */
 
+import { randomBytes } from "node:crypto";
+import { createSecretCipher } from "@ds/secrets";
 import type pg from "pg";
 import {
   enterTenant,
@@ -52,6 +54,7 @@ import {
   upsert,
 } from "./lib.js";
 import { describeDemoStaff, seedDemoStaff } from "./staff.js";
+import type { TenantSeedOptions } from "./medice-adhs.js";
 
 /**
  * Fixed, for the same reason as MEDICE's: `customers`' own RLS policy checks
@@ -200,7 +203,11 @@ const QUESTION_COUNT = 5;
  * inside the API image, and which stream the summary belongs on is the
  * entrypoint's business, not this function's.
  */
-export async function seedDsDemo(pool: pg.Pool): Promise<string> {
+export async function seedDsDemo(
+  pool: pg.Pool,
+  options: TenantSeedOptions = {},
+): Promise<string> {
+  const onlyIfMissing = options.onlyIfMissing ?? false;
   try {
     await pool.query("BEGIN");
     // See `resolveCustomerId`: adopt whatever already holds this slug.
@@ -209,6 +216,24 @@ export async function seedDsDemo(pool: pg.Pool): Promise<string> {
       slug: CUSTOMER_SLUG,
     });
     await enterTenant(pool, tenantId);
+
+    /*
+     * `--if-missing`: return before the first write (P65-01).
+     *
+     * After `enterTenant`, not before: `customers` is under RLS and read on the
+     * bare connection it matches zero rows — so the check would always say
+     * "missing" and the seed would rebuild the tenant on every deploy, deleting
+     * learner progress each time (CLAUDE.md §9.6).
+     */
+    if (onlyIfMissing) {
+      const { rowCount } = await pool.query("SELECT 1 FROM customers WHERE id = $1", [
+        tenantId,
+      ]);
+      if (rowCount !== null && rowCount > 0) {
+        await pool.query("ROLLBACK");
+        return "The DS test tenant already exists; nothing was written.";
+      }
+    }
 
     const customerId = await upsert(
       pool,
@@ -364,6 +389,7 @@ export async function seedDsDemo(pool: pg.Pool): Promise<string> {
       `  courses   ${CME_COURSE_SLUG}   3 CME-Punkte, ${String(QUESTION_COUNT)} Fragen`,
       `            ${FREE_COURSE_SLUG}   keine Punkte, keine VNR, kein Quiz`,
       "",
+      "Both courses are published and clickable now.",
       `Portal sign-in at /${PORTAL_PROJECT_SLUG}:`,
       `  E-Mail    ${PARTICIPANT_EMAIL}`,
       password.supplied
@@ -421,15 +447,17 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
        required_watch_percent, pass_threshold_percent, max_quiz_attempts,
        reveal_correct_answers, learning_objectives, target_audience,
        scientific_lead_name, scientific_lead_title, certificate_issue_place,
-       stamp_image, stamp_image_mime, signature_image, signature_image_mime
+       stamp_image, stamp_image_mime, signature_image, signature_image_mime,
+       vnr_password_enc
      ) VALUES (
-       $1,$2,$3,$4,$5,'on_demand','published',
+       $1,$2,$3,$4,$5,'on_demand',$17,
        ARRAY['Demo'], ARRAY['Erwachsene'], $6, $7, $8, $9,
        'online', 'DigitalSpital GmbH', $10, $11,
        100, 70, NULL,
-       true, $12, $13,
+       $18, $12, $13,
        $14, $15, 'Münster',
-       $16, 'image/png', $16, 'image/png'
+       $16, 'image/png', $16, 'image/png',
+       $19
      )
      ON CONFLICT (project_id, slug) DO UPDATE SET
        title = EXCLUDED.title,
@@ -449,6 +477,13 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
        stamp_image_mime = EXCLUDED.stamp_image_mime,
        signature_image = EXCLUDED.signature_image,
        signature_image_mime = EXCLUDED.signature_image_mime,
+       -- Only when there is not one already: an operator who set the real
+       -- credential through the console must not have it replaced by a re-run.
+       vnr_password_enc = COALESCE(courses.vnr_password_enc, EXCLUDED.vnr_password_enc),
+       -- status is deliberately absent: publishing is an operator decision and
+       -- a re-run of the seed must not undo it. reveal_correct_answers above is
+       -- not — it is a condition of the Anerkennung, so a re-run repairs a row
+       -- an older seed wrote with the answer key on.
        updated_at = now()
      RETURNING id`,
     [
@@ -477,8 +512,77 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
       "Muster-Leitung",
       "Dr. med.",
       PLACEHOLDER_IMAGE,
+      /*
+       * `draft` for the accredited course, and it is not a limitation of the
+       * seed (P63-02).
+       *
+       * A course awarding CME points may not be `published` while its VNR
+       * password is unset — `courses_published_cme_is_complete`. A seed cannot
+       * furnish that password: it authenticates DigitalSpital to a real
+       * accreditation interface, and a generated one would authenticate to
+       * nothing, turning a refusal that names a field into a 401 from a remote
+       * system. So the truthful seeded state is a fully authored draft, and
+       * `describeDsDemo` names the two steps that publish it.
+       *
+       * The point-free course has no Punktemeldung to be incomplete for and is
+       * published immediately, which is what keeps the demo tenant clickable
+       * the moment the seed finishes.
+       */
+      "published",
+      /*
+       * The answer key, refused on an accredited course since migration 0039
+       * (P56-01): with unlimited retries, per-question feedback *is* the answer
+       * key and the Lernerfolgskontrolle is a condition of the Anerkennung.
+       *
+       * This was a literal `true` for both courses, which is why the seed had
+       * been unable to run since 0039 landed — see P63-01. Derived from the
+       * accreditation now, so the next constraint on this column cannot be
+       * satisfied for one course and violated for the other.
+       */
+      !accredited,
+      // Only an accredited course has a Punktemeldung to authenticate, and the
+      // constraint only asks for one there.
+      accredited ? seededVnrPassword() : null,
     ],
   );
+}
+
+/**
+ * The VNR password a seed writes, so the course can be published (P64-02).
+ *
+ * ## Why a seed sets one at all
+ *
+ * `courses_published_cme_is_complete` refuses a published, point-awarding
+ * course whose `vnr_password_enc` is null. Leaving it null therefore meant the
+ * seeded course was a draft, the catalogue was empty, and `/medice` looked
+ * broken to everybody who opened it. A tenant nobody can look at is not a
+ * seeded tenant.
+ *
+ * ## Why that is safe, and where the real guard is
+ *
+ * This value authenticates nothing. It goes with the seeded VNR, which is a
+ * documented placeholder — `0000000000000000000` for MEDICE unless
+ * `SEED_MEDICE_VNR` overrides it, and a fictional Ärztekammer for the DS demo.
+ * A Punktemeldung carrying it would be refused by EIV-FOBI, and it cannot reach
+ * EIV-FOBI in the first place: the deploy refuses a live `EIV_BASE_URL` without
+ * `EIV_ALLOW_LIVE=yes` (ADR-0005). The credential that matters is the real one,
+ * and the real one is set through the console's write-only field, which
+ * overwrites this.
+ *
+ * ## Why it is random rather than a constant
+ *
+ * A constant in the repository is a credential in the repository — gitleaks is
+ * right to fail on those, and "it is only a placeholder" is how a real one
+ * eventually gets committed next to it. Nobody needs to read this value: the
+ * VNR password is used server-side only and is never returned by any API, so
+ * there is nothing to print and nothing to remember.
+ */
+function seededVnrPassword(): Buffer {
+  const cipher = createSecretCipher(
+    process.env["NODE_ENV"] ?? "development",
+    process.env["SECRETS_KMS_KEY"] ?? "",
+  );
+  return cipher.encrypt(randomBytes(24).toString("base64url"));
 }
 
 interface ContentSeed {

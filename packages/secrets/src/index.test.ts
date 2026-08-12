@@ -16,7 +16,7 @@ import {
   PlaintextSecretCipher,
   SecretCipherUnavailableError,
   SecretDecryptionError,
-} from "./secret-cipher.js";
+} from "./index.js";
 
 const KEY = randomBytes(32).toString("base64");
 

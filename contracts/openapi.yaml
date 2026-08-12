@@ -721,6 +721,43 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+  /admin/courses/{slug}/media-check:
+    get:
+      tags: [admin]
+      operationId: adminCheckCourseMedia
+      summary: Does every video host answer a Range request?
+      description: |
+        Asks each distinct media URL in the course for **one byte** —
+        `Range: bytes=0-0` — and reports what came back.
+
+        The finding this exists for is that **`200` is a failure**. A host that
+        ignores the header answers the whole file with a `200`, looks healthy to
+        every other check ever written, and produces a player whose scrub bar
+        does nothing. To a learner that is indistinguishable from the anti-skip
+        gate refusing a seek on the accreditation's behalf, and the two need
+        different people to fix them.
+
+        One byte rather than a HEAD, because a HEAD tells you nothing about
+        whether ranges are honoured; one byte rather than the file, because
+        downloading a 700 MB module to answer a configuration question is its
+        own outage. Each distinct URL is asked once.
+
+        `s3://` references are not probed: the API signs those itself against an
+        S3-compatible bucket, which is Range-capable by definition, and probing
+        would mint a signature to throw away.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: The verdict, and the evidence behind it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaCheckReport" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /admin/branding/font:
     get:
       tags: [admin]
@@ -1638,12 +1675,24 @@ paths:
     post:
       tags: [admin]
       operationId: adminInviteStaff
-      summary: Invite an operator
+      summary: Create an operator, with a password or with an invitation
       description: |
-        Creates the account with **no password** and returns a single-use token.
-        The token is returned rather than emailed; the operator passes the link
-        on. Until it is redeemed the account cannot sign in, so an un-redeemed
-        invitation is not a credential.
+        Two paths, chosen by whether `password` is present.
+
+        **With `password`** the account is usable immediately, no token is
+        minted, and `status` comes back as `created` with `token: null`. This is
+        the path for "make an account and hand somebody the password", which
+        needs no mail server and no invitee action.
+
+        **Without it** the account is created with no password at all and a
+        single-use invitation token is returned. Until that token is redeemed
+        the account cannot sign in, so an un-redeemed invitation is not a
+        credential. The token is returned rather than only emailed, so an
+        invitation is never lost because a mail server was down.
+
+        A password is checked against the same policy the invitee's own choice
+        goes through — an administrator cannot set a weaker password than the
+        person could — and a rejection is a 422 naming the rule.
       requestBody:
         required: true
         content:
@@ -1658,10 +1707,56 @@ paths:
                 type: object
                 required: [status, token]
                 properties:
-                  status: { type: string }
-                  token: { type: string }
+                  status:
+                    type: string
+                    enum: [invited, created]
+                  token:
+                    type: [string, "null"]
+                    description: |
+                      The invitation token, or `null` when a password was set
+                      and there is no link to hand over.
+                  delivered:
+                    type: boolean
+                    description: Whether the invitation mail was sent.
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /admin/staff/{id}/password:
+    post:
+      tags: [admin]
+      operationId: adminSetStaffPassword
+      summary: Set or change an operator's password
+      description: |
+        The administrative path, for "create an account and hand somebody the
+        password" and for "this operator is locked out". Self-service reset
+        covers neither: it needs a working sender and it needs the operator to
+        still be able to read the mailbox.
+
+        Permitted to exactly whoever may already change the account's scope —
+        being able to set a password is being able to act as the account, so it
+        must not reach further than being able to define it. A `customer_admin`
+        can set a password inside their own customer and cannot touch a
+        `super_admin`.
+
+        Setting a password revokes every session the account holds and every
+        outstanding invitation or reset link, so the new password is the only
+        way in.
+      parameters: [{ $ref: "#/components/parameters/StaffId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        "204": { description: Set. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
   /admin/staff/{id}/scope:
@@ -3454,6 +3549,48 @@ components:
       type: string
       enum: [video, text, quiz, details, material]
 
+    MediaCheckReport:
+      type: object
+      additionalProperties: false
+      required: [seekable, sources]
+      properties:
+        seekable:
+          type: boolean
+          description: |
+            True when every source can be sought. The answer, with `sources` as
+            the evidence — a five-module course probes fifteen URLs and an
+            operator should not have to read fifteen rows to learn one thing.
+        sources:
+          type: array
+          items: { $ref: "#/components/schemas/MediaCheckResult" }
+
+    MediaCheckResult:
+      type: object
+      additionalProperties: false
+      required: [url, verdict]
+      properties:
+        url: { type: string }
+        verdict:
+          type: string
+          enum: [seekable, no_range, unreachable, failed, signed_by_us]
+          description: |
+            `seekable` — answered 206 with a Content-Range.
+            `no_range` — answered, but ignored the header. The dangerous one.
+            `unreachable` — answered with an error status.
+            `failed` — the request itself did not complete.
+            `signed_by_us` — an `s3://` reference, not probed.
+        status:
+          type: integer
+          nullable: true
+          description: The HTTP status, where the host answered at all.
+        detail:
+          type: string
+          nullable: true
+          description: |
+            A short English explanation for an operator. Never the error's own
+            message: a fetch failure can quote the URL, and a signed URL carries
+            a credential in its query string.
+
     MediaSource:
       type: object
       description: |
@@ -4747,6 +4884,14 @@ components:
           properties:
             email: { type: string, format: email, maxLength: 320 }
             displayName: { type: string, minLength: 1, maxLength: 200 }
+            password:
+              type: string
+              minLength: 1
+              maxLength: 200
+              description: |
+                Present to create the account with this password and no
+                invitation link; absent to invite. Never returned by any
+                endpoint.
 
     StaffAccount:
       type: object

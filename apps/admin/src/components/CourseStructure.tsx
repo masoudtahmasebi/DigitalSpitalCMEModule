@@ -43,6 +43,7 @@ import type {
   MediaSourceWrite,
 } from "@ds/sdk";
 import { MEDIA_MIME_TYPES } from "@ds/domain";
+import { MediaCheckPanel } from "./MediaCheck.js";
 import { de } from "../locale/de.js";
 import { nullable, swap } from "../drafts.js";
 import {
@@ -170,6 +171,12 @@ export function CourseStructureEditor(props: {
         }
         onDone={setStructure}
       />
+
+      {/*
+       * Here rather than on the settings screen, because this is where the
+       * source URLs are typed and it is the URLs the check is about (P63-04).
+       */}
+      <MediaCheckPanel client={client} courseSlug={courseSlug} />
     </section>
   );
 }

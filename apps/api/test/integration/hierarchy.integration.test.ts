@@ -599,6 +599,10 @@ describe("the second factor cannot be stepped around", () => {
   });
 });
 
+/** Long enough for `checkPassword`, and containing no account identifier. */
+const STAFF_PASSWORD = "Sommerregen-Iserlohn-2026";
+const PASSWORD_ACCOUNT_EMAIL = `mit-passwort-${RUN}@ds.test`;
+
 describe("operator accounts", () => {
   /**
    * The check that matters. A `customer_admin` legitimately manages operators
@@ -628,6 +632,118 @@ describe("operator accounts", () => {
       [`invited-${RUN}@ds.test`],
     );
     expect(rows[0]?.password_hash).toBeNull();
+  });
+
+  /*
+   * Create with a password, and change one (P64-01).
+   *
+   * The whole reason this exists: an operator account could only be created by
+   * invitation, and its password could only be changed by the operator via a
+   * mail the platform might not be able to send. Both cases below were
+   * impossible, and both were asked for by name.
+   *
+   * **One** account is created across these four cases, on purpose.
+   * `POST /admin/staff` is on the `customerCreate` limiter, and a suite that
+   * spends the bucket makes *later, unrelated* tests fail with 429 — which is
+   * how the first version of this block presented, and is a worse failure than
+   * the one it was testing for.
+   */
+  it("creates an account with a password, mints no token, and stores a hash", async () => {
+    const { status, body } = await asStaff(superSession, "POST", "/admin/staff", {
+      email: PASSWORD_ACCOUNT_EMAIL,
+      displayName: "Mit Passwort",
+      role: "customer_admin",
+      customerId: existingCustomerId,
+      departmentId: null,
+      password: STAFF_PASSWORD,
+    });
+
+    expect(status).toBe(201);
+    expect(body.status).toBe("created");
+    // The assertion that separates this from the invitation path: no link,
+    // because there is nothing to redeem.
+    expect(body.token).toBeNull();
+
+    const { rows } = await seedPool.query<{ hash: string | null; live: string }>(
+      `SELECT u.password_hash AS hash,
+              (SELECT count(*) FROM admin_credential_tokens t
+                WHERE t.admin_user_id = u.id
+                  AND t.accepted_at IS NULL AND t.revoked_at IS NULL)::text AS live
+         FROM admin_users u WHERE u.email = $1`,
+      [PASSWORD_ACCOUNT_EMAIL],
+    );
+    expect(rows[0]?.hash).toEqual(expect.any(String));
+    // No live invitation either: a token beside a password is a second
+    // credential for the same account.
+    expect(rows[0]?.live).toBe("0");
+  });
+
+  it("changes that password, and the stored hash moves", async () => {
+    const before = await seedPool.query<{ id: string; hash: string }>(
+      "SELECT id, password_hash AS hash FROM admin_users WHERE email = $1",
+      [PASSWORD_ACCOUNT_EMAIL],
+    );
+    const id = before.rows[0]?.id ?? "";
+
+    const changed = await asStaff(superSession, "POST", `/admin/staff/${id}/password`, {
+      password: `${STAFF_PASSWORD}-zwei`,
+    });
+    expect(changed.status).toBe(204);
+
+    const after = await seedPool.query<{ hash: string }>(
+      "SELECT password_hash AS hash FROM admin_users WHERE id = $1",
+      [id],
+    );
+    expect(after.rows[0]?.hash).not.toBe(before.rows[0]?.hash);
+  });
+
+  it("refuses a password the policy rejects, naming the rule and not the value", async () => {
+    const { rows } = await seedPool.query<{ id: string }>(
+      "SELECT id FROM admin_users WHERE email = $1",
+      [PASSWORD_ACCOUNT_EMAIL],
+    );
+
+    const { status, body } = await asStaff(
+      superSession,
+      "POST",
+      `/admin/staff/${rows[0]?.id ?? ""}/password`,
+      { password: "geheim" },
+    );
+
+    expect(status).toBe(422);
+    expect(body.detail).toContain("zu kurz");
+    /*
+     * §9.5: an error names invalid fields, never their contents.
+     *
+     * The value here is deliberately not a German word from the message. The
+     * first version of this test rejected `"kurz"` and asserted the body did
+     * not contain `"kurz"` — which the correct message *does*, in "zu kurz". A
+     * test that cannot distinguish the rejected value from the rule's own name
+     * is not testing the rule.
+     */
+    expect(JSON.stringify(body)).not.toContain("geheim");
+  });
+
+  it("refuses a customer administrator setting a super administrator's password", async () => {
+    /*
+     * The escalation this must not permit, and the reason the check is
+     * `canGrant` rather than the `staff_user` capability: setting a password is
+     * being able to sign in as that account, so a customer administrator who
+     * could do it to a super administrator would own the platform.
+     */
+    const { rows } = await seedPool.query<{ id: string }>(
+      `SELECT u.id FROM admin_users u
+         JOIN admin_user_roles r ON r.admin_user_id = u.id
+        WHERE r.role = 'super_admin' LIMIT 1`,
+    );
+
+    const { status } = await asStaff(
+      tenantSession,
+      "POST",
+      `/admin/staff/${rows[0]?.id ?? ""}/password`,
+      { password: `${STAFF_PASSWORD}-drei` },
+    );
+    expect(status).toBe(403);
   });
 
   it("refuses a customer administrator inviting a super administrator", async () => {

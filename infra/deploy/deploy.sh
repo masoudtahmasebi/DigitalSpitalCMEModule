@@ -561,6 +561,36 @@ if [[ "$RUN_MIGRATIONS" == "1" ]]; then
       -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD_URL}@postgres:5432/${POSTGRES_DB}" \
       --entrypoint node api dist/seed-ds-default.js --if-missing
   fi
+
+  # -------------------------------------------------------------------------
+  # 4a-bis. The client tenants, once, on an installation that has none (P65-01)
+  # -------------------------------------------------------------------------
+  #
+  # ## Why these now run here, having been excluded on purpose
+  #
+  # They were excluded because they rebuild a course's content tree
+  # unconditionally, deleting learner progress against it. That reasoning was
+  # right about the seeds as they were and wrong as a conclusion, because the
+  # consequence was that `https://…/medice` answered "Diesen Bereich gibt es
+  # nicht" on a correctly deployed installation — reported three times — for the
+  # single reason that nobody had SSH'd in and run one command.
+  #
+  # A seed the deploy cannot run is a seed somebody has to remember, and over
+  # four months nobody did. So the seeds gained `--if-missing`, which returns
+  # before the first write once the tenant exists. The destructive rebuild is
+  # still there and still what an operator gets when they run `./dsc seed medice`
+  # deliberately; it is simply not what an unattended deploy does.
+  #
+  # Off with `SEED_CLIENT_TENANTS=no` for an installation that manages its
+  # tenants by hand and does not want ours appearing.
+  if [[ "${SEED_CLIENT_TENANTS:-yes}" == "yes" ]]; then
+    for tenant_seed in seed-medice seed-ds; do
+      log "Ensuring the ${tenant_seed#seed-} tenant exists"
+      compose run --rm \
+        -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD_URL}@postgres:5432/${POSTGRES_DB}" \
+        --entrypoint node api "dist/${tenant_seed}.js" --if-missing
+    done
+  fi
 fi
 
 # ---------------------------------------------------------------------------

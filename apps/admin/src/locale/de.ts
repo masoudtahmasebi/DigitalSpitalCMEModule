@@ -148,6 +148,28 @@ export const de = {
     name: "Name",
     email: "E-Mail-Adresse",
     role: "Rolle",
+    /*
+     * Setting a password directly (P64-01).
+     *
+     * The hint is the load-bearing part: the form's behaviour changes with a
+     * field left empty, and until it said so the answer to "how do I create an
+     * account with a password" was not on the screen at all.
+     */
+    password: "Passwort (optional)",
+    passwordHint:
+      "Wird ein Passwort eingetragen, ist das Konto sofort nutzbar und es wird kein Einladungslink erzeugt. Bleibt das Feld leer, wird stattdessen eine Einladung erstellt. Mindestens 12 Zeichen; das Passwort darf die E-Mail-Adresse nicht enthalten.",
+    createWithPassword: "Konto mit Passwort anlegen",
+    createdTitle: "Konto angelegt",
+    createdBody: (email: string): string =>
+      `${email} kann sich ab sofort mit dem vergebenen Passwort anmelden. Es wurde kein Einladungslink erzeugt.`,
+
+    setPassword: "Passwort setzen",
+    setPasswordFor: (email: string): string => `Passwort für ${email} setzen`,
+    newPassword: "Neues Passwort",
+    newPasswordHint:
+      "Mindestens 12 Zeichen. Alle offenen Sitzungen und Einladungslinks dieses Kontos werden dabei ungültig.",
+    settingPassword: "Wird gesetzt …",
+
     roleHint: "Bestimmt, was dieses Konto anlegen und ändern darf.",
     roleCourseEditor: "Nur Fortbildungen",
     roleDepartmentAdmin: "Abteilung",
@@ -507,6 +529,40 @@ export const de = {
     removeSource: (url: string): string => `Videoquelle „${url}“ entfernen`,
     sourcesMissing:
       "Ein Video braucht mindestens eine Quelle — ohne sie kann die Fortbildung nicht angesehen werden.",
+
+    /*
+     * The Range check (P62-03, P63-04).
+     *
+     * Written for the person who has to act on it, which is why no verdict here
+     * is a status code. `mediaNoRange` is the one the whole check exists for: a
+     * host that answers 200 to a Range request looks healthy everywhere else,
+     * and its symptom in the player is identical to the anti-skip gate — so the
+     * sentence has to say which of the two it is.
+     */
+    mediaCheck: "Medien prüfen",
+    mediaOk: "In Ordnung",
+    mediaProblem: "Problem",
+    mediaChecking: "Videoserver werden geprüft …",
+    mediaCheckIntro:
+      "Fragt jeden Videoserver nach einem einzelnen Byte und prüft, ob er Bereichsabrufe beantwortet. Ohne Bereichsabrufe lässt sich im Player nicht springen — und für Teilnehmende sieht das genauso aus wie die Sperre gegen Vorspulen.",
+    mediaCheckAllGood:
+      "Alle Videoquellen beantworten Bereichsabrufe. Im Player kann innerhalb des bereits angesehenen Bereichs gesprungen werden.",
+    mediaCheckProblems:
+      "Nicht alle Videoquellen sind in Ordnung. Bitte die unten genannten Adressen an den Betreiber des Videoservers weitergeben.",
+    mediaCheckNone: "Diese Fortbildung hat noch keine Videoquellen.",
+    mediaCheckFailed:
+      "Die Prüfung konnte nicht durchgeführt werden. Bitte später erneut versuchen.",
+    mediaVerdict: {
+      seekable: "In Ordnung — Bereichsabrufe werden beantwortet.",
+      no_range:
+        "Der Videoserver liefert die Datei vollständig und ignoriert Bereichsabrufe. Der Player kann deshalb nicht springen. Das ist eine Einstellung des Videoservers und nicht der Fortbildung.",
+      unreachable:
+        "Der Videoserver hat die Adresse abgelehnt. Meist ist die Adresse falsch geschrieben oder die Datei ist nicht öffentlich.",
+      failed:
+        "Der Videoserver war nicht erreichbar. Das kann an der Adresse, am Zertifikat oder am Server selbst liegen.",
+      signed_by_us:
+        "Datei aus dem eigenen Speicher — wird beim Abspielen signiert und muss nicht geprüft werden.",
+    },
     posterUrl: "Vorschaubild",
     posterHint:
       "Standbild vor dem Start. Ohne Vorschaubild zeigt der Player bis zum ersten Bild eine schwarze Fläche.",

@@ -61,6 +61,20 @@ const Scope = z.object({
 const Invitation = Scope.extend({
   email: z.string().email().max(320),
   displayName: z.string().trim().min(1).max(200),
+  /*
+   * Set the password now instead of sending an invitation (P64-01).
+   *
+   * Optional, and the two paths are genuinely different rather than one being
+   * a shortcut for the other. With a password the account is usable the moment
+   * this returns and no token is minted; without one it is invited exactly as
+   * before. Bounded at 200 because that is what `checkPassword` accepts, and a
+   * rejection here should name the length rather than come back from argon2.
+   */
+  password: z.string().min(1).max(200).optional(),
+});
+
+const PasswordBody = z.object({
+  password: z.string().min(1).max(200),
 });
 
 const Disabled = z.object({ disabled: z.boolean() });
@@ -80,9 +94,15 @@ export class StaffAccountsController {
   }
 
   @Post()
-  // Nobody invites operators in bulk, and a loop that did would fill the
-  // console's account list with rows somebody then has to disable one by one.
-  @RateLimit("customerCreate")
+  /*
+   * Its own bucket since P64-01, no longer shared with customer creation.
+   *
+   * The old comment said "nobody invites operators in bulk", and onboarding a
+   * department is exactly that: a dozen accounts in a few minutes. Sharing a
+   * bucket of ten with tenant creation refused the eleventh person for a reason
+   * about customers. A loop that runs away still stops, thirty in.
+   */
+  @RateLimit("staffCreate")
   async invite(@Body() body: unknown, @Req() request: Request) {
     const input = Invitation.parse(body);
     const actor = actorScope(request);
@@ -106,10 +126,60 @@ export class StaffAccountsController {
     );
 
     if (outcome.kind === "refused") throw refusal(outcome.reason);
+
+    /*
+     * A password was supplied, so finish the job here (P64-01).
+     *
+     * The account is created by the same call either way — it has to be, since
+     * the scope check and the row insert live there — and the password is set
+     * immediately afterwards, which also revokes the invitation token that call
+     * minted. So the account ends up with a password and no live link, which is
+     * exactly what "create an operator with this password" should mean.
+     *
+     * A rejected password is a 400 on an account that now exists as an
+     * invitation. That is the honest outcome and it is recoverable from the
+     * screen: the row is listed, and `POST :id/password` sets one.
+     */
+    if (input.password !== undefined) {
+      const set = await this.service.setAccountPassword(
+        outcome.adminUserId,
+        input.password,
+        actor,
+      );
+      if (!set.ok) throw refusal(set.reason);
+      return { status: "created", token: null, delivered: false };
+    }
+
     // `delivered` so the console can stop telling somebody to hand over a link
     // that is already in the invitee's inbox. The token comes back either way:
     // an invitation must not be lost because a mail server was down.
     return { status: "invited", token: outcome.token, delivered: outcome.delivered };
+  }
+
+  /**
+   * Set or change an operator's password (P64-01).
+   *
+   * On its own limiter. Not the login path's — there a limit is a control
+   * against guessing, and here the caller is an authenticated administrator
+   * `canGrant` has already permitted. Not account creation's either: an
+   * administrator onboarding a team sets several passwords and creates no
+   * customers, and sharing the bucket makes the two starve each other.
+   */
+  @Post(":id/password")
+  @HttpCode(204)
+  @RateLimit("staffPasswordSet")
+  async setPassword(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<void> {
+    const input = PasswordBody.parse(body);
+    const result = await this.service.setAccountPassword(
+      id,
+      input.password,
+      actorScope(request),
+    );
+    if (!result.ok) throw refusal(result.reason);
   }
 
   @Post(":id/scope")
@@ -216,12 +286,35 @@ function actorScope(request: Request): StaffScope & { id: string } {
  */
 function refusal(reason: string): AppError {
   if (reason === "not_found") return AppError.notFound("no such staff account");
+
+  /*
+   * A rejected password is a 400 naming the rule, not a 403 (P64-01).
+   *
+   * `checkPassword` refuses for four reasons and an administrator can act on
+   * every one of them — so the sentence says which, in the words of the person
+   * typing the password. Never the value: an error naming invalid *fields* and
+   * not their contents is the standing rule (CLAUDE.md §9.5).
+   */
+  const rejection = PASSWORD_REJECTIONS[reason];
+  if (rejection !== undefined) {
+    return new AppError("validation", `password rejected: ${reason}`, rejection);
+  }
+
   return new AppError(
     "forbidden",
     `staff account change refused: ${reason}`,
     "Sie sind nicht berechtigt, dieses Konto zu ändern.",
   );
 }
+
+const PASSWORD_REJECTIONS: Readonly<Record<string, string>> = {
+  password_too_short: "Das Passwort ist zu kurz. Es braucht mindestens 12 Zeichen.",
+  password_too_long: "Das Passwort ist zu lang. Zulässig sind höchstens 200 Zeichen.",
+  password_too_common:
+    "Dieses Passwort ist in bekannten Datenlecks aufgetaucht und kann nicht verwendet werden.",
+  password_contains_identifier:
+    "Das Passwort darf nicht die E-Mail-Adresse oder den Namen des Kontos enthalten.",
+};
 
 /**
  * The origin a link in an outbound mail may point at.
