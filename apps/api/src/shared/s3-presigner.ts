@@ -245,6 +245,48 @@ export class S3Presigner implements Presigner {
   }
 
   /**
+   * The bucket's own CORS configuration, read or written (P70-01).
+   *
+   * ## Why the platform touches a bucket-level setting at all
+   *
+   * Every other method here addresses one object, deliberately: a signature that
+   * can only be spent on one key is the whole argument of this file. This one
+   * addresses the bucket, and it is the exception because of what the setting
+   * *is*. The console uploads straight to the bucket, so whether that upload can
+   * happen at all is decided by the bucket's CORS rule — and a rule a human has
+   * to remember to apply is a rule that is missing. It was, on production, for
+   * as long as uploads have existed (P70-01).
+   *
+   * `?cors` is a subresource, so the canonical URI is the bucket with an empty
+   * key — the same shape `presignList` uses — and `cors` joins the canonical
+   * query string, which means a signature minted to write the CORS rule cannot
+   * be replayed against `?policy` or `?acl`.
+   *
+   * ## Content-MD5
+   *
+   * Amazon documents it as required for `PutBucketCors`; Ceph, which is what
+   * Hetzner runs, accepts the request without it. Signing and sending it
+   * satisfies both, and costs one hash of a few hundred bytes.
+   */
+  presignBucketCors(
+    method: "GET" | "PUT",
+    expiresInSec: number,
+    now: Date,
+    contentMd5?: string,
+  ): string {
+    return this.presign(
+      method,
+      "",
+      expiresInSec,
+      now,
+      contentMd5 === undefined
+        ? {}
+        : { "content-md5": contentMd5, "content-type": "application/xml" },
+      { cors: "" },
+    );
+  }
+
+  /**
    * The one implementation of SigV4 query signing.
    *
    * Every method goes through here rather than each growing its own copy: the

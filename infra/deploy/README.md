@@ -84,14 +84,20 @@ cd ~/Repositories/DigitalSpitalCMEModule/infra/deploy
 ./deploy.sh
 ```
 
-### Two things the bucket needs that this file cannot set
+### What the bucket needs beyond these variables
 
-**CORS**, because the browser PUTs to the bucket from
-`verwaltung.<BASE_DOMAIN>` and the bucket has to allow that origin and the
-`PUT` method. Without it the upload fails in the browser's preflight and
-nothing reaches the API to be logged.
+**CORS — applied and proved by the deploy (P70-01).** The browser PUTs to the
+bucket from `verwaltung.<BASE_DOMAIN>`, so the bucket has to allow that origin
+and the `PUT` method; without it the upload fails in the browser's preflight and
+nothing reaches the API to be logged. `deploy.sh` runs `dist/bucket-cors.js`,
+which writes the rule and then asks the bucket the browser's own question — an
+unsigned `OPTIONS` preflight. **A deploy whose bucket would refuse an upload
+fails**, with the exact document to paste at the provider in its output.
 
-**Not public.** Every object is fetched through a short-lived signature the API
+This was a manual step until every installation turned out never to have had it
+done. See P70.
+
+**Not public**, and still by hand. Every object is fetched through a short-lived signature the API
 mints only after the gate agrees. A publicly readable bucket makes every
 customer's material world-readable by URL, and the per-customer key prefix
 stops meaning anything.
@@ -249,19 +255,20 @@ docker compose -f docker-compose.prod.yml --env-file .env.production logs -f api
 docker compose -f docker-compose.prod.yml --env-file .env.production logs caddy | grep -i "certificate\|acme"
 ```
 
-| Symptom                                        | Usually                                                                       |
-| ---------------------------------------------- | ----------------------------------------------------------------------------- |
-| Browser TLS warning                            | DNS does not point here yet, or `acme_ca` staging is still uncommented        |
-| API healthy, site unreachable                  | Caddy could not get a certificate — check the ACME lines in its log           |
-| Every request 401s                             | `KEYCLOAK_ISSUER` / `KEYCLOAK_AUDIENCE` do not match the realm                |
-| Widget blocked in the browser                  | The WordPress origin is missing from `CORS_ALLOWED_ORIGINS`                   |
-| Videos 403 after a while                       | `S3_URL_TTL_SEC` shorter than a lesson; presigned URLs expire                 |
-| Submissions stuck queued                       | `EIV_ALLOW_LIVE` unset while `EIV_BASE_URL` points live — by design           |
-| API cannot authenticate to PG                  | `DS_APP_PASSWORD` changed in the env file but the deploy was skipped          |
-| Staff sign-in succeeds, then "session expired" | `STAFF_COOKIE_DOMAIN` missing or not a parent of both the console and the API |
-| Console loads, every request fails             | `API_DOMAIN_URL` unset, so the CSP's `connect-src` is `'self'` only           |
-| Console loads, requests are CORS-refused       | `https://verwaltung.…` missing from `CORS_ALLOWED_ORIGINS`                    |
-| Portal has no certificate                      | `PORTAL_DOMAIN` unset, so Caddy has a site block with an empty address        |
+| Symptom                                        | Usually                                                                                         |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Browser TLS warning                            | DNS does not point here yet, or `acme_ca` staging is still uncommented                          |
+| API healthy, site unreachable                  | Caddy could not get a certificate — check the ACME lines in its log                             |
+| Every request 401s                             | `KEYCLOAK_ISSUER` / `KEYCLOAK_AUDIENCE` do not match the realm                                  |
+| Widget blocked in the browser                  | The WordPress origin is missing from `CORS_ALLOWED_ORIGINS`                                     |
+| Videos 403 after a while                       | `S3_URL_TTL_SEC` shorter than a lesson; presigned URLs expire                                   |
+| Submissions stuck queued                       | `EIV_ALLOW_LIVE` unset while `EIV_BASE_URL` points live — by design                             |
+| API cannot authenticate to PG                  | `DS_APP_PASSWORD` changed in the env file but the deploy was skipped                            |
+| Staff sign-in succeeds, then "session expired" | `STAFF_COOKIE_DOMAIN` missing or not a parent of both the console and the API                   |
+| Console loads, every request fails             | `API_DOMAIN_URL` unset, so the CSP's `connect-src` is `'self'` only                             |
+| Console loads, requests are CORS-refused       | `https://verwaltung.…` missing from `CORS_ALLOWED_ORIGINS`                                      |
+| Portal has no certificate                      | `PORTAL_DOMAIN` unset, so Caddy has a site block with an empty address                          |
+| Video upload does nothing, API log clean       | The bucket has no CORS rule — the deploy now fails on this rather than letting it ship (P70-01) |
 
 ---
 

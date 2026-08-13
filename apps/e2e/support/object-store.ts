@@ -18,9 +18,9 @@
  *
  * So the harness stands up a bucket. Not a stub that accepts everything: a
  * bucket that verifies the SigV4 query signature, enforces the signed headers,
- * enforces the expiry, and answers CORS the way a real bucket configured per
- * `docs/object-storage.md` does. An upload that would 403 against Hetzner
- * 403s here.
+ * enforces the expiry, and answers CORS only once something has configured it
+ * — the way a real bucket does. An upload that would 403 against Hetzner 403s
+ * here, and one Hetzner's CORS rule would block is blocked here.
  *
  * ## Why the verifier is written out rather than imported
  *
@@ -66,6 +66,12 @@ export interface ObjectStore {
   get(key: string): StoredObject | undefined;
   /** Every request that was refused, and why — the failure message's material. */
   refusals(): readonly string[];
+  /**
+   * The origins the bucket currently allows, or `undefined` while it has no
+   * CORS rule at all. `stack.ts` asserts on this so that "the deploy's applier
+   * ran" is a stated fact rather than an inference from the upload working.
+   */
+  corsOrigins(): readonly string[] | undefined;
   /** The CA file the API must trust to HEAD an object it just approved. */
   readonly caFile: string;
   stop(): Promise<void>;
@@ -101,12 +107,16 @@ export const STORE_REGION = "eu-central-1";
 export async function startObjectStore(): Promise<ObjectStore> {
   const objects = new Map<string, StoredObject>();
   const refusals: string[] = [];
+  // A box rather than a plain `let`, so `handle` can write it back — the bucket
+  // is unconfigured until something calls `PutBucketCors`, which is the state a
+  // real bucket is created in.
+  const bucketCors: { current: BucketCors | undefined } = { current: undefined };
   const certificate = selfSignedLoopbackCertificate();
 
   const server: Server = createServer(
     { key: certificate.key, cert: certificate.cert },
     (request, response) => {
-      void handle(request, response, objects, refusals);
+      void handle(request, response, objects, refusals, bucketCors);
     },
   );
 
@@ -123,48 +133,87 @@ export async function startObjectStore(): Promise<ObjectStore> {
     keys: () => [...objects.keys()],
     get: (key) => objects.get(key),
     refusals: () => [...refusals],
+    corsOrigins: () => bucketCors.current?.origins,
     stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
 
 /**
- * The CORS a bucket must be configured with for a browser upload to work at
- * all, and the reason this harness answers preflight rather than allowing
- * everything.
+ * The bucket starts with **no CORS configuration**, exactly as a new one does
+ * (P70-01).
  *
- * `docs/object-storage.md` documents the same three lists for the real bucket.
- * A deployment whose bucket allows GET but not PUT produces precisely the
- * defect the client hit — the console asks for a ticket, gets one, and the
- * browser refuses to send it — so the harness models the check rather than
- * waving requests through.
+ * ## Why the harness used to allow everything, and why that was the bug
+ *
+ * This file previously answered every preflight with a fixed permissive list.
+ * That made the sixteen browser tests green while production's bucket refused
+ * every upload the console attempted — the harness modelled a bucket somebody
+ * had already configured, and configuring it was the step nobody had done. A
+ * fixture that assumes the missing setting is present is a fixture that cannot
+ * find the missing setting (CLAUDE.md §9.1, third form).
+ *
+ * So the rule now has to be applied, by the same `dist/bucket-cors.js` the
+ * deploy runs — see `stack.ts`. Delete that call and the journey fails at the
+ * upload, which is what makes it evidence.
  */
-const ALLOWED_METHODS = "GET,PUT,HEAD,DELETE";
-const ALLOWED_HEADERS = "content-type,content-length,x-amz-copy-source";
+interface BucketCors {
+  readonly origins: readonly string[];
+  readonly methods: readonly string[];
+  readonly headers: readonly string[];
+  readonly maxAgeSeconds: number;
+}
+
+/**
+ * What the harness answers a preflight with, given what has been configured.
+ *
+ * Written as the browser reads it: an origin that is not on the list gets *no*
+ * `Access-Control-Allow-Origin`, not an empty one, because that is the wire
+ * behaviour the browser turns into "blocked by CORS policy".
+ */
+function preflightHeaders(
+  cors: BucketCors | undefined,
+  origin: string,
+): Record<string, string> | undefined {
+  if (cors === undefined) return undefined;
+  if (!cors.origins.includes(origin) && !cors.origins.includes("*")) return undefined;
+
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-methods": cors.methods.join(","),
+    "access-control-allow-headers": cors.headers.join(","),
+    "access-control-max-age": String(cors.maxAgeSeconds),
+    // The browser reads the length off the response to a ranged GET, and
+    // without this the player cannot tell how much it received.
+    "access-control-expose-headers": "content-length,content-range,etag",
+  };
+}
 
 async function handle(
   request: IncomingMessage,
   response: ServerResponse,
   objects: Map<string, StoredObject>,
   refusals: string[],
+  bucketCors: { current: BucketCors | undefined },
 ): Promise<void> {
   const origin = request.headers.origin;
-  const cors: Record<string, string> =
-    origin === undefined
-      ? {}
-      : {
-          "access-control-allow-origin": origin,
-          // The browser reads the length off the response to a ranged GET, and
-          // without this the player cannot tell how much it received.
-          "access-control-expose-headers": "content-length,content-range,etag",
-        };
+  const allowed =
+    origin === undefined ? undefined : preflightHeaders(bucketCors.current, origin);
+  const cors: Record<string, string> = allowed ?? {};
 
   if (request.method === "OPTIONS") {
-    response.writeHead(204, {
-      ...cors,
-      "access-control-allow-methods": ALLOWED_METHODS,
-      "access-control-allow-headers": ALLOWED_HEADERS,
-      "access-control-max-age": "600",
-    });
+    if (allowed === undefined) {
+      // 403 and no headers: Ceph's answer to a preflight it has no rule for,
+      // and the shape the browser reports as "No 'Access-Control-Allow-Origin'
+      // header is present on the requested resource."
+      refuse(
+        response,
+        {},
+        refusals,
+        403,
+        `preflight from ${origin ?? "no origin"}: the bucket has no CORS rule for it`,
+      );
+      return;
+    }
+    response.writeHead(204, allowed);
     response.end();
     return;
   }
@@ -187,6 +236,13 @@ async function handle(
     // once the XML is stripped — and `uploadToTicket` shows the status, not the
     // body, so the harness matching S3's status is what matters.
     refuse(response, cors, refusals, 403, `${request.method} ${key}: ${verdict}`);
+    return;
+  }
+
+  // `?cors` is a bucket subresource, so it is checked before the key-addressed
+  // operations below — `key` is empty here and means the bucket itself.
+  if (url.searchParams.has("cors")) {
+    await bucketCorsSubresource(request, response, refusals, bucketCors);
     return;
   }
 
@@ -218,6 +274,81 @@ async function handle(
         `${request.method ?? "?"} is not implemented`,
       );
   }
+}
+
+/**
+ * `PutBucketCors` and `GetBucketCors`, parsed rather than accepted.
+ *
+ * The parse is the assertion: a document whose `AllowedMethod` the harness
+ * cannot find produces a bucket that still refuses `PUT`, so a malformed rule
+ * fails at the upload rather than at the write — which is the order the real
+ * bucket fails in too.
+ */
+async function bucketCorsSubresource(
+  request: IncomingMessage,
+  response: ServerResponse,
+  refusals: string[],
+  bucketCors: { current: BucketCors | undefined },
+): Promise<void> {
+  if (request.method === "GET") {
+    if (bucketCors.current === undefined) {
+      refuse(response, {}, refusals, 404, "the bucket has no CORS configuration");
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/xml" });
+    response.end(
+      `<?xml version="1.0" encoding="UTF-8"?><CORSConfiguration><CORSRule>` +
+        bucketCors.current.origins
+          .map((value) => `<AllowedOrigin>${escapeXml(value)}</AllowedOrigin>`)
+          .join("") +
+        `</CORSRule></CORSConfiguration>`,
+    );
+    return;
+  }
+
+  if (request.method !== "PUT") {
+    refuse(response, {}, refusals, 501, `${request.method ?? "?"} ?cors`);
+    return;
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(chunk as Buffer);
+  const body = Buffer.concat(chunks).toString("utf8");
+
+  /*
+   * `Content-MD5`, checked. Amazon requires it for this operation and Ceph does
+   * not, so the platform sends it to satisfy both — and a harness that ignored
+   * it would leave "we send a correct one" with nothing asserting it.
+   */
+  const declared = request.headers["content-md5"];
+  if (typeof declared === "string") {
+    const actual = createHash("md5").update(body, "utf8").digest("base64");
+    if (declared !== actual) {
+      refuse(response, {}, refusals, 400, `?cors: Content-MD5 ${declared} ≠ ${actual}`);
+      return;
+    }
+  }
+
+  const tags = (name: string): string[] =>
+    [...body.matchAll(new RegExp(`<${name}>([^<]*)</${name}>`, "gu"))].map(
+      (match) => match[1] ?? "",
+    );
+
+  const origins = tags("AllowedOrigin");
+  const methods = tags("AllowedMethod");
+  if (origins.length === 0 || methods.length === 0) {
+    refuse(response, {}, refusals, 400, "?cors: no AllowedOrigin or no AllowedMethod");
+    return;
+  }
+
+  bucketCors.current = {
+    origins,
+    methods,
+    headers: tags("AllowedHeader"),
+    maxAgeSeconds: Number(tags("MaxAgeSeconds")[0] ?? "0"),
+  };
+  response.writeHead(200);
+  response.end();
 }
 
 function refuse(
