@@ -24,6 +24,7 @@
  */
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { applicableSecondFactorPolicy } from "@ds/domain";
 import type { ApiClient, SecondFactorPolicies, SecondFactorPolicy } from "@ds/sdk";
 import { describeError } from "../api.js";
 import { de } from "../locale/de.js";
@@ -74,6 +75,14 @@ export function Security(props: {
   const [policies, setPolicies] = useState<SecondFactorPolicies | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [saved, setSaved] = useState(false);
+  /**
+   * Kept apart from `saved` (P69-01).
+   *
+   * Removing your own second factor and saving a policy are different acts with
+   * different consequences, and one "Gespeichert." for both is what let a
+   * *rotation* read as a removal.
+   */
+  const [removed, setRemoved] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -94,6 +103,7 @@ export function Security(props: {
   ): Promise<void> {
     try {
       await client.adminSetSecondFactorPolicy({ customerId, policy });
+      setRemoved(false);
       setSaved(true);
       setError(undefined);
       await load();
@@ -106,7 +116,8 @@ export function Security(props: {
   async function removeOwn(): Promise<void> {
     try {
       await client.adminRemoveOwnSecondFactor();
-      setSaved(true);
+      setSaved(false);
+      setRemoved(true);
       setError(undefined);
     } catch (cause) {
       setSaved(false);
@@ -127,6 +138,27 @@ export function Security(props: {
   const forCustomer = new Map(
     policies.customers.map((row) => [row.customerId, row.policy]),
   );
+
+  /*
+   * The rule this operator is actually under (P69-01).
+   *
+   * `applicableSecondFactorPolicy` is the API's own — strictest wins across
+   * every scope you hold a grant in — rather than a second opinion computed
+   * here. A super administrator belongs to no customer, so their grant is the
+   * platform's; everybody else is under the strictest of the customers they can
+   * see, which is the set this screen was already given.
+   *
+   * It decides one thing: whether "entfernen" below means *removed* or
+   * *rotated*. Getting that wrong is what produced the report.
+   */
+  const ownPolicy = applicableSecondFactorPolicy(
+    props.isSuperAdmin
+      ? [{ customerId: null }]
+      : props.customers.map((customer) => ({ customerId: customer.id })),
+    policies.platform,
+    forCustomer,
+  );
+  const removalRotates = ownPolicy === "required";
 
   return (
     // No heading here: `Page` draws it from the navigation entry (P30-02).
@@ -187,10 +219,40 @@ export function Security(props: {
               ? de.security.ownFactorEnrolled
               : de.security.ownFactorNone}
           </p>
+
+          {/*
+            What the button will actually do, before it is pressed (P69-01).
+
+            Under `required` the removal succeeds and the policy does not
+            change, so the next sign-in goes to enrolment — a rotation. Reported
+            from production as "i removed the 2factor ... and again after login,
+            it is asking for setting a 2factor auth", which is two true
+            statements that together read as a broken control.
+
+            Saying it here rather than weakening the rule: a removal that also
+            relaxed the policy would let anyone holding a live session turn the
+            second factor off for good.
+          */}
+          {props.ownSecondFactorEnrolled && removalRotates ? (
+            <Notice tone="warning">{de.security.removeOwnRotates}</Notice>
+          ) : null}
+
+          {removed ? (
+            <Notice tone="success">
+              {removalRotates
+                ? de.security.removeOwnRotated
+                : de.security.removeOwnRemoved}
+            </Notice>
+          ) : null}
+
           {props.ownSecondFactorEnrolled ? (
             <ConfirmButton
               label={de.security.removeOwn}
-              confirmLabel={de.security.removeOwnConfirm}
+              confirmLabel={
+                removalRotates
+                  ? de.security.removeOwnConfirmRotates
+                  : de.security.removeOwnConfirm
+              }
               cancelLabel={de.common.cancel}
               onConfirm={() => void removeOwn()}
             />

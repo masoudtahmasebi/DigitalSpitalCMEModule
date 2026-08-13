@@ -394,6 +394,43 @@ In order, before touching code:
    question, a person clicking is the wrong instrument.
 5. **Break it and watch the check go red.** Two green runs is not proof —
    P32-01 recorded "verified by running twice" and the third run failed.
+6. **Would the journey have noticed?** (§9.13) — `pnpm test:e2e -- --grep "ganze"`
+   walks the whole product in twenty seconds, and most reports from a browser
+   are about something only it can see.
+
+### 9.13 The tests call the API; the person uses the product
+
+Five defects reached production in one day with 512 integration tests, sixteen
+browser tests and every static gate green (P68). Each one lived somewhere an API
+test structurally cannot look:
+
+| Defect                     | Lived in                                                      |
+| -------------------------- | ------------------------------------------------------------- |
+| Enrolment answered 403     | Two cookies on one request. Every suite sends exactly one.    |
+| Every video upload blocked | A CSP header set by Caddy. No suite read a header from Caddy. |
+| `/medice` empty            | The deploy's seed step. No suite runs a deploy.               |
+| A form silently discarded  | The **order** two controls are used in, on one screen.        |
+| A control the API refuses  | A screen offering it anyway.                                  |
+
+An API test asserts that a function answers correctly. It cannot assert that
+anything **calls** it, that the browser is allowed to make the request, or that
+the screen a person is looking at agrees with the answer. That is the same shape
+as §9.3 and §9.7, one layer further out.
+
+**So:** `apps/e2e/tests/journey.spec.ts` walks the whole product on every
+`pnpm test:e2e`, and the deploy runs the same spec against the installation.
+When a change touches a form, a gate, a session, a header or a deploy step, the
+question is _would the journey have noticed?_
+
+Two rules keep it honest, and both are the §9.1 trap in a new place:
+
+1. **Never relax the product to make the suite pass.** The watch gate keeps its
+   real threshold and the fixture is an eight-second video instead. The widget's
+   shadow root stays closed and the harness opens it in its own browser — with a
+   separate test, run without the patch, asserting the product still closes it.
+2. **The rig must be shaped like the deployment.** It serves the Caddyfile's own
+   policy and runs a signature-verifying bucket. A rig without those is how
+   sixteen green browser tests coexisted with an upload nobody could perform.
 
 ---
 

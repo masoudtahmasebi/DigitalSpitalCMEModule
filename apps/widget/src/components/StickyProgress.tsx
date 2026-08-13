@@ -153,7 +153,7 @@ export function StickyProgress(props: {
           {props.onResume === undefined ? null : (
             <div className="mt-4">
               <Button variant="cta" onClick={props.onResume}>
-                {props.state.progress.completedCount === 0
+                {props.state.progress.status === "not_started"
                   ? de.overview.start
                   : de.overview.resume}
               </Button>

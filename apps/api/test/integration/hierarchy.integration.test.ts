@@ -2074,6 +2074,46 @@ describe("configuring where platform mail comes from (P40-01)", () => {
  * to open the *reads*, and a fix that quietly opened the writes as well would
  * let a department administrator withdraw a Teilnahmebescheinigung.
  */
+/**
+ * A staff session is not a participant session, even in one browser (P68-02).
+ *
+ * Both apps talk to the same API host, so an operator with the console open
+ * sends `ds_staff_session` on every request the portal makes. CSRF is not
+ * checked on a GET, so `GET /auth/participant/me` — the portal's entire test
+ * for "am I signed in" — answered 200 for a staff cookie, and the portal drew a
+ * signed-in catalogue for somebody who could not enrol in anything on it.
+ *
+ * Driven with a **real, valid** super-administrator session, because the fix
+ * defers before the session is resolved: a made-up cookie would be refused by
+ * the old code too, and the test would have been green on the bug.
+ */
+describe("the portal does not accept a staff session (P68-02)", () => {
+  it("refuses /auth/participant/me for a valid staff cookie", async () => {
+    const response = await fetch(`${baseUrl}/auth/participant/me`, {
+      /*
+       * The slug's value does not matter and cannot: the staff plane defers on
+       * the path, and the learner path then refuses for want of a credential
+       * before it ever resolves a project. What matters is that the header is
+       * present at all, because that is the shape the portal sends.
+       */
+      headers: { cookie: superSession.cookie, "x-ds-project": `egal-${RUN}` },
+    });
+
+    expect(
+      response.status,
+      "a staff session authenticated the learner plane — the portal will draw a " +
+        "signed-in catalogue for an operator who cannot enrol in anything on it",
+    ).toBe(401);
+  });
+
+  it("still lets the same session use the console", async () => {
+    // The other half, and the reason the fix is scoped to a path rather than to
+    // a header: `X-DS-Project` is a legitimate staff tenant scope, and keying
+    // on it would have signed every department administrator out.
+    expect((await asStaff(superSession, "GET", "/admin/customers")).status).toBe(200);
+  });
+});
+
 describe("a department administrator's screens actually load (P41-02)", () => {
   let departmental: StaffSession;
   let projectSlug: string;

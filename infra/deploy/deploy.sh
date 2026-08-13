@@ -584,7 +584,7 @@ if [[ "$RUN_MIGRATIONS" == "1" ]]; then
   # Off with `SEED_CLIENT_TENANTS=no` for an installation that manages its
   # tenants by hand and does not want ours appearing.
   if [[ "${SEED_CLIENT_TENANTS:-yes}" == "yes" ]]; then
-    for tenant_seed in seed-medice seed-ds; do
+    for tenant_seed in seed-medice seed-ds seed-ds-test; do
       log "Ensuring the ${tenant_seed#seed-} tenant exists"
       compose run --rm \
         -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD_URL}@postgres:5432/${POSTGRES_DB}" \

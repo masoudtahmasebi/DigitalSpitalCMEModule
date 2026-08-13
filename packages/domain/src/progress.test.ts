@@ -42,6 +42,33 @@ const done = (id: string): ContentProgressRecord => ({
 });
 
 describe("rollupProgress", () => {
+  /**
+   * The course agrees with the modules inside it about the word "started"
+   * (P68-02).
+   *
+   * It did not: modules and chapters asked whether any content had left
+   * `not_started`, and the course asked whether any had been *completed*. One
+   * response therefore carried `course.status === "not_started"` above
+   * `modules.m1.status === "in_progress"`, which is CLAUDE.md §4 invariant 6
+   * being false inside a single function.
+   *
+   * A watched-but-unfinished video is the case that separates the two, and it
+   * is the ordinary one: a physician who stops half way through the first
+   * chapter.
+   */
+  it("calls a course started when any content has been started, not only completed", () => {
+    const rollup = rollupProgress(course, [
+      { contentId: "c1", status: "in_progress", watchedPercent: 50 },
+    ]);
+
+    expect(rollup.course.status).toBe("in_progress");
+    expect(rollup.modules["m1"]?.status).toBe("in_progress");
+    expect(rollup.chapters["m1k1"]?.status).toBe("in_progress");
+    // And nothing is claimed to be finished on the strength of it.
+    expect(rollup.course.completedCount).toBe(0);
+    expect(rollup.modules["m2"]?.status).toBe("not_started");
+  });
+
   it("rolls status up through content, chapter, module and course", () => {
     const rollup = rollupProgress(course, [done("c1"), done("c2")]);
 

@@ -71,6 +71,47 @@ const resetConfirmSchema = z.object({
   newPassword: z.string().min(1).max(MAX_PASSWORD_LENGTH),
 });
 
+/**
+ * A staff session is not a participant session, even on the same browser
+ * (P68-02).
+ *
+ * ## What went wrong, and why it is not the same as P66-01
+ *
+ * Both apps call the same API host, so an operator signed into the console
+ * sends `ds_staff_session` on every request the *portal* makes. P66-01 fixed
+ * the unsafe half of that: a failed staff CSRF check with a learner credential
+ * present now defers instead of refusing, which is what made enrolment answer
+ * 403 for anybody with the console open in another tab.
+ *
+ * The safe half was left, and it is worse than a 403 because it succeeds.
+ * `GET /auth/participant/me` is the portal's whole test for "am I signed in",
+ * and a staff cookie passed it — CSRF is not checked on a GET. So an operator
+ * opening the portal saw a **signed-in catalogue**: their name in the header,
+ * courses on the page, and a refusal on the first thing they clicked, because
+ * enrolling is a POST and there is no learner credential behind it.
+ *
+ * That is CLAUDE.md §9.2 exactly — a screen offering what the system will
+ * refuse — and it was invisible to every existing test, because the API suites
+ * send one credential per request and no browser test had ever had two.
+ *
+ * ## Why the fix is on the plane and not on the roles
+ *
+ * `@Roles` on these routes lists staff roles deliberately, and that stays: a
+ * *learner-plane* principal can carry `customer_admin` when a customer's
+ * Keycloak realm grants it, and refusing them would lock a physician out of
+ * their own portal. The question here is a different one — which plane
+ * authenticated this request — and `principal.identity` is the field that
+ * answers it (ADR-0012).
+ *
+ * A 401 rather than a 403: from the portal's point of view nobody is signed in,
+ * and 401 is what makes it draw the sign-in form instead of an error.
+ */
+function requireLearnerPlane(principal: Principal): void {
+  if (principal.identity !== "learner") {
+    throw AppError.unauthenticated("this route is on the participant plane");
+  }
+}
+
 @Controller("auth/participant")
 export class ParticipantAuthController {
   constructor(
@@ -240,6 +281,8 @@ export class ParticipantAuthController {
   @Get("me")
   @Roles("learner", "department_admin", "customer_admin", "super_admin")
   async me(@CurrentPrincipal() principal: Principal) {
+    requireLearnerPlane(principal);
+
     /*
      * `mustChangePassword` is here and not only on the sign-in response, and
      * that is the difference between a requirement and a suggestion.
@@ -316,6 +359,8 @@ export class ParticipantAuthController {
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
   ): Promise<void> {
+    requireLearnerPlane(principal);
+
     const parsed = passwordChangeSchema.safeParse(body);
     if (!parsed.success) throw this.weakPassword();
 

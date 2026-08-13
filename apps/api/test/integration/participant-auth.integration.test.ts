@@ -360,6 +360,42 @@ describe("signing in and seeing a catalogue", () => {
   });
 });
 
+/**
+ * A learner's own request wins over a staff cookie riding along (P68-02).
+ *
+ * Both apps talk to one API host, so a physician using the portal while an
+ * operator's console is open in another tab sends **both** cookies. The staff
+ * plane resolved first, so a lesson read was answered for the operator — who
+ * holds no enrolment — and the widget showed "Diese Fortbildung wurde nicht
+ * gefunden" in the middle of a Fortbildung.
+ *
+ * The staff cookie here is deliberately a plausible-looking value rather than a
+ * real session: the fix defers **before** the session is resolved, so what this
+ * asserts is that the presence of the cookie changes nothing at all on the
+ * learner surface. A real session is asserted against in
+ * `hierarchy.integration.test.ts`, where one exists.
+ */
+describe("a staff cookie riding along does not displace the learner (P68-02)", () => {
+  it("still answers the catalogue for the learner's own session", async () => {
+    const token = sessionCookie(await signIn(alpha));
+
+    const courses = await fetch(`${baseUrl}/courses`, {
+      headers: {
+        cookie: `${PARTICIPANT_COOKIE}=${token!}; ds_staff_session=an-operator-elsewhere`,
+        "x-ds-project": alpha.projectSlug,
+      },
+    });
+
+    expect(
+      courses.status,
+      "a staff cookie in the same jar took over a learner's request",
+    ).toBe(200);
+
+    const body = (await courses.json()) as { items: Array<{ slug: string }> };
+    expect(body.items.map((c) => c.slug)).toContain(alpha.courseSlug);
+  });
+});
+
 describe("the tenant boundary, over the wire", () => {
   it("refuses a session presented against another tenant", async () => {
     // The one that matters. Without the project check in

@@ -149,6 +149,12 @@ jobs:
     # debugging would look anyway.
     environment:
       name: production
+    # Consumed by the `journey` job below, which drives the deployed hostnames
+    # from outside rather than guessing at them (P68-03).
+    outputs:
+      api_domain: ${{ steps.derive.outputs.api_domain }}
+      portal_domain: ${{ steps.derive.outputs.portal_domain }}
+      admin_domain: ${{ steps.derive.outputs.admin_domain }}
     env:
       REPO_DIR: ${{ vars.DEPLOY_REPO_DIR || '~/Repositories/DigitalSpitalCMEModule' }}
       SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -205,6 +211,25 @@ jobs:
           [ -n "$api_domain" ] || { echo "::error::the host reported no API domain"; exit 1; }
           echo "API domain: ${api_domain}"
           echo "api_domain=${api_domain}" >> "$GITHUB_OUTPUT"
+
+          # The other two hostnames, for the same reason and from the same
+          # place: the post-deploy journey drives the portal and the console,
+          # and a smoke test that guessed at their names would be testing a
+          # deployment nobody made (P68-03).
+          other_domains=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd ${REPO_DIR}/infra/deploy && . ./domains.sh && \
+             set -a && . \$HOME/ds-education/config.env && set +a && \
+             ds_derive_domains && printf '%s %s' \"\$PORTAL_DOMAIN\" \"\$ADMIN_DOMAIN\"")
+
+          portal_domain=${other_domains%% *}
+          admin_domain=${other_domains##* }
+          [ -n "$portal_domain" ] && [ -n "$admin_domain" ] || {
+            echo "::error::the host reported no portal or admin domain"; exit 1; }
+          echo "Portal domain: ${portal_domain}"
+          echo "Admin domain: ${admin_domain}"
+          echo "portal_domain=${portal_domain}" >> "$GITHUB_OUTPUT"
+          echo "admin_domain=${admin_domain}" >> "$GITHUB_OUTPUT"
 
       # Detached at an exact commit, not a branch tip. A `git pull` would
       # deploy whatever `main` had become in the twenty minutes since CI went
@@ -278,3 +303,64 @@ jobs:
           echo "::error::Deployment failed. The previous version is still running —"
           echo "::error::deploy.sh exits non-zero without swapping if any step fails."
           echo "::error::To roll back explicitly: run this workflow with rollback_tag set."
+
+  # ---------------------------------------------------------------------------
+  # The whole journey, in a browser, against what was just deployed (P68-03)
+  # ---------------------------------------------------------------------------
+  #
+  # `/health` answering is not evidence that a physician can earn a CME point.
+  # Every defect the client found on 12.08 was downstream of a healthy API: a
+  # CSP header that blocked every upload, a cookie collision that refused every
+  # enrolment, a tenant whose seed had never run. This job signs in as an
+  # operator, builds a Fortbildung with a real video upload, publishes it, and
+  # then completes it as a physician and downloads the Bescheinigung — on the
+  # hostnames the client looks at, through the real Caddy, against the real
+  # bucket.
+  #
+  # It runs from a GitHub runner rather than on the host, deliberately: the
+  # point is to see the deployment the way the internet sees it, and a browser
+  # inside the machine would miss exactly the layer that broke.
+  #
+  # A failure here fails the workflow run. A deploy that cannot enrol a learner
+  # is not a successful deploy, and the previous images are still on disk —
+  # `deploy.sh --rollback <tag>` is the way back.
+  journey:
+    name: The whole journey, in a browser
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Only Chromium. The suite runs one project and a full browser matrix
+      # would triple a job whose value is the round trip, not the engine.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Drive the deployed installation
+        env:
+          E2E_PORTAL_URL: https://${{ needs.deploy.outputs.portal_domain }}
+          E2E_ADMIN_URL: https://${{ needs.deploy.outputs.admin_domain }}
+          E2E_API_URL: https://${{ needs.deploy.outputs.api_domain }}
+          # Must match what the host seeded the DS Test operator with. Unset
+          # here and unset there means both use the seed's own default, which is
+          # self-describing rather than realistic on purpose (P33-02).
+          SEED_TEST_STAFF_PASSWORD: ${{ secrets.SEED_TEST_STAFF_PASSWORD || 'ds-test-operator-2026' }}
+        run: pnpm test:smoke
+
+      - name: Keep the trace when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: journey-trace
+          path: apps/e2e/test-results/
+          retention-days: 7

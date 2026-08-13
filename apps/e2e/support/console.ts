@@ -39,6 +39,17 @@ export function menu(page: Page) {
 export interface ConsoleCredentials {
   readonly email: string;
   readonly password: string;
+  /**
+   * Where the console is, when it is not the local rig's (P68-03).
+   *
+   * The first version of this helper navigated to `ADMIN_BASE` unconditionally,
+   * and the smoke run — pointed at a deployment — obediently drove
+   * `127.0.0.1:4181` and failed with a connection refused. A helper that
+   * silently ignores which installation it was asked for is the same shape as
+   * every other check in this repository that could not go red where it
+   * mattered, so the base is an argument now.
+   */
+  readonly baseUrl?: string | undefined;
 }
 
 /**
@@ -52,7 +63,7 @@ export async function signInToConsole(
   page: Page,
   credentials: ConsoleCredentials,
 ): Promise<void> {
-  await page.goto(`${ADMIN_BASE}/`);
+  await page.goto(`${credentials.baseUrl ?? ADMIN_BASE}/`);
   await page.getByLabel("E-Mail-Adresse").fill(credentials.email);
   await page.getByLabel("Passwort").fill(credentials.password);
   await page.getByRole("button", { name: "Anmelden" }).click();

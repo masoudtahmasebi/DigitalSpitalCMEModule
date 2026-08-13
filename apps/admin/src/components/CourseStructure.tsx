@@ -970,7 +970,35 @@ function DurationProbe(props: {
   onDuration: (seconds: number) => void;
 }) {
   const url = probeableSourceUrl(props.sources);
-  if (url === undefined) return null;
+
+  /*
+   * No probeable source, and the two reasons are not the same thing (P68-02).
+   *
+   * With no sources at all there is nothing to say: `sourcesMissing` above
+   * already says it, and a second notice would be noise.
+   *
+   * With sources that are all `s3://`, there is. A reference is a key in our
+   * storage rather than a URL this browser can fetch, so the button cannot
+   * work — and it used to simply not be drawn. That is the case an author
+   * reaches by uploading a video through this very form, which is now the
+   * normal way to attach one: the one control that gets `durationSec` right
+   * disappears exactly when the author used the console to put the file there,
+   * with nothing on screen to say why.
+   *
+   * An absent control reads as an unfinished feature (CLAUDE.md §9.4). This
+   * says what happened and what to do instead. It does not pretend the gap is
+   * fine — P68 records the fix, which is for the API to hand back a readable
+   * URL for an object it has just accepted.
+   */
+  if (url === undefined) {
+    const hasSources = props.sources.some((source) => source.url.trim() !== "");
+    if (!hasSources) return null;
+    return (
+      <p className="mt-1 text-xs text-[color:var(--ds-ink-muted)]">
+        {de.structure.durationDetectUnavailable}
+      </p>
+    );
+  }
 
   return (
     <div className="mt-1 space-y-1">

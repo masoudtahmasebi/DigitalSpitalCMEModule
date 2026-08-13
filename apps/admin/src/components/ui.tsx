@@ -74,6 +74,24 @@ export function Field(props: {
 export function TextInput(props: {
   id: string;
   value: string;
+  /**
+   * For a field with no visible `<label>` (P68-02).
+   *
+   * ## Why this is declared rather than left to slip through
+   *
+   * It was not, and three controls lost their names because of it. The video
+   * sources editor renders a row of URL, Format and Bezeichnung with the column
+   * headings above the list rather than a label per cell, and passes
+   * `aria-label` to each — correctly. These components did not accept it, so
+   * React dropped it and a screen reader announced "Eingabefeld, leer" three
+   * times per rendition.
+   *
+   * TypeScript did not object: a **hyphenated** JSX attribute is never checked
+   * against a component's props, because it cannot be a JavaScript identifier.
+   * So the rule was written, looked enforced, and was not — CLAUDE.md §9.3, in
+   * the one place the compiler cannot see.
+   */
+  "aria-label"?: string | undefined;
   type?: string | undefined;
   maxLength?: number | undefined;
   autoComplete?: string | undefined;
@@ -88,6 +106,7 @@ export function TextInput(props: {
   return (
     <input
       id={props.id}
+      aria-label={props["aria-label"]}
       type={props.type ?? "text"}
       value={props.value}
       maxLength={props.maxLength}
@@ -101,6 +120,8 @@ export function TextInput(props: {
 
 export function TextArea(props: {
   id: string;
+  /** See `TextInput` — declared so a passed label is not silently dropped. */
+  "aria-label"?: string | undefined;
   value: string;
   rows?: number | undefined;
   maxLength?: number | undefined;
@@ -109,6 +130,7 @@ export function TextArea(props: {
   return (
     <textarea
       id={props.id}
+      aria-label={props["aria-label"]}
       value={props.value}
       rows={props.rows ?? 4}
       maxLength={props.maxLength}
@@ -120,6 +142,8 @@ export function TextArea(props: {
 
 export function Select<T extends string>(props: {
   id: string;
+  /** See `TextInput` — declared so a passed label is not silently dropped. */
+  "aria-label"?: string | undefined;
   value: T;
   options: ReadonlyArray<readonly [T, string]>;
   onChange: (value: T) => void;
@@ -127,6 +151,7 @@ export function Select<T extends string>(props: {
   return (
     <select
       id={props.id}
+      aria-label={props["aria-label"]}
       value={props.value}
       onChange={(event) => props.onChange(event.target.value as T)}
       className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"

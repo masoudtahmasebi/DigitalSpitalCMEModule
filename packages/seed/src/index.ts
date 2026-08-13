@@ -49,6 +49,7 @@ export {
 } from "./lib.js";
 export { seedDsDefault, type DsDefaultOptions } from "./ds-default.js";
 export { seedDsDemo } from "./ds-demo.js";
+export { describeDsTest, seedDsTest, type DsTestCredentials } from "./ds-test.js";
 export { seedMediceAdhs } from "./medice-adhs.js";
 export {
   describeDemoStaff,

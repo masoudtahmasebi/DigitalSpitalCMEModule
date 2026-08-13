@@ -251,6 +251,38 @@ export const de = {
 
     removeOwn: "Eigenen zweiten Faktor entfernen",
     removeOwnConfirm: "Wirklich entfernen",
+
+    /*
+     * What "entfernen" means while the rule says "verpflichtend" (P69-01).
+     *
+     * Reported from production: *"i removed the 2factor for an account, and
+     * again after login, it is asking for setting a 2factor auth."* Both halves
+     * are true, and together they read as a broken button.
+     *
+     * Under `required` the removal succeeds and the **policy does not change**,
+     * so the next sign-in goes straight to enrolment — which is a rotation, not
+     * a removal. That is the correct security behaviour: a removal that also
+     * relaxed the rule would let anyone holding a live session turn the second
+     * factor off for good. What was wrong is that the screen did not say so,
+     * and P66-02 made the button work without making its meaning match its
+     * label (CLAUDE.md §9.2, §9.4).
+     *
+     * So the consequence is stated before the click, and the confirmation says
+     * what it is really confirming.
+     */
+    removeOwnRotates:
+      "Die Regel Ihres Bereichs ist „Verpflichtend“. Ein Entfernen setzt den " +
+      "zweiten Faktor deshalb nur zurück: beim nächsten Anmelden richten Sie " +
+      "einen neuen ein — genau das, was ein Gerätewechsel braucht. Wenn Sie " +
+      "gar keinen zweiten Faktor mehr verwenden möchten, stellen Sie zuerst " +
+      "oben die Regel auf „Freigestellt“.",
+    removeOwnConfirmRotates: "Zurücksetzen und neu einrichten",
+    removeOwnRotated:
+      "Der zweite Faktor wurde zurückgesetzt. Beim nächsten Anmelden richten " +
+      "Sie einen neuen ein — die Regel Ihres Bereichs bleibt „Verpflichtend“.",
+    removeOwnRemoved:
+      "Der zweite Faktor wurde entfernt. Sie melden sich künftig nur mit " +
+      "Passwort an.",
     /*
      * Says what to do next, not only that the door is shut (P38-07).
      *
@@ -575,6 +607,17 @@ export const de = {
       `Länge übernommen: ${String(seconds)} Sekunden.`,
     durationDetectFailed:
       "Die Länge konnte nicht aus der Quelle gelesen werden. Das ist bei Speicher-Schlüsseln (s3://) und bei Servern ohne CORS-Freigabe normal — bitte die Länge in Sekunden eintragen.",
+    /**
+     * Why the button is not there at all (P68-02).
+     *
+     * The message above is for a probe that ran and failed. This one is for the
+     * case where there is nothing to click, which is what an author reaches
+     * after uploading a video here — the file is a storage key, not an address
+     * this browser can open. Saying so is the difference between a limitation
+     * and a screen that looks half-built.
+     */
+    durationDetectUnavailable:
+      "Bei hochgeladenen Videos kann die Länge hier nicht automatisch gelesen werden — die Datei liegt im Dateispeicher und nicht unter einer für den Browser abrufbaren Adresse. Bitte die Länge in Sekunden eintragen.",
     captionsUrl: "Untertitel-Datei (WebVTT)",
     captionsHint:
       "URL einer .vtt-Datei mit deutschen Untertiteln. Untertitel sind Stufe A der Barrierefreiheitsrichtlinien (WCAG 1.2.2, EN 301 549): Ohne sie können hörbeeinträchtigte Ärztinnen und Ärzte die Fortbildung nicht absolvieren — und der Fortschritt wird sie als nicht angesehen erfassen.",

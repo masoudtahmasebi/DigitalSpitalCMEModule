@@ -47,8 +47,24 @@ export function StickyMetaBar(props: {
   onResume: (() => void) | undefined;
 }) {
   const { course } = props;
+  /**
+   * "Starten" or "fortsetzen", decided by the server's own `status` (P68-02).
+   *
+   * It was `completedCount === 0`, which is a different question: a physician who
+   * had watched half a module and come back the next evening was offered
+   * **Fortbildung starten** — an invitation to begin something they were already
+   * in the middle of, next to a panel saying "50 % der Videoinhalte angesehen".
+   * Nothing was lost by pressing it, but the label was the one piece of the
+   * screen that disagreed with the rest.
+   *
+   * `status` is `not_started | in_progress | completed`, decided by the API from
+   * the same rollup everything else here renders — so the label now cannot
+   * disagree with the progress beside it.
+   */
   const resumeLabel =
-    props.state.progress.completedCount === 0 ? de.overview.start : de.overview.resume;
+    props.state.progress.status === "not_started"
+      ? de.overview.start
+      : de.overview.resume;
 
   return (
     <div className="mb-4">
@@ -143,7 +159,7 @@ export function ProgressCard(props: {
         action={
           props.onResume === undefined ? null : (
             <Button variant="cta" onClick={props.onResume}>
-              {props.state.progress.completedCount === 0
+              {props.state.progress.status === "not_started"
                 ? de.overview.start
                 : de.overview.resume}
             </Button>

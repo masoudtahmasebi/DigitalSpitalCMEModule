@@ -26,6 +26,8 @@ import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { extname, join, normalize } from "node:path";
+import { cspFromCaddyfile } from "./csp.js";
+import { startObjectStore, type ObjectStore } from "./object-store.js";
 
 export const PORTS = { api: 3100, portal: 4180, admin: 4181 } as const;
 
@@ -55,10 +57,24 @@ const MIME: Record<string, string> = {
  * portal's most important feature not at all, and every tenant test would fail
  * for a reason that has nothing to do with the product.
  */
-function serveSpa(root: string, config: Record<string, string>): Server {
+function serveSpa(
+  root: string,
+  config: Record<string, string>,
+  /**
+   * The Content-Security-Policy Caddy would serve for this app (P68-02).
+   *
+   * Not optional and not a convenience. Sixteen browser tests were green while
+   * every video upload in the deployed console was blocked by a CSP, because
+   * this server sent no policy and no test had ever read one. Serving the
+   * deployed policy here is what makes that class of defect reachable from a
+   * developer's machine — CLAUDE.md §9.1, first form.
+   */
+  csp: string,
+): Server {
   const configBody = `window.__DS_CONFIG__ = ${JSON.stringify(config)};\n`;
 
   return createServer((request, response) => {
+    response.setHeader("content-security-policy", csp);
     void (async () => {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
 
@@ -99,6 +115,8 @@ function serveSpa(root: string, config: Record<string, string>): Server {
 }
 
 export interface Stack {
+  /** The harness's own bucket — see `object-store.ts`. */
+  readonly storage: ObjectStore;
   stop(): Promise<void>;
 }
 
@@ -127,12 +145,37 @@ export async function startStack(options: {
   migrationUrl: string;
   kmsKey: string;
 }): Promise<Stack> {
+  /*
+   * The bucket comes up first, because the API reads its address at boot and a
+   * partial S3 configuration is treated as no configuration at all
+   * (`hasObjectStorage`) — which would silently disable every upload endpoint
+   * and turn the journey's upload step into a "not configured" message.
+   */
+  const storage = await startObjectStore();
+
   const api: ChildProcess = spawn("node", ["apps/api/dist/main.js"], {
     cwd: options.repo,
     stdio: "pipe",
     env: {
       ...process.env,
       NODE_ENV: "test",
+      /*
+       * Object storage, for real (P68-02).
+       *
+       * Until now this rig had none, so `objectStorageFor` returned undefined,
+       * the upload endpoints answered "not configured", and the one path the
+       * client found broken on 12.08 had no test anywhere. The store verifies
+       * SigV4, so a signature bug fails here rather than in a browser.
+       */
+      S3_ENDPOINT: storage.endpoint,
+      S3_REGION: storage.region,
+      S3_BUCKET: storage.bucket,
+      S3_ACCESS_KEY_ID: storage.accessKeyId,
+      S3_SECRET_ACCESS_KEY: storage.secretAccessKey,
+      S3_FORCE_PATH_STYLE: "true",
+      // The bucket is on a certificate this run generated, and `verifyUpload`
+      // HEADs it from inside this process's child. See `tls.ts`.
+      NODE_EXTRA_CA_CERTS: storage.caFile,
       API_PORT: String(PORTS.api),
       DATABASE_URL: options.databaseUrl,
       MIGRATION_DATABASE_URL: options.migrationUrl,
@@ -178,12 +221,30 @@ export async function startStack(options: {
     }
   });
 
-  const portal = serveSpa(join(options.repo, "apps/portal/dist"), {
-    apiBase: API_BASE,
-  });
-  const admin = serveSpa(join(options.repo, "apps/admin/dist"), {
-    apiBase: API_BASE,
-  });
+  /*
+   * The policies, read out of the Caddyfile the deploy actually serves.
+   *
+   * The placeholder names are Caddy's own, expanded from this rig's addresses
+   * rather than from the deploy environment. `KEYCLOAK_ORIGIN` expands to
+   * nothing, which is what Caddy does on an installation that authenticates
+   * locally — and what the portal's policy is written to tolerate.
+   */
+  const csp = {
+    API_DOMAIN_URL: API_BASE,
+    S3_ORIGIN: storage.endpoint,
+    KEYCLOAK_ORIGIN: "",
+  };
+
+  const portal = serveSpa(
+    join(options.repo, "apps/portal/dist"),
+    { apiBase: API_BASE },
+    cspFromCaddyfile("PORTAL_DOMAIN", csp),
+  );
+  const admin = serveSpa(
+    join(options.repo, "apps/admin/dist"),
+    { apiBase: API_BASE },
+    cspFromCaddyfile("ADMIN_DOMAIN", csp),
+  );
 
   portal.listen(PORTS.portal);
   admin.listen(PORTS.admin);
@@ -199,11 +260,13 @@ export async function startStack(options: {
   }
 
   return {
+    storage,
     async stop() {
       api.kill("SIGTERM");
       await Promise.all([
         new Promise<void>((resolve) => portal.close(() => resolve())),
         new Promise<void>((resolve) => admin.close(() => resolve())),
+        storage.stop(),
       ]);
     },
   };
