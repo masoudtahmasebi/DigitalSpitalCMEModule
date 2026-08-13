@@ -140,6 +140,41 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
     const learner = await context.newPage();
     await openWidgetShadowRoots(learner);
 
+    /*
+     * What the browser said, kept for the one assertion that cannot see it
+     * (P68-03).
+     *
+     * The upload happens between the console and the bucket with no server of
+     * ours in the middle, so when it fails the only witness is the browser: a
+     * CSP violation, a blocked preflight, a 403 from the bucket. Running
+     * locally somebody watches it happen; running after a deploy nobody does,
+     * and the message this suite shipped with said "see the browser console",
+     * which on a CI runner is advice nobody can take.
+     *
+     * So the browser's own account is collected from the start and printed with
+     * the failure. That is CLAUDE.md §9.4 applied to a test: say what the
+     * person does next, at the point they look.
+     */
+    const browserSaid: string[] = [];
+    operator.on("console", (message) => {
+      if (message.type() === "error" || message.type() === "warning") {
+        browserSaid.push(`console.${message.type()}: ${message.text()}`);
+      }
+    });
+    operator.on("requestfailed", (request) => {
+      browserSaid.push(
+        `${request.method()} ${request.url()} failed: ` +
+          `${request.failure()?.errorText ?? "no reason given"}`,
+      );
+    });
+    operator.on("response", (response) => {
+      if (response.status() >= 400) {
+        browserSaid.push(
+          `${response.status()} ${response.request().method()} ${response.url()}`,
+        );
+      }
+    });
+
     try {
       // ===================================================================
       // Act 1 · The operator signs in
@@ -255,11 +290,46 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       await operator.locator('input[type="file"]').first().setInputFiles(VIDEO);
 
       const stored = operator.getByText(/hochgeladen|gespeichert/iu).first();
-      await expect(
-        stored,
-        "the upload never produced a stored reference — see the browser console " +
-          "for a CSP violation, and the harness bucket's refusals for a signature",
-      ).toBeVisible({ timeout: 60_000 });
+      try {
+        await expect(stored).toBeVisible({ timeout: 60_000 });
+      } catch (failure) {
+        /*
+         * Rethrown with the evidence attached, because the assertion alone says
+         * only that a chip never appeared — and the cause is always one of four
+         * things the browser knows and the DOM does not: a CSP that does not
+         * name the bucket, a bucket with no CORS for PUT, a signature over the
+         * wrong canonical request, or object storage not configured at all.
+         *
+         * The console's own message is included too: it is German and written
+         * for an operator, and it distinguishes "nicht konfiguriert" from a
+         * transport failure without anybody reading a network log.
+         */
+        const onScreen = (await operator.locator("main").innerText())
+          .replace(/\s+/gu, " ")
+          .slice(0, 400);
+
+        throw new Error(
+          [
+            "the upload never produced a stored reference.",
+            "",
+            "The four causes, in the order to check them:",
+            "  1. object storage not configured on this installation (S3_* in config.env)",
+            "  2. the console's CSP does not name the bucket (S3_ORIGIN — P67-01)",
+            "  3. the bucket has no CORS rule allowing PUT from the console's origin",
+            "     (docs/object-storage.md — a bucket-side setting no deploy applies)",
+            "  4. the presigned request did not verify",
+            "",
+            `The screen says: ${onScreen}`,
+            "",
+            "The browser said:",
+            ...(browserSaid.length === 0
+              ? ["  (nothing — which itself rules out 2 and 3)"]
+              : browserSaid.slice(-25).map((line) => `  ${line}`)),
+            "",
+            String(failure),
+          ].join("\n"),
+        );
+      }
 
       // The format the bucket actually stored it as, not what the picker said.
       await expect(
