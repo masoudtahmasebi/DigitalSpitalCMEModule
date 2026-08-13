@@ -154,17 +154,40 @@ Controller does HTTP. Each has one job.
 
 ### 5. Tests
 
-| Layer                         | Test style                     | Where                           | Needs infrastructure |
-| ----------------------------- | ------------------------------ | ------------------------------- | -------------------- |
-| `packages/domain`             | Unit, exhaustive               | `packages/domain/src/*.test.ts` | No                   |
-| Service                       | Unit, faked repository         | `<feature>.service.test.ts`     | No                   |
-| Contract (DTO ⇄ SDK)          | Type-level assertions          | `apps/api/test/contract/`       | No                   |
-| Repository / tenant isolation | Integration, **real Postgres** | `apps/api/test/integration/`    | Yes                  |
+| Layer                            | Test style                     | Where                           | Needs infrastructure |
+| -------------------------------- | ------------------------------ | ------------------------------- | -------------------- |
+| `packages/domain`                | Unit, exhaustive               | `packages/domain/src/*.test.ts` | No                   |
+| Service                          | Unit, faked repository         | `<feature>.service.test.ts`     | No                   |
+| Contract (DTO ⇄ SDK)             | Type-level assertions          | `apps/api/test/contract/`       | No                   |
+| Repository / tenant isolation    | Integration, **real Postgres** | `apps/api/test/integration/`    | Yes                  |
+| The product, as a person uses it | Browser, **one journey**       | `apps/e2e/tests/`               | Yes                  |
 
-`pnpm test` runs the first three; `pnpm test:integration` runs the last, and CI
-gives it its own job with Postgres and Redis services.
+`pnpm test` runs the first three; `pnpm test:integration` runs the fourth, and
+`pnpm test:e2e` the fifth. CI gives each of the last two its own job.
 
 Never mock the database to test a repository.
+
+#### The fifth row is not optional, and P68 is why
+
+Five defects reached production in one day with every gate green, and each one
+lived somewhere an API test cannot look: two cookies on one request, a header
+set by Caddy, the deploy's own seed step, a screen offering a control the API
+refuses. **The tests called the API; the client used the product.**
+
+So when a change touches something a person sees or does — a form, a gate, a
+session, a header, a deploy step — the question is not only "is there a unit
+test" but _would the journey have noticed if this broke?_ `pnpm test:e2e -- --grep "ganze"`
+answers it in about twenty seconds.
+
+Two rules for that suite specifically:
+
+- **Never relax the product to make it pass.** The watch gate stays at its real
+  threshold; the fixture is an eight-second video instead. The shadow root stays
+  closed; the harness opens it in its own browser and `learner.spec.ts` asserts
+  the product still closes it.
+- **The rig has to be shaped like the deployment.** It serves the Caddyfile's
+  own CSP and runs a signature-verifying bucket, because a rig without those is
+  how sixteen green browser tests coexisted with an upload nobody could perform.
 
 #### Running the integration suite (P32-01)
 

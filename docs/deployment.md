@@ -288,6 +288,13 @@ random bytes — so no human ever needs to see one.
 And optionally one _variable_, `DEPLOY_REPO_DIR`, if the clone is not at
 `~/Repositories/DigitalSpitalCMEModule`.
 
+One optional secret, `SEED_TEST_STAFF_PASSWORD`, belongs with them (P68-03). It
+is the password of the DS Test tenant's operator — the account the post-deploy
+journey signs in as — and it has to be the **same value the host seeded with**.
+Set it in neither place and both use the seed's own self-describing default,
+which is fine: that tenant holds no accreditation, no CME points and no real
+participant. Set it on the host and not here, and the journey job cannot sign in.
+
 That is the whole list. `PRODUCTION_ENV` — the entire production environment,
 database passwords and encryption key included — used to be a repository secret
 this workflow wrote to the host on every deploy. It made GitHub a credential
@@ -481,6 +488,24 @@ a grant broader than the actor's own, so an installation holding only a
 command that could create one refused because that account existed. Order still
 does not matter now: seed first or bootstrap first, both work.
 
+### The DS Test tenant, which the deploy seeds for you (P68-01)
+
+Separate from `ds` below, and not optional: `dstest` is the tenant the
+post-deploy journey **writes into**. `deploy.sh` seeds it alongside the others,
+so there is nothing to run by hand.
+
+It holds a customer, a department, a portal project at `/dstest` and one
+`customer_admin`, `e2e@dstest.example`. **No course** — building one is what the
+journey is for. Its data accumulates on purpose: every run leaves the course, the
+participant and the certificate it created, each named with a fresh suffix, so a
+failed run is still there to look at. Nothing in it is visible to any other
+customer, and nothing it seeds carries accreditation or CME points.
+
+```bash
+ssh -i ~/.ssh/ds-deploy deploy@78.47.178.65
+cd ~/ds-education && ./dsc seed ds-test        # prints the operator's sign-in
+```
+
 ### Optionally, the DS test tenant (P20-01)
 
 A second customer — `ds`, DigitalSpital's own — with two demo courses. It exists
@@ -566,7 +591,48 @@ redeploying a plugin.
 
 ### Every deploy
 
-Merge to `main`. CI runs; if it is green, Deploy runs. That is the whole loop.
+Merge to `main`. CI runs; if it is green, Deploy runs, and then the **journey**
+job drives the deployment in a browser. That is the whole loop.
+
+### The journey job — what a green deploy now means (P68-03)
+
+`/health` answering was never evidence that a physician can earn a CME point.
+Every defect reported from production on 12.08 was downstream of a healthy API:
+a CSP header that blocked every video upload, a cookie collision that refused
+every enrolment, a tenant whose seed had never run.
+
+So after `deploy.sh` succeeds, a separate job checks out the repository on a
+GitHub runner, installs Chromium, and runs `pnpm test:smoke` against the real
+hostnames — which it takes from the host's own `ds_derive_domains`, so the test
+cannot disagree with the server about where the server is. It signs in to
+Verwaltung as the DS Test operator, builds a Fortbildung with a real video
+upload, publishes it, and then completes it as a physician and downloads the
+Teilnahmebescheinigung.
+
+Three things to know when it fails:
+
+- **It fails the workflow run, and that is intended.** A deploy that cannot
+  enrol a learner is not a successful deploy. The previous images are still on
+  disk — see _Rolling back_ below.
+- **It names the build it was looking at.** The run records the commit behind
+  `/metrics` before it asserts anything, so "the fix is not deployed" and "the
+  fix does not work" are different reports (§9.9).
+- **The trace is kept.** The failed run uploads `apps/e2e/test-results/` as an
+  artifact; `pnpm exec playwright show-trace trace.zip` replays the browser step
+  by step, with a screenshot at the moment it stopped.
+
+It leaves data behind on purpose. Every run creates a course and a participant
+in the `dstest` tenant, each named with a fresh suffix, so an old run's course
+is still there to look at when something goes wrong. Nothing it creates is
+visible to MEDICE or to any other customer.
+
+**It refuses to run when `EIV_ALLOW_LIVE` is set**, and says why. The journey
+publishes an accredited Fortbildung — a Teilnahmebescheinigung requires CME
+points and a VNR — and its VNR is a reserved number belonging to no
+Veranstaltung. On an installation reporting live, that would be one refused
+Punktemeldung per deploy, each an alert somebody has to dismiss. If the smoke
+ever has to run on a live-reporting installation, `docs/backlog/P68.md` records
+what to build first.
 
 ### When `config.env` falls behind the template
 

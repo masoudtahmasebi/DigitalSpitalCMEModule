@@ -182,6 +182,8 @@ container's own client.
 ```bash
 pnpm verify            # lint, format, typecheck, unit tests, prod audit
 pnpm test:integration  # against a real Postgres — needs infra:up
+pnpm test:e2e          # the whole product, in a browser — see below
+pnpm test:smoke        # the same journey, against a deployed installation
 pnpm test:wp           # the WordPress plugin's security checks (needs php)
 ```
 
@@ -193,6 +195,58 @@ which failure bought it.
 
 `pnpm verify` is what CI runs first. Run it before pushing; it is faster than a
 round trip through Actions and it fails in the same order.
+
+### The journey — the check that fails when the product does (P68)
+
+```bash
+pnpm test:e2e                       # everything, about a minute
+pnpm test:e2e -- --grep "ganze"     # only the full journey, about twenty seconds
+```
+
+`test:e2e` builds the workspace, rebuilds `ds_education_e2e`, seeds it, starts
+the API and both frontends from `dist/`, and drives a real browser. One of its
+specs walks the **entire product**: an operator signs in to Verwaltung, creates
+a participant, builds a Fortbildung, uploads a video, writes a quiz and an
+Evaluationsbogen, fills in the accreditation and publishes — and then a
+physician signs in at her tenant's own path, enrols, watches the video in real
+time, pauses, reloads, passes the Lernerfolgskontrolle, supplies an EFN and
+downloads a Teilnahmebescheinigung that is asserted to be a real PDF.
+
+Three things make it a check that could have gone red on the deployment, rather
+than one that is green because of what it is not looking at:
+
+- it serves the **Content-Security-Policy from `infra/deploy/Caddyfile`**, so a
+  policy that does not name the object-storage bucket fails here rather than in
+  an operator's browser;
+- it stands up an **S3-compatible bucket that verifies the SigV4 signature**,
+  answers CORS preflight and serves `Range`, so the upload is real on a
+  developer's machine;
+- it runs both people in **one browser context**, which is what a real browser
+  with the console open in another tab is.
+
+Nothing about the product is relaxed to make it pass. The course it builds uses
+an eight-second video so that `requiredWatchPercent` can stay at its real value.
+
+### The same journey, against a deployment
+
+```bash
+E2E_PORTAL_URL=https://fortbildung.example.com \
+E2E_ADMIN_URL=https://verwaltung.example.com \
+E2E_API_URL=https://api.example.com \
+SEED_TEST_STAFF_PASSWORD=… \
+pnpm test:smoke
+```
+
+Starts nothing and seeds nothing: it signs in as the **DS Test** tenant's
+operator, which `deploy.sh` seeds on every deploy, and drives the real
+hostnames — real Caddy, real headers, real cookies, real bucket. The deploy
+workflow runs it automatically after `deploy.sh` succeeds; a failure fails the
+deploy. All four variables are required, because a smoke test that fell back to
+`localhost` would report a healthy deployment while looking at nothing.
+
+It refuses to run against an installation with `EIV_ALLOW_LIVE` set, and says
+why: the journey publishes an accredited Fortbildung, and its reserved VNR must
+never become a Punktemeldung at a real Ärztekammer.
 
 ### Why `db:migrate` connects as `ds_migrator`
 
