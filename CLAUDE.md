@@ -341,6 +341,16 @@ answers the first; the tenant paths `deploy.sh` prints answer the second.
 repository's state is not the installation's state. A seed, a migration or a
 setting that exists here exists there only if somebody ran it.
 
+**And its strongest form** (P70-01): _documentation instructing a human to apply
+a setting is a setting that is not applied._ The bucket's CORS rule sat in
+`config.env.example` under the heading "you have to do this once, by hand", with
+the exact policy to paste, from P23-04 until P70 — and on every installation the
+platform has ever had, nobody did it. Every video upload was refused by the
+browser for months, with a clean API log, because the refusal happens in a
+conversation between the browser and the bucket that the server is not part of.
+So: if a deploy _can_ apply a setting, it applies it; if it cannot, it **checks**
+it and fails. A README sentence is not a mechanism.
+
 **And the version of it that does not arrive as a browser report** (P43-02): the
 gap shows up as an error naming an innocent statement. `./dsc seed ds` answered
 
@@ -428,9 +438,19 @@ Two rules keep it honest, and both are the §9.1 trap in a new place:
    real threshold and the fixture is an eight-second video instead. The widget's
    shadow root stays closed and the harness opens it in its own browser — with a
    separate test, run without the patch, asserting the product still closes it.
-2. **The rig must be shaped like the deployment.** It serves the Caddyfile's own
-   policy and runs a signature-verifying bucket. A rig without those is how
-   sixteen green browser tests coexisted with an upload nobody could perform.
+2. **The rig must be shaped like the deployment — including what the deployment
+   has not been given yet.** It serves the Caddyfile's own policy and runs a
+   signature-verifying bucket. A rig without those is how sixteen green browser
+   tests coexisted with an upload nobody could perform.
+
+   The sharper half, from P70-01: the harness bucket used to answer every CORS
+   preflight permissively, so it modelled a bucket somebody had already
+   configured — and configuring it was precisely the step no installation had
+   done. **A fixture that assumes the missing setting is present cannot find the
+   missing setting.** Start fixtures in the state a real one is _created_ in,
+   and make the product's own tooling bring them up — the rig now spawns the
+   deploy's `dist/bucket-cors.js`, as a subprocess, over the same environment
+   variables the host uses.
 
 ---
 

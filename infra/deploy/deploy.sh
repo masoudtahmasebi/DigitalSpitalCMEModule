@@ -723,6 +723,46 @@ for attempt in $(seq 1 20); do
   sleep 5
 done
 
+# ---------------------------------------------------------------------------
+# 6b. The bucket will accept an upload from the console (P70-01)
+# ---------------------------------------------------------------------------
+#
+# ## The failure this ends
+#
+# The console PUTs a course video straight to the bucket, so the browser asks
+# the *bucket* for permission in a preflight the API is not part of and never
+# learns about. A bucket with no CORS rule therefore produces: an upload button
+# that appears to work, a ticket minted successfully, an API log with nothing
+# wrong in it, and no video.
+#
+# That was production's state for as long as uploads have existed. The rule to
+# apply has been in `config.env.example` since P23-04, under the heading
+# "Bucket configuration you have to do once, by hand", and nobody ever did —
+# CLAUDE.md §9.9's corollary: **the repository's state is not the
+# installation's state.** So the deploy applies it, rather than a document
+# asking somebody to remember.
+#
+# The tool applies the rule and then asks the bucket the browser's own
+# question — an unsigned OPTIONS preflight. It is the probe, not the write,
+# that decides the exit code: a write returning 200 proves the request was
+# accepted, and only the preflight proves the browser can proceed.
+#
+# **Fatal, deliberately.** The containers are already running by this point, so
+# the site stays up and the deploy reports failure — which is the honest
+# outcome for an installation whose authors cannot upload. The message names
+# the exact document to paste at the storage provider.
+if [[ -n "${S3_ENDPOINT:-}" && -n "${S3_BUCKET:-}" ]]; then
+  log "Checking the media bucket accepts uploads from https://${ADMIN_DOMAIN}"
+  if ! compose run --rm --no-deps \
+    -e S3_CORS_ORIGINS="https://${ADMIN_DOMAIN}" \
+    --entrypoint node api dist/bucket-cors.js; then
+    die "the media bucket refuses uploads from the console — see the CORS document above.
+   Everything else deployed and is running; only video upload is affected."
+  fi
+else
+  log "No object storage configured; skipping the bucket check"
+fi
+
 # Old images and build layers accumulate fast on a host that builds; a full
 # disk is its own outage. A week keeps enough tags for a rollback to be
 # instant, which is the point of tagging by commit.

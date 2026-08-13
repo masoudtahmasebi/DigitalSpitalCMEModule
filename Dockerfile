@@ -239,7 +239,7 @@ EXPOSE 3000
 # No shell form: `node` becomes PID 1 and receives SIGTERM directly, so a
 # rolling deploy drains rather than being killed after the stop timeout.
 #
-# Three other entrypoints ship in the same image and are run with
+# Other entrypoints ship in the same image and are run with
 # `--entrypoint node`, never as the default:
 #
 #   dist/db-migrate.js       apply migrations as ds_migrator
@@ -248,6 +248,9 @@ EXPOSE 3000
 #                            seed deploy.sh runs by itself, with --if-missing
 #   dist/seed-ds.js          create the DS test tenant, on request (P20-01)
 #   dist/seed-medice.js      create the MEDICE ADHS course (P24-02)
+#   dist/bucket-cors.js      configure the media bucket for browser uploads and
+#                            prove it with a preflight (P70-01) — deploy.sh runs
+#                            it on every deploy and fails when it refuses
 #
 # They live here rather than in a separate tools image because they must be
 # built from the same commit as the API — a migrator one commit ahead of the

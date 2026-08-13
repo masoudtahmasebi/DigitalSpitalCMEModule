@@ -139,6 +139,75 @@ async function waitFor(url: string, what: string, timeoutMs = 60_000): Promise<v
   throw new Error(`${what} never became ready at ${url} (${lastError})`);
 }
 
+/**
+ * The bucket is configured for browser uploads by the deploy's own tool
+ * (P70-01).
+ *
+ * ## Why a subprocess rather than a function call
+ *
+ * `dist/bucket-cors.js` is what `deploy.sh` runs on the production host, over
+ * exactly these environment variables. Calling a TypeScript function instead
+ * would test the logic and not the artefact — and the last three defects in
+ * this area were all in the wiring rather than the logic: a value derived and
+ * never exported (P68-03), a check that read the template instead of the value
+ * (P67-01), a rule tested exhaustively and called from nowhere (§9.3). Running
+ * the compiled entrypoint means the thing under test here is the thing that
+ * runs there.
+ *
+ * It also keeps `apps/e2e` free of workspace imports, which is the rule the
+ * lint config enforces and which P68-03 established the hard way.
+ *
+ * **Break this to check the suite still works**: comment out the call and the
+ * journey fails at the upload with the browser's own CORS message, because the
+ * harness bucket starts unconfigured like a real one.
+ */
+async function configureBucketCors(repo: string, storage: ObjectStore): Promise<void> {
+  const result = await new Promise<{ code: number | null; output: string }>((resolve) => {
+    const child = spawn("node", ["apps/api/dist/bucket-cors.js"], {
+      cwd: repo,
+      stdio: "pipe",
+      env: {
+        ...process.env,
+        S3_ENDPOINT: storage.endpoint,
+        S3_REGION: storage.region,
+        S3_BUCKET: storage.bucket,
+        S3_ACCESS_KEY_ID: storage.accessKeyId,
+        S3_SECRET_ACCESS_KEY: storage.secretAccessKey,
+        S3_FORCE_PATH_STYLE: "true",
+        // The console's origin, which is what the deploy derives from
+        // BASE_DOMAIN. The portal is deliberately not here: it never uploads.
+        S3_CORS_ORIGINS: ADMIN_BASE,
+        NODE_EXTRA_CA_CERTS: storage.caFile,
+      },
+    });
+
+    const output: string[] = [];
+    child.stdout?.on("data", (chunk: Buffer) => output.push(chunk.toString()));
+    child.stderr?.on("data", (chunk: Buffer) => output.push(chunk.toString()));
+    child.on("close", (code) => resolve({ code, output: output.join("") }));
+  });
+
+  if (result.code !== 0) {
+    throw new Error(
+      `configuring the harness bucket for browser uploads failed:\n${result.output}`,
+    );
+  }
+
+  /*
+   * Not redundant with the exit code. The tool's own probe asks the bucket, and
+   * this asks the bucket's state directly — so a probe that passed for the
+   * wrong reason (a permissive harness, a stub that echoes any origin) is still
+   * caught here. CLAUDE.md §9.1: the gate has to be able to go red.
+   */
+  const origins = storage.corsOrigins();
+  if (origins === undefined || !origins.includes(ADMIN_BASE)) {
+    throw new Error(
+      `bucket-cors.js exited 0 without configuring the bucket for ${ADMIN_BASE} ` +
+        `(the bucket allows: ${origins?.join(", ") ?? "nothing"}).\n${result.output}`,
+    );
+  }
+}
+
 export async function startStack(options: {
   repo: string;
   databaseUrl: string;
@@ -258,6 +327,8 @@ export async function startStack(options: {
     // a bad connection string, a missing migration, a refused KMS key.
     throw new Error(`${String(error)}\n\n--- API output ---\n${apiLog.join("")}`);
   }
+
+  await configureBucketCors(options.repo, storage);
 
   return {
     storage,
