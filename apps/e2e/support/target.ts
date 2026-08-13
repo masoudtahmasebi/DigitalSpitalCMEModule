@@ -33,7 +33,6 @@
  * to wonder whether the fix is even deployed.
  */
 
-import { stripTrailingSlashes } from "@ds/domain";
 import { ADMIN_BASE, API_BASE, PORTAL_BASE } from "./stack.js";
 import { DS_TEST_STAFF_EMAIL, DS_TEST_STAFF_PASSWORD, DS_TEST_TENANT } from "./world.js";
 
@@ -103,12 +102,28 @@ export function currentTarget(): Target {
 }
 
 /**
- * `@ds/domain`'s, not a local regex: an anchored `/+$` backtracks quadratically
- * and the lint rule that says so is right — a URL out of the environment is not
- * bounded by construction.
+ * A loop, not a regex and not `@ds/domain` (P68-03).
+ *
+ * An anchored `/+$` backtracks quadratically on an adversarial input, and the
+ * lint rule that says so is right — a URL out of the environment is not bounded
+ * by construction. Its suggested fix is `stripTrailingSlashes` from
+ * `@ds/domain`, which is what this was, **and that broke the smoke run**: the
+ * job installs a browser and nothing else, so the workspace package has no
+ * `dist/` and the spec failed to load before it looked at anything.
+ *
+ * That is the whole design constraint of this file, and it is worth stating
+ * because it is easy to undo: **nothing under `apps/e2e` that the smoke path
+ * touches may import a workspace package.** The local rig builds the workspace
+ * in `global-setup`; the smoke run deliberately does not build anything,
+ * because a post-deploy check that first has to compile the monorepo is a check
+ * whose failure is ambiguous — was it the deployment, or was it the build?
+ *
+ * The rule's other suggestion is a loop, so this is a loop.
  */
 function trimSlash(url: string): string {
-  return stripTrailingSlashes(url);
+  let end = url.length;
+  while (end > 0 && url[end - 1] === "/") end -= 1;
+  return url.slice(0, end);
 }
 
 /**
