@@ -186,6 +186,42 @@ check "no bucket configured leaves the directive alone" "<empty>" "$actual"
 rejects_check "an S3_ORIGIN that does not match S3_ENDPOINT" \
   eval 'S3_ENDPOINT=https://nbg1.your-objectstorage.com; S3_ORIGIN=https://elsewhere.example'
 
+# ---------------------------------------------------------------------------
+# Derived is not the same as exported (P68-03)
+# ---------------------------------------------------------------------------
+#
+# Every check above reads `$S3_ORIGIN` in the same shell that derived it, and
+# every one of them passed while the value never reached a container. `docker
+# compose` substitutes from the **environment**, so a variable that is set but
+# not exported is a variable the Caddy container is handed as empty — and the
+# console shipped with `connect-src 'self' https://api.…` on a host whose bucket
+# was configured and whose API was minting valid presigned URLs for it.
+#
+# The post-deploy journey caught it in a browser. This catches it here, which is
+# where the fix is. `env` rather than `${S3_ORIGIN}`, because reading the
+# variable is precisely the thing that cannot tell the difference.
+actual=$(
+  source ./domains.sh
+  BASE_DOMAIN=digitalspital.com
+  S3_ENDPOINT=https://nbg1.your-objectstorage.com
+  ds_derive_domains
+  env | grep -c '^S3_ORIGIN=https://nbg1.your-objectstorage.com$' || true
+)
+check "the bucket origin is exported, not merely set" "1" "$actual"
+
+# The same for every other value compose substitutes, so the next one to be
+# derived and not exported fails here rather than in somebody's browser.
+for name in API_DOMAIN ADMIN_DOMAIN PORTAL_DOMAIN WIDGET_DOMAIN API_DOMAIN_URL \
+  CORS_ALLOWED_ORIGINS DS_SITES_DIR; do
+  actual=$(
+    source ./domains.sh
+    BASE_DOMAIN=digitalspital.com
+    ds_derive_domains
+    env | grep -c "^${name}=" || true
+  )
+  check "${name} is exported" "1" "$actual"
+done
+
 rm -f /tmp/ds-domains-happy.txt
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
