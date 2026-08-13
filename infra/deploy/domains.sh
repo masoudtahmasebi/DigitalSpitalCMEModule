@@ -188,6 +188,21 @@ ds_derive_domains() {
   export STAFF_COOKIE_DOMAIN CORS_ALLOWED_ORIGINS
   export DS_ADMIN_API_BASE DS_PORTAL_API_BASE
   export DS_SITES_DIR APEX_REDIRECT_URL
+
+  # `S3_ORIGIN`, which P67-01 derived above and forgot to export (P68-03).
+  #
+  # `docker compose` substitutes from the **environment**, so a value that is
+  # only a shell variable in this function's caller is a value the Caddy
+  # container never sees: `S3_ORIGIN: ${S3_ORIGIN:-}` resolved to empty and the
+  # console shipped with `connect-src 'self' https://api.…` — exactly the policy
+  # P67-01 existed to widen, on a machine where the bucket was configured and
+  # the API was minting valid presigned URLs for it.
+  #
+  # `deploy-vars.test.sh` asserted the Caddyfile *names* {$S3_ORIGIN}, and it
+  # passed the whole time. That is CLAUDE.md §9.1: the check tested the template
+  # and not the value, so it could not have gone red for this. The test below it
+  # now checks the environment.
+  export S3_ORIGIN
 }
 
 # Check the parts a derivation cannot: values a human still has to supply, and
