@@ -583,12 +583,29 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * why that is a harness affordance rather than a weakened product, and
        * `learner.spec.ts` for the assertion that keeps it honest.
        */
+      /*
+       * Scoped to **this run's card**, and that is not a nicety (P71-04).
+       *
+       * The client asked for a tenant whose data stays, so the DS Test
+       * catalogue grows by one course every time this runs. `.first()` on the
+       * page's *"Zur Fortbildung"* buttons therefore opens whichever course the
+       * catalogue happens to list first — this run's on a rig with one course,
+       * somebody else's on the installation. It failed on production at 19:13
+       * exactly that way: the card was found, the button belonged to another
+       * course, and the heading assertion then looked for a title that was
+       * never opened.
+       *
+       * A suite that only works on an empty tenant is a suite that does not
+       * work where the product runs. The card carries the title, so the button
+       * is reached through it.
+       */
+      const card = learner.locator("li").filter({ hasText: COURSE }).first();
       await expect(
-        learner.getByText(COURSE),
+        card,
         "the published Fortbildung is not in the physician's catalogue",
       ).toBeVisible({ timeout: 30_000 });
 
-      await learner.getByRole("button", { name: "Zur Fortbildung" }).first().click();
+      await card.getByRole("button", { name: "Zur Fortbildung" }).click();
       await expect(learner.getByRole("heading", { name: COURSE })).toBeVisible({
         timeout: 20_000,
       });
