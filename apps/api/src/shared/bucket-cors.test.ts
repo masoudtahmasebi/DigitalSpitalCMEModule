@@ -17,6 +17,7 @@ import {
   consoleUploadRule,
   contentMd5,
   corsConfigurationXml,
+  describeFetchFailure,
   probePreflight,
 } from "./bucket-cors.js";
 
@@ -199,5 +200,54 @@ describe("the preflight probe", () => {
     const verdict = await probePreflight("https://x", "media", ORIGIN, "PUT", impl);
 
     expect(verdict.kind).toBe("unreachable");
+  });
+
+  /*
+   * The one that actually mattered on 13.08. Node's fetch rejects with the
+   * word "fetch failed" and nothing else; the deploy printed that, and it is
+   * the same sentence for a DNS failure, a refused connection, an unreachable
+   * network and an untrusted certificate. The cause was a container with no
+   * gateway, and the chain below is what would have said so.
+   */
+  it("carries the cause out, because 'fetch failed' names nothing", async () => {
+    const cause = Object.assign(
+      new Error("getaddrinfo EAI_AGAIN nbg1.your-objectstorage.com"),
+      { code: "EAI_AGAIN" },
+    );
+    const impl = (() =>
+      Promise.reject(new TypeError("fetch failed", { cause }))) as typeof fetch;
+
+    const verdict = await probePreflight("https://x", "media", ORIGIN, "PUT", impl);
+
+    expect(verdict.kind).toBe("unreachable");
+    expect(verdict.kind === "unreachable" && verdict.reason).toContain(
+      "nbg1.your-objectstorage.com",
+    );
+    expect(verdict.kind === "unreachable" && verdict.reason).toContain("EAI_AGAIN");
+  });
+});
+
+describe("describing why a fetch failed", () => {
+  it("walks the whole cause chain", () => {
+    const root = Object.assign(new Error("connect ECONNREFUSED"), {
+      code: "ECONNREFUSED",
+    });
+    const middle = new Error("socket hang up", { cause: root });
+
+    expect(describeFetchFailure(new TypeError("fetch failed", { cause: middle }))).toBe(
+      "fetch failed — socket hang up — connect ECONNREFUSED (ECONNREFUSED)",
+    );
+  });
+
+  it("terminates on a cycle rather than hanging the deploy", () => {
+    const a = new Error("a");
+    const b = new Error("b", { cause: a });
+    (a as { cause?: unknown }).cause = b;
+
+    expect(describeFetchFailure(a).split(" — ")).toHaveLength(5);
+  });
+
+  it("says something for a value that is not an Error at all", () => {
+    expect(describeFetchFailure("boom")).toBe("unknown error");
   });
 });

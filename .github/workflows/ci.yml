@@ -109,6 +109,11 @@ jobs:
           # an operator to edit a file that was correct.
           ./infra/deploy/config-check.test.sh
           node scripts/check-runtime-config.mjs
+          # A container that calls out is on a network with a gateway. The API
+          # was on `internal: true` alone, which isolates in *both* directions
+          # — so the object store, SMTP, a customer's Keycloak JWKS and EIV
+          # were all unreachable, each failing as a timeout inside a worker.
+          node scripts/check-egress.mjs
           # The local stack's ports, and the browser-facing URLs that have
           # to name published ports rather than service names — a mistake
           # whose only symptom is CORS failing in a browser.
