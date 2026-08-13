@@ -30,12 +30,22 @@ const sources: MediaSource[] = [
   { url: "https://cdn/x-360.mp4", mimeType: "video/mp4", label: "360p" },
 ];
 
-function renderPlayer(over: Partial<React.ComponentProps<typeof VideoPlayer>> = {}) {
+/**
+ * The element, not a render — so a test can hand the *same* component new
+ * props through `rerender`.
+ *
+ * That distinction is the whole subject of "keeps what it has watched when a
+ * progress flush brings a new ceiling" below: what the client hit only happens
+ * on a re-render of a mounted player, and a helper that could only mount would
+ * have made that case unwritable.
+ */
+function playerWith(over: Partial<React.ComponentProps<typeof VideoPlayer>> = {}) {
   const props = {
     sources,
     posterUrl: "https://cdn/x.jpg",
     captionsUrl: "https://cdn/x.vtt",
     title: "Modul 3 — Diagnostik",
+    contentId: "content-1",
     durationSec: 1545,
     startAtSec: 875,
     // Unrestricted by default: the seek-limit tests below opt in, so every
@@ -48,7 +58,12 @@ function renderPlayer(over: Partial<React.ComponentProps<typeof VideoPlayer>> = 
     onStop: vi.fn(),
     ...over,
   };
-  return { ...render(<VideoPlayer {...props} />), props };
+  return <VideoPlayer {...props} />;
+}
+
+function renderPlayer(over: Partial<React.ComponentProps<typeof VideoPlayer>> = {}) {
+  const element = playerWith(over);
+  return { ...render(element), props: element.props };
 }
 
 describe("sources", () => {
@@ -269,6 +284,70 @@ describe("forward seeking", () => {
     fireEvent.seeking(video);
 
     expect(at()).toBe(75);
+  });
+
+  /*
+   * The client's report, on 13.08 (P71-01):
+   *
+   *   > "suddenly the video stops and when i press again it goes to start of
+   *   > the video, the video player is not robust"
+   *
+   * `reachedRef` exists so that a playing video is not dragged back to the last
+   * flushed second — the test above asserts exactly that. What neither of them
+   * exercised is the event that *destroys* it: a **new** ceiling arriving,
+   * which is what a progress flush produces every fifteen seconds on the same
+   * lesson. The reset effect said "a different lesson starts its own session"
+   * and listed `seekCeilingSec` among its dependencies.
+   *
+   * So the watermark was thrown away four times a minute, the limit collapsed
+   * back to the stale ceiling, and the next `seeking` event — the browser's
+   * own, during buffering, or PiP, or a media key — yanked the playhead to it.
+   */
+  it("keeps what it has watched when a progress flush brings a new ceiling", () => {
+    const { video, at, rerender } = trackedPlayer({
+      seekCeilingSec: 25,
+      startAtSec: 0,
+    });
+    Object.defineProperty(video, "paused", { value: false, configurable: true });
+
+    // Watched to 0:37. The ceiling is behind the playhead, which is the
+    // *ordinary* state between flushes and the entire reason the watermark
+    // exists — a flush covers up to the moment it was sent, not to now.
+    video.currentTime = 37;
+    fireEvent.timeUpdate(video);
+
+    // The flush lands: a new ceiling, on the same lesson, still behind. This
+    // is the every-fifteen-seconds event, not an edge case.
+    rerender(playerWith({ seekCeilingSec: 30, startAtSec: 0 }));
+
+    fireEvent.seeking(video);
+
+    // Not 30. A learner who has watched every second up to 0:37 is the wrong
+    // person to drag backwards.
+    expect(at()).toBe(37);
+  });
+
+  it("still starts a new session when the lesson changes", () => {
+    // The negative, and the reason the fix is keyed on the content rather than
+    // on nothing: a second video in the same mounted player must not inherit
+    // the first one's watermark, or finishing module 1 would unlock module 2's
+    // scrub bar.
+    const { video, at, rerender } = trackedPlayer({
+      seekCeilingSec: 60,
+      startAtSec: 0,
+      contentId: "content-1",
+    });
+    Object.defineProperty(video, "paused", { value: false, configurable: true });
+
+    video.currentTime = 900;
+    fireEvent.timeUpdate(video);
+
+    rerender(playerWith({ seekCeilingSec: 60, startAtSec: 0, contentId: "content-2" }));
+
+    video.currentTime = 900;
+    fireEvent.seeking(video);
+
+    expect(at()).toBe(60);
   });
 
   it("does not let a seek raise its own ceiling", () => {

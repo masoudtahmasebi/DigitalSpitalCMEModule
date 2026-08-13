@@ -227,6 +227,9 @@ function VideoLesson(props: {
         // at 14:35 comes back at 14:00, and which second that is, is decided in
         // one place for every host.
         startAtSec={lesson.resumeAtSec}
+        // What makes a new watch session, and it is not a new ceiling
+        // (P71-01). See `VideoPlayer`'s `contentId`.
+        contentId={lesson.id}
         seekCeilingSec={seekCeilingSec}
         watchedSegments={covered}
         paused={props.paused}

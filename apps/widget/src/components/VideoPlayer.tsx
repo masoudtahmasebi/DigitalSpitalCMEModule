@@ -111,6 +111,21 @@ export interface VideoPlayerProps {
    * in when the field is missing.
    */
   readonly seekCeilingSec: number | null;
+  /**
+   * Which content this is, and the only thing that starts a new watch session
+   * (P71-01).
+   *
+   * The player keeps a watermark of the furthest second reached by ordinary
+   * playback, because the server's ceiling is fifteen seconds stale by
+   * construction and enforcing it literally drags a watching learner backwards.
+   * That watermark used to be reset by an effect keyed on `startAtSec` and
+   * `seekCeilingSec` — and `seekCeilingSec` changes on *every progress flush*,
+   * on the same lesson, four times a minute.
+   *
+   * So it is keyed on identity now. A ceiling arriving is news about this
+   * session; a different content **is** a different session.
+   */
+  readonly contentId: string;
   /** The server's merged union — what the coverage bar draws. */
   readonly watchedSegments: readonly WatchedSegment[];
   /** Set by the chrome's **Fortbildung pausieren**. */
@@ -206,11 +221,37 @@ export function VideoPlayer(props: VideoPlayerProps) {
   const reachedRef = useRef(props.startAtSec);
   const [reachedSec, setReachedSec] = useState(props.startAtSec);
 
-  // A different lesson in the same mounted player starts its own session.
+  // Read through a ref so that the reset below depends on the *content* and
+  // nothing else. `startAtSec` is a property of the lesson and changes with it,
+  // but naming it as a dependency would put a second trigger on an effect whose
+  // correctness is entirely about having exactly one.
+  const startAtRef = useRef(props.startAtSec);
+  startAtRef.current = props.startAtSec;
+
+  /*
+   * A different lesson in the same mounted player starts its own session —
+   * and *only* a different lesson does (P71-01).
+   *
+   * This effect used to list `props.seekCeilingSec` among its dependencies,
+   * which meant it also fired every time a progress flush answered: four times
+   * a minute, on the same video, mid-playback. It threw the watermark away, the
+   * limit collapsed back to a ceiling fifteen seconds stale, and the next
+   * `seeking` event — the browser's own during buffering, Picture-in-Picture, a
+   * media key — snapped the playhead back to it.
+   *
+   * The client reported it as *"suddenly the video stops and when i press again
+   * it goes to start of the video"*. Both halves, from this one dependency.
+   *
+   * The comment twenty lines above already said what the watermark is for:
+   * "enforcing it alone would yank a playing video backwards the moment the
+   * playhead passed the last flushed second". The rule was right and its
+   * trigger was wrong, which is CLAUDE.md §9.3 one turn further round — a rule
+   * that *is* called, and called by the wrong thing.
+   */
   useEffect(() => {
-    reachedRef.current = props.startAtSec;
-    setReachedSec(props.startAtSec);
-  }, [props.startAtSec, props.seekCeilingSec]);
+    reachedRef.current = startAtRef.current;
+    setReachedSec(startAtRef.current);
+  }, [props.contentId]);
 
   /**
    * The limit as the *bar* sees it, which lags a second behind the handlers.
@@ -245,10 +286,8 @@ export function VideoPlayer(props: VideoPlayerProps) {
 
   // Resume where they left off. Applied on `loadedmetadata` rather than in an
   // effect on mount: setting `currentTime` before the element knows its own
-  // duration is silently discarded by every browser.
-  const startAtRef = useRef(props.startAtSec);
-  startAtRef.current = props.startAtSec;
-
+  // duration is silently discarded by every browser. `startAtRef` is declared
+  // with the watermark above, which is the other thing that reads it.
   const handleLoadedMetadata = () => {
     const video = videoRef.current;
     if (video === null) return;
