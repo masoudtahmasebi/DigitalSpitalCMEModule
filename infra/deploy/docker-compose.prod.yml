@@ -226,7 +226,36 @@ services:
       timeout: 5s
       retries: 6
       start_period: 20s
-    networks: [internal]
+    # `edge` as well as `internal`, and this was the fourth cause of one
+    # bug report (P70-02).
+    #
+    # `internal: true` on the `internal` network isolates it in **both**
+    # directions — Docker gives it no gateway, so a container attached only to
+    # it cannot reach the internet. The comment on the network says "nothing
+    # else can be reached from outside the host", which is about ingress and is
+    # true; what it did not say is that egress goes with it.
+    #
+    # This container has to reach the outside world for nearly everything that
+    # is not a database query:
+    #
+    #   - the object store, to HEAD an upload it just approved and to archive
+    #     an issued certificate (`verifyUpload`, P60-01)
+    #   - the SMTP host, to deliver a certificate (P8-03)
+    #   - a customer's Keycloak, for the JWKS every learner token is validated
+    #     against (ADR-0003) — MEDICE's realm is not on this host
+    #   - EIV-FOBI, to report a Punktemeldung
+    #
+    # None of those had ever succeeded on this installation, and none of them
+    # says so anywhere a person looks: each fails as a timeout or a "fetch
+    # failed" inside a worker or a request handler.
+    #
+    # `backup` already carried `[internal, edge]` because it writes to S3 —
+    # somebody hit this once and fixed the one service in front of them.
+    #
+    # Being on `edge` publishes nothing. Reachability from outside the host is
+    # decided by `ports:`, which this service does not have and must not: the
+    # API is reached through Caddy.
+    networks: [internal, edge]
 
   # The console and the portal are configured at **runtime**, not at build time
   # (P16-02). Their entrypoint writes /config.js from these before nginx starts,
@@ -408,7 +437,27 @@ services:
     networks: [internal]
 
 networks:
-  # Only Caddy is on both. Nothing else can be reached from outside the host.
+  # `edge` has a gateway; `internal` deliberately does not.
+  #
+  # **`internal: true` is not only about ingress**, which is what the comment
+  # here used to say and what cost P70-02. Docker gives an internal network no
+  # gateway at all, so a container attached *only* to it cannot make an
+  # outbound connection either — no DNS, no HTTPS, nothing.
+  #
+  # So membership of `edge` is the question "does this service call out?", and
+  # it is not the question "can this service be reached from outside?" — that
+  # one is answered by `ports:`, which only Caddy has.
+  #
+  #   caddy     both     ACME, and it is the only published service
+  #   api       both     object store, SMTP, Keycloak JWKS, EIV (P70-02)
+  #   backup    both     writes to the backup bucket
+  #   postgres  internal a database nothing outside should reach, and which
+  #   redis     internal reaches nothing itself
+  #   admin/portal/widget
+  #             internal nginx serving static files; the *browser* makes the
+  #                      outbound calls, not the container
+  #
+  # `scripts/check-egress.mjs` holds that table against this file.
   edge:
   internal:
     internal: true

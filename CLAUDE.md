@@ -381,6 +381,24 @@ tenant paths, to an operator who is already trusted (P42-02).
 **Check:** when a refusal is correct and unhelpful, do not weaken the refusal.
 Find the audience that is already entitled to the answer and put it there.
 
+### 9.10a A setting has two sides, and the comment names one
+
+`internal: true` on a Docker network says "nothing outside can reach this",
+which is true, and it also removes the gateway — so a container attached only to
+that network cannot reach **out**. The compose file's comment named the first
+half only, and the API sat there for months unable to reach the object store,
+SMTP, a customer's Keycloak JWKS or EIV-FOBI (P70-02). Every one of those fails
+asynchronously, so nothing ever said so.
+
+The tell was already in the file: `backup` carried `[internal, edge]` because
+somebody had traced one S3 failure and fixed the service in front of them.
+
+**Check:** when a setting is a boolean with a name like `internal`, `private`,
+`readonly`, `strict` — write down what it does in _both_ directions before
+relying on the half you needed. And when a comment explains a setting, it is
+claiming completeness; a comment that names one consequence of two is worse
+than none, because it stops the next person looking.
+
 ### 9.11 Fix the class, not the instance
 
 When a report arrives, the question is not "where is this bug" but **"what else

@@ -131,6 +131,39 @@ export function contentMd5(body: string): string {
   return createHash("md5").update(body, "utf8").digest("base64");
 }
 
+/**
+ * Every layer of a failed `fetch`, because the top one says nothing (P70-02).
+ *
+ * Node's `fetch` reports **"fetch failed"** for a DNS failure, a refused
+ * connection, an unreachable network and a certificate it does not trust
+ * alike. The reason is one level down, in `cause`, and sometimes two.
+ *
+ * This is not a detail. The deploy's first run of `bucket-cors.js` printed
+ * `Could not reach the bucket … fetch failed`, which named the symptom of four
+ * quite different problems and pointed at none of them. The actual cause was
+ * that the API container is on a Docker network with no gateway — a sentence
+ * `EAI_AGAIN nbg1.your-objectstorage.com` would have led to in a minute.
+ *
+ * CLAUDE.md §9.4, in the diagnostic written to satisfy §9.4: say what the thing
+ * is, in the words of the person holding it.
+ */
+export function describeFetchFailure(error: unknown): string {
+  const layers: string[] = [];
+  let current: unknown = error;
+
+  // Bounded: `cause` chains are short in practice, and a cycle must not hang a
+  // deploy step whose whole job is to report a failure.
+  for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
+    const code = (current as { code?: unknown }).code;
+    layers.push(
+      typeof code === "string" ? `${current.message} (${code})` : current.message,
+    );
+    current = current.cause;
+  }
+
+  return layers.length === 0 ? "unknown error" : layers.join(" — ");
+}
+
 export type ApplyResult =
   | { readonly kind: "applied" }
   | { readonly kind: "refused"; readonly status: number; readonly body: string }
@@ -163,10 +196,7 @@ export async function applyBucketCors(
     }
     return { kind: "applied" };
   } catch (error) {
-    return {
-      kind: "unreachable",
-      reason: error instanceof Error ? error.message : "unknown error",
-    };
+    return { kind: "unreachable", reason: describeFetchFailure(error) };
   }
 }
 
@@ -203,10 +233,7 @@ export async function probePreflight(
       },
     });
   } catch (error) {
-    return {
-      kind: "unreachable",
-      reason: error instanceof Error ? error.message : "unknown error",
-    };
+    return { kind: "unreachable", reason: describeFetchFailure(error) };
   }
 
   const allowedOrigin = response.headers.get("access-control-allow-origin");
