@@ -343,8 +343,15 @@ jobs:
 
       # Only Chromium. The suite runs one project and a full browser matrix
       # would triple a job whose value is the round trip, not the engine.
+      #
+      # From `apps/e2e`, and with `pnpm exec` rather than `npx`: `@playwright/test`
+      # is that workspace's dependency, not the root's, and pnpm does not hoist
+      # it — so `npx playwright` at the root resolved to nothing and the job died
+      # with `sh: 1: playwright: not found` on its first real run. The job caught
+      # it the way it is supposed to, by failing the deploy rather than passing.
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        working-directory: apps/e2e
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Drive the deployed installation
         env:
