@@ -124,10 +124,9 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
   }) => {
     /*
      * Generous, and every second of it is spent on something real: a workspace
-     * build in global setup, a ten-megabyte upload, twenty seconds of
-     * 1080p watched at 1× and then again,
-     * and — on a second sign-in inside one 30-second TOTP step — a wait for the
-     * next code. Shortening this would not make anything faster; it would only
+     * build in global setup, an upload, eighteen seconds of video watched at
+     * 1x and then again, and — on a second sign-in inside one 30-second TOTP
+     * step — a wait for the next code. Shortening this would not make anything faster; it would only
      * turn a slow step into a failure that names the wrong thing.
      */
     test.setTimeout(300_000);
@@ -189,6 +188,42 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
           `${response.status()} ${response.request().method()} ${response.url()}`,
         );
       }
+    });
+
+    /**
+     * Every media fetch the learner's browser makes, with the second it made it
+     * (P71-03).
+     *
+     * The journey reproduced the client's report on production — an eighteen
+     * second video that stopped by itself at eight — and could say only *that*
+     * it stopped. The one observation that separates the two remaining
+     * explanations is whether the browser **asked for the video again** at the
+     * moment it stopped:
+     *
+     *   * a second request, at a different URL, means the `<source>` elements
+     *     were replaced under a playing element — resource selection re-runs,
+     *     the element pauses and the playhead resets, which is the symptom
+     *     exactly;
+     *   * no second request means the element stopped on its own and the cause
+     *     is inside the player or the media itself.
+     *
+     * A hypothesis that needs another deploy to test is a hypothesis nobody
+     * tests. This makes the next run answer it, whichever way it goes.
+     */
+    const mediaAsked: string[] = [];
+    const startedAt = Date.now();
+    learner.on("request", (request) => {
+      if (request.resourceType() !== "media") return;
+      const at = ((Date.now() - startedAt) / 1000).toFixed(1);
+      // The query string is the whole point — two presigned URLs for the same
+      // object differ only there — but it is long, so the signature is kept and
+      // the rest of the credential scope is not.
+      const url = new URL(request.url());
+      const signature = url.searchParams.get("X-Amz-Signature");
+      mediaAsked.push(
+        `${at}s ${request.method()} ${url.origin}${url.pathname}` +
+          (signature === null ? "" : ` sig=${signature.slice(0, 12)}…`),
+      );
     });
 
     try {
@@ -639,10 +674,29 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         await learner.waitForTimeout(250);
       }
 
-      expect(retreats, "the playhead went backwards while playing forwards").toEqual([]);
+      /*
+       * Both failures print what the browser asked the bucket for, and when.
+       * On 13.08 this act failed on production with `furthest` at eight
+       * seconds and nothing in the message could say why — see the collector
+       * at the top of this file for what the trail distinguishes.
+       */
+      const mediaTrail = () =>
+        mediaAsked.length === 0
+          ? "\n\nThe browser made no media request at all, which is its own finding."
+          : `\n\nThe browser asked for media at:\n${mediaAsked
+              .map((line) => `  ${line}`)
+              .join("\n")}`;
+
+      expect(
+        retreats,
+        `the playhead went backwards while playing forwards${mediaTrail()}`,
+      ).toEqual([]);
       expect(
         furthest,
-        "the video never played past a progress flush, so this act asserted nothing",
+        "the video stopped before it reached a progress flush. If it paused on " +
+          "its own, this is the report of 13.08 — and the trail below says " +
+          "whether the browser was handed a new URL for the same object (P71)." +
+          mediaTrail(),
       ).toBeGreaterThan(16);
 
       await learner.getByRole("button", { name: "Pause", exact: true }).first().click();
