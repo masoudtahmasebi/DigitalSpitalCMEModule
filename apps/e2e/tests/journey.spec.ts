@@ -65,6 +65,14 @@
  * when one does. A fixture that cannot reach a state cannot find a bug in it,
  * which is CLAUDE.md §9.13's second rule in a new place.
  *
+ * **And it is still not a real recording**, which is a known gap rather than a
+ * decision (P71-02). The client supplied real 1080p H.264 files for this, and
+ * `fixtures/fortbildung-modul.mp4` is one of them, committed. It uploads and
+ * stores correctly and it **cannot be played**, because Playwright's Chromium
+ * ships no H.264 decoder — the codec every learner's browser has and every real
+ * course uses. `codecs.spec.ts` holds that fact as an assertion so it cannot go
+ * quiet, and `fixtures/README.md` names the two ways to close it.
+ *
  * ## Two targets, one spec
  *
  * Locally this drives the rig `stack.ts` assembles — with the deployed CSP, a
@@ -116,7 +124,8 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
   }) => {
     /*
      * Generous, and every second of it is spent on something real: a workspace
-     * build in global setup, an upload, eighteen seconds of video watched at 1× and then again,
+     * build in global setup, a ten-megabyte upload, twenty seconds of
+     * 1080p watched at 1× and then again,
      * and — on a second sign-in inside one 30-second TOTP step — a wait for the
      * next code. Shortening this would not make anything faster; it would only
      * turn a slow step into a failure that names the wrong thing.
