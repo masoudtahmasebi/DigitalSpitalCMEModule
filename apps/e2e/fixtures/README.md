@@ -1,4 +1,4 @@
-# The eight-second Fortbildung
+# The eighteen-second Fortbildung
 
 `kurzvideo.webm` — 320×180, VP8, 10 fps, **exactly 8.00 seconds**, 29 KB.
 
@@ -11,10 +11,24 @@ time since the learner's last activity, so a physician cannot watch ten minutes
 in one second and the API refuses a report that claims they did.
 
 The fixture is the answer to that, **not a weakened rule**. The course this
-suite builds uses an eight-second video with `requiredWatchPercent` at its real
-value. Watching 80 % of eight seconds takes seven seconds of wall clock, and
-every rule stays exactly as it is in production — nothing is relaxed, mocked or
+suite builds uses an eighteen-second video with `requiredWatchPercent` at its
+real value. Watching it takes eighteen seconds of wall clock, and every rule
+stays exactly as it is in production — nothing is relaxed, mocked or
 fast-forwarded for the test.
+
+### Why eighteen seconds and not eight (P71-01)
+
+It was eight, which was enough to open the watch gate and not enough for a
+progress flush ever to land during playback.
+
+The widget flushes progress every fifteen seconds. A fixture shorter than that
+means no flush ever arrives _during_ playback, so everything that can go wrong
+when one does — a re-render mid-video, state that does not survive it — is
+unreachable from the journey, however green it is. Eighteen seconds costs the
+suite ten more seconds and buys the whole class.
+
+The same shape as the harness bucket that used to answer every CORS preflight
+(P70-01): a fixture that cannot reach a state cannot find a bug in it.
 
 ## Why WebM and not MP4
 
@@ -28,7 +42,7 @@ serves to physicians is correct, and is not the file to test the _harness_ with.
 
 ## Why the frames say what they say
 
-Each frame carries the elapsed time and a bar that fills over the eight seconds.
+Each frame carries the elapsed time and a bar that fills over the eighteen seconds.
 When a run fails at "the gate did not open", the trace screenshot shows how far
 the player actually got — which distinguishes "the video never played" from
 "the progress never reached the API", and those two have entirely different

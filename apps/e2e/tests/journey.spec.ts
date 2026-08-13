@@ -54,9 +54,16 @@
  * presumably why every earlier suite stopped before the player.
  *
  * The fixture is the answer rather than a relaxed rule: `kurzvideo.webm` is
- * eight seconds long, `requiredWatchPercent` keeps its real value, and watching
- * enough of it costs seven seconds of wall clock. Nothing is mocked, stubbed or
- * fast-forwarded, and the gate that opens is the same gate a physician passes.
+ * eighteen seconds long, `requiredWatchPercent` keeps its real value, and
+ * watching it costs eighteen seconds of wall clock. Nothing is mocked, stubbed
+ * or fast-forwarded, and the gate that opens is the same gate a physician
+ * passes.
+ *
+ * **Eighteen and not eight** (P71-01): the widget flushes progress every
+ * fifteen seconds, so a fixture shorter than that means no flush ever arrives
+ * *during* playback — and the client's report was a defect that only happens
+ * when one does. A fixture that cannot reach a state cannot find a bug in it,
+ * which is CLAUDE.md §9.13's second rule in a new place.
  *
  * ## Two targets, one spec
  *
@@ -109,7 +116,7 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
   }) => {
     /*
      * Generous, and every second of it is spent on something real: a workspace
-     * build in global setup, an upload, eight seconds of video watched at 1×,
+     * build in global setup, an upload, eighteen seconds of video watched at 1× and then again,
      * and — on a second sign-in inside one 30-second TOTP step — a wait for the
      * next code. Shortening this would not make anything faster; it would only
      * turn a slow step into a failure that names the wrong thing.
@@ -357,7 +364,21 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         operator.getByText(/Bei hochgeladenen Videos kann die Länge/u),
         "an uploaded video offers no length probe, and the screen must say why",
       ).toBeVisible();
-      await operator.locator("#content-new-duration").fill("8");
+      /*
+       * The fixture's real length, and it has to be exactly that (P71-01).
+       *
+       * This said "8" while the fixture grew to eighteen seconds, and the
+       * journey then failed at the very last act with *"Es fehlt noch: die
+       * vollständige Videowiedergabe"* — which is the product being right. The
+       * watch percentage is computed against the **authored** length, so a
+       * number that does not match the file is exactly the silent accreditation
+       * defect `media-duration.ts` exists to prevent, reproduced by hand in the
+       * suite that is supposed to catch it.
+       *
+       * It is typed rather than probed because an uploaded `s3://` reference
+       * offers no length probe yet — see the assertion just above.
+       */
+      await operator.locator("#content-new-duration").fill("18");
 
       await operator.getByRole("button", { name: "Hinzufügen", exact: true }).click();
       await expect(operator.getByText("Die Aufzeichnung")).toBeVisible({
@@ -555,8 +576,8 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        *
        * Nothing here fakes a `timeupdate` or posts a segment directly: the
        * player plays, the tracker observes, and the API credits the union of
-       * what was actually watched. That is the whole reason the fixture is
-       * eight seconds long — see `fixtures/README.md`.
+       * what was actually watched. That is the whole reason the fixture has a
+       * real length — see `fixtures/README.md`.
        */
       await expect
         .poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime), {
@@ -565,6 +586,55 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
           timeout: 30_000,
         })
         .toBeGreaterThan(3);
+
+      /*
+       * The playhead never goes backwards on its own (P71-01).
+       *
+       * ## What this covers, and what it does not
+       *
+       * The fixture is eighteen seconds rather than eight so that a progress
+       * flush lands *during* playback — `FLUSH_INTERVAL_MS` is fifteen, so a
+       * shorter video guaranteed one never did, and everything that can go
+       * wrong across a mid-video re-render was unreachable from here.
+       *
+       * **It did not reproduce the client's report of 13.08**, and that is
+       * recorded rather than papered over. P71-01 is a real defect — the
+       * watermark of the furthest second watched was destroyed on every flush,
+       * and `VideoPlayer.test.tsx` goes red on it — but making the *playhead*
+       * visibly snap back needs the server's ceiling to lag the playhead by
+       * more than a second, and in this rig it does not: the API credits the
+       * union promptly, even at 1,5×. Tried at 1,5× with a twenty-five second
+       * fixture; still green against the broken player.
+       *
+       * So this is a monotonicity guard, not the regression test for that
+       * report. It would catch a gross rewind; the unit test is what catches
+       * P71-01. Saying so is the point — a check whose reach is overstated is
+       * how the last four defects survived (§9.1).
+       */
+      let furthest = 0;
+      const retreats: string[] = [];
+      const until = Date.now() + 25_000;
+      while (Date.now() < until) {
+        const now = await video.evaluate((element: HTMLVideoElement) => ({
+          at: element.currentTime,
+          paused: element.paused,
+        }));
+        // Half a second of tolerance: `currentTime` lands on a keyframe rather
+        // than exactly where it was set, and this is not a test of decoder
+        // precision.
+        if (now.at < furthest - 0.5) {
+          retreats.push(`${furthest.toFixed(1)}s → ${now.at.toFixed(1)}s`);
+        }
+        furthest = Math.max(furthest, now.at);
+        if (furthest > 16 || (now.paused && furthest > 2)) break;
+        await learner.waitForTimeout(250);
+      }
+
+      expect(retreats, "the playhead went backwards while playing forwards").toEqual([]);
+      expect(
+        furthest,
+        "the video never played past a progress flush, so this act asserted nothing",
+      ).toBeGreaterThan(16);
 
       await learner.getByRole("button", { name: "Pause", exact: true }).first().click();
       await expect
@@ -609,7 +679,7 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
 
       /*
        * The gate. `requiredWatchPercent` is at its real value, so this opens
-       * only because the whole eight seconds were genuinely watched — the
+       * only because the whole video was genuinely watched — the
        * button that replaces "Fortbildung pausieren" once the server agrees.
        */
       await expect(
