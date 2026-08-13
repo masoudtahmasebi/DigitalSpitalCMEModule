@@ -330,4 +330,42 @@ export default [
       "@typescript-eslint/no-explicit-any": "off",
     },
   },
+
+  /*
+   * The browser suite builds nothing, so it may import nothing that is built
+   * (P68-03).
+   *
+   * `pnpm test:smoke` runs after a deploy with a browser and three URLs and
+   * **no workspace build** — deliberately, because a post-deploy check that
+   * first has to compile the monorepo has an ambiguous failure: was it the
+   * deployment, or was it the build?
+   *
+   * So a `@ds/*` import here resolves to a `dist/` nobody produced, and the
+   * spec fails to load before it looks at the installation at all. That is
+   * exactly what happened on the journey job's second run, to
+   * `stripTrailingSlashes` — an import a *lint rule* had suggested, which is
+   * how easy it is to reintroduce.
+   *
+   * Placed after the test override above, so it applies to the spec files too.
+   */
+  {
+    files: ["apps/e2e/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@ds/*"],
+              message:
+                "apps/e2e builds nothing: `pnpm test:smoke` runs against a deployment " +
+                "with only a browser, so a workspace import resolves to a dist/ that " +
+                "does not exist. Inline the few lines you need, or shell out to the " +
+                "command that owns them (see support/world.ts).",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];
