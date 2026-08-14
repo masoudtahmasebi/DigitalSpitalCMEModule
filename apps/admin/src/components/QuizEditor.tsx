@@ -79,7 +79,20 @@ interface DraftOption {
   isCorrect: boolean;
 }
 
-export function QuizEditor(props: { client: ApiClient; contentId: string }) {
+export function QuizEditor(props: {
+  client: ApiClient;
+  contentId: string;
+  /**
+   * Back to "Inhalte & Darstellung" (P74-06).
+   *
+   * Reported as *"when in here i added a question, i can not easily go back to
+   * the inhalt darstellung"*. The way back existed — the breadcrumb at the top
+   * of the page — and after writing eleven questions it is several screens
+   * above where the author is working. An exit belongs where the work ends, not
+   * only where it began.
+   */
+  onDone: () => void;
+}) {
   const { client, contentId } = props;
 
   const load = useCallback(() => client.adminGetQuiz(contentId), [client, contentId]);
@@ -176,6 +189,25 @@ export function QuizEditor(props: { client: ApiClient; contentId: string }) {
         >
           {saver.state === "saving" ? de.common.saving : de.common.save}
         </Button>
+        {/*
+          Named, not "Zurück" (P74-06). A button that says only "back" leaves
+          the reader to work out where back is, which is the objection P30-02
+          made about the control the breadcrumb replaced — and this screen is
+          two levels down, so "back" has two plausible answers.
+
+          It does not save. A control that both left and saved would be one
+          click for two decisions, and the one that matters here decides what a
+          physician is asked. The unsaved-changes note beside it is what makes
+          leaving safe to offer.
+        */}
+        <Button variant="secondary" onClick={props.onDone}>
+          {de.quiz.backToStructure}
+        </Button>
+        {draft === undefined ? null : (
+          <p className="self-center text-xs text-amber-700" role="status">
+            {de.quiz.unsavedChanges}
+          </p>
+        )}
       </div>
     </section>
   );

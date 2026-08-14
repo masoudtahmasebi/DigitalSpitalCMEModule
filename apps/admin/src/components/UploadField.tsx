@@ -34,16 +34,25 @@
  */
 
 import { useRef, useState } from "react";
+import { srtToVtt } from "@ds/domain";
 import type { ApiClient, UploadPurpose } from "@ds/sdk";
 import { uploadToTicket } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { useReadableUrl } from "../media-preview.js";
 import { Button, Field, IconButton, Notice, TextInput } from "./ui.js";
 
-/** What a file picker should offer per purpose. Mirrors `UPLOAD_TYPES`. */
+/**
+ * What a file picker should offer per purpose. Mirrors `UPLOAD_TYPES`.
+ *
+ * `captions` offers `.srt` as well, and that is not a widening of what the
+ * platform stores (P74-05). An SRT is converted to WebVTT here, before the
+ * upload, so the object in the bucket is `text/vtt` exactly as before — see
+ * `prepare`. Offering it is the point: SRT is what comes out of every
+ * transcription service, and `<track>` takes WebVTT and nothing else.
+ */
 const ACCEPT: Readonly<Record<UploadPurpose, string>> = {
   video: "video/mp4,video/webm,audio/mpeg,audio/mp4",
-  captions: "text/vtt,.vtt",
+  captions: "text/vtt,.vtt,.srt,application/x-subrip",
   poster: "image/jpeg,image/png,image/webp",
   material: "application/pdf",
 };
@@ -73,10 +82,12 @@ export async function runUpload(
   client: ApiClient,
   courseSlug: string,
   purpose: UploadPurpose,
-  file: File,
+  chosen: File,
   onProgress: (percent: number) => void,
   signal: AbortSignal,
 ): Promise<{ reference: string; mimeType: string }> {
+  const file = await prepare(purpose, chosen);
+
   const ticket = await client.adminBeginUpload(courseSlug, {
     purpose,
     // `file.type` is empty for some files on some platforms — a `.vtt` picked
@@ -92,6 +103,72 @@ export async function runUpload(
   // checked that the bucket holds what it approved.
   const confirmed = await client.adminCompleteUpload(courseSlug, ticket.key);
   return { reference: confirmed.reference, mimeType: confirmed.mimeType };
+}
+
+/**
+ * The file as it should reach the bucket (P74-05).
+ *
+ * Only captions have anything to do here, and only when the author picked an
+ * SRT. `<track src>` takes **WebVTT and nothing else**: a browser handed an
+ * `.srt` fires `error` on the track and shows no captions at all, silently,
+ * with the video playing perfectly. So an author who uploaded subtitles and saw
+ * no complaint would have a course without them, and would find out from a
+ * physician who could not follow it.
+ *
+ * Converting here rather than at play time means the stored object is genuinely
+ * `text/vtt`: the API's upload rules do not learn a second format, nothing
+ * converts on the learner's path, and a file downloaded from the Mediathek is
+ * what its name says.
+ *
+ * A file that is already WebVTT, or that is not subtitles at all, is passed
+ * through untouched. The second is deliberate: the server refuses it with a
+ * German message written for this screen, which is a better refusal than
+ * anything this function could invent, and a converter that repaired its input
+ * would produce plausible nonsense.
+ */
+async function prepare(purpose: UploadPurpose, file: File): Promise<File> {
+  if (purpose !== "captions") return file;
+
+  const converted = srtToVtt(await readText(file));
+  if (!converted.ok) return file;
+
+  return new File([converted.vtt], toVttName(file.name), { type: "text/vtt" });
+}
+
+/**
+ * The file's text, from whichever API this browser has.
+ *
+ * `Blob.prototype.text()` is the modern one and is what nearly every visitor
+ * uses. `FileReader` is the fallback, and it is not hypothetical: Safari gained
+ * `text()` only in 14, and jsdom — which is what the console's own tests run
+ * in — does not implement it at all. Without this the conversion threw in a
+ * `try` that reported it as "the upload failed", which is a message about the
+ * wrong thing.
+ */
+async function readText(file: File): Promise<string> {
+  if (typeof file.text === "function") return file.text();
+
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result ?? "")));
+    reader.addEventListener("error", () =>
+      reject(reader.error ?? new Error("the file could not be read")),
+    );
+    reader.readAsText(file);
+  });
+}
+
+/**
+ * `untertitel.srt` → `untertitel.vtt`. The extension is a lie otherwise.
+ *
+ * `lastIndexOf` rather than a regular expression anchored at the end: a
+ * repetition before `$` backtracks quadratically, and the input here is a
+ * filename somebody chose.
+ */
+function toVttName(name: string): string {
+  const dot = name.lastIndexOf(".");
+  const stem = dot <= 0 ? name : name.slice(0, dot);
+  return `${stem}.vtt`;
 }
 
 function fallbackType(purpose: UploadPurpose): string {

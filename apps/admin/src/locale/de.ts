@@ -659,11 +659,15 @@ export const de = {
      * this browser can open. Saying so is the difference between a limitation
      * and a screen that looks half-built.
      */
-    durationDetectUnavailable:
-      "Bei hochgeladenen Videos kann die Länge hier nicht automatisch gelesen werden — die Datei liegt im Dateispeicher und nicht unter einer für den Browser abrufbaren Adresse. Bitte die Länge in Sekunden eintragen.",
-    captionsUrl: "Untertitel-Datei (WebVTT)",
+    captionsUrl: "Untertitel-Datei (WebVTT oder SRT)",
+    /*
+     * The field takes SRT now (P74-05), and the label says so rather than the
+     * hint alone: the label is what somebody reads before deciding whether they
+     * have the right file, and "WebVTT" on its own is what sent them away to
+     * convert one by hand.
+     */
     captionsHint:
-      "URL einer .vtt-Datei mit deutschen Untertiteln. Untertitel sind Stufe A der Barrierefreiheitsrichtlinien (WCAG 1.2.2, EN 301 549): Ohne sie können hörbeeinträchtigte Ärztinnen und Ärzte die Fortbildung nicht absolvieren — und der Fortschritt wird sie als nicht angesehen erfassen.",
+      "Datei oder URL mit deutschen Untertiteln. SRT-Dateien werden beim Hochladen automatisch in das WebVTT-Format umgewandelt, das Browser für Untertitelspuren verlangen. Untertitel sind Stufe A der Barrierefreiheitsrichtlinien (WCAG 1.2.2, EN 301 549): Ohne sie können hörbeeinträchtigte Ärztinnen und Ärzte die Fortbildung nicht absolvieren — und der Fortschritt wird sie als nicht angesehen erfassen.",
     captionsMissing:
       "Für dieses Video sind keine Untertitel hinterlegt. Bei Videos mit Sprache ist das ein Barrierefreiheitsmangel. Reine Folienaufzeichnungen ohne Ton benötigen keine.",
     body: "Text",
@@ -707,6 +711,17 @@ export const de = {
       "Die Reihenfolge der Fragen ist die Reihenfolge in der Prüfung. Bewertet wird auf exakte Übereinstimmung: bei „eine richtige Antwort“ muss genau die richtige Option gewählt sein, bei „mehrere richtige Antworten“ genau die Menge der richtigen.",
     empty: "Noch keine Fragen.",
     addQuestion: "Frage hinzufügen",
+    /*
+     * The way out, at the bottom where the work ends (P74-06).
+     *
+     * Named rather than "Zurück": this screen is two levels down — a course, a
+     * tab, a quiz — so "back" has two plausible answers. It names the tab the
+     * quiz replaced, which is "Inhalte"; the neighbouring tab is called "Inhalte
+     * & Darstellung" and the two are easy to confuse, so the wording has to
+     * point at exactly one of them.
+     */
+    backToStructure: "Zurück zu den Inhalten",
+    unsavedChanges: "Nicht gespeicherte Änderungen gehen dabei verloren.",
     prompt: "Frage",
     kind: "Antworttyp",
     kinds: {

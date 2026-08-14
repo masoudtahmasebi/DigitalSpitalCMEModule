@@ -52,7 +52,24 @@ export type Route =
   | { kind: "certificates" }
   | { kind: "staff" }
   | { kind: "security" }
-  | { kind: "course"; slug: string; tab: RouteCourseTab };
+  | {
+      kind: "course";
+      slug: string;
+      tab: RouteCourseTab;
+      /**
+       * The quiz open under the structure tab, if any (P74-06).
+       *
+       * A quiz is a level below the tabs — a content, in a chapter, in a
+       * module — so it is not a tab of its own. It was held in React state and
+       * nowhere else, which is the defect this whole file exists to fix, one
+       * level deeper than P42-01 reached: this file's own header names "somebody
+       * deep in a course's quiz editor who pressed F5" as the motivating case,
+       * and the fix stopped at the tab. Reported as _"when in here i added a
+       * question, i can not easily go back to the inhalt darstellung"_ — because
+       * Back left the console rather than closing the quiz.
+       */
+      quizContentId?: string;
+    };
 
 /**
  * One table, read in both directions.
@@ -86,7 +103,10 @@ const TABS: readonly RouteCourseTab[] = [
 /** The fragment for a route, including the leading `#`. */
 export function encode(route: Route): string {
   if (route.kind === "course") {
-    return `#/fortbildungen/${encodeURIComponent(route.slug)}/${route.tab}`;
+    const course = `#/fortbildungen/${encodeURIComponent(route.slug)}/${route.tab}`;
+    return route.quizContentId === undefined
+      ? course
+      : `${course}/quiz/${encodeURIComponent(route.quizContentId)}`;
   }
   return `#/${SEGMENTS[route.kind]}`;
 }
@@ -104,14 +124,39 @@ export function decode(hash: string): Route | undefined {
   const path = stripTrailingSlashes(hash.replace(/^#\/?/u, ""));
   if (path === "") return undefined;
 
-  // A course, and only if its tab is one that exists: `#/fortbildungen/x/quatsch`
-  // is a bad link, not a request for a tab to be invented.
-  const course = /^fortbildungen\/([^/]+)\/([a-z]+)$/u.exec(path);
-  if (course !== null) {
-    const slug = decodeURIComponent(course[1] ?? "");
-    const tab = course[2] as RouteCourseTab;
-    if (slug !== "" && slug !== "neu" && TABS.includes(tab)) {
-      return { kind: "course", slug, tab };
+  /*
+   * A course, and only if its tab is one that exists: `#/fortbildungen/x/quatsch`
+   * is a bad link, not a request for a tab to be invented.
+   *
+   * The optional `/quiz/<contentId>` tail is the one level below a tab
+   * (P74-06). Its id is not validated as a uuid: this decides *which screen*,
+   * and whether a content exists is the API's answer to the request the screen
+   * then makes — a second opinion here would produce a "not found" the server
+   * never said.
+   *
+   * Split on `/` rather than matched by one pattern. The pattern that expressed
+   * this had an optional group after a greedy one and backtracks on input built
+   * to make it — reading a value straight out of the address bar, which is the
+   * same trap `stripTrailingSlashes` exists for (P49-01).
+   */
+  const parts = path.split("/");
+  if (parts[0] === "fortbildungen" && (parts.length === 3 || parts.length === 5)) {
+    const slug = decodeURIComponent(parts[1] ?? "");
+    const tab = (parts[2] ?? "") as RouteCourseTab;
+    const hasQuiz = parts.length === 5;
+    if (hasQuiz && parts[3] !== "quiz") return undefined;
+
+    const quizContentId = hasQuiz ? decodeURIComponent(parts[4] ?? "") : undefined;
+    if (slug !== "" && slug !== "neu" && TABS.includes(tab) && quizContentId !== "") {
+      return {
+        kind: "course",
+        slug,
+        tab,
+        // Spread rather than assigned: `exactOptionalPropertyTypes` makes
+        // "absent" and "present and undefined" different values, and only the
+        // first round-trips back through `encode` to the URL that was decoded.
+        ...(quizContentId === undefined ? {} : { quizContentId }),
+      };
     }
     return undefined;
   }

@@ -487,6 +487,28 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         timeout: 15_000,
       });
 
+      /*
+       * The way out, and the address that makes it one (P74-06).
+       *
+       * > _"when in here i added a question, i can not easily go back to the
+       * > inhalt darstellung"_
+       *
+       * Two things are asserted here and neither is visible to an API test.
+       * The quiz is **in the address bar** — so Back closes it, F5 keeps it, and
+       * it can be sent to somebody — and there is an exit at the bottom of the
+       * editor, where the author actually is after writing questions, rather
+       * than only in the breadcrumb several screens above.
+       */
+      await expect(operator).toHaveURL(/\/structure\/quiz\/[0-9a-f-]{36}$/u);
+      await operator.getByRole("button", { name: "Zurück zu den Inhalten" }).click();
+      await expect(
+        operator,
+        "leaving the quiz must land on the structure tab, not somewhere else",
+      ).toHaveURL(/\/structure$/u);
+      await expect(
+        operator.getByRole("button", { name: "Inhalt hinzufügen" }),
+      ).toBeVisible({ timeout: 15_000 });
+
       // ===================================================================
       // Act 6 · The Evaluationsbogen, which the Bescheid requires
       // ===================================================================

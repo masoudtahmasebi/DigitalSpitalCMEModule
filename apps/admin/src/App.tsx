@@ -359,7 +359,7 @@ type View =
   | { kind: "certificates" }
   | { kind: "staff" }
   | { kind: "security" }
-  | { kind: "course"; slug: string; tab: CourseTab };
+  | { kind: "course"; slug: string; tab: CourseTab; quizContentId?: string };
 
 /**
  * The sections, and the capability each one needs.
@@ -968,7 +968,17 @@ export function Console(props: {
         client={client}
         slug={view.slug}
         tab={view.tab}
+        // Spread, not assigned: under `exactOptionalPropertyTypes` an explicit
+        // `undefined` is a different value from an absent key, and only the
+        // absent one encodes back to the URL without a trailing `/quiz/`.
+        {...(view.quizContentId === undefined
+          ? {}
+          : { quizContentId: view.quizContentId })}
         onTab={(tab) => setView({ kind: "course", slug: view.slug, tab })}
+        onEditQuiz={(quizContentId) =>
+          setView({ kind: "course", slug: view.slug, tab: "structure", quizContentId })
+        }
+        onCloseQuiz={() => setView({ kind: "course", slug: view.slug, tab: "structure" })}
         onBack={() => {
           setView({ kind: "courses" });
           void loadCourses();
@@ -1185,22 +1195,38 @@ function CourseScreen(props: {
   client: ApiClient;
   slug: string;
   tab: CourseTab;
+  /**
+   * The quiz open under the structure tab, from the address bar (P74-06).
+   *
+   * It used to be React state here, which made the quiz editor a place with no
+   * address: Back left the console instead of closing it, F5 lost it, and there
+   * was nothing to send anybody. Reported as *"when in here i added a question,
+   * i can not easily go back to the inhalt darstellung"*.
+   */
+  quizContentId?: string;
   onTab: (tab: CourseTab) => void;
+  onEditQuiz: (contentId: string) => void;
+  onCloseQuiz: () => void;
   onBack: () => void;
 }) {
   const [course, setCourse] = useState<AdminCourseDetail | undefined>();
   const [participants, setParticipants] = useState<ParticipantList | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
   /**
-   * Editing one quiz replaces the structure tab rather than opening beside it.
+   * The title of the quiz's content item, for the heading.
    *
-   * A quiz belongs to a content item, which belongs to a chapter — so it is a
-   * level deeper than the tabs, and giving it a tab of its own would mean a tab
-   * that is meaningless until something in another tab is selected.
+   * State rather than route, and the distinction matters: *which* quiz is open
+   * is addressable and belongs in the URL, but its title is a fact the server
+   * owns. Somebody arriving on a link has an id and no title yet, and the
+   * heading falls back to "Lernerfolgskontrolle" — which is true, rather than a
+   * title guessed from a url.
    */
-  const [quiz, setQuiz] = useState<{ contentId: string; title: string } | undefined>();
+  const [quizTitle, setQuizTitle] = useState<string | undefined>();
 
   const { client, slug, tab } = props;
+  // A quiz only exists under the structure tab. Deriving it rather than
+  // clearing it in an effect means the two can never briefly disagree.
+  const quizContentId = tab === "structure" ? props.quizContentId : undefined;
 
   useEffect(() => {
     setProblem(undefined);
@@ -1216,11 +1242,6 @@ function CourseScreen(props: {
     });
   }, [client, slug, tab]);
 
-  // Leaving the structure tab abandons a quiz that was open under it.
-  useEffect(() => {
-    if (tab !== "structure") setQuiz(undefined);
-  }, [tab]);
-
   /*
    * Where the operator is (P30-02).
    *
@@ -1234,16 +1255,22 @@ function CourseScreen(props: {
   // The trail names the levels *above*; the heading names where you are. So a
   // quiz pushes the course into the trail rather than repeating it.
   const trail: Crumb[] =
-    quiz === undefined
+    quizContentId === undefined
       ? [{ label: de.courses.title, onClick: props.onBack }]
       : [
           { label: de.courses.title, onClick: props.onBack },
-          { label: courseLabel, onClick: () => setQuiz(undefined) },
+          { label: courseLabel, onClick: props.onCloseQuiz },
         ];
 
   return (
     <Page
-      title={quiz === undefined ? courseLabel : `${de.quiz.title} — ${quiz.title}`}
+      title={
+        quizContentId === undefined
+          ? courseLabel
+          : quizTitle === undefined
+            ? de.quiz.title
+            : `${de.quiz.title} — ${quizTitle}`
+      }
       trail={trail}
     >
       <nav className="flex flex-wrap gap-1 border-b border-gray-200">
@@ -1276,8 +1303,12 @@ function CourseScreen(props: {
         tab={tab}
         course={course}
         participants={participants}
-        quiz={quiz}
-        onEditQuiz={(contentId, title) => setQuiz({ contentId, title })}
+        {...(quizContentId === undefined ? {} : { quizContentId })}
+        onEditQuiz={(contentId, title) => {
+          setQuizTitle(title);
+          props.onEditQuiz(contentId);
+        }}
+        onCloseQuiz={props.onCloseQuiz}
         onCourseSaved={setCourse}
       />
     </Page>
@@ -1290,22 +1321,27 @@ function CourseTabContent(props: {
   tab: CourseTab;
   course: AdminCourseDetail | undefined;
   participants: ParticipantList | undefined;
-  quiz: { contentId: string; title: string } | undefined;
+  quizContentId?: string;
   onEditQuiz: (contentId: string, title: string) => void;
+  onCloseQuiz: () => void;
   onCourseSaved: (course: AdminCourseDetail) => void;
 }) {
   const { client, slug } = props;
 
   switch (props.tab) {
     case "structure":
-      return props.quiz === undefined ? (
+      return props.quizContentId === undefined ? (
         <CourseStructureEditor
           client={client}
           courseSlug={slug}
           onEditQuiz={props.onEditQuiz}
         />
       ) : (
-        <QuizEditor client={client} contentId={props.quiz.contentId} />
+        <QuizEditor
+          client={client}
+          contentId={props.quizContentId}
+          onDone={props.onCloseQuiz}
+        />
       );
 
     case "experts":

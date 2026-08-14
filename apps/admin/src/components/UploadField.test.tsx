@@ -99,6 +99,24 @@ function filePicker(): HTMLInputElement {
   return input as HTMLInputElement;
 }
 
+/**
+ * A blob's text, through `FileReader`.
+ *
+ * jsdom does not implement `Blob.prototype.text()` — the same gap `readText`
+ * in the component exists for, and the reason it exists rather than being a
+ * one-liner.
+ */
+function readAsText(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result ?? "")));
+    reader.addEventListener("error", () =>
+      reject(reader.error ?? new Error("unreadable")),
+    );
+    reader.readAsText(file);
+  });
+}
+
 function choose(file: File): void {
   const input = filePicker();
   Object.defineProperty(input, "files", { value: [file], configurable: true });
@@ -324,6 +342,67 @@ describe("what an author is told when it goes wrong", () => {
     choose(new File(["x"], "poster.png", { type: "image/png" }));
 
     await waitFor(() => expect(filePicker().value).toBe(""));
+  });
+});
+
+/**
+ * SRT in, WebVTT in the bucket (P74-05).
+ *
+ * > _"can we make the subtitle be also in srt format?"_
+ *
+ * The conversion itself is `srtToVtt` in `@ds/domain`, tested exhaustively
+ * there. What only this file can hold is that anything **calls** it — the §9.3
+ * shape — and that what reaches the bucket is the converted bytes rather than
+ * the file the author picked.
+ */
+describe("subtitles the author already has", () => {
+  const SRT = "1\n00:00:01,000 --> 00:00:04,000\nWillkommen.\n";
+
+  it("uploads an SRT as WebVTT, under a .vtt name", async () => {
+    uploadToTicket.mockResolvedValue(undefined);
+    const { client } = renderField({ purpose: "captions" });
+
+    choose(new File([SRT], "untertitel.srt", { type: "application/x-subrip" }));
+
+    await waitFor(() => expect(client.adminBeginUpload).toHaveBeenCalled());
+    // The type the *server* is asked to approve is the converted one — asking
+    // for `application/x-subrip` would be a 422, correctly, since that is not a
+    // format the platform stores.
+    expect(client.adminBeginUpload).toHaveBeenCalledWith("adhs", {
+      purpose: "captions",
+      mimeType: "text/vtt",
+      sizeBytes: expect.any(Number) as number,
+    });
+
+    const sent = uploadToTicket.mock.calls[0]?.[1] as File;
+    expect(sent.name).toBe("untertitel.vtt");
+    expect(sent.type).toBe("text/vtt");
+    // The bytes, not just the label. A `<track>` handed anything without this
+    // first line shows no captions at all, silently.
+    expect(await readAsText(sent)).toContain("WEBVTT");
+    expect(await readAsText(sent)).toContain("00:00:01.000 --> 00:00:04.000");
+  });
+
+  it("leaves a WebVTT file exactly as it was", async () => {
+    // A second `WEBVTT` line in the middle of a file is a parse failure, so
+    // converting twice would break the case that already worked.
+    uploadToTicket.mockResolvedValue(undefined);
+    const vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nWillkommen.\n";
+    renderField({ purpose: "captions" });
+
+    choose(new File([vtt], "untertitel.vtt", { type: "text/vtt" }));
+
+    await waitFor(() => expect(uploadToTicket).toHaveBeenCalled());
+    const sent = uploadToTicket.mock.calls[0]?.[1] as File;
+    expect(sent.name).toBe("untertitel.vtt");
+    expect(await readAsText(sent)).toBe(vtt);
+  });
+
+  it("offers the picker both formats", () => {
+    renderField({ purpose: "captions" });
+    const accept = filePicker().getAttribute("accept") ?? "";
+    expect(accept).toContain(".srt");
+    expect(accept).toContain(".vtt");
   });
 });
 
