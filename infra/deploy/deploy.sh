@@ -763,6 +763,97 @@ else
   log "No object storage configured; skipping the bucket check"
 fi
 
+# ---------------------------------------------------------------------------
+# 6c. Caddy is serving the Caddyfile in *this checkout* (P74-07)
+# ---------------------------------------------------------------------------
+#
+# ## The failure this ends
+#
+# `caddy` runs a stock image with `./Caddyfile:/etc/caddy/Caddyfile:ro` — a
+# bind mount. `compose up -d` recreates a container when its image or its
+# compose-level configuration changes, and **a changed mounted file is neither**.
+# So Caddy kept serving whatever Caddyfile it read when it last started, and a
+# deploy that pulled a new Caddyfile reported success having applied none of it.
+#
+# It was found by the post-deploy journey on 14.08: the browser said
+#
+#     Refused to load media from 'https://nbg1.your-objectstorage.com/…'
+#     because it violates the following Content Security Policy directive:
+#     "default-src 'self'". Note that 'media-src' was not explicitly set…
+#
+# against a deploy whose checkout *contained* the `media-src`. The repository's
+# state is not the installation's state (CLAUDE.md §9.9), one layer below where
+# that rule is usually applied: here the deploy had copied the file and the
+# process that reads it was never told.
+#
+# This is not one directive's problem. Every header, route and redirect ever
+# changed in that file has had the same fate, and nothing anywhere said so.
+#
+# ## Reload, and then check the effect rather than the command
+#
+# `caddy reload` is the graceful path — new config, no dropped connections, no
+# fresh ACME work. But a reload returning 0 proves the command ran, not that
+# the running server now answers differently: exactly the §9.1 shape. So the
+# **served header** is compared against the file, per site.
+#
+# The comparison expands Caddy's own placeholders from this shell, which holds
+# the same values compose passes the container — so a mismatch means the file
+# and the server genuinely disagree, not that one of them interpolated. (Spelt
+# without the literal token here: `deploy-vars.test.sh` reads comments too, and
+# an example in prose would read as a variable this script requires.)
+#
+# What it covers: any change to a policy, including a value inside a directive.
+# What it does not: the rest of the Caddyfile — a changed route or redirect is
+# still unverified here, and the reload above is what applies it.
+source "${SCRIPT_DIR}/caddy-config.sh"
+
+log "Reloading Caddy so it reads this checkout's Caddyfile"
+if ! compose exec -T caddy caddy reload \
+  --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null; then
+  # A reload can legitimately fail — the container may have been created only
+  # moments ago by `up -d`, or an older Caddy may not accept these flags.
+  # Recreating is heavier (a few seconds of refused connections) and always
+  # works, so it is the fallback rather than the default.
+  log "  reload refused; recreating the container instead"
+  compose up -d --force-recreate caddy
+  sleep 3
+fi
+
+for site in ADMIN_DOMAIN PORTAL_DOMAIN; do
+  expected="$(ds_expected_csp "$site" || true)"
+  [[ -n "$expected" ]] || continue
+
+  host="${!site}"
+
+  # Retried, because a reload is in flight and a single refused connection
+  # during it would fail a deploy that is in fact fine. Five seconds is far
+  # longer than a Caddy reload and far shorter than anybody's patience.
+  served=""
+  for attempt in $(seq 1 5); do
+    served="$(ds_normalise_policy "$(
+      curl --silent --show-error --max-time 10 --head "https://${host}" 2>/dev/null \
+        | sed -n 's/^[Cc]ontent-[Ss]ecurity-[Pp]olicy: *//p'
+    )")"
+    [[ "$served" == "$expected" ]] && break
+    [[ "$attempt" == "5" ]] || sleep 1
+  done
+
+  if [[ "$served" != "$expected" ]]; then
+    die "https://${host} is not serving the Caddyfile in this checkout.
+
+   The file says:
+     ${expected}
+
+   The server answers:
+     ${served:-（no Content-Security-Policy header at all）}
+
+   Caddy did not re-read its configuration. Everything else deployed; what is
+   affected is every header, route and redirect changed in that file — which
+   fails in the browser, with nothing in any server log."
+  fi
+  log "https://${host} serves the policy this checkout defines"
+done
+
 # Old images and build layers accumulate fast on a host that builds; a full
 # disk is its own outage. A week keeps enough tags for a rollback to be
 # instant, which is the point of tagging by commit.

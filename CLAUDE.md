@@ -381,6 +381,31 @@ tenant paths, to an operator who is already trusted (P42-02).
 **Check:** when a refusal is correct and unhelpful, do not weaken the refusal.
 Find the audience that is already entitled to the answer and put it there.
 
+### 9.9a Copying a file is not applying it
+
+The §9.9 corollary again, one layer lower. There it was _a setting a human was
+told to apply by hand_; here it is a setting the deploy **did** apply — to the
+filesystem — while the process that reads it kept running with the old one.
+
+`caddy` mounts `./Caddyfile` from the checkout. `docker compose up -d`
+recreates a container when its **image** or its **compose-level configuration**
+changes, and a changed _mounted file_ is neither. So a deploy pulled a Caddyfile
+with a new `media-src`, reported success, and Caddy went on serving the policy
+it had read at its last restart — for however long that had been. Every header,
+route and redirect ever changed in that file had the same fate (P74-07).
+
+The tell is that nothing failed. The file was right, the deploy was green, the
+server logs were clean, and the only evidence was a line in a browser console
+on the console screen — which is §9.13's territory, and is why the post-deploy
+journey found it and no server-side check could have.
+
+**Check:** for every file a container reads at startup and the deploy can
+change — a Caddyfile, an nginx conf, a systemd unit, a seed, a policy document
+— ask _what makes the running process read it again?_ If the answer is "a
+restart that happens for other reasons", it is not applied. And having made it
+reload, assert the **effect**: a reload's exit code says the command ran, not
+that the server now answers differently (§9.1).
+
 ### 9.10a A setting has two sides, and the comment names one
 
 `internal: true` on a Docker network says "nothing outside can reach this",
