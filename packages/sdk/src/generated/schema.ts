@@ -2021,6 +2021,41 @@ export interface components {
         SecondFactorPolicy: "disabled" | "optional" | "required";
         SecondFactorPolicies: {
             /**
+             * @description The rule governing the **caller's own** account, and where it comes
+             *     from (P74-01).
+             *
+             *     The console cannot derive this: it knows the customers an operator
+             *     may pick from, which is not the same set as the customers they hold
+             *     a grant in, and for a customer-scoped operator it is empty. Deriving
+             *     it there produced a screen that said "change the rule above" while
+             *     drawing two rows and naming neither.
+             *
+             *     `scopes` lists every scope at the strictest level, because relaxing
+             *     one of two `required` customers changes nothing.
+             */
+            own: {
+                policy: components["schemas"]["SecondFactorPolicy"];
+                scopes: {
+                    /**
+                     * Format: uuid
+                     * @description `null` is the platform's own scope.
+                     */
+                    customerId: string | null;
+                    /**
+                     * @description The customer's name, so the screen can point at a row.
+                     *     `null` for the platform scope, and `null` for a customer
+                     *     whose name could not be read.
+                     */
+                    name: string | null;
+                    /**
+                     * @description Whether this caller may set that scope's policy — the same
+                     *     check `PUT` applies, answered once so the screen can say
+                     *     *who* to ask instead of offering a control that is refused.
+                     */
+                    mayChange: boolean;
+                }[];
+            };
+            /**
              * @description The policy for accounts belonging to no customer — which is every
              *     `super_admin`. Defaults to `required`.
              */

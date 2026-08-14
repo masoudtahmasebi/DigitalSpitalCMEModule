@@ -1114,6 +1114,47 @@ describe("the second factor is a policy, not a constant (P22-02)", () => {
     expect(result.body.platform).toBe("required");
   });
 
+  /*
+   * Which row is the reader's own (P74-01).
+   *
+   * The console used to work this out from the customer list it holds for the
+   * invitation form — every customer for a super administrator, none of which
+   * they hold a grant in. So it told them to relax a customer's rule that had
+   * no bearing on their account, beside the platform row that did.
+   */
+  it("tells a super admin that the platform row is the one governing them", async () => {
+    const result = await asStaff(superSession, "GET", "/admin/auth/second-factor/policy");
+    expect(result.body.own.policy).toBe("required");
+    expect(result.body.own.scopes).toEqual([
+      { customerId: null, name: null, mayChange: true },
+    ]);
+  });
+
+  it("tells a customer admin it is their own customer, by name", async () => {
+    const result = await asStaff(
+      tenantSession,
+      "GET",
+      "/admin/auth/second-factor/policy",
+    );
+    expect(result.status).toBe(200);
+
+    const scopes = result.body.own.scopes as readonly {
+      customerId: string | null;
+      name: string | null;
+      mayChange: boolean;
+    }[];
+    expect(scopes).toHaveLength(1);
+    expect(scopes[0]?.customerId).toBe(existingCustomerId);
+    // Read through `list_customer_registry()`, because `customers` is under
+    // FORCE ROW LEVEL SECURITY and this pool carries no tenant context — a
+    // plain SELECT would answer `null` and the screen would name nothing
+    // (CLAUDE.md §9.6).
+    expect(scopes[0]?.name).not.toBeNull();
+    // And never the platform's, which is the row they cannot set.
+    expect(scopes[0]?.customerId).not.toBeNull();
+    expect(scopes[0]?.mayChange).toBe(true);
+  });
+
   it("refuses a customer admin setting the platform policy", async () => {
     // They would be deciding, from inside one customer, how strictly the
     // platform's unrestricted accounts are protected.

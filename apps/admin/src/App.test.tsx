@@ -114,9 +114,17 @@ function fakeClient(over: Partial<Record<string, unknown>> = {}) {
       fontBytes: null,
     }),
     adminGetBranding: vi.fn().mockResolvedValue({}),
-    adminGetSecondFactorPolicy: vi
-      .fn()
-      .mockResolvedValue({ platform: "required", customers: [] }),
+    adminGetSecondFactorPolicy: vi.fn().mockResolvedValue({
+      platform: "required",
+      customers: [],
+      // The caller's own rule and where it comes from (P74-01). Not optional in
+      // the contract, and the screen reads it on mount — a fixture without it
+      // renders nothing, which is how this fake earned a line of its own.
+      own: {
+        policy: "required",
+        scopes: [{ customerId: null, name: null, mayChange: true }],
+      },
+    }),
     ...over,
   } as never;
 }

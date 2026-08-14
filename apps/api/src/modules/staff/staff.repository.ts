@@ -201,6 +201,22 @@ export interface StaffRepositoryPort {
   }): Promise<void>;
 
   /**
+   * Names for customers the caller already holds a grant in (P74-01).
+   *
+   * Only so a screen can say *which* row to change. `customers` is under FORCE
+   * ROW LEVEL SECURITY and this pool carries no tenant context, so a plain
+   * `SELECT` here would match zero rows and the screen would quietly say
+   * nothing — CLAUDE.md §9.6. It goes through `list_customer_registry()`, the
+   * one function allowed to see the table, and the caller's own ids are the
+   * filter.
+   *
+   * An id with no row is simply absent from the map rather than an error: a
+   * grant can outlive a deleted customer, and a missing name must not take the
+   * security screen down.
+   */
+  customerNames(ids: readonly string[]): Promise<ReadonlyMap<string, string>>;
+
+  /**
    * Forget an account's second factor entirely.
    *
    * The secret *and* the replay counter. Leaving the counter would carry a high
@@ -763,6 +779,16 @@ export class StaffRepository implements StaffRepositoryPort {
     // row must not be a way to take the console down, and it must certainly not
     // be a way to make sign-in easier.
     return { platform: platform ?? DEFAULT_PLATFORM_SECOND_FACTOR, perCustomer };
+  }
+
+  async customerNames(ids: readonly string[]): Promise<ReadonlyMap<string, string>> {
+    if (ids.length === 0) return new Map();
+
+    const { rows } = await this.pool.query<{ id: string; name: string }>(
+      "SELECT id, name FROM list_customer_registry() WHERE id = ANY($1::uuid[])",
+      [ids],
+    );
+    return new Map(rows.map((row) => [row.id, row.name]));
   }
 
   async setSecondFactorPolicy(input: {

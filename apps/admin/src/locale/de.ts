@@ -7,6 +7,15 @@
  * form has to say what the number does rather than just name it.
  */
 
+/**
+ * The word the security screen uses for the strictest policy.
+ *
+ * Hoisted out of `de.security.policy_` because two sentences below quote it
+ * and an object literal cannot refer to itself. If it drifts, the notice tells
+ * an operator to look for a rule the dropdown does not offer.
+ */
+const LABEL_REQUIRED = "Verpflichtend";
+
 export const de = {
   appTitle: "DS Education — Verwaltung",
   /* The sidebar is 15 rem wide and the full title does not fit in it — it
@@ -224,7 +233,7 @@ export const de = {
     policy_: {
       disabled: "Aus",
       optional: "Freigestellt",
-      required: "Verpflichtend",
+      required: LABEL_REQUIRED,
     },
     policyHint_: {
       disabled:
@@ -236,6 +245,17 @@ export const de = {
     },
     strictestWins:
       "Wer Rechte in mehreren Bereichen hat, unterliegt der strengsten Regel davon.",
+    /*
+     * Which of these rows is the reader's own (P74-01).
+     *
+     * Without it the screen draws two or more rules, says "die Regel Ihres
+     * Bereichs ist Verpflichtend", and leaves the reader to guess which one
+     * that is — and the obvious guess, the customer row directly under the
+     * cursor, is the wrong one for a super administrator.
+     */
+    governsYou: "für Sie maßgeblich",
+    /** When the API sent a scope the console has no name for. */
+    ownCustomerScope: "Ihr Kundenbereich",
     ownFactor: "Ihr eigener zweiter Faktor",
     ownFactorEnrolled: "Eingerichtet.",
     ownFactorNone: "Nicht eingerichtet.",
@@ -270,12 +290,27 @@ export const de = {
      * So the consequence is stated before the click, and the confirmation says
      * what it is really confirming.
      */
-    removeOwnRotates:
-      "Die Regel Ihres Bereichs ist „Verpflichtend“. Ein Entfernen setzt den " +
-      "zweiten Faktor deshalb nur zurück: beim nächsten Anmelden richten Sie " +
-      "einen neuen ein — genau das, was ein Gerätewechsel braucht. Wenn Sie " +
-      "gar keinen zweiten Faktor mehr verwenden möchten, stellen Sie zuerst " +
-      "oben die Regel auf „Freigestellt“.",
+    removeOwnRotates: (scope: string): string =>
+      `Für Sie gilt die Regel „${LABEL_REQUIRED}“ aus ${scope}. Ein Entfernen ` +
+      "setzt den zweiten Faktor deshalb nur zurück: beim nächsten Anmelden " +
+      "richten Sie einen neuen ein — genau das, was ein Gerätewechsel braucht. " +
+      "Wenn Sie gar keinen zweiten Faktor mehr verwenden möchten, stellen Sie " +
+      `zuerst oben ${scope} auf „Freigestellt“.`,
+    /*
+     * The same fact for somebody who cannot act on it (P74-01).
+     *
+     * A `department_admin` under a `required` customer policy may not set
+     * policies at all, so the sentence above would send them to a control they
+     * do not have. Naming who can is the §9.4 half that P38-07 taught: an
+     * action that is deliberately impossible has to say so where somebody looks
+     * for it.
+     */
+    removeOwnRotatesLocked: (scope: string): string =>
+      `Für Sie gilt die Regel „${LABEL_REQUIRED}“ aus ${scope}. Ein Entfernen ` +
+      "setzt den zweiten Faktor deshalb nur zurück: beim nächsten Anmelden " +
+      "richten Sie einen neuen ein. Diese Regel dürfen Sie nicht ändern — " +
+      "wenden Sie sich an eine Administration, die den genannten Bereich " +
+      "verwaltet.",
     removeOwnConfirmRotates: "Zurücksetzen und neu einrichten",
     removeOwnRotated:
       "Der zweite Faktor wurde zurückgesetzt. Beim nächsten Anmelden richten " +

@@ -263,6 +263,7 @@ export {
   resetStatus,
   secondFactorStep,
   applicableSecondFactorPolicy,
+  governingSecondFactorScopes,
   canRemoveOwnSecondFactor,
   canResetSecondFactorOf,
   DEFAULT_CUSTOMER_SECOND_FACTOR,
