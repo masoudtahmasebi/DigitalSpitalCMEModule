@@ -28,6 +28,7 @@ import {
   resolveTenantContext,
   secondFactorStep,
   applicableSecondFactorPolicy,
+  governingSecondFactorScopes,
   canRemoveOwnSecondFactor,
   canResetSecondFactorOf,
   DEFAULT_CUSTOMER_SECOND_FACTOR,
@@ -1061,6 +1062,97 @@ export class StaffService {
   }
 
   /**
+   * The rule governing *this* operator, and which row it is (P74-01).
+   *
+   * ## Why the console cannot work this out
+   *
+   * It tried, and got it wrong in both directions. It fed
+   * `applicableSecondFactorPolicy` the customer list it holds for the
+   * invitation form — which is the set an operator may *pick from*, fetched
+   * only for an account holding the `customer` capability. For a super
+   * administrator that is every customer, none of which they hold a grant in;
+   * for a customer administrator it is empty, so the screen decided their rule
+   * was the platform's. The result was a screen telling somebody to relax a rule
+   * that was not theirs, beside a row that was.
+   *
+   * The grants are here. So the answer is computed here, from the same domain
+   * function the sign-in path uses — one rollup path, CLAUDE.md §4 invariant 6.
+   *
+   * ## Why `mayChange` comes with it
+   *
+   * A screen that says "set this to Freigestellt" has to know whether this
+   * operator can. `maySetSecondFactorPolicy` is the same check `PUT` applies —
+   * not a second copy — so the screen either offers the control or says who to
+   * ask, and never offers one the API refuses (CLAUDE.md §9.2).
+   *
+   * The customer name is read for the caller's **own** scopes only. It is not
+   * an enumeration: they hold a grant in it, so they already know it exists.
+   */
+  async ownSecondFactorScopes(actor: {
+    readonly role: StaffRole;
+    readonly grants: readonly StaffGrant[];
+  }): Promise<{
+    readonly policy: SecondFactorPolicy;
+    readonly scopes: readonly {
+      readonly customerId: string | null;
+      readonly name: string | null;
+      readonly mayChange: boolean;
+    }[];
+  }> {
+    const { platform, perCustomer } = await this.deps.repository.secondFactorPolicies();
+    const policy = applicableSecondFactorPolicy(actor.grants, platform, perCustomer);
+    const scopeIds = governingSecondFactorScopes(actor.grants, platform, perCustomer);
+
+    const customerIds = scopeIds.filter((id): id is string => id !== null);
+    const names =
+      customerIds.length === 0
+        ? new Map<string, string>()
+        : await this.deps.repository.customerNames(customerIds);
+
+    return {
+      policy,
+      scopes: scopeIds.map((customerId) => ({
+        customerId,
+        name: customerId === null ? null : (names.get(customerId) ?? null),
+        mayChange: this.maySetSecondFactorPolicy(actor, customerId).ok,
+      })),
+    };
+  }
+
+  /**
+   * Who may set which scope's policy.
+   *
+   * Extracted from `setSecondFactorPolicy` rather than restated, because the
+   * security screen now asks the same question in order to decide what to
+   * offer — and a second copy of this rule would eventually disagree with the
+   * one that refuses.
+   */
+  private maySetSecondFactorPolicy(
+    actor: { readonly role: StaffRole; readonly grants: readonly StaffGrant[] },
+    customerId: string | null,
+  ): { readonly ok: boolean; readonly reason?: string } {
+    if (customerId === null) {
+      return actor.role === "super_admin"
+        ? { ok: true }
+        : {
+            ok: false,
+            reason: "only a super administrator may set the platform policy",
+          };
+    }
+
+    if (!canManage(actor.role, "staff_user")) {
+      return { ok: false, reason: "your role does not manage staff accounts" };
+    }
+
+    const reaches =
+      actor.role === "super_admin" ||
+      actor.grants.some((grant) => grant.customerId === customerId);
+    return reaches
+      ? { ok: true }
+      : { ok: false, reason: "you hold no grant reaching that customer" };
+  }
+
+  /**
    * Change the policy for one scope (P22-02).
    *
    * `customerId: null` is the platform's own — the scope a super administrator
@@ -1078,24 +1170,10 @@ export class StaffService {
     customerId: string | null;
     policy: SecondFactorPolicy;
   }): Promise<{ readonly ok: boolean; readonly reason?: string }> {
-    if (input.customerId === null && input.actor.role !== "super_admin") {
-      return {
-        ok: false,
-        reason: "only a super administrator may set the platform policy",
-      };
-    }
-
-    if (input.customerId !== null) {
-      if (!canManage(input.actor.role, "staff_user")) {
-        return { ok: false, reason: "your role does not manage staff accounts" };
-      }
-      const reaches =
-        input.actor.role === "super_admin" ||
-        input.actor.grants.some((grant) => grant.customerId === input.customerId);
-      if (!reaches) {
-        return { ok: false, reason: "you hold no grant reaching that customer" };
-      }
-    }
+    // The same check the security screen asks before offering the control, so
+    // what it offers and what this refuses cannot drift apart (P74-01).
+    const allowed = this.maySetSecondFactorPolicy(input.actor, input.customerId);
+    if (!allowed.ok) return allowed;
 
     const before = await this.deps.repository.secondFactorPolicies();
     const previous =

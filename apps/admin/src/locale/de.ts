@@ -7,6 +7,15 @@
  * form has to say what the number does rather than just name it.
  */
 
+/**
+ * The word the security screen uses for the strictest policy.
+ *
+ * Hoisted out of `de.security.policy_` because two sentences below quote it
+ * and an object literal cannot refer to itself. If it drifts, the notice tells
+ * an operator to look for a rule the dropdown does not offer.
+ */
+const LABEL_REQUIRED = "Verpflichtend";
+
 export const de = {
   appTitle: "DS Education — Verwaltung",
   /* The sidebar is 15 rem wide and the full title does not fit in it — it
@@ -224,7 +233,7 @@ export const de = {
     policy_: {
       disabled: "Aus",
       optional: "Freigestellt",
-      required: "Verpflichtend",
+      required: LABEL_REQUIRED,
     },
     policyHint_: {
       disabled:
@@ -236,6 +245,17 @@ export const de = {
     },
     strictestWins:
       "Wer Rechte in mehreren Bereichen hat, unterliegt der strengsten Regel davon.",
+    /*
+     * Which of these rows is the reader's own (P74-01).
+     *
+     * Without it the screen draws two or more rules, says "die Regel Ihres
+     * Bereichs ist Verpflichtend", and leaves the reader to guess which one
+     * that is — and the obvious guess, the customer row directly under the
+     * cursor, is the wrong one for a super administrator.
+     */
+    governsYou: "für Sie maßgeblich",
+    /** When the API sent a scope the console has no name for. */
+    ownCustomerScope: "Ihr Kundenbereich",
     ownFactor: "Ihr eigener zweiter Faktor",
     ownFactorEnrolled: "Eingerichtet.",
     ownFactorNone: "Nicht eingerichtet.",
@@ -270,12 +290,27 @@ export const de = {
      * So the consequence is stated before the click, and the confirmation says
      * what it is really confirming.
      */
-    removeOwnRotates:
-      "Die Regel Ihres Bereichs ist „Verpflichtend“. Ein Entfernen setzt den " +
-      "zweiten Faktor deshalb nur zurück: beim nächsten Anmelden richten Sie " +
-      "einen neuen ein — genau das, was ein Gerätewechsel braucht. Wenn Sie " +
-      "gar keinen zweiten Faktor mehr verwenden möchten, stellen Sie zuerst " +
-      "oben die Regel auf „Freigestellt“.",
+    removeOwnRotates: (scope: string): string =>
+      `Für Sie gilt die Regel „${LABEL_REQUIRED}“ aus ${scope}. Ein Entfernen ` +
+      "setzt den zweiten Faktor deshalb nur zurück: beim nächsten Anmelden " +
+      "richten Sie einen neuen ein — genau das, was ein Gerätewechsel braucht. " +
+      "Wenn Sie gar keinen zweiten Faktor mehr verwenden möchten, stellen Sie " +
+      `zuerst oben ${scope} auf „Freigestellt“.`,
+    /*
+     * The same fact for somebody who cannot act on it (P74-01).
+     *
+     * A `department_admin` under a `required` customer policy may not set
+     * policies at all, so the sentence above would send them to a control they
+     * do not have. Naming who can is the §9.4 half that P38-07 taught: an
+     * action that is deliberately impossible has to say so where somebody looks
+     * for it.
+     */
+    removeOwnRotatesLocked: (scope: string): string =>
+      `Für Sie gilt die Regel „${LABEL_REQUIRED}“ aus ${scope}. Ein Entfernen ` +
+      "setzt den zweiten Faktor deshalb nur zurück: beim nächsten Anmelden " +
+      "richten Sie einen neuen ein. Diese Regel dürfen Sie nicht ändern — " +
+      "wenden Sie sich an eine Administration, die den genannten Bereich " +
+      "verwaltet.",
     removeOwnConfirmRotates: "Zurücksetzen und neu einrichten",
     removeOwnRotated:
       "Der zweite Faktor wurde zurückgesetzt. Beim nächsten Anmelden richten " +
@@ -521,6 +556,14 @@ export const de = {
     videoUpload: "Video hochladen",
     videoUploadHint:
       "MP4 oder WebM, bis 2 GB. Die Datei wird direkt in den Dateispeicher übertragen und ist anschließend nur für Teilnehmende dieser Fortbildung abrufbar.",
+
+    // Seeing the file rather than its name (P74-03).
+    previewLoading: "Vorschau wird geladen …",
+    previewFailed:
+      "Die Vorschau konnte nicht geladen werden. Die Datei bleibt hinterlegt — bitte prüfen Sie sie über die Teilnehmenden-Ansicht.",
+    previewPosterAlt: "Vorschau des hochgeladenen Bildes",
+    previewVideoLabel: "Vorschau des hochgeladenen Videos",
+    previewOpen: "Datei öffnen",
   },
 
   structure: {
@@ -616,11 +659,15 @@ export const de = {
      * this browser can open. Saying so is the difference between a limitation
      * and a screen that looks half-built.
      */
-    durationDetectUnavailable:
-      "Bei hochgeladenen Videos kann die Länge hier nicht automatisch gelesen werden — die Datei liegt im Dateispeicher und nicht unter einer für den Browser abrufbaren Adresse. Bitte die Länge in Sekunden eintragen.",
-    captionsUrl: "Untertitel-Datei (WebVTT)",
+    captionsUrl: "Untertitel-Datei (WebVTT oder SRT)",
+    /*
+     * The field takes SRT now (P74-05), and the label says so rather than the
+     * hint alone: the label is what somebody reads before deciding whether they
+     * have the right file, and "WebVTT" on its own is what sent them away to
+     * convert one by hand.
+     */
     captionsHint:
-      "URL einer .vtt-Datei mit deutschen Untertiteln. Untertitel sind Stufe A der Barrierefreiheitsrichtlinien (WCAG 1.2.2, EN 301 549): Ohne sie können hörbeeinträchtigte Ärztinnen und Ärzte die Fortbildung nicht absolvieren — und der Fortschritt wird sie als nicht angesehen erfassen.",
+      "Datei oder URL mit deutschen Untertiteln. SRT-Dateien werden beim Hochladen automatisch in das WebVTT-Format umgewandelt, das Browser für Untertitelspuren verlangen. Untertitel sind Stufe A der Barrierefreiheitsrichtlinien (WCAG 1.2.2, EN 301 549): Ohne sie können hörbeeinträchtigte Ärztinnen und Ärzte die Fortbildung nicht absolvieren — und der Fortschritt wird sie als nicht angesehen erfassen.",
     captionsMissing:
       "Für dieses Video sind keine Untertitel hinterlegt. Bei Videos mit Sprache ist das ein Barrierefreiheitsmangel. Reine Folienaufzeichnungen ohne Ton benötigen keine.",
     body: "Text",
@@ -664,6 +711,17 @@ export const de = {
       "Die Reihenfolge der Fragen ist die Reihenfolge in der Prüfung. Bewertet wird auf exakte Übereinstimmung: bei „eine richtige Antwort“ muss genau die richtige Option gewählt sein, bei „mehrere richtige Antworten“ genau die Menge der richtigen.",
     empty: "Noch keine Fragen.",
     addQuestion: "Frage hinzufügen",
+    /*
+     * The way out, at the bottom where the work ends (P74-06).
+     *
+     * Named rather than "Zurück": this screen is two levels down — a course, a
+     * tab, a quiz — so "back" has two plausible answers. It names the tab the
+     * quiz replaced, which is "Inhalte"; the neighbouring tab is called "Inhalte
+     * & Darstellung" and the two are easy to confuse, so the wording has to
+     * point at exactly one of them.
+     */
+    backToStructure: "Zurück zu den Inhalten",
+    unsavedChanges: "Nicht gespeicherte Änderungen gehen dabei verloren.",
     prompt: "Frage",
     kind: "Antworttyp",
     kinds: {

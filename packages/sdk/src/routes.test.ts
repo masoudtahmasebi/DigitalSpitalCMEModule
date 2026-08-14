@@ -213,6 +213,7 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
     }),
   adminCompleteUpload: (c) =>
     c.adminCompleteUpload("adhs", "cust/courses/id/video-x.mp4"),
+  adminViewUpload: (c) => c.adminViewUpload("adhs", "s3://cust/courses/id/video-x.mp4"),
   adminCreateModule: (c) => c.adminCreateModule("adhs", { title: "M" }),
   adminUpdateModule: (c) => c.adminUpdateModule(ID, { title: "M" }),
   adminDeleteCourse: (c) => c.adminDeleteCourse("adhs"),

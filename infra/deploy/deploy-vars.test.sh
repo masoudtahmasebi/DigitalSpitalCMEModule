@@ -223,6 +223,22 @@ if ! grep -q "connect-src 'self' {\$API_DOMAIN_URL} {\$S3_ORIGIN}" Caddyfile; th
   printf '   before a request is made, with nothing in any server log.\n\n' >&2
 fi
 
+# And the other direction (P74-03). `connect-src` covers the upload; the console
+# also *reads* from the bucket now — it shows an author the video they uploaded
+# and reads its length out of its own header, which the watch gate is a
+# percentage of. Without `media-src` the browser refuses both under
+# `default-src 'self'`, and again nothing reaches a server.
+#
+# One grep per directive rather than one for the whole header: a single pattern
+# would be green as soon as any of them matched, which is how the read half went
+# unnoticed while the write half was fixed.
+if ! grep -q "media-src 'self' {\$S3_ORIGIN}" Caddyfile; then
+  failed=$((failed + 1))
+  printf 'xx the admin CSP does not name {$S3_ORIGIN} in media-src.\n' >&2
+  printf '   The console then cannot play back an uploaded video or read its\n' >&2
+  printf '   length, and "Aus Video ermitteln" silently does nothing.\n\n' >&2
+fi
+
 if [[ "$failed" == "0" ]]; then
   printf '\n%s shell + %s compose references checked, all guaranteed\n' \
     "${#referenced[@]}" "${#compose_bare[@]}"

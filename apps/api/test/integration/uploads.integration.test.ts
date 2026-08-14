@@ -499,6 +499,98 @@ describe("the tenant boundary, which the bucket cannot enforce", () => {
   });
 });
 
+/**
+ * Looking at what was uploaded (P74-02).
+ *
+ * > _"for here, can we have the preview of the video, and the preview of images
+ * > uploaded?"_
+ *
+ * The console holds an `s3://` reference and a browser cannot fetch one, so the
+ * form could show a filename and nothing else — and `Aus Video ermitteln`, the
+ * one control that gets `durationSec` right, disappeared exactly when the
+ * author used this console to put the file there.
+ *
+ * The route hands back a signed GET. What has to hold is that it is *only* a
+ * signed GET, for an object of the course it is asked about, for the tenant
+ * asking.
+ */
+describe("reading an object back", () => {
+  it("hands back a URL the bucket actually serves", async () => {
+    const body = Buffer.from("hello video");
+    const ticket = await ticketFor(courseSlug, {
+      purpose: "video",
+      mimeType: "video/mp4",
+      sizeBytes: body.byteLength,
+    });
+    await put(ticket, body);
+    await asAdmin("POST", `/admin/courses/${courseSlug}/uploads/complete`, {
+      key: ticket.key,
+    });
+
+    const view = await asAdmin("POST", `/admin/courses/${courseSlug}/uploads/view`, {
+      reference: `s3://${ticket.key}`,
+    });
+    expect(view.status, JSON.stringify(view.body)).toBe(200);
+
+    // Against the fake bucket, which recomputes the signature the way Hetzner
+    // would — so a canonical request this API gets wrong fails here.
+    const fetched = await fetch(view.body.url);
+    expect(fetched.status).toBe(200);
+    expect(Buffer.from(await fetched.arrayBuffer()).toString()).toBe("hello video");
+  });
+
+  it("records the read, so an issued capability is in the log", async () => {
+    const ticket = await ticketFor();
+    await put(ticket, Buffer.from("hello video"));
+    await asAdmin("POST", `/admin/courses/${courseSlug}/uploads/complete`, {
+      key: ticket.key,
+    });
+    await asAdmin("POST", `/admin/courses/${courseSlug}/uploads/view`, {
+      reference: `s3://${ticket.key}`,
+    });
+
+    const rows = await auditRows(ticket.key);
+    expect(rows.map((row) => row.action)).toEqual(["mint", "store", "read"]);
+  });
+
+  it("refuses an object belonging to another course in the same tenant", async () => {
+    // The check that is stricter than the customer prefix, and the reason it is
+    // there: an author who may edit one course must not be able to read every
+    // object the customer owns by naming a key from another one.
+    const ticket = await ticketFor(secondCourseSlug);
+
+    const view = await asAdmin("POST", `/admin/courses/${courseSlug}/uploads/view`, {
+      reference: `s3://${ticket.key}`,
+    });
+    expect(view.status).toBe(404);
+  });
+
+  it("refuses a key under another customer's prefix", async () => {
+    const foreign = `${otherCustomerId}/courses/${randomUUID()}/video-x.mp4`;
+
+    const view = await asAdmin("POST", `/admin/courses/${courseSlug}/uploads/view`, {
+      reference: `s3://${foreign}`,
+    });
+    expect(view.status).toBe(404);
+  });
+
+  it("refuses an ordinary URL rather than echoing it back", async () => {
+    // Otherwise this route is a way to have the API bless an arbitrary address,
+    // and a console that trusted the answer would render whatever came back.
+    const view = await asAdmin("POST", `/admin/courses/${courseSlug}/uploads/view`, {
+      reference: "https://media.example.org/somebody-elses/1.mp4",
+    });
+    expect(view.status).toBe(404);
+  });
+
+  it("gives another customer's admin a 404 for a course they cannot see", async () => {
+    const view = await asOtherAdmin("POST", `/admin/courses/${courseSlug}/uploads/view`, {
+      reference: `s3://${customerId}/courses/x/video-x.mp4`,
+    });
+    expect(view.status).toBe(404);
+  });
+});
+
 describe("verification against the bucket", () => {
   it("refuses a completion when nothing was uploaded", async () => {
     const ticket = await ticketFor();

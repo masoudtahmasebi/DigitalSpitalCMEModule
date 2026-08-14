@@ -24,6 +24,7 @@ import {
   resetStatus,
   secondFactorStep,
   applicableSecondFactorPolicy,
+  governingSecondFactorScopes,
   canRemoveOwnSecondFactor,
   canResetSecondFactorOf,
   DEFAULT_CUSTOMER_SECOND_FACTOR,
@@ -383,6 +384,98 @@ describe("applicableSecondFactorPolicy", () => {
         per,
       ),
     ).toBe("disabled");
+  });
+});
+
+describe("governingSecondFactorScopes", () => {
+  it("names the platform scope for an account with a customerless grant", () => {
+    expect(
+      governingSecondFactorScopes([{ customerId: null }], "required", new Map()),
+    ).toEqual([null]);
+  });
+
+  it("names the customer whose rule is the one in force", () => {
+    const per = new Map<string, SecondFactorPolicy>([
+      ["strict", "required"],
+      ["loose", "disabled"],
+    ]);
+    expect(
+      governingSecondFactorScopes(
+        [{ customerId: "loose" }, { customerId: "strict" }],
+        "disabled",
+        per,
+      ),
+    ).toEqual(["strict"]);
+  });
+
+  it("names every scope at the strictest level, not the first of them", () => {
+    // Relaxing one of two `required` customers changes nothing, so a screen
+    // shown only the first would send the operator round the loop again.
+    const per = new Map<string, SecondFactorPolicy>([
+      ["a", "required"],
+      ["b", "required"],
+      ["c", "optional"],
+    ]);
+    expect(
+      governingSecondFactorScopes(
+        [{ customerId: "a" }, { customerId: "b" }, { customerId: "c" }],
+        "optional",
+        per,
+      ),
+    ).toEqual(["a", "b"]);
+  });
+
+  it("names the platform when it is the strictest scope reached", () => {
+    const per = new Map<string, SecondFactorPolicy>([["c1", "disabled"]]);
+    expect(
+      governingSecondFactorScopes(
+        [{ customerId: null }, { customerId: "c1" }],
+        "required",
+        per,
+      ),
+    ).toEqual([null]);
+  });
+
+  it("lists a customer once even when several grants reach it", () => {
+    // One grant per department is the normal shape, and the scope is the
+    // customer — three identical rows on a screen is the bug this prevents.
+    const per = new Map<string, SecondFactorPolicy>([["c1", "required"]]);
+    expect(
+      governingSecondFactorScopes(
+        [{ customerId: "c1" }, { customerId: "c1" }, { customerId: "c1" }],
+        "optional",
+        per,
+      ),
+    ).toEqual(["c1"]);
+  });
+
+  it("names the platform for an account with no grants at all", () => {
+    // `applicableSecondFactorPolicy` answers with the platform policy there, so
+    // the two functions have to agree about where that answer came from.
+    expect(governingSecondFactorScopes([], "required", new Map())).toEqual([null]);
+  });
+
+  it("names a customer that has set no policy of its own", () => {
+    // The default is a rule like any other: it governs, and the row an operator
+    // has to change is still that customer's.
+    expect(
+      governingSecondFactorScopes([{ customerId: "c9" }], "disabled", new Map()),
+    ).toEqual(["c9"]);
+  });
+
+  it("agrees with applicableSecondFactorPolicy about which policy that is", () => {
+    // The two are read together — one for the wording, one for the row — and a
+    // disagreement would put "Verpflichtend" in the sentence beside a row that
+    // says something else.
+    const per = new Map<string, SecondFactorPolicy>([
+      ["a", "optional"],
+      ["b", "required"],
+    ]);
+    const grants = [{ customerId: "a" }, { customerId: "b" }, { customerId: null }];
+    const policy = applicableSecondFactorPolicy(grants, "disabled", per);
+    for (const scope of governingSecondFactorScopes(grants, "disabled", per)) {
+      expect(scope === null ? "disabled" : per.get(scope)).toBe(policy);
+    }
   });
 });
 

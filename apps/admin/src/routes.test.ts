@@ -27,11 +27,21 @@ const EVERY_SCREEN: readonly Route[] = [
   { kind: "security" },
   { kind: "course", slug: "adhs-akademie-adult", tab: "structure" },
   { kind: "course", slug: "adhs-akademie-adult", tab: "settings" },
+  {
+    kind: "course",
+    slug: "adhs-akademie-adult",
+    tab: "structure",
+    quizContentId: "0198f4c1-7a2e-7000-8000-000000000009",
+  },
 ];
 
 describe("every screen round-trips", () => {
   for (const route of EVERY_SCREEN) {
-    it(`${route.kind}${route.kind === "course" ? `/${route.tab}` : ""}`, () => {
+    const name =
+      route.kind === "course"
+        ? `course/${route.tab}${route.quizContentId === undefined ? "" : "/quiz"}`
+        : route.kind;
+    it(name, () => {
       expect(decode(encode(route))).toEqual(route);
     });
   }
@@ -95,5 +105,74 @@ describe("what a fragment may not become", () => {
 
   it("tolerates a trailing slash, which a person pasting a link adds", () => {
     expect(decode("#/organisation/")).toEqual({ kind: "organisation" });
+  });
+});
+
+/**
+ * The quiz, which is one level below a tab (P74-06).
+ *
+ * > _"when in here i added a question, i can not easily go back to the inhalt
+ * > darstellung"_
+ *
+ * It was React state and nothing else, so Back left the console, F5 lost it and
+ * there was nothing to send anybody — the three costs this file's own header
+ * lists, still being paid one level deeper than P42-01 reached.
+ */
+describe("a quiz under the structure tab", () => {
+  const CONTENT = "0198f4c1-7a2e-7000-8000-000000000009";
+
+  it("is addressable, and the address says which quiz", () => {
+    expect(
+      encode({ kind: "course", slug: "adhs", tab: "structure", quizContentId: CONTENT }),
+    ).toBe(`#/fortbildungen/adhs/structure/quiz/${CONTENT}`);
+  });
+
+  it("decodes back to the same screen", () => {
+    expect(decode(`#/fortbildungen/adhs/structure/quiz/${CONTENT}`)).toEqual({
+      kind: "course",
+      slug: "adhs",
+      tab: "structure",
+      quizContentId: CONTENT,
+    });
+  });
+
+  it("leaves the tab's own address alone", () => {
+    // The property that makes closing a quiz work: the tab is what is left when
+    // the quiz is dropped, so `onCloseQuiz` is a route without the tail rather
+    // than a separate destination.
+    expect(encode({ kind: "course", slug: "adhs", tab: "structure" })).toBe(
+      "#/fortbildungen/adhs/structure",
+    );
+    expect(decode("#/fortbildungen/adhs/structure")).toEqual({
+      kind: "course",
+      slug: "adhs",
+      tab: "structure",
+    });
+  });
+
+  it("does not carry an explicit undefined, which would encode a trailing slash", () => {
+    // `exactOptionalPropertyTypes` distinguishes the two and only the absent
+    // key round-trips. A test on the *value* rather than the key is what makes
+    // that visible.
+    const route = decode("#/fortbildungen/adhs/structure");
+    expect(route !== undefined && "quizContentId" in route).toBe(false);
+  });
+
+  it("refuses a tail that is not a quiz", () => {
+    expect(decode("#/fortbildungen/adhs/structure/frage/1")).toBeUndefined();
+    expect(decode("#/fortbildungen/adhs/structure/quiz")).toBeUndefined();
+  });
+
+  it("survives a content id that needs escaping", () => {
+    const odd = "a/b";
+    const round = decode(
+      encode({ kind: "course", slug: "adhs", tab: "structure", quizContentId: odd }),
+    );
+    expect(round).toEqual({
+      kind: "course",
+      slug: "adhs",
+      tab: "structure",
+      quizContentId: odd,
+    });
   });
 });

@@ -140,6 +140,9 @@ export {
   storageKeyOf,
 } from "./storage-key.js";
 
+export { isWebVtt, looksLikeSrt, srtToVtt } from "./subtitles.js";
+export type { SubtitleConversion } from "./subtitles.js";
+
 export {
   InvalidUploadTokenError,
   planUpload,
@@ -263,6 +266,7 @@ export {
   resetStatus,
   secondFactorStep,
   applicableSecondFactorPolicy,
+  governingSecondFactorScopes,
   canRemoveOwnSecondFactor,
   canResetSecondFactorOf,
   DEFAULT_CUSTOMER_SECOND_FACTOR,

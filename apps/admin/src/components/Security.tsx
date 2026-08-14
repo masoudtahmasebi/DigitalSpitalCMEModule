@@ -24,7 +24,6 @@
  */
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { applicableSecondFactorPolicy } from "@ds/domain";
 import type { ApiClient, SecondFactorPolicies, SecondFactorPolicy } from "@ds/sdk";
 import { describeError } from "../api.js";
 import { de } from "../locale/de.js";
@@ -140,25 +139,70 @@ export function Security(props: {
   );
 
   /*
-   * The rule this operator is actually under (P69-01).
+   * The rule this operator is actually under, and which row it is (P69-01,
+   * P74-01).
    *
-   * `applicableSecondFactorPolicy` is the API's own — strictest wins across
-   * every scope you hold a grant in — rather than a second opinion computed
-   * here. A super administrator belongs to no customer, so their grant is the
-   * platform's; everybody else is under the strictest of the customers they can
-   * see, which is the set this screen was already given.
+   * Read from the API rather than derived here. This screen used to compute it
+   * from `props.customers` — the list an operator may *pick* from, which is
+   * every customer for a super administrator (who holds a grant in none of
+   * them) and empty for a customer administrator (whose own customer is the
+   * only one that counts). Both answers were wrong, and the visible cost was a
+   * notice saying "stellen Sie oben die Regel auf Freigestellt" beside two rows,
+   * naming neither, one of which changes nothing.
    *
-   * It decides one thing: whether "entfernen" below means *removed* or
-   * *rotated*. Getting that wrong is what produced the report.
+   * `own.policy` decides whether "entfernen" below means *removed* or
+   * *rotated*; `own.scopes` decides which row to point at.
    */
-  const ownPolicy = applicableSecondFactorPolicy(
-    props.isSuperAdmin
-      ? [{ customerId: null }]
-      : props.customers.map((customer) => ({ customerId: customer.id })),
-    policies.platform,
-    forCustomer,
+  const own = policies.own;
+  const removalRotates = own.policy === "required";
+  const governing = new Set(own.scopes.map((scope) => scope.customerId));
+
+  const scopeLabel = (scope: {
+    customerId: string | null;
+    name: string | null;
+  }): string =>
+    scope.customerId === null
+      ? de.security.platformScope
+      : `${de.security.customerScope}: ${scope.name ?? nameOf(props.customers, scope.customerId)}`;
+
+  const governingLabels = own.scopes.map(scopeLabel).join(" · ");
+  /*
+   * Whether the operator can do what the notice is about to tell them to do.
+   *
+   * `mayChange` is the API's own answer, from the same check `PUT` applies, so
+   * this screen can never tell somebody to use a control the API refuses
+   * (CLAUDE.md §9.2) — nor stay silent about who can (§9.4). The case is real:
+   * a `department_admin` governed by a `required` customer policy may not set
+   * policies at all.
+   */
+  const mayRelax = own.scopes.some((scope) => scope.mayChange);
+
+  /*
+   * Every scope that governs this account gets a row, whether or not the
+   * console's customer list happens to contain it.
+   *
+   * For a customer administrator that list is empty, so the screen used to draw
+   * the platform row and nothing else — the one rule that actually governed
+   * them had no row at all, and the notice pointed "oben" at somebody else's.
+   */
+  const extraScopes = own.scopes.filter(
+    (scope) =>
+      scope.customerId !== null &&
+      !props.customers.some((customer) => customer.id === scope.customerId),
   );
-  const removalRotates = ownPolicy === "required";
+
+  /*
+   * Whether to draw a row as a control or as text.
+   *
+   * `mayChange` is the API's own answer and wins wherever it exists — that is
+   * the only way a row can never offer a change the API refuses (§9.2). The
+   * fallback is for the rows this caller holds no grant in and the API
+   * therefore said nothing about: the platform's, read-only unless they are a
+   * super administrator, and a customer's, which is only listed at all for an
+   * operator who manages customers.
+   */
+  const editable = (customerId: string | null, fallback: boolean): boolean =>
+    own.scopes.find((scope) => scope.customerId === customerId)?.mayChange ?? fallback;
 
   return (
     // No heading here: `Page` draws it from the navigation entry (P30-02).
@@ -186,7 +230,8 @@ export function Security(props: {
             // Rendered read-only rather than hidden: an operator should be able
             // to see the rule their own account is under even when somebody
             // else sets it.
-            disabled={!props.isSuperAdmin}
+            disabled={!editable(null, props.isSuperAdmin)}
+            governs={governing.has(null)}
             onChange={(policy) => void save(null, policy)}
           />
 
@@ -197,8 +242,22 @@ export function Security(props: {
               label={`${de.security.customerScope}: ${customer.name}`}
               hint={undefined}
               value={forCustomer.get(customer.id) ?? "optional"}
-              disabled={false}
+              disabled={!editable(customer.id, true)}
+              governs={governing.has(customer.id)}
               onChange={(policy) => void save(customer.id, policy)}
+            />
+          ))}
+
+          {extraScopes.map((scope) => (
+            <PolicyRow
+              key={scope.customerId}
+              id={`policy-${scope.customerId ?? "platform"}`}
+              label={scopeLabel(scope)}
+              hint={undefined}
+              value={forCustomer.get(scope.customerId ?? "") ?? "optional"}
+              disabled={!scope.mayChange}
+              governs={true}
+              onChange={(policy) => void save(scope.customerId, policy)}
             />
           ))}
         </div>
@@ -234,7 +293,11 @@ export function Security(props: {
             second factor off for good.
           */}
           {props.ownSecondFactorEnrolled && removalRotates ? (
-            <Notice tone="warning">{de.security.removeOwnRotates}</Notice>
+            <Notice tone="warning">
+              {mayRelax
+                ? de.security.removeOwnRotates(governingLabels)
+                : de.security.removeOwnRotatesLocked(governingLabels)}
+            </Notice>
           ) : null}
 
           {removed ? (
@@ -450,12 +513,32 @@ function blank(value: string): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
+/**
+ * The name of a customer the console happens to know, or a stand-in.
+ *
+ * The API sends the name for the caller's own scopes, so this is only reached
+ * when that read found nothing — a grant outliving a deleted customer. "Ihr
+ * Kundenbereich" is then more use than a uuid, and the row still writes the
+ * right id.
+ */
+function nameOf(
+  customers: readonly { readonly id: string; readonly name: string }[],
+  customerId: string,
+): string {
+  return (
+    customers.find((customer) => customer.id === customerId)?.name ??
+    de.security.ownCustomerScope
+  );
+}
+
 function PolicyRow(props: {
   id: string;
   label: string;
   hint: string | undefined;
   value: SecondFactorPolicy;
   disabled: boolean;
+  /** Whether this is the row the reader's own account is under (P74-01). */
+  governs: boolean;
   onChange: (policy: SecondFactorPolicy) => void;
 }) {
   return (
@@ -464,7 +547,10 @@ function PolicyRow(props: {
     // does" side by side in the same grey — two sentences that read as one
     // paragraph and answer different questions. The scope note belongs with the
     // label; the consequence belongs with the value.
-    <Field label={props.label} htmlFor={props.id}>
+    <Field
+      label={props.governs ? `${props.label} — ${de.security.governsYou}` : props.label}
+      htmlFor={props.id}
+    >
       {props.hint === undefined ? null : (
         <p className="-mt-1 mb-1 text-xs text-gray-600">{props.hint}</p>
       )}

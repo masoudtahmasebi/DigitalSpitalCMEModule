@@ -109,6 +109,7 @@ export type UploadPurpose = components["schemas"]["UploadPurpose"];
 export type UploadRequest = components["schemas"]["UploadRequest"];
 export type UploadTicket = components["schemas"]["UploadTicket"];
 export type UploadConfirmed = components["schemas"]["UploadConfirmed"];
+export type UploadView = components["schemas"]["UploadView"];
 export type StructureOrder = components["schemas"]["StructureOrder"];
 export type ExpertsWrite = components["schemas"]["ExpertsWrite"];
 export type AuthoringQuiz = components["schemas"]["AuthoringQuiz"];
@@ -806,6 +807,16 @@ export function createClient(options: ClientOptions) {
      */
     adminCompleteUpload: (slug: string, key: string): Promise<UploadConfirmed> =>
       request(`${adminCourse(slug)}/uploads/complete`, json({ key })),
+
+    /**
+     * Turn a stored `s3://` reference back into something a browser can fetch.
+     *
+     * For the console only, and short-lived. It is what lets the content form
+     * show an author the file they uploaded and read a video's own length —
+     * neither of which a key can do.
+     */
+    adminViewUpload: (slug: string, reference: string): Promise<UploadView> =>
+      request(`${adminCourse(slug)}/uploads/view`, json({ reference })),
 
     adminCreateModule: (slug: string, input: ModuleWrite): Promise<CourseStructure> =>
       request(`${adminCourse(slug)}/modules`, json(input)),

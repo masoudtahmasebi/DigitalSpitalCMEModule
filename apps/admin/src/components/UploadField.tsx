@@ -34,15 +34,25 @@
  */
 
 import { useRef, useState } from "react";
+import { srtToVtt } from "@ds/domain";
 import type { ApiClient, UploadPurpose } from "@ds/sdk";
 import { uploadToTicket } from "@ds/sdk";
 import { de } from "../locale/de.js";
+import { useReadableUrl } from "../media-preview.js";
 import { Button, Field, IconButton, Notice, TextInput } from "./ui.js";
 
-/** What a file picker should offer per purpose. Mirrors `UPLOAD_TYPES`. */
+/**
+ * What a file picker should offer per purpose. Mirrors `UPLOAD_TYPES`.
+ *
+ * `captions` offers `.srt` as well, and that is not a widening of what the
+ * platform stores (P74-05). An SRT is converted to WebVTT here, before the
+ * upload, so the object in the bucket is `text/vtt` exactly as before — see
+ * `prepare`. Offering it is the point: SRT is what comes out of every
+ * transcription service, and `<track>` takes WebVTT and nothing else.
+ */
 const ACCEPT: Readonly<Record<UploadPurpose, string>> = {
   video: "video/mp4,video/webm,audio/mpeg,audio/mp4",
-  captions: "text/vtt,.vtt",
+  captions: "text/vtt,.vtt,.srt,application/x-subrip",
   poster: "image/jpeg,image/png,image/webp",
   material: "application/pdf",
 };
@@ -72,10 +82,12 @@ export async function runUpload(
   client: ApiClient,
   courseSlug: string,
   purpose: UploadPurpose,
-  file: File,
+  chosen: File,
   onProgress: (percent: number) => void,
   signal: AbortSignal,
 ): Promise<{ reference: string; mimeType: string }> {
+  const file = await prepare(purpose, chosen);
+
   const ticket = await client.adminBeginUpload(courseSlug, {
     purpose,
     // `file.type` is empty for some files on some platforms — a `.vtt` picked
@@ -91,6 +103,72 @@ export async function runUpload(
   // checked that the bucket holds what it approved.
   const confirmed = await client.adminCompleteUpload(courseSlug, ticket.key);
   return { reference: confirmed.reference, mimeType: confirmed.mimeType };
+}
+
+/**
+ * The file as it should reach the bucket (P74-05).
+ *
+ * Only captions have anything to do here, and only when the author picked an
+ * SRT. `<track src>` takes **WebVTT and nothing else**: a browser handed an
+ * `.srt` fires `error` on the track and shows no captions at all, silently,
+ * with the video playing perfectly. So an author who uploaded subtitles and saw
+ * no complaint would have a course without them, and would find out from a
+ * physician who could not follow it.
+ *
+ * Converting here rather than at play time means the stored object is genuinely
+ * `text/vtt`: the API's upload rules do not learn a second format, nothing
+ * converts on the learner's path, and a file downloaded from the Mediathek is
+ * what its name says.
+ *
+ * A file that is already WebVTT, or that is not subtitles at all, is passed
+ * through untouched. The second is deliberate: the server refuses it with a
+ * German message written for this screen, which is a better refusal than
+ * anything this function could invent, and a converter that repaired its input
+ * would produce plausible nonsense.
+ */
+async function prepare(purpose: UploadPurpose, file: File): Promise<File> {
+  if (purpose !== "captions") return file;
+
+  const converted = srtToVtt(await readText(file));
+  if (!converted.ok) return file;
+
+  return new File([converted.vtt], toVttName(file.name), { type: "text/vtt" });
+}
+
+/**
+ * The file's text, from whichever API this browser has.
+ *
+ * `Blob.prototype.text()` is the modern one and is what nearly every visitor
+ * uses. `FileReader` is the fallback, and it is not hypothetical: Safari gained
+ * `text()` only in 14, and jsdom — which is what the console's own tests run
+ * in — does not implement it at all. Without this the conversion threw in a
+ * `try` that reported it as "the upload failed", which is a message about the
+ * wrong thing.
+ */
+async function readText(file: File): Promise<string> {
+  if (typeof file.text === "function") return file.text();
+
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result ?? "")));
+    reader.addEventListener("error", () =>
+      reject(reader.error ?? new Error("the file could not be read")),
+    );
+    reader.readAsText(file);
+  });
+}
+
+/**
+ * `untertitel.srt` → `untertitel.vtt`. The extension is a lie otherwise.
+ *
+ * `lastIndexOf` rather than a regular expression anchored at the end: a
+ * repetition before `$` backtracks quadratically, and the input here is a
+ * filename somebody chose.
+ */
+function toVttName(name: string): string {
+  const dot = name.lastIndexOf(".");
+  const stem = dot <= 0 ? name : name.slice(0, dot);
+  return `${stem}.vtt`;
 }
 
 function fallbackType(purpose: UploadPurpose): string {
@@ -217,7 +295,117 @@ export function UploadField(props: {
       )}
 
       {state.kind === "failed" ? <Notice tone="warning">{state.message}</Notice> : null}
+
+      <MediaPreview
+        client={props.client}
+        courseSlug={props.courseSlug}
+        value={props.value}
+        purpose={props.purpose}
+      />
     </Field>
+  );
+}
+
+/**
+ * Show the author the file, not its name (P74-03).
+ *
+ * > _"for here, can we have the preview of the video, and the preview of images
+ * > uploaded?"_
+ *
+ * Reasonable, and it was not laziness that left it out: the form holds an
+ * `s3://` reference, and a browser cannot fetch one. `useReadableUrl` asks the
+ * API for a short-lived signature; everything here is what to do with it.
+ *
+ * ## Why a poster is an `<img>` and a video is a `<video>` and a PDF is a link
+ *
+ * A preview is worth having when it answers the question the author actually
+ * has, which differs per purpose. For an image it is "is this the right
+ * picture" — one look. For a video it is "is this the right recording, and does
+ * it play" — which needs controls, and is also the only way to notice before a
+ * physician does that the file is silent or is the wrong take. For a PDF and a
+ * caption file it is "is this the right document", and an inline PDF viewer in
+ * a form is a page inside a page; a link that opens it is both smaller and
+ * better.
+ *
+ * ## Why a failure is stated
+ *
+ * A blank space where a preview should be reads as an unfinished feature. It is
+ * an ordinary state — no object storage on this deployment, an object removed
+ * behind the reference — and saying which is not possible from here, so it says
+ * what it knows: the file could not be opened, and the reference is unchanged.
+ */
+export function MediaPreview(props: {
+  client: ApiClient;
+  courseSlug: string | undefined;
+  value: string;
+  purpose: UploadPurpose;
+}) {
+  const resolved = useReadableUrl(props.client, props.courseSlug, props.value);
+
+  if (resolved.kind === "none") return null;
+  if (resolved.kind === "loading") {
+    return (
+      <p className="mt-2 text-xs text-[color:var(--ds-ink-muted)]">
+        {de.uploads.previewLoading}
+      </p>
+    );
+  }
+  if (resolved.kind === "failed") {
+    return (
+      <p className="mt-2 text-xs text-amber-700" role="status">
+        {de.uploads.previewFailed}
+      </p>
+    );
+  }
+
+  if (props.purpose === "poster") {
+    return (
+      <img
+        src={resolved.url}
+        alt={de.uploads.previewPosterAlt}
+        className="mt-2 max-h-40 rounded-md border border-[color:var(--ds-hairline)] object-contain"
+      />
+    );
+  }
+
+  if (props.purpose === "video") {
+    return (
+      /*
+       * `preload="metadata"` rather than `auto`: a lecture is hundreds of
+       * megabytes and an author opening a form is not asking to download one.
+       *
+       * No `<track>`, and the WCAG obligation is not being waved away. It
+       * belongs to the learner's player, which does render one, and this form
+       * refuses to be quiet about a video without captions — `captionsMissing`
+       * says so under the very field that supplies them. A track here would
+       * point at whatever is in that field at this instant, which is usually
+       * nothing and is never what this preview is being asked: is this the
+       * right recording.
+       */
+      // eslint-disable-next-line jsx-a11y/media-has-caption -- see above
+      <video
+        src={resolved.url}
+        controls
+        preload="metadata"
+        aria-label={de.uploads.previewVideoLabel}
+        className="mt-2 max-h-64 w-full rounded-md border border-[color:var(--ds-hairline)] bg-black"
+      />
+    );
+  }
+
+  return (
+    <p className="mt-2">
+      <a
+        href={resolved.url}
+        target="_blank"
+        // `noreferrer` as well as `noopener`: the URL carries a signature, and
+        // a `Referer` header would send it to whatever the file links to.
+        rel="noopener noreferrer"
+        className="text-sm underline"
+      >
+        {de.uploads.previewOpen}
+      </a>
+    </p>
   );
 }
 

@@ -389,40 +389,65 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       ).toHaveValue("video/webm");
 
       /*
-       * Eight seconds, typed — and a finding recorded rather than papered over.
+       * The length, **measured** rather than typed (P74-04).
        *
-       * The watch gate is a percentage of this number, so getting it wrong
-       * quietly makes the tail of a video optional. The console has a control
-       * for exactly that, "Aus Video ermitteln", which reads the length out of
-       * the file — and it is **absent for an uploaded video**, because an
-       * `s3://` reference is a storage key rather than an address this browser
-       * can fetch. It disappears precisely when the author used the console's
-       * own uploader, which is now the normal way to attach a video.
+       * This is the assertion in this file that changed the most, and the
+       * history is the point. The watch gate is a percentage of `durationSec`,
+       * so a figure that does not match the file quietly makes the tail of a
+       * video optional — a silent accreditation defect. The console has a
+       * control for exactly that, "Aus Video ermitteln", and it used to be
+       * **absent for an uploaded video**: an `s3://` reference is a storage key
+       * and not an address a browser can fetch, so the one control that gets
+       * this right disappeared precisely when the author used the console's own
+       * uploader. The journey asserted the *sentence explaining the gap*
+       * (P68-02) — honest, and not a feature.
        *
-       * The screen now says so instead of showing nothing (P68-02), and the
-       * real fix — the API handing back a readable URL for an object it just
-       * accepted — is in the ticket. What this asserts is the sentence, so the
-       * gap has a test and cannot quietly become a blank space again.
+       * `adminViewUpload` closed it. So this clicks the button and asserts the
+       * number, which walks the whole chain in one act:
+       *
+       *   the API mints a read signature for an object of this course
+       *   → the bucket's CORS rule allows GET from the console's origin
+       *     (added in P74-02 — a rule carrying only PUT fails right here)
+       *   → the browser reads the container's own header
+       *   → the field holds the fixture's real length
+       *
+       * Not one of those four is visible to an API test.
+       *
+       * And nothing is typed afterwards. The number has to be exactly the
+       * fixture's: it said "8" while the fixture grew to eighteen seconds, and
+       * the journey then failed at the very last act with *"Es fehlt noch: die
+       * vollständige Videowiedergabe"* — the product being right about a suite
+       * that was wrong. A fallback `fill("18")` here would hide a regression in
+       * the probe behind a run that stayed green.
        */
-      await expect(
-        operator.getByText(/Bei hochgeladenen Videos kann die Länge/u),
-        "an uploaded video offers no length probe, and the screen must say why",
-      ).toBeVisible();
-      /*
-       * The fixture's real length, and it has to be exactly that (P71-01).
-       *
-       * This said "8" while the fixture grew to eighteen seconds, and the
-       * journey then failed at the very last act with *"Es fehlt noch: die
-       * vollständige Videowiedergabe"* — which is the product being right. The
-       * watch percentage is computed against the **authored** length, so a
-       * number that does not match the file is exactly the silent accreditation
-       * defect `media-duration.ts` exists to prevent, reproduced by hand in the
-       * suite that is supposed to catch it.
-       *
-       * It is typed rather than probed because an uploaded `s3://` reference
-       * offers no length probe yet — see the assertion just above.
-       */
-      await operator.locator("#content-new-duration").fill("18");
+      await operator.getByRole("button", { name: "Aus Video ermitteln" }).click();
+      try {
+        await expect(operator.locator("#content-new-duration")).toHaveValue("18", {
+          timeout: 30_000,
+        });
+      } catch (failure) {
+        // The browser's own account, gathered *after* the wait rather than
+        // formatted into the assertion message — which Playwright evaluates
+        // before it starts waiting, so it would always be empty (P74-04).
+        throw new Error(
+          [
+            "the length was not read out of the uploaded video.",
+            "",
+            "In the order to check them:",
+            "  1. adminViewUpload refused — the key is not under this course's prefix",
+            "  2. the bucket's CORS rule has no GET for the console's origin",
+            "     (dist/bucket-cors.js applies and proves it; the deploy runs it)",
+            "  3. the browser cannot decode the fixture — see tests/codecs.spec.ts",
+            "",
+            "The browser said:",
+            ...(browserSaid.length === 0
+              ? ["  (nothing)"]
+              : browserSaid.slice(-25).map((line) => `  ${line}`)),
+            "",
+            String(failure),
+          ].join("\n"),
+        );
+      }
 
       await operator.getByRole("button", { name: "Hinzufügen", exact: true }).click();
       await expect(operator.getByText("Die Aufzeichnung")).toBeVisible({
@@ -461,6 +486,28 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       await expect(operator.getByText(/Gespeichert\./u)).toBeVisible({
         timeout: 15_000,
       });
+
+      /*
+       * The way out, and the address that makes it one (P74-06).
+       *
+       * > _"when in here i added a question, i can not easily go back to the
+       * > inhalt darstellung"_
+       *
+       * Two things are asserted here and neither is visible to an API test.
+       * The quiz is **in the address bar** — so Back closes it, F5 keeps it, and
+       * it can be sent to somebody — and there is an exit at the bottom of the
+       * editor, where the author actually is after writing questions, rather
+       * than only in the breadcrumb several screens above.
+       */
+      await expect(operator).toHaveURL(/\/structure\/quiz\/[0-9a-f-]{36}$/u);
+      await operator.getByRole("button", { name: "Zurück zu den Inhalten" }).click();
+      await expect(
+        operator,
+        "leaving the quiz must land on the structure tab, not somewhere else",
+      ).toHaveURL(/\/structure$/u);
+      await expect(
+        operator.getByRole("button", { name: "Inhalt hinzufügen" }),
+      ).toBeVisible({ timeout: 15_000 });
 
       // ===================================================================
       // Act 6 · The Evaluationsbogen, which the Bescheid requires
@@ -583,12 +630,29 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * why that is a harness affordance rather than a weakened product, and
        * `learner.spec.ts` for the assertion that keeps it honest.
        */
+      /*
+       * Scoped to **this run's card**, and that is not a nicety (P71-04).
+       *
+       * The client asked for a tenant whose data stays, so the DS Test
+       * catalogue grows by one course every time this runs. `.first()` on the
+       * page's *"Zur Fortbildung"* buttons therefore opens whichever course the
+       * catalogue happens to list first — this run's on a rig with one course,
+       * somebody else's on the installation. It failed on production at 19:13
+       * exactly that way: the card was found, the button belonged to another
+       * course, and the heading assertion then looked for a title that was
+       * never opened.
+       *
+       * A suite that only works on an empty tenant is a suite that does not
+       * work where the product runs. The card carries the title, so the button
+       * is reached through it.
+       */
+      const card = learner.locator("li").filter({ hasText: COURSE }).first();
       await expect(
-        learner.getByText(COURSE),
+        card,
         "the published Fortbildung is not in the physician's catalogue",
       ).toBeVisible({ timeout: 30_000 });
 
-      await learner.getByRole("button", { name: "Zur Fortbildung" }).first().click();
+      await card.getByRole("button", { name: "Zur Fortbildung" }).click();
       await expect(learner.getByRole("heading", { name: COURSE })).toBeVisible({
         timeout: 20_000,
       });

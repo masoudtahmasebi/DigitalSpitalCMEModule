@@ -27,10 +27,23 @@
  *
  * ## Why it can fail, and why that is fine
  *
- * An `s3://` reference is a key in our storage, not a URL a browser can fetch,
- * and a customer's own CDN may not send CORS headers. Both are ordinary and
- * neither is an error the author caused, so this reports "could not read it,
- * please type it" and the field stays exactly as editable as it was.
+ * A customer's own CDN may not send CORS headers. That is ordinary and is not
+ * an error the author caused, so this reports "could not read it, please type
+ * it" and the field stays exactly as editable as it was.
+ *
+ * ## The `s3://` gap, and how it was closed (P74-04)
+ *
+ * A reference is a key in our storage, not something a browser can fetch, so
+ * until P74-02 `probeableSourceUrl` skipped them — and the effect was that the
+ * one control which gets `durationSec` right disappeared **exactly** when the
+ * author used the console to upload the video, which is now the normal way to
+ * attach one. The field then went back to being typed, which is the
+ * accreditation defect this file exists to prevent.
+ *
+ * The reference is now resolved to a short-lived signed URL first, so the
+ * source-picking rule below is stated over both kinds. It stays pure: choosing
+ * *which* source is a rule, resolving one is I/O, and they are separate
+ * functions for the same reason they always were.
  */
 
 import type { MediaSourceWrite } from "@ds/sdk";
@@ -39,16 +52,23 @@ import type { MediaSourceWrite } from "@ds/sdk";
 const PROBE_TIMEOUT_MS = 15_000;
 
 /**
- * The first source a browser could actually load.
+ * The first source whose length is worth reading.
  *
  * Pure, and separate from the probe, because *which* source is a rule and the
  * probe is I/O — this is the part worth testing. Order is meaningful: the
  * source list is the player's format negotiation, so the first entry is the one
  * most learners will watch, and its length is the one the gate should measure.
  *
- * `s3://` is skipped rather than rejected: those keys are resolved to signed
- * URLs by the API at play time, and there is nothing wrong with them — they
- * simply cannot be fetched from here.
+ * Both an `https://` URL and an `s3://` reference qualify (P74-04). The
+ * reference needs resolving before it can be fetched, which is the caller's
+ * job — what is decided here is only which of the rows to use.
+ *
+ * An adaptive manifest is **not** skipped, and that is deliberate rather than
+ * an oversight: a browser reports a finite `duration` for an on-demand HLS or
+ * DASH manifest it can play, and reports `NaN` or `Infinity` for one it cannot.
+ * `probeDurationSec` already refuses both, so a manifest either gives the right
+ * answer or gives none — and skipping it here would leave a course whose only
+ * rendition is adaptive with no button at all.
  */
 export function probeableSourceUrl(
   sources: readonly MediaSourceWrite[],
@@ -56,7 +76,7 @@ export function probeableSourceUrl(
   for (const source of sources) {
     const url = source.url.trim();
     if (url === "") continue;
-    if (/^https?:\/\//iu.test(url)) return url;
+    if (/^https?:\/\//iu.test(url) || url.startsWith("s3://")) return url;
   }
   return undefined;
 }

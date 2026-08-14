@@ -93,6 +93,9 @@ const MEDICE = {
  * implementation of the SDK to keep in step, and the SDK's own contract is
  * covered by `routes.test.ts` — path and verb against `openapi.yaml`.
  */
+/** One quiz's content id, for the routed quiz editor (P74-06). */
+const QUIZ_CONTENT = "0198f4c1-7a2e-7000-8000-000000000009";
+
 function fakeClient(over: Partial<Record<string, unknown>> = {}) {
   return {
     adminListCourses: vi.fn().mockResolvedValue([]),
@@ -114,9 +117,17 @@ function fakeClient(over: Partial<Record<string, unknown>> = {}) {
       fontBytes: null,
     }),
     adminGetBranding: vi.fn().mockResolvedValue({}),
-    adminGetSecondFactorPolicy: vi
-      .fn()
-      .mockResolvedValue({ platform: "required", customers: [] }),
+    adminGetSecondFactorPolicy: vi.fn().mockResolvedValue({
+      platform: "required",
+      customers: [],
+      // The caller's own rule and where it comes from (P74-01). Not optional in
+      // the contract, and the screen reads it on mount — a fixture without it
+      // renders nothing, which is how this fake earned a line of its own.
+      own: {
+        policy: "required",
+        scopes: [{ customerId: null, name: null, mayChange: true }],
+      },
+    }),
     ...over,
   } as never;
 }
@@ -458,6 +469,56 @@ describe("the screen is in the address bar (P42-01)", () => {
 
     await waitFor(() =>
       expect(screen.getAllByRole("heading", { name: "Teilnehmende" }).length).toBe(1),
+    );
+  });
+
+  /**
+   * The quiz editor, which is one level below a tab (P74-06).
+   *
+   * > _"when in here i added a question, i can not easily go back to the inhalt
+   * > darstellung"_
+   *
+   * `routes.test.ts` covers the fragment exhaustively and would pass unchanged
+   * on a console that ignored it — the §9.7 trap, and the reason this block
+   * exists at all. So these two assert the wiring: that opening a quiz *from the
+   * screen* writes the address, and that the button at the bottom of the editor
+   * takes the reader back to the tab.
+   */
+  it("puts an open quiz in the address bar, and takes it back out", async () => {
+    const admin = fakeClient({
+      adminGetCourse: vi.fn().mockResolvedValue({
+        slug: "adhs",
+        title: "ADHS Akademie adult",
+      }),
+      adminGetQuiz: vi.fn().mockResolvedValue({ contentId: QUIZ_CONTENT, questions: [] }),
+      // What the structure tab loads once the quiz is closed. Present because
+      // the assertion below is that the console *arrives* there.
+      adminGetStructure: vi.fn().mockResolvedValue({ modules: [] }),
+      adminCheckMedia: vi.fn().mockResolvedValue({ results: [] }),
+    });
+    window.history.replaceState(
+      null,
+      "",
+      `#/fortbildungen/adhs/structure/quiz/${QUIZ_CONTENT}`,
+    );
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    renderConsole({ admin, platform });
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+
+    // Mounting *at* the quiz: the half a click test cannot reach, and the one
+    // that decides whether F5 keeps your place.
+    const back = await screen.findByRole("button", { name: "Zurück zu den Inhalten" });
+    expect(
+      (admin as never as { adminGetQuiz: { mock: { calls: unknown[][] } } }).adminGetQuiz
+        .mock.calls[0]?.[0],
+    ).toBe(QUIZ_CONTENT);
+
+    fireEvent.click(back);
+    await waitFor(() =>
+      expect(window.location.hash).toBe("#/fortbildungen/adhs/structure"),
     );
   });
 });

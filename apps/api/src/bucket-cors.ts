@@ -117,17 +117,30 @@ async function main(): Promise<void> {
       break;
   }
 
-  // Every origin, not the first: a two-console installation where only one is
-  // allowed is precisely the half-configured state this is here to catch.
+  /*
+   * Every origin **and every method the rule claims**, not the first of either.
+   *
+   * A two-console installation where only one origin is allowed is precisely
+   * the half-configured state this is here to catch — and since P74-02 the rule
+   * carries `GET` as well, which is what the console's length probe needs. A
+   * loop over `PUT` alone would have gone green on a bucket that allows uploads
+   * and refuses reads, and the symptom of that is a button that quietly stops
+   * filling `durationSec` (CLAUDE.md §9.1: the check that covers less than it
+   * claims).
+   */
   const refusals: string[] = [];
   for (const origin of origins) {
-    const verdict = await probePreflight(endpoint, bucket, origin, "PUT");
-    if (verdict.kind === "allowed") {
-      console.log(`${bucket} allows PUT from ${origin}.`);
-    } else if (verdict.kind === "refused") {
-      refusals.push(`${origin}: ${verdict.why}`);
-    } else {
-      refusals.push(`${origin}: the bucket could not be reached — ${verdict.reason}`);
+    for (const method of rule.methods) {
+      const verdict = await probePreflight(endpoint, bucket, origin, method);
+      if (verdict.kind === "allowed") {
+        console.log(`${bucket} allows ${method} from ${origin}.`);
+      } else if (verdict.kind === "refused") {
+        refusals.push(`${origin} (${method}): ${verdict.why}`);
+      } else {
+        refusals.push(
+          `${origin} (${method}): the bucket could not be reached — ${verdict.reason}`,
+        );
+      }
     }
   }
 

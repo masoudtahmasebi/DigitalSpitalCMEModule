@@ -512,6 +512,9 @@ export class StaffAuthController {
         customerId,
         policy,
       })),
+      // Which of those rows is this caller's, answered here because only here
+      // are their grants known (P74-01).
+      own: await this.service.ownSecondFactorScopes(profile),
     };
   }
 

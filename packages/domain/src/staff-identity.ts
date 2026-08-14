@@ -392,6 +392,55 @@ export function applicableSecondFactorPolicy(
 }
 
 /**
+ * *Which* scopes produced that answer (P74-01).
+ *
+ * `applicableSecondFactorPolicy` says what the rule is. This says where it
+ * comes from, and the difference is the difference between a screen that tells
+ * somebody to change a rule and a screen that tells them **which** rule to
+ * change.
+ *
+ * The reported version: the Sicherheit screen draws a platform row and a
+ * customer row, says "stellen Sie zuerst oben die Regel auf „Freigestellt“",
+ * and names neither. An operator whose account is governed by the platform row
+ * relaxes the customer row, nothing changes, and the screen has no more to say.
+ * That is CLAUDE.md §9.4 — the action is possible and the screen does not say
+ * where.
+ *
+ * Every scope at the strictest level is returned, not the first one: two
+ * customers can both say `required`, and relaxing one of them leaves the
+ * account exactly where it was. A caller that showed only the first would send
+ * somebody round the loop a second time.
+ *
+ * `null` is the platform scope, the same encoding `applicable…` takes and the
+ * same one the policy table uses for its own row.
+ */
+export function governingSecondFactorScopes(
+  grants: readonly { readonly customerId: string | null }[],
+  platform: SecondFactorPolicy,
+  perCustomer: ReadonlyMap<string, SecondFactorPolicy>,
+): readonly (string | null)[] {
+  const applicable = applicableSecondFactorPolicy(grants, platform, perCustomer);
+  // No grants: `applicable…` answers with the platform policy, so the platform
+  // is where it came from. Deriving it here rather than special-casing above
+  // keeps the two functions answering about the same thing.
+  if (grants.length === 0) return [null];
+
+  const scopes: (string | null)[] = [];
+  for (const grant of grants) {
+    const policy =
+      grant.customerId === null
+        ? platform
+        : (perCustomer.get(grant.customerId) ?? DEFAULT_CUSTOMER_SECOND_FACTOR);
+    // Two grants can name the same customer — one per department — and the
+    // scope is the customer, so it is listed once.
+    if (policy === applicable && !scopes.includes(grant.customerId)) {
+      scopes.push(grant.customerId);
+    }
+  }
+  return scopes;
+}
+
+/**
  * Whether sign-in may complete.
  *
  * `enrolled` and `required` are separate on purpose. An account that must have
