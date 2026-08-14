@@ -2389,6 +2389,70 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
 
+  /admin/courses/{slug}/uploads/view:
+    post:
+      tags: [admin]
+      operationId: adminViewUpload
+      summary: A short-lived URL for an object this course already holds
+      description: |
+        Turns an `s3://` reference back into something a browser can fetch, so
+        the console can show the author the video or image they uploaded and
+        read a video's length out of its own header.
+
+        The reference is in the **body** rather than the query string: a query
+        string is written to every access log on the way, and course material is
+        a physician's.
+
+        The key must sit under the caller's customer prefix **and** under the
+        named course's prefix. Both refusals, and a reference that is not an
+        `s3://` one at all, get the same 404 — an ordinary URL needs no
+        signature and is not this route's business.
+
+        Every issued URL is written to the storage audit log as a `read`. A
+        signed GET is a capability that leaves the building.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reference]
+              properties:
+                reference:
+                  type: string
+                  maxLength: 2000
+                  description: The stored `s3://…` value, exactly as the content row holds it.
+      responses:
+        "200":
+          description: A URL valid for ten minutes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadView" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: |
+            The reference is not an object of this course's in this tenant. A
+            key belonging to another customer or another course gets this same
+            answer.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "409":
+          description: This deployment has no object storage configured.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429":
+          description: Too many read signatures too quickly.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
   /admin/courses/{slug}/modules:
     post:
       tags: [admin]
@@ -5499,6 +5563,21 @@ components:
             `posterUrl`, `captionsUrl` or `fileUrl`.
         sizeBytes: { type: integer, minimum: 1 }
         mimeType: { type: string }
+
+    UploadView:
+      type: object
+      required: [url, expiresAt]
+      description: |
+        A short-lived read URL for one object the named course owns (P74-02).
+      properties:
+        url: { type: string }
+        expiresAt:
+          type: string
+          format: date-time
+          description: |
+            When the signature stops working. The console keeps it so a
+            `<video>` is not left holding a dead URL, which presents as an
+            upload that broke by itself.
 
     MediaSourceWrite:
       type: object

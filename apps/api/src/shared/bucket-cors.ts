@@ -41,14 +41,22 @@
  * different list for a different question, and unioning the two here would hand
  * every embedding site a write path.
  *
- * **The one thing that would change it.** `media-duration.ts` reads a video's
- * length in the console with `crossOrigin = "anonymous"`, which is a CORS `GET`
- * — and it does not need this rule today only because `probeableSourceUrl`
- * skips `s3://` references, so an uploaded video is never probed. The open item
- * in `docs/backlog/P68.md` is to give the console a readable URL after an
- * upload. Whoever does that must add `GET` here, or the length field will
- * silently go back to being typed by hand — which is the accreditation defect
- * `media-duration.ts` exists to prevent.
+ * `GET` was added in P74-02, and the paragraph that predicted it is worth
+ * keeping because it is what made this a one-line change rather than a
+ * fortnight of "the length button does nothing":
+ *
+ * > `media-duration.ts` reads a video's length in the console with
+ * > `crossOrigin = "anonymous"`, which is a CORS `GET` — and it does not need
+ * > this rule today only because `probeableSourceUrl` skips `s3://` references,
+ * > so an uploaded video is never probed. Whoever gives the console a readable
+ * > URL after an upload must add `GET` here, or the length field will silently
+ * > go back to being typed by hand — which is the accreditation defect
+ * > `media-duration.ts` exists to prevent.
+ *
+ * It is still a **read** of one object with a signature the API minted, from
+ * the console's own origin. It is not a way for anybody else's page to read the
+ * bucket: without a signature the object answers 403 whatever CORS says, and
+ * the origin list is still exactly the console.
  */
 
 import { joinUrl } from "@ds/domain";
@@ -79,7 +87,11 @@ export interface BucketCorsRule {
 }
 
 /**
- * What the console's upload needs, and nothing else.
+ * What the console needs, and nothing else.
+ *
+ * `PUT` to upload, `GET` to look at what was uploaded and to read a video's
+ * own length (P74-02) — the second one is a compliance input, because the watch
+ * gate is a percentage of `durationSec`.
  *
  * `content-type` is the only header the browser preflights: `content-length` is
  * signed too, but a browser computes it and forbids script from setting it, so
@@ -89,7 +101,7 @@ export interface BucketCorsRule {
 export function consoleUploadRule(origins: readonly string[]): BucketCorsRule {
   return {
     origins,
-    methods: ["PUT"],
+    methods: ["PUT", "GET"],
     headers: ["content-type"],
     maxAgeSeconds: 3000,
   };

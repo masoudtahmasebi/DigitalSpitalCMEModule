@@ -21,15 +21,22 @@ describe("probeableSourceUrl", () => {
     ).toBe("https://cdn.example.org/modul-1-720.mp4");
   });
 
-  it("skips a storage key, which is not something a browser can fetch", () => {
-    // `s3://` is resolved to a signed URL by the API at play time. Nothing is
-    // wrong with it; it simply cannot be read from the console.
+  /*
+   * A storage key is now a candidate (P74-04).
+   *
+   * It used to be skipped, because a browser cannot fetch one — and the effect
+   * was that the button which gets `durationSec` right vanished exactly when
+   * the author uploaded the video through this console, sending the field back
+   * to being typed. `adminViewUpload` resolves it; this rule only decides which
+   * row to resolve, and the uploaded rendition is the one the player takes.
+   */
+  it("takes an uploaded video, which is the normal way one gets here", () => {
     expect(
       probeableSourceUrl([
         source("s3://ds-media/adhs/modul-1.mp4"),
         source("https://cdn.example.org/modul-1.mp4"),
       ]),
-    ).toBe("https://cdn.example.org/modul-1.mp4");
+    ).toBe("s3://ds-media/adhs/modul-1.mp4");
   });
 
   it("ignores a row the author started and abandoned", () => {
@@ -38,12 +45,12 @@ describe("probeableSourceUrl", () => {
     );
   });
 
-  it("has nothing to offer when no source is fetchable", () => {
+  it("has nothing to offer when no source could be read", () => {
     expect(probeableSourceUrl([])).toBeUndefined();
-    expect(probeableSourceUrl([source("s3://ds-media/x.mp4")])).toBeUndefined();
-    // Not a scheme a browser will load media over, and one worth never trying:
-    // a `javascript:` URL assigned to `video.src` is inert, but writing the
-    // allow-list as "http and https" rather than "not s3" keeps it that way.
+    // Still an allow-list of two schemes rather than a deny-list. A
+    // `javascript:` URL assigned to `video.src` is inert, and writing it this
+    // way round is what keeps the next scheme somebody types out of the probe.
     expect(probeableSourceUrl([source("javascript:alert(1)")])).toBeUndefined();
+    expect(probeableSourceUrl([source("file:///etc/passwd")])).toBeUndefined();
   });
 });

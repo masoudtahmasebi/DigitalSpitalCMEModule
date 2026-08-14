@@ -37,14 +37,19 @@ function answering(
 }
 
 describe("the CORS configuration document", () => {
-  it("allows PUT from the console and nothing else", () => {
+  it("allows the console to upload and to read back, and nothing else", () => {
     const xml = corsConfigurationXml(consoleUploadRule([ORIGIN]));
 
     expect(xml).toContain(`<AllowedOrigin>${ORIGIN}</AllowedOrigin>`);
     expect(xml).toContain("<AllowedMethod>PUT</AllowedMethod>");
+    // `GET` since P74-02: the console shows the author what they uploaded and
+    // reads a video's own length, both of which are cross-origin reads.
+    expect(xml).toContain("<AllowedMethod>GET</AllowedMethod>");
     expect(xml).toContain("<AllowedHeader>content-type</AllowedHeader>");
-    expect(xml).not.toContain("<AllowedMethod>GET</AllowedMethod>");
+    // Still nothing that changes the bucket. A read needs a signature the API
+    // minted; a delete would need no more than this rule.
     expect(xml).not.toContain("<AllowedMethod>DELETE</AllowedMethod>");
+    expect(xml).not.toContain("<AllowedMethod>POST</AllowedMethod>");
     expect(xml).not.toContain("*");
   });
 

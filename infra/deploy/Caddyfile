@@ -110,7 +110,22 @@ import /etc/caddy/sites/*.caddy
 	# `S3_ORIGIN` is derived from `S3_ENDPOINT` by domains.sh, and empty when no
 	# bucket is configured — which collapses the directive back to what it was
 	# and is correct: no bucket, no uploads.
-	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' {$API_DOMAIN_URL} {$S3_ORIGIN}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+	#
+	# `media-src` is here for the other direction (P74-03). The console shows an
+	# author the video they uploaded and reads its length out of its own header,
+	# both of which load media from the bucket — and `default-src 'self'` refuses
+	# that with a message no server log contains:
+	#
+	#     Refused to load media from 'https://…/video-….webm' because it
+	#     violates the following Content Security Policy directive:
+	#     "default-src 'self'". Note that 'media-src' was not explicitly set,
+	#     so 'default-src' is used as a fallback.
+	#
+	# Exactly the shape of P67-01, one directive along: `connect-src` was fixed
+	# for the upload and the read half was not, because nothing read yet. The
+	# portal's policy below has carried a `media-src` since it was written, for
+	# the learner's player — the console needed the same and did not have it.
+	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: {$S3_ORIGIN}; media-src 'self' {$S3_ORIGIN}; connect-src 'self' {$API_DOMAIN_URL} {$S3_ORIGIN}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 	reverse_proxy admin:80
 }

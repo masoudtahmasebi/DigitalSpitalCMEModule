@@ -1662,6 +1662,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/courses/{slug}/uploads/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A short-lived URL for an object this course already holds
+         * @description Turns an `s3://` reference back into something a browser can fetch, so
+         *     the console can show the author the video or image they uploaded and
+         *     read a video's length out of its own header.
+         *
+         *     The reference is in the **body** rather than the query string: a query
+         *     string is written to every access log on the way, and course material is
+         *     a physician's.
+         *
+         *     The key must sit under the caller's customer prefix **and** under the
+         *     named course's prefix. Both refusals, and a reference that is not an
+         *     `s3://` one at all, get the same 404 — an ordinary URL needs no
+         *     signature and is not this route's business.
+         *
+         *     Every issued URL is written to the storage audit log as a `read`. A
+         *     signed GET is a capability that leaves the building.
+         */
+        post: operations["adminViewUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/courses/{slug}/modules": {
         parameters: {
             query?: never;
@@ -3811,6 +3845,17 @@ export interface components {
             reference: string;
             sizeBytes: number;
             mimeType: string;
+        };
+        /** @description A short-lived read URL for one object the named course owns (P74-02). */
+        UploadView: {
+            url: string;
+            /**
+             * Format: date-time
+             * @description When the signature stops working. The console keeps it so a
+             *     `<video>` is not left holding a dead URL, which presents as an
+             *     upload that broke by itself.
+             */
+            expiresAt: string;
         };
         /**
          * @description A rendition as an author supplies it. `url` accepts an `s3://` reference
@@ -7986,6 +8031,98 @@ export interface operations {
              *     noise of people uploading the wrong thing.
              */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    adminViewUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The stored `s3://…` value, exactly as the content row holds it. */
+                    reference: string;
+                };
+            };
+        };
+        responses: {
+            /** @description A URL valid for ten minutes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadView"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /**
+             * @description The reference is not an object of this course's in this tenant. A
+             *     key belonging to another customer or another course gets this same
+             *     answer.
+             */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description This deployment has no object storage configured. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many read signatures too quickly. */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

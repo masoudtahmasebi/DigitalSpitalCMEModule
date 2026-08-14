@@ -40,7 +40,11 @@ import type { Db } from "../../db/tenant-db.js";
 import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { objectStorageFor } from "../../shared/object-storage.factory.js";
-import { uploadBeginSchema, uploadCompleteSchema } from "./upload.dto.js";
+import {
+  uploadBeginSchema,
+  uploadCompleteSchema,
+  uploadViewSchema,
+} from "./upload.dto.js";
 import { StorageAuditRecorder, UploadRepository } from "./upload.repository.js";
 import { UploadService } from "./upload.service.js";
 import type { ZodType } from "zod";
@@ -87,6 +91,36 @@ export class UploadController {
     return this.service(db, principal).complete(
       slug,
       parse(uploadCompleteSchema, body, "upload"),
+      actorOf(principal),
+      new Date(),
+    );
+  }
+
+  /**
+   * A short-lived read URL for an object this course owns (P74-02).
+   *
+   * POST rather than GET, and the reference in the body rather than the query,
+   * for the same reason `complete` takes a key in a body: a reference in a
+   * query string is written to every access log between here and the browser,
+   * and one of the things this route exists to make readable is a physician's
+   * course material.
+   *
+   * 200 rather than 201: nothing is created. The object already exists and this
+   * hands back a way to look at it.
+   */
+  @Post("courses/:slug/uploads/view")
+  @HttpCode(200)
+  @RateLimit("mediaUpload")
+  @Roles(...AUTHOR_ROLES)
+  async view(
+    @Param("slug") slug: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    return this.service(db, principal).view(
+      slug,
+      parse(uploadViewSchema, body, "upload"),
       actorOf(principal),
       new Date(),
     );

@@ -27,6 +27,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ApiClient } from "@ds/sdk";
+import { clearPreviewCache } from "../media-preview.js";
 import { isUploadedReference, referenceName, UploadField } from "./UploadField.js";
 
 const uploadToTicket = vi.hoisted(() => vi.fn());
@@ -41,6 +42,9 @@ const REFERENCE = "s3://0198f4c1-7a2e-7000-8000-000000000001/courses/abc/video-9
 afterEach(() => {
   cleanup();
   uploadToTicket.mockReset();
+  // The preview cache lives in a module, so it outlives a case unless it is
+  // reset here — the P42-01 lesson about ambient state, one module along.
+  clearPreviewCache();
 });
 
 function fakeClient(overrides: Partial<ApiClient> = {}): ApiClient {
@@ -56,6 +60,13 @@ function fakeClient(overrides: Partial<ApiClient> = {}): ApiClient {
       reference: REFERENCE,
       sizeBytes: 11,
       mimeType: "video/mp4",
+    })),
+    // The preview's own call (P74-03). Present here rather than left out, so a
+    // component that stops calling it fails a test instead of quietly showing
+    // nothing.
+    adminViewUpload: vi.fn(async () => ({
+      url: "https://storage.example/signed-get",
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
     })),
     ...overrides,
   } as unknown as ApiClient;
@@ -313,6 +324,99 @@ describe("what an author is told when it goes wrong", () => {
     choose(new File(["x"], "poster.png", { type: "image/png" }));
 
     await waitFor(() => expect(filePicker().value).toBe(""));
+  });
+});
+
+/**
+ * Seeing the file, not its name (P74-03).
+ *
+ * > _"for here, can we have the preview of the video, and the preview of images
+ * > uploaded?"_
+ *
+ * The form held an `s3://` reference and a browser cannot fetch one, so it
+ * showed a filename. These cases hold the wiring — that the component asks the
+ * API, that it asks it for the right thing, and that a refusal is stated rather
+ * than left as an empty rectangle.
+ */
+describe("the preview of an uploaded file", () => {
+  it("asks the API to resolve the reference and shows the image", async () => {
+    const { client } = renderField({ value: REFERENCE, purpose: "poster" });
+
+    const image = await screen.findByAltText("Vorschau des hochgeladenen Bildes");
+    expect(image.getAttribute("src")).toBe("https://storage.example/signed-get");
+    expect(client.adminViewUpload).toHaveBeenCalledWith("adhs", REFERENCE);
+  });
+
+  it("shows a video as something an author can actually play", async () => {
+    renderField({ value: REFERENCE, purpose: "video" });
+
+    const video = await screen.findByLabelText("Vorschau des hochgeladenen Videos");
+    expect(video.tagName).toBe("VIDEO");
+    // Not `auto`: a lecture is hundreds of megabytes and opening a form is not
+    // a request to download one.
+    expect(video.getAttribute("preload")).toBe("metadata");
+  });
+
+  it("offers a PDF as a link rather than a viewer inside the form", async () => {
+    renderField({ value: REFERENCE, purpose: "material" });
+
+    const link = await screen.findByRole("link", { name: "Datei öffnen" });
+    expect(link.getAttribute("href")).toBe("https://storage.example/signed-get");
+    // The URL carries a signature; a `Referer` would hand it to whatever the
+    // file links out to.
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("does not ask the API about a URL the customer serves themselves", async () => {
+    const { client } = renderField({
+      value: "https://cdn.medice.de/poster.jpg",
+      purpose: "poster",
+    });
+
+    const image = await screen.findByAltText("Vorschau des hochgeladenen Bildes");
+    expect(image.getAttribute("src")).toBe("https://cdn.medice.de/poster.jpg");
+    expect(client.adminViewUpload).not.toHaveBeenCalled();
+  });
+
+  it("says the preview failed rather than leaving a blank space", async () => {
+    // An ordinary state — no object storage on this deployment, or an object
+    // removed behind the reference. A gap where a picture should be reads as an
+    // unfinished feature (CLAUDE.md §9.4).
+    renderField({
+      value: REFERENCE,
+      purpose: "poster",
+      client: fakeClient({
+        adminViewUpload: vi.fn(async () => {
+          throw new Error("no object storage");
+        }),
+      } as unknown as Partial<ApiClient>),
+    });
+
+    expect(
+      await screen.findByText(/Die Vorschau konnte nicht geladen werden/u),
+    ).toBeDefined();
+  });
+
+  it("shows nothing at all when there is no value", () => {
+    const { client } = renderField({ value: "", purpose: "poster" });
+
+    expect(screen.queryByAltText("Vorschau des hochgeladenen Bildes")).toBeNull();
+    expect(screen.queryByText(/Vorschau wird geladen/u)).toBeNull();
+    expect(client.adminViewUpload).not.toHaveBeenCalled();
+  });
+
+  it("resolves a reference once, however many fields hold it", async () => {
+    const client = fakeClient();
+    renderField({ value: REFERENCE, purpose: "poster", client });
+    renderField({ value: REFERENCE, purpose: "video", client });
+
+    await screen.findByAltText("Vorschau des hochgeladenen Bildes");
+    await screen.findByLabelText("Vorschau des hochgeladenen Videos");
+
+    // A signature is minted per call and each one is an audit row; a content
+    // form with a video, a poster and captions would otherwise mint on every
+    // keystroke that re-renders it.
+    expect(client.adminViewUpload).toHaveBeenCalledTimes(1);
   });
 });
 

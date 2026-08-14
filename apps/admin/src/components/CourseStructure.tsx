@@ -55,6 +55,7 @@ import {
 } from "../structure-order.js";
 import { useLoaded, useSaver } from "../hooks.js";
 import { probeableSourceUrl, probeDurationSec } from "../media-duration.js";
+import { readableUrl } from "../media-preview.js";
 import {
   Button,
   ConfirmButton,
@@ -71,6 +72,7 @@ import {
 } from "./ui.js";
 import {
   isUploadedReference,
+  MediaPreview,
   referenceName,
   runUpload,
   UploadField,
@@ -708,6 +710,8 @@ function ContentForm(props: {
               */}
               <DurationProbe
                 sources={sources}
+                client={props.client}
+                courseSlug={props.courseSlug}
                 state={probe}
                 onState={setProbe}
                 onDuration={(seconds) => setDurationSec(String(seconds))}
@@ -960,45 +964,25 @@ function EditForm(props: {
  * black at the end, or a length agreed with the Ärztekammer. Overwriting it on
  * render would replace a decision with a measurement without telling anybody.
  *
- * Absent entirely when no source can be fetched — a button that always fails is
- * worse than no button.
+ * Absent entirely when there is no source at all — a button that always fails
+ * is worse than no button. That is now the *only* reason it is absent: until
+ * P74-04 an uploaded video was also unprobeable, so the control disappeared
+ * exactly when the author used this console to attach the file, and the length
+ * went back to being typed.
  */
 function DurationProbe(props: {
   sources: readonly MediaSourceWrite[];
+  client: ApiClient;
+  courseSlug: string;
   state: "idle" | "running" | "failed" | number;
   onState: (next: "idle" | "running" | "failed" | number) => void;
   onDuration: (seconds: number) => void;
 }) {
-  const url = probeableSourceUrl(props.sources);
+  const source = probeableSourceUrl(props.sources);
 
-  /*
-   * No probeable source, and the two reasons are not the same thing (P68-02).
-   *
-   * With no sources at all there is nothing to say: `sourcesMissing` above
-   * already says it, and a second notice would be noise.
-   *
-   * With sources that are all `s3://`, there is. A reference is a key in our
-   * storage rather than a URL this browser can fetch, so the button cannot
-   * work — and it used to simply not be drawn. That is the case an author
-   * reaches by uploading a video through this very form, which is now the
-   * normal way to attach one: the one control that gets `durationSec` right
-   * disappears exactly when the author used the console to put the file there,
-   * with nothing on screen to say why.
-   *
-   * An absent control reads as an unfinished feature (CLAUDE.md §9.4). This
-   * says what happened and what to do instead. It does not pretend the gap is
-   * fine — P68 records the fix, which is for the API to hand back a readable
-   * URL for an object it has just accepted.
-   */
-  if (url === undefined) {
-    const hasSources = props.sources.some((source) => source.url.trim() !== "");
-    if (!hasSources) return null;
-    return (
-      <p className="mt-1 text-xs text-[color:var(--ds-ink-muted)]">
-        {de.structure.durationDetectUnavailable}
-      </p>
-    );
-  }
+  // Nothing to measure, and `sourcesMissing` above already says so — a second
+  // notice in the same form would be noise.
+  if (source === undefined) return null;
 
   return (
     <div className="mt-1 space-y-1">
@@ -1008,14 +992,18 @@ function DurationProbe(props: {
         disabled={props.state === "running"}
         onClick={() => {
           props.onState("running");
-          void probeDurationSec(url).then((seconds) => {
+          void (async () => {
+            // An `s3://` reference has to become a signed URL before a `<video>`
+            // can load it; an ordinary URL passes straight through.
+            const url = await readableUrl(props.client, props.courseSlug, source);
+            const seconds = url === undefined ? undefined : await probeDurationSec(url);
             if (seconds === undefined) {
               props.onState("failed");
               return;
             }
             props.onDuration(seconds);
             props.onState(seconds);
-          });
+          })();
         }}
       >
         {props.state === "running"
@@ -1055,6 +1043,10 @@ function SourcesEditor(props: {
     props.onChange(
       props.sources.map((source, i) => (i === index ? { ...source, ...change } : source)),
     );
+
+  // The same rule the length probe uses, so the preview and the measurement are
+  // of the same file.
+  const previewed = probeableSourceUrl(props.sources);
 
   return (
     <fieldset className="space-y-2">
@@ -1182,6 +1174,25 @@ function SourcesEditor(props: {
       </p>
 
       {upload.kind === "failed" ? <Notice tone="warning">{upload.message}</Notice> : null}
+
+      {/*
+        One preview, under the list rather than one per row (P74-03).
+
+        The rows are renditions of the *same* recording — 1080p, 720p, an
+        adaptive manifest — so three players would show the same film three
+        times and download it three times. The first row is the one the browser
+        would take, so it is the one worth looking at, and it is also the one
+        `DurationProbe` measures: seeing a different film from the one the length
+        came off would be worse than seeing none.
+      */}
+      {previewed === undefined ? null : (
+        <MediaPreview
+          client={props.client}
+          courseSlug={props.courseSlug}
+          value={previewed}
+          purpose="video"
+        />
+      )}
     </fieldset>
   );
 }

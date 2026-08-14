@@ -40,14 +40,33 @@
 
 import { AppError } from "../../shared/problem-details.js";
 import type { ObjectStorage, UploadRefusal } from "../../shared/object-storage.js";
-import { keyBelongsToCustomer } from "@ds/domain";
+import { keyBelongsToCustomer, storageKeyOf } from "@ds/domain";
 import type { StorageAuditPort, UploadRepositoryPort } from "./upload.repository.js";
 import type {
   UploadBegin,
   UploadComplete,
   UploadConfirmedResponse,
   UploadTicketResponse,
+  UploadView,
+  UploadViewResponse,
 } from "./upload.dto.js";
+
+/**
+ * How long a console read signature lives (P74-02).
+ *
+ * Ten minutes rather than the sixty seconds a learner's lesson URL gets: an
+ * author uploads a lecture, then scrubs through it, fills the length, edits the
+ * title and saves — one page visit, several minutes, and a signature that
+ * expires under a playing `<video>` looks like a broken upload. It is still
+ * short enough that a URL copied out of a network tab is worth little, and it
+ * is one object, read-only, inside one course.
+ */
+const VIEW_TTL_SEC = 600;
+
+/** Where this course's objects live. Lower-cased to match `courseAssetKey`. */
+function coursePrefix(customerId: string, courseId: string): string {
+  return `${customerId.toLowerCase()}/courses/${courseId.toLowerCase()}/`;
+}
 
 export interface UploadActor {
   readonly customerId: string;
@@ -216,6 +235,92 @@ export class UploadService {
     };
   }
 
+  /**
+   * A short-lived URL for an object this course already owns (P74-02).
+   *
+   * ## What it is for
+   *
+   * Two things the console could not do at all, both reported by the client on
+   * the content form: see the video or image that was just uploaded, and read
+   * a video's length out of its own header. The second is not cosmetic —
+   * `durationSec` is a compliance input, the watch gate is a percentage of it,
+   * and the one control that gets it right (`Aus Video ermitteln`) disappeared
+   * exactly when the author used this console to put the file there, because an
+   * `s3://` reference is a key and not something a browser can fetch.
+   *
+   * ## Why the course is in the path and checked
+   *
+   * Three checks, and each rules out a different mistake:
+   *
+   * 1. **The reference must be ours.** A plain `https://` URL needs no
+   *    signature and is refused here rather than echoed back, so this route can
+   *    never be used to have the API fetch or bless an arbitrary address.
+   * 2. **The key must sit under the caller's customer prefix.** The same
+   *    `keyBelongsToCustomer` boundary as `complete`, on a store with no RLS
+   *    beneath it.
+   * 3. **The key must sit under *this course's* prefix.** Stricter than (2) on
+   *    purpose: without it, an author who may edit one course could read every
+   *    object their customer owns by naming a key from another course. The
+   *    course is the unit the authoring routes already authorise against.
+   *
+   * The refusal for all three is the same `notFound` as an unknown upload —
+   * telling a caller that an object exists but is not reachable from here is
+   * more than the refusal needs to say (§9.5).
+   *
+   * ## Why it is audited
+   *
+   * `read` is in `storage_action` and this is the first thing to write one. A
+   * signed GET is a capability that leaves the building: whoever holds the URL
+   * can read that object until it expires, so the fact that one was issued, to
+   * whom and for which key belongs in the append-only log with the mints.
+   */
+  async view(
+    courseSlug: string,
+    input: UploadView,
+    actor: UploadActor,
+    now: Date,
+  ): Promise<UploadViewResponse> {
+    const storage = this.requireStorage();
+    const courseId = await this.requireCourse(courseSlug);
+
+    const key = storageKeyOf(input.reference);
+    const withinCourse =
+      key !== undefined &&
+      keyBelongsToCustomer(key, actor.customerId) &&
+      key.toLowerCase().startsWith(coursePrefix(actor.customerId, courseId));
+
+    if (!withinCourse) {
+      await this.record(actor, courseId, {
+        action: "refuse",
+        // The reference is not echoed: it is client-supplied and this row is
+        // read by an operator. The course's own prefix says where it was aimed.
+        objectKey: coursePrefix(actor.customerId, courseId),
+        sizeBytes: null,
+        mimeType: null,
+        succeeded: false,
+        detail:
+          key === undefined
+            ? "not a storage reference"
+            : "key is outside this course's prefix",
+      });
+      throw this.unknownUpload();
+    }
+
+    await this.record(actor, courseId, {
+      action: "read",
+      objectKey: key,
+      sizeBytes: null,
+      mimeType: null,
+      succeeded: true,
+      detail: null,
+    });
+
+    return {
+      url: storage.readUrl(key, VIEW_TTL_SEC, now),
+      expiresAt: new Date(now.getTime() + VIEW_TTL_SEC * 1000).toISOString(),
+    };
+  }
+
   // -------------------------------------------------------------------------
 
   private requireStorage(): ObjectStorage {
@@ -254,7 +359,7 @@ export class UploadService {
     actor: UploadActor,
     courseId: string,
     event: {
-      action: "mint" | "store" | "refuse" | "delete";
+      action: "mint" | "store" | "refuse" | "read" | "delete";
       objectKey: string;
       sizeBytes: number | null;
       mimeType: string | null;

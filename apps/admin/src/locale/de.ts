@@ -556,6 +556,14 @@ export const de = {
     videoUpload: "Video hochladen",
     videoUploadHint:
       "MP4 oder WebM, bis 2 GB. Die Datei wird direkt in den Dateispeicher übertragen und ist anschließend nur für Teilnehmende dieser Fortbildung abrufbar.",
+
+    // Seeing the file rather than its name (P74-03).
+    previewLoading: "Vorschau wird geladen …",
+    previewFailed:
+      "Die Vorschau konnte nicht geladen werden. Die Datei bleibt hinterlegt — bitte prüfen Sie sie über die Teilnehmenden-Ansicht.",
+    previewPosterAlt: "Vorschau des hochgeladenen Bildes",
+    previewVideoLabel: "Vorschau des hochgeladenen Videos",
+    previewOpen: "Datei öffnen",
   },
 
   structure: {

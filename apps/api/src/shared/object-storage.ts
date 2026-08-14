@@ -145,6 +145,23 @@ export class ObjectStorage {
   }
 
   /**
+   * A short-lived URL a browser can read one object from (P74-02).
+   *
+   * The console needs this for two things a filename cannot do: show the author
+   * what they just uploaded, and let the browser read a video's own header to
+   * fill `durationSec` — which is a compliance input, because the watch gate is
+   * a percentage of it.
+   *
+   * `presignGet` and nothing else. The caller has already established that the
+   * key is inside the course it named, and a read signature must not be
+   * reachable from a code path that could also write or delete: this is the
+   * same reason `media-url.ts` takes a `ReadPresigner`.
+   */
+  readUrl(key: string, ttlSec: number, now: Date): string {
+    return this.presigner.presignGet(key, ttlSec, now);
+  }
+
+  /**
    * Confirm the bytes arrived and are what we approved.
    *
    * Returns the verified facts on success so the caller records the size and

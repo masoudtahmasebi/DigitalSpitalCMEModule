@@ -51,8 +51,33 @@ export const uploadCompleteSchema = z.object({
   key: z.string().trim().min(1).max(1024),
 });
 
+/**
+ * "Let me look at the thing I just uploaded" (P74-02).
+ *
+ * A reference rather than a key, because a reference is what the form holds:
+ * the content row stores `s3://<key>` and the console never keeps the bare key
+ * around. The server strips the scheme and checks the key exactly as `complete`
+ * does — the shape of the value is not what makes it safe.
+ */
+export const uploadViewSchema = z.object({
+  reference: z.string().trim().min(1).max(2000),
+});
+
 export type UploadBegin = z.infer<typeof uploadBeginSchema>;
 export type UploadComplete = z.infer<typeof uploadCompleteSchema>;
+export type UploadView = z.infer<typeof uploadViewSchema>;
+
+/**
+ * What `view` answers with.
+ *
+ * `expiresAt` is not decoration: the console caches these per reference, and a
+ * `<video>` element that reloads a source after the signature has expired shows
+ * an error a learner never sees and an author cannot explain.
+ */
+export interface UploadViewResponse {
+  readonly url: string;
+  readonly expiresAt: string;
+}
 
 /** What `begin` answers with. The URL is short-lived and never logged. */
 export interface UploadTicketResponse {

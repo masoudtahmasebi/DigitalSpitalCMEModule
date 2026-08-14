@@ -37,6 +37,7 @@ import { useRef, useState } from "react";
 import type { ApiClient, UploadPurpose } from "@ds/sdk";
 import { uploadToTicket } from "@ds/sdk";
 import { de } from "../locale/de.js";
+import { useReadableUrl } from "../media-preview.js";
 import { Button, Field, IconButton, Notice, TextInput } from "./ui.js";
 
 /** What a file picker should offer per purpose. Mirrors `UPLOAD_TYPES`. */
@@ -217,7 +218,117 @@ export function UploadField(props: {
       )}
 
       {state.kind === "failed" ? <Notice tone="warning">{state.message}</Notice> : null}
+
+      <MediaPreview
+        client={props.client}
+        courseSlug={props.courseSlug}
+        value={props.value}
+        purpose={props.purpose}
+      />
     </Field>
+  );
+}
+
+/**
+ * Show the author the file, not its name (P74-03).
+ *
+ * > _"for here, can we have the preview of the video, and the preview of images
+ * > uploaded?"_
+ *
+ * Reasonable, and it was not laziness that left it out: the form holds an
+ * `s3://` reference, and a browser cannot fetch one. `useReadableUrl` asks the
+ * API for a short-lived signature; everything here is what to do with it.
+ *
+ * ## Why a poster is an `<img>` and a video is a `<video>` and a PDF is a link
+ *
+ * A preview is worth having when it answers the question the author actually
+ * has, which differs per purpose. For an image it is "is this the right
+ * picture" — one look. For a video it is "is this the right recording, and does
+ * it play" — which needs controls, and is also the only way to notice before a
+ * physician does that the file is silent or is the wrong take. For a PDF and a
+ * caption file it is "is this the right document", and an inline PDF viewer in
+ * a form is a page inside a page; a link that opens it is both smaller and
+ * better.
+ *
+ * ## Why a failure is stated
+ *
+ * A blank space where a preview should be reads as an unfinished feature. It is
+ * an ordinary state — no object storage on this deployment, an object removed
+ * behind the reference — and saying which is not possible from here, so it says
+ * what it knows: the file could not be opened, and the reference is unchanged.
+ */
+export function MediaPreview(props: {
+  client: ApiClient;
+  courseSlug: string | undefined;
+  value: string;
+  purpose: UploadPurpose;
+}) {
+  const resolved = useReadableUrl(props.client, props.courseSlug, props.value);
+
+  if (resolved.kind === "none") return null;
+  if (resolved.kind === "loading") {
+    return (
+      <p className="mt-2 text-xs text-[color:var(--ds-ink-muted)]">
+        {de.uploads.previewLoading}
+      </p>
+    );
+  }
+  if (resolved.kind === "failed") {
+    return (
+      <p className="mt-2 text-xs text-amber-700" role="status">
+        {de.uploads.previewFailed}
+      </p>
+    );
+  }
+
+  if (props.purpose === "poster") {
+    return (
+      <img
+        src={resolved.url}
+        alt={de.uploads.previewPosterAlt}
+        className="mt-2 max-h-40 rounded-md border border-[color:var(--ds-hairline)] object-contain"
+      />
+    );
+  }
+
+  if (props.purpose === "video") {
+    return (
+      /*
+       * `preload="metadata"` rather than `auto`: a lecture is hundreds of
+       * megabytes and an author opening a form is not asking to download one.
+       *
+       * No `<track>`, and the WCAG obligation is not being waved away. It
+       * belongs to the learner's player, which does render one, and this form
+       * refuses to be quiet about a video without captions — `captionsMissing`
+       * says so under the very field that supplies them. A track here would
+       * point at whatever is in that field at this instant, which is usually
+       * nothing and is never what this preview is being asked: is this the
+       * right recording.
+       */
+      // eslint-disable-next-line jsx-a11y/media-has-caption -- see above
+      <video
+        src={resolved.url}
+        controls
+        preload="metadata"
+        aria-label={de.uploads.previewVideoLabel}
+        className="mt-2 max-h-64 w-full rounded-md border border-[color:var(--ds-hairline)] bg-black"
+      />
+    );
+  }
+
+  return (
+    <p className="mt-2">
+      <a
+        href={resolved.url}
+        target="_blank"
+        // `noreferrer` as well as `noopener`: the URL carries a signature, and
+        // a `Referer` header would send it to whatever the file links to.
+        rel="noopener noreferrer"
+        className="text-sm underline"
+      >
+        {de.uploads.previewOpen}
+      </a>
+    </p>
   );
 }
 
