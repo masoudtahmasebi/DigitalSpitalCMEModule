@@ -769,32 +769,45 @@ fi
 #
 # ## The failure this ends
 #
-# `caddy` runs a stock image with `./Caddyfile:/etc/caddy/Caddyfile:ro` — a
-# bind mount. `compose up -d` recreates a container when its image or its
-# compose-level configuration changes, and **a changed mounted file is neither**.
-# So Caddy kept serving whatever Caddyfile it read when it last started, and a
-# deploy that pulled a new Caddyfile reported success having applied none of it.
-#
-# It was found by the post-deploy journey on 14.08: the browser said
+# Found by the post-deploy journey on 14.08. The browser said, on production:
 #
 #     Refused to load media from 'https://nbg1.your-objectstorage.com/…'
 #     because it violates the following Content Security Policy directive:
 #     "default-src 'self'". Note that 'media-src' was not explicitly set…
 #
-# against a deploy whose checkout *contained* the `media-src`. The repository's
-# state is not the installation's state (CLAUDE.md §9.9), one layer below where
-# that rule is usually applied: here the deploy had copied the file and the
-# process that reads it was never told.
+# against a deploy whose checkout *contained* that `media-src`.
+#
+# ## Two causes, and the second one only showed itself under the check
+#
+# 1. `compose up -d` recreates a container when its **image** or its
+#    **compose-level configuration** changes, and a changed mounted file is
+#    neither — so nothing restarted Caddy at all.
+#
+# 2. And a reload alone does not fix it either, which is the part that cost a
+#    second deploy to learn. `./Caddyfile:/etc/caddy/Caddyfile:ro` is a bind
+#    mount of a **file**, and Docker resolves that to an **inode** when the
+#    container is created. `git checkout` does not edit the file in place — it
+#    writes a new one and renames it over the old — so the checkout gets a new
+#    inode and the container goes on pointing at the previous one. Caddy then
+#    re-reads `/etc/caddy/Caddyfile` perfectly faithfully and gets the old
+#    bytes; `caddy reload` returns 0 and nothing changes.
+#
+# The repository's state is not the installation's state (CLAUDE.md §9.9), one
+# layer below where that rule is usually applied: the deploy had updated the
+# file, and the container was not looking at that file any more.
 #
 # This is not one directive's problem. Every header, route and redirect ever
 # changed in that file has had the same fate, and nothing anywhere said so.
 #
-# ## Reload, and then check the effect rather than the command
+# ## Reload, check, escalate, check again
 #
-# `caddy reload` is the graceful path — new config, no dropped connections, no
-# fresh ACME work. But a reload returning 0 proves the command ran, not that
-# the running server now answers differently: exactly the §9.1 shape. So the
-# **served header** is compared against the file, per site.
+# `caddy reload` is the graceful path — no dropped connections, no fresh ACME
+# work — so it is tried first. A recreate re-resolves the mount and always
+# works, at the cost of a few seconds of refused connections, so it is the
+# fallback rather than the default. **What decides between them is the served
+# header**, not a guess about which of the two causes above is in play: a
+# reload returning 0 proves the command ran, not that the running server
+# answers differently, which is exactly the §9.1 shape this check exists for.
 #
 # The comparison expands Caddy's own placeholders from this shell, which holds
 # the same values compose passes the container — so a mismatch means the file
@@ -807,52 +820,81 @@ fi
 # still unverified here, and the reload above is what applies it.
 source "${SCRIPT_DIR}/caddy-config.sh"
 
-log "Reloading Caddy so it reads this checkout's Caddyfile"
-if ! compose exec -T caddy caddy reload \
-  --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null; then
-  # A reload can legitimately fail — the container may have been created only
-  # moments ago by `up -d`, or an older Caddy may not accept these flags.
-  # Recreating is heavier (a few seconds of refused connections) and always
-  # works, so it is the fallback rather than the default.
-  log "  reload refused; recreating the container instead"
+# The served policy for one site, normalised. Empty when the site answers no
+# header at all, which is itself a mismatch worth reporting.
+ds_served_csp() {
+  ds_normalise_policy "$(
+    curl --silent --show-error --max-time 10 --head "https://$1" 2>/dev/null \
+      | sed -n 's/^[Cc]ontent-[Ss]ecurity-[Pp]olicy: *//p'
+  )"
+}
+
+# Does every site serve what the file says? Retried, because a reload is in
+# flight and one refused connection during it must not decide the answer.
+ds_policies_match() {
+  local site host expected attempt
+  for attempt in $(seq 1 "${1:-5}"); do
+    local all_match=1
+    for site in ADMIN_DOMAIN PORTAL_DOMAIN; do
+      expected="$(ds_expected_csp "$site" || true)"
+      [[ -n "$expected" ]] || continue
+      host="${!site}"
+      [[ "$(ds_served_csp "$host")" == "$expected" ]] || all_match=0
+    done
+    [[ "$all_match" == "1" ]] && return 0
+    sleep 1
+  done
+  return 1
+}
+
+log "Making Caddy read this checkout's Caddyfile"
+
+# Cheap first: a reload is graceful, drops no connection and redoes no ACME
+# work. It is also **not always enough**, for a reason worth stating because it
+# cost a deploy to find:
+#
+#   `./Caddyfile:/etc/caddy/Caddyfile:ro` is a bind mount of a *file*, which
+#   Docker resolves to an **inode** when the container is created. `git
+#   checkout` does not edit that file in place — it writes a new one and
+#   renames it over the old — so the checkout gets a new inode and the
+#   container keeps pointing at the old one.
+#
+# Caddy then re-reads `/etc/caddy/Caddyfile` perfectly faithfully and gets the
+# file as it was when the container was created. `caddy reload` returns 0 and
+# nothing changes. Only recreating the container re-resolves the mount.
+#
+# So: reload, check, and escalate to a recreate if the check disagrees. The
+# recreate costs a few seconds of refused connections, which is why it is not
+# the first move — and the check is what decides, rather than a guess about
+# which case this is.
+compose exec -T caddy caddy reload \
+  --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || true
+
+if ! ds_policies_match 5; then
+  log "  a reload was not enough — recreating the container to re-resolve the mount"
   compose up -d --force-recreate caddy
-  sleep 3
 fi
 
-for site in ADMIN_DOMAIN PORTAL_DOMAIN; do
-  expected="$(ds_expected_csp "$site" || true)"
-  [[ -n "$expected" ]] || continue
+# The last word, and deliberately after both attempts: a reload's exit code
+# says the command ran, not that the running server answers differently (§9.1).
+if ! ds_policies_match 15; then
+  for site in ADMIN_DOMAIN PORTAL_DOMAIN; do
+    expected="$(ds_expected_csp "$site" || true)"
+    [[ -n "$expected" ]] || continue
+    host="${!site}"
+    served="$(ds_served_csp "$host")"
+    [[ "$served" == "$expected" ]] && continue
 
-  host="${!site}"
-
-  # Retried, because a reload is in flight and a single refused connection
-  # during it would fail a deploy that is in fact fine. Five seconds is far
-  # longer than a Caddy reload and far shorter than anybody's patience.
-  served=""
-  for attempt in $(seq 1 5); do
-    served="$(ds_normalise_policy "$(
-      curl --silent --show-error --max-time 10 --head "https://${host}" 2>/dev/null \
-        | sed -n 's/^[Cc]ontent-[Ss]ecurity-[Pp]olicy: *//p'
-    )")"
-    [[ "$served" == "$expected" ]] && break
-    [[ "$attempt" == "5" ]] || sleep 1
+    printf '\033[1;31mxx\033[0m %s\n' "https://${host} is not serving this checkout's Caddyfile." >&2
+    printf '   the file says:   %s\n' "$expected" >&2
+    printf '   the server says: %s\n' "${served:-（no Content-Security-Policy at all）}" >&2
   done
-
-  if [[ "$served" != "$expected" ]]; then
-    die "https://${host} is not serving the Caddyfile in this checkout.
-
-   The file says:
-     ${expected}
-
-   The server answers:
-     ${served:-（no Content-Security-Policy header at all）}
-
-   Caddy did not re-read its configuration. Everything else deployed; what is
-   affected is every header, route and redirect changed in that file — which
-   fails in the browser, with nothing in any server log."
-  fi
-  log "https://${host} serves the policy this checkout defines"
-done
+  die "Caddy is not serving this checkout's configuration, and recreating its
+   container did not change that. Everything else deployed and is running.
+   What is affected is every header, route and redirect changed in that file,
+   each of which fails in the browser with nothing in any server log."
+fi
+log "Caddy serves the policy this checkout defines"
 
 # Old images and build layers accumulate fast on a host that builds; a full
 # disk is its own outage. A week keeps enough tags for a rollback to be
