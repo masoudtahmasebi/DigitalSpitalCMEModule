@@ -4,12 +4,16 @@
 #
 # ## The failure this exists to end
 #
-# `caddy` runs a stock image with `./Caddyfile:/etc/caddy/Caddyfile:ro` — a
-# bind mount. `docker compose up -d` recreates a container when its image or
-# its compose-level configuration changes, and **a changed mounted file is
-# neither**. So Caddy kept serving whatever Caddyfile it read when it last
-# started, and a deploy that pulled a new one reported success having applied
-# none of it.
+# `caddy` runs a stock image with `./Caddyfile:/etc/caddy/Caddyfile:ro`. Two
+# things then conspire, and the second only surfaced once this check existed:
+#
+# 1. `docker compose up -d` recreates a container when its **image** or its
+#    **compose-level configuration** changes, and a changed mounted file is
+#    neither — so nothing restarted Caddy.
+# 2. A bind mount of a *file* resolves to an **inode** at container creation,
+#    and `git checkout` replaces the file rather than editing it in place. The
+#    container therefore points at the previous inode for good: `caddy reload`
+#    re-reads the path, gets the old bytes, and returns 0.
 #
 # Found by the post-deploy journey on 14.08. The browser said:
 #

@@ -387,12 +387,22 @@ The §9.9 corollary again, one layer lower. There it was _a setting a human was
 told to apply by hand_; here it is a setting the deploy **did** apply — to the
 filesystem — while the process that reads it kept running with the old one.
 
-`caddy` mounts `./Caddyfile` from the checkout. `docker compose up -d`
-recreates a container when its **image** or its **compose-level configuration**
-changes, and a changed _mounted file_ is neither. So a deploy pulled a Caddyfile
-with a new `media-src`, reported success, and Caddy went on serving the policy
-it had read at its last restart — for however long that had been. Every header,
-route and redirect ever changed in that file had the same fate (P74-07).
+`caddy` mounts `./Caddyfile` from the checkout, and **two** things go wrong —
+the second of which only appeared once a check made the first one visible:
+
+1. `docker compose up -d` recreates a container when its **image** or its
+   **compose-level configuration** changes, and a changed _mounted file_ is
+   neither. So nothing restarted Caddy.
+2. A bind mount of a **file** resolves to an **inode** when the container is
+   created, and `git checkout` replaces a file rather than editing it in place.
+   The container keeps pointing at the old inode for good — so `caddy reload`
+   re-reads the path, gets the previous bytes, and exits 0. Only recreating the
+   container re-resolves the mount.
+
+So a deploy pulled a Caddyfile with a new `media-src`, reported success, and
+Caddy went on serving the policy it had read whenever it was last created.
+Every header, route and redirect ever changed in that file had the same fate
+(P74-07).
 
 The tell is that nothing failed. The file was right, the deploy was green, the
 server logs were clean, and the only evidence was a line in a browser console
@@ -402,9 +412,13 @@ journey found it and no server-side check could have.
 **Check:** for every file a container reads at startup and the deploy can
 change — a Caddyfile, an nginx conf, a systemd unit, a seed, a policy document
 — ask _what makes the running process read it again?_ If the answer is "a
-restart that happens for other reasons", it is not applied. And having made it
-reload, assert the **effect**: a reload's exit code says the command ran, not
-that the server now answers differently (§9.1).
+restart that happens for other reasons", it is not applied. Prefer mounting the
+**directory** over the file, which has no inode problem.
+
+And having made it reload, assert the **effect**. A reload's exit code says the
+command ran, not that the server now answers differently (§9.1) — which is
+exactly how cause 2 was found: the fix for cause 1 shipped, the reload returned
+0, and the check refused to agree.
 
 ### 9.10a A setting has two sides, and the comment names one
 
