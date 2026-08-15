@@ -225,6 +225,32 @@ export const de = {
     sessionEnded:
       "Ihre Sitzung ist abgelaufen — Ihr Fortschritt wird derzeit nicht gespeichert. " +
       "Bitte laden Sie die Seite neu und melden Sie sich erneut an.",
+    /**
+     * When the section's configured length is longer than the file (P76-03).
+     *
+     * The learner is stuck through no fault of their own: the gate asks for
+     * more seconds than the video contains, so the bar cannot fill however
+     * carefully they watch. Before this they were told nothing at all — the
+     * reported instance was a 45-second recording behind a 25:24 length,
+     * showing „0 % der Fortbildung absolviert" after a complete viewing.
+     *
+     * Four things, in the order a person needs them: that it is the course and
+     * not them, what the two numbers are, that watching on will not help, and
+     * who fixes it. The numbers are named because the physician can see one of
+     * them on the scrub bar already, and a message that does not account for
+     * what they are looking at reads as a different problem.
+     *
+     * It does **not** say "Ihre Punkte sind sicher" or anything else about the
+     * outcome: the widget does not know what will be credited, and inventing
+     * reassurance about a CME point is exactly what §4 invariant 1 forbids.
+     */
+    lengthMisconfigured: (videoLength: string, requiredLength: string): string =>
+      `Dieser Abschnitt ist fehlerhaft konfiguriert: Das Video ist ${videoLength} lang, ` +
+      `für den Abschluss sind jedoch ${requiredLength} Wiedergabe hinterlegt. ` +
+      "Der Fortschritt kann deshalb nicht vollständig werden — weiteres Ansehen ändert " +
+      "daran nichts. Bitte wenden Sie sich an den Anbieter dieser Fortbildung.",
+    lengthMisconfiguredLabel: "Hinweis zur Konfiguration dieses Abschnitts",
+
     pause: "Fortbildung pausieren",
     back: "Zurück zur Übersicht",
 

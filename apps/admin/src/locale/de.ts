@@ -641,15 +641,39 @@ export const de = {
     posterUrl: "Vorschaubild",
     posterHint:
       "Standbild vor dem Start. Ohne Vorschaubild zeigt der Player bis zum ersten Bild eine schwarze Fläche.",
-    durationSec: "Länge in Sekunden",
+    durationSec: "Länge des Videos",
+    /*
+     * The length is read from the file (P75-01), so the copy stops asking for
+     * it. `durationHint` is now only shown in the one case where no file could
+     * be read; `durationMeasuredHint` is the normal case.
+     */
     durationHint:
-      "Pflichtangabe für Videos. Der erforderliche Videoanteil ist ein Prozentsatz dieser Länge — ohne Länge gibt es nichts zu erreichen und der Inhalt wäre überspringbar. Die Gesamtdauer der Fortbildung wird aus den Längen aller Videos berechnet und nicht separat gepflegt.",
-    durationDetect: "Aus Video ermitteln",
-    durationDetecting: "Wird ermittelt …",
-    durationDetected: (seconds: number): string =>
-      `Länge übernommen: ${String(seconds)} Sekunden.`,
+      "Konnte nicht aus der Datei gelesen werden — bitte die Länge in Sekunden eintragen. Der erforderliche Videoanteil ist ein Prozentsatz dieser Länge: Eine zu große Zahl macht den Abschnitt unabschließbar, weil die geforderten Sekunden im Video nicht existieren.",
+    durationMeasuredHint:
+      "Aus der Videodatei gelesen und nicht von Hand gepflegt. Der erforderliche Videoanteil ist ein Prozentsatz dieser Länge; die Gesamtdauer der Fortbildung wird aus den Längen aller Videos berechnet.",
+    durationMeasured: (seconds: number): string =>
+      `${String(Math.floor(seconds / 60))}:${String(seconds % 60).padStart(2, "0")} (${String(seconds)} Sekunden)`,
+    durationDetecting: "Länge wird aus dem Video gelesen …",
+    /**
+     * The stored length was wrong, and the correction is not saved yet
+     * (P76-03).
+     *
+     * P75-01 made the form measure and overwrite. On its own that hides the
+     * repair: the field shows the right number, and nothing says the content
+     * had been refusing to complete for every learner — nor that leaving this
+     * screen without saving leaves it refusing.
+     *
+     * So: what was stored, what the file actually is, what it cost, what to do.
+     * The last part is the one that makes this a mechanism rather than a
+     * remark (CLAUDE.md §9.4).
+     */
+    durationCorrected: (storedSec: number, measuredSec: number): string =>
+      `Die gespeicherte Länge (${String(storedSec)} Sekunden) stimmt nicht mit der Videodatei überein ` +
+      `(${String(measuredSec)} Sekunden). Ist die gespeicherte Länge größer als die Datei, ` +
+      "konnten Teilnehmende diesen Abschnitt nicht abschließen. " +
+      "Mit „Speichern“ wird die gemessene Länge übernommen.",
     durationDetectFailed:
-      "Die Länge konnte nicht aus der Quelle gelesen werden. Das ist bei Speicher-Schlüsseln (s3://) und bei Servern ohne CORS-Freigabe normal — bitte die Länge in Sekunden eintragen.",
+      "Die Länge konnte nicht aus der Datei gelesen werden. Das kommt bei Servern ohne CORS-Freigabe und bei adaptiven Streams vor — bitte die Länge in Sekunden eintragen und mit der tatsächlichen Videolänge vergleichen.",
     /**
      * Why the button is not there at all (P68-02).
      *

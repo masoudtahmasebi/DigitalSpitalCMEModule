@@ -42,7 +42,6 @@ export {
   validateSegments,
   watchedPercent,
   watchedSecondsWithin,
-  watchedSeconds,
 } from "./watch.js";
 export type {
   RejectedSegment,
@@ -330,7 +329,6 @@ export { configValue } from "./runtime-config.js";
 export type { RuntimeConfig } from "./runtime-config.js";
 
 export {
-  clampSeek,
   clampSeekToLimit,
   playerSeekLimit,
   RESUME_GRANULARITY_SEC,
@@ -338,3 +336,6 @@ export {
   seekCeiling,
 } from "./resume.js";
 export type { ResumeInput } from "./resume.js";
+
+export { lengthsAgree, mediaLengthVerdict } from "./gate-reachability.js";
+export type { MediaLengthInput, MediaLengthVerdict } from "./gate-reachability.js";

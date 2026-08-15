@@ -32,7 +32,7 @@
  * should not have to click to discover a rule.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ApiClient,
   AuthoringChapter,
@@ -42,7 +42,7 @@ import type {
   ContentWrite,
   MediaSourceWrite,
 } from "@ds/sdk";
-import { MEDIA_MIME_TYPES } from "@ds/domain";
+import { lengthsAgree, MEDIA_MIME_TYPES } from "@ds/domain";
 import { MediaCheckPanel } from "./MediaCheck.js";
 import { de } from "../locale/de.js";
 import { nullable, swap } from "../drafts.js";
@@ -686,37 +686,30 @@ function ContentForm(props: {
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field
-              label={de.structure.durationSec}
-              hint={de.structure.durationHint}
-              htmlFor={id("duration")}
-            >
-              <TextInput
-                id={id("duration")}
-                value={durationSec}
-                type="number"
-                onChange={(next) => {
-                  setDurationSec(next);
-                  // A typed value replaces the probe's verdict rather than
-                  // sitting under a stale "Länge übernommen".
-                  setProbe("idle");
-                }}
-              />
-              {/*
-                The length is a compliance input, not a caption: the watch gate
-                is a percentage of it, so a mistyped figure quietly makes the
-                tail of a video optional. Reading it out of the file is the one
-                way to get it right that does not depend on the author's care.
-              */}
-              <DurationProbe
-                sources={sources}
-                client={props.client}
-                courseSlug={props.courseSlug}
-                state={probe}
-                onState={setProbe}
-                onDuration={(seconds) => setDurationSec(String(seconds))}
-              />
-            </Field>
+            {/*
+              The length is **measured**, not typed (P75-01).
+
+              It was a number field with a button beside it, and the client's
+              report is what that costs: a 45-second video on a course whose
+              row said 1524, a learner told to watch 25:24 that does not exist,
+              and no way forward — the watch gate is a percentage of this
+              figure, so one wrong number makes a module impossible rather than
+              merely inaccurate.
+
+              A field an author *can* get wrong is a field that eventually is
+              wrong, and nothing downstream can tell. So the file decides, and
+              the only escape hatch is the one case where no file can be read.
+            */}
+            <MeasuredDuration
+              id={id("duration")}
+              sources={sources}
+              client={props.client}
+              courseSlug={props.courseSlug}
+              value={durationSec}
+              state={probe}
+              onState={setProbe}
+              onChange={setDurationSec}
+            />
             <UploadField
               label={de.structure.posterUrl}
               hint={de.structure.posterHint}
@@ -957,70 +950,155 @@ function EditForm(props: {
  * group the author's order is preserved and is theirs to decide.
  */
 /**
- * "Aus Video ermitteln" — fills the length from the file's own header.
+ * The video's length, measured from the file rather than typed (P75-01).
  *
- * Offered rather than automatic. An author editing an existing content item may
- * have a deliberate figure in that field: a recording with thirty seconds of
- * black at the end, or a length agreed with the Ärztekammer. Overwriting it on
- * render would replace a decision with a measurement without telling anybody.
+ * ## Why there is no longer a number field here
  *
- * Absent entirely when there is no source at all — a button that always fails
- * is worse than no button. That is now the *only* reason it is absent: until
- * P74-04 an uploaded video was also unprobeable, so the control disappeared
- * exactly when the author used this console to attach the file, and the length
- * went back to being typed.
+ * Reported from production:
+ *
+ * > _"in the course i have a video which is 45 seconds and the system says you
+ * > have to watch a video for 25 minutes, which there is not, and i can not go
+ * > further in the course"_
+ *
+ * The watch gate is a percentage of `durationSec`. A figure larger than the
+ * file is therefore not an inaccuracy — it is a module **nobody can finish**,
+ * because the seconds it demands do not exist to be watched. The learner sees a
+ * progress bar that cannot fill and no sentence explaining why.
+ *
+ * It used to be a text input with "Aus Video ermitteln" beside it, offered
+ * rather than automatic, on the reasoning that an author might have a
+ * deliberate figure — a recording with thirty seconds of black at the end. That
+ * reasoning was wrong in the direction that matters: a field an author *can*
+ * get wrong is one that eventually is wrong, nothing downstream can tell, and
+ * the person who pays is a physician who cannot complete their Fortbildung.
+ *
+ * So the file decides. The measurement runs by itself when the sources change,
+ * and the value is shown as what it is: a reading, not an opinion.
+ *
+ * ## The one escape hatch, and why it exists
+ *
+ * A length that cannot be measured must not make the content unsaveable — a
+ * customer's own CDN may send no CORS headers, and an adaptive manifest may
+ * report nothing. In exactly that case the field becomes editable and says
+ * why. Removing it entirely would replace "a wrong number" with "a course that
+ * cannot be authored at all", which is not an improvement (CLAUDE.md §9.2: a
+ * control that can only produce an error is worse than an absent one — and so
+ * is an absent control that was the only way through).
  */
-function DurationProbe(props: {
+function MeasuredDuration(props: {
+  id: string;
   sources: readonly MediaSourceWrite[];
   client: ApiClient;
   courseSlug: string;
+  value: string;
   state: "idle" | "running" | "failed" | number;
   onState: (next: "idle" | "running" | "failed" | number) => void;
-  onDuration: (seconds: number) => void;
+  onChange: (value: string) => void;
 }) {
   const source = probeableSourceUrl(props.sources);
+  const { client, courseSlug, onChange, onState } = props;
 
-  // Nothing to measure, and `sourcesMissing` above already says so — a second
-  // notice in the same form would be noise.
-  if (source === undefined) return null;
+  /**
+   * What was stored before this form measured anything (P76-03).
+   *
+   * The measurement overwrites the field, which is the point of P75-01 — and on
+   * its own it makes a *broken* content indistinguishable from a correct one:
+   * the operator opens the form, sees the right length, and never learns that
+   * what was saved was blocking learners, or that they now have to press
+   * Speichern to repair it.
+   *
+   * A ref taken on first render, not `props.value`, because `props.value` is
+   * what the probe replaced a moment later.
+   */
+  const storedRef = useRef(props.value);
+
+  /*
+   * Measured when the source changes, and only then.
+   *
+   * Keyed on the URL rather than on the array: the sources list is rebuilt on
+   * every keystroke in a label field, and re-probing a lecture on each one
+   * would mint a signature per character.
+   */
+  useEffect(() => {
+    if (source === undefined) return;
+
+    let cancelled = false;
+    onState("running");
+    void (async () => {
+      // An `s3://` reference has to become a signed URL before a `<video>` can
+      // load it; an ordinary URL passes straight through.
+      const url = await readableUrl(client, courseSlug, source);
+      const seconds = url === undefined ? undefined : await probeDurationSec(url);
+      if (cancelled) return;
+      if (seconds === undefined) {
+        onState("failed");
+        return;
+      }
+      onChange(String(seconds));
+      onState(seconds);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [source, client, courseSlug, onChange, onState]);
+
+  const measured = typeof props.state === "number";
 
   return (
-    <div className="mt-1 space-y-1">
-      <button
-        type="button"
-        className="ds-button-secondary text-xs"
-        disabled={props.state === "running"}
-        onClick={() => {
-          props.onState("running");
-          void (async () => {
-            // An `s3://` reference has to become a signed URL before a `<video>`
-            // can load it; an ordinary URL passes straight through.
-            const url = await readableUrl(props.client, props.courseSlug, source);
-            const seconds = url === undefined ? undefined : await probeDurationSec(url);
-            if (seconds === undefined) {
-              props.onState("failed");
-              return;
-            }
-            props.onDuration(seconds);
-            props.onState(seconds);
-          })();
-        }}
-      >
-        {props.state === "running"
-          ? de.structure.durationDetecting
-          : de.structure.durationDetect}
-      </button>
-      {typeof props.state === "number" ? (
-        <p className="text-xs text-green-700" role="status">
-          {de.structure.durationDetected(props.state)}
+    <Field
+      label={de.structure.durationSec}
+      hint={measured ? de.structure.durationMeasuredHint : de.structure.durationHint}
+      htmlFor={props.id}
+    >
+      {measured ? (
+        // Shown, not editable. The number is a reading of the file, and a box
+        // around it would invite the edit this whole component exists to stop.
+        <p
+          className="rounded-md border border-[color:var(--ds-hairline)] bg-[color:var(--ds-surface)] px-3 py-2 text-sm text-[color:var(--ds-ink)]"
+          id={props.id}
+        >
+          {de.structure.durationMeasured(Number(props.state))}
+        </p>
+      ) : (
+        <TextInput
+          id={props.id}
+          value={props.value}
+          type="number"
+          onChange={props.onChange}
+        />
+      )}
+
+      {props.state === "running" ? (
+        <p className="mt-1 text-xs text-[color:var(--ds-ink-muted)]" role="status">
+          {de.structure.durationDetecting}
         </p>
       ) : null}
+
       {props.state === "failed" ? (
-        <p className="text-xs text-amber-700" role="status">
+        <p className="mt-1 text-xs text-amber-700" role="status">
           {de.structure.durationDetectFailed}
         </p>
       ) : null}
-    </div>
+
+      {/*
+        The stored figure was wrong, and saying so is the repair (P76-03).
+
+        Without this the correction is invisible: the form measures, the field
+        shows the right number, and an operator who came here for something else
+        never learns that this content was refusing to complete for every
+        learner — nor that leaving without pressing Speichern leaves it that way.
+
+        It names both numbers and the consequence, per §9.4. `role="status"`
+        rather than `alert`: this is the operator's own screen reporting on work
+        it just did, not an interruption.
+      */}
+      {measured && !lengthsAgree(Number(storedRef.current), Number(props.state)) ? (
+        <p className="mt-1 text-xs text-amber-700" role="status">
+          {de.structure.durationCorrected(Number(storedRef.current), Number(props.state))}
+        </p>
+      ) : null}
+    </Field>
   );
 }
 

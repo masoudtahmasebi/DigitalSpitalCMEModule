@@ -20,7 +20,8 @@
 
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Pool, type PoolClient } from "pg";
+import type { PoolClient } from "pg";
+import { createPool } from "@ds/postgres";
 import { runInTenant, TenantResolutionError } from "../../src/db/tenant-db.js";
 import { courses } from "../../src/db/schema.js";
 import { addCredential, seedLearner } from "./support/seed-learner.js";
@@ -29,8 +30,8 @@ import { requireEnv } from "./support/env.js";
 const DATABASE_URL = requireEnv("DATABASE_URL");
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 
-const seedPool = new Pool({ connectionString: SUPERUSER_URL });
-const appPool = new Pool({ connectionString: DATABASE_URL, max: 5 });
+const seedPool = createPool({ connectionString: SUPERUSER_URL });
+const appPool = createPool({ connectionString: DATABASE_URL, max: 5 });
 
 interface SeededTenant {
   customerId: string;
@@ -182,7 +183,7 @@ describe("ds_app sees only its own tenant's rows (ADR-0002)", () => {
 
 describe("no leakage across a pool of one connection (P1-05 acceptance criterion)", () => {
   it("interleaved requests for two customers over a single pooled connection stay isolated", async () => {
-    const singleConnectionPool = new Pool({ connectionString: DATABASE_URL, max: 1 });
+    const singleConnectionPool = createPool({ connectionString: DATABASE_URL, max: 1 });
 
     try {
       // Both run concurrently against a pool that can only ever hand out one

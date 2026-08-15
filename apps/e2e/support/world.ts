@@ -174,7 +174,26 @@ export function prepareDatabase(repo: string, superuser: string): Prepared {
  * suite's act 7.
  */
 export async function accreditSeededCourse(superuserUrl: string): Promise<void> {
+  /*
+   * The one hand-rolled idle-error handler, and why it is hand-rolled.
+   *
+   * Everywhere else this is `createPool` from `@ds/postgres` (P76-04). This
+   * package may not import a workspace package at all: `pnpm test:smoke` runs
+   * it against a real deployment with nothing but a browser, so a workspace
+   * import resolves to a `dist/` that was never built — the `no-restricted-
+   * imports` rule covering `apps/e2e` says exactly that, and it is right.
+   *
+   * The hazard is unchanged: an `'error'` event with no listener is re-thrown
+   * as an uncaught exception, and this pool is opened beside a suite that drops
+   * and rebuilds databases underneath it.
+   */
+  // eslint-disable-next-line no-restricted-syntax -- apps/e2e cannot import @ds/postgres; see above
   const pool = new Pool({ connectionString: superuserUrl });
+  pool.on("error", () => {
+    // Deliberately reported nowhere: a harness losing an idle connection while
+    // its own suite tears the database down is expected. The only thing that
+    // matters is that it does not end the process.
+  });
   try {
     await pool.query(
       `UPDATE courses

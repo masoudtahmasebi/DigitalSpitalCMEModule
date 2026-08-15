@@ -47,7 +47,7 @@
  */
 
 import { useState } from "react";
-import { clockTime } from "@ds/domain";
+import { clockTime, germanMinutesAndSeconds, mediaLengthVerdict } from "@ds/domain";
 import type { ApiClient, CourseDetail, EnrolmentState, LessonContent } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { findQuizContent, locateContent, playbackDuration } from "../player.js";
@@ -95,6 +95,30 @@ export function PlayerScreen(props: {
   const here = locateContent(course, lesson.id);
   const quiz = findQuizContent(course, state);
   const duration = playbackDuration(lesson.durationSec, playback.durationSec);
+
+  /**
+   * Whether this section's gate can be satisfied by the file behind it
+   * (P76-03).
+   *
+   * Both numbers are already here and were never compared: `lesson.durationSec`
+   * is what the server computes the watch percentage against, and
+   * `playback.durationSec` is what the browser found in the container. When the
+   * first is larger, the gate asks for seconds the file does not contain, and
+   * the learner watches a bar that cannot fill with nothing on screen to say
+   * why (P75).
+   *
+   * `NaN` until `loadedmetadata`, which the rule reads as "cannot be sure" and
+   * answers `ok` — so the notice appears when the browser knows the length, and
+   * never flickers onto a course that is fine.
+   *
+   * This changes no gate and no percentage. It only says out loud what the
+   * screen was already showing silently (CLAUDE.md §4 invariant 1).
+   */
+  const lengthVerdict = mediaLengthVerdict({
+    configuredDurationSec: lesson.kind === "video" ? lesson.durationSec : null,
+    measuredDurationSec: playback.durationSec,
+    requiredWatchPercent: state.requiredWatchPercent,
+  });
 
   /** Undefined while the server still has the quiz locked. */
   const quizOpen =
@@ -161,6 +185,33 @@ export function PlayerScreen(props: {
           )}
         </div>
       </section>
+
+      {/*
+        The section nobody can finish, said out loud (P76-03).
+
+        Directly under the progress card on purpose: that card is where the
+        learner reads „0 % der Fortbildung absolviert" after watching the whole
+        video, and the explanation belongs beside the number it explains rather
+        than below the player where it would sit off-screen on a phone.
+
+        `role="alert"` because it appears after `loadedmetadata` rather than at
+        render, so a learner using a screen reader is not left with a silent
+        change to a screen they have already heard. Only `unreachable` is shown
+        here — `overrun` is an accreditation problem for the operator, and a
+        learner who is not blocked cannot act on it (§9.10).
+      */}
+      {lengthVerdict.kind !== "unreachable" ? null : (
+        <section
+          role="alert"
+          aria-label={de.player.lengthMisconfiguredLabel}
+          className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+        >
+          {de.player.lengthMisconfigured(
+            germanMinutesAndSeconds(playback.durationSec),
+            germanMinutesAndSeconds(lesson.durationSec ?? 0),
+          )}
+        </section>
+      )}
 
       <LessonScreen
         onAuthLost={() => setAuthLost(true)}

@@ -18,7 +18,8 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Pool } from "pg";
+import type { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 import { CertificateArchive } from "../../src/modules/certificate/certificate.archive.js";
 import { ObjectErasureService } from "../../src/modules/certificate/object-erasure.service.js";
 import { S3Presigner } from "../../src/shared/s3-presigner.js";
@@ -39,7 +40,7 @@ let customerId: string;
 let courseId: string;
 
 beforeAll(async () => {
-  seedPool = new Pool({ connectionString: SUPERUSER_URL });
+  seedPool = createPool({ connectionString: SUPERUSER_URL });
   s3 = await startFakeS3();
   presigner = new S3Presigner({
     endpoint: s3.endpoint,

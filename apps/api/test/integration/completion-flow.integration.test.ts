@@ -19,7 +19,8 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Pool } from "pg";
+import type { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "jose";
@@ -86,7 +87,7 @@ const wrongOptionByQuestion = new Map<string, string>();
 let evaluationId: string;
 
 beforeAll(async () => {
-  seedPool = new Pool({ connectionString: SUPERUSER_URL });
+  seedPool = createPool({ connectionString: SUPERUSER_URL });
 
   const pair = await generateKeyPair("RS256");
   privateKey = pair.privateKey;
@@ -1319,7 +1320,7 @@ describe("erasure keeps the participation and removes the person", () => {
       role === "operator"
         ? requireEnv("MIGRATION_DATABASE_URL")
         : requireEnv("DATABASE_URL");
-    const pool = new Pool({ connectionString: url });
+    const pool = createPool({ connectionString: url });
     try {
       return await pool.query("SELECT * FROM erase_subject($1, $2)", [userId, "test"]);
     } finally {
@@ -1407,7 +1408,7 @@ describe("erasure keeps the participation and removes the person", () => {
     // the same visibility as the erasure.
     await setSubmissionStatus("queued");
 
-    const pool = new Pool({ connectionString: requireEnv("MIGRATION_DATABASE_URL") });
+    const pool = createPool({ connectionString: requireEnv("MIGRATION_DATABASE_URL") });
     try {
       const { rows } = await pool.query<{
         enrolments: number;

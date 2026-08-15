@@ -77,6 +77,32 @@ export default [
             "Named exports only (CLAUDE.md §5). Disable locally where a framework requires a default export.",
         },
         {
+          // A `pg.Pool` built by hand is a process-level crash waiting for a
+          // database restart (P76-04).
+          //
+          // `pg.Pool` emits `'error'` when an idle connection dies — a
+          // failover, a restart, an idle-session timeout — and in Node an
+          // `'error'` event with no listener is re-thrown as an uncaught
+          // exception. Every one of the thirty-odd pools in this repository was
+          // built without a listener, including the long-lived one behind every
+          // API request, so a routine database event was an outage.
+          //
+          // This rule exists because the fix is one line that is invisible when
+          // it is missing: nothing fails, nothing warns, and the pool works
+          // perfectly until the day it does not. `createPool` from
+          // `@ds/postgres` takes the whole of `pg.PoolConfig`, so there is no
+          // configuration that needs the bare constructor — and
+          // `attachIdleErrorHandler` covers a pool that arrives from elsewhere.
+          //
+          // Applies to tests too, deliberately: the report that uncovered this
+          // was a CI failure caused by a *test* pool, and exempting tests would
+          // exempt the exact case that found it.
+          selector:
+            "NewExpression[callee.name='Pool'], NewExpression[callee.object.name='pg'][callee.property.name='Pool']",
+          message:
+            "Use createPool from @ds/postgres, never `new Pool` — an unlistened 'error' event on an idle connection crashes the process (P76-04).",
+        },
+        {
           // A repetition anchored at the end of the string — `/\/+$/`, `/-+$/`,
           // `/\s*$/` — makes the engine restart its scan at every position, so
           // the work is quadratic in the input's length. CodeQL calls it

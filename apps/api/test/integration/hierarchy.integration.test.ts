@@ -22,7 +22,8 @@
 
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { Pool } from "pg";
+import type { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 import Redis from "ioredis";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
@@ -77,7 +78,7 @@ interface StaffSession {
 }
 
 beforeAll(async () => {
-  seedPool = new Pool({ connectionString: SUPERUSER_URL });
+  seedPool = createPool({ connectionString: SUPERUSER_URL });
 
   // One customer that already exists, with a department inside it, so the
   // deletion refusals have something real to refuse.

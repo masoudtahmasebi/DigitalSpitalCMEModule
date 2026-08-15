@@ -29,6 +29,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
+import { attachClientErrorHandler } from "@ds/postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { pendingMigrations, runMigrations } from "../src/index.js";
 
@@ -37,6 +38,7 @@ const SUPERUSER = process.env["POSTGRES_SUPERUSER_URL"];
 async function createDatabase(): Promise<{ url: string; drop: () => Promise<void> }> {
   const name = `ds_pending_test_${randomUUID().replaceAll("-", "")}`;
   const admin = new pg.Client({ connectionString: SUPERUSER });
+  attachClientErrorHandler(admin);
   await admin.connect();
   await admin.query(`CREATE DATABASE ${name}`);
   await admin.end();
@@ -48,6 +50,7 @@ async function createDatabase(): Promise<{ url: string; drop: () => Promise<void
     url: url.toString(),
     drop: async () => {
       const cleaner = new pg.Client({ connectionString: SUPERUSER });
+      attachClientErrorHandler(cleaner);
       await cleaner.connect();
       await cleaner.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
       await cleaner.end();

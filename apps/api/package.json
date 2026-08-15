@@ -19,6 +19,7 @@
     "@ds/mail": "workspace:*",
     "@ds/migrator": "workspace:*",
     "@ds/plugin-api": "workspace:*",
+    "@ds/postgres": "workspace:*",
     "@ds/secrets": "workspace:*",
     "@ds/seed": "workspace:*",
     "@nestjs/common": "^11.1.28",

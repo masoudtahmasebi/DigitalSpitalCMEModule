@@ -27,7 +27,7 @@
  * security default disappears without anybody deciding to remove it.
  */
 
-import { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 
 /**
  * Every table holding tenant or account data, children before parents.
@@ -107,7 +107,7 @@ function assertLocal(url: string): void {
 export async function resetDatabase(url: string): Promise<void> {
   assertLocal(url);
 
-  const pool = new Pool({ connectionString: url });
+  const pool = createPool({ connectionString: url });
   try {
     // One statement, so foreign keys never see a half-empty schema. CASCADE
     // covers anything added since this list was written — the list exists to

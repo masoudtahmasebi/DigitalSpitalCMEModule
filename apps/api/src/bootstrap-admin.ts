@@ -56,7 +56,7 @@
  */
 
 import { randomBytes, randomUUID } from "node:crypto";
-import { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 import { hashPassword } from "./modules/staff/credentials.js";
 
 /* eslint-disable no-console -- this is a CLI; its output is the point. */
@@ -135,7 +135,8 @@ async function main(): Promise<void> {
     throw new Error("DATABASE_URL is required");
   }
 
-  const pool = new Pool({ connectionString });
+  // `createPool`, not `new Pool` — see @ds/postgres (P76-04).
+  const pool = createPool({ connectionString });
 
   try {
     /*

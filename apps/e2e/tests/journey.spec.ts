@@ -389,65 +389,41 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       ).toHaveValue("video/webm");
 
       /*
-       * The length, **measured** rather than typed (P74-04).
+       * The length, measured **by itself** (P74-04, P75-01).
        *
-       * This is the assertion in this file that changed the most, and the
-       * history is the point. The watch gate is a percentage of `durationSec`,
-       * so a figure that does not match the file quietly makes the tail of a
-       * video optional — a silent accreditation defect. The console has a
-       * control for exactly that, "Aus Video ermitteln", and it used to be
-       * **absent for an uploaded video**: an `s3://` reference is a storage key
-       * and not an address a browser can fetch, so the one control that gets
-       * this right disappeared precisely when the author used the console's own
-       * uploader. The journey asserted the *sentence explaining the gap*
-       * (P68-02) — honest, and not a feature.
+       * This assertion has moved twice and the history is the point. It began
+       * as `fill("8")`. P74-04 made it click "Aus Video ermitteln" and assert
+       * the value. P75-01 removed the button and the number field altogether,
+       * because the client found what a typed length actually costs:
        *
-       * `adminViewUpload` closed it. So this clicks the button and asserts the
-       * number, which walks the whole chain in one act:
+       * > _"in the course i have a video which is 45 seconds and the system
+       * > says you have to watch a video for 25 minutes, which there is not,
+       * > and i can not go further in the course"_
        *
-       *   the API mints a read signature for an object of this course
-       *   → the bucket's CORS rule allows GET from the console's origin
-       *     (added in P74-02 — a rule carrying only PUT fails right here)
-       *   → the browser reads the container's own header
-       *   → the field holds the fixture's real length
+       * The watch gate is a percentage of this figure, so a number larger than
+       * the file is a module **nobody can finish**. Nothing is typed here now,
+       * and nothing is clicked: the form measures the file when the source
+       * changes, and this waits for the reading.
        *
-       * Not one of those four is visible to an API test.
-       *
-       * And nothing is typed afterwards. The number has to be exactly the
-       * fixture's: it said "8" while the fixture grew to eighteen seconds, and
-       * the journey then failed at the very last act with *"Es fehlt noch: die
-       * vollständige Videowiedergabe"* — the product being right about a suite
-       * that was wrong. A fallback `fill("18")` here would hide a regression in
-       * the probe behind a run that stayed green.
+       * It still walks the whole chain — the API mints a read signature, the
+       * bucket's CORS rule allows GET from the console's origin, the CSP lets
+       * the browser load it, the browser decodes the header — and not one of
+       * those is visible to an API test. What changed is that a regression in
+       * any of them now fails here rather than falling back to a hard-coded
+       * number that would keep the run green.
        */
-      await operator.getByRole("button", { name: "Aus Video ermitteln" }).click();
-      try {
-        await expect(operator.locator("#content-new-duration")).toHaveValue("18", {
-          timeout: 30_000,
-        });
-      } catch (failure) {
-        // The browser's own account, gathered *after* the wait rather than
-        // formatted into the assertion message — which Playwright evaluates
-        // before it starts waiting, so it would always be empty (P74-04).
-        throw new Error(
-          [
-            "the length was not read out of the uploaded video.",
-            "",
-            "In the order to check them:",
-            "  1. adminViewUpload refused — the key is not under this course's prefix",
-            "  2. the bucket's CORS rule has no GET for the console's origin",
-            "     (dist/bucket-cors.js applies and proves it; the deploy runs it)",
-            "  3. the browser cannot decode the fixture — see tests/codecs.spec.ts",
-            "",
-            "The browser said:",
-            ...(browserSaid.length === 0
-              ? ["  (nothing)"]
-              : browserSaid.slice(-25).map((line) => `  ${line}`)),
-            "",
-            String(failure),
-          ].join("\n"),
-        );
-      }
+      await expect(
+        operator.getByText(/0:18 \(18 Sekunden\)/u),
+        [
+          "the length was not read out of the uploaded video.",
+          "",
+          "In the order to check them:",
+          "  1. adminViewUpload refused — the key is not under this course's prefix",
+          "  2. the bucket's CORS rule has no GET for the console's origin",
+          "  3. the console's CSP has no media-src for the bucket",
+          "  4. the browser cannot decode the fixture — see tests/codecs.spec.ts",
+        ].join("\n"),
+      ).toBeVisible({ timeout: 30_000 });
 
       await operator.getByRole("button", { name: "Hinzufügen", exact: true }).click();
       await expect(operator.getByText("Die Aufzeichnung")).toBeVisible({
