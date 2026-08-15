@@ -350,3 +350,65 @@ describe("the controls", () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 });
+
+/**
+ * The section nobody can finish (P76-03).
+ *
+ * These are the §9.7 half of `mediaLengthVerdict`'s own unit tests: those
+ * prove the rule, and would have stayed green on the player that never called
+ * it — which is precisely the player that shipped, and which left a physician
+ * watching a 45-second video behind a 25:24 gate with nothing on screen to say
+ * why the bar would not fill (P75).
+ *
+ * The measured length has to come from the element, because that is where it
+ * comes from in the product: jsdom reports `duration: NaN` until a test says
+ * otherwise, so each case defines it and fires the event the browser fires.
+ */
+function playVideoOfLength(seconds: number) {
+  const video = document.querySelector("video");
+  if (video === null) throw new Error("no <video> rendered");
+  Object.defineProperty(video, "duration", { value: seconds, configurable: true });
+  fireEvent(video, new Event("loadedmetadata"));
+}
+
+describe("a section whose configured length the file cannot satisfy", () => {
+  it("says so, naming both lengths, once the browser knows the file", () => {
+    // The reported course: 1545 s authored, a 45 s recording, gate at 80 %.
+    renderPlayer({ lesson: lesson({ durationSec: 1545 }) });
+
+    // Nothing before metadata: the rule cannot be sure, and a warning that
+    // flickers onto every course during loading is one nobody reads.
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    playVideoOfLength(45);
+
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("fehlerhaft konfiguriert");
+    // Both numbers, because the learner can already see one of them.
+    expect(alert.textContent).toContain("0:45 Min.");
+    expect(alert.textContent).toContain("25:45 Min.");
+    // And that watching on will not help, which is the thing they would
+    // otherwise try for twenty-five minutes.
+    expect(alert.textContent).toContain("weiteres Ansehen ändert daran nichts");
+  });
+
+  it("stays silent when the file matches its configured length", () => {
+    renderPlayer({ lesson: lesson({ durationSec: 1545 }) });
+    playVideoOfLength(1545);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("stays silent when the gate is low enough that the file still satisfies it", () => {
+    // 80 % of 100 s is 80 s, and the file has 90. Short of its authored length
+    // and completable anyway — the case a naive "measured < configured" check
+    // would have called broken.
+    renderPlayer({ lesson: lesson({ durationSec: 100 }) });
+    playVideoOfLength(90);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says nothing on a lesson that has no timeline to disagree about", () => {
+    renderPlayer({ lesson: lesson({ kind: "text", sources: [], durationSec: 1545 }) });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});

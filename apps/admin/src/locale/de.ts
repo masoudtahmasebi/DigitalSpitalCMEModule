@@ -654,6 +654,24 @@ export const de = {
     durationMeasured: (seconds: number): string =>
       `${String(Math.floor(seconds / 60))}:${String(seconds % 60).padStart(2, "0")} (${String(seconds)} Sekunden)`,
     durationDetecting: "Länge wird aus dem Video gelesen …",
+    /**
+     * The stored length was wrong, and the correction is not saved yet
+     * (P76-03).
+     *
+     * P75-01 made the form measure and overwrite. On its own that hides the
+     * repair: the field shows the right number, and nothing says the content
+     * had been refusing to complete for every learner — nor that leaving this
+     * screen without saving leaves it refusing.
+     *
+     * So: what was stored, what the file actually is, what it cost, what to do.
+     * The last part is the one that makes this a mechanism rather than a
+     * remark (CLAUDE.md §9.4).
+     */
+    durationCorrected: (storedSec: number, measuredSec: number): string =>
+      `Die gespeicherte Länge (${String(storedSec)} Sekunden) stimmt nicht mit der Videodatei überein ` +
+      `(${String(measuredSec)} Sekunden). Ist die gespeicherte Länge größer als die Datei, ` +
+      "konnten Teilnehmende diesen Abschnitt nicht abschließen. " +
+      "Mit „Speichern“ wird die gemessene Länge übernommen.",
     durationDetectFailed:
       "Die Länge konnte nicht aus der Datei gelesen werden. Das kommt bei Servern ohne CORS-Freigabe und bei adaptiven Streams vor — bitte die Länge in Sekunden eintragen und mit der tatsächlichen Videolänge vergleichen.",
     /**

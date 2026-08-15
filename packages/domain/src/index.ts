@@ -336,3 +336,6 @@ export {
   seekCeiling,
 } from "./resume.js";
 export type { ResumeInput } from "./resume.js";
+
+export { lengthsAgree, mediaLengthVerdict } from "./gate-reachability.js";
+export type { MediaLengthInput, MediaLengthVerdict } from "./gate-reachability.js";

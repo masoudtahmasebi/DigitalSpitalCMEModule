@@ -42,7 +42,7 @@ import type {
   ContentWrite,
   MediaSourceWrite,
 } from "@ds/sdk";
-import { MEDIA_MIME_TYPES } from "@ds/domain";
+import { lengthsAgree, MEDIA_MIME_TYPES } from "@ds/domain";
 import { MediaCheckPanel } from "./MediaCheck.js";
 import { de } from "../locale/de.js";
 import { nullable, swap } from "../drafts.js";
@@ -998,6 +998,20 @@ function MeasuredDuration(props: {
   const source = probeableSourceUrl(props.sources);
   const { client, courseSlug, onChange, onState } = props;
 
+  /**
+   * What was stored before this form measured anything (P76-03).
+   *
+   * The measurement overwrites the field, which is the point of P75-01 — and on
+   * its own it makes a *broken* content indistinguishable from a correct one:
+   * the operator opens the form, sees the right length, and never learns that
+   * what was saved was blocking learners, or that they now have to press
+   * Speichern to repair it.
+   *
+   * A ref taken on first render, not `props.value`, because `props.value` is
+   * what the probe replaced a moment later.
+   */
+  const storedRef = useRef(props.value);
+
   /*
    * Measured when the source changes, and only then.
    *
@@ -1064,6 +1078,24 @@ function MeasuredDuration(props: {
       {props.state === "failed" ? (
         <p className="mt-1 text-xs text-amber-700" role="status">
           {de.structure.durationDetectFailed}
+        </p>
+      ) : null}
+
+      {/*
+        The stored figure was wrong, and saying so is the repair (P76-03).
+
+        Without this the correction is invisible: the form measures, the field
+        shows the right number, and an operator who came here for something else
+        never learns that this content was refusing to complete for every
+        learner — nor that leaving without pressing Speichern leaves it that way.
+
+        It names both numbers and the consequence, per §9.4. `role="status"`
+        rather than `alert`: this is the operator's own screen reporting on work
+        it just did, not an interruption.
+      */}
+      {measured && !lengthsAgree(Number(storedRef.current), Number(props.state)) ? (
+        <p className="mt-1 text-xs text-amber-700" role="status">
+          {de.structure.durationCorrected(Number(storedRef.current), Number(props.state))}
         </p>
       ) : null}
     </Field>
