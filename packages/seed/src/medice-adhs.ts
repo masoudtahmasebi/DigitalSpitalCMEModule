@@ -116,8 +116,30 @@ interface ModuleSeed {
 }
 
 /**
- * The five modules from the layout's Inhalte list, with the durations shown
- * there. Placeholder video URLs — real media is supplied by MEDICE.
+ * The five modules from the layout's Inhalte list.
+ *
+ * ## The durations are from the layout, and that is a hazard (P75-01)
+ *
+ * They are the figures the design shows beside each module. They describe **no
+ * file this seed ships** — the video URLs below are placeholders on a domain
+ * nobody owns (P72) — and the watch gate is a percentage of them.
+ *
+ * That is not a cosmetic inaccuracy. Reported from production on 14.08:
+ *
+ * > _"in the course i have a video which is 45 seconds and the system says you
+ * > have to watch a video for 25 minutes, which there is not, and i can not go
+ * > further in the course"_
+ *
+ * Somebody had attached a real 45-second recording to Modul 1 through the
+ * console, and this seed's `1524` stayed behind — so the gate demanded 25:24 of
+ * a video that holds 0:45, and the module became impossible to finish.
+ *
+ * The console no longer lets an author type a length: it reads it from the file
+ * and writes what it read (P75-01), so **replacing the media now replaces the
+ * duration with it**. What this comment is here to stop is the next person
+ * adding a module with a plausible number beside media that does not exist.
+ * Until P72 gives this seed real media, a duration here is a promise about a
+ * file, made without one.
  */
 
 /**
