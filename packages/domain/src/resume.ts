@@ -104,23 +104,24 @@ export function seekCeiling(
 }
 
 /**
- * `targetSec`, clamped to what has been watched.
+ * There is deliberately no `clampSeek` taking segments.
  *
- * Backwards is always allowed — re-watching is legitimate and free. Forwards
- * stops at the ceiling rather than being ignored, so dragging the scrub bar to
- * the end lands on the furthest legitimate point instead of doing nothing,
- * which reads as a broken control.
+ * There was one, and it composed the two functions either side of this comment
+ * into a single call — which is convenient and is the one thing the split
+ * exists to prevent. The two halves live on opposite sides of the API boundary
+ * on purpose: the **server** turns segments into `seekCeilingSec`, and the
+ * **client** clamps against that number. A function that does both can only be
+ * called somewhere that holds both, and on the client that means recomputing
+ * the server's answer from its inputs — which `clampSeekToLimit` below names as
+ * how the two come to disagree (CLAUDE.md §4 invariant 6).
+ *
+ * So it was not merely unused: any use of it would have been the bug. Removed
+ * in P76-02, found by `scripts/unused-rules.mjs` once that scanner stopped
+ * skipping files it mistook for binary.
  */
-export function clampSeek(
-  targetSec: number,
-  segments: readonly WatchedSegment[],
-  toleranceSec = 5,
-): number {
-  return clampSeekToLimit(targetSec, seekCeiling(segments, toleranceSec));
-}
 
 /**
- * The same clamp, against a limit that has already been computed.
+ * `targetSec`, clamped against a limit that has already been computed.
  *
  * This is the form the player uses: the ceiling reaches it as a number from the
  * API (`seekCeilingSec`) rather than as a set of intervals, because the client

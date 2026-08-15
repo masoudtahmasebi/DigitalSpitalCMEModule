@@ -7,12 +7,31 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  clampSeek,
   clampSeekToLimit,
   playerSeekLimit,
   resumePosition,
   seekCeiling,
 } from "./resume.js";
+import type { WatchedSegment } from "./watch.js";
+
+/**
+ * The two-step path the product actually takes: the server turns segments into
+ * a ceiling, the client clamps against that number.
+ *
+ * These cases used to call a `clampSeek` that did both at once. It was removed
+ * in P76-02 — composing the halves is only possible somewhere that holds both,
+ * and on the client that means recomputing the server's answer. Writing the
+ * chain out here is the point rather than an inconvenience: this is the shape
+ * the call sites have, so a change that breaks them breaks this.
+ */
+function seekAcrossTheBoundary(
+  targetSec: number,
+  segments: readonly WatchedSegment[],
+  toleranceSec = 5,
+): number {
+  const serverAnswer = seekCeiling(segments, toleranceSec);
+  return clampSeekToLimit(targetSec, serverAnswer);
+}
 
 describe("resumePosition", () => {
   it("rewinds to the start of the containing minute", () => {
@@ -61,20 +80,20 @@ describe("seeking forward", () => {
   it("cannot pass the furthest point actually watched", () => {
     // Dragging to the end of a 25-minute video after watching five minutes
     // lands at five minutes, not at the end.
-    expect(clampSeek(1545, watched)).toBe(305);
+    expect(seekAcrossTheBoundary(1545, watched)).toBe(305);
     expect(seekCeiling(watched)).toBe(305);
   });
 
   it("allows seeking backwards without restriction", () => {
     // Re-watching is legitimate and free: coverage is a union, so a second
     // viewing of the same seconds cannot inflate the percentage.
-    expect(clampSeek(0, watched)).toBe(0);
-    expect(clampSeek(120, watched)).toBe(120);
+    expect(seekAcrossTheBoundary(0, watched)).toBe(0);
+    expect(seekAcrossTheBoundary(120, watched)).toBe(120);
   });
 
   it("pins a learner who has watched nothing to the start", () => {
-    expect(clampSeek(600, [])).toBe(5);
-    expect(clampSeek(0, [])).toBe(0);
+    expect(seekAcrossTheBoundary(600, [])).toBe(5);
+    expect(seekAcrossTheBoundary(0, [])).toBe(0);
   });
 
   it("takes the end of the union, not the end of the last reported segment", () => {
@@ -88,8 +107,8 @@ describe("seeking forward", () => {
   });
 
   it("refuses a target that is not a position", () => {
-    expect(clampSeek(-10, watched)).toBe(0);
-    expect(clampSeek(Number.NaN, watched)).toBe(0);
+    expect(seekAcrossTheBoundary(-10, watched)).toBe(0);
+    expect(seekAcrossTheBoundary(Number.NaN, watched)).toBe(0);
   });
 });
 

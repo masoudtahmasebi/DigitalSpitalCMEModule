@@ -42,7 +42,6 @@ export {
   validateSegments,
   watchedPercent,
   watchedSecondsWithin,
-  watchedSeconds,
 } from "./watch.js";
 export type {
   RejectedSegment,
@@ -330,7 +329,6 @@ export { configValue } from "./runtime-config.js";
 export type { RuntimeConfig } from "./runtime-config.js";
 
 export {
-  clampSeek,
   clampSeekToLimit,
   playerSeekLimit,
   RESUME_GRANULARITY_SEC,

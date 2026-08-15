@@ -88,13 +88,25 @@ export function mergeWatchedSegments(
   return merged;
 }
 
-/** Total seconds covered by the union of the segments. */
-export function watchedSeconds(segments: readonly WatchedSegment[]): number {
-  return mergeWatchedSegments(segments).reduce(
-    (total, s) => total + (s.endSec - s.startSec),
-    0,
-  );
-}
+/**
+ * There is deliberately no exported `watchedSeconds`.
+ *
+ * There was one — "total seconds covered by the union of the segments", raw,
+ * uncapped, no endpoint tolerance — and summing it across a course is precisely
+ * what caused P68-02: the same stored segments read as 100 % per content and
+ * 99 % per course, in one response, with no way out of the state. See
+ * `watchedSecondsWithin`, which is the answer to that question and the only one.
+ *
+ * It survived the fix as an unused export, which is the dangerous shape: the
+ * name is the obvious thing to reach for, the docstring made it sound like the
+ * primitive, and nothing would have objected to a second rollup calling it. A
+ * duplicate of a compliance rule that is one import away from a caller is worse
+ * than no rule at all, because the two disagree quietly (CLAUDE.md §4
+ * invariant 6). Found by `scripts/unused-rules.mjs` (P76-02).
+ *
+ * If you want the union itself, `mergeWatchedSegments` is exported and honest
+ * about being intervals rather than a credited figure.
+ */
 
 /**
  * How far from an endpoint still counts as being at it.

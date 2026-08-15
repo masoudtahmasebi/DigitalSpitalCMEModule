@@ -5,7 +5,7 @@ import {
   mergeWatchedSegments,
   validateSegments,
   watchedPercent,
-  watchedSeconds,
+  watchedSecondsWithin,
 } from "./watch.js";
 
 describe("mergeWatchedSegments", () => {
@@ -174,13 +174,25 @@ describe("watchedPercent", () => {
     expect(watchedPercent([], 100)).toBe(0);
   });
 
-  it("sums disjoint segments", () => {
-    expect(
-      watchedSeconds([
-        { startSec: 0, endSec: 10 },
-        { startSec: 20, endSec: 30 },
-      ]),
-    ).toBe(20);
+  it("sums disjoint segments, leaving the hole between them a hole", () => {
+    // 0–10 and 20–30 of a 30 s video is twenty seconds watched, not thirty:
+    // the ten-second gap is content the learner did not see.
+    const disjoint = [
+      { startSec: 0, endSec: 10 },
+      { startSec: 20, endSec: 30 },
+    ];
+    expect(watchedSecondsWithin(disjoint, 30)).toBe(20);
+    expect(watchedPercent(disjoint, 30)).toBe(66);
+  });
+
+  it("never credits more seconds than the content has", () => {
+    // The P68-02 property, pinned where the removed `watchedSeconds` used to be
+    // asserted. That function returned the raw union with no cap, so segments
+    // overrunning the duration — which a `<video>` reporting past its own end
+    // produces — credited more than the file contains, and a course-level sum
+    // of those figures disagreed with the per-content percentage.
+    expect(watchedSecondsWithin([{ startSec: 0, endSec: 400 }], 300)).toBe(300);
+    expect(watchedPercent([{ startSec: 0, endSec: 400 }], 300)).toBe(100);
   });
 });
 
