@@ -26,7 +26,8 @@
 
 import { randomBytes } from "node:crypto";
 import { hash as argonHash } from "@node-rs/argon2";
-import pg from "pg";
+import type pg from "pg";
+import { createPool } from "@ds/postgres";
 
 /**
  * Open the seeding connection, refusing anything that is not obviously a
@@ -56,7 +57,8 @@ export function openSeedPool(what: string): pg.Pool {
     );
   }
 
-  return new pg.Pool({ connectionString });
+  // `createPool`, not `new pg.Pool` — see @ds/postgres (P76-04).
+  return createPool({ connectionString });
 }
 
 /**

@@ -35,6 +35,7 @@
  */
 
 import pg from "pg";
+import { createPool } from "@ds/postgres";
 
 interface Args {
   subject?: string;
@@ -168,7 +169,8 @@ async function main(): Promise<void> {
     );
   }
 
-  const pool = new pg.Pool({ connectionString });
+  // `createPool`, not `new pg.Pool` — see @ds/postgres (P76-04).
+  const pool = createPool({ connectionString });
 
   try {
     const userId = await resolveUserId(pool, args);

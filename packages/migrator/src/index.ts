@@ -79,7 +79,8 @@
 
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import pg from "pg";
+import type pg from "pg";
+import { createPool } from "@ds/postgres";
 
 /**
  * Advisory lock key, arbitrary but fixed forever.
@@ -111,7 +112,18 @@ export async function runMigrations(
   options: MigrationOptions,
 ): Promise<readonly string[]> {
   const log = options.log ?? ((): void => {});
-  const pool = new pg.Pool({ connectionString: options.connectionString });
+  /*
+   * `createPool`, never `new pg.Pool` — an idle connection dying is a routine
+   * event and an unlistened `'error'` makes it fatal (P76-04). A deploy is
+   * precisely when a database restarts under you, so the migrator is the worst
+   * place to lose the process to one.
+   */
+  const pool = createPool({
+    connectionString: options.connectionString,
+    onIdleError: (error) => {
+      log(`postgres connection lost while idle: ${error.message}`);
+    },
+  });
 
   try {
     const lockHolder = await pool.connect();
@@ -186,7 +198,7 @@ export async function runMigrations(
 export async function pendingMigrations(
   options: Pick<MigrationOptions, "connectionString" | "migrationsDir">,
 ): Promise<readonly string[]> {
-  const pool = new pg.Pool({ connectionString: options.connectionString });
+  const pool = createPool({ connectionString: options.connectionString });
   try {
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- a path from the caller's own configuration, not from a request
     const files = (await readdir(options.migrationsDir))

@@ -22,7 +22,8 @@
 
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Pool } from "pg";
+import type { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 import { seedDsDefault } from "@ds/seed";
 import { requireEnv } from "./support/env.js";
 
@@ -45,8 +46,8 @@ let admin: Pool;
 let seeder: Pool;
 
 beforeAll(async () => {
-  admin = new Pool({ connectionString: SUPERUSER_URL });
-  seeder = new Pool({ connectionString: MIGRATION_URL, max: 1 });
+  admin = createPool({ connectionString: SUPERUSER_URL });
+  seeder = createPool({ connectionString: MIGRATION_URL, max: 1 });
 });
 
 afterAll(async () => {

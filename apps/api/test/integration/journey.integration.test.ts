@@ -43,7 +43,8 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Pool } from "pg";
+import type { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { runMigrations } from "@ds/migrator";
@@ -112,7 +113,7 @@ const world = {
 
 beforeAll(async () => {
   // ---- an empty cluster ----------------------------------------------------
-  const bootstrap = new Pool({ connectionString: pointAt(SUPERUSER_URL, "postgres") });
+  const bootstrap = createPool({ connectionString: pointAt(SUPERUSER_URL, "postgres") });
   await bootstrap.query(`CREATE DATABASE ${DB}`);
   await bootstrap.end();
 
@@ -183,14 +184,14 @@ beforeAll(async () => {
   }
   baseUrl = `http://127.0.0.1:${address.port}`;
 
-  admin = new Pool({ connectionString: pointAt(SUPERUSER_URL, DB) });
+  admin = createPool({ connectionString: pointAt(SUPERUSER_URL, DB) });
 }, 120_000);
 
 afterAll(async () => {
   await app?.close();
   await admin?.end();
 
-  const bootstrap = new Pool({ connectionString: pointAt(SUPERUSER_URL, "postgres") });
+  const bootstrap = createPool({ connectionString: pointAt(SUPERUSER_URL, "postgres") });
   await bootstrap.query(`DROP DATABASE IF EXISTS ${DB} WITH (FORCE)`);
   await bootstrap.end();
 });
@@ -1233,7 +1234,7 @@ describe("7 · the Punktemeldung reaches the Ärztekammer", () => {
     const { AuditService } = await import("../../src/audit/audit.service.js");
     const { createSecretCipher } = await import("../../src/shared/secret-cipher.js");
 
-    const pool = new Pool({ connectionString: pointAt(APP_URL, DB) });
+    const pool = createPool({ connectionString: pointAt(APP_URL, DB) });
     try {
       const service = new EivService(
         new EivRepository(

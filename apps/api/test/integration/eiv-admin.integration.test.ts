@@ -20,7 +20,8 @@
 
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Pool } from "pg";
+import type { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 import {
   EivAccreditationReporter,
   startMockServer,
@@ -55,8 +56,8 @@ let courseId: string;
 let courseSlug: string;
 
 beforeAll(async () => {
-  seedPool = new Pool({ connectionString: SUPERUSER_URL });
-  appPool = new Pool({ connectionString: DATABASE_URL, max: 5 });
+  seedPool = createPool({ connectionString: SUPERUSER_URL });
+  appPool = createPool({ connectionString: DATABASE_URL, max: 5 });
   mock = await startMockServer(0, { eventBeginn: BEGINN, eventEnde: ENDE });
 
   const suffix = randomUUID().slice(0, 8);

@@ -45,7 +45,8 @@
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Pool } from "pg";
+import type { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 import { seedDsDefault, seedDsDemo, seedDsTest, seedMediceAdhs } from "@ds/seed";
 import { requireEnv } from "./support/env.js";
 
@@ -74,13 +75,13 @@ const SEEDS: ReadonlyArray<[string, (pool: Pool) => Promise<string>]> = [
  * the tenant context is set on a connection the inserts do not use.
  */
 function openSeeder(): Pool {
-  return new Pool({ connectionString: SUPERUSER_URL, max: 1 });
+  return createPool({ connectionString: SUPERUSER_URL, max: 1 });
 }
 
 let admin: Pool;
 
 beforeAll(() => {
-  admin = new Pool({ connectionString: SUPERUSER_URL });
+  admin = createPool({ connectionString: SUPERUSER_URL });
 });
 
 afterAll(async () => {

@@ -20,7 +20,8 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Pool } from "pg";
+import type { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "jose";
@@ -66,7 +67,7 @@ let submittedEnrolmentId: string;
 let certificateId: string;
 
 beforeAll(async () => {
-  seedPool = new Pool({ connectionString: SUPERUSER_URL });
+  seedPool = createPool({ connectionString: SUPERUSER_URL });
 
   const pair = await generateKeyPair("RS256");
   privateKey = pair.privateKey;

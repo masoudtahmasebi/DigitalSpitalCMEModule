@@ -26,7 +26,8 @@
 
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { Pool } from "pg";
+import type { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 import Redis from "ioredis";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
@@ -64,7 +65,7 @@ let courseA: string;
 let courseB: string;
 
 beforeAll(async () => {
-  pool = new Pool({ connectionString: SUPERUSER_URL });
+  pool = createPool({ connectionString: SUPERUSER_URL });
   redis = new Redis(requireEnv("REDIS_URL"), { maxRetriesPerRequest: 3 });
 
   app = await NestFactory.create<NestExpressApplication>(AppModule, {

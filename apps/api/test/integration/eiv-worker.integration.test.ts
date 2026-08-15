@@ -13,7 +13,8 @@
 
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Pool } from "pg";
+import type { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 import { startMockServer, type MockServer } from "@ds/eiv-client";
 import { AuditService } from "../../src/audit/audit.service.js";
 import { PlaintextSecretCipher } from "../../src/shared/secret-cipher.js";
@@ -43,8 +44,8 @@ let courseId: string;
 let userId: string;
 
 beforeAll(async () => {
-  seedPool = new Pool({ connectionString: SUPERUSER_URL });
-  appPool = new Pool({ connectionString: DATABASE_URL, max: 5 });
+  seedPool = createPool({ connectionString: SUPERUSER_URL });
+  appPool = createPool({ connectionString: DATABASE_URL, max: 5 });
   mock = await startMockServer(0);
 
   const suffix = randomUUID().slice(0, 8);

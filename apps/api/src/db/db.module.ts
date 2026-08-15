@@ -10,8 +10,9 @@
  * (ADR-0002) — migrations run separately, out of band of the running API.
  */
 
-import { Global, Inject, Module, type OnModuleDestroy } from "@nestjs/common";
-import { Pool } from "pg";
+import { Global, Inject, Logger, Module, type OnModuleDestroy } from "@nestjs/common";
+import type { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 import Redis from "ioredis";
 import { loadConfig, type AppConfig } from "../config/config.js";
 import { APP_CONFIG, PG_POOL, REDIS_CLIENT } from "./tokens.js";
@@ -24,11 +25,37 @@ import { RateLimiter, RedisRateLimitStore } from "../shared/rate-limit.js";
     {
       provide: PG_POOL,
       useFactory: (config: AppConfig) =>
-        new Pool({
+        createPool({
           connectionString: config.DATABASE_URL,
           // Bounded so a leak (a missing client.release()) degrades instead of
           // exhausting Postgres connections outright.
           max: 10,
+          /*
+           * Without this the API dies whenever Postgres closes an idle
+           * connection (P76-04).
+           *
+           * A pooled connection sitting idle can be closed by the server at any
+           * time — a failover, a restart, an idle-session timeout, a firewall
+           * dropping a quiet socket. `pg.Pool` reports that by emitting
+           * `'error'`, and in Node an `'error'` event with **no listener** is
+           * re-thrown as an uncaught exception. So a routine database event
+           * became a dead API process, with no failing request to point at it
+           * and nothing in the log but the process ending.
+           *
+           * It is a report, not a decision: `pg` has already discarded the
+           * broken client and the next checkout opens a fresh one. Logged at
+           * `error` because a database restarting under the API is worth
+           * seeing, and through Nest's logger so it joins the structured stream
+           * rather than landing on stderr where nothing collects it.
+           *
+           * `createPool` rather than `new Pool` so that the pools in this
+           * repository cannot drift into most-armed-and-one-not.
+           */
+          onIdleError: (error) => {
+            new Logger("PgPool").error(
+              `postgres connection lost while idle: ${error.message}`,
+            );
+          },
         }),
       inject: [APP_CONFIG],
     },

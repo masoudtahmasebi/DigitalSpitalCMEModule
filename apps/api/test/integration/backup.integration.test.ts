@@ -36,7 +36,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Pool } from "pg";
+import type { Pool } from "pg";
+import { createPool } from "@ds/postgres";
 import { S3Presigner } from "../../src/shared/s3-presigner.js";
 import {
   runDatabaseBackup,
@@ -76,7 +77,7 @@ beforeAll(async () => {
     }),
   );
 
-  pool = new Pool({ connectionString: SUPERUSER_URL });
+  pool = createPool({ connectionString: SUPERUSER_URL });
   workDir = await mkdtemp(join(tmpdir(), "ds-backup-"));
 
   // A row to look for on the other side. Not "some data" — a specific value
@@ -206,7 +207,7 @@ describe("the restore drill — the only thing that makes it a backup", () => {
       },
     );
 
-    const restoredPool = new Pool({ connectionString: target.toString() });
+    const restoredPool = createPool({ connectionString: target.toString() });
     try {
       const { rows } = await restoredPool.query<{ name: string }>(
         "SELECT name FROM customers WHERE slug = $1",
