@@ -43,8 +43,23 @@ const typeNames = new Set(
 const out = [];
 for (const name of new Set(names)) {
   if (typeNames.has(name)) continue;
+  /*
+   * `-a`, and it is not cosmetic (P76-01).
+   *
+   * Without it, one NUL byte anywhere in a file makes grep call the whole file
+   * binary: it prints "binary file matches" to stderr and **no lines at all**
+   * to stdout, so every caller inside that file counts as zero. That was the
+   * real state of this scan — `apps/widget/src/branding.ts` used a literal NUL
+   * as a cache-key separator, and its three calls to `parseBranding` were
+   * invisible here. A rule whose only callers lived in such a file would have
+   * been reported as dead, and somebody would have deleted it.
+   *
+   * The byte itself is gone now, which is the better fix. This is the one that
+   * stops the next one: a scan that skips a file it cannot parse is a scan
+   * that silently covers less than it claims (CLAUDE.md §9.1).
+   */
   const hits = execSync(
-    `grep -rn "\\b${name}\\b" apps packages --include=*.ts --include=*.tsx ` +
+    `grep -arn "\\b${name}\\b" apps packages --include=*.ts --include=*.tsx ` +
       `| grep -v "packages/domain/" | grep -v "\\.test\\." | wc -l`,
     { encoding: "utf8" },
   ).trim();
