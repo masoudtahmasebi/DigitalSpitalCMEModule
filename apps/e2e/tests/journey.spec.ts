@@ -782,16 +782,32 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       // Act 12 · It survives a reload — the assertion this exists for
       // ===================================================================
       await learner.reload();
+
+      /*
+       * A reload keeps your **place**, not merely your progress (P82-04).
+       *
+       * This asserted the outline's "N % der Videoinhalte angesehen", because
+       * until P82-04 a reload always landed on the course overview — which was
+       * the reported defect: *"when i am in the course, and i refresh … it goes
+       * to the main page of the course."* The widget now writes the section
+       * into the fragment and reads it back, so a reload returns to the video.
+       *
+       * The old assertion was therefore encoding the bug. What it was really
+       * checking — that the watched time reached the server and came back — is
+       * still checked, one line down, by the player's own percentage; and this
+       * now checks the thing the fix was for.
+       */
       await expect(
-        learner.getByText(/[1-9]\d* % der Videoinhalte angesehen/u),
+        learner.getByRole("button", { name: "Fortbildung pausieren" }).first(),
+        "a reload did not return to the section the learner was in (P82-04)",
+      ).toBeVisible({ timeout: 30_000 });
+
+      await expect(
+        learner.getByText(/[1-9]\d* % angesehen/u).first(),
         "progress did not survive a reload",
       ).toBeVisible({ timeout: 30_000 });
 
-      // Back into the lesson and on to the end of it.
-      await learner
-        .getByRole("button", { name: "Fortbildung fortsetzen" })
-        .first()
-        .click();
+      // And on to the end of it, from where the reload left us.
       await learner.getByRole("button", { name: "Abspielen" }).first().click();
       await expect
         .poll(() => video.evaluate((element: HTMLVideoElement) => element.ended), {
