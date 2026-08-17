@@ -32,6 +32,32 @@ async function mount(html: string): Promise<DsLmsElement> {
   return element;
 }
 
+/**
+ * Wait until the shadow root stops saying something, or give up.
+ *
+ * A single `setTimeout(0)` was here and it is a race, not a wait: re-rendering
+ * after `tokenProvider` is assigned takes however many microtask turns React
+ * needs, and one macrotask happens to be enough on an idle machine and not on
+ * a loaded CI runner. It failed exactly once, on a commit whose sibling run
+ * passed — which is the signature of a check that cannot be trusted in either
+ * direction (CLAUDE.md §9.1).
+ *
+ * Polling for the condition keeps the assertion identical and removes the
+ * timing assumption. The deadline is what makes a genuine regression still
+ * fail: if the text never goes away, this returns and the `expect` below it
+ * reports the real problem rather than hanging the suite.
+ */
+async function waitForAbsence(
+  read: () => string,
+  fragment: string,
+  timeoutMs = 2000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (read().includes(fragment) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 describe("registration", () => {
   it("registers the element under its documented name", () => {
     expect(customElements.get(WIDGET_ELEMENT_NAME)).toBe(DsLmsElement);
@@ -157,7 +183,10 @@ describe("configuration", () => {
     );
 
     element.tokenProvider = async () => "late";
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitForAbsence(
+      () => element.shadowRootForTest?.textContent ?? "",
+      "nicht korrekt eingebunden",
+    );
 
     expect(element.shadowRootForTest?.textContent ?? "").not.toContain(
       "nicht korrekt eingebunden",
