@@ -587,8 +587,38 @@ export const storageAuditLog = pgTable("storage_audit_log", {
   detail: text("detail"),
 });
 
+/**
+ * The customer's own media library (P81-01).
+ *
+ * One row per object the customer has uploaded, so a file can be found and
+ * reused instead of uploaded a second time under a second key. The bucket
+ * holds the bytes; this holds what they are for — a human title, the alt text
+ * a screen reader announces, who put it there and when.
+ *
+ * Written by the upload path when an object verifies, because that is the
+ * moment the platform knows an object exists and what is in it.
+ */
+export const mediaAssets = pgTable("media_assets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  customerId: uuid("customer_id").notNull(),
+  /** The `s3://…` reference, exactly as a content row stores it. */
+  storageKey: text("storage_key").notNull(),
+  /** What the author called it when they picked it. Never used to build a key. */
+  fileName: text("file_name").notNull(),
+  /** Derived from the object, never typed (P79-01). Null means "not described". */
+  mimeType: text("mime_type"),
+  byteSize: bigint("byte_size", { mode: "number" }),
+  title: text("title"),
+  /** Null means "not set", which the console reports rather than emitting `alt=""`. */
+  altText: text("alt_text"),
+  uploadedBy: uuid("uploaded_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const schema = {
   customers,
+  mediaAssets,
   departments,
   projects,
   courses,

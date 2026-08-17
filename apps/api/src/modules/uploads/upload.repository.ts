@@ -21,9 +21,9 @@
  * another customer simply has no mint to find.
  */
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import type { Pool } from "pg";
-import { courses, storageAuditLog } from "../../db/schema.js";
+import { courses, mediaAssets, storageAuditLog } from "../../db/schema.js";
 import { runInTenant, type Db, type TenantContext } from "../../db/tenant-db.js";
 
 export interface RecordedMint {
@@ -46,11 +46,55 @@ export interface StorageEvent {
   readonly detail: string | null;
 }
 
+/**
+ * How the library screen narrows a list.
+ *
+ * `kind` is the first token of the MIME type — "show me the videos" — and the
+ * migration indexes `split_part(mime_type, '/', 1)` for exactly this. Rows with
+ * no MIME type are excluded when a kind is asked for rather than included as a
+ * courtesy: "the videos" must not contain a file nobody could describe.
+ */
+export interface LibraryFilter {
+  readonly kind?: string | undefined;
+  readonly limit: number;
+}
+
+export interface LibraryRow {
+  readonly id: string;
+  readonly storageKey: string;
+  readonly fileName: string;
+  readonly mimeType: string | null;
+  readonly byteSize: number | null;
+  readonly title: string | null;
+  readonly altText: string | null;
+  readonly createdAt: Date;
+}
+
+/** A file to remember, once the bucket has confirmed it holds it. */
+export interface LibraryEntry {
+  readonly customerId: string;
+  readonly storageKey: string;
+  readonly fileName: string;
+  readonly mimeType: string | null;
+  readonly byteSize: number | null;
+  readonly uploadedBy: string | null;
+}
+
 export interface UploadRepositoryPort {
   /** The course's id, or undefined when this tenant cannot see that slug. */
   findCourseId(slug: string): Promise<string | undefined>;
   /** What was approved for this key, if this tenant approved anything. */
   findMint(objectKey: string): Promise<RecordedMint | undefined>;
+  /** Everything this customer has uploaded, newest first. */
+  listAssets(filter: LibraryFilter): Promise<readonly LibraryRow[]>;
+  /**
+   * Remember a stored object in the customer's library (P81-02).
+   *
+   * Idempotent on `(customer_id, storage_key)`: `complete` can legitimately be
+   * called twice for one upload — a retried request, a double-clicked button —
+   * and the second must not produce a second library entry for one file.
+   */
+  rememberAsset(entry: LibraryEntry): Promise<void>;
 }
 
 /**
@@ -127,6 +171,79 @@ export class UploadRepository implements UploadRepositoryPort {
       sizeBytes: row.sizeBytes,
       mimeType: row.mimeType,
     };
+  }
+
+  async listAssets(filter: LibraryFilter): Promise<readonly LibraryRow[]> {
+    /*
+     * No `where customer_id = …` here, and that is not an oversight.
+     *
+     * `media_assets` is under FORCE ROW LEVEL SECURITY and `this.db` carries
+     * the tenant context, so the database decides what this query can see
+     * (ADR-0002). An application-level filter would be defence in depth and is
+     * welcome elsewhere; what it must never be is the only defence.
+     */
+    const kind = (filter.kind ?? "").trim().toLowerCase();
+
+    return this.db
+      .select({
+        id: mediaAssets.id,
+        storageKey: mediaAssets.storageKey,
+        fileName: mediaAssets.fileName,
+        mimeType: mediaAssets.mimeType,
+        byteSize: mediaAssets.byteSize,
+        title: mediaAssets.title,
+        altText: mediaAssets.altText,
+        createdAt: mediaAssets.createdAt,
+      })
+      .from(mediaAssets)
+      .where(
+        kind === ""
+          ? undefined
+          : and(
+              isNotNull(mediaAssets.mimeType),
+              sql`split_part(${mediaAssets.mimeType}, '/', 1) = ${kind}`,
+            ),
+      )
+      .orderBy(desc(mediaAssets.createdAt))
+      .limit(filter.limit);
+  }
+
+  async rememberAsset(entry: LibraryEntry): Promise<void> {
+    /*
+     * `this.db` is the request's tenant-scoped connection, the same one every
+     * other method here uses — so `app.customer_id` is set and the RLS policy
+     * on `media_assets` admits the row.
+     *
+     * Worth saying explicitly because the table is under FORCE ROW LEVEL
+     * SECURITY: written on a bare pool this INSERT would be refused, and a read
+     * would match nothing and look like "no files" rather than like a missing
+     * tenant context (§9.6, and the P40-03 instance).
+     */
+    await this.db
+      .insert(mediaAssets)
+      .values({
+        customerId: entry.customerId,
+        storageKey: entry.storageKey,
+        fileName: entry.fileName,
+        mimeType: entry.mimeType,
+        byteSize: entry.byteSize,
+        uploadedBy: entry.uploadedBy,
+      })
+      /*
+       * Uploading the same file again refreshes what we know about it rather
+       * than adding a twin. The title and alt text are deliberately **not**
+       * touched: those are the author's words about the file, and a re-upload
+       * of the same object is not a reason to discard them.
+       */
+      .onConflictDoUpdate({
+        target: [mediaAssets.customerId, mediaAssets.storageKey],
+        set: {
+          fileName: entry.fileName,
+          mimeType: entry.mimeType,
+          byteSize: entry.byteSize,
+          updatedAt: sql`now()`,
+        },
+      });
   }
 }
 

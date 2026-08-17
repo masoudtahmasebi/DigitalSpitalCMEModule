@@ -43,6 +43,8 @@ import type { ObjectStorage, UploadRefusal } from "../../shared/object-storage.j
 import { keyBelongsToCustomer, storageKeyOf } from "@ds/domain";
 import type { StorageAuditPort, UploadRepositoryPort } from "./upload.repository.js";
 import type {
+  MediaAssetResponse,
+  MediaList,
   UploadBegin,
   UploadComplete,
   UploadConfirmedResponse,
@@ -73,6 +75,26 @@ export interface UploadActor {
   readonly userId: string | undefined;
 }
 
+/**
+ * What to call a file in the library.
+ *
+ * The author's own filename when the console sent one, because the whole point
+ * of the library is that somebody recognises their own file in a list. The
+ * generated key's last segment otherwise — `video-9f2c….mp4`, which is not
+ * friendly but is at least the truth, and is what an older console that does
+ * not send the name will produce.
+ *
+ * Never used to build a key, a path or a header. `uploadObjectName` generates
+ * the key and this value never reaches it, so an author's `../../etc/passwd`
+ * is a silly label in one list and nothing else.
+ */
+function libraryName(supplied: string | undefined, key: string): string {
+  const trimmed = (supplied ?? "").trim();
+  if (trimmed !== "") return trimmed;
+  const segments = key.split("/");
+  return segments[segments.length - 1] ?? key;
+}
+
 /** German for the four ways `planUpload` can say no. */
 const PLAN_MESSAGES: Readonly<Record<string, string>> = {
   unknown_purpose: "Für diesen Verwendungszweck können keine Dateien hochgeladen werden.",
@@ -81,12 +103,25 @@ const PLAN_MESSAGES: Readonly<Record<string, string>> = {
   too_large: "Die Datei ist zu groß.",
 };
 
+/**
+ * `warn`, which is what `JsonLogger` (a Nest `LoggerService`) has.
+ *
+ * Injected rather than reached for, so a test can assert the one thing this
+ * service does quietly: failing to index a file must be visible somewhere, and
+ * a `catch {}` would make "the library is empty" indistinguishable from "no
+ * uploads yet".
+ */
+export interface UploadLogger {
+  warn(message: string): void;
+}
+
 export class UploadService {
   constructor(
     private readonly repository: UploadRepositoryPort,
     private readonly audit: StorageAuditPort,
     /** Undefined when the deployment has no object storage configured. */
     private readonly storage: ObjectStorage | undefined,
+    private readonly logger: UploadLogger = { warn: () => undefined },
   ) {}
 
   async begin(
@@ -228,11 +263,85 @@ export class UploadService {
       detail: null,
     });
 
+    /*
+     * And remember it in the customer's library (P81-02).
+     *
+     * Here rather than anywhere else because this is the only moment the
+     * platform knows an object exists *and* what is in it: `begin` knows what
+     * was promised, and the content form knows only a reference somebody may
+     * or may not go on to save. An entry written earlier would list files that
+     * were never uploaded; one written when a course is saved would miss every
+     * file uploaded and then not used, which is exactly the file somebody wants
+     * to find again later.
+     *
+     * Deliberately after the audit row and deliberately not fatal. The audit
+     * log is the compliance record and must be written; the library is a
+     * convenience, and a failure to index a file must not fail the upload that
+     * succeeded — the object is in the bucket and the reference in the response
+     * is valid either way.
+     */
+    try {
+      await this.repository.rememberAsset({
+        customerId: actor.customerId,
+        storageKey: verified.upload.reference,
+        fileName: libraryName(input.fileName, input.key),
+        mimeType: verified.upload.contentType,
+        byteSize: verified.upload.sizeBytes,
+        uploadedBy: actor.userId ?? null,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `media library: could not index ${input.key}: ${
+          error instanceof Error ? error.message : "unknown"
+        }`,
+      );
+    }
+
     return {
       reference: verified.upload.reference,
       sizeBytes: verified.upload.sizeBytes,
       mimeType: verified.upload.contentType,
     };
+  }
+
+  /**
+   * Everything this customer has uploaded (P81-02).
+   *
+   * ## Why it is not scoped to a course
+   *
+   * Because the report was that it should not be: *"we should also have a
+   * mediathek-library section for all of the files a customer have uploaded"*,
+   * and the concrete cost of the course-scoped world was an introduction video
+   * that could not be used in a second course without uploading it twice.
+   *
+   * The tenant is still the boundary. Rows come back under RLS in the caller's
+   * customer, and the roles are the same two that may author — reading the list
+   * of a customer's own files is an authoring capability, not a reporting one.
+   *
+   * ## What it deliberately does not return
+   *
+   * No signed URLs. A list of two hundred capabilities that leave the building
+   * would be minted whether or not anybody looked at a single one, and each
+   * would be an audited `read` for a file nobody opened. The console asks for a
+   * URL per file it actually shows, through the route that already exists for
+   * that and already audits it.
+   */
+  async list(input: MediaList): Promise<readonly MediaAssetResponse[]> {
+    const rows = await this.repository.listAssets({
+      kind: input.kind,
+      limit: input.limit,
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      reference: row.storageKey,
+      fileName: row.fileName,
+      mimeType: row.mimeType,
+      byteSize: row.byteSize,
+      title: row.title,
+      altText: row.altText,
+      createdAt: row.createdAt.toISOString(),
+    }));
   }
 
   /**

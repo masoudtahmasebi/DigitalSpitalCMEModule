@@ -49,6 +49,17 @@ export const uploadCompleteSchema = z.object({
    * signature in a request body ends up in a log.
    */
   key: z.string().trim().min(1).max(1024),
+  /**
+   * The name the file had on the author's machine, for the media library
+   * (P81-02).
+   *
+   * Optional, and the API works without it: a console that does not send one
+   * gets the generated key's last segment in the library instead. Bounded and
+   * trimmed because it is shown back to the customer's own staff, and it is the
+   * one field in `media_assets` whose value a person chose rather than the
+   * platform — so it is a label and never a key, a path or a header.
+   */
+  fileName: z.string().trim().max(255).optional(),
 });
 
 /**
@@ -95,4 +106,36 @@ export interface UploadConfirmedResponse {
   /** As the **bucket** reports them, not as the client declared them. */
   readonly sizeBytes: number;
   readonly mimeType: string;
+}
+
+/**
+ * How the media library screen asks for a page (P81-02).
+ *
+ * `kind` is the first token of a MIME type — `video`, `image`, `application`.
+ * A free string rather than an enum: the set of things a customer may upload is
+ * decided by `UPLOAD_TYPES` and grows, and an enum here would refuse a filter
+ * for a type the platform had just started accepting.
+ *
+ * `limit` is bounded because this is a picker, not an export. A console asking
+ * for everything a customer has ever uploaded would be a slow screen and a
+ * large response, and the answer to "I have five hundred files" is a search
+ * box rather than a bigger page.
+ */
+export const mediaListSchema = z.object({
+  kind: z.string().trim().max(40).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(60),
+});
+
+export type MediaList = z.infer<typeof mediaListSchema>;
+
+/** One row as the console reads it. */
+export interface MediaAssetResponse {
+  readonly id: string;
+  readonly reference: string;
+  readonly fileName: string;
+  readonly mimeType: string | null;
+  readonly byteSize: number | null;
+  readonly title: string | null;
+  readonly altText: string | null;
+  readonly createdAt: string;
 }

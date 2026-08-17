@@ -110,6 +110,7 @@ export type UploadRequest = components["schemas"]["UploadRequest"];
 export type UploadTicket = components["schemas"]["UploadTicket"];
 export type UploadConfirmed = components["schemas"]["UploadConfirmed"];
 export type UploadView = components["schemas"]["UploadView"];
+export type MediaAsset = components["schemas"]["MediaAsset"];
 export type StructureOrder = components["schemas"]["StructureOrder"];
 export type ExpertsWrite = components["schemas"]["ExpertsWrite"];
 export type AuthoringQuiz = components["schemas"]["AuthoringQuiz"];
@@ -805,8 +806,35 @@ export function createClient(options: ClientOptions) {
      * Skipping this is not a shortcut: no reference, and the server has not
      * checked that the bucket holds what it approved.
      */
-    adminCompleteUpload: (slug: string, key: string): Promise<UploadConfirmed> =>
-      request(`${adminCourse(slug)}/uploads/complete`, json({ key })),
+    adminCompleteUpload: (
+      slug: string,
+      key: string,
+      fileName?: string,
+    ): Promise<UploadConfirmed> =>
+      request(
+        `${adminCourse(slug)}/uploads/complete`,
+        json(fileName === undefined ? { key } : { key, fileName }),
+      ),
+
+    /**
+     * The customer's media library (P81-02).
+     *
+     * Flat, not under a course: the whole point is the files that outlive any
+     * one course. No signed URLs come back — ask `adminViewUpload` for the ones
+     * actually shown, so a list of two hundred does not mint two hundred
+     * capabilities nobody uses.
+     */
+    adminListMedia: (
+      options: { kind?: string; limit?: number } = {},
+    ): Promise<MediaAsset[]> => {
+      const query = new URLSearchParams();
+      if (options.kind !== undefined && options.kind !== "") {
+        query.set("kind", options.kind);
+      }
+      if (options.limit !== undefined) query.set("limit", String(options.limit));
+      const suffix = query.toString();
+      return request(`/admin/media${suffix === "" ? "" : `?${suffix}`}`);
+    },
 
     /**
      * Turn a stored `s3://` reference back into something a browser can fetch.

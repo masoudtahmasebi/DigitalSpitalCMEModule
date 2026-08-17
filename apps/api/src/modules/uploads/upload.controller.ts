@@ -28,7 +28,16 @@
  * exactly the task the feature exists for.
  */
 
-import { Body, Controller, HttpCode, Inject, Param, Post } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Post,
+  Query,
+} from "@nestjs/common";
 import type { Pool } from "pg";
 import { Roles } from "../../auth/roles.decorator.js";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
@@ -41,6 +50,7 @@ import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { objectStorageFor } from "../../shared/object-storage.factory.js";
 import {
+  mediaListSchema,
   uploadBeginSchema,
   uploadCompleteSchema,
   uploadViewSchema,
@@ -57,6 +67,31 @@ export class UploadController {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(PG_POOL) private readonly pool: Pool,
   ) {}
+
+  /**
+   * The customer's media library (P81-02).
+   *
+   * `/admin/media`, flat — the one upload route that is deliberately **not**
+   * under a course, because the thing being asked for is precisely the set of
+   * files that outlives any one course. The comment at the top of this file
+   * explains why the others are course-scoped and that reasoning still holds
+   * for them: a course is half the key and the authorization boundary for a
+   * *write*. This is a read of the customer's own index, bounded by RLS.
+   *
+   * GET with the filter in the query, unlike `view`: a kind and a page size are
+   * not a physician's material, and a URL that can be linked and cached is the
+   * right shape for a list.
+   */
+  @Get("media")
+  @RateLimit("mediaUpload")
+  @Roles(...AUTHOR_ROLES)
+  async media(
+    @Query() query: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    return this.service(db, principal).list(parse(mediaListSchema, query, "media"));
+  }
 
   @Post("courses/:slug/uploads")
   @RateLimit("mediaUpload")
