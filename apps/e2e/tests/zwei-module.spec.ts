@@ -53,6 +53,7 @@ import {
   readIssuedPassword,
   signInToConsole,
 } from "../support/console.js";
+import { openCourseFromCatalogue } from "../support/catalogue.js";
 import { openWidgetShadowRoots } from "../support/shadow.js";
 import { buildBehind, currentTarget } from "../support/target.js";
 import { forgetSignInAttempts } from "../support/world.js";
@@ -233,12 +234,17 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
         timeout: 20_000,
       });
 
-      const card = learner.locator("li").filter({ hasText: COURSE }).first();
-      await expect(card).toBeVisible({ timeout: 30_000 });
-      await card.getByRole("button", { name: "Zur Fortbildung" }).click();
-      await expect(learner.getByRole("heading", { name: COURSE })).toBeVisible({
-        timeout: 20_000,
-      });
+      /*
+       * Through the catalogue, on whichever page it lists this course (P89-03).
+       *
+       * This is the line that failed against the installation while everything
+       * before it passed. The catalogue is ten per page ordered by title, the
+       * DS Test tenant keeps every course this suite has ever built, and
+       * „E2E **Z**wei Module …" sorts after all of them — so it was on page two
+       * and a first-page locator called it absent. `journey.spec.ts` passed the
+       * same minute on the same tenant because its title begins with an F.
+       */
+      await openCourseFromCatalogue(learner, COURSE);
 
       await learner.getByRole("button", { name: "Fortbildung starten" }).first().click();
       await expect(
