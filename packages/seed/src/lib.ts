@@ -491,3 +491,41 @@ export async function courseHasContent(
   );
   return (rows[0]?.n ?? "0") !== "0";
 }
+
+/**
+ * Whether this course still has no Evaluationsbogen (P84-01).
+ *
+ * ## The deploy this exists to stop
+ *
+ * All three seeds used to make the evaluation idempotent the obvious way —
+ * `DELETE` everything for the course, then `INSERT` the standard set. That
+ * works exactly until somebody uses the system. `evaluation_responses` holds
+ * `evaluation_id` with `ON DELETE RESTRICT`, so the first physician to submit a
+ * form pins those rows permanently, and every deploy afterwards died on:
+ *
+ *     update or delete on table "evaluations" violates foreign key constraint
+ *     "evaluation_responses_evaluation_id_fkey"
+ *
+ * The deploy script aborts rather than swapping when a step fails, which is the
+ * right behaviour and made the consequence total: **nothing could be released
+ * at all**, for reasons that had nothing to do with what was being released.
+ * That is the shape worth remembering — a seeding step that fails does not skip
+ * seeding, it stops the deploy.
+ *
+ * ## Why "only when empty" and not an upsert keyed on ordinal
+ *
+ * An upsert would keep the deploy green and silently overwrite the customer's
+ * own wording on every release. The operator can edit this form in the console;
+ * re-imposing our text each time is a worse bug than the one being fixed,
+ * because nothing anywhere would say it had happened.
+ *
+ * A seed establishes a starting point. Once a course has an evaluation, the
+ * people using it own it — whether they wrote it or a learner answered it.
+ */
+export async function hasNoEvaluation(pool: pg.Pool, courseId: string): Promise<boolean> {
+  const { rows } = await pool.query<{ n: string }>(
+    "SELECT count(*)::text AS n FROM evaluations WHERE course_id = $1",
+    [courseId],
+  );
+  return (rows[0]?.n ?? "0") === "0";
+}

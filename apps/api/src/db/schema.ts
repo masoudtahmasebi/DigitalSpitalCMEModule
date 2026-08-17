@@ -130,6 +130,15 @@ export const projects = pgTable("projects", {
    */
   embedOrigins: text("embed_origins").array().notNull().default([]),
   branding: jsonb("branding").notNull().default({}),
+  /**
+   * The customer's own words for the learner's screens (P83-01).
+   *
+   * Dotted locale key to replacement text. Beside `branding` because the widget
+   * reads both in one fetch at mount; separate from it because `branding` is a
+   * fixed set of named fields with a grammar each and this is an open map whose
+   * key space belongs to `@ds/copy`.
+   */
+  copyOverrides: jsonb("copy_overrides").notNull().default({}),
   smtpHost: text("smtp_host"),
   smtpPort: integer("smtp_port"),
   smtpUsername: text("smtp_username"),

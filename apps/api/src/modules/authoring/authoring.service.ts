@@ -33,6 +33,8 @@ import {
   correctOptionCount,
   keyBelongsToCustomer,
   invalidBrandingFields,
+  invalidCopyKeys,
+  parseCopyOverrides,
   parseBranding,
   questionProblems,
   storageKeyOf,
@@ -42,6 +44,7 @@ import {
   type HierarchyLevel,
   type QuestionProblem,
 } from "@ds/domain";
+import { COPY_KEYS } from "@ds/copy";
 import { AppError } from "../../shared/problem-details.js";
 import type { Db } from "../../db/tenant-db.js";
 import type { SecretCipher } from "../../shared/secret-cipher.js";
@@ -140,6 +143,9 @@ export class AuthoringService {
       // Validated on read: a value stored before a grammar tightened must not
       // reach a settings form as though it were still acceptable.
       branding: parseBranding(row.branding),
+      // Same reasoning as `branding`: a key stored before the widget's locale
+      // table lost it must not reach a settings form as an editable field.
+      copyOverrides: { ...parseCopyOverrides(row.copyOverrides, COPY_KEYS) },
       identityProvider: narrowIdentityProvider(row.identityProvider),
     }));
   }
@@ -228,6 +234,31 @@ export class AuthoringService {
         );
       }
       patch.branding = parseBranding(update.branding);
+    }
+
+    if (update.copyOverrides !== undefined) {
+      /*
+       * The same shape as branding above, and for the same reason (P83-02).
+       *
+       * `parseCopyOverrides` drops what it cannot use, because a learner's
+       * screen has to render whatever is stored. That is right for the read
+       * path and wrong for this one: an operator who typed into a field for a
+       * screen that has since been renamed away deserves to be told, not to
+       * watch the value vanish on the next load.
+       *
+       * Keys, never values (§9.5). One of these fields is free text an operator
+       * pasted from somewhere, and the refusal travels through a log.
+       */
+      const invalid = invalidCopyKeys(update.copyOverrides, COPY_KEYS);
+      if (invalid.length > 0) {
+        const keys = invalid.map((entry) => entry.key).join(", ");
+        throw new AppError(
+          "validation",
+          `invalid copy keys: ${invalid.map((e) => `${e.key}=${e.reason}`).join(", ")}`,
+          `Diese Texte konnten nicht gespeichert werden: ${keys}. Bitte prüfen Sie Länge und Schreibweise.`,
+        );
+      }
+      patch.copyOverrides = { ...parseCopyOverrides(update.copyOverrides, COPY_KEYS) };
     }
     if (update.smtpPassword !== undefined) {
       // Encrypted before it crosses into the repository — no layer below this

@@ -208,9 +208,26 @@ export const projectUpdateSchema = z.object({
    * and the *parsed* result is what gets stored — never the submitted blob.
    */
   branding: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * The customer's own words for the learner's screens (P83-02).
+   *
+   * Strings, so this DTO and the contract agree — `dto-sdk-parity` checks that
+   * and is right to.
+   *
+   * The interesting refusals are still `invalidCopyKeys`'s, and they are the
+   * ones an operator can act on: a key the widget's locale table no longer has,
+   * a value past the length bound, a control character pasted in from
+   * somewhere. Its `not_text` case is unreachable through this route, because
+   * zod has already refused a non-string — that case exists for any other
+   * caller of the rule and is not dead code here, it is simply not this route's
+   * failure mode.
+   */
+  copyOverrides: z.record(z.string(), z.string()).optional(),
 });
 
 export const projectSummarySchema = z.object({
+  /** The customer's own words for the learner's screens (P83-02). */
+  copyOverrides: z.record(z.string(), z.string()),
   slug: z.string(),
   name: z.string(),
   departmentSlug: z.string(),

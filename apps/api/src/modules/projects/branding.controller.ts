@@ -35,7 +35,8 @@ import {
   Query,
   StreamableFile,
 } from "@nestjs/common";
-import { parseBranding, type Branding } from "@ds/domain";
+import { parseBranding, parseCopyOverrides, type Branding } from "@ds/domain";
+import { COPY_KEYS } from "@ds/copy";
 import { Public } from "../../auth/public.decorator.js";
 import { PG_POOL } from "../../db/tokens.js";
 import type { Pool } from "pg";
@@ -79,6 +80,37 @@ export class BrandingController {
             fontVersion: row.fontUpdatedAt.toISOString(),
           }),
     });
+  }
+
+  /**
+   * The customer's own words for the learner's screens (P83-02).
+   *
+   * Its own route rather than a field on `GET /branding`, because the two are
+   * different questions: `Branding` is a typed object whose fields become CSS
+   * variables and each has a grammar, and this is an open map of dotted locale
+   * keys to text. Merging them would give one response two grammars and one
+   * parser two jobs.
+   *
+   * Public and cached the same way, for the same reason: it is identical for
+   * every visitor of a project and changes rarely. Five minutes keeps a
+   * reworded button from needing a cache purge.
+   *
+   * **Validated on read, not only on write.** `parseCopyOverrides` drops any
+   * key that is no longer in `COPY_KEYS` and any value that is no longer
+   * acceptable, so a setting stored before a rule tightened — or before a
+   * screen was renamed away — cannot reach a learner. The write path refuses
+   * those and tells the operator; this one simply does not serve them, because
+   * a learner's page must render whatever is stored.
+   */
+  @Get("copy")
+  @Public()
+  @Header("cache-control", "public, max-age=300")
+  async copy(
+    @Headers("x-ds-project") projectSlug?: string,
+  ): Promise<Record<string, string>> {
+    if (projectSlug === undefined || projectSlug === "") return {};
+    const stored = await this.branding.resolveCopy(projectSlug);
+    return { ...parseCopyOverrides(stored, COPY_KEYS) };
   }
 
   /**

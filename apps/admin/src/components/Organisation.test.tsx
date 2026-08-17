@@ -40,6 +40,7 @@ function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     slug: "medice",
     name: "MEDICE",
     departmentSlug: "default",
+    copyOverrides: {},
     identityProvider: "keycloak",
     loginUrl: null,
     keycloakIssuer: "https://auth.example.de/realms/medice",

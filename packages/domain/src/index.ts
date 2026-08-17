@@ -338,5 +338,15 @@ export {
 } from "./resume.js";
 export type { ResumeInput } from "./resume.js";
 
+export {
+  applyCopyOverrides,
+  copyDefaultAt,
+  copyKeysOf,
+  COPY_MAX_LENGTH,
+  invalidCopyKeys,
+  parseCopyOverrides,
+} from "./copy.js";
+export type { CopyOverrides, CopyRejection, RejectedCopy } from "./copy.js";
+
 export { lengthsAgree, mediaLengthVerdict } from "./gate-reachability.js";
 export type { MediaLengthInput, MediaLengthVerdict } from "./gate-reachability.js";

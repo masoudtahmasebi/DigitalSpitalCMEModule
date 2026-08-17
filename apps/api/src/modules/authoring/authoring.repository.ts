@@ -166,6 +166,7 @@ export interface ProjectRow {
   smtpFromName: string | null;
   hasSmtpPassword: boolean;
   branding: unknown;
+  copyOverrides: unknown;
   courseCount: number;
 }
 
@@ -186,6 +187,8 @@ export interface ProjectPatch {
   smtpFromAddress?: string | null;
   smtpFromName?: string | null;
   branding?: unknown;
+  /** Dotted locale key to replacement text (P83-02). */
+  copyOverrides?: unknown;
 }
 
 export interface ContentValues {
@@ -381,6 +384,7 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
         // secret is to not select it.
         hasSmtpPassword: sql<boolean>`${projects.smtpPasswordEnc} IS NOT NULL`,
         branding: projects.branding,
+        copyOverrides: projects.copyOverrides,
         courseCount: sql<number>`(
           SELECT count(*)::int FROM courses c WHERE c.project_id = "projects"."id"
         )`,

@@ -44,6 +44,7 @@ import {
 import { de } from "./locale/de.js";
 import { Badge, Button, Notice, Spinner, Table } from "./components/ui.js";
 import { EmptyState, Page, type Crumb } from "./components/page.js";
+import { CopySettings } from "./components/CopySettings.js";
 import { BrandingSettings } from "./components/BrandingSettings.js";
 import { CourseSettings } from "./components/CourseSettings.js";
 import { CoursePresentation } from "./components/CoursePresentation.js";
@@ -353,6 +354,7 @@ type View =
   | { kind: "new-course" }
   | { kind: "organisation" }
   | { kind: "branding" }
+  | { kind: "copy" }
   | { kind: "customers" }
   | { kind: "participants" }
   | { kind: "learners" }
@@ -496,6 +498,18 @@ const NAV: readonly NavGroup[] = [
         label: de.nav.branding,
         title: de.nav.branding,
         description: de.branding.intro,
+        capability: "project",
+      },
+      /*
+       * Texte (P83-04), beside Erscheinungsbild and with the same capability.
+       * Both are "how this project looks and reads to a learner", and a course
+       * editor writes courses rather than the surface they appear on.
+       */
+      {
+        kind: "copy",
+        label: de.copy.nav,
+        title: de.copy.nav,
+        description: de.copy.intro,
         capability: "project",
       },
       // No capability: every operator may read the rules their own sign-in is
@@ -1074,6 +1088,11 @@ export function Console(props: {
     // A department_admin gets a 403 from the PUT; the screen renders for them
     // because the API, not the navigation, is the gate (P9-01).
     return headed(<BrandingSettings client={client} />);
+  }
+
+  if (view.kind === "copy") {
+    // Like branding: the screen renders and the API is the gate on the write.
+    return headed(<CopySettings client={client} />);
   }
 
   if (view.kind === "organisation") {
