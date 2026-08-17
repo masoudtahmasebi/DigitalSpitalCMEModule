@@ -309,3 +309,63 @@ function rejectionReason(
   if (segment.endSec > durationSec) return "beyond_duration";
   return undefined;
 }
+
+/**
+ * The parts of a video that have **not** been credited (P85-01).
+ *
+ * ## Why this exists
+ *
+ * Reported twice, at 95 % and then at 96 % after a re-watch:
+ *
+ * > _"i have watched the whole thing. this issue is very weird."_
+ *
+ * Both halves of that are informative. A percentage that *moves* on a second
+ * viewing is not a wrong denominator — a stored length longer than the file
+ * would pin it at one number for ever. It is a union with holes in it, and the
+ * re-watch filled some of them.
+ *
+ * What the learner had, at that point, was a full progress bar, "noch 0:00",
+ * and a number that refused to reach 100 with nothing on screen to act on.
+ * That is CLAUDE.md §9.10 — correct and unusable. The gate is right to withhold
+ * credit for seconds nobody watched; what was missing is *which seconds*.
+ *
+ * ## Why it belongs here and not in the player
+ *
+ * It is the complement of the same union `watchedPercent` divides by, so it has
+ * to be derived from the same merged intervals by the same rules — the player
+ * computing "what looks unwatched" from a coverage bar would be a second
+ * opinion about a number that decides a CME point (§4 invariant 6).
+ *
+ * Segments are assumed merged and sorted, exactly as `watchedSecondsWithin`
+ * assumes, because both are fed by `mergeWatchedSegments`.
+ *
+ * `toleranceSec` exists so this agrees with what the gate actually counts: a
+ * sliver far below a playback sample is not something a person can go and
+ * watch, and listing it would send somebody hunting for a gap they cannot
+ * close. Default a quarter second — one `timeupdate`.
+ */
+export function uncoveredSpans(
+  segments: readonly WatchedSegment[],
+  durationSec: number,
+  toleranceSec = 0.25,
+): readonly WatchedSegment[] {
+  if (!Number.isFinite(durationSec) || durationSec <= 0) return [];
+
+  const gaps: WatchedSegment[] = [];
+  let cursor = 0;
+
+  for (const segment of segments) {
+    const start = Math.max(0, Math.min(segment.startSec, durationSec));
+    const end = Math.max(0, Math.min(segment.endSec, durationSec));
+    if (start - cursor > toleranceSec) {
+      gaps.push({ startSec: cursor, endSec: start });
+    }
+    cursor = Math.max(cursor, end);
+  }
+
+  if (durationSec - cursor > toleranceSec) {
+    gaps.push({ startSec: cursor, endSec: durationSec });
+  }
+
+  return gaps;
+}

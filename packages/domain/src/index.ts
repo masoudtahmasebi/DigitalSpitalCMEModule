@@ -41,6 +41,7 @@ export {
   mergeWatchedSegments,
   validateSegments,
   watchedPercent,
+  uncoveredSpans,
   watchedSecondsWithin,
 } from "./watch.js";
 export type {

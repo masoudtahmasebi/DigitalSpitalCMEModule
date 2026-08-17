@@ -39,6 +39,10 @@ function harness(
   overrides: {
     rememberAsset?: (entry: LibraryEntry) => Promise<void>;
     listAssets?: UploadRepositoryPort["listAssets"];
+    findAsset?: UploadRepositoryPort["findAsset"];
+    describeAsset?: UploadRepositoryPort["describeAsset"];
+    countAssetUses?: UploadRepositoryPort["countAssetUses"];
+    forgetAsset?: UploadRepositoryPort["forgetAsset"];
   } = {},
 ) {
   const remembered: LibraryEntry[] = [];
@@ -47,6 +51,13 @@ function harness(
     findCourseId: async () => COURSE,
     findMint: async () => ({ courseId: COURSE, sizeBytes: 1024, mimeType: "video/mp4" }),
     listAssets: overrides.listAssets ?? (async () => []),
+    // Not exercised by the cases in this file; declared so the port stays
+    // whole rather than cast away, which is what keeps a new method from
+    // silently going untested everywhere at once.
+    findAsset: overrides.findAsset ?? (async () => undefined),
+    describeAsset: overrides.describeAsset ?? (async () => false),
+    countAssetUses: overrides.countAssetUses ?? (async () => 0),
+    forgetAsset: overrides.forgetAsset ?? (async () => false),
     rememberAsset:
       overrides.rememberAsset ??
       (async (entry) => {
@@ -178,5 +189,73 @@ describe("list", () => {
     // Never set is `null`, not `""`: an empty alt claims the image is
     // decorative, and the console has to be able to tell the difference.
     expect(rows[0]?.altText).toBeNull();
+  });
+});
+
+describe("forget", () => {
+  it("refuses while a course content still points at the file, and says how many", async () => {
+    /*
+     * The content would keep rendering it — the object is still in the bucket —
+     * while the operator lost the only place the file is listed and described,
+     * having been told it was deleted. The count is in the message because that
+     * is what somebody needs in order to go and unpick it.
+     */
+    const forgetAsset = vi.fn(async () => true);
+    const { service } = harness({
+      findAsset: async () => ({
+        id: "a",
+        storageKey: REFERENCE,
+        fileName: "x.mp4",
+        mimeType: "video/mp4",
+        byteSize: 1,
+        title: null,
+        altText: null,
+        createdAt: NOW,
+      }),
+      countAssetUses: async () => 2,
+      forgetAsset,
+    });
+
+    /*
+     * `clientDetail`, not `message`. `AppError` keeps the technical reason for
+     * logs and the German for the operator, and it is the German that has to
+     * carry the count — asserting on `message` would pass while the screen
+     * showed something nobody can act on.
+     */
+    await expect(service.forget("a", ACTOR)).rejects.toMatchObject({
+      kind: "conflict",
+      clientDetail: expect.stringContaining("2 Inhalten"),
+    });
+    expect(forgetAsset).not.toHaveBeenCalled();
+  });
+
+  it("forgets an unused entry", async () => {
+    // The control: without it the refusal above would pass on a method that
+    // refused everything.
+    const forgetAsset = vi.fn(async () => true);
+    const { service } = harness({
+      findAsset: async () => ({
+        id: "a",
+        storageKey: REFERENCE,
+        fileName: "x.mp4",
+        mimeType: "video/mp4",
+        byteSize: 1,
+        title: null,
+        altText: null,
+        createdAt: NOW,
+      }),
+      countAssetUses: async () => 0,
+      forgetAsset,
+    });
+
+    await service.forget("a", ACTOR);
+    expect(forgetAsset).toHaveBeenCalledWith("a");
+  });
+
+  it("answers the same for an unknown id and another customer's file", async () => {
+    // Distinguishing them would confirm that somebody else's file exists
+    // (§9.5).
+    const { service } = harness({ findAsset: async () => undefined });
+    await expect(service.forget("a", ACTOR)).rejects.toThrow(/not visible in tenant/u);
   });
 });

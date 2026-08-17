@@ -16,7 +16,17 @@
  */
 const LABEL_REQUIRED = "Verpflichtend";
 
-export const de = {
+import { currentLanguage, overlay } from "./language.js";
+import { en } from "./en.js";
+
+/**
+ * The German table itself.
+ *
+ * Exported so `en.ts` can be typed against it without a cycle: annotating `de`
+ * below as `typeof german` is what stops its type depending on the overlay
+ * that is merged into it.
+ */
+export const german = {
   appTitle: "DS Education — Verwaltung",
   /* The sidebar is 15 rem wide and the full title does not fit in it — it
      rendered as "DS Education — Ve…", which is worse than a short name. */
@@ -407,6 +417,21 @@ export const de = {
     api: "API",
     skew: "Unterschiedliche Stände — bitte erneut deployen.",
     apiUnknown: "Die API meldet keinen Stand (ältere Version).",
+  },
+
+  /** The language switch in the header (P86-01). */
+  language: {
+    german: "Deutsch",
+    english: "English",
+    /**
+     * The button's accessible name (P86-01).
+     *
+     * A two-letter label is the right *visible* control for a two-language
+     * switch — a dropdown for two options is heavier than the choice — but
+     * "EN" read out on its own says nothing. The name says what pressing it
+     * does, which is the question somebody using a screen reader is asking.
+     */
+    switchTo: (language: string): string => `Sprache wechseln zu ${language}`,
   },
 
   nav: {
@@ -829,6 +854,26 @@ export const de = {
   },
 
   /** Texte — the customer's own words for the learner's screens (P83-04). */
+  /** The Mediathek picker (P81-03). */
+  media: {
+    title: "Mediathek",
+    open: "Aus Mediathek wählen",
+    close: "Schließen",
+    intro:
+      "Alle Dateien, die für diesen Kunden hochgeladen wurden. Wählen Sie eine aus, statt dieselbe Datei erneut hochzuladen.",
+    empty:
+      "Für diesen Kunden wurde noch keine Datei hochgeladen. Sobald Sie etwas hochladen, erscheint es hier und kann in weiteren Fortbildungen verwendet werden.",
+    unknownType: "Dateityp unbekannt",
+    assetTitle: "Titel",
+    assetAlt: "Alternativtext",
+    altHint:
+      "Der Titel benennt die Datei für Sie in dieser Liste. Der Alternativtext beschreibt das Bild für Menschen, die es nicht sehen können — er wird von Screenreadern vorgelesen und ist für die Barrierefreiheit (WCAG 1.1.1) erforderlich. Bleibt er leer, gilt er als nicht gesetzt.",
+    use: "Diese Datei verwenden",
+    forget: "Aus Mediathek entfernen",
+    forgetHint:
+      "Entfernen löscht nur den Eintrag aus dieser Liste — die Datei selbst bleibt im Dateispeicher erhalten. Solange eine Fortbildung die Datei noch verwendet, wird das Entfernen abgelehnt.",
+  },
+
   copy: {
     nav: "Texte",
     intro:
@@ -1160,3 +1205,17 @@ export const de = {
     },
   },
 } as const;
+
+/**
+ * The table every screen imports (P86-01).
+ *
+ * Still called `de`, and deliberately: thirty files import it under that name,
+ * the German is the source of truth, and renaming it everywhere to add a
+ * language switch would be churn with no reader.
+ *
+ * The language is decided once, at import, before any component renders — see
+ * `language.ts` for why switching reloads. English is a partial overlay, so an
+ * untranslated key renders in German rather than as a key name or a blank.
+ */
+export const de: typeof german =
+  currentLanguage() === "en" ? overlay(german, en) : german;

@@ -408,6 +408,20 @@ export const de = {
     material: "Material",
     back: "Zurück zur Übersicht",
     next: "Weiter",
+    /**
+     * Which seconds are still missing (P85-01).
+     *
+     * Reported as *"i have watched the whole thing. this issue is very weird."*
+     * — with a full progress bar, "noch 0:00", and a percentage that would not
+     * reach 100. The gate was right to withhold credit for seconds nobody
+     * watched; what the screen never said is *which* ones, so there was nothing
+     * to act on (§9.10).
+     *
+     * A function, so it is not overridable: the spans are formatted here and a
+     * customer's template would have to reproduce the list-building too.
+     */
+    gaps: (spans: readonly string[]): string =>
+      `Diese Stellen fehlen noch: ${spans.join(", ")}. Spulen Sie dorthin, um die Wiedergabe zu vervollständigen.`,
     watched: (percent: number): string => `${percent} % angesehen`,
     /** The <track> label a player shows in its captions menu. */
     captions: "Untertitel (Deutsch)",

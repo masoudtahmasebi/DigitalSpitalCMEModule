@@ -5,6 +5,7 @@ import {
   mergeWatchedSegments,
   validateSegments,
   watchedPercent,
+  uncoveredSpans,
   watchedSecondsWithin,
 } from "./watch.js";
 
@@ -298,5 +299,58 @@ describe("validateSegments", () => {
     });
 
     expect(result.accepted).toHaveLength(1);
+  });
+});
+
+describe("uncoveredSpans", () => {
+  it("names the hole in the middle of an otherwise watched video", () => {
+    // The reported shape: a full-looking bar, "noch 0:00", and 96 %.
+    expect(
+      uncoveredSpans(
+        [
+          { startSec: 0, endSec: 8 },
+          { startSec: 9, endSec: 20 },
+        ],
+        20,
+      ),
+    ).toEqual([{ startSec: 8, endSec: 9 }]);
+  });
+
+  it("names a gap at the very start", () => {
+    expect(uncoveredSpans([{ startSec: 2, endSec: 20 }], 20)).toEqual([
+      { startSec: 0, endSec: 2 },
+    ]);
+  });
+
+  it("names a gap at the very end", () => {
+    expect(uncoveredSpans([{ startSec: 0, endSec: 18 }], 20)).toEqual([
+      { startSec: 18, endSec: 20 },
+    ]);
+  });
+
+  it("says nothing about a video that was fully watched", () => {
+    expect(uncoveredSpans([{ startSec: 0, endSec: 20 }], 20)).toEqual([]);
+  });
+
+  it("ignores a sliver below one playback sample", () => {
+    // Nobody can go and watch a tenth of a second, and listing it would send
+    // somebody hunting for a gap they cannot close.
+    expect(
+      uncoveredSpans(
+        [
+          { startSec: 0, endSec: 9.9 },
+          { startSec: 10, endSec: 20 },
+        ],
+        20,
+      ),
+    ).toEqual([]);
+  });
+
+  it("clamps to the video rather than reporting past its end", () => {
+    expect(uncoveredSpans([{ startSec: 0, endSec: 25 }], 20)).toEqual([]);
+  });
+
+  it("answers nothing for a video with no usable length", () => {
+    expect(uncoveredSpans([{ startSec: 0, endSec: 5 }], 0)).toEqual([]);
   });
 });

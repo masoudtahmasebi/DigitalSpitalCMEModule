@@ -23,7 +23,7 @@
 
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import type { Pool } from "pg";
-import { courses, mediaAssets, storageAuditLog } from "../../db/schema.js";
+import { contents, courses, mediaAssets, storageAuditLog } from "../../db/schema.js";
 import { runInTenant, type Db, type TenantContext } from "../../db/tenant-db.js";
 
 export interface RecordedMint {
@@ -87,6 +87,18 @@ export interface UploadRepositoryPort {
   findMint(objectKey: string): Promise<RecordedMint | undefined>;
   /** Everything this customer has uploaded, newest first. */
   listAssets(filter: LibraryFilter): Promise<readonly LibraryRow[]>;
+  /** One entry, or undefined when this tenant cannot see it. */
+  findAsset(id: string): Promise<LibraryRow | undefined>;
+  /** Set the human title and the alt text. Answers false if it is not ours. */
+  describeAsset(
+    id: string,
+    title: string | null,
+    altText: string | null,
+  ): Promise<boolean>;
+  /** How many course contents still point at this object. */
+  countAssetUses(reference: string): Promise<number>;
+  /** Forget the library entry. The object itself is untouched — see the service. */
+  forgetAsset(id: string): Promise<boolean>;
   /**
    * Remember a stored object in the customer's library (P81-02).
    *
@@ -206,6 +218,71 @@ export class UploadRepository implements UploadRepositoryPort {
       )
       .orderBy(desc(mediaAssets.createdAt))
       .limit(filter.limit);
+  }
+
+  async findAsset(id: string): Promise<LibraryRow | undefined> {
+    const [row] = await this.db
+      .select({
+        id: mediaAssets.id,
+        storageKey: mediaAssets.storageKey,
+        fileName: mediaAssets.fileName,
+        mimeType: mediaAssets.mimeType,
+        byteSize: mediaAssets.byteSize,
+        title: mediaAssets.title,
+        altText: mediaAssets.altText,
+        createdAt: mediaAssets.createdAt,
+      })
+      .from(mediaAssets)
+      .where(eq(mediaAssets.id, id))
+      .limit(1);
+    return row;
+  }
+
+  async describeAsset(
+    id: string,
+    title: string | null,
+    altText: string | null,
+  ): Promise<boolean> {
+    const updated = await this.db
+      .update(mediaAssets)
+      .set({ title, altText, updatedAt: sql`now()` })
+      .where(eq(mediaAssets.id, id))
+      .returning({ id: mediaAssets.id });
+    return updated.length > 0;
+  }
+
+  /**
+   * How many course contents still point at this object.
+   *
+   * Four places a reference can sit, and all four are checked: a poster, a
+   * caption track, a material's file, and any rendition inside `media_sources`.
+   * Missing one would let the library forget a file that is still on a screen,
+   * and the learner-facing failure of that is a video with no poster and
+   * nothing anywhere saying why.
+   *
+   * `media_sources` is jsonb, so the containment test goes through it rather
+   * than a column comparison — `@>` on an array of objects asks "is there an
+   * element with this url", which is exactly the question.
+   */
+  async countAssetUses(reference: string): Promise<number> {
+    const [row] = await this.db
+      .select({ n: sql<string>`count(*)::text` })
+      .from(contents)
+      .where(
+        sql`${contents.posterUrl} = ${reference}
+         OR ${contents.captionsUrl} = ${reference}
+         OR ${contents.fileUrl} = ${reference}
+         OR ${contents.mediaSources} @> ${JSON.stringify([{ url: reference }])}::jsonb`,
+      );
+    return Number(row?.n ?? "0");
+  }
+
+  async forgetAsset(id: string): Promise<boolean> {
+    const removed = await this.db
+      .delete(mediaAssets)
+      .where(eq(mediaAssets.id, id))
+      .returning({ id: mediaAssets.id });
+    return removed.length > 0;
   }
 
   async rememberAsset(entry: LibraryEntry): Promise<void> {

@@ -139,3 +139,17 @@ export interface MediaAssetResponse {
   readonly altText: string | null;
   readonly createdAt: string;
 }
+
+/**
+ * A human title and the alt text a screen reader announces (P81-03).
+ *
+ * Both optional and both bounded. Blank is meaningful — it means "not set" —
+ * so an absent field and an empty one are the same request here, and the
+ * service maps both to null.
+ */
+export const mediaDescribeSchema = z.object({
+  title: z.string().trim().max(200).optional(),
+  altText: z.string().trim().max(500).optional(),
+});
+
+export type MediaDescribe = z.infer<typeof mediaDescribeSchema>;
