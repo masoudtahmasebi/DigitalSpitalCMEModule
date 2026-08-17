@@ -2276,6 +2276,60 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /admin/media:
+    get:
+      tags: [admin]
+      operationId: adminListMedia
+      summary: Everything this customer has uploaded
+      description: |
+        The customer's media library — one entry per object stored, newest
+        first, so a file can be found and reused instead of uploaded a second
+        time under a second key.
+
+        **Not scoped to a course**, unlike every other upload route, and that is
+        the point: the reported cost of the course-scoped world was an
+        introduction video that could not be used in a second course without
+        uploading it again. The tenant is still the boundary — rows come back
+        under row-level security in the caller's customer.
+
+        **No signed URLs here.** A list of two hundred read capabilities would
+        be minted whether or not anybody opened a single file, and each would be
+        an audited read for a file nobody looked at. Ask
+        `adminViewUpload` for a URL per file actually shown.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: kind
+          in: query
+          required: false
+          schema: { type: string, maxLength: 40 }
+          description: |
+            The first token of a MIME type — `video`, `image`, `application`.
+            Entries with no recorded MIME type are excluded when this is set:
+            "the videos" must not contain a file nobody could describe.
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 60 }
+          description: |
+            Bounded because this is a picker, not an export. The answer to a
+            customer with five hundred files is a search box, not a bigger page.
+      responses:
+        "200":
+          description: The customer's files, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MediaAsset" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429":
+          description: Too many requests too quickly.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
   /admin/courses/{slug}/uploads:
     post:
       tags: [admin]
@@ -5538,6 +5592,56 @@ components:
           format: date-time
           description: After this the signature is refused and a new one is needed.
 
+    MediaAsset:
+      type: object
+      required: [id, reference, fileName, mimeType, byteSize, title, altText, createdAt]
+      description: |
+        One file in the customer's library. The bucket holds the bytes; this is
+        what they are for.
+      properties:
+        id:
+          type: string
+          format: uuid
+        reference:
+          type: string
+          description: |
+            The `s3://…` value to store on a content — the same string
+            `adminCompleteUpload` returned, so reusing a file is assigning this
+            to a field.
+        fileName:
+          type: string
+          description: |
+            What the author called it. A label shown only inside the customer's
+            own console; the stored key is always the name the API generated.
+        mimeType:
+          type: string
+          nullable: true
+          description: |
+            Derived from the object, never typed. Null means "not described",
+            which is legitimate for an extension we do not recognise.
+        byteSize:
+          type: integer
+          nullable: true
+        title:
+          type: string
+          nullable: true
+          description: A human title, for the person managing the file.
+        altText:
+          type: string
+          nullable: true
+          description: |
+            What a screen reader announces. Separate from `title` on purpose —
+            a title names the file for whoever is filing it, alt text describes
+            the image for somebody who cannot see it, and using one for the
+            other produces alt text that reads like a filing label.
+
+            Null means **not set**, which the console reports rather than
+            silently emitting `alt=""` — an empty alt claims the image is
+            decorative, and that is a statement somebody has to make.
+        createdAt:
+          type: string
+          format: date-time
+
     UploadCompletion:
       type: object
       required: [key]
@@ -5547,6 +5651,20 @@ components:
           minLength: 1
           maxLength: 1024
           description: The `key` from the ticket.
+        fileName:
+          type: string
+          maxLength: 255
+          description: |
+            What the file was called on the author's machine, recorded in the
+            customer's media library so a person can recognise it in a list
+            later (P81-02).
+
+            Optional. A console that sends none gets the generated key's last
+            segment in the library instead — less friendly, still true.
+
+            A **label and nothing else**. The stored key is always the name the
+            API generated; this value never reaches key generation, a path or a
+            header, and is shown only inside the customer's own console.
 
     UploadConfirmed:
       type: object

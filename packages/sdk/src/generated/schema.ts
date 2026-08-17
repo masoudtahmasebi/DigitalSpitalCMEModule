@@ -1597,6 +1597,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Everything this customer has uploaded
+         * @description The customer's media library — one entry per object stored, newest
+         *     first, so a file can be found and reused instead of uploaded a second
+         *     time under a second key.
+         *
+         *     **Not scoped to a course**, unlike every other upload route, and that is
+         *     the point: the reported cost of the course-scoped world was an
+         *     introduction video that could not be used in a second course without
+         *     uploading it again. The tenant is still the boundary — rows come back
+         *     under row-level security in the caller's customer.
+         *
+         *     **No signed URLs here.** A list of two hundred read capabilities would
+         *     be minted whether or not anybody opened a single file, and each would be
+         *     an audited read for a file nobody looked at. Ask
+         *     `adminViewUpload` for a URL per file actually shown.
+         */
+        get: operations["adminListMedia"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/courses/{slug}/uploads": {
         parameters: {
             query?: never;
@@ -3828,9 +3861,62 @@ export interface components {
              */
             expiresAt: string;
         };
+        /**
+         * @description One file in the customer's library. The bucket holds the bytes; this is
+         *     what they are for.
+         */
+        MediaAsset: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description The `s3://…` value to store on a content — the same string
+             *     `adminCompleteUpload` returned, so reusing a file is assigning this
+             *     to a field.
+             */
+            reference: string;
+            /**
+             * @description What the author called it. A label shown only inside the customer's
+             *     own console; the stored key is always the name the API generated.
+             */
+            fileName: string;
+            /**
+             * @description Derived from the object, never typed. Null means "not described",
+             *     which is legitimate for an extension we do not recognise.
+             */
+            mimeType: string | null;
+            byteSize: number | null;
+            /** @description A human title, for the person managing the file. */
+            title: string | null;
+            /**
+             * @description What a screen reader announces. Separate from `title` on purpose —
+             *     a title names the file for whoever is filing it, alt text describes
+             *     the image for somebody who cannot see it, and using one for the
+             *     other produces alt text that reads like a filing label.
+             *
+             *     Null means **not set**, which the console reports rather than
+             *     silently emitting `alt=""` — an empty alt claims the image is
+             *     decorative, and that is a statement somebody has to make.
+             */
+            altText: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
         UploadCompletion: {
             /** @description The `key` from the ticket. */
             key: string;
+            /**
+             * @description What the file was called on the author's machine, recorded in the
+             *     customer's media library so a person can recognise it in a list
+             *     later (P81-02).
+             *
+             *     Optional. A console that sends none gets the generated key's last
+             *     segment in the library instead — less friendly, still true.
+             *
+             *     A **label and nothing else**. The stored key is always the name the
+             *     API generated; this value never reaches key generation, a path or a
+             *     header, and is shown only inside the customer's own console.
+             */
+            fileName?: string;
         };
         /**
          * @description What object storage reports, not what the client declared — the two
@@ -7860,6 +7946,79 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    adminListMedia: {
+        parameters: {
+            query?: {
+                /**
+                 * @description The first token of a MIME type — `video`, `image`, `application`.
+                 *     Entries with no recorded MIME type are excluded when this is set:
+                 *     "the videos" must not contain a file nobody could describe.
+                 */
+                kind?: string;
+                /**
+                 * @description Bounded because this is a picker, not an export. The answer to a
+                 *     customer with five hundred files is a search box, not a bigger page.
+                 */
+                limit?: number;
+            };
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The customer's files, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaAsset"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many requests too quickly. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     adminBeginUpload: {

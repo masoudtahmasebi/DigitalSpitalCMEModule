@@ -62,6 +62,27 @@ import { Button, LockIcon } from "./primitives.js";
 const CONTENT_TABS = ["summary", "quiz", "reporting"] as const;
 type ContentTab = (typeof CONTENT_TABS)[number];
 
+/**
+ * Which tabs this course actually has (P82-03).
+ *
+ * A course without a Lernerfolgskontrolle used to render the tab anyway,
+ * padlocked, forever — reported as *"if a module does not have erfolgs
+ * controlle, it should not appear"*. The padlock says "not yet", and for a
+ * course with no quiz content there is no yet: nothing will ever unlock it.
+ *
+ * That is the same judgement the module header already records for
+ * **Zur Teilprüfung**, which is deliberately not drawn because the feature does
+ * not exist — *"the learner would wait for something that is never going to
+ * unlock"*. The reasoning was written down and then not applied to the case
+ * beside it (CLAUDE.md §9.2).
+ *
+ * The Punktemeldung tab follows it: with no Lernerfolgskontrolle there is no
+ * `quizPassed` to reach, so the tab could only ever be locked as well.
+ */
+function tabsFor(hasQuiz: boolean): readonly ContentTab[] {
+  return hasQuiz ? CONTENT_TABS : CONTENT_TABS.filter((tab) => tab === "summary");
+}
+
 export function PlayerScreen(props: {
   client: ApiClient;
   courseSlug: string;
@@ -294,6 +315,7 @@ export function PlayerScreen(props: {
         tab={tab}
         onTab={setTab}
         lesson={lesson}
+        tabs={tabsFor(quiz !== undefined)}
         quizLocked={quiz === undefined || quiz.gate === "locked"}
         reportingLocked={!state.quizPassed}
         onQuiz={quizOpen}
@@ -307,6 +329,8 @@ function ContentTabs(props: {
   tab: ContentTab;
   onTab: (tab: ContentTab) => void;
   lesson: LessonContent;
+  /** The tabs this course has — see `tabsFor`. */
+  tabs: readonly ContentTab[];
   quizLocked: boolean;
   reportingLocked: boolean;
   onQuiz: (() => void) | undefined;
@@ -325,7 +349,7 @@ function ContentTabs(props: {
         aria-label={de.player.tabsLabel}
         className="flex flex-wrap gap-2"
       >
-        {CONTENT_TABS.map((entry) => (
+        {props.tabs.map((entry) => (
           <button
             key={entry}
             type="button"

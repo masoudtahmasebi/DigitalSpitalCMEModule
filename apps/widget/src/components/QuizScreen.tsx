@@ -54,14 +54,29 @@ export function QuizScreen(props: {
   onPassed: () => void;
   onBack: () => void;
   /**
-   * The passed screen's **CME-Punkte geltend machen** (layout 12.3).
+   * The passed screen's **CME-Punkte geltend machen** (layout 12.3), or
+   * `undefined` when the course is not finished yet (P82-01).
    *
    * The parent decides where that leads — the evaluation if it is still
    * outstanding, otherwise the Punktemeldung. This screen knows the learner
    * asked; it does not know what else the course still wants, and `App` reads
    * that from `EnrolmentState`, which is the server's.
+   *
+   * **`undefined` is the case that was missing.** The button used to be drawn
+   * on every passed quiz, and a course can hold more than one — so passing a
+   * quiz two modules in led to the EFN form and a 409 naming the modules still
+   * unwatched. The parent now passes a callback only when `courseComplete`
+   * says the API would accept it (CLAUDE.md §9.2).
    */
-  onClaimPoints: () => void;
+  onClaimPoints: (() => void) | undefined;
+  /**
+   * The next section the server has open, when the course is not finished.
+   *
+   * Without it the passed screen has nothing to offer but "back to the
+   * overview", which is how a learner ends up hunting for their place in a
+   * five-module course by hand.
+   */
+  onNext: { readonly title: string; readonly open: () => void } | undefined;
 }) {
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [phase, setPhase] = useState<Phase>({ kind: "intro" });
@@ -124,6 +139,7 @@ export function QuizScreen(props: {
         }}
         onBack={props.onBack}
         onClaimPoints={props.onClaimPoints}
+        onNext={props.onNext}
       />
     );
   }
@@ -392,7 +408,8 @@ function QuizResult(props: {
   attempt: QuizAttemptResult;
   onRetry: () => void;
   onBack: () => void;
-  onClaimPoints: () => void;
+  onClaimPoints: (() => void) | undefined;
+  onNext: { readonly title: string; readonly open: () => void } | undefined;
 }) {
   const { attempt } = props;
   const needed = minimumCorrectAnswers(attempt.totalCount, attempt.passThresholdPercent);
@@ -456,11 +473,34 @@ function QuizResult(props: {
       ) : null}
 
       {attempt.passed ? (
-        <div className="flex justify-center">
-          <Button variant="cta" onClick={props.onClaimPoints}>
-            {de.quiz.claim}
-            <span aria-hidden="true">→</span>
-          </Button>
+        /*
+         * Passed — and what follows depends on whether the *course* is
+         * finished, not on whether this quiz is (P82-01).
+         *
+         * `onClaimPoints` is defined only when the API would accept a
+         * completion. When it is not, offering it anyway is a control that can
+         * only produce a 409, so the screen says where the learner actually
+         * stands and points at the next section instead.
+         */
+        <div className="flex flex-wrap items-center justify-center gap-4">
+          {props.onClaimPoints === undefined ? (
+            <>
+              <p className="w-full text-sm text-gray-700">{de.quiz.morePending}</p>
+              {props.onNext === undefined ? null : (
+                <Button variant="cta" onClick={props.onNext.open}>
+                  {de.player.nextSection(props.onNext.title)}
+                </Button>
+              )}
+              <Button variant="secondary" onClick={props.onBack}>
+                {de.player.back}
+              </Button>
+            </>
+          ) : (
+            <Button variant="cta" onClick={props.onClaimPoints}>
+              {de.quiz.claim}
+              <span aria-hidden="true">→</span>
+            </Button>
+          )}
         </div>
       ) : (
         <div className="flex flex-wrap items-start justify-center gap-4">

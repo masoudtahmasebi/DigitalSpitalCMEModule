@@ -56,6 +56,7 @@ import {
 import { useLoaded, useSaver } from "../hooks.js";
 import { probeableSourceUrl, probeDurationSec } from "../media-duration.js";
 import { readableUrl } from "../media-preview.js";
+import { capturePosterFrame } from "../poster-frame.js";
 import {
   Button,
   ConfirmButton,
@@ -716,12 +717,10 @@ function ContentForm(props: {
               onState={setProbe}
               onChange={setDurationSec}
             />
-            <UploadField
-              label={de.structure.posterUrl}
-              hint={de.structure.posterHint}
+            <AutoPoster
               id={id("poster")}
+              sources={sources}
               value={posterUrl}
-              purpose="poster"
               client={props.client}
               courseSlug={props.courseSlug}
               onChange={setPosterUrl}
@@ -983,6 +982,104 @@ function EditForm(props: {
  * control that can only produce an error is worse than an absent one — and so
  * is an absent control that was the only way through).
  */
+/**
+ * The poster field, which fills itself from the video (P80-01).
+ *
+ * Asked for as _"the preview picture should be automatically as the first
+ * second of the video if no image is selected."_ Without one the player shows
+ * a black rectangle until the first frame decodes, which is indistinguishable
+ * from a video that failed to load.
+ *
+ * ## Only when the box is empty
+ *
+ * It never replaces a poster an author chose. The capture runs when there is a
+ * video, no poster, and no capture has been attempted for this source — and the
+ * ordinary upload field stays exactly as it was underneath, so choosing a still
+ * by hand is unchanged.
+ *
+ * ## Failure is silent on purpose
+ *
+ * `capturePosterFrame` answers `undefined` for a tainted canvas, a codec the
+ * browser cannot decode, or a source that never loads. A poster is a
+ * convenience and the field beside it still works, so a failure leaves the box
+ * empty rather than interrupting an author with an error about a thing they did
+ * not ask for. The one thing it must not do is loop: `attemptedRef` records the
+ * source it tried, so a failure is attempted once and not on every keystroke.
+ */
+function AutoPoster(props: {
+  id: string;
+  sources: readonly MediaSourceWrite[];
+  value: string;
+  client: ApiClient;
+  courseSlug: string;
+  onChange: (value: string) => void;
+}) {
+  const source = probeableSourceUrl(props.sources);
+  const { client, courseSlug, onChange, value } = props;
+  const [busy, setBusy] = useState(false);
+  const attemptedRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (source === undefined) return;
+    if (value.trim() !== "") return;
+    if (attemptedRef.current === source) return;
+    attemptedRef.current = source;
+
+    let cancelled = false;
+    setBusy(true);
+    void (async () => {
+      try {
+        // The same signed read the duration probe and the preview use — an
+        // `s3://` reference is not something a `<video>` can open.
+        const url = await readableUrl(client, courseSlug, source);
+        const frame = url === undefined ? undefined : await capturePosterFrame(url);
+        if (cancelled || frame === undefined) return;
+
+        // The ordinary upload path: same presign, same key prefix, same
+        // storage audit row. A second path for posters would be a second set
+        // of rules to keep in step.
+        const uploaded = await runUpload(
+          client,
+          courseSlug,
+          "poster",
+          frame,
+          () => {},
+          new AbortController().signal,
+        );
+        if (!cancelled) onChange(uploaded.reference);
+      } catch {
+        // Silent by design — see the header.
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [source, value, client, courseSlug, onChange]);
+
+  return (
+    <div>
+      <UploadField
+        label={de.structure.posterUrl}
+        hint={de.structure.posterHint}
+        id={props.id}
+        value={props.value}
+        purpose="poster"
+        client={client}
+        courseSlug={courseSlug}
+        onChange={onChange}
+      />
+      {busy ? (
+        <p className="mt-1 text-xs text-[color:var(--ds-ink-muted)]" role="status">
+          {de.structure.posterCapturing}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function MeasuredDuration(props: {
   id: string;
   sources: readonly MediaSourceWrite[];
@@ -1009,6 +1106,24 @@ function MeasuredDuration(props: {
    * what the probe replaced a moment later.
    */
   const storedRef = useRef(props.value);
+
+  /**
+   * The source this content had when the form opened (P80-02).
+   *
+   * Without it the notice below cannot tell two very different situations
+   * apart, and it reported the alarming one for both:
+   *
+   * - the file is unchanged and the stored length disagrees with it — the
+   *   content **was** blocking learners, which is worth a warning;
+   * - the operator has just uploaded a different file, so of course the stored
+   *   length describes the old one. Nobody was blocked; nothing is wrong.
+   *
+   * The client hit the second and read the first: „Teilnehmende konnten diesen
+   * Abschnitt nicht abschließen" immediately after uploading a new video, about
+   * a video no learner has ever seen.
+   */
+  const openedWithSource = useRef(source);
+  const sourceChangedHere = source !== openedWithSource.current;
 
   /*
    * Measured when the source changes, and only then.
@@ -1092,8 +1207,26 @@ function MeasuredDuration(props: {
         it just did, not an interruption.
       */}
       {measured && !lengthsAgree(Number(storedRef.current), Number(props.state)) ? (
-        <p className="mt-1 text-xs text-amber-700" role="status">
-          {de.structure.durationCorrected(Number(storedRef.current), Number(props.state))}
+        /*
+         * Two sentences, because they are two different facts (P80-02).
+         *
+         * Amber only for a length that disagrees with the file that was
+         * *already there* — that content really was refusing to complete.
+         * Swapping the video is an ordinary edit and gets an ordinary note:
+         * the number changed with the file, press Speichern.
+         */
+        <p
+          className={`mt-1 text-xs ${
+            sourceChangedHere ? "text-[color:var(--ds-ink-muted)]" : "text-amber-700"
+          }`}
+          role="status"
+        >
+          {sourceChangedHere
+            ? de.structure.durationFollowedNewFile(Number(props.state))
+            : de.structure.durationCorrected(
+                Number(storedRef.current),
+                Number(props.state),
+              )}
         </p>
       ) : null}
     </Field>

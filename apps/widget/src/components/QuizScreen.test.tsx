@@ -57,9 +57,22 @@ function clientReturning(result: QuizAttemptResult) {
 
 function renderQuiz(
   result: QuizAttemptResult,
-  handlers: Partial<{ onClaimPoints: () => void; onBack: () => void }> = {},
+  handlers: Partial<{
+    /**
+     * `null` means "the course is not complete" — the prop is
+     * `(() => void) | undefined`, and `undefined` here cannot express that
+     * because it is also what "the caller did not override this" looks like.
+     */
+    onClaimPoints: (() => void) | null;
+    onBack: () => void;
+    onNext: { title: string; open: () => void };
+  }> = {},
 ) {
   const { client, submitQuiz } = clientReturning(result);
+  const claim =
+    handlers.onClaimPoints === undefined
+      ? () => undefined
+      : (handlers.onClaimPoints ?? undefined);
   render(
     <QuizScreen
       client={client}
@@ -67,7 +80,8 @@ function renderQuiz(
       quiz={QUIZ}
       onPassed={() => undefined}
       onBack={handlers.onBack ?? (() => undefined)}
-      onClaimPoints={handlers.onClaimPoints ?? (() => undefined)}
+      onClaimPoints={claim}
+      onNext={handlers.onNext}
     />,
   );
   return { submitQuiz };
@@ -171,6 +185,54 @@ describe("the result", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /CME-Punkte geltend machen/ }));
     expect(onClaimPoints).toHaveBeenCalledTimes(1);
+  });
+
+  it("passed but the course is not finished: no claim, the next section instead", async () => {
+    /*
+     * The 409 (P82-01).
+     *
+     * A course holds one Lernerfolgskontrolle per the engine, but a learner
+     * reaches it with modules still unwatched — and this screen offered
+     * **CME-Punkte geltend machen** on every pass regardless. Following it saved
+     * an EFN and then took a 409 naming the video still to watch.
+     *
+     * The parent decides, from the server's `courseComplete`, by passing no
+     * callback. What must not happen is the button appearing anyway.
+     */
+    const open = vi.fn();
+    renderQuiz(attempt({ passed: true }), {
+      onClaimPoints: null,
+      onNext: { title: "Pharmakotherapie", open },
+    });
+
+    await answerEverything();
+
+    expect(screen.getByText("Abschlussprüfung bestanden!")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /CME-Punkte geltend machen/ }),
+    ).toBeNull();
+
+    // And it says so, rather than leaving a passed exam with no explanation of
+    // why the points are not on offer (§9.4).
+    expect(screen.getByText(/fehlen noch Abschnitte/u)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Weiter: Pharmakotherapie/ }));
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it("passed, course unfinished, nothing open: still says why, and offers the way back", async () => {
+    // The last section of a course whose gate is not satisfiable leaves no
+    // "next". A screen with a passed exam and no sentence at all would read as
+    // a broken page.
+    renderQuiz(attempt({ passed: true }), { onClaimPoints: null });
+
+    await answerEverything();
+
+    expect(
+      screen.queryByRole("button", { name: /CME-Punkte geltend machen/ }),
+    ).toBeNull();
+    expect(screen.getByText(/fehlen noch Abschnitte/u)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Zurück zur Übersicht/ })).toBeTruthy();
   });
 
   it("failed: says how many were needed, and offers another attempt", async () => {

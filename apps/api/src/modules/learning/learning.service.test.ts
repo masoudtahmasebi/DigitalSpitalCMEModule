@@ -480,6 +480,76 @@ describe("recordProgress", () => {
     expect(written[0]?.["watchedSegments"]).toEqual([{ startSec: 0, endSec: 200 }]);
   });
 
+  it("marks a video done at the course's own requirement, not at a hidden 100", async () => {
+    /*
+     * P82-05, and the report behind it: *"i have watched the video, but still
+     * other modules are not available."*
+     *
+     * `status` was `percent >= 100`, unconditionally. That is a second watch
+     * threshold — stricter than the one the course declares, configured by
+     * nobody, displayed nowhere — and it is the one that decides whether the
+     * next section unlocks, because `evaluateSequence` reads exactly this
+     * field. A course asking 80 % therefore let a physician satisfy its own
+     * gate and still refused to open the module after it.
+     *
+     * 480 of 600 s is 80 %: the requirement exactly, which is the boundary
+     * that has to be inclusive.
+     */
+    const { repository, written } = fakeRepository({
+      enrolment: { ...enrolment, requiredWatchPercent: 80 },
+    });
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      { segments: [{ startSec: 0, endSec: 480 }] },
+      learner,
+      now,
+    );
+
+    expect(result.watchedPercent).toBe(80);
+    expect(result.status).toBe("completed");
+    expect(written[0]?.["status"]).toBe("completed");
+  });
+
+  it("still withholds completion one percent short of the requirement", async () => {
+    // The control for the case above: if this also said "completed", the
+    // assertion there would be passing on a rule that never refuses anything.
+    const { repository } = fakeRepository({
+      enrolment: { ...enrolment, requiredWatchPercent: 80 },
+    });
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      { segments: [{ startSec: 0, endSec: 474 }] },
+      learner,
+      now,
+    );
+
+    expect(result.watchedPercent).toBe(79);
+    expect(result.status).toBe("in_progress");
+  });
+
+  it("does not call an untouched video complete on a course requiring 0 %", async () => {
+    // `0 >= 0` would put a green check on every section of a course nobody has
+    // opened, and report it as fully watched.
+    const { repository } = fakeRepository({
+      enrolment: { ...enrolment, requiredWatchPercent: 0 },
+    });
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      { segments: [] },
+      learner,
+      now,
+    );
+
+    expect(result.watchedPercent).toBe(0);
+    expect(result.status).toBe("not_started");
+  });
+
   it("ignores any percentage the client might try to assert", async () => {
     const { repository } = fakeRepository();
 

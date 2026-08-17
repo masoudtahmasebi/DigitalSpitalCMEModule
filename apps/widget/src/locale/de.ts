@@ -553,6 +553,15 @@ export const de = {
     pause: "Fortbildung pausieren",
     pauseHint: "Prüfung zu einem späteren Zeitpunkt fortsetzen",
     claim: "CME-Punkte geltend machen",
+    /**
+     * Passed, but the course is not finished (P82-01).
+     *
+     * The screen used to offer "CME-Punkte geltend machen" here regardless,
+     * which ended in a 409 from an API that was right. Saying what remains is
+     * the honest version, and the button beside it is the way on.
+     */
+    morePending:
+      "Diese Lernerfolgskontrolle ist bestanden. Für die CME-Punkte fehlen noch Abschnitte der Fortbildung.",
     /** No points to claim, so the passed screen offers the way onwards instead. */
     claimWithoutPoints: "Fortbildung abschließen",
 
@@ -659,6 +668,17 @@ export const de = {
     submitting: "Wird übermittelt …",
     done: "Ihre Fortbildung ist abgeschlossen. Die Punkte werden an die Ärztekammer gemeldet.",
     outstanding: "Es fehlt noch:",
+    /**
+     * Why the button below it is inactive, and what to do instead (P82-01).
+     *
+     * The list alone was already there, and the submit button beside it was
+     * live — so the sentence read as information rather than as the reason the
+     * next step was unavailable. Now that the button is correctly disabled, an
+     * unexplained dead control is the new failure (§9.4): say why at the point
+     * somebody looks for it.
+     */
+    outstandingHint:
+      "Sobald das erledigt ist, können Sie Ihre Daten hier übermitteln. Über „Zurück zur Übersicht“ gelangen Sie zurück zur Fortbildung.",
     conditions: {
       watch: "die vollständige Videowiedergabe",
       quiz: "die Lernerfolgskontrolle",

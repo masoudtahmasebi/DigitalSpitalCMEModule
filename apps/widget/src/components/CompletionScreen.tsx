@@ -124,11 +124,40 @@ export function CompletionScreen(props: {
     };
   }, [client, state.efnPresent]);
 
+  /*
+   * What is still holding the *course* back, in the learner's words.
+   *
+   * The EFN is excluded because this form is where it is supplied — listing it
+   * as a blocker would tell somebody they cannot submit the field they are
+   * currently typing into.
+   *
+   * Declared here rather than beside its first use in the markup, because
+   * `ready` below now depends on it and a `const` read before its declaration
+   * is a ReferenceError, not a warning.
+   */
+  const blockers = state.outstanding.filter((condition) => condition !== "efn");
+
   const ready =
     givenName.trim() !== "" &&
     familyName.trim() !== "" &&
     (!efnNeeded || efnValid) &&
-    (!consentAvailable || consented);
+    (!consentAvailable || consented) &&
+    /*
+     * And the course itself has to be finished (P82-01).
+     *
+     * `blockers` was already computed and already rendered as a sentence — and
+     * the button beside it was live anyway. Pressing it saved the EFN, asked
+     * the API to complete the course, and got the 409 the API is right to
+     * raise: *"Es fehlt noch: die vollständige Videowiedergabe, die
+     * Lernerfolgskontrolle."* The learner had just been told exactly that, one
+     * line higher, in orange.
+     *
+     * So the screen said the true thing and then offered the impossible one.
+     * That is CLAUDE.md §9.2: a control that can only produce an error is
+     * worse than an absent one, because it reads as a decision the person is
+     * allowed to make.
+     */
+    blockers.length === 0;
 
   /*
    * A correction is sent on its own, before the completion.
@@ -199,8 +228,6 @@ export function CompletionScreen(props: {
       </p>
     );
   }
-
-  const blockers = state.outstanding.filter((condition) => condition !== "efn");
 
   return (
     <div className="space-y-6">
@@ -376,10 +403,13 @@ export function CompletionScreen(props: {
       </div>
 
       {blockers.length > 0 ? (
-        <p className="text-sm text-status-inProgress">
-          {de.completion.outstanding}{" "}
-          {blockers.map((condition) => de.completion.conditions[condition]).join(", ")}.
-        </p>
+        <div className="text-sm text-status-inProgress" role="status">
+          <p>
+            {de.completion.outstanding}{" "}
+            {blockers.map((condition) => de.completion.conditions[condition]).join(", ")}.
+          </p>
+          <p className="mt-1">{de.completion.outstandingHint}</p>
+        </div>
       ) : null}
 
       {problem === undefined ? null : (

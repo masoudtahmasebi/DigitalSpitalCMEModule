@@ -250,11 +250,44 @@ export class LearningService {
     const merged = mergeWatchedSegments([...previousSegments, ...validation.accepted]);
     const percent = watchedPercent(merged, content.durationSec);
 
-    // A video counts as done at full coverage. The course-level requirement
-    // (which may be lower) is applied by the completion gate, not here — this
-    // status is about this one video.
+    /*
+     * A video counts as done at the coverage **the course asks for** (P82-05).
+     *
+     * This was `percent >= 100`, with a comment reasoning that the
+     * course-level requirement is applied by the completion gate and that
+     * "this status is about this one video". The first half is true. The
+     * second is not: `status` is what `evaluateSequence` reads to decide
+     * whether the *next* content unlocks, and what `rollupProgress` counts —
+     * so a hard 100 here is a second watch threshold, stricter than the one
+     * the course declares, that no operator configured and nothing displays.
+     *
+     * What that cost: a course set to 80 %, a video credited 95 %, and a
+     * physician who had watched it end to end with a green course gate, an
+     * unlocked Lernerfolgskontrolle — and no way to reach the next module,
+     * because the section behind them never turned "completed". Reported as
+     * *"i have watched the video, but still other modules are not available.
+     * the flow of learner is really very broken."*
+     *
+     * This is not a loosening of the CME gate. The point still depends on
+     * `courseWatchCoverage` measured against `requiredWatchPercent` across the
+     * whole course, computed in `deriveState` and untouched here. It removes a
+     * stricter *undeclared* rule, so the number that governs progress is the
+     * number the course says it is. Where a course does require 100 — as the
+     * MEDICE one does — nothing about this changes.
+     *
+     * From the enrolment's snapshot rather than the live course, like every
+     * other read of this figure: re-accrediting a course must not change what
+     * was asked of somebody already part-way through it.
+     *
+     * At least one percent, whatever the course says. A course configured to
+     * require 0 % means "watching is not what gates this", not "every video is
+     * finished before anybody opens it" — and without the floor, `0 >= 0`
+     * would put a green check on every section of an untouched course and
+     * report it as fully watched.
+     */
+    const required = Math.max(1, enrolment.requiredWatchPercent);
     const status =
-      percent >= 100 ? "completed" : percent > 0 ? "in_progress" : "not_started";
+      percent >= required ? "completed" : percent > 0 ? "in_progress" : "not_started";
 
     await this.repository.upsertProgress({
       customerId: learner.customerId,
