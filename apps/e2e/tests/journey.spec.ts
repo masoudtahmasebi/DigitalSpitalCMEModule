@@ -383,10 +383,30 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         );
       }
 
-      // The format the bucket actually stored it as, not what the picker said.
+      /*
+       * The type is **derived and not asked for** (P79-01, corrected P86-02).
+       *
+       * This used to assert a "Format" dropdown held `video/webm`. P79-01
+       * removed that control — reported as *"there is no need to set the type
+       * anywhere"* — and the assertion stayed, so the first run that reached
+       * this line failed on a control the product deliberately no longer has.
+       *
+       * That it survived is the §9.1 lesson in a new place: the journey is the
+       * check that would have caught it, and it does not run on a branch. The
+       * post-deploy run is the *first* time these lines execute after a change
+       * to the form, which makes a stale assertion here uniquely expensive —
+       * it fails after the code is already on the server.
+       *
+       * What is asserted instead is the fact the dropdown was standing in for:
+       * the upload produced a stored source. Whether its type is right is
+       * proved further down, where the physician's browser plays the file —
+       * which is the only evidence that actually matters and cannot be faked by
+       * a form field.
+       */
       await expect(
-        operator.getByRole("combobox", { name: "Format" }).first(),
-      ).toHaveValue("video/webm");
+        operator.getByText(/Hochgeladen · .*\.webm/u).first(),
+        "the upload did not become a stored source on the form",
+      ).toBeVisible();
 
       /*
        * The length, measured **by itself** (P74-04, P75-01).
