@@ -829,6 +829,26 @@ export const de = {
   },
 
   /** Texte — the customer's own words for the learner's screens (P83-04). */
+  /** The Mediathek picker (P81-03). */
+  media: {
+    title: "Mediathek",
+    open: "Aus Mediathek wählen",
+    close: "Schließen",
+    intro:
+      "Alle Dateien, die für diesen Kunden hochgeladen wurden. Wählen Sie eine aus, statt dieselbe Datei erneut hochzuladen.",
+    empty:
+      "Für diesen Kunden wurde noch keine Datei hochgeladen. Sobald Sie etwas hochladen, erscheint es hier und kann in weiteren Fortbildungen verwendet werden.",
+    unknownType: "Dateityp unbekannt",
+    assetTitle: "Titel",
+    assetAlt: "Alternativtext",
+    altHint:
+      "Der Titel benennt die Datei für Sie in dieser Liste. Der Alternativtext beschreibt das Bild für Menschen, die es nicht sehen können — er wird von Screenreadern vorgelesen und ist für die Barrierefreiheit (WCAG 1.1.1) erforderlich. Bleibt er leer, gilt er als nicht gesetzt.",
+    use: "Diese Datei verwenden",
+    forget: "Aus Mediathek entfernen",
+    forgetHint:
+      "Entfernen löscht nur den Eintrag aus dieser Liste — die Datei selbst bleibt im Dateispeicher erhalten. Solange eine Fortbildung die Datei noch verwendet, wird das Entfernen abgelehnt.",
+  },
+
   copy: {
     nav: "Texte",
     intro:

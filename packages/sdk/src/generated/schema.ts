@@ -1630,6 +1630,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/media/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a file from the library
+         * @description Forgets the library entry. **The object in storage is untouched.**
+         *
+         *     Deliberately: an object may be referenced by a course this tenant can
+         *     see and by an archived certificate it cannot, and destroying bytes goes
+         *     through the erasure path with its own audit trail and retention rules
+         *     (ADR-0004). A convenience screen must not be a second, quieter way to
+         *     destroy a physician's course material.
+         *
+         *     **Refused with 409 while any course content still points at the file.**
+         *     The content would keep rendering it — the object is still there — while
+         *     the operator lost the only place it is listed and described, having been
+         *     told it was deleted. The refusal says how many contents are involved.
+         */
+        delete: operations["adminForgetMedia"];
+        options?: never;
+        head?: never;
+        /**
+         * Give a file a title and alt text
+         * @description `title` names the file for whoever is filing it; `altText` is what a
+         *     screen reader announces. Separate fields on purpose — using one for the
+         *     other produces alt text that reads like a filing label, which satisfies
+         *     an automated check and helps nobody.
+         *
+         *     Blank means **not set** and is stored as null. An empty `alt` attribute
+         *     claims the image is decorative, and that is a statement an author makes
+         *     deliberately rather than by leaving a box empty.
+         */
+        patch: operations["adminDescribeMedia"];
+        trace?: never;
+    };
     "/admin/courses/{slug}/uploads": {
         parameters: {
             query?: never;
@@ -3889,6 +3931,14 @@ export interface components {
              * @description After this the signature is refused and a new one is needed.
              */
             expiresAt: string;
+        };
+        /**
+         * @description Both optional, both bounded. Blank is meaningful — it means "not set" —
+         *     so an absent field and an empty one are the same request.
+         */
+        MediaDescribe: {
+            title?: string;
+            altText?: string;
         };
         /**
          * @description One file in the customer's library. The bucket holds the bytes; this is
@@ -8048,6 +8098,146 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+        };
+    };
+    adminForgetMedia: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Forgotten. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /** @description No such file in this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Still referenced by at least one course content. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    adminDescribeMedia: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MediaDescribe"];
+            };
+        };
+        responses: {
+            /** @description The updated entry. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaAsset"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /**
+             * @description No such file in this tenant. A file belonging to another customer
+             *     gets this same answer — distinguishing the two would confirm that
+             *     somebody else's file exists.
+             */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
         };
     };
     adminBeginUpload: {

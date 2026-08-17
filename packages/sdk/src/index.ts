@@ -111,6 +111,7 @@ export type UploadTicket = components["schemas"]["UploadTicket"];
 export type UploadConfirmed = components["schemas"]["UploadConfirmed"];
 export type UploadView = components["schemas"]["UploadView"];
 export type MediaAsset = components["schemas"]["MediaAsset"];
+export type MediaDescribe = components["schemas"]["MediaDescribe"];
 export type StructureOrder = components["schemas"]["StructureOrder"];
 export type ExpertsWrite = components["schemas"]["ExpertsWrite"];
 export type AuthoringQuiz = components["schemas"]["AuthoringQuiz"];
@@ -835,6 +836,18 @@ export function createClient(options: ClientOptions) {
       const suffix = query.toString();
       return request(`/admin/media${suffix === "" ? "" : `?${suffix}`}`);
     },
+
+    /** A human title and the alt text a screen reader announces (P81-03). */
+    adminDescribeMedia: (id: string, input: MediaDescribe): Promise<MediaAsset> =>
+      request(`/admin/media/${seg(id)}`, json(input, "PATCH")),
+
+    /**
+     * Forget a library entry. The object in storage is untouched.
+     *
+     * Refused with 409 while any course content still points at the file.
+     */
+    adminForgetMedia: (id: string): Promise<void> =>
+      request(`/admin/media/${seg(id)}`, { method: "DELETE" }),
 
     /**
      * Turn a stored `s3://` reference back into something a browser can fetch.

@@ -31,10 +31,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Inject,
   Param,
+  Patch,
   Post,
   Query,
 } from "@nestjs/common";
@@ -50,6 +52,7 @@ import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { objectStorageFor } from "../../shared/object-storage.factory.js";
 import {
+  mediaDescribeSchema,
   mediaListSchema,
   uploadBeginSchema,
   uploadCompleteSchema,
@@ -91,6 +94,42 @@ export class UploadController {
     @TenantDb() db: Db,
   ) {
     return this.service(db, principal).list(parse(mediaListSchema, query, "media"));
+  }
+
+  /** A human title and the alt text a screen reader announces (P81-03). */
+  @Patch("media/:id")
+  @RateLimit("mediaUpload")
+  @Roles(...AUTHOR_ROLES)
+  async describeMedia(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    return this.service(db, principal).describe(
+      id,
+      parse(mediaDescribeSchema, body, "media"),
+      actorOf(principal),
+    );
+  }
+
+  /**
+   * Forget a file (P81-03).
+   *
+   * 204: there is nothing to return, and the console re-reads the list. The
+   * object in the bucket is untouched — see `UploadService.forget` for why a
+   * convenience screen is not a second path to destroying course material.
+   */
+  @Delete("media/:id")
+  @HttpCode(204)
+  @RateLimit("mediaUpload")
+  @Roles(...AUTHOR_ROLES)
+  async forgetMedia(
+    @Param("id") id: string,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    await this.service(db, principal).forget(id, actorOf(principal));
   }
 
   @Post("courses/:slug/uploads")

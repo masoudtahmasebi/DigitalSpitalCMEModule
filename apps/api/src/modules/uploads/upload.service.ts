@@ -44,6 +44,7 @@ import { keyBelongsToCustomer, storageKeyOf } from "@ds/domain";
 import type { StorageAuditPort, UploadRepositoryPort } from "./upload.repository.js";
 import type {
   MediaAssetResponse,
+  MediaDescribe,
   MediaList,
   UploadBegin,
   UploadComplete,
@@ -342,6 +343,103 @@ export class UploadService {
       altText: row.altText,
       createdAt: row.createdAt.toISOString(),
     }));
+  }
+
+  /**
+   * Give a file a human title and alt text (P81-03).
+   *
+   * The two are separate fields on purpose and the console says so: a title
+   * names the file for whoever is filing it ("Intro Modul 1"), alt text
+   * describes the image for somebody who cannot see it. Using one for the other
+   * produces alt text that reads like a filing label, which passes an automated
+   * check and helps nobody.
+   *
+   * Blank means **not set**, stored as null rather than `""`. An empty `alt`
+   * attribute is a claim that the image is decorative, and that is a statement
+   * an author has to make deliberately rather than by leaving a box empty.
+   */
+  async describe(
+    id: string,
+    input: MediaDescribe,
+    actor: UploadActor,
+  ): Promise<MediaAssetResponse> {
+    const blankToNull = (value: string | undefined): string | null => {
+      const trimmed = (value ?? "").trim();
+      return trimmed === "" ? null : trimmed;
+    };
+
+    const found = await this.repository.describeAsset(
+      id,
+      blankToNull(input.title),
+      blankToNull(input.altText),
+    );
+    if (!found) throw this.unknownAsset();
+
+    const row = await this.repository.findAsset(id);
+    if (row === undefined) throw this.unknownAsset();
+    void actor;
+
+    return {
+      id: row.id,
+      reference: row.storageKey,
+      fileName: row.fileName,
+      mimeType: row.mimeType,
+      byteSize: row.byteSize,
+      title: row.title,
+      altText: row.altText,
+      createdAt: row.createdAt.toISOString(),
+    };
+  }
+
+  /**
+   * Remove a file from the library (P81-03).
+   *
+   * ## Refused while anything still points at it
+   *
+   * A course content holding this reference would keep rendering it — the
+   * object is still in the bucket — but the operator would have lost the only
+   * place the file is listed, described and findable. Worse, they would have
+   * been told it was deleted. So the count is checked first and the refusal
+   * names how many contents are involved, which is what somebody needs to go
+   * and unpick it.
+   *
+   * ## Why the object itself is not deleted
+   *
+   * This forgets the library entry, not the bytes. Two reasons, and the second
+   * decides it: an object may be referenced by a course this tenant can see and
+   * by an archived certificate it cannot, and object deletion on this platform
+   * goes through `object_erasures` with its own audit trail and its own
+   * retention rules (P23-02, ADR-0004). A convenience screen must not become a
+   * second, quieter path to destroying a physician's course material.
+   *
+   * The console says so rather than implying the file is gone.
+   */
+  async forget(id: string, actor: UploadActor): Promise<void> {
+    const row = await this.repository.findAsset(id);
+    if (row === undefined) throw this.unknownAsset();
+
+    const uses = await this.repository.countAssetUses(row.storageKey);
+    if (uses > 0) {
+      throw new AppError(
+        "conflict",
+        `media asset=${id} still referenced by ${uses} content(s)`,
+        `Diese Datei wird noch in ${uses} ${
+          uses === 1 ? "Inhalt" : "Inhalten"
+        } verwendet. Bitte entfernen Sie sie dort zuerst.`,
+      );
+    }
+
+    await this.repository.forgetAsset(id);
+    void actor;
+  }
+
+  private unknownAsset(): AppError {
+    /*
+     * The same answer for "no such id" and "belongs to another customer"
+     * (§9.5). Distinguishing them would confirm that somebody else's file
+     * exists, which is more than the refusal needs to say.
+     */
+    return AppError.notFound("media asset not visible in tenant");
   }
 
   /**

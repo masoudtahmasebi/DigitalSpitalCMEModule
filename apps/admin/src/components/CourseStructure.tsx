@@ -43,6 +43,7 @@ import type {
   MediaSourceWrite,
 } from "@ds/sdk";
 import { lengthsAgree, mimeTypeForUrl } from "@ds/domain";
+import { MediaPicker } from "./MediaPicker.js";
 import { MediaCheckPanel } from "./MediaCheck.js";
 import { de } from "../locale/de.js";
 import { nullable, swap } from "../drafts.js";
@@ -1247,6 +1248,7 @@ function SourcesEditor(props: {
   >({ kind: "idle" });
   const filePicker = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | undefined>(undefined);
+  const [libraryOpen, setLibraryOpen] = useState(false);
 
   const patch = (index: number, change: Partial<MediaSourceWrite>) =>
     props.onChange(
@@ -1329,6 +1331,27 @@ function SourcesEditor(props: {
         </p>
       )}
 
+      {!libraryOpen ? null : (
+        <MediaPicker
+          client={props.client}
+          kind="video"
+          onPick={(reference) => {
+            /*
+             * Appended as a new source rather than replacing the first, for the
+             * same reason "Videoquelle hinzufügen" exists: a course can carry
+             * several renditions of one recording, and silently overwriting the
+             * one already there would lose an author's work with no undo.
+             */
+            props.onChange([
+              ...props.sources,
+              { url: reference, mimeType: mimeTypeForUrl(reference) ?? "", label: null },
+            ]);
+            setLibraryOpen(false);
+          }}
+          onClose={() => setLibraryOpen(false)}
+        />
+      )}
+
       <input
         ref={filePicker}
         type="file"
@@ -1381,6 +1404,18 @@ function SourcesEditor(props: {
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" onClick={() => filePicker.current?.click()}>
             {de.uploads.videoUpload}
+          </Button>
+          {/*
+            The other half of "upload" (P81-03).
+            
+            Beside the upload button rather than on a page of its own, because a
+            Mediathek you have to visit, copy a reference out of and paste back
+            here is the same remembering with extra steps — and remembering was
+            the problem. Picking assigns the reference exactly as finishing an
+            upload does, so both paths end in the same place.
+          */}
+          <Button variant="secondary" onClick={() => setLibraryOpen(true)}>
+            {de.media.open}
           </Button>
           <Button
             variant="secondary"
