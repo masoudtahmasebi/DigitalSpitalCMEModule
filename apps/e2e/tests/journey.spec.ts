@@ -119,7 +119,17 @@ const EFN = "123456789012345";
  * for. So the course is accredited, and the number is one the Ärztekammer has
  * not issued to anybody.
  *
- * What stops that becoming a Punktemeldung is `assertReportingIsOff` below.
+ * What stops that becoming a Punktemeldung to a real Ärztekammer is **not in
+ * this file**, and the previous version of this sentence said it was — it named
+ * an `assertReportingIsOff` "below" that has never existed. Somebody auditing
+ * "what stops this?" would have looked for a function, not found one, and had
+ * to choose between assuming it was handled and writing a second copy. A
+ * comment naming a safety mechanism that is not there is worse than no comment
+ * (§9.3).
+ *
+ * The real guard is `scripts/run-smoke.mjs`, which refuses to start at all when
+ * `EIV_ALLOW_LIVE` is set, and says why. It covers every spec in the run rather
+ * than this one, which is the right level for it.
  */
 const FIXTURE_VNR = "2760000000000000000";
 

@@ -33,7 +33,21 @@ import { defineConfig, devices } from "@playwright/test";
 // eslint-disable-next-line no-restricted-syntax -- Playwright loads these by default export
 export default defineConfig({
   testDir: "./tests",
-  testMatch: /journey\.spec\.ts$/u,
+  /*
+   * Both journeys, against the installation (P88-04).
+   *
+   * `journey.spec.ts` walks one module with one exam — MEDICE's accredited
+   * shape. `zwei-module.spec.ts` walks an exam on every module, which is the
+   * shape the client asked for in P87 and the one whose gate is new. §9.13's
+   * rule is that the deploy runs the same spec the rig runs; a new journey that
+   * only ever ran locally would be the half of that rule nobody applied.
+   *
+   * It costs about fifty seconds and leaves one more course on the DS Test
+   * tenant, which keeps its data on purpose. The `EIV_ALLOW_LIVE` refusal in
+   * `run-smoke.mjs` covers both, so neither can queue a Punktemeldung against
+   * an installation that reports live.
+   */
+  testMatch: /(journey|zwei-module)\.spec\.ts$/u,
   fullyParallel: false,
   workers: 1,
   forbidOnly: true,
