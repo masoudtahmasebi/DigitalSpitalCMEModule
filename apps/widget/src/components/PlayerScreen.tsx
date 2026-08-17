@@ -29,14 +29,21 @@
  * actually showing and keeps the layout's word. If MEDICE confirms a different
  * quantity, one locale entry and one prop change.
  *
- * ## What is not here
+ * ## The Lernerfolgskontrolle is this module's (P87)
  *
- * **Zur Teilprüfung.** The layout has it, locked, with "Wird nach Modul 3
- * freigeschaltet". A Teilprüfung is a *per-module* assessment and is explicitly
- * out of the 140 h scope (`docs/requirements/medice-adhs.md` §6.1); the quiz
- * engine models one course-level Lernerfolgskontrolle. Rendering a permanently
- * locked button for a feature that does not exist would be worse than omitting
- * it — the learner would wait for something that is never going to unlock.
+ * This header used to record the opposite, and the reasoning is worth keeping
+ * because it was right when it was written: *"a Teilprüfung is a per-module
+ * assessment and is explicitly out of the 140 h scope; the quiz engine models
+ * one course-level Lernerfolgskontrolle"*, so the layout's locked
+ * **Zur Teilprüfung** was deliberately not drawn — a learner must not be shown a
+ * control waiting for something that will never unlock.
+ *
+ * The client asked for per-module assessment directly (P87), which makes it in
+ * scope and makes the old shape a defect rather than a simplification: with one
+ * course-wide search every module offered module 1's exam and no later exam was
+ * reachable at all. The tab now follows the module — drawn when this one has a
+ * Lernerfolgskontrolle, absent when it does not — which is the same judgement as
+ * before, applied at the granularity the course now has.
  *
  * ## The tab locks are the server's
  *
@@ -119,7 +126,10 @@ export function PlayerScreen(props: {
   const [tab, setTab] = useState<ContentTab>("summary");
 
   const here = locateContent(course, lesson.id);
-  const quiz = findQuizContent(course, state);
+  // Scoped to the module this section is in (P87-02): a course with an exam on
+  // every module must offer *this* module's, and a module without one must
+  // offer none.
+  const quiz = findQuizContent(course, state, lesson.id);
   /*
    * Where the learner goes after this section (P78-02).
    *

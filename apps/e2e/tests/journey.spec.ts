@@ -80,10 +80,15 @@
  * it drives the real hostnames. See `support/target.ts` for why both.
  */
 
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { signInToConsole, menu } from "../support/console.js";
+import {
+  fillNearest,
+  menu,
+  readIssuedPassword,
+  signInToConsole,
+} from "../support/console.js";
 import { openWidgetShadowRoots } from "../support/shadow.js";
 import { buildBehind, currentTarget } from "../support/target.js";
 import { forgetSignInAttempts } from "../support/world.js";
@@ -114,7 +119,17 @@ const EFN = "123456789012345";
  * for. So the course is accredited, and the number is one the Ärztekammer has
  * not issued to anybody.
  *
- * What stops that becoming a Punktemeldung is `assertReportingIsOff` below.
+ * What stops that becoming a Punktemeldung to a real Ärztekammer is **not in
+ * this file**, and the previous version of this sentence said it was — it named
+ * an `assertReportingIsOff` "below" that has never existed. Somebody auditing
+ * "what stops this?" would have looked for a function, not found one, and had
+ * to choose between assuming it was handled and writing a second copy. A
+ * comment naming a safety mechanism that is not there is worse than no comment
+ * (§9.3).
+ *
+ * The real guard is `scripts/run-smoke.mjs`, which refuses to start at all when
+ * `EIV_ALLOW_LIVE` is set, and says why. It covers every spec in the run rather
+ * than this one, which is the right level for it.
  */
 const FIXTURE_VNR = "2760000000000000000";
 
@@ -782,16 +797,32 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       // Act 12 · It survives a reload — the assertion this exists for
       // ===================================================================
       await learner.reload();
+
+      /*
+       * A reload keeps your **place**, not merely your progress (P82-04).
+       *
+       * This asserted the outline's "N % der Videoinhalte angesehen", because
+       * until P82-04 a reload always landed on the course overview — which was
+       * the reported defect: *"when i am in the course, and i refresh … it goes
+       * to the main page of the course."* The widget now writes the section
+       * into the fragment and reads it back, so a reload returns to the video.
+       *
+       * The old assertion was therefore encoding the bug. What it was really
+       * checking — that the watched time reached the server and came back — is
+       * still checked, one line down, by the player's own percentage; and this
+       * now checks the thing the fix was for.
+       */
       await expect(
-        learner.getByText(/[1-9]\d* % der Videoinhalte angesehen/u),
+        learner.getByRole("button", { name: "Fortbildung pausieren" }).first(),
+        "a reload did not return to the section the learner was in (P82-04)",
+      ).toBeVisible({ timeout: 30_000 });
+
+      await expect(
+        learner.getByText(/[1-9]\d* % angesehen/u).first(),
         "progress did not survive a reload",
       ).toBeVisible({ timeout: 30_000 });
 
-      // Back into the lesson and on to the end of it.
-      await learner
-        .getByRole("button", { name: "Fortbildung fortsetzen" })
-        .first()
-        .click();
+      // And on to the end of it, from where the reload left us.
       await learner.getByRole("button", { name: "Abspielen" }).first().click();
       await expect
         .poll(() => video.evaluate((element: HTMLVideoElement) => element.ended), {
@@ -909,43 +940,3 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
     }
   });
 });
-
-/**
- * The password out of the "nur jetzt sichtbar" panel.
- *
- * Read from the definition list rather than by matching text. The first version
- * of this looked for `/Passwort\s+(\S+)/` and came back with an **en dash** —
- * the panel's own title is "Passwort – nur jetzt sichtbar", so the regex
- * matched the heading before it ever reached the value. The sign-in that
- * followed failed with "E-Mail-Adresse oder Passwort ist nicht korrekt", which
- * is the product being right about a one-character password.
- *
- * `dd` is the value half of a `dt`/`dd` pair, which is what the panel actually
- * uses: two rows, address then password. Asserting the count first, so a third
- * row added later fails here rather than silently shifting which value this
- * reads.
- */
-async function readIssuedPassword(panel: Locator): Promise<string> {
-  const values = panel.locator("dd");
-  await expect(
-    values,
-    "the issued-password panel no longer has exactly an address and a password",
-  ).toHaveCount(2);
-  // `textContent`, not `innerText`: the panel can be outside the viewport when
-  // this runs, and `innerText` answers with the empty string for an element the
-  // renderer has not laid out — which reads as "the console issued no password"
-  // and fails three acts later at a sign-in.
-  return ((await values.last().textContent()) ?? "").trim();
-}
-
-/**
- * Fill the field labelled `label` inside the form that is currently open.
- *
- * The console has several forms on a structure screen at once — a module form,
- * a chapter form, a content form — and each carries a "Titel". `getByLabel`
- * would match all of them and Playwright would refuse the ambiguity, so this
- * takes the last one, which is the one that just opened.
- */
-async function fillNearest(page: Page, label: string, value: string): Promise<void> {
-  await page.getByRole("textbox", { name: label }).last().fill(value);
-}

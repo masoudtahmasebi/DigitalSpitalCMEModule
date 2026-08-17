@@ -42,6 +42,7 @@ function harness(
     findAsset?: UploadRepositoryPort["findAsset"];
     describeAsset?: UploadRepositoryPort["describeAsset"];
     countAssetUses?: UploadRepositoryPort["countAssetUses"];
+    countUsesFor?: UploadRepositoryPort["countUsesFor"];
     forgetAsset?: UploadRepositoryPort["forgetAsset"];
   } = {},
 ) {
@@ -57,6 +58,9 @@ function harness(
     findAsset: overrides.findAsset ?? (async () => undefined),
     describeAsset: overrides.describeAsset ?? (async () => false),
     countAssetUses: overrides.countAssetUses ?? (async () => 0),
+    // The page-wide count behind `usedByCount` (P88-01). Empty by default,
+    // which the service reads as zero uses for every row.
+    countUsesFor: overrides.countUsesFor ?? (async () => new Map()),
     forgetAsset: overrides.forgetAsset ?? (async () => false),
     rememberAsset:
       overrides.rememberAsset ??

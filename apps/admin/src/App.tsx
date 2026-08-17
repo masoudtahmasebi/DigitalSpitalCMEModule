@@ -46,6 +46,7 @@ import { de } from "./locale/de.js";
 import { Badge, Button, Notice, Spinner, Table } from "./components/ui.js";
 import { EmptyState, Page, type Crumb } from "./components/page.js";
 import { CopySettings } from "./components/CopySettings.js";
+import { MediaLibrary } from "./components/MediaLibrary.js";
 import { BrandingSettings } from "./components/BrandingSettings.js";
 import { CourseSettings } from "./components/CourseSettings.js";
 import { CoursePresentation } from "./components/CoursePresentation.js";
@@ -376,6 +377,7 @@ type View =
   | { kind: "organisation" }
   | { kind: "branding" }
   | { kind: "copy" }
+  | { kind: "media" }
   | { kind: "customers" }
   | { kind: "participants" }
   | { kind: "learners" }
@@ -468,6 +470,24 @@ const NAV: readonly NavGroup[] = [
         capability: "project",
       },
       { kind: "courses", label: de.nav.courses, title: de.courses.title },
+      /*
+       * The Mediathek (P88-01), under ANGEBOT beside the courses whose files it
+       * holds — it is content, not a setting.
+       *
+       * `project`, the same capability as Erscheinungsbild and Texte. The
+       * library spans every course of the customer, so it is not a course
+       * editor's own material: a `course_editor` writes the courses they are
+       * given and does not tidy the shared shelf. Their uploads still land in
+       * it and the picker still offers it to them, which is the reuse this was
+       * built for.
+       */
+      {
+        kind: "media",
+        label: de.media.nav,
+        title: de.media.title,
+        description: de.media.screenIntro,
+        capability: "project",
+      },
     ],
   },
   {
@@ -1114,6 +1134,12 @@ export function Console(props: {
   if (view.kind === "copy") {
     // Like branding: the screen renders and the API is the gate on the write.
     return headed(<CopySettings client={client} />);
+  }
+
+  if (view.kind === "media") {
+    // Like branding and Texte: the screen renders and the API is the gate on
+    // every write it offers.
+    return headed(<MediaLibrary client={client} />);
   }
 
   if (view.kind === "organisation") {

@@ -32,7 +32,7 @@ import { useBranding } from "./branding.js";
 import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
 import type { TokenProvider } from "./token.js";
-import { nextAvailableContent } from "./player.js";
+import { indexTitles, nextAvailableContent } from "./player.js";
 import { decode, encode, type WidgetRoute } from "./route.js";
 import { CourseList } from "./components/CourseList.js";
 import { CertificationTab } from "./components/CertificationTab.js";
@@ -606,6 +606,17 @@ function Loaded(props: {
           client={client}
           courseSlug={courseSlug}
           contentId={screen.contentId}
+          /*
+           * The exam's own title, from the catalogue (P87-02).
+           *
+           * `indexTitles` is the one place the two responses are zipped, so
+           * this reads the same map the outline draws from — a second lookup
+           * would be a second answer to "what is this exam called", on two
+           * screens a physician sees side by side.
+           */
+          examTitle={
+            indexTitles(detail).contents.get(screen.contentId)?.title ?? de.quiz.exam
+          }
           onPassed={refresh}
           onBack={() => {
             refresh();
@@ -1041,6 +1052,8 @@ function QuizGate(props: {
   contentId: string;
   onPassed: () => void;
   onBack: () => void;
+  /** This exam's own name, from the catalogue tree — see `QuizScreen` (P87-02). */
+  examTitle: string;
   /** Absent while the course is not complete — see `QuizScreen` (P82-01). */
   onClaimPoints: (() => void) | undefined;
   onNext: { readonly title: string; readonly open: () => void } | undefined;
@@ -1062,6 +1075,7 @@ function QuizGate(props: {
       client={props.client}
       courseSlug={props.courseSlug}
       quiz={quiz.data}
+      examTitle={props.examTitle}
       onPassed={props.onPassed}
       onBack={props.onBack}
       onClaimPoints={props.onClaimPoints}

@@ -10,6 +10,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { currentLanguage, overlay } from "./language.js";
+import { german } from "./de.js";
+import { en } from "./en.js";
 
 // The one ambient store this file touches, cleared after every case (§9.8).
 afterEach(() => window.localStorage.clear());
@@ -89,5 +91,63 @@ describe("the language a console starts in", () => {
     // answer rather than a console rendering nothing.
     window.localStorage.setItem("ds-admin-language", "fr");
     expect(currentLanguage()).toBe("de");
+  });
+});
+
+/**
+ * The real tables, not a fixture (P88-03).
+ *
+ * Every case above drives `overlay` with two small objects, which is the right
+ * way to test a merge rule and proves nothing about the file that ships. These
+ * three are about `en.ts` itself — the §9.7 shape: a rule exercised
+ * exhaustively, and nothing checking that what it is applied to is right.
+ *
+ * `scripts/i18n-coverage.mjs` counts coverage in CI and in `pnpm verify`. This
+ * covers what a line count cannot: that the merged table is actually usable.
+ */
+describe("the English table that ships", () => {
+  it("leaves nothing German on a screen an operator opens first", () => {
+    /*
+     * A spot check with teeth. These are the strings on the sign-in screen, the
+     * navigation and the first error somebody meets — if the overlay is wired
+     * up at all, these are English, and if it is not, every one of them is the
+     * German fallback.
+     */
+    const merged = overlay(german, en);
+
+    expect(merged.auth.signIn).toBe("Sign in");
+    expect(merged.nav.courses).toBe("Courses");
+    expect(merged.error.title).toBe("Something went wrong");
+    expect(merged.courses.title).toBe("Courses");
+    expect(merged.media.nav).toBe("Media library");
+  });
+
+  it("keeps the accreditation vocabulary, which is not ours to translate", () => {
+    /*
+     * CLAUDE.md §7. These words appear verbatim on the Anerkennungsbescheid and
+     * in the EIV-FOBI interface, so an operator reconciling a screen against
+     * the paperwork needs the same token in both. "Learning assessment" is a
+     * translation of Lernerfolgskontrolle and is not the name of the thing.
+     */
+    const merged = overlay(german, en);
+
+    expect(merged.quiz.title).toBe("Lernerfolgskontrolle");
+    expect(merged.course.certificate).toBe("Teilnahmebescheinigung");
+    expect(merged.learners.submission).toBe("Punktemeldung");
+    expect(merged.participants.columnEfn).toBe("EFN");
+  });
+
+  it("keeps every plural-aware sentence in code rather than translating it away", () => {
+    /*
+     * `overlay` refuses to replace a function, and this is why it matters here:
+     * German plural rules live in `de.ts` because "1 Punkt" and "4 Punkten" are
+     * a grammar problem rather than a copy problem. An English table that
+     * flattened one to a string would silently lose the singular.
+     */
+    const merged = overlay(german, en);
+
+    expect(typeof merged.media.usedBy).toBe("function");
+    expect(merged.media.usedBy(1)).toContain("1 Inhalt ");
+    expect(typeof merged.courses.completedOf).toBe("function");
   });
 });

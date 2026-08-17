@@ -483,6 +483,7 @@ export class AuthoringService {
       chapterId,
     );
     const values = this.validContent(input, actor.customerId);
+    await this.assertOnlyQuizInModule(courseSlug, chapterId, input.kind, undefined);
 
     await this.repository.createContent(chapterId, values);
     await this.audit(actor, "admin.content.create", chapterId, { kind: input.kind });
@@ -499,10 +500,72 @@ export class AuthoringService {
       id,
     );
     const values = this.validContent(input, actor.customerId);
+    await this.assertOnlyQuizInModule(courseSlug, undefined, input.kind, id);
 
     await this.repository.updateContent(id, values);
     await this.audit(actor, "admin.content.update", id, { kind: input.kind });
     return this.getStructure(courseSlug);
+  }
+
+  /**
+   * One Lernerfolgskontrolle per module (P87-06).
+   *
+   * The gate, the player's tab and the completion arithmetic all speak of *the*
+   * exam belonging to a module. A second one is a shape none of them can
+   * express: `findQuizContent` would offer whichever came first, the other
+   * would be unreachable from the player, and `hasPassedQuiz` would still
+   * require both — so the course could not be finished at all. That is exactly
+   * how P87-01 arose, one level up, from a course-wide search silently ignoring
+   * the second quiz.
+   *
+   * Refused at authoring time, which is the only point where the mistake is
+   * cheap: an author who has just written twelve questions into an exam nobody
+   * can sit has lost the afternoon, and nothing on the structure screen would
+   * have told them.
+   *
+   * The message names the **module**, by its own title, because that is what
+   * the author has to go and look at. It names no ids and no values (§9.5).
+   *
+   * `chapterId` for a create — the module is the one owning that chapter — and
+   * `contentId` for an update, where the content may be moving *into* `quiz`
+   * from another kind. Exactly one of the two is given.
+   */
+  private async assertOnlyQuizInModule(
+    courseSlug: string,
+    chapterId: string | undefined,
+    kind: ContentWrite["kind"],
+    contentId: string | undefined,
+  ): Promise<void> {
+    if (kind !== "quiz") return;
+
+    const structure = await this.getStructure(courseSlug);
+    const module = structure.modules.find((entry) =>
+      entry.chapters.some(
+        (chapter) =>
+          chapter.id === chapterId ||
+          (contentId !== undefined &&
+            chapter.contents.some((content) => content.id === contentId)),
+      ),
+    );
+    // No module found means the caller is editing something this course does
+    // not contain, which `slugOwning` has already refused — nothing to add.
+    if (module === undefined) return;
+
+    const existing = module.chapters
+      .flatMap((chapter) => chapter.contents)
+      .filter((content) => content.kind === "quiz")
+      // An update that leaves a quiz a quiz must not collide with itself.
+      .filter((content) => content.id !== contentId);
+
+    if (existing.length === 0) return;
+
+    throw new AppError(
+      "validation",
+      `module=${module.id} already has a Lernerfolgskontrolle`,
+      `Das Modul „${module.title}" hat bereits eine Lernerfolgskontrolle. ` +
+        "Pro Modul ist genau eine möglich — bearbeiten Sie die vorhandene, " +
+        "oder legen Sie ein weiteres Modul an.",
+    );
   }
 
   async deleteContent(id: string, actor: AuthorContext): Promise<CourseStructure> {

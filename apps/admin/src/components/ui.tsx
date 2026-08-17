@@ -102,6 +102,15 @@ export function TextInput(props: {
    */
   inputMode?: "numeric" | "text" | undefined;
   onChange: (value: string) => void;
+  /**
+   * Called when the field is finished with (P88-01).
+   *
+   * For a field whose value is saved rather than merely held: the Mediathek
+   * writes a rename here instead of from `onChange`, which was one request per
+   * keystroke racing the typist. Enter fires it too, because a form with one
+   * field per row is one people finish with the keyboard.
+   */
+  onBlur?: (() => void) | undefined;
 }) {
   return (
     <input
@@ -113,6 +122,17 @@ export function TextInput(props: {
       autoComplete={props.autoComplete}
       inputMode={props.inputMode}
       onChange={(event) => props.onChange(event.target.value)}
+      onBlur={props.onBlur}
+      onKeyDown={
+        props.onBlur === undefined
+          ? undefined
+          : (event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                props.onBlur?.();
+              }
+            }
+      }
       className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
     />
   );

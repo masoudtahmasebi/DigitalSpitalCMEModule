@@ -872,6 +872,43 @@ export const german = {
     forget: "Aus Mediathek entfernen",
     forgetHint:
       "Entfernen löscht nur den Eintrag aus dieser Liste — die Datei selbst bleibt im Dateispeicher erhalten. Solange eine Fortbildung die Datei noch verwendet, wird das Entfernen abgelehnt.",
+
+    /* The Mediathek screen (P88-01). */
+    nav: "Mediathek",
+    screenIntro:
+      "Alle Dateien dieses Kunden: Videos, Bilder, PDF-Dokumente und Untertitel. Hier benennen Sie Dateien, hinterlegen Alternativtexte und entfernen, was nicht mehr gebraucht wird. Zum Verwenden einer Datei öffnen Sie die Fortbildung und wählen sie beim Hochladen aus.",
+    filterLabel: "Nach Dateityp filtern",
+    kinds: {
+      all: "Alle",
+      video: "Videos",
+      image: "Bilder",
+      document: "Dokumente",
+      captions: "Untertitel",
+      audio: "Audio",
+    },
+    search: "Suchen",
+    refresh: "Aktualisieren",
+    noMatch:
+      "Zu dieser Auswahl gibt es keine Datei. Ändern Sie den Filter oder die Suche.",
+    count: (shown: number, total: number): string =>
+      shown === total
+        ? `${total} ${total === 1 ? "Datei" : "Dateien"}`
+        : `${shown} von ${total} Dateien`,
+    bytes: (n: number): string => `${n} ${n === 1 ? "Byte" : "Bytes"}`,
+    /*
+     * Given the already-formatted size, not the byte count.
+     *
+     * The formatting rule lives in `media-library.ts` beside the unit table it
+     * needs; a locale file that computed it would be a second implementation of
+     * "1,4 MB", and the two would disagree the first time either changed.
+     */
+    totalSize: (size: string): string => `Belegter Speicher in dieser Liste: ${size}`,
+    /* Singular and plural, because "1 Inhalten" is wrong and people notice. */
+    usedBy: (n: number): string =>
+      n === 1 ? "In 1 Inhalt verwendet" : `In ${n} Inhalten verwendet`,
+    unused: "In keiner Fortbildung verwendet",
+    noPreview: "Keine Vorschau verfügbar",
+    openFile: "Datei öffnen",
   },
 
   copy: {

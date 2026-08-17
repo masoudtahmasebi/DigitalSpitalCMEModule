@@ -138,6 +138,13 @@ export interface MediaAssetResponse {
   readonly title: string | null;
   readonly altText: string | null;
   readonly createdAt: string;
+  /**
+   * How many course contents point at this file (P88-01).
+   *
+   * On the list so the library can say what removing it would cost *before*
+   * somebody presses the button, rather than answering 409 afterwards.
+   */
+  readonly usedByCount: number;
 }
 
 /**

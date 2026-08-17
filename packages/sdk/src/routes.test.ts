@@ -214,6 +214,7 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
   adminCompleteUpload: (c) =>
     c.adminCompleteUpload("adhs", "cust/courses/id/video-x.mp4"),
   adminViewUpload: (c) => c.adminViewUpload("adhs", "s3://cust/courses/id/video-x.mp4"),
+  adminViewMedia: (c) => c.adminViewMedia("11111111-1111-4111-8111-111111111111"),
   adminListMedia: (c) => c.adminListMedia({ kind: "video", limit: 20 }),
   adminDescribeMedia: (c) => c.adminDescribeMedia(ID, { title: "Intro" }),
   adminForgetMedia: (c) => c.adminForgetMedia(ID),

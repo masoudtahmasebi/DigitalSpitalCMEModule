@@ -531,7 +531,34 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+
+      # Advisory here, and enforced elsewhere (P88-04).
+      #
+      # This action needs GitHub's **Dependency graph** switched on for the
+      # repository, and it is not. Every pull request this repository has ever
+      # had failed on it with:
+      #
+      #   Dependency review is not supported on this repository.
+      #
+      # A required check that cannot pass is the §9.2 shape at the pipeline
+      # level: it looks like a gate, it has never once made a decision, and a
+      # permanently red check trains everybody to ignore the red checks. Worse,
+      # it hides the checks that *are* saying something.
+      #
+      # The policy it would apply is already enforced, on every push, by the
+      # `Security audit` job: `pnpm audit --prod --audit-level=moderate` fails
+      # the build on exactly the same severity floor. So nothing is being
+      # weakened here — what this action adds over that is the per-PR comment
+      # summarising which dependency changed, which is useful and is not a gate.
+      #
+      # **To make it a gate again**, enable Dependency graph at
+      # Settings → Advanced Security, and delete the `continue-on-error` below.
+      # That is the one-line change, and it is the repository owner's to make;
+      # this workflow cannot switch the setting on for itself (§9.9 — a setting
+      # documented is a setting not applied, so the enforcing check is the one
+      # that runs rather than this one).
       - uses: actions/dependency-review-action@v4
+        continue-on-error: true
         with:
           fail-on-severity: moderate
           comment-summary-in-pr: always

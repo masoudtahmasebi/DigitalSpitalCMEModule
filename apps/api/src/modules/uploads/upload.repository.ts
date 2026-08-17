@@ -97,6 +97,19 @@ export interface UploadRepositoryPort {
   ): Promise<boolean>;
   /** How many course contents still point at this object. */
   countAssetUses(reference: string): Promise<number>;
+  /**
+   * The same count for a whole page of references, in one query (P88-01).
+   *
+   * The library screen shows the count on every row so that removing a file is
+   * a decision somebody can make **before** pressing the button rather than a
+   * 409 afterwards. Calling `countAssetUses` per row would be one query per
+   * file — fifty files, fifty round trips — which is the shape that turns a
+   * useful column into a slow screen somebody removes again.
+   *
+   * References absent from the result have no uses; the caller reads a missing
+   * key as zero rather than as unknown, because "unknown" has no rendering.
+   */
+  countUsesFor(references: readonly string[]): Promise<ReadonlyMap<string, number>>;
   /** Forget the library entry. The object itself is untouched — see the service. */
   forgetAsset(id: string): Promise<boolean>;
   /**
@@ -218,6 +231,51 @@ export class UploadRepository implements UploadRepositoryPort {
       )
       .orderBy(desc(mediaAssets.createdAt))
       .limit(filter.limit);
+  }
+
+  /**
+   * How many contents point at each of these references, in one query.
+   *
+   * The predicate is the same one `countAssetUses` uses, applied to a set —
+   * written once as a lateral over the references rather than four separate
+   * scans, so a file referenced as both a poster and a source counts once.
+   *
+   * No `customer_id` filter, for the reason `listAssets` states: `contents` is
+   * under RLS and the connection carries the tenant. A count that reached
+   * across tenants would tell an operator how popular another customer's file
+   * is, which is the §9.5 shape in a number.
+   */
+  async countUsesFor(
+    references: readonly string[],
+  ): Promise<ReadonlyMap<string, number>> {
+    if (references.length === 0) return new Map();
+
+    /*
+     * Every reference is a **bound parameter**, never interpolated.
+     *
+     * `sql.join` over `sql`${value}`` produces one placeholder per entry, so a
+     * storage key is data on the way to Postgres and cannot become syntax. The
+     * values here are server-generated keys rather than anything a caller
+     * typed, which is a reason to be calm and not a reason to concatenate: the
+     * next person to reuse this helper will pass it something else.
+     */
+    const list = sql.join(
+      references.map((reference) => sql`${reference}`),
+      sql`, `,
+    );
+
+    const result = await this.db.execute<{ reference: string; n: string }>(sql`
+      SELECT r.reference, count(c.id)::text AS n
+        FROM unnest(ARRAY[${list}]::text[]) AS r(reference)
+        LEFT JOIN contents c
+          ON c.poster_url = r.reference
+          OR c.captions_url = r.reference
+          OR c.file_url = r.reference
+          OR c.media_sources @> jsonb_build_array(jsonb_build_object('url', r.reference))
+       GROUP BY r.reference
+    `);
+
+    return new Map(result.rows.map((row) => [row.reference, Number(row.n)] as const));
   }
 
   async findAsset(id: string): Promise<LibraryRow | undefined> {

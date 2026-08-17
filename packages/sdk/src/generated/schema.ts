@@ -1630,6 +1630,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/media/{id}/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A short-lived URL for a file in the library
+         * @description The same capability as `adminViewUpload`, authorised by the **library
+         *     entry** rather than by a course.
+         *
+         *     The Mediathek screen is not inside a course, so it has no slug to check
+         *     a key's prefix against — and asking it to guess one would mean either a
+         *     screen with no previews or a route that takes a bare key. Authorising by
+         *     the asset's own id is the tighter answer, not the looser one: the row is
+         *     under FORCE ROW LEVEL SECURITY, so a file belonging to another customer
+         *     is not visible to name in the first place.
+         *
+         *     Every issued URL is written to the storage audit log as a `read`, in the
+         *     same way. A signed GET is a capability that leaves the building however
+         *     it was asked for.
+         */
+        post: operations["adminViewMedia"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/media/{id}": {
         parameters: {
             query?: never;
@@ -3979,6 +4011,16 @@ export interface components {
             altText: string | null;
             /** Format: date-time */
             createdAt: string;
+            /**
+             * @description How many course contents currently point at this file.
+             *
+             *     Present so the library can say what removing it would cost
+             *     **before** somebody presses the button, rather than answering 409
+             *     afterwards. Counts every field that can hold a reference — a
+             *     content's own file, its poster, its captions, and each entry in its
+             *     media source list.
+             */
+            usedByCount: number;
         };
         UploadCompletion: {
             /** @description The `key` from the ticket. */
@@ -8090,6 +8132,89 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
             /** @description Too many requests too quickly. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    adminViewMedia: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A URL valid for ten minutes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadView"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /**
+             * @description No such file in this tenant. A file belonging to another customer
+             *     gets this same answer.
+             */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description This deployment has no object storage configured. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too many read signatures too quickly. */
             429: {
                 headers: {
                     [name: string]: unknown;

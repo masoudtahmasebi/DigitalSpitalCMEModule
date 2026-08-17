@@ -13,6 +13,7 @@
 
 import {
   courseAvailability,
+  contentGates,
   courseChapterSequence,
   courseWatchCoverage,
   evaluateSequence,
@@ -689,6 +690,32 @@ export class LearningService {
     if (chapterId === undefined) return;
 
     const gates = evaluateSequence(courseChapterSequence(courseNode, rollup));
+
+    /*
+     * A module's Lernerfolgskontrolle is refused until that module's videos are
+     * watched (P87-04) — here and not only in the widget's rendering.
+     *
+     * Hiding the button is not the gate. `POST attempts` reaches the assessment
+     * service through `requireReachableContent`, so an exam opened by a direct
+     * call has to be refused by the same rule that greys out the tab, or the
+     * watch requirement is a decoration on a screen (CLAUDE.md §4 invariant 1).
+     */
+    const perContent = contentGates({
+      modules: courseNode.modules,
+      chapterGates: gates,
+      completed: completedContentIds(rollup),
+    });
+
+    const contentGate = perContent.get(contentId);
+    if (contentGate?.reason === "module_incomplete") {
+      throw new AppError(
+        "gate_locked",
+        `content=${contentId} is a quiz whose module is incomplete` +
+          `${contentGate.blockedBy === undefined ? "" : `, blocked by ${contentGate.blockedBy}`}`,
+        "Die Lernerfolgskontrolle wird freigeschaltet, sobald Sie die Videos dieses Moduls vollständig angesehen haben.",
+      );
+    }
+
     const gate = gates.get(chapterId);
 
     if (gate?.status === "locked") {
@@ -787,7 +814,16 @@ export class LearningService {
       courseCompletedAt: courseCompletedAt?.toISOString() ?? null,
       progress: figures.progress,
       moduleCompletion: figures.moduleCompletion,
-      modules: buildModuleStates(tree, rollup, gates),
+      modules: buildModuleStates(
+        tree,
+        rollup,
+        gates,
+        contentGates({
+          modules: courseNode.modules,
+          chapterGates: gates,
+          completed: completedContentIds(rollup),
+        }),
+      ),
       resumeContentId: firstReachableIncomplete(tree, rollup, gates),
     };
   }
@@ -972,6 +1008,22 @@ export function readSegments(value: unknown): readonly WatchedSegment[] {
   );
 }
 
+/**
+ * The content ids the rollup calls complete, as a set (P87-04).
+ *
+ * One function because `contentGates` is consulted twice — once when the state
+ * is built for a screen and once when a write is refused — and the two must
+ * hand it the same set, or a control the screen shows would be refused by the
+ * endpoint behind it (§9.2).
+ */
+function completedContentIds(rollup: CourseRollup): ReadonlySet<string> {
+  return new Set(
+    Object.entries(rollup.contents)
+      .filter(([, summary]) => summary.status === "completed")
+      .map(([id]) => id),
+  );
+}
+
 /** A course is quiz-passed when every quiz content has a passing best score. */
 function hasPassedQuiz(
   records: readonly ContentProgressRecord[],
@@ -997,6 +1049,19 @@ function buildModuleStates(
   tree: CourseTree,
   rollup: CourseRollup,
   gates: ReadonlyMap<string, GateResult>,
+  /**
+   * Per-content gates from `contentGates` (P87-04).
+   *
+   * Content used to inherit its chapter's gate unconditionally, which is right
+   * for two videos in one chapter and wrong for a chapter holding a video and
+   * the exam about it — both inherited `available`, so the Lernerfolgskontrolle
+   * was open at nought per cent watched.
+   *
+   * Passed in rather than computed here: the same map is what `assertReachable`
+   * refuses on, and a second derivation would be a screen and a refusal that
+   * can disagree.
+   */
+  perContent: ReadonlyMap<string, GateResult>,
 ): ModuleState[] {
   const empty = {
     status: "not_started" as const,
@@ -1018,10 +1083,13 @@ function buildModuleStates(
         )
         .map((content) => ({
           id: content.id,
-          // Content inherits its chapter's gate: the sequence is evaluated at
-          // chapter granularity, so a content item is exactly as reachable as
-          // the chapter containing it.
-          gate: gate?.status ?? "available",
+          /*
+           * Content is as reachable as the chapter containing it — except a
+           * Lernerfolgskontrolle, which additionally waits for its own module's
+           * videos (P87-04). `contentGates` answers both, so this reads one map
+           * rather than deciding anything here.
+           */
+          gate: perContent.get(content.id)?.status ?? gate?.status ?? "available",
           progress: rollup.contents[content.id] ?? empty,
         }));
 

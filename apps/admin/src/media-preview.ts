@@ -168,3 +168,70 @@ export function useReadableUrl(
 
   return state;
 }
+
+/**
+ * A readable URL for a **library entry**, by its id (P88-01).
+ *
+ * The Mediathek screen is not inside a course, so `readableUrl` has no slug to
+ * resolve against and answers `undefined` for every stored reference — which is
+ * exactly the blank preview this exists to remove. `adminViewMedia` authorises
+ * by the entry instead, which RLS already bounds to the caller's tenant.
+ *
+ * The same cache, keyed by the asset id rather than the reference. Two keys into
+ * one map is deliberate: an entry looked at on the library screen and the same
+ * object looked at on a content form are two different signatures with two
+ * different audit rows, and sharing the cache between them would make one
+ * screen's `read` satisfy the other's — a quieter log than the truth.
+ */
+async function readableAsset(
+  client: ApiClient,
+  assetId: string,
+): Promise<string | undefined> {
+  const cacheKey = `asset:${assetId}`;
+  const now = Date.now();
+
+  const hit = cache.get(cacheKey);
+  if (hit !== undefined && hit.expiresAtMs - RENEW_MARGIN_MS > now) return hit.url;
+
+  const pending = inFlight.get(cacheKey);
+  if (pending !== undefined) return pending;
+
+  const request = (async (): Promise<string | undefined> => {
+    try {
+      const view = await client.adminViewMedia(assetId);
+      const expiresAtMs = Date.parse(view.expiresAt);
+      cache.set(cacheKey, {
+        url: view.url,
+        expiresAtMs: Number.isFinite(expiresAtMs) ? expiresAtMs : now + RENEW_MARGIN_MS,
+      });
+      return view.url;
+    } catch {
+      return undefined;
+    } finally {
+      inFlight.delete(cacheKey);
+    }
+  })();
+
+  inFlight.set(cacheKey, request);
+  return request;
+}
+
+/** `readableAsset` as a hook, with the same three states as `useReadableUrl`. */
+export function useReadableAsset(client: ApiClient, assetId: string): ReadableUrl {
+  const [state, setState] = useState<ReadableUrl>({ kind: "none" });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ kind: "loading" });
+    void readableAsset(client, assetId).then((url) => {
+      if (cancelled) return;
+      setState(url === undefined ? { kind: "failed" } : { kind: "ready", url });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client, assetId]);
+
+  return state;
+}

@@ -25,7 +25,7 @@
  * a message about a screen that never appeared.
  */
 
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { ADMIN_BASE } from "./stack.js";
 import { decodeBase32, freshTotpCode } from "./staff.js";
 
@@ -158,4 +158,48 @@ function whichever(wait: Promise<unknown>, outcome: Outcome): Promise<Outcome> {
     () => outcome,
     () => new Promise<Outcome>(() => undefined),
   );
+}
+
+/**
+ * The password out of the "nur jetzt sichtbar" panel.
+ *
+ * Read from the definition list rather than by matching text. The first version
+ * of this looked for `/Passwort\s+(\S+)/` and came back with an **en dash** —
+ * the panel's own title is "Passwort – nur jetzt sichtbar", so the regex
+ * matched the heading before it ever reached the value. The sign-in that
+ * followed failed with "E-Mail-Adresse oder Passwort ist nicht korrekt", which
+ * is the product being right about a one-character password.
+ *
+ * `dd` is the value half of a `dt`/`dd` pair, which is what the panel actually
+ * uses: two rows, address then password. Asserting the count first, so a third
+ * row added later fails here rather than silently shifting which value this
+ * reads.
+ */
+export async function readIssuedPassword(panel: Locator): Promise<string> {
+  const values = panel.locator("dd");
+  await expect(
+    values,
+    "the issued-password panel no longer has exactly an address and a password",
+  ).toHaveCount(2);
+  // `textContent`, not `innerText`: the panel can be outside the viewport when
+  // this runs, and `innerText` answers with the empty string for an element the
+  // renderer has not laid out — which reads as "the console issued no password"
+  // and fails three acts later at a sign-in.
+  return ((await values.last().textContent()) ?? "").trim();
+}
+
+/**
+ * Fill the field labelled `label` inside the form that is currently open.
+ *
+ * The console has several forms on a structure screen at once — a module form,
+ * a chapter form, a content form — and each carries a "Titel". `getByLabel`
+ * would match all of them and Playwright would refuse the ambiguity, so this
+ * takes the last one, which is the one that just opened.
+ */
+export async function fillNearest(
+  page: Page,
+  label: string,
+  value: string,
+): Promise<void> {
+  await page.getByRole("textbox", { name: label }).last().fill(value);
 }

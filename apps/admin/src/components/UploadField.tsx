@@ -39,7 +39,27 @@ import type { ApiClient, UploadPurpose } from "@ds/sdk";
 import { uploadToTicket } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { useReadableUrl } from "../media-preview.js";
+import { MediaPicker } from "./MediaPicker.js";
+import type { MediaKind } from "../media-library.js";
 import { Button, Field, IconButton, Notice, TextInput } from "./ui.js";
+
+/**
+ * Which family of the library a purpose should offer (P88-02).
+ *
+ * The picker was wired to the video source list alone, so a poster, a subtitle
+ * file or a PDF uploaded last week could not be reused at all — the library
+ * held them and nothing on the screen said so. Mirrors `ACCEPT`: a field asks
+ * for the kind it could actually accept, because offering a PDF where a poster
+ * belongs is a choice that ends in a refusal (§9.2).
+ */
+const LIBRARY_KIND: Readonly<Record<UploadPurpose, MediaKind>> = {
+  video: "video",
+  poster: "image",
+  material: "application",
+  // WebVTT is `text/vtt`, so the library's own first-token filter is `text` —
+  // the same rule the API indexes on rather than a second opinion here.
+  captions: "text",
+};
 
 /**
  * What a file picker should offer per purpose. Mirrors `UPLOAD_TYPES`.
@@ -201,6 +221,7 @@ export function UploadField(props: {
   onMimeType?: (mimeType: string) => void;
 }) {
   const [state, setState] = useState<State>({ kind: "idle" });
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | undefined>(undefined);
 
@@ -286,6 +307,16 @@ export function UploadField(props: {
           >
             {de.uploads.choose}
           </Button>
+          {/*
+            The library, beside the upload button rather than instead of it
+            (P88-02). Unlike uploading it needs no course — the reference is
+            already stored and choosing one is assigning a string — so it stays
+            available while a course is still being created, which is exactly
+            when somebody is most likely to want the file they used last time.
+          */}
+          <Button variant="secondary" onClick={() => setLibraryOpen((open) => !open)}>
+            {de.media.open}
+          </Button>
           {props.courseSlug === undefined ? (
             <span className="text-xs text-[color:var(--ds-ink-muted)]">
               {de.uploads.noCourseYet}
@@ -295,6 +326,18 @@ export function UploadField(props: {
       )}
 
       {state.kind === "failed" ? <Notice tone="warning">{state.message}</Notice> : null}
+
+      {!libraryOpen ? null : (
+        <MediaPicker
+          client={props.client}
+          kind={LIBRARY_KIND[props.purpose]}
+          onPick={(reference) => {
+            props.onChange(reference);
+            setLibraryOpen(false);
+          }}
+          onClose={() => setLibraryOpen(false)}
+        />
+      )}
 
       <MediaPreview
         client={props.client}
