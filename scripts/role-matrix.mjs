@@ -53,6 +53,9 @@ const SCREEN_LOADS = {
   // makes — copy is stored per project, so the screen has to list them before
   // it can show anything.
   copy: ["GET /admin/projects"],
+  // Mediathek (P88-01). One read at mount — the customer's own file index,
+  // bounded by RLS rather than by a course.
+  media: ["GET /admin/media"],
   security: ["GET /admin/auth/second-factor/policy"],
 };
 

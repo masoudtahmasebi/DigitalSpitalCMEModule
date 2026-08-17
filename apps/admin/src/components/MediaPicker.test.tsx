@@ -24,6 +24,7 @@ const ASSET: MediaAsset = {
   title: null,
   altText: null,
   createdAt: "2026-08-17T10:00:00.000Z",
+  usedByCount: 0,
 };
 
 function client(overrides: Partial<ApiClient> = {}): ApiClient {
@@ -31,6 +32,12 @@ function client(overrides: Partial<ApiClient> = {}): ApiClient {
     adminListMedia: vi.fn(async () => [ASSET]),
     adminDescribeMedia: vi.fn(async () => ASSET),
     adminForgetMedia: vi.fn(async () => undefined),
+    // Every card mints a preview signature for its own entry (P88-01). Refusing
+    // here is the ordinary "no object storage on this deployment" path, which
+    // the card renders as a named state rather than a blank rectangle.
+    adminViewMedia: vi.fn(async () => {
+      throw new Error("no storage in this test");
+    }),
     ...overrides,
   } as unknown as ApiClient;
 }

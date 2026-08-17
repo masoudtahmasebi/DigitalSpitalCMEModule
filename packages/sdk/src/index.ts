@@ -850,6 +850,17 @@ export function createClient(options: ClientOptions) {
       request(`/admin/media/${seg(id)}`, { method: "DELETE" }),
 
     /**
+     * A short-lived read URL for a library entry (P88-01).
+     *
+     * `adminViewUpload` authorises by the course whose prefix the key sits
+     * under. The Mediathek screen is not inside a course and has no slug to
+     * offer, so this authorises by the entry's own id — which RLS already
+     * bounds to the caller's tenant.
+     */
+    adminViewMedia: (id: string): Promise<UploadView> =>
+      request(`/admin/media/${seg(id)}/view`, { method: "POST" }),
+
+    /**
      * Turn a stored `s3://` reference back into something a browser can fetch.
      *
      * For the console only, and short-lived. It is what lets the content form

@@ -40,7 +40,7 @@
 
 import { AppError } from "../../shared/problem-details.js";
 import type { ObjectStorage, UploadRefusal } from "../../shared/object-storage.js";
-import { keyBelongsToCustomer, storageKeyOf } from "@ds/domain";
+import { customerPrefix, keyBelongsToCustomer, storageKeyOf } from "@ds/domain";
 import type { StorageAuditPort, UploadRepositoryPort } from "./upload.repository.js";
 import type {
   MediaAssetResponse,
@@ -333,7 +333,95 @@ export class UploadService {
       limit: input.limit,
     });
 
-    return rows.map((row) => ({
+    /*
+     * How many contents point at each file, in one query (P88-01).
+     *
+     * The library screen shows this so that removing a file is a decision
+     * somebody makes **before** pressing the button rather than a 409
+     * afterwards — §9.4, at the point they look. One query for the page rather
+     * than one per row: fifty files would otherwise be fifty round trips, which
+     * is how a useful column becomes a slow screen somebody removes again.
+     */
+    const uses = await this.repository.countUsesFor(rows.map((row) => row.storageKey));
+
+    return rows.map((row) => this.asAsset(row, uses.get(row.storageKey) ?? 0));
+  }
+
+  /**
+   * A short-lived read URL for a library entry (P88-01).
+   *
+   * `view` above authorises by the course whose prefix the key sits under. The
+   * Mediathek screen is not inside a course and has no slug to check against —
+   * so this authorises by the **asset row**, which is under FORCE ROW LEVEL
+   * SECURITY. That is the tighter answer rather than the looser one: a file
+   * belonging to another customer is not visible to name in the first place,
+   * where the course route has to compare two prefixes and get both right.
+   *
+   * Audited as a `read` in the same way. A signed GET is a capability that
+   * leaves the building however it was asked for, and a second route that did
+   * not write the row would be a hole in an append-only log.
+   */
+  async viewAsset(
+    id: string,
+    actor: UploadActor,
+    now: Date,
+  ): Promise<UploadViewResponse> {
+    const storage = this.requireStorage();
+
+    const row = await this.repository.findAsset(id);
+    if (row === undefined) throw this.unknownAsset();
+
+    const key = storageKeyOf(row.storageKey);
+    if (key === undefined || !keyBelongsToCustomer(key, actor.customerId)) {
+      /*
+       * Unreachable through RLS, and checked anyway.
+       *
+       * The row is this customer's or it is not visible; a key inside it that
+       * belongs to somebody else would mean the library and the bucket disagree
+       * about who owns what, which is worth refusing loudly rather than
+       * signing. Defence in depth, never the only defence (ADR-0002).
+       */
+      await this.record(actor, null, {
+        action: "refuse",
+        objectKey: customerPrefix(actor.customerId),
+        sizeBytes: null,
+        mimeType: null,
+        succeeded: false,
+        detail: "library entry points outside this customer's prefix",
+      });
+      throw this.unknownAsset();
+    }
+
+    await this.record(actor, null, {
+      action: "read",
+      objectKey: key,
+      sizeBytes: null,
+      mimeType: null,
+      succeeded: true,
+      detail: null,
+    });
+
+    return {
+      url: storage.readUrl(key, VIEW_TTL_SEC, now),
+      expiresAt: new Date(now.getTime() + VIEW_TTL_SEC * 1000).toISOString(),
+    };
+  }
+
+  /** One shape for a library entry, so the three routes cannot drift. */
+  private asAsset(
+    row: {
+      id: string;
+      storageKey: string;
+      fileName: string;
+      mimeType: string | null;
+      byteSize: number | null;
+      title: string | null;
+      altText: string | null;
+      createdAt: Date;
+    },
+    usedByCount: number,
+  ): MediaAssetResponse {
+    return {
       id: row.id,
       reference: row.storageKey,
       fileName: row.fileName,
@@ -342,7 +430,8 @@ export class UploadService {
       title: row.title,
       altText: row.altText,
       createdAt: row.createdAt.toISOString(),
-    }));
+      usedByCount,
+    };
   }
 
   /**
@@ -379,16 +468,7 @@ export class UploadService {
     if (row === undefined) throw this.unknownAsset();
     void actor;
 
-    return {
-      id: row.id,
-      reference: row.storageKey,
-      fileName: row.fileName,
-      mimeType: row.mimeType,
-      byteSize: row.byteSize,
-      title: row.title,
-      altText: row.altText,
-      createdAt: row.createdAt.toISOString(),
-    };
+    return this.asAsset(row, await this.repository.countAssetUses(row.storageKey));
   }
 
   /**
@@ -564,7 +644,15 @@ export class UploadService {
 
   private async record(
     actor: UploadActor,
-    courseId: string,
+    /**
+     * Null for an operation that is not about one course (P88-01).
+     *
+     * The library is the customer's index and outlives any course, so a read
+     * minted from the Mediathek genuinely has no course to name. `StorageEvent`
+     * has allowed null since P23-02; this parameter simply did not, which made
+     * every audited action look course-scoped by construction.
+     */
+    courseId: string | null,
     event: {
       action: "mint" | "store" | "refuse" | "read" | "delete";
       objectKey: string;

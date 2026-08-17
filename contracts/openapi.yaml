@@ -2330,6 +2330,57 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
 
+  /admin/media/{id}/view:
+    post:
+      tags: [admin]
+      operationId: adminViewMedia
+      summary: A short-lived URL for a file in the library
+      description: |
+        The same capability as `adminViewUpload`, authorised by the **library
+        entry** rather than by a course.
+
+        The Mediathek screen is not inside a course, so it has no slug to check
+        a key's prefix against — and asking it to guess one would mean either a
+        screen with no previews or a route that takes a bare key. Authorising by
+        the asset's own id is the tighter answer, not the looser one: the row is
+        under FORCE ROW LEVEL SECURITY, so a file belonging to another customer
+        is not visible to name in the first place.
+
+        Every issued URL is written to the storage audit log as a `read`, in the
+        same way. A signed GET is a capability that leaves the building however
+        it was asked for.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: A URL valid for ten minutes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadView" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: |
+            No such file in this tenant. A file belonging to another customer
+            gets this same answer.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "409":
+          description: This deployment has no object storage configured.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "429":
+          description: Too many read signatures too quickly.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
   /admin/media/{id}:
     patch:
       tags: [admin]
@@ -5712,7 +5763,18 @@ components:
 
     MediaAsset:
       type: object
-      required: [id, reference, fileName, mimeType, byteSize, title, altText, createdAt]
+      required:
+        [
+          id,
+          reference,
+          fileName,
+          mimeType,
+          byteSize,
+          title,
+          altText,
+          createdAt,
+          usedByCount,
+        ]
       description: |
         One file in the customer's library. The bucket holds the bytes; this is
         what they are for.
@@ -5759,6 +5821,17 @@ components:
         createdAt:
           type: string
           format: date-time
+        usedByCount:
+          type: integer
+          minimum: 0
+          description: |
+            How many course contents currently point at this file.
+
+            Present so the library can say what removing it would cost
+            **before** somebody presses the button, rather than answering 409
+            afterwards. Counts every field that can hold a reference — a
+            content's own file, its poster, its captions, and each entry in its
+            media source list.
 
     UploadCompletion:
       type: object

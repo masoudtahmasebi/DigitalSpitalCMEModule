@@ -114,6 +114,25 @@ export class UploadController {
   }
 
   /**
+   * A short-lived read URL for a library entry (P88-01).
+   *
+   * POST rather than GET, matching `view`: it *mints a capability* and writes
+   * an audit row, so it is not a cacheable read however much it looks like one.
+   * No body — the entry's id is the whole question, and it is a uuid this
+   * tenant can see or cannot.
+   */
+  @Post("media/:id/view")
+  @RateLimit("mediaUpload")
+  @Roles(...AUTHOR_ROLES)
+  async viewMedia(
+    @Param("id") id: string,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    return this.service(db, principal).viewAsset(id, actorOf(principal), new Date());
+  }
+
+  /**
    * Forget a file (P81-03).
    *
    * 204: there is nothing to return, and the console re-reads the list. The

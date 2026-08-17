@@ -47,6 +47,7 @@ export type Route =
   | { kind: "organisation" }
   | { kind: "branding" }
   | { kind: "copy" }
+  | { kind: "media" }
   | { kind: "customers" }
   | { kind: "participants" }
   | { kind: "learners" }
@@ -87,6 +88,7 @@ const SEGMENTS: Readonly<Record<Exclude<Route["kind"], "course">, string>> = {
   // German in the URL, like every other screen: an operator sending a
   // colleague a link should see the word they use for the thing.
   copy: "texte",
+  media: "mediathek",
   customers: "kunden",
   participants: "zugaenge",
   learners: "teilnehmende",
