@@ -89,6 +89,7 @@ import {
   readIssuedPassword,
   signInToConsole,
 } from "../support/console.js";
+import { openCourseFromCatalogue } from "../support/catalogue.js";
 import { openWidgetShadowRoots } from "../support/shadow.js";
 import { buildBehind, currentTarget } from "../support/target.js";
 import { forgetSignInAttempts } from "../support/world.js";
@@ -655,18 +656,12 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        *
        * A suite that only works on an empty tenant is a suite that does not
        * work where the product runs. The card carries the title, so the button
-       * is reached through it.
+       * is reached through it — and, since P89-03, on whichever page the
+       * catalogue's alphabet put it. "E2E Fortbildung …" happens to sort early;
+       * `zwei-module.spec.ts` failed on the installation because its own title
+       * does not, which is the same defect and not this file's luck.
        */
-      const card = learner.locator("li").filter({ hasText: COURSE }).first();
-      await expect(
-        card,
-        "the published Fortbildung is not in the physician's catalogue",
-      ).toBeVisible({ timeout: 30_000 });
-
-      await card.getByRole("button", { name: "Zur Fortbildung" }).click();
-      await expect(learner.getByRole("heading", { name: COURSE })).toBeVisible({
-        timeout: 20_000,
-      });
+      await openCourseFromCatalogue(learner, COURSE);
 
       /*
        * Enrolling. This is the request that answered 403 in production for
