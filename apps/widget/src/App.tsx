@@ -32,6 +32,7 @@ import { useBranding } from "./branding.js";
 import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
 import type { TokenProvider } from "./token.js";
+import { nextAvailableContent } from "./player.js";
 import { CourseList } from "./components/CourseList.js";
 import { CertificationTab } from "./components/CertificationTab.js";
 import { ProgressCard, StickyMetaBar } from "./components/CourseHeader.js";
@@ -375,6 +376,29 @@ function Loaded(props: {
   const refresh = () => enrolment.reload();
 
   /*
+   * The next section a learner may open after finishing this one (P82-01).
+   *
+   * `nextAvailableContent` is the same rule the player's „Weiter: ‹Abschnitt›"
+   * button uses, called with the same arguments — one implementation, two
+   * callers. A second "what comes next" written for the quiz screen would drift
+   * from the player's the first time either changed, and the two disagreeing
+   * about where a physician goes next is the kind of difference nobody notices
+   * until it is on a CME record.
+   *
+   * Undefined whenever the enrolment or the course has not loaded, or the
+   * server has nothing open — the caller renders no button rather than one
+   * pointing nowhere.
+   */
+  function nextAfter(
+    contentId: string,
+  ): { readonly title: string; readonly open: () => void } | undefined {
+    if (detail === undefined || state === undefined) return undefined;
+    const target = nextAvailableContent(detail, state, contentId);
+    if (target === undefined) return undefined;
+    return { title: target.title, open: () => open(target.id) };
+  }
+
+  /*
    * Where **Fortbildung fortsetzen** goes.
    *
    * `resumeContentId` is the first *incomplete* reachable content, so it is
@@ -478,14 +502,29 @@ function Loaded(props: {
            * straight to page 13 would end in a rejection *after* they had typed
            * their EFN.
            */
-          onClaimPoints={() => {
-            refresh();
-            setScreen(
-              state.evaluationSubmitted
-                ? { kind: "reporting" }
-                : { kind: "evaluation", then: "reporting" },
-            );
-          }}
+          /*
+           * Offered only when the API would accept it (P82-01).
+           *
+           * `courseComplete` is the server's own answer to "has this physician
+           * watched what they must and passed the Lernerfolgskontrolle", which
+           * is exactly the pair `POST /completion` refuses on. Passing the
+           * callback unconditionally is what produced a 409 after a learner
+           * had typed their EFN — the worst place to be refused, because the
+           * refusal arrives after the personal data.
+           */
+          onClaimPoints={
+            state.courseComplete
+              ? () => {
+                  refresh();
+                  setScreen(
+                    state.evaluationSubmitted
+                      ? { kind: "reporting" }
+                      : { kind: "evaluation", then: "reporting" },
+                  );
+                }
+              : undefined
+          }
+          onNext={nextAfter(screen.contentId)}
         />,
         screen.contentId,
       );
@@ -884,7 +923,9 @@ function QuizGate(props: {
   contentId: string;
   onPassed: () => void;
   onBack: () => void;
-  onClaimPoints: () => void;
+  /** Absent while the course is not complete — see `QuizScreen` (P82-01). */
+  onClaimPoints: (() => void) | undefined;
+  onNext: { readonly title: string; readonly open: () => void } | undefined;
 }) {
   const quiz = useAsync(
     () => props.client.getQuiz(props.courseSlug, props.contentId),
@@ -906,6 +947,7 @@ function QuizGate(props: {
       onPassed={props.onPassed}
       onBack={props.onBack}
       onClaimPoints={props.onClaimPoints}
+      onNext={props.onNext}
     />
   );
 }

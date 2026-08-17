@@ -174,6 +174,7 @@ function lesson(overrides: Partial<LessonContent> = {}): LessonContent {
 
 function renderPlayer(
   overrides: {
+    course?: CourseDetail;
     state?: EnrolmentState;
     lesson?: LessonContent;
     onOpen?: (id: string) => void;
@@ -186,7 +187,7 @@ function renderPlayer(
     <PlayerScreen
       client={client}
       courseSlug="adhs"
-      course={course()}
+      course={overrides.course ?? course()}
       state={overrides.state ?? state()}
       lesson={overrides.lesson ?? lesson()}
       onProgress={vi.fn()}
@@ -321,6 +322,45 @@ describe("the content tabs", () => {
     expect(
       screen.getByText("Für diesen Abschnitt ist keine Zusammenfassung hinterlegt."),
     ).toBeTruthy();
+  });
+
+  it("offers no Lernerfolgskontrolle tab on a course that has none", () => {
+    /*
+     * P82-03, reported as *"if a module does not have erfolgs controlle, it
+     * should not appear"*.
+     *
+     * The tab was drawn regardless and padlocked, which reads as "not yet".
+     * On a course with no quiz content there is no yet — nothing will ever
+     * unlock it, and the learner is left waiting for something that does not
+     * exist. That is precisely the judgement the Teilprüfung case above
+     * records; it had simply never been applied to the tab beside it.
+     *
+     * The Punktemeldung follows it: without a Lernerfolgskontrolle there is no
+     * `quizPassed` to reach, so it too could only ever be locked.
+     */
+    const withoutQuiz = course();
+    for (const module of withoutQuiz.modules) {
+      for (const chapter of module.chapters) {
+        (chapter as { contents: unknown[] }).contents = chapter.contents.filter(
+          (content) => content.kind !== "quiz",
+        );
+      }
+    }
+
+    renderPlayer({ course: withoutQuiz });
+
+    expect(screen.queryByRole("tab", { name: /Lernerfolgskontrolle/ })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Punktemeldung/ })).toBeNull();
+    // The one that is always meaningful stays.
+    expect(screen.getByRole("tab", { name: /Zusammenfassung/ })).toBeTruthy();
+  });
+
+  it("keeps the tabs on a course that does have a Lernerfolgskontrolle", () => {
+    // The control: without it the assertion above would pass on a player that
+    // renders no tabs at all.
+    renderPlayer();
+    expect(screen.getByRole("tab", { name: /Lernerfolgskontrolle/ })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Punktemeldung/ })).toBeTruthy();
   });
 
   it("offers no Teilprüfung", () => {

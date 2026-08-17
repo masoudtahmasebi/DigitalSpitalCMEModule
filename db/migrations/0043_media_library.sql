@@ -43,6 +43,8 @@
 -- customer's own console, never to a learner, and never in a log. The storage
 -- key remains the name *we* generated (`uploadObjectName`), never theirs.
 
+BEGIN;
+
 CREATE TABLE media_assets (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     customer_id   uuid NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -103,3 +105,5 @@ CREATE POLICY media_assets_tenant_isolation ON media_assets
     WITH CHECK (customer_id = nullif(current_setting('app.customer_id', true), '')::uuid);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON media_assets TO ds_app;
+
+COMMIT;

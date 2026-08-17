@@ -23,17 +23,60 @@ afterEach(() => {
   host.remove();
 });
 
-/** Renders synchronously enough for React to have flushed its first commit. */
+/**
+ * Let React finish committing.
+ *
+ * This used to be a single `setTimeout(0)` under a comment claiming it
+ * "renders synchronously enough", and that claim is the bug: a commit takes
+ * however many microtask *and* macrotask turns React needs, which is one on an
+ * idle machine and more on a loaded CI runner. Eleven sites in this file shared
+ * the assumption and two of them failed in consecutive runs — passing and
+ * failing on the same commit, which is CLAUDE.md §9.1's "a green gate is only
+ * evidence if it could have been red" in its worst form: it was red for no
+ * reason and green for no reason.
+ *
+ * Several turns rather than one. For an assertion that something *appears*,
+ * prefer `waitForText`, which waits for the fact instead of for a duration.
+ */
+async function settle(turns = 5): Promise<void> {
+  for (let i = 0; i < turns; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
 async function mount(html: string): Promise<DsLmsElement> {
   host.innerHTML = html;
   const element = host.querySelector(WIDGET_ELEMENT_NAME);
   if (!(element instanceof DsLmsElement)) throw new Error("element did not upgrade");
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await settle();
   return element;
 }
 
 /**
- * Wait until the shadow root stops saying something, or give up.
+ * Wait for a fact about the shadow root, rather than for a duration.
+ *
+ * One polling loop, three ways of asking — a second implementation of "poll
+ * until" is a second set of timings to keep in step, and the copy in the
+ * convenient wrapper is the one that would drift.
+ *
+ * The deadline is what keeps a genuine regression failing: when the condition
+ * never holds this returns anyway, and the `expect` after it reports the real
+ * difference rather than hanging the suite on a timeout with no message.
+ */
+async function waitFor(condition: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+/** Wait until the shadow root says `fragment`. */
+async function waitForText(read: () => string, fragment: string): Promise<void> {
+  await waitFor(() => read().includes(fragment));
+}
+
+/**
+ * Wait until the shadow root stops saying `fragment`.
  *
  * A single `setTimeout(0)` was here and it is a race, not a wait: re-rendering
  * after `tokenProvider` is assigned takes however many microtask turns React
@@ -41,21 +84,22 @@ async function mount(html: string): Promise<DsLmsElement> {
  * a loaded CI runner. It failed exactly once, on a commit whose sibling run
  * passed — which is the signature of a check that cannot be trusted in either
  * direction (CLAUDE.md §9.1).
- *
- * Polling for the condition keeps the assertion identical and removes the
- * timing assumption. The deadline is what makes a genuine regression still
- * fail: if the text never goes away, this returns and the `expect` below it
- * reports the real problem rather than hanging the suite.
  */
-async function waitForAbsence(
-  read: () => string,
-  fragment: string,
-  timeoutMs = 2000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (read().includes(fragment) && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+async function waitForAbsence(read: () => string, fragment: string): Promise<void> {
+  await waitFor(() => !read().includes(fragment));
+}
+
+/**
+ * Wait until the widget has rendered *anything at all*.
+ *
+ * The precondition for every assertion of the form "the shadow root does **not**
+ * say X". Before the first commit the text is the empty string, which contains
+ * nothing — so the assertion passes, and passes just as happily on a widget
+ * that renders nothing ever. That is §9.1 in miniature: green because the
+ * subject had not yet had a chance to be wrong.
+ */
+async function waitForRender(read: () => string): Promise<void> {
+  await waitFor(() => read().trim() !== "");
 }
 
 describe("registration", () => {
@@ -114,9 +158,10 @@ describe("configuration", () => {
     // A missing attribute is a page-integration mistake. It gets one sentence,
     // not a wall of failed requests the learner cannot act on.
     const element = await mount("<ds-lms></ds-lms>");
-    const text = element.shadowRootForTest?.textContent ?? "";
+    const read = (): string => element.shadowRootForTest?.textContent ?? "";
+    await waitForText(read, "nicht korrekt eingebunden");
 
-    expect(text).toContain("nicht korrekt eingebunden");
+    expect(read()).toContain("nicht korrekt eingebunden");
   });
 
   it("refuses when configured but given no way to get a token", async () => {
@@ -125,10 +170,10 @@ describe("configuration", () => {
     const element = await mount(
       `<ds-lms api-base="https://api.test" project="p" course="c"></ds-lms>`,
     );
+    const read = (): string => element.shadowRootForTest?.textContent ?? "";
+    await waitForText(read, "nicht korrekt eingebunden");
 
-    expect(element.shadowRootForTest?.textContent ?? "").toContain(
-      "nicht korrekt eingebunden",
-    );
+    expect(read()).toContain("nicht korrekt eingebunden");
   });
 
   it("keeps a provider set before the element upgraded", async () => {
@@ -152,14 +197,17 @@ describe("configuration", () => {
 
     // Adopting into this document is what triggers the upgrade.
     host.append(document.adoptNode(raw));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
 
     expect(raw).toBeInstanceOf(DsLmsElement);
     const upgraded = raw as unknown as DsLmsElement;
     expect(await upgraded.tokenProvider?.({ refresh: false })).toBe("early");
-    expect(upgraded.shadowRootForTest?.textContent ?? "").not.toContain(
-      "nicht korrekt eingebunden",
-    );
+
+    const read = (): string => upgraded.shadowRootForTest?.textContent ?? "";
+    // Before the first commit the text is empty, and empty contains nothing —
+    // so the assertion below would pass on a widget that never rendered.
+    await waitForRender(read);
+    expect(read()).not.toContain("nicht korrekt eingebunden");
   });
 
   it("accepts a token provider set AFTER insertion, and re-renders", async () => {
@@ -175,22 +223,16 @@ describe("configuration", () => {
     element.setAttribute("project", "medice-adhs");
 
     host.append(element);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    const read = (): string => element.shadowRootForTest?.textContent ?? "";
+    await waitForText(read, "nicht korrekt eingebunden");
 
     // Exactly the state the bug left behind.
-    expect(element.shadowRootForTest?.textContent ?? "").toContain(
-      "nicht korrekt eingebunden",
-    );
+    expect(read()).toContain("nicht korrekt eingebunden");
 
     element.tokenProvider = async () => "late";
-    await waitForAbsence(
-      () => element.shadowRootForTest?.textContent ?? "",
-      "nicht korrekt eingebunden",
-    );
+    await waitForAbsence(read, "nicht korrekt eingebunden");
 
-    expect(element.shadowRootForTest?.textContent ?? "").not.toContain(
-      "nicht korrekt eingebunden",
-    );
+    expect(read()).not.toContain("nicht korrekt eingebunden");
   });
 
   it("does not re-render when the same provider is assigned again", async () => {
@@ -205,11 +247,11 @@ describe("configuration", () => {
     element.tokenProvider = provider;
 
     host.append(element);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
     const before = element.shadowRootForTest?.firstElementChild;
 
     element.tokenProvider = provider;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
 
     expect(element.shadowRootForTest?.firstElementChild).toBe(before);
   });
@@ -223,12 +265,12 @@ describe("configuration", () => {
     element.tokenProvider = async () => "token";
 
     host.append(element);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const read = (): string => element.shadowRootForTest?.textContent ?? "";
+    await waitForRender(read);
 
     // It got past the configuration check and started loading.
-    expect(element.shadowRootForTest?.textContent ?? "").not.toContain(
-      "nicht korrekt eingebunden",
-    );
+    expect(read()).not.toContain("nicht korrekt eingebunden");
   });
 });
 
@@ -313,7 +355,7 @@ describe("white-label branding", () => {
     );
     // The branding fetch is deliberately not awaited by connectedCallback —
     // a logo must never block the first render.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
     return element;
   }
 });
@@ -419,7 +461,7 @@ describe("the ds-lms:course-open event", () => {
 
     // The list is fetched after the first commit.
     for (let i = 0; i < 5; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await settle();
     }
 
     const buttons = [
@@ -449,7 +491,7 @@ describe("the ds-lms:course-open event", () => {
     document.addEventListener("ds-lms:course-open", cancel);
 
     open.click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
     document.removeEventListener("ds-lms:course-open", cancel);
 
     // Still the list: the host is about to replace this element itself.
@@ -461,7 +503,7 @@ describe("the ds-lms:course-open event", () => {
 
     open.click();
     for (let i = 0; i < 5; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await settle();
     }
 
     expect(element.shadowRootForTest?.textContent ?? "").not.toContain("Zur Fortbildung");
@@ -472,7 +514,7 @@ describe("lifecycle", () => {
   it("tears down cleanly when removed", async () => {
     const element = await mount("<ds-lms></ds-lms>");
     element.remove();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
 
     expect(element.shadowRootForTest).toBeUndefined();
   });
