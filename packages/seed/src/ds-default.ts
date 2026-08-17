@@ -61,6 +61,7 @@ import {
   seedParticipant,
   seedPortalProject,
   upsert,
+  hasNoEvaluation,
 } from "./lib.js";
 import { describeDemoStaff, seedDemoStaff } from "./staff.js";
 
@@ -399,15 +400,23 @@ export async function seedDsDefault(
       }
     }
 
-    await pool.query("DELETE FROM evaluations WHERE course_id = $1", [courseId]);
-    await pool.query(
-      `INSERT INTO evaluations (customer_id, course_id, ordinal, prompt, kind, required, options)
-       VALUES
-         ($1,$2,0,'Wie bewerten Sie die Fortbildung insgesamt?','scale',true,$3::jsonb),
-         ($1,$2,1,'War der Inhalt für Ihre Praxis relevant?','scale',true,$3::jsonb),
-         ($1,$2,2,'Anmerkungen','text',false,'[]'::jsonb)`,
-      [customerId, courseId, JSON.stringify(["1", "2", "3", "4", "5"])],
-    );
+    /*
+     * Seeded once, never rewritten — see `medice-adhs.ts` for the deploy this
+     * broke (P84-01). `evaluation_responses.evaluation_id` is
+     * `ON DELETE RESTRICT`, so the first learner to answer pins these rows and
+     * a re-seeding deploy dies on the foreign key rather than merely skipping
+     * the seed.
+     */
+    if (await hasNoEvaluation(pool, courseId)) {
+      await pool.query(
+        `INSERT INTO evaluations (customer_id, course_id, ordinal, prompt, kind, required, options)
+         VALUES
+           ($1,$2,0,'Wie bewerten Sie die Fortbildung insgesamt?','scale',true,$3::jsonb),
+           ($1,$2,1,'War der Inhalt für Ihre Praxis relevant?','scale',true,$3::jsonb),
+           ($1,$2,2,'Anmerkungen','text',false,'[]'::jsonb)`,
+        [customerId, courseId, JSON.stringify(["1", "2", "3", "4", "5"])],
+      );
+    }
 
     /*
      * The two console accounts (P38-01), and why `revealPasswords` is tied to

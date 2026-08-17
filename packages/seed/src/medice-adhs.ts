@@ -47,6 +47,7 @@ import {
   seedParticipant,
   seedPortalProject,
   upsert,
+  hasNoEvaluation,
 } from "./lib.js";
 
 /**
@@ -589,15 +590,45 @@ export async function seedMediceAdhs(
       }
     }
 
-    await pool.query("DELETE FROM evaluations WHERE course_id = $1", [courseId]);
-    await pool.query(
-      `INSERT INTO evaluations (customer_id, course_id, ordinal, prompt, kind, required, options)
-       VALUES
-         ($1,$2,0,'Wie bewerten Sie die Fortbildung insgesamt?','scale',true,$3::jsonb),
-         ($1,$2,1,'War der Inhalt für Ihre Praxis relevant?','scale',true,$3::jsonb),
-         ($1,$2,2,'Anmerkungen','text',false,'[]'::jsonb)`,
-      [customerId, courseId, JSON.stringify(["1", "2", "3", "4", "5"])],
-    );
+    /*
+     * The Evaluationsbogen — seeded **once**, never rewritten (P84-01).
+     *
+     * ## The deploy this broke
+     *
+     * It used to be `DELETE` then `INSERT`, which is the obvious way to make a
+     * seed idempotent and stops being possible the moment the system is used.
+     * `evaluation_responses.evaluation_id` is `ON DELETE RESTRICT`, so the first
+     * physician to answer the form pins those rows for good — and every deploy
+     * from then on died here:
+     *
+     *     update or delete on table "evaluations" violates foreign key
+     *     constraint "evaluation_responses_evaluation_id_fkey"
+     *
+     * The deploy script is correct to abort rather than swap, so the effect was
+     * that **no change could reach the server at all** while the fix for a
+     * completely unrelated bug sat on main. That is the expensive shape: a
+     * seeding step failing does not merely skip seeding, it stops the release.
+     *
+     * ## Why "only when there are none" and not an upsert
+     *
+     * An upsert keyed on ordinal would keep the deploy green and quietly
+     * overwrite the customer's own wording on every release — the operator can
+     * edit this form in the console, and re-imposing our text each time is a
+     * worse bug than the one being fixed, because nothing would ever say so.
+     *
+     * A seed establishes a starting point. Once a course has an evaluation, the
+     * people using it own it.
+     */
+    if (await hasNoEvaluation(pool, courseId)) {
+      await pool.query(
+        `INSERT INTO evaluations (customer_id, course_id, ordinal, prompt, kind, required, options)
+         VALUES
+           ($1,$2,0,'Wie bewerten Sie die Fortbildung insgesamt?','scale',true,$3::jsonb),
+           ($1,$2,1,'War der Inhalt für Ihre Praxis relevant?','scale',true,$3::jsonb),
+           ($1,$2,2,'Anmerkungen','text',false,'[]'::jsonb)`,
+        [customerId, courseId, JSON.stringify(["1", "2", "3", "4", "5"])],
+      );
+    }
 
     await pool.query("COMMIT");
 
