@@ -47,4 +47,52 @@ COMMENT ON COLUMN projects.copy_overrides IS
     'Dotted locale key to the customer''s replacement text (P83-01). '
     'Keys are COPY_KEYS from @ds/copy; the API refuses any other.';
 
+-- ## Readable before a token exists, the same way branding is
+--
+-- The widget renders its loading, "session expired" and "not embedded" states
+-- **pre-auth**, and those states have words in them. So the wording has to be
+-- readable without a tenant context, for exactly the reason
+-- `resolve_project_branding` gives in migration 0007 — and it follows that
+-- function's rules rather than inventing looser ones: one argument, one
+-- non-sensitive column, STABLE, a pinned search_path, owned by the NOLOGIN
+-- BYPASSRLS role that exists to own these functions and nothing else, EXECUTE
+-- granted only to ds_app.
+--
+-- ## Why this is not a hole in ADR-0002
+--
+-- Interface wording rendered on a public page to every visitor, signed in or
+-- not. Guessing a project slug reveals the words that customer's own website
+-- already shows anyone who loads it. No ids, no binding, no SMTP.
+CREATE OR REPLACE FUNCTION resolve_project_copy(p_slug text)
+RETURNS TABLE (copy_overrides jsonb)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    SELECT p.copy_overrides
+    FROM projects p
+    WHERE p.slug = p_slug
+    LIMIT 1;
+$$;
+
+ALTER FUNCTION resolve_project_copy(text) OWNER TO ds_binding_resolver;
+
+-- The column grant is where "returns display data only" is actually enforced.
+-- `ds_binding_resolver` holds BYPASSRLS, so RLS does not constrain it — it can
+-- only read the columns it has been granted. Widening what any of these
+-- functions can see therefore requires adding a column name here, in a
+-- migration, in a diff. That is the point (0007).
+GRANT SELECT (copy_overrides) ON projects TO ds_binding_resolver;
+
+-- The default grant on a new function is to PUBLIC, which on SECURITY DEFINER
+-- means every role in the cluster.
+REVOKE ALL ON FUNCTION resolve_project_copy(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION resolve_project_copy(text) TO ds_app;
+
+COMMENT ON FUNCTION resolve_project_copy(text) IS
+    'The customer''s wording overrides for a project slug, readable without a '
+    'tenant context because the widget renders worded states before it has a '
+    'token. Display data only — no ids, no Keycloak binding, no SMTP.';
+
 COMMIT;

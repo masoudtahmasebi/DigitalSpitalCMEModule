@@ -1291,13 +1291,29 @@ function SourcesEditor(props: {
                 }
               />
             )}
-            <TextInput
-              id={props.idFor(`source-label-${index}`)}
-              aria-label={de.structure.sourceLabel}
-              value={source.label ?? ""}
-              maxLength={60}
-              onChange={(label) => patch(index, { label })}
-            />
+            {/*
+              The Bezeichnung, and only when it can do anything (P84-02).
+              
+              Reported as *"i still do not get it what is this automatisch"*:
+              the field carried the value "Automatisch", had no visible label —
+              only an `aria-label` a sighted person never sees — and sat beside
+              a single video source, where the quality picker it feeds is never
+              drawn at all. So it was an unexplained box whose contents changed
+              nothing, which is the §9.2 shape with the sign flipped.
+              
+              A quality picker needs something to pick between, so this appears
+              from the second source onwards, with the sentence that was already
+              written for it in the locale and rendered nowhere (§9.3).
+            */}
+            {props.sources.length < 2 ? null : (
+              <TextInput
+                id={props.idFor(`source-label-${index}`)}
+                aria-label={de.structure.sourceLabel}
+                value={source.label ?? ""}
+                maxLength={60}
+                onChange={(label) => patch(index, { label })}
+              />
+            )}
             <IconButton
               label={de.structure.removeSource(source.url === "" ? "—" : source.url)}
               glyph="✕"
@@ -1306,6 +1322,12 @@ function SourcesEditor(props: {
           </li>
         ))}
       </ul>
+
+      {props.sources.length < 2 ? null : (
+        <p className="text-xs text-[color:var(--ds-ink-muted)]">
+          {de.structure.sourceLabelHint}
+        </p>
+      )}
 
       <input
         ref={filePicker}

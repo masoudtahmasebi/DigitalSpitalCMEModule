@@ -3493,6 +3493,18 @@ export interface components {
          *     `hasVnrPassword` is for a course (CLAUDE.md §4 invariant 7).
          */
         ProjectSummary: {
+            /**
+             * @description The customer's own words for the learner's screens (P83-02): dotted
+             *     locale key to replacement text.
+             *
+             *     Only keys the widget's locale table still has. A key stored before a
+             *     screen was renamed away is dropped on read rather than served, so
+             *     this never contains a setting nothing can apply — and the write path
+             *     refuses one rather than accepting an orphan.
+             */
+            copyOverrides: {
+                [key: string]: string;
+            };
             slug: string;
             name: string;
             departmentSlug: string;
@@ -3604,6 +3616,23 @@ export interface components {
          *     a worse failure than the one it prevented.
          */
         ProjectUpdate: {
+            /**
+             * @description The customer's own words for the learner's screens (P83-02).
+             *
+             *     A **complete** map for this project: what is sent replaces what is
+             *     stored. An empty string removes an override and returns that screen
+             *     to the platform's wording — which is why the console sends blank
+             *     fields rather than omitting them. Omitting a key would be
+             *     indistinguishable from leaving it alone, and there would be no way
+             *     to undo a change.
+             *
+             *     A key the widget's locale table no longer has is **refused**, naming
+             *     the key. Accepting it would store a setting nothing can apply, that
+             *     nobody can see and nobody can find to delete.
+             */
+            copyOverrides?: {
+                [key: string]: string;
+            };
             name?: string;
             /**
              * @description The customer's **own** sign-in page, when they have one.

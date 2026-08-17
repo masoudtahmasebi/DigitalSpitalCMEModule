@@ -16,7 +16,8 @@
     "@ds/sdk": "workspace:*",
     "bwip-js": "^4.11.2",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "@ds/copy": "workspace:*"
   },
   "devDependencies": {
     "@ds/config": "workspace:*",

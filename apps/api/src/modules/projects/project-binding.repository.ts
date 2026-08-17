@@ -250,6 +250,27 @@ export class ProjectBrandingRepository implements ProjectBrandingRepositoryPort 
       fontUpdatedAt: row?.font_updated_at ?? null,
     };
   }
+
+  /**
+   * The customer's wording overrides, pre-auth (P83-02).
+   *
+   * Through `resolve_project_copy` for the same reason `resolve` goes through
+   * `resolve_project_branding`: the widget renders worded states before it has
+   * a token, so this has to be readable without a tenant context, and the
+   * SECURITY DEFINER function with its column grant is what bounds exactly
+   * what "without a tenant context" may see.
+   *
+   * Returns the raw value. `parseCopyOverrides` in `@ds/domain` decides what is
+   * acceptable — a repository returns rows, and which keys still exist is a
+   * rule.
+   */
+  async resolveCopy(slug: string): Promise<unknown> {
+    const result = await this.pool.query<{ copy_overrides: unknown }>(
+      "SELECT * FROM resolve_project_copy($1)",
+      [slug],
+    );
+    return result.rows[0]?.copy_overrides ?? {};
+  }
 }
 
 /**

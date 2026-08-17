@@ -5148,9 +5148,21 @@ components:
           hasSmtpPassword,
           embedOrigins,
           branding,
+          copyOverrides,
           courseCount,
         ]
       properties:
+        copyOverrides:
+          type: object
+          additionalProperties: { type: string }
+          description: |
+            The customer's own words for the learner's screens (P83-02): dotted
+            locale key to replacement text.
+
+            Only keys the widget's locale table still has. A key stored before a
+            screen was renamed away is dropped on read rather than served, so
+            this never contains a setting nothing can apply — and the write path
+            refuses one rather than accepting an orphan.
         slug: { type: string }
         name: { type: string }
         departmentSlug: { type: string }
@@ -5272,6 +5284,22 @@ components:
         is given, because refusing to let an admin change their own IdP would be
         a worse failure than the one it prevented.
       properties:
+        copyOverrides:
+          type: object
+          additionalProperties: { type: string }
+          description: |
+            The customer's own words for the learner's screens (P83-02).
+
+            A **complete** map for this project: what is sent replaces what is
+            stored. An empty string removes an override and returns that screen
+            to the platform's wording — which is why the console sends blank
+            fields rather than omitting them. Omitting a key would be
+            indistinguishable from leaving it alone, and there would be no way
+            to undo a change.
+
+            A key the widget's locale table no longer has is **refused**, naming
+            the key. Accepting it would store a setting nothing can apply, that
+            nobody can see and nobody can find to delete.
         name: { type: string, minLength: 1, maxLength: 300 }
         loginUrl:
           type: [string, "null"]

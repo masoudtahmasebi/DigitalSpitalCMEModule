@@ -828,6 +828,23 @@ export const de = {
       "Freitextantworten können personenbezogene Angaben enthalten. Sie werden ausschließlich aggregiert ausgewertet und erscheinen in keinem Protokoll.",
   },
 
+  /** Texte — the customer's own words for the learner's screens (P83-04). */
+  copy: {
+    nav: "Texte",
+    intro:
+      "Hier ändern Sie die Beschriftungen und Sätze, die Teilnehmende in der Fortbildung sehen. Leer lassen heißt: der Standardtext wird verwendet. Die Änderungen gelten für das gewählte Projekt.",
+    project: "Projekt",
+    filter: "Suchen",
+    save: "Texte speichern",
+    saving: "Wird gespeichert …",
+    saved: "Gespeichert.",
+    counts: (shown: number, total: number): string => `${shown} von ${total} Texten`,
+    fallback: (value: string): string => `Standard: ${value}`,
+    fixed: "Nicht änderbar",
+    fixedHint:
+      "Dieser Satz enthält eine Zahl und wird im Code gebildet, damit Einzahl und Mehrzahl stimmen („1 Punkt“ gegenüber „4 Punkten“). Als frei bearbeitbare Vorlage ginge die Einzahl verloren.",
+  },
+
   branding: {
     title: "Schriftart",
     intro:

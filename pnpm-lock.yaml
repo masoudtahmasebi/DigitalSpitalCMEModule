@@ -82,6 +82,9 @@ importers:
       '@ds/build-info':
         specifier: workspace:*
         version: link:../../packages/build-info
+      '@ds/copy':
+        specifier: workspace:*
+        version: link:../../packages/copy
       '@ds/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -140,6 +143,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@ds/copy':
+        specifier: workspace:*
+        version: link:../../packages/copy
       '@ds/domain':
         specifier: workspace:*
         version: link:../../packages/domain

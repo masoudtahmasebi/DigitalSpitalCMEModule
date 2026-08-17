@@ -49,6 +49,10 @@ const SCREEN_LOADS = {
   certificates: ["GET /admin/certificates"],
   staff: ["GET /admin/staff"],
   branding: ["GET /admin/branding/font"],
+  // Texte (P83-04). One read at mount, and it is the same one Organisation
+  // makes — copy is stored per project, so the screen has to list them before
+  // it can show anything.
+  copy: ["GET /admin/projects"],
   security: ["GET /admin/auth/second-factor/policy"],
 };
 
