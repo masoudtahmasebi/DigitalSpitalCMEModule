@@ -690,6 +690,18 @@ export const de = {
      * The last part is the one that makes this a mechanism rather than a
      * remark (CLAUDE.md §9.4).
      */
+    /**
+     * The new file's length, after the operator changed the video (P80-02).
+     *
+     * Not a warning. The stored number describes the file that was there
+     * before, so of course it differs — and saying „Teilnehmende konnten
+     * diesen Abschnitt nicht abschließen" about a video nobody has seen yet
+     * is alarming and untrue. It states what happened and what to do.
+     */
+    /** Shown while a still is being taken from the video (P80-01). */
+    posterCapturing: "Vorschaubild wird aus dem Video erzeugt …",
+    durationFollowedNewFile: (measuredSec: number): string =>
+      `Neue Datei erkannt — die Länge wurde auf ${String(measuredSec)} Sekunden aktualisiert. Mit „Speichern“ wird sie übernommen.`,
     durationCorrected: (storedSec: number, measuredSec: number): string =>
       `Die gespeicherte Länge (${String(storedSec)} Sekunden) stimmt nicht mit der Videodatei überein ` +
       `(${String(measuredSec)} Sekunden). Ist die gespeicherte Länge größer als die Datei, ` +
