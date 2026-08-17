@@ -139,7 +139,8 @@ export interface QuizLocation {
 }
 
 /**
- * The course's Lernerfolgskontrolle, if it has one, with the server's gate.
+ * **This module's** Lernerfolgskontrolle, if it has one, with the server's gate
+ * (P87-02).
  *
  * The player's second content tab is the quiz, and it has to know both where it
  * is and whether it is open yet. The gate is looked up in `EnrolmentState`
@@ -147,9 +148,23 @@ export interface QuizLocation {
  * reachable, and a second rule in the widget would be a client-side gate that
  * happened to agree until it did not.
  *
- * The first quiz wins. A course with per-module Teilprüfungen would need more
- * than this, and Teilprüfung is explicitly out of scope — see
- * `docs/requirements/medice-adhs.md` §6.1.
+ * ## Why the search is scoped to one module now
+ *
+ * It used to return the **first** quiz in the whole course, on the reasoning
+ * that the quiz engine models one course-level Lernerfolgskontrolle and a
+ * per-module Teilprüfung was out of scope. The client has since asked for one
+ * per module directly — *"each module part, can have quiz or not, if it has the
+ * tab is shown, if not it is not shown"* — and the old search makes that shape
+ * unfinishable: every module offers module 1's exam, and no later exam is
+ * reachable by any route.
+ *
+ * `undefined` when this module has none, which is what draws no tab at all
+ * rather than a padlock on something that will never unlock (P82-03, now at
+ * module granularity).
+ *
+ * `undefined` also for a content id that is not in the course — a caller that
+ * cannot place the learner shows no exam, which is the same judgement
+ * `locateContent` makes one function up and for the same reason.
  */
 export function findQuizContent(
   course: Pick<CourseDetail, "modules">,
@@ -158,6 +173,7 @@ export function findQuizContent(
       chapters: readonly { contents: readonly { id: string; gate: GateStatus }[] }[];
     }[];
   },
+  currentContentId: string,
 ): QuizLocation | undefined {
   const gates = new Map<string, GateStatus>();
   for (const module of state.modules) {
@@ -166,15 +182,19 @@ export function findQuizContent(
     }
   }
 
-  for (const module of course.modules) {
-    for (const chapter of module.chapters) {
-      for (const content of chapter.contents) {
-        if (content.kind !== "quiz") continue;
-        const gate = gates.get(content.id);
-        // No gate means the enrolment does not know this content — treat it as
-        // locked rather than as open.
-        return { id: content.id, gate: gate ?? "locked" };
-      }
+  const here = locateContent(course, currentContentId);
+  if (here === undefined) return undefined;
+
+  const module = course.modules.find((entry) => entry.id === here.moduleId);
+  if (module === undefined) return undefined;
+
+  for (const chapter of module.chapters) {
+    for (const content of chapter.contents) {
+      if (content.kind !== "quiz") continue;
+      const gate = gates.get(content.id);
+      // No gate means the enrolment does not know this content — treat it as
+      // locked rather than as open.
+      return { id: content.id, gate: gate ?? "locked" };
     }
   }
   return undefined;
@@ -199,9 +219,22 @@ export function findQuizContent(
  * about to refuse, or — worse — look right while the two quietly disagreed
  * (CLAUDE.md §4 invariant 1).
  *
- * A `quiz` is deliberately skipped. The Lernerfolgskontrolle has its own tab
- * and its own button, and sliding into it from a video would drop the learner
- * into an exam they did not choose to start.
+ * ## The quiz is on the way now (P87-03)
+ *
+ * This used to `continue` past a `quiz`, so that finishing a video never slid
+ * the learner into an exam they had not chosen to start. That reasoning holds
+ * for a course with one exam at the end — and it is what makes a course with an
+ * exam on every module impossible: after module 1's last video, **Weiter**
+ * jumped over module 1's Lernerfolgskontrolle to a module the server has
+ * locked, found nothing available, and drew no control at all.
+ *
+ * The learner is not dropped into an exam by this: the button says
+ * „Weiter: ‹Lernerfolgskontrolle›" and opens the quiz's **start** screen, which
+ * is a page with a „… starten" button on it. Choosing to go on is still a
+ * click, and it is now a click that exists.
+ *
+ * The server's gate is unchanged and still decides: a quiz that P87-04 holds
+ * shut is not `available`, so it is not offered here either.
  *
  * Returns `undefined` when nothing further is open — the last section, or a
  * course whose next module is still locked — and the caller then offers
@@ -231,7 +264,6 @@ export function nextAvailableContent(
   if (here === -1) return undefined;
 
   for (const content of ordered.slice(here + 1)) {
-    if (content.kind === "quiz") continue;
     if (gates.get(content.id) !== "available") continue;
     return { id: content.id, title: content.title };
   }

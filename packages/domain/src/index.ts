@@ -54,6 +54,7 @@ export type {
 
 export { evaluateGate, evaluateSequence } from "./gating.js";
 export type { GateReason, GateResult, GateStatus, GatingItem } from "./gating.js";
+export { contentGates } from "./module-quiz.js";
 
 export { courseWatchCoverage } from "./coverage.js";
 export type { ContentSegments, WatchCoverage } from "./coverage.js";

@@ -51,7 +51,15 @@ const course: CourseComplianceRow = {
   validTo: null,
 };
 
-/** Video then quiz in the same chapter, so the quiz is reachable from the start. */
+/**
+ * Video then quiz in the same chapter — the shape every author builds.
+ *
+ * The quiz is **not** reachable from the start any more (P87-04): a module's
+ * Lernerfolgskontrolle waits for that module's videos. This file is about the
+ * quiz engine rather than about the gate, so `build` credits the video by
+ * default and `WATCHED` says so out loud; the gate has its own test at the
+ * bottom, and it is the one that would go red if the rule were removed.
+ */
 const tree: CourseTree = {
   modules: [{ id: M1, ordinal: 0, title: "Modul 1" }],
   chapters: [{ id: C1, moduleId: M1, ordinal: 0 }],
@@ -120,6 +128,26 @@ const answerKey: AnswerKeyRow[] = [
   { questionId: Q2, kind: "single", correctOptionIds: [Q2_RIGHT] },
 ];
 
+/**
+ * The module's video, watched end to end — the precondition for opening its
+ * Lernerfolgskontrolle (P87-04).
+ *
+ * Every test below that reaches the quiz starts from here, because reaching the
+ * quiz is now something a learner earns rather than the default state. Passing
+ * `progress: []` restores the unwatched case, which is what the gate test does.
+ */
+const WATCHED: readonly ProgressRow[] = [
+  {
+    contentId: VIDEO,
+    status: "completed",
+    watchedPercent: 100,
+    watchedSegments: [{ startSec: 0, endSec: 600 }],
+    lastPositionSec: 600,
+    scorePercent: null,
+    updatedAt: new Date("2026-07-28T09:00:00Z"),
+  },
+];
+
 function build(
   options_: {
     attempts?: number;
@@ -139,7 +167,7 @@ function build(
     findEnrolment: async () => ({ ...enrolment, ...options_.enrolmentOverrides }),
     createEnrolment: async () => enrolment,
     findCourseTree: async () => tree,
-    findProgress: async () => options_.progress ?? [],
+    findProgress: async () => options_.progress ?? [...WATCHED],
     upsertProgress: async () => undefined,
     hasEfn: async () => false,
     hasEvaluationResponse: async () => false,
@@ -467,5 +495,58 @@ describe("submit", () => {
       .catch((e) => e);
 
     expect((error as AppError).kind).toBe("gate_locked");
+  });
+});
+
+describe("the module's own gate", () => {
+  const allCorrect = {
+    answers: [
+      { questionId: Q1, selectedOptionIds: [Q1_RIGHT] },
+      { questionId: Q2, selectedOptionIds: [Q2_RIGHT] },
+    ],
+  };
+
+  /*
+   * P87-04, at the endpoint rather than on the screen.
+   *
+   * The widget stops drawing „Lernerfolgskontrolle beginnen" until the module's
+   * videos are watched, and that is a rendering decision. This is the rule: a
+   * physician who posts straight to the quiz — or opens it from a stale tab, or
+   * from a link a colleague sent — gets the same answer as the one who looked
+   * at the screen. Otherwise the watch requirement is a decoration
+   * (CLAUDE.md §4 invariant 1).
+   *
+   * `progress: []` is the whole fixture change: the same course, the same
+   * enrolment, the same quiz, with the module's video unwatched.
+   */
+  it("refuses the quiz until this module's video is watched", async () => {
+    const { service } = build({ progress: [] });
+
+    const error = await service.getQuiz(course.slug, QUIZ, learner).catch((e) => e);
+
+    expect((error as AppError).kind).toBe("gate_locked");
+    // Names the field, never a value, and tells the learner what to do next
+    // (§9.4): "finish the videos", not "locked".
+    expect((error as AppError).clientDetail).toContain("Videos dieses Moduls");
+  });
+
+  it("refuses a submission to it as well, not only the read", async () => {
+    // Two entry points, one rule. The read being gated and the write not is how
+    // a gate becomes advisory.
+    const { service } = build({ progress: [] });
+
+    const error = await service
+      .submit(course.slug, QUIZ, allCorrect, learner)
+      .catch((e) => e);
+
+    expect((error as AppError).kind).toBe("gate_locked");
+  });
+
+  it("opens once it is watched — the control for both refusals above", async () => {
+    // Without this the two assertions would pass on a service that refuses
+    // every quiz for every reason (§9.1).
+    const { service } = build();
+
+    await expect(service.getQuiz(course.slug, QUIZ, learner)).resolves.toBeDefined();
   });
 });

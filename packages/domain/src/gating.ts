@@ -20,6 +20,13 @@ export type GateReason =
   | "previous_incomplete"
   /** Already finished; still reachable for review. */
   | "already_completed"
+  /**
+   * A module's Lernerfolgskontrolle, whose videos are not all watched yet
+   * (P87-04). Distinct from `previous_incomplete` because the blocker is inside
+   * this item's own module rather than in a chapter before it — see
+   * `module-quiz.ts`.
+   */
+  | "module_incomplete"
   /** The identifier is not part of this sequence. */
   | "unknown_item";
 
@@ -27,8 +34,9 @@ export interface GateResult {
   readonly status: GateStatus;
   readonly reason: GateReason;
   /**
-   * The first incomplete item blocking this one, when `previous_incomplete`.
-   * Lets the widget say which chapter to finish rather than "locked".
+   * The first incomplete item blocking this one, when `previous_incomplete` or
+   * `module_incomplete`. Lets the widget say which chapter to finish rather
+   * than "locked".
    */
   readonly blockedBy?: string;
 }

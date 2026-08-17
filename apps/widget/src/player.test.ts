@@ -256,12 +256,34 @@ describe("nextAvailableContent", () => {
     expect(nextAvailableContent(course(), state({}), "v2")).toBeUndefined();
   });
 
-  it("never slides into the Lernerfolgskontrolle", () => {
-    // The exam has its own button. Arriving in it by pressing "weiter" would
-    // start an assessment the learner did not choose to begin.
-    expect(
-      nextAvailableContent(course(), state({ quiz: "available" }), "v3"),
-    ).toBeUndefined();
+  it("goes on to this module's Lernerfolgskontrolle when the server opens it", () => {
+    /*
+     * This test asserted the opposite until P87-03 — *"never slides into the
+     * Lernerfolgskontrolle"*, on the reasoning that the exam has its own button
+     * and arriving in it by pressing „Weiter" would start an assessment the
+     * learner did not choose to begin.
+     *
+     * That reasoning holds for a course with one exam at the end. With one per
+     * module it is what makes the course unfinishable: after a module's last
+     * video, „Weiter" skipped its exam, looked into a module the server had
+     * locked, found nothing, and drew no control at all — the reported *"it
+     * does not go to next one"*.
+     *
+     * The learner is still not dropped into an exam. The button names it, and
+     * it opens the quiz's start screen, which is a page with a „… starten"
+     * button on it.
+     */
+    expect(nextAvailableContent(course(), state({ quiz: "available" }), "v3")).toEqual({
+      id: "quiz",
+      title: "Lernerfolgskontrolle",
+    });
+  });
+
+  it("does not offer an exam the server still has locked", () => {
+    // The gate is the server's, for a quiz exactly as for a video: P87-04 holds
+    // a module's Lernerfolgskontrolle shut until its videos are watched, and
+    // this renders that answer rather than a second opinion.
+    expect(nextAvailableContent(course(), state({}), "v3")).toBeUndefined();
   });
 
   it("offers nothing after the last section", () => {

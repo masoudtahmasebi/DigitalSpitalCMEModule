@@ -44,7 +44,28 @@ function progress(overrides: Partial<ProgressSummary> = {}): ProgressSummary {
   };
 }
 
-/** Five modules; the quiz lives in the fifth, which is where the layout puts it. */
+/**
+ * Which modules carry a Lernerfolgskontrolle (P87-02).
+ *
+ * Two and three, and the order is the whole point. The fixture's lesson is
+ * `v3`, so module 3's exam is the one the screen must offer — and module 2's
+ * comes **first in course order**, so it is what the old course-wide search
+ * returns. Putting the second exam in a *later* module would have left these
+ * tests green against the behaviour P87-02 replaces, which is the trap
+ * CLAUDE.md §9.1 is about; both were watched to fail with the search restored.
+ *
+ * Modules 1, 4 and 5 have none, which is the other half of the client's rule:
+ * *"each module part, can have quiz or not, if it has the tab is shown, if not
+ * it is not shown."*
+ */
+const MODULES_WITH_QUIZ = [2, 3];
+
+/** The exam id for a module that has one — `quiz3`, `quiz5`. */
+function quizId(module: number): string {
+  return `quiz${String(module)}`;
+}
+
+/** Five modules, with an exam on two of them — see `MODULES_WITH_QUIZ`. */
 function course(): CourseDetail {
   const modules = [1, 2, 3, 4, 5].map((n) => ({
     id: `m${n}`,
@@ -65,10 +86,10 @@ function course(): CourseDetail {
             durationSec: 1545,
             mimeType: null,
           } satisfies ContentSummary,
-          ...(n === 5
+          ...(MODULES_WITH_QUIZ.includes(n)
             ? [
                 {
-                  id: "quiz",
+                  id: quizId(n),
                   ordinal: 1,
                   kind: "quiz",
                   title: "Lernerfolgskontrolle",
@@ -120,8 +141,12 @@ function state(overrides: Partial<EnrolmentState> = {}): EnrolmentState {
       progress: progress(),
       contents: [
         { id: `v${n}`, gate, progress: progress() },
-        ...(n === 5
-          ? [{ id: "quiz", gate: "locked" as GateStatus, progress: progress() }]
+        // Every exam starts locked, including module 3's, whose chapter is
+        // reachable: P87-04 holds a module's Lernerfolgskontrolle shut until
+        // that module's videos are watched, so a reachable chapter and a
+        // locked exam inside it is the normal state, not a contrived one.
+        ...(MODULES_WITH_QUIZ.includes(n)
+          ? [{ id: quizId(n), gate: "locked" as GateStatus, progress: progress() }]
           : []),
       ],
     };
@@ -151,6 +176,30 @@ function state(overrides: Partial<EnrolmentState> = {}): EnrolmentState {
     resumeContentId: "v3",
     ...overrides,
   } as EnrolmentState;
+}
+
+/**
+ * The server has opened one module's Lernerfolgskontrolle.
+ *
+ * Only the exam's own gate moves, not its chapter's or its module's: that is
+ * exactly the state P87-04 produces once a module's videos are watched, and a
+ * helper that opened everything at once would let a widget that ignores the
+ * content gate pass.
+ */
+function withQuizOpen(base: EnrolmentState, module: number): EnrolmentState {
+  const id = quizId(module);
+  return {
+    ...base,
+    modules: base.modules.map((entry) => ({
+      ...entry,
+      chapters: entry.chapters.map((chapter) => ({
+        ...chapter,
+        contents: chapter.contents.map((content) =>
+          content.id === id ? { ...content, gate: "available" as GateStatus } : content,
+        ),
+      })),
+    })),
+  };
 }
 
 function lesson(overrides: Partial<LessonContent> = {}): LessonContent {
@@ -262,35 +311,39 @@ describe("the content tabs", () => {
     expect(screen.queryByRole("button", { name: "Zur Lernerfolgskontrolle" })).toBeNull();
   });
 
-  it("opens the quiz by id once its gate is available", () => {
+  it("opens **this module's** quiz once the server opens its gate", () => {
+    /*
+     * The assertion that P87-02 is for. The learner is on `v3`, and the course
+     * has an exam on module 2 *and* on module 3. Opening module 3's is the only
+     * right answer; the old course-wide search returned the first quiz it found
+     * anywhere, which here is module 2's — somebody else's module's exam,
+     * offered from this one.
+     */
     const onOpen = vi.fn();
-    const opened = state();
-    const fifth = opened.modules[4] as ModuleState;
-    const chapter = fifth.chapters[0] as ChapterState;
-    renderPlayer({
-      onOpen,
-      state: {
-        ...opened,
-        modules: [
-          ...opened.modules.slice(0, 4),
-          {
-            ...fifth,
-            gate: "available",
-            chapters: [
-              {
-                ...chapter,
-                gate: "available",
-                contents: chapter.contents.map((c) => ({ ...c, gate: "available" })),
-              },
-            ],
-          },
-        ],
-      },
-    });
+    renderPlayer({ onOpen, state: withQuizOpen(state(), 3) });
 
     fireEvent.click(screen.getByRole("tab", { name: "Lernerfolgskontrolle" }));
     fireEvent.click(screen.getByRole("button", { name: "Zur Lernerfolgskontrolle" }));
-    expect(onOpen).toHaveBeenCalledWith("quiz");
+    expect(onOpen).toHaveBeenCalledWith("quiz3");
+  });
+
+  it("draws no Lernerfolgskontrolle tab on a module that has none", () => {
+    /*
+     * The other half of the client's rule, and the case that makes the tab
+     * mean something: *"each module part, can have quiz or not, if it has the
+     * tab is shown, if not it is not shown."*
+     *
+     * Module 1 has no exam while the course has two. Before P87-02 this drew a
+     * padlocked tab pointing at module 2's — an affordance for an exam that
+     * belongs to a different part of the course (§9.2).
+     */
+    renderPlayer({
+      lesson: lesson({ id: "v1", title: "Video 1" }),
+    });
+
+    expect(screen.queryByRole("tab", { name: /Lernerfolgskontrolle/ })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Punktemeldung/ })).toBeNull();
+    expect(screen.getByRole("tab", { name: /Zusammenfassung/ })).toBeTruthy();
   });
 
   it("locks CME Punktemeldung on quizPassed and nothing else", () => {
