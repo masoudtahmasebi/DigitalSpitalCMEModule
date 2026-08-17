@@ -22,9 +22,9 @@
  * fought back.
  *
  * So the draft lives here, keyed by asset, and is written when the field is
- * *finished with* — blur, or Enter. `dirty` says whether there is anything
- * outstanding, which is what lets a screen warn before it closes rather than
- * silently dropping a rename (§9.4).
+ * *finished with* — blur, or Enter. Nothing is lost by closing a picker
+ * mid-edit: choosing a file blurs the field first, so the pending rename is
+ * written on the way out.
  *
  * ## What "remove" means, and what it does not
  *
@@ -36,7 +36,7 @@
  * carries `usedByCount`.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiClient, MediaAsset } from "@ds/sdk";
 import { de } from "./locale/de.js";
 import { describeError } from "./api.js";
@@ -73,9 +73,6 @@ export interface MediaLibraryState {
   readonly commit: (asset: MediaAsset) => void;
   readonly forget: (asset: MediaAsset) => void;
   readonly reload: () => void;
-  /** True while any field holds something not yet written. */
-  readonly dirty: boolean;
-  readonly dismissProblem: () => void;
 }
 
 export function useMediaLibrary(client: ApiClient, kind: MediaKind): MediaLibraryState {
@@ -207,20 +204,7 @@ export function useMediaLibrary(client: ApiClient, kind: MediaKind): MediaLibrar
     [client],
   );
 
-  const dirty = useMemo(() => Object.keys(drafts).length > 0, [drafts]);
-
-  return {
-    assets,
-    problem,
-    busy,
-    draftFor,
-    edit,
-    commit,
-    forget,
-    reload,
-    dirty,
-    dismissProblem: useCallback(() => setProblem(undefined), []),
-  };
+  return { assets, problem, busy, draftFor, edit, commit, forget, reload };
 }
 
 function omit<T>(record: Readonly<Record<string, T>>, key: string): Record<string, T> {

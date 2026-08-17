@@ -40,8 +40,6 @@ import { useMediaLibrary, type MediaKind } from "../media-library.js";
 import { MediaCard } from "./MediaCard.js";
 import { Button, Notice } from "./ui.js";
 
-export type { MediaKind };
-
 export function MediaPicker(props: {
   client: ApiClient;
   /** Restricts the list to what this field could actually accept. */

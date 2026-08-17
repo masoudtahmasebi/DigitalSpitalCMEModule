@@ -39,12 +39,7 @@
 import { useMemo, useState } from "react";
 import type { ApiClient } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import {
-  familyOf,
-  humanBytes,
-  useMediaLibrary,
-  type MediaKind,
-} from "../media-library.js";
+import { humanBytes, useMediaLibrary, type MediaKind } from "../media-library.js";
 import { MediaCard } from "./MediaCard.js";
 import { Button, Notice, TextInput } from "./ui.js";
 
@@ -185,6 +180,3 @@ export function MediaLibrary(props: { client: ApiClient }) {
 function totalBytes(assets: readonly { byteSize: number | null }[]): number {
   return assets.reduce((sum, asset) => sum + (asset.byteSize ?? 0), 0);
 }
-
-/** Exported for the picker's chips, so both screens name a kind the same way. */
-export { familyOf };
