@@ -43,7 +43,6 @@ import type {
   MediaSourceWrite,
 } from "@ds/sdk";
 import { lengthsAgree, mimeTypeForUrl } from "@ds/domain";
-import { MediaPicker } from "./MediaPicker.js";
 import { MediaCheckPanel } from "./MediaCheck.js";
 import { de } from "../locale/de.js";
 import { nullable, swap } from "../drafts.js";
@@ -72,14 +71,9 @@ import {
   TextArea,
   TextInput,
 } from "./ui.js";
-import {
-  isUploadedReference,
-  MediaPreview,
-  referenceName,
-  runUpload,
-  UploadField,
-  UploadProgress,
-} from "./UploadField.js";
+import { isUploadedReference, referenceName, runUpload } from "../uploads.js";
+import { MediaDialog } from "./MediaDialog.js";
+import { MediaPreview, UploadField } from "./UploadField.js";
 
 type ContentKind = AuthoringContent["kind"];
 
@@ -1241,14 +1235,7 @@ function SourcesEditor(props: {
   client: ApiClient;
   courseSlug: string;
 }) {
-  const [upload, setUpload] = useState<
-    | { kind: "idle" }
-    | { kind: "busy"; percent: number }
-    | { kind: "failed"; message: string }
-  >({ kind: "idle" });
-  const filePicker = useRef<HTMLInputElement>(null);
-  const abort = useRef<AbortController | undefined>(undefined);
-  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const patch = (index: number, change: Partial<MediaSourceWrite>) =>
     props.onChange(
@@ -1331,113 +1318,66 @@ function SourcesEditor(props: {
         </p>
       )}
 
-      {!libraryOpen ? null : (
-        <MediaPicker
+      {/*
+        One button, and it used to be three (P90-01).
+
+        "Video hochladen", "Aus Mediathek wählen" and "Videoquelle hinzufügen"
+        stood here as equals, and they were not alternatives — they were an
+        upload, a library and an empty row for an external URL, each added in a
+        different phase for a reason that was locally sound. The client read the
+        row as one decision offered three times:
+
+          *"why are there 3 options? i don't get it why I have to repeat
+          everything multiple times, just one button to select the media"*
+
+        All three are answers to "which file?", so they are tabs of one dialog
+        now. Every one of them still exists — the URL tab is the empty row with
+        a label saying what belongs in it.
+      */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="secondary"
+          id={props.idFor("choose-media")}
+          onClick={() => setDialogOpen(true)}
+        >
+          {de.media.choose}
+        </Button>
+      </div>
+
+      {!dialogOpen ? null : (
+        <MediaDialog
           client={props.client}
           kind="video"
-          onPick={(reference) => {
+          purpose="video"
+          courseSlug={props.courseSlug}
+          onPick={(reference, mimeType) => {
             /*
-             * Appended as a new source rather than replacing the first, for the
-             * same reason "Videoquelle hinzufügen" exists: a course can carry
-             * several renditions of one recording, and silently overwriting the
-             * one already there would lose an author's work with no undo.
+             * Appended rather than replacing the first, because a course can
+             * carry several renditions of one recording — 1080p, 720p, an
+             * adaptive manifest — and silently overwriting the one already
+             * there would lose an author's work with no undo.
+             *
+             * The type comes from the bucket where there is one, so the player
+             * is told what was actually stored rather than what a filename
+             * suggested; `mimeTypeForUrl` answers for an external URL.
              */
             props.onChange([
               ...props.sources,
-              { url: reference, mimeType: mimeTypeForUrl(reference) ?? "", label: null },
+              {
+                url: reference,
+                mimeType: mimeType === "" ? (mimeTypeForUrl(reference) ?? "") : mimeType,
+                label: null,
+              },
             ]);
-            setLibraryOpen(false);
+            setDialogOpen(false);
           }}
-          onClose={() => setLibraryOpen(false)}
+          onClose={() => setDialogOpen(false)}
         />
-      )}
-
-      <input
-        ref={filePicker}
-        type="file"
-        className="hidden"
-        accept="video/mp4,video/webm,audio/mpeg,audio/mp4"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file === undefined) return;
-
-          const controller = new AbortController();
-          abort.current = controller;
-          setUpload({ kind: "busy", percent: 0 });
-
-          void (async () => {
-            try {
-              const result = await runUpload(
-                props.client,
-                props.courseSlug,
-                "video",
-                file,
-                (percent) => setUpload({ kind: "busy", percent }),
-                controller.signal,
-              );
-              // The type comes from the bucket, so the dropdown agrees with
-              // what was actually stored rather than with what the picker said.
-              props.onChange([
-                ...props.sources,
-                { url: result.reference, mimeType: result.mimeType, label: null },
-              ]);
-              setUpload({ kind: "idle" });
-            } catch (error) {
-              setUpload({
-                kind: "failed",
-                message: error instanceof Error ? error.message : de.uploads.failed,
-              });
-            } finally {
-              abort.current = undefined;
-              if (filePicker.current !== null) filePicker.current.value = "";
-            }
-          })();
-        }}
-      />
-
-      {upload.kind === "busy" ? (
-        <UploadProgress
-          percent={upload.percent}
-          onCancel={() => abort.current?.abort()}
-        />
-      ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" onClick={() => filePicker.current?.click()}>
-            {de.uploads.videoUpload}
-          </Button>
-          {/*
-            The other half of "upload" (P81-03).
-            
-            Beside the upload button rather than on a page of its own, because a
-            Mediathek you have to visit, copy a reference out of and paste back
-            here is the same remembering with extra steps — and remembering was
-            the problem. Picking assigns the reference exactly as finishing an
-            upload does, so both paths end in the same place.
-          */}
-          <Button variant="secondary" onClick={() => setLibraryOpen(true)}>
-            {de.media.open}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() =>
-              props.onChange([
-                ...props.sources,
-                // Defaults to MP4: it is the rendition every course has, and an
-                // author adding a second one changes the dropdown deliberately.
-                { url: "", mimeType: "", label: null },
-              ])
-            }
-          >
-            {de.structure.addSource}
-          </Button>
-        </div>
       )}
 
       <p className="text-xs text-[color:var(--ds-ink-muted)]">
         {de.uploads.videoUploadHint}
       </p>
-
-      {upload.kind === "failed" ? <Notice tone="warning">{upload.message}</Notice> : null}
 
       {/*
         One preview, under the list rather than one per row (P74-03).

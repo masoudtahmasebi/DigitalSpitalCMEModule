@@ -11,6 +11,14 @@ import { useState, type ReactNode } from "react";
 export function Button(props: {
   onClick?: () => void;
   type?: "button" | "submit";
+  /**
+   * A stable handle for a control the browser suite has to find precisely.
+   *
+   * Used where several buttons on one screen share a label — the media dialog's
+   * opener appears once per file field — and a positional locator would depend
+   * on the order the form happens to render in (P90-01).
+   */
+  id?: string;
   variant?: "primary" | "secondary" | "danger";
   disabled?: boolean;
   /**
@@ -40,6 +48,7 @@ export function Button(props: {
       type={props.type ?? "button"}
       disabled={props.disabled === true}
       onClick={props.onClick}
+      {...(props.id === undefined ? {} : { id: props.id })}
       {...(props.ariaLabel === undefined ? {} : { "aria-label": props.ariaLabel })}
       className={`inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold disabled:opacity-50 ${skin}`}
     >
@@ -422,6 +431,57 @@ export function Table(props: { headers: readonly string[]; children: ReactNode }
         </thead>
         <tbody>{props.children}</tbody>
       </table>
+    </div>
+  );
+}
+
+/**
+ * An upload's progress, with a cancel (P23-04; moved here in P90-01).
+ *
+ * ## Why the bar is not decoration
+ *
+ * A lecture is hundreds of megabytes and takes minutes. A spinner with no
+ * percentage in front of that is indistinguishable from a hang, and the
+ * reasonable response to a hang is to reload the page — which, with no
+ * resumable upload behind it, throws away everything transferred so far. The
+ * percentage is what stops that.
+ *
+ * `role="progressbar"` with the ARIA value attributes rather than a `<progress>`
+ * element: the styling has to match the rest of the console and a `<progress>`
+ * is close to unstyleable across browsers. The semantics are the part that
+ * matters and they are all here.
+ *
+ * It lives in `ui.tsx` because two components render it — the field and the
+ * media dialog — and one of those renders the other. See `uploads.ts` for the
+ * same reasoning applied to the upload itself.
+ */
+export function UploadProgress(props: {
+  percent: number;
+  cancelLabel: string;
+  label: string;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="mt-1 flex items-center gap-3">
+      <div
+        role="progressbar"
+        aria-label={props.label}
+        aria-valuenow={props.percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        className="h-2 flex-1 overflow-hidden rounded-full bg-[color:var(--ds-surface)]"
+      >
+        <div
+          className="h-full bg-[color:var(--ds-brand-500)] transition-[width]"
+          style={{ width: `${props.percent}%` }}
+        />
+      </div>
+      <span className="w-12 text-right text-xs tabular-nums text-[color:var(--ds-ink-muted)]">
+        {props.percent}%
+      </span>
+      <Button variant="secondary" onClick={props.onCancel}>
+        {props.cancelLabel}
+      </Button>
     </div>
   );
 }

@@ -642,8 +642,31 @@ export const en: DeepPartial<typeof german> = {
 
   media: {
     title: "Media library",
-    open: "Choose from library",
     close: "Close",
+
+    /* The one button, and the dialog behind it (P90-01). */
+    choose: "Select media",
+    dialogTitle: "Select media",
+    tabsLabel: "Where the file comes from",
+    tabs: {
+      library: "Media library",
+      upload: "Upload file",
+      url: "From address (URL)",
+    },
+    dropHere: "Drag a file here, or choose one",
+    uploadHints: {
+      video:
+        "MP4 or WebM, up to 2 GB. The file goes straight to storage and is then reachable only by participants of this course.",
+      poster: "JPEG, PNG or WebP. Shown as the course's preview image.",
+      captions:
+        "WebVTT (.vtt) or SRT (.srt). SRT files are converted to WebVTT on upload — storage always holds WebVTT.",
+      material: "PDF document. Offered to participants in the course's Mediathek.",
+    },
+    urlLabel: "Address of the file",
+    urlHint:
+      "For files that are not held here: a video on your own server, or an adaptive stream (HLS, .m3u8). The address has to be publicly reachable.",
+    urlSubmit: "Use this address",
+
     intro:
       "Every file uploaded for this customer. Pick one instead of uploading the same file again.",
     empty:
@@ -660,7 +683,7 @@ export const en: DeepPartial<typeof german> = {
 
     nav: "Media library",
     screenIntro:
-      "Every file of this customer: videos, images, PDF documents and subtitles. Here you name files, add alternative text, and remove what is no longer needed. To use a file, open the course and choose it where you would upload one.",
+      "Every file of this customer: videos, images, PDF documents and subtitles. Here you name files, add alternative text, and remove what is no longer needed. To use a file, open the course and click “Select media” there.",
     filterLabel: "Filter by file type",
     kinds: {
       all: "All",

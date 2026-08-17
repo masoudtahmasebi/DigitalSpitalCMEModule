@@ -52,6 +52,7 @@ import {
   menu,
   readIssuedPassword,
   signInToConsole,
+  uploadThroughMediaDialog,
 } from "../support/console.js";
 import { openCourseFromCatalogue } from "../support/catalogue.js";
 import { openWidgetShadowRoots } from "../support/shadow.js";
@@ -457,7 +458,8 @@ async function addModule(page: Page, title: string, chapter: string): Promise<vo
 async function addVideo(page: Page, title: string): Promise<void> {
   await page.getByRole("button", { name: "Inhalt hinzufügen" }).last().click();
   await page.locator("#content-new-title").fill(title);
-  await page.locator('input[type="file"]').first().setInputFiles(VIDEO);
+  // One button, three tabs since P90-01 — see `support/console.ts`.
+  await uploadThroughMediaDialog(page, VIDEO);
 
   await expect(
     page.getByText(/Hochgeladen · .*\.webm/u).first(),

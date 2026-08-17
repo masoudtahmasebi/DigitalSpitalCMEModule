@@ -857,8 +857,41 @@ export const german = {
   /** The Mediathek picker (P81-03). */
   media: {
     title: "Mediathek",
-    open: "Aus Mediathek wählen",
     close: "Schließen",
+
+    /* The one button, and the dialog behind it (P90-01). */
+    choose: "Medien auswählen",
+    dialogTitle: "Medien auswählen",
+    tabsLabel: "Woher die Datei kommt",
+    tabs: {
+      library: "Mediathek",
+      upload: "Datei hochladen",
+      url: "Von Adresse (URL)",
+    },
+    dropHere: "Datei hierher ziehen oder auswählen",
+    /*
+     * What this field accepts, per purpose (P90-01).
+     *
+     * One dialog serves four fields, and the first version showed the video
+     * hint in all of them — so an author uploading a PDF was told "MP4 oder
+     * WebM, bis 2 GB". A hint that describes a different field is worse than
+     * none: it is a confident wrong answer at the moment somebody is deciding
+     * whether their file will be accepted.
+     */
+    uploadHints: {
+      video:
+        "MP4 oder WebM, bis 2 GB. Die Datei wird direkt in den Dateispeicher übertragen und ist anschließend nur für Teilnehmende dieser Fortbildung abrufbar.",
+      poster: "JPEG, PNG oder WebP. Wird als Vorschaubild der Fortbildung angezeigt.",
+      captions:
+        "WebVTT (.vtt) oder SRT (.srt). SRT-Dateien werden beim Hochladen automatisch in WebVTT umgewandelt — im Dateispeicher liegt immer WebVTT.",
+      material:
+        "PDF-Dokument. Wird Teilnehmenden in der Mediathek der Fortbildung angeboten.",
+    },
+    urlLabel: "Adresse der Datei",
+    urlHint:
+      "Für Dateien, die nicht hier liegen: ein Video auf Ihrem eigenen Server oder ein adaptiver Stream (HLS, .m3u8). Die Adresse muss öffentlich abrufbar sein.",
+    urlSubmit: "Adresse übernehmen",
+
     intro:
       "Alle Dateien, die für diesen Kunden hochgeladen wurden. Wählen Sie eine aus, statt dieselbe Datei erneut hochzuladen.",
     empty:
@@ -876,7 +909,7 @@ export const german = {
     /* The Mediathek screen (P88-01). */
     nav: "Mediathek",
     screenIntro:
-      "Alle Dateien dieses Kunden: Videos, Bilder, PDF-Dokumente und Untertitel. Hier benennen Sie Dateien, hinterlegen Alternativtexte und entfernen, was nicht mehr gebraucht wird. Zum Verwenden einer Datei öffnen Sie die Fortbildung und wählen sie beim Hochladen aus.",
+      "Alle Dateien dieses Kunden: Videos, Bilder, PDF-Dokumente und Untertitel. Hier benennen Sie Dateien, hinterlegen Alternativtexte und entfernen, was nicht mehr gebraucht wird. Zum Verwenden einer Datei öffnen Sie die Fortbildung und klicken dort auf „Medien auswählen“.",
     filterLabel: "Nach Dateityp filtern",
     kinds: {
       all: "Alle",

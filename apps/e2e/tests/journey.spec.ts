@@ -88,6 +88,7 @@ import {
   menu,
   readIssuedPassword,
   signInToConsole,
+  uploadThroughMediaDialog,
 } from "../support/console.js";
 import { openCourseFromCatalogue } from "../support/catalogue.js";
 import { openWidgetShadowRoots } from "../support/shadow.js";
@@ -343,18 +344,21 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       await operator.locator("#content-new-title").fill("Die Aufzeichnung");
 
       /*
-       * `setInputFiles` on the hidden picker, which is what the "Video
-       * hochladen" button opens. From here the console does the real three-step
-       * upload: it asks the API for a ticket, PUTs the bytes straight to the
-       * bucket over a presigned URL, and asks the API to confirm the object
-       * landed. The API never sees a byte.
+       * Through the media dialog, which is the one control this form now has
+       * for supplying a file (P90-01) — the three buttons the client could not
+       * tell apart are its three tabs.
+       *
+       * From here the console does the real three-step upload: it asks the API
+       * for a ticket, PUTs the bytes straight to the bucket over a presigned
+       * URL, and asks the API to confirm the object landed. The API never sees
+       * a byte.
        *
        * Everything that can go wrong here went wrong in production and was
        * green in this suite: a CSP that does not name the bucket, a bucket with
        * no CORS for PUT, a signature over the wrong canonical request, a
        * `Content-Length` that does not match. All four now fail this line.
        */
-      await operator.locator('input[type="file"]').first().setInputFiles(VIDEO);
+      await uploadThroughMediaDialog(operator, VIDEO);
 
       const stored = operator.getByText(/hochgeladen|gespeichert/iu).first();
       try {
