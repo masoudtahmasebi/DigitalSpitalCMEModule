@@ -35,6 +35,7 @@ import type {
 } from "@ds/sdk";
 import { buildCommit, buildVersion, readConfig } from "./config.js";
 import { currentStaff, signOut, type StaffProfile } from "./staff-auth.js";
+import { chooseLanguage, currentLanguage } from "./locale/language.js";
 import {
   createAdminClient,
   createPlatformClient,
@@ -284,6 +285,26 @@ function Shell(props: {
                   and a super admin one — otherwise has no way to tell which they
                   are acting as, and the two differ in what they can destroy. */}
               <span className="text-sm text-gray-600">{props.operator}</span>
+              {/*
+                The language switch (P86-01).
+                
+                In the header rather than under Einstellungen because it is not
+                a setting about the platform — it is a property of the person
+                reading the screen, and somebody who cannot read the current
+                language must be able to find it without navigating through it.
+                
+                Switching reloads: see `locale/language.ts` for why that is the
+                design and not a shortcut.
+              */}
+              <Button
+                variant="secondary"
+                aria-label={de.language.switchTo(
+                  currentLanguage() === "de" ? de.language.english : de.language.german,
+                )}
+                onClick={() => chooseLanguage(currentLanguage() === "de" ? "en" : "de")}
+              >
+                {currentLanguage() === "de" ? "EN" : "DE"}
+              </Button>
               <Button variant="secondary" onClick={() => props.onSignOut?.()}>
                 {de.auth.signOut}
               </Button>

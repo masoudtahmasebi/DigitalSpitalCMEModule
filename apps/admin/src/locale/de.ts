@@ -16,7 +16,17 @@
  */
 const LABEL_REQUIRED = "Verpflichtend";
 
-export const de = {
+import { currentLanguage, overlay } from "./language.js";
+import { en } from "./en.js";
+
+/**
+ * The German table itself.
+ *
+ * Exported so `en.ts` can be typed against it without a cycle: annotating `de`
+ * below as `typeof german` is what stops its type depending on the overlay
+ * that is merged into it.
+ */
+export const german = {
   appTitle: "DS Education — Verwaltung",
   /* The sidebar is 15 rem wide and the full title does not fit in it — it
      rendered as "DS Education — Ve…", which is worse than a short name. */
@@ -407,6 +417,21 @@ export const de = {
     api: "API",
     skew: "Unterschiedliche Stände — bitte erneut deployen.",
     apiUnknown: "Die API meldet keinen Stand (ältere Version).",
+  },
+
+  /** The language switch in the header (P86-01). */
+  language: {
+    german: "Deutsch",
+    english: "English",
+    /**
+     * The button's accessible name (P86-01).
+     *
+     * A two-letter label is the right *visible* control for a two-language
+     * switch — a dropdown for two options is heavier than the choice — but
+     * "EN" read out on its own says nothing. The name says what pressing it
+     * does, which is the question somebody using a screen reader is asking.
+     */
+    switchTo: (language: string): string => `Sprache wechseln zu ${language}`,
   },
 
   nav: {
@@ -1180,3 +1205,17 @@ export const de = {
     },
   },
 } as const;
+
+/**
+ * The table every screen imports (P86-01).
+ *
+ * Still called `de`, and deliberately: thirty files import it under that name,
+ * the German is the source of truth, and renaming it everywhere to add a
+ * language switch would be churn with no reader.
+ *
+ * The language is decided once, at import, before any component renders — see
+ * `language.ts` for why switching reloads. English is a partial overlay, so an
+ * untranslated key renders in German rather than as a key name or a blank.
+ */
+export const de: typeof german =
+  currentLanguage() === "en" ? overlay(german, en) : german;
