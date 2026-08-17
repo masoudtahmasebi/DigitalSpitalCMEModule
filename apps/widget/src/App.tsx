@@ -33,6 +33,7 @@ import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
 import type { TokenProvider } from "./token.js";
 import { nextAvailableContent } from "./player.js";
+import { decode, encode, type WidgetRoute } from "./route.js";
 import { CourseList } from "./components/CourseList.js";
 import { CertificationTab } from "./components/CertificationTab.js";
 import { ProgressCard, StickyMetaBar } from "./components/CourseHeader.js";
@@ -85,6 +86,49 @@ type OpenIntent = "start" | "resume";
  * Module-level so the outline's click and the catalogue's resume cannot drift:
  * a quiz that opened as a lesson would render a player with no video in it.
  */
+/**
+ * A `Screen` for an address, and the address for a `Screen` (P82-04).
+ *
+ * Both live beside `screenFor` because they share its one hard rule: whether a
+ * content is a lesson or a quiz is a fact about the course, not about the URL.
+ * `route.ts` deliberately encodes neither, so this is the single place that
+ * decides — and a link to a content that has since been deleted resolves to
+ * nothing here rather than to a player with no video in it.
+ */
+function screenFromRoute(course: CourseDetail, route: WidgetRoute): Screen | undefined {
+  switch (route.kind) {
+    case "outline":
+      return { kind: "outline" };
+    case "content":
+      return screenFor(course, route.contentId);
+    case "evaluation":
+      /*
+       * "outline" rather than "reporting": arriving by link is not the same act
+       * as arriving from a passed exam. The `then` in the quiz flow exists so a
+       * physician who just earned their points is carried on to the
+       * Punktemeldung; somebody opening a bookmark has asked for the evaluation
+       * and nothing more.
+       */
+      return { kind: "evaluation", then: "outline" };
+    case "reporting":
+      return { kind: "reporting" };
+  }
+}
+
+function routeForScreen(screen: Screen): WidgetRoute {
+  switch (screen.kind) {
+    case "outline":
+      return { kind: "outline" };
+    case "lesson":
+    case "quiz":
+      return { kind: "content", contentId: screen.contentId };
+    case "evaluation":
+      return { kind: "evaluation" };
+    case "reporting":
+      return { kind: "reporting" };
+  }
+}
+
 function screenFor(course: CourseDetail, contentId: string): Screen | undefined {
   for (const module of course.modules) {
     for (const chapter of module.chapters) {
@@ -288,6 +332,17 @@ function Loaded(props: {
   const [tab, setTab] = useState<Tab>("overview");
   const [screen, setScreen] = useState<Screen>({ kind: "outline" });
 
+  /*
+   * Whether the fragment has been read yet (P82-04).
+   *
+   * The address is applied once the course has loaded, because turning
+   * `#ds/inhalt/<id>` into a screen needs `screenFor` to know whether that
+   * content is a lesson or a quiz. Until then there is nothing to apply and the
+   * flag keeps the effect from re-applying an address the learner has since
+   * navigated away from.
+   */
+  const addressApplied = useRef(false);
+
   const course = useAsync(() => client.getCourseBySlug(courseSlug), [client, courseSlug]);
   const enrolment = useEnrolment(client, courseSlug);
 
@@ -306,6 +361,69 @@ function Loaded(props: {
    * Once only. Coming back to the outline from the player is a decision the
    * learner made, and re-applying the intent would trap them in the video.
    */
+  /*
+   * The address, in both directions (P82-04).
+   *
+   * **In**, once — and before the resume intent below, which is why this
+   * effect sets `resumed` too. A learner who followed a link to a specific
+   * section must land on that section; letting "Fortbildung fortsetzen" also
+   * fire would move them somewhere else a moment after the page settled.
+   *
+   * **Out**, on every change, and only for fragments that are ours: `decode`
+   * answers `undefined` for a host page's own anchor and this leaves it alone.
+   */
+  useEffect(() => {
+    if (addressApplied.current || course.data === undefined) return;
+    addressApplied.current = true;
+
+    const route = decode(window.location.hash);
+    if (route === undefined) return;
+
+    const target = screenFromRoute(course.data, route);
+    if (target === undefined) return;
+    resumed.current = true;
+    setScreen(target);
+  }, [course.data]);
+
+  /*
+   * Back and forward.
+   *
+   * Without this the fragment would describe where the learner is and the
+   * browser's own buttons would still leave the page — which is two thirds of
+   * the reason §9.8 exists.
+   */
+  useEffect(() => {
+    const onHashChange = (): void => {
+      const detail = course.data;
+      if (detail === undefined) return;
+      const route = decode(window.location.hash);
+      if (route === undefined) return;
+      const target = screenFromRoute(detail, route);
+      if (target !== undefined) setScreen(target);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [course.data]);
+
+  /*
+   * And out again, so the address always describes the screen.
+   *
+   * `replaceState` rather than assigning `location.hash`, for two reasons. It
+   * does not fire `hashchange`, so the effect above cannot be woken by this
+   * one; and it does not push an entry, so opening a lesson from the outline
+   * leaves one history step rather than two — the difference between one press
+   * of Back going where the learner expects and two.
+   *
+   * The first render is skipped: writing the outline's address before the
+   * fragment has been read would erase the very link that was followed.
+   */
+  useEffect(() => {
+    if (!addressApplied.current) return;
+    const fragment = `#${encode(routeForScreen(screen))}`;
+    if (window.location.hash === fragment) return;
+    window.history.replaceState(null, "", fragment);
+  }, [screen]);
+
   const resumed = useRef(false);
   useEffect(() => {
     if (props.openAt !== "resume" || resumed.current) return;
