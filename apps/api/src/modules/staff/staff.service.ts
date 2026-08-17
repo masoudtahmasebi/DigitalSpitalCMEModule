@@ -55,7 +55,7 @@ import {
 import { generateTotpSecret, otpauthUri, totpCode } from "./totp.js";
 import type { SecretCipher } from "../../shared/secret-cipher.js";
 import { canSend, sendNow } from "../../shared/mailer.js";
-import { invitationEmail, passwordResetEmail } from "./reset.copy.js";
+import { invitationEmail, passwordResetEmail, smtpTestEmail } from "./reset.copy.js";
 import type {
   StaffAccount,
   StaffAccountSummary,
@@ -387,6 +387,108 @@ export class StaffService {
       // The host, so a change of sender is traceable. Never the credential.
       detail: { host: blank(input.host) ?? "(none)" },
     });
+  }
+
+  /**
+   * Send the platform sender a test message, to the operator's own inbox
+   * (P77-01).
+   *
+   * ## Why this exists
+   *
+   * Until now the only way to find out whether the SMTP settings worked was to
+   * trigger a real password reset and wait — and that flow is deliberately
+   * silent about whether anything was sent (§9.5, it must not be an
+   * account-enumeration oracle). So a mistyped host produced no error anywhere
+   * an operator could see, and the first evidence was a colleague who never
+   * received their invitation.
+   *
+   * ## Why it sends only to the caller
+   *
+   * The recipient is the authenticated operator's own address and is not an
+   * argument. An endpoint that mails an address chosen by the caller is an
+   * open relay wearing a console button: it would let an authenticated
+   * operator send this platform's mail, from this platform's domain and
+   * reputation, to anybody at all. Their own inbox is also the only address
+   * that answers the question they are actually asking.
+   *
+   * ## Why the stored settings, not the ones in the form
+   *
+   * It tests what will really be used. Testing an unsaved draft would mean
+   * accepting a plaintext password in a request body, and would answer a
+   * question about a configuration that may never be saved — green here and
+   * broken in production is precisely the shape this is meant to remove.
+   * "Save, then test" is one more click and it is honest.
+   *
+   * Returns the outcome rather than throwing: a refused connection is a normal
+   * answer to this question, and it is the answer the operator came for.
+   */
+  async sendPlatformTestEmail(actor: {
+    readonly id: string;
+    readonly email: string;
+  }): Promise<{
+    readonly status: "sent" | "not_configured" | "failed";
+    readonly reason?: string;
+    /**
+     * Where it went, on success — the caller's own address.
+     *
+     * Returned rather than left implicit because an operator may hold more
+     * than one console account, and "sent to your address" is not a sentence
+     * they can check against an inbox. No disclosure: it is the address of the
+     * session making the request.
+     */
+    readonly sentTo?: string;
+  }> {
+    const sender = await this.deps.repository.readPlatformSmtp();
+
+    if (!canSend(sender)) {
+      // Not a failure of the send — there is nothing to send with. Named
+      // separately so the console can say which of the two it is (§9.4).
+      return { status: "not_configured" };
+    }
+
+    const outcome = await sendNow(
+      {
+        host: sender.host ?? "",
+        port: sender.port,
+        username: sender.username,
+        password:
+          sender.passwordEnc === null
+            ? null
+            : this.deps.cipher.decrypt(sender.passwordEnc),
+        secure: sender.secure,
+        fromAddress: sender.fromAddress ?? "",
+        fromName: sender.fromName,
+      },
+      { ...smtpTestEmail(new Date().toISOString()), to: actor.email },
+    );
+
+    const sent = outcome.status === "delivered";
+
+    /*
+     * Audited like every other outbound message, and for the same reason: this
+     * one is operator-triggered, so "who made the platform send mail, and did
+     * it work" is a question somebody will ask.
+     *
+     * The host is recorded because a change of sender is traceable; the
+     * credential never is, and neither is the recipient — it is the actor's own
+     * address and `actor.id` already identifies them (invariant 7, ADR-0004).
+     */
+    await this.deps.audit.recordSystem({
+      actor: { identity: "staff", id: actor.id },
+      action: "platform.smtp_tested",
+      detail: {
+        delivered: sent,
+        status: outcome.status,
+        host: sender.host ?? "",
+        // The same narrowing the reset path uses: `reason` exists only on the
+        // failure variants, and it is the SMTP server's own text.
+        ...(outcome.status === "delivered" ? {} : { reason: outcome.reason }),
+      },
+    });
+
+    return outcome.status === "delivered"
+      ? { status: "sent", sentTo: actor.email }
+      : { status: "failed", reason: outcome.reason };
   }
 
   /**
