@@ -621,7 +621,6 @@ export const de = {
     sourcesHint:
       "Mehrere Fassungen derselben Aufzeichnung. Der Browser nimmt die erste, die er abspielen kann — adaptive Streams (HLS) stehen deshalb vorn.",
     sourceUrl: "URL",
-    sourceType: "Format",
     sourceLabel: "Bezeichnung",
     sourceLabelHint: "Erscheint in der Qualitätsauswahl, z. B. „720p“.",
     addSource: "Videoquelle hinzufügen",
@@ -722,7 +721,6 @@ export const de = {
     /** On a download: the paragraph the Mediathek card shows (page-05). */
     materialBody: "Beschreibung (erscheint auf der Materialkarte)",
     fileUrl: "Datei-URL",
-    mimeType: "Dateityp",
 
     /** "3 Teilnahmen erfasst" — why a delete is refused. */
     learnerRecords: (count: number): string =>

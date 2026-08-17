@@ -61,6 +61,7 @@ export {
   hasAdaptiveSource,
   MEDIA_MIME_TYPES,
   mediaSourceProblems,
+  mimeTypeForUrl,
   orderSources,
   parseMediaSources,
   streamingKindOf,

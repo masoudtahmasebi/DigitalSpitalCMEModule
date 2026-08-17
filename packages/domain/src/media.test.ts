@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   hasAdaptiveSource,
   mediaSourceProblems,
+  mimeTypeForUrl,
   orderSources,
   parseMediaSources,
   streamingKindOf,
@@ -102,12 +103,29 @@ describe("mediaSourceProblems", () => {
   });
 
   it("refuses a mime type no browser would match", () => {
-    // "mp4" or "video/mp4 " produces a <source> every browser skips — a video
-    // that silently refuses to play with nothing in the console to explain it.
+    // "mp4" produces a <source> every browser skips — a video that silently
+    // refuses to play with nothing in the console to explain it.
     expect(mediaSourceProblems([source("https://cdn/x.mp4", "mp4")])).toContain(
       "unknown_mime_type",
     );
-    expect(mediaSourceProblems([source("https://cdn/x.mp4", "")])).toContain(
+  });
+
+  it("no longer refuses a blank one — that changed in P79-01", () => {
+    /*
+     * This case used to assert the opposite, and the reversal is deliberate.
+     *
+     * While the console had a `Dateityp` field, blank meant "the author left a
+     * required box empty" and refusing it was right. The console no longer asks:
+     * the type is derived from the file by `mimeTypeForUrl`, which answers
+     * `undefined` for an extension it does not recognise. Blank now means "we
+     * could not name this format", and it reaches the player as a `<source>`
+     * with no `type` attribute — which the browser sniffs perfectly well.
+     *
+     * Keeping the old assertion would have made an unusual but perfectly
+     * playable file unauthorable, which is the limitation the client asked to
+     * have removed.
+     */
+    expect(mediaSourceProblems([source("https://cdn/x.mp4", "")])).not.toContain(
       "unknown_mime_type",
     );
   });
@@ -181,5 +199,71 @@ describe("parseMediaSources", () => {
     expect(parseMediaSources({})).toEqual([]);
     expect(parseMediaSources(undefined)).toEqual([]);
     expect(parseMediaSources("[]")).toEqual([]);
+  });
+});
+
+/**
+ * The type the file already knows (P79-01).
+ *
+ * Reported as _"the datei type in here should not be string, it should be
+ * calculated automatically … there is no need to set the type anywhere, and
+ * they can upload anything anywhere, do not limit them."_
+ *
+ * Both halves are here: the extension answers the question, and an extension
+ * nobody recognises is `undefined` rather than a refusal.
+ */
+describe("mimeTypeForUrl", () => {
+  it("names the video containers the player negotiates on", () => {
+    expect(mimeTypeForUrl("video-abc.mp4")).toBe("video/mp4");
+    expect(mimeTypeForUrl("clip.webm")).toBe("video/webm");
+    expect(mimeTypeForUrl("stream.m3u8")).toBe("application/vnd.apple.mpegurl");
+    expect(mimeTypeForUrl("stream.mpd")).toBe("application/dash+xml");
+  });
+
+  it("names the documents a Mediathek actually holds", () => {
+    // The reported screen: a `.pdf` beside a hand-typed `application/pdf`.
+    expect(mimeTypeForUrl("material-e75466f.pdf")).toBe("application/pdf");
+    expect(mimeTypeForUrl("folien.pptx")).toBe(
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    );
+  });
+
+  it("reads through a storage reference, a full URL and a signed one", () => {
+    expect(mimeTypeForUrl("s3://medice/courses/x/video-1.mp4")).toBe("video/mp4");
+    expect(mimeTypeForUrl("https://cdn.example.org/a/b/poster.PNG")).toBe("image/png");
+    // A presigned GET carries a query string, and the extension is before it.
+    expect(mimeTypeForUrl("https://s3.test/o/video.mp4?X-Amz-Signature=deadbeef")).toBe(
+      "video/mp4",
+    );
+  });
+
+  it("says nothing rather than refusing an extension it does not know", () => {
+    // "do not limit them": undeclared reaches the player as a <source> with no
+    // `type`, and the browser sniffs the container.
+    for (const url of ["recording.mkv", "archive.tar.gz", "file", "noextension.", ""]) {
+      expect(mimeTypeForUrl(url)).toBeUndefined();
+    }
+    expect(mimeTypeForUrl(null)).toBeUndefined();
+    expect(mimeTypeForUrl(undefined)).toBeUndefined();
+  });
+});
+
+describe("an undeclared source type", () => {
+  it("is no longer a problem, because the console no longer asks for one", () => {
+    expect(
+      mediaSourceProblems([{ url: "https://cdn/x.mkv", mimeType: "" }]),
+    ).not.toContain("unknown_mime_type");
+    expect(
+      mediaSourceProblems([{ url: "https://cdn/x.mkv", mimeType: null }]),
+    ).not.toContain("unknown_mime_type");
+  });
+
+  it("still refuses a stated type no browser recognises", () => {
+    // Only reachable from data written before P79-01, or from an API caller
+    // that is not the console. A `<source>` with such a type is skipped in
+    // silence, which is the failure this check exists for.
+    expect(
+      mediaSourceProblems([{ url: "https://cdn/x.mp4", mimeType: "video/quicktime" }]),
+    ).toContain("unknown_mime_type");
   });
 });
