@@ -134,6 +134,20 @@ export const RATE_LIMIT_RULES = {
    */
   staffPasswordReset: { limit: 3, windowSec: 60 },
   /**
+   * The platform sender's own test message (P77-01).
+   *
+   * A button that makes the server send mail is an outbound channel, and an
+   * unlimited one is a way to have this platform's relay send a few thousand
+   * messages to a super administrator's inbox — which costs the relay's
+   * reputation, which is the whole asset the sender depends on.
+   *
+   * Deliberately generous per minute and small enough to be useless as a
+   * cannon: somebody wiring up SMTP legitimately presses this a handful of
+   * times while they fix a host name, and nobody legitimately presses it fifty
+   * times a minute.
+   */
+  platformMailTest: { limit: 5, windowSec: 60 },
+  /**
    * A participant changing their own password.
    *
    * Tight, because the endpoint takes the *current* password: without a limit

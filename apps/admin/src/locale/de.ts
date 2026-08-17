@@ -268,6 +268,30 @@ export const de = {
     platformMailIncomplete:
       "Server und Absenderadresse fehlen noch. Ohne sie kann kein Link verschickt werden — Betroffene brauchen dann eine Einladung durch eine andere Administration.",
     platformMailSecure: "Verschlüsselt ab Verbindungsaufbau (Port 465)",
+    /*
+     * The test send, and the four things it can say (P77-01).
+     *
+     * Each names what to do next, because the whole reason this control exists
+     * is that the alternative — trigger a real password reset and wait — tells
+     * you nothing when it fails (CLAUDE.md §9.4).
+     */
+    platformMailTest: "Test-E-Mail senden",
+    platformMailTestHint:
+      "Sendet eine Testnachricht mit den gespeicherten Einstellungen an Ihre eigene Adresse. Bitte zuerst speichern — geprüft wird, was gespeichert ist, nicht was im Formular steht.",
+    platformMailTestSending: "Test-E-Mail wird gesendet …",
+    platformMailTestSent: (address: string): string =>
+      `Test-E-Mail an ${address} gesendet. Bitte prüfen Sie, ob sie ankommt — auch im Spam-Ordner — und ob die Absenderadresse stimmt.`,
+    platformMailTestNotConfigured:
+      "Es ist kein Versand eingerichtet. Server und Absenderadresse werden benötigt.",
+    /*
+     * The SMTP server's own words, not a paraphrase. A translated or summarised
+     * error would drop the one detail that identifies the problem — a response
+     * code, a host name, a certificate subject.
+     */
+    platformMailTestFailed: (reason: string): string =>
+      `Der Versand ist fehlgeschlagen. Meldung des Servers: ${reason}`,
+    platformMailTestUnreachable:
+      "Die Anfrage konnte nicht gestellt werden. Bitte prüfen Sie Ihre Verbindung und ob Sie noch angemeldet sind.",
 
     removeOwn: "Eigenen zweiten Faktor entfernen",
     removeOwnConfirm: "Wirklich entfernen",
@@ -597,7 +621,6 @@ export const de = {
     sourcesHint:
       "Mehrere Fassungen derselben Aufzeichnung. Der Browser nimmt die erste, die er abspielen kann — adaptive Streams (HLS) stehen deshalb vorn.",
     sourceUrl: "URL",
-    sourceType: "Format",
     sourceLabel: "Bezeichnung",
     sourceLabelHint: "Erscheint in der Qualitätsauswahl, z. B. „720p“.",
     addSource: "Videoquelle hinzufügen",
@@ -698,7 +721,6 @@ export const de = {
     /** On a download: the paragraph the Mediathek card shows (page-05). */
     materialBody: "Beschreibung (erscheint auf der Materialkarte)",
     fileUrl: "Datei-URL",
-    mimeType: "Dateityp",
 
     /** "3 Teilnahmen erfasst" — why a delete is refused. */
     learnerRecords: (count: number): string =>

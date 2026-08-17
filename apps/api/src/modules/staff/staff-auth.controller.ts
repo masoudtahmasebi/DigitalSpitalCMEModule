@@ -55,7 +55,7 @@ import { Public } from "../../auth/public.decorator.js";
 import { StaffOnly } from "../../auth/staff-only.decorator.js";
 import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { AppError } from "../../shared/problem-details.js";
-import { StaffService } from "./staff.service.js";
+import { StaffService, type StaffProfile } from "./staff.service.js";
 
 export const SESSION_COOKIE = "ds_staff_session";
 
@@ -183,6 +183,29 @@ export interface StaffAuthConfig {
  * A token is the way in.
  */
 export const STAFF_AUTH_CONFIG = Symbol("STAFF_AUTH_CONFIG");
+
+/**
+ * The one rule for who may touch the platform sender (P77-01).
+ *
+ * Extracted rather than restated, because it now governs two routes — writing
+ * the settings and asking the server to send a test with them — and a rule
+ * written twice is one that eventually disagrees with itself. That is the
+ * P74-01 lesson: `mayChange` on the second-factor screen is the same
+ * function the `PUT` enforces, so what the console offers and what the API
+ * refuses cannot drift (CLAUDE.md §9.2).
+ *
+ * Super administrators only, for the reason the write already gave: this is
+ * not one customer's setting, it is the address the platform's own mail comes
+ * from, and mail about accounts that are not a customer administrator's.
+ */
+function requirePlatformSenderAdmin(request: Request): StaffProfile {
+  const profile = request.staffProfile;
+  if (profile === undefined) throw AppError.unauthenticated("no staff session");
+  if (profile.role !== "super_admin") {
+    throw AppError.forbidden("only a super administrator may change the platform sender");
+  }
+  return profile;
+}
 
 @Controller("admin/auth")
 export class StaffAuthController {
@@ -461,13 +484,7 @@ export class StaffAuthController {
     @Body() body: unknown,
     @Req() request: Request,
   ): Promise<{ status: string }> {
-    const profile = request.staffProfile;
-    if (profile === undefined) throw AppError.unauthenticated("no staff session");
-    if (profile.role !== "super_admin") {
-      throw AppError.forbidden(
-        "only a super administrator may change the platform sender",
-      );
-    }
+    const profile = requirePlatformSenderAdmin(request);
 
     const input = PlatformSmtpBody.parse(body);
     // Spread the optional key rather than passing it through: under
@@ -487,6 +504,41 @@ export class StaffAuthController {
       { id: profile.id },
     );
     return { status: "saved" };
+  }
+
+  /**
+   * Send a test message with the stored settings, to the caller's own inbox
+   * (P77-01).
+   *
+   * Same rule as the write, through the same function — see
+   * `requirePlatformSenderAdmin`.
+   *
+   * Rate limited because this is a button that makes the server send mail. An
+   * unlimited one is a way to spend the relay's reputation, which is the whole
+   * asset the platform sender depends on.
+   *
+   * Answers 200 with the outcome rather than an error status for a delivery
+   * failure: "the SMTP host refused the credentials" is a *successful* answer
+   * to the question the operator asked, and a 500 here would make the console
+   * show its generic "something went wrong" instead of the one sentence that
+   * tells them what to fix.
+   */
+  @StaffOnly()
+  @RateLimit("platformMailTest")
+  @Post("platform-smtp/test")
+  async testPlatformSmtp(
+    @Req() request: Request,
+  ): Promise<{ status: string; reason?: string; sentTo?: string }> {
+    const profile = requirePlatformSenderAdmin(request);
+    const outcome = await this.service.sendPlatformTestEmail({
+      id: profile.id,
+      email: profile.email,
+    });
+    return {
+      status: outcome.status,
+      ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
+      ...(outcome.sentTo === undefined ? {} : { sentTo: outcome.sentTo }),
+    };
   }
 
   // --- the second factor, as a policy (P22-02) -----------------------------

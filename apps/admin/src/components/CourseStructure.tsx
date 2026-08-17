@@ -42,7 +42,7 @@ import type {
   ContentWrite,
   MediaSourceWrite,
 } from "@ds/sdk";
-import { lengthsAgree, MEDIA_MIME_TYPES } from "@ds/domain";
+import { lengthsAgree, mimeTypeForUrl } from "@ds/domain";
 import { MediaCheckPanel } from "./MediaCheck.js";
 import { de } from "../locale/de.js";
 import { nullable, swap } from "../drafts.js";
@@ -651,7 +651,13 @@ function ContentForm(props: {
               captionsUrl: nullable(captionsUrl),
               durationSec: durationSec.trim() === "" ? null : Number(durationSec),
               fileUrl: nullable(fileUrl),
-              mimeType: nullable(mimeType),
+              /*
+               * Derived, never typed (P79-01). The uploader reports the
+               * bucket's own content type and `mimeTypeForUrl` reads the
+               * extension of a pasted URL; `undefined` from either means the
+               * format is simply not described, which is legitimate.
+               */
+              mimeType: nullable(mimeType) ?? mimeTypeForUrl(fileUrl) ?? null,
             }),
           ),
         );
@@ -786,14 +792,6 @@ function ContentForm(props: {
             // saves an author typing "application/pdf" into a free-text field.
             onMimeType={setMimeType}
           />
-          <Field label={de.structure.mimeType} htmlFor={id("mime")}>
-            <TextInput
-              id={id("mime")}
-              value={mimeType}
-              maxLength={200}
-              onChange={setMimeType}
-            />
-          </Field>
         </div>
       ) : null}
 
@@ -1152,16 +1150,14 @@ function SourcesEditor(props: {
                 aria-label={de.structure.sourceUrl}
                 value={source.url}
                 maxLength={2000}
-                onChange={(url) => patch(index, { url })}
+                onChange={(url) =>
+                  // The extension answers it, so nobody has to (P79-01). An
+                  // unrecognised one stores "", which reaches the player as a
+                  // <source> with no `type` and is sniffed by the browser.
+                  patch(index, { url, mimeType: mimeTypeForUrl(url) ?? "" })
+                }
               />
             )}
-            <Select
-              id={props.idFor(`source-type-${index}`)}
-              aria-label={de.structure.sourceType}
-              value={source.mimeType}
-              options={MEDIA_TYPE_OPTIONS}
-              onChange={(mimeType) => patch(index, { mimeType })}
-            />
             <TextInput
               id={props.idFor(`source-label-${index}`)}
               aria-label={de.structure.sourceLabel}
@@ -1238,7 +1234,7 @@ function SourcesEditor(props: {
                 ...props.sources,
                 // Defaults to MP4: it is the rendition every course has, and an
                 // author adding a second one changes the dropdown deliberately.
-                { url: "", mimeType: "video/mp4", label: null },
+                { url: "", mimeType: "", label: null },
               ])
             }
           >
@@ -1274,25 +1270,3 @@ function SourcesEditor(props: {
     </fieldset>
   );
 }
-
-/**
- * The formats a source may declare, labelled for an author.
- *
- * Derived from `MEDIA_MIME_TYPES` rather than typed out, so the dropdown cannot
- * offer a type the server would refuse — the list has one home.
- */
-const MEDIA_TYPE_LABELS: Readonly<Record<string, string>> = {
-  "video/mp4": "MP4 (H.264)",
-  "video/webm": "WebM",
-  "video/ogg": "Ogg",
-  "audio/mpeg": "MP3 (nur Ton)",
-  "audio/mp4": "M4A (nur Ton)",
-  "audio/ogg": "Ogg (nur Ton)",
-  "application/vnd.apple.mpegurl": "HLS (adaptiv)",
-  "application/x-mpegurl": "HLS (adaptiv, alt)",
-  "application/dash+xml": "DASH (adaptiv)",
-};
-
-const MEDIA_TYPE_OPTIONS: ReadonlyArray<readonly [string, string]> = MEDIA_MIME_TYPES.map(
-  (mimeType) => [mimeType, MEDIA_TYPE_LABELS[mimeType] ?? mimeType] as const,
-);

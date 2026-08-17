@@ -595,7 +595,22 @@ export function VideoPlayer(props: VideoPlayerProps) {
           key={reloads}
         >
           {props.sources.map((source) => (
-            <source key={source.url} src={source.url} type={source.mimeType} />
+            <source
+              key={source.url}
+              src={source.url}
+              /*
+               * Omitted when we could not name the format (P79-01).
+               *
+               * `type=""` is not "no type": the browser compares it against
+               * what it can play, matches nothing, and skips the rendition —
+               * so a perfectly playable file would refuse to start with
+               * nothing in the console to explain it. Leaving the attribute
+               * off makes the browser sniff the container, which is what it
+               * does well and is why the console stopped asking authors to
+               * declare a type at all.
+               */
+              {...(source.mimeType.trim() === "" ? {} : { type: source.mimeType })}
+            />
           ))}
           {/*
             WCAG 1.2.2 (Captions, Prerecorded) is Level A and EN 301 549 makes

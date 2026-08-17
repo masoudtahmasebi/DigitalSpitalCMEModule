@@ -30,6 +30,7 @@ import { de } from "../locale/de.js";
 import { Button, ConfirmButton, Field, Notice, Panel, Select, TextInput } from "./ui.js";
 import {
   readPlatformSender,
+  sendPlatformTestMail,
   writePlatformSender,
   type PlatformSender,
 } from "../staff-auth.js";
@@ -361,6 +362,21 @@ function PlatformSenderPanel(props: { apiBase: string }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | undefined>();
   const [saved, setSaved] = useState(false);
+  /*
+   * The test send is its own state, not folded into `problem`/`saved`
+   * (P77-01). A failed test after a successful save is two true statements —
+   * "gespeichert" and "der Versand schlug fehl" — and collapsing them would
+   * make the screen contradict itself.
+   */
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<
+    | {
+        status: "sent" | "not_configured" | "failed" | "unreachable";
+        reason?: string;
+        sentTo?: string;
+      }
+    | undefined
+  >();
 
   useEffect(() => {
     void (async () => {
@@ -499,9 +515,53 @@ function PlatformSenderPanel(props: { apiBase: string }) {
             : de.organisation.smtpPasswordMissing}
         </p>
 
-        <Button type="submit" disabled={busy}>
-          {busy ? de.common.saving : de.common.save}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" disabled={busy}>
+            {busy ? de.common.saving : de.common.save}
+          </Button>
+
+          {/*
+            The test, beside Speichern rather than under it (P77-01).
+
+            No `type` needed: `Button` renders `type={props.type ?? "button"}`,
+            so only the Speichern above it — which passes `type="submit"` — can
+            submit this form. Setting it here explicitly was redundant, and the
+            comment that used to justify it described a hazard this codebase's
+            shared button had already removed.
+
+            Disabled until the *stored* settings are complete, because that is
+            what it tests: offering it against an unconfigured sender is a
+            control that can only produce an error, which is §9.2.
+          */}
+          <Button
+            variant="secondary"
+            disabled={busy || testing || sender?.canSend !== true}
+            onClick={() => {
+              setTesting(true);
+              setTestResult(undefined);
+              void (async () => {
+                setTestResult(await sendPlatformTestMail(props.apiBase));
+                setTesting(false);
+              })();
+            }}
+          >
+            {testing ? de.security.platformMailTestSending : de.security.platformMailTest}
+          </Button>
+        </div>
+
+        <p className="text-xs text-gray-600">{de.security.platformMailTestHint}</p>
+
+        {testResult === undefined ? null : (
+          <Notice tone={testResult.status === "sent" ? "success" : "warning"}>
+            {testResult.status === "sent"
+              ? de.security.platformMailTestSent(testResult.sentTo ?? "")
+              : testResult.status === "not_configured"
+                ? de.security.platformMailTestNotConfigured
+                : testResult.status === "failed"
+                  ? de.security.platformMailTestFailed(testResult.reason ?? "")
+                  : de.security.platformMailTestUnreachable}
+          </Notice>
+        )}
       </form>
     </Panel>
   );

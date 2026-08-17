@@ -50,7 +50,12 @@ import { useState } from "react";
 import { clockTime, germanMinutesAndSeconds, mediaLengthVerdict } from "@ds/domain";
 import type { ApiClient, CourseDetail, EnrolmentState, LessonContent } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { findQuizContent, locateContent, playbackDuration } from "../player.js";
+import {
+  findQuizContent,
+  locateContent,
+  nextAvailableContent,
+  playbackDuration,
+} from "../player.js";
 import { LessonScreen, type PlaybackState } from "./LessonScreen.js";
 import { Button, LockIcon } from "./primitives.js";
 
@@ -94,6 +99,15 @@ export function PlayerScreen(props: {
 
   const here = locateContent(course, lesson.id);
   const quiz = findQuizContent(course, state);
+  /*
+   * Where the learner goes after this section (P78-02).
+   *
+   * The server's gate decides which content that is; this only renders the
+   * answer. `undefined` on the last section, or while the next module is still
+   * locked — and then nothing is drawn, rather than a control that would be
+   * refused (§9.2).
+   */
+  const next = nextAvailableContent(course, state, lesson.id);
   const duration = playbackDuration(lesson.durationSec, playback.durationSec);
 
   /**
@@ -254,6 +268,23 @@ export function PlayerScreen(props: {
         ) : (
           <Button onClick={quizOpen}>{de.player.quizBegin}</Button>
         )}
+        {/*
+          The way onward, when the server has one open (P78-02).
+
+          Reported as *"i can not go forward"*: a finished section offered only
+          „Fortbildung pausieren" and „Zurück zur Übersicht", so continuing
+          meant returning to the outline and finding the next item by hand.
+
+          After the quiz CTA, so that when the Lernerfolgskontrolle is unlocked
+          it stays the primary action — the exam is the end of the course and
+          should not be competing with another chapter for attention.
+        */}
+        {next === undefined ? null : (
+          <Button variant="secondary" onClick={() => props.onOpen(next.id)}>
+            {de.player.nextSection(next.title)}
+          </Button>
+        )}
+
         <Button variant="secondary" onClick={props.onBack}>
           {de.player.back}
         </Button>

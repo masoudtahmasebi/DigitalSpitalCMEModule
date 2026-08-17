@@ -251,6 +251,16 @@ export const de = {
       "daran nichts. Bitte wenden Sie sich an den Anbieter dieser Fortbildung.",
     lengthMisconfiguredLabel: "Hinweis zur Konfiguration dieses Abschnitts",
 
+    /*
+     * The way onward from a finished section (P78-02).
+     *
+     * Names the destination rather than saying „Weiter": the sidebar shows five
+     * modules and several chapters, and a bare "next" does not say whether it
+     * means the next chapter, the next module or the exam. It is only rendered
+     * when the server has that content as `available`, so it can never be a
+     * control that refuses.
+     */
+    nextSection: (title: string): string => `Weiter: ${title}`,
     pause: "Fortbildung pausieren",
     back: "Zurück zur Übersicht",
 

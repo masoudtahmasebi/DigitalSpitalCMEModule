@@ -310,6 +310,48 @@ export async function writePlatformSender(
   }
 }
 
+/**
+ * Ask the server to send a test message with the stored settings (P77-01).
+ *
+ * Returns the server's own verdict rather than a boolean. "It did not work" is
+ * useless to somebody wiring up SMTP; `535 authentication failed` and
+ * `getaddrinfo ENOTFOUND` are two completely different afternoons, and the
+ * whole point of this control is to hand over the sentence the SMTP server
+ * actually said.
+ *
+ * A transport failure here — the console could not reach the API at all — is
+ * distinct from a delivery failure and is reported as such, because the two
+ * have nothing to do with each other.
+ */
+export async function sendPlatformTestMail(apiBase: string): Promise<{
+  status: "sent" | "not_configured" | "failed" | "unreachable";
+  reason?: string;
+  sentTo?: string;
+}> {
+  try {
+    const response = await post(apiBase, "/admin/auth/platform-smtp/test", {});
+    if (!response.ok) return { status: "unreachable" };
+    const body = (await response.json()) as {
+      status?: string;
+      reason?: string;
+      sentTo?: string;
+    };
+    const status =
+      body.status === "sent" ||
+      body.status === "not_configured" ||
+      body.status === "failed"
+        ? body.status
+        : "unreachable";
+    return {
+      status,
+      ...(body.reason === undefined ? {} : { reason: body.reason }),
+      ...(body.sentTo === undefined ? {} : { sentTo: body.sentTo }),
+    };
+  } catch {
+    return { status: "unreachable" };
+  }
+}
+
 function post(apiBase: string, path: string, body: unknown): Promise<Response> {
   return fetch(new URL(path, apiBase), {
     method: "POST",

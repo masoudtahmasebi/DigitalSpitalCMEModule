@@ -128,6 +128,85 @@ export interface MediaSourceDraft {
  * entries, and an author who meant to paste a second rendition has silently
  * shipped one. Cheap to catch, invisible otherwise.
  */
+/**
+ * The MIME type a file's own name implies (P79-01).
+ *
+ * ## Why the form stopped asking
+ *
+ * Every media form had a `Dateityp` field — a free-text box on materials and a
+ * dropdown on video sources — and the client's objection is exactly right:
+ * *"there is no need to set the type anywhere"*. The file already carries the
+ * answer in its extension, the uploader already returns a content type, and a
+ * person typing `application/pdf` next to a `.pdf` they just uploaded is doing
+ * the computer's work and can only get it wrong.
+ *
+ * Getting it wrong is not cosmetic on a `<source>`: a `type` the browser does
+ * not recognise makes it skip that rendition silently, so the video refuses to
+ * play with nothing in the console to explain it.
+ *
+ * ## Undeclared is a legitimate answer
+ *
+ * Anything not listed returns `undefined`, and `undefined` means *do not put a
+ * `type` attribute on the element at all* — which makes the browser sniff the
+ * container, and is what it does perfectly well for ordinary files. That is the
+ * "do not limit them" half of the same request: an unusual extension is no
+ * longer refused at authoring time, it is simply not described.
+ *
+ * Extensions only, deliberately. Reading the bytes would mean fetching the file
+ * on the authoring path, and the extension is what the storage layer named the
+ * object by anyway.
+ */
+const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
+  // Progressive video and audio — the `<source type>` cases.
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  webm: "video/webm",
+  ogv: "video/ogg",
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  oga: "audio/ogg",
+  ogg: "audio/ogg",
+  // Adaptive manifests. Both spellings of the HLS type are in the wild; this
+  // emits the one the registry prefers and `streamingKindOf` accepts either.
+  m3u8: "application/vnd.apple.mpegurl",
+  mpd: "application/dash+xml",
+  // Documents, for Mediathek materials.
+  pdf: "application/pdf",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  zip: "application/zip",
+  // Images, for posters.
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+  // Captions.
+  vtt: "text/vtt",
+  srt: "application/x-subrip",
+};
+
+export function mimeTypeForUrl(url: string | null | undefined): string | undefined {
+  const trimmed = (url ?? "").trim();
+  if (trimmed === "") return undefined;
+
+  // Strip a query string and fragment before looking at the extension: a signed
+  // URL carries `?X-Amz-…`, and `.mp4?sig=x` must still read as an mp4.
+  const withoutQuery = trimmed.split("?")[0]?.split("#")[0] ?? "";
+  const lastSlash = withoutQuery.lastIndexOf("/");
+  const name = lastSlash === -1 ? withoutQuery : withoutQuery.slice(lastSlash + 1);
+
+  const dot = name.lastIndexOf(".");
+  if (dot === -1 || dot === name.length - 1) return undefined;
+
+  return MIME_BY_EXTENSION[name.slice(dot + 1).toLowerCase()];
+}
+
 export function mediaSourceProblems(
   sources: readonly MediaSourceDraft[],
 ): readonly MediaSourceProblem[] {
@@ -142,8 +221,26 @@ export function mediaSourceProblems(
     else if (seen.has(url)) problems.add("duplicate_url");
     else seen.add(url);
 
+    /*
+     * A **blank** type is fine now (P79-01).
+     *
+     * The console no longer asks for one — it derives it from the file, and
+     * `mimeTypeForUrl` answers `undefined` for anything it does not recognise.
+     * That `undefined` reaches the player as a `<source>` with no `type`
+     * attribute, which makes the browser sniff the container. Refusing it here
+     * would turn "we could not name this format" into "you may not use this
+     * file", which is the limitation the client asked to have removed.
+     *
+     * A *stated* type nobody recognises is still a problem, and for the
+     * original reason: the browser skips such a source silently, so the video
+     * refuses to play with nothing to explain it. That can only arrive from
+     * data written before this change or from an API caller that is not the
+     * console.
+     */
     const mimeType = (source.mimeType ?? "").trim().toLowerCase();
-    if (!MEDIA_MIME_TYPES.includes(mimeType)) problems.add("unknown_mime_type");
+    if (mimeType !== "" && !MEDIA_MIME_TYPES.includes(mimeType)) {
+      problems.add("unknown_mime_type");
+    }
   }
 
   return [...problems];

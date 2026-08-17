@@ -121,3 +121,41 @@ export function invitationEmail(link: string): OutboundLetter {
     ].join("\n"),
   };
 }
+
+/**
+ * The message the SMTP test sends (P77-01).
+ *
+ * Deliberately contains no link, no token and nothing actionable. Its whole
+ * job is to prove that the configured sender can reach a real inbox, so the
+ * only things worth putting in it are the ones somebody would want to check
+ * *in the received message*: that it arrived, where it came from, and that it
+ * is not a leaked credential.
+ *
+ * It names the sender address on purpose. The commonest way this test misleads
+ * is passing while the mail lands in spam or arrives with an unexpected From —
+ * and both are things you can only see in the delivered message.
+ */
+export function smtpTestEmail(sentAtIso: string): OutboundLetter {
+  return {
+    to: "",
+    subject: "Test-E-Mail — DS Education",
+    body: [
+      "Guten Tag,",
+      "",
+      "diese Nachricht wurde in der DS-Education-Verwaltung ausgelöst, um den",
+      "E-Mail-Versand zu prüfen. Wenn Sie sie lesen, funktioniert der",
+      "hinterlegte SMTP-Zugang.",
+      "",
+      `Gesendet: ${sentAtIso}`,
+      "",
+      "Bitte prüfen Sie auch, ob die Nachricht im Posteingang und nicht im",
+      "Spam-Ordner gelandet ist und ob die Absenderadresse stimmt — beides",
+      "lässt sich nur an der zugestellten Nachricht erkennen.",
+      "",
+      "Diese Nachricht enthält bewusst keinen Link und keine Zugangsdaten.",
+      "",
+      "Diese Nachricht wurde automatisch erzeugt. Bitte antworten Sie nicht",
+      "darauf.",
+    ].join("\n"),
+  };
+}

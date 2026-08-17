@@ -181,6 +181,64 @@ export function findQuizContent(
 }
 
 /**
+ * The next content a learner may actually open, in course order (P78-02).
+ *
+ * ## Why this exists
+ *
+ * Finishing a section left the learner nowhere to go. The only controls under
+ * the video were „Fortbildung pausieren" and „Zurück zur Übersicht", so
+ * advancing meant going back to the outline and finding the next item by hand —
+ * which was reported, accurately, as *"i can not go forward"*.
+ *
+ * ## Why it reads the enrolment's gates and decides nothing
+ *
+ * The candidate must be `available` **according to the server**. This walks the
+ * catalogue for order and the enrolment for permission, exactly as
+ * `findQuizContent` does one function up, and for the same reason: a widget
+ * that worked out for itself what comes next would offer a section the API is
+ * about to refuse, or — worse — look right while the two quietly disagreed
+ * (CLAUDE.md §4 invariant 1).
+ *
+ * A `quiz` is deliberately skipped. The Lernerfolgskontrolle has its own tab
+ * and its own button, and sliding into it from a video would drop the learner
+ * into an exam they did not choose to start.
+ *
+ * Returns `undefined` when nothing further is open — the last section, or a
+ * course whose next module is still locked — and the caller then offers
+ * nothing rather than a control that would refuse.
+ */
+export function nextAvailableContent(
+  course: Pick<CourseDetail, "modules">,
+  state: {
+    modules: readonly {
+      chapters: readonly { contents: readonly { id: string; gate: GateStatus }[] }[];
+    }[];
+  },
+  currentContentId: string,
+): { readonly id: string; readonly title: string } | undefined {
+  const gates = new Map<string, GateStatus>();
+  for (const module of state.modules) {
+    for (const chapter of module.chapters) {
+      for (const content of chapter.contents) gates.set(content.id, content.gate);
+    }
+  }
+
+  const ordered = course.modules.flatMap((module) =>
+    module.chapters.flatMap((chapter) => chapter.contents),
+  );
+
+  const here = ordered.findIndex((content) => content.id === currentContentId);
+  if (here === -1) return undefined;
+
+  for (const content of ordered.slice(here + 1)) {
+    if (content.kind === "quiz") continue;
+    if (gates.get(content.id) !== "available") continue;
+    return { id: content.id, title: content.title };
+  }
+  return undefined;
+}
+
+/**
  * The video's length, preferring the authored figure.
  *
  * `lesson.durationSec` is what the server computes the watch percentage
