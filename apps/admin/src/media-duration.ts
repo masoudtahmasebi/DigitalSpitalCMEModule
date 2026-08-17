@@ -88,6 +88,43 @@ export function probeableSourceUrl(
  * truncating would shorten every video by up to a second — which, on a gate
  * requiring 100 % coverage, is a second the learner can never watch.
  */
+/**
+ * The length to store, from what the media element reported (P78-01).
+ *
+ * ## Floor, never round
+ *
+ * `Math.round` was the original, and it is the bug the client reported: a
+ * 5.5-second file was stored as `6`, so the authored length — which the watch
+ * gate is a percentage of — was **longer than the file**. The scrub bar stopped
+ * short, „noch 0:00" sat under a bar with a visible gap, and the section
+ * completed only because the rollup's half-second endpoint tolerance happened
+ * to cover the 0.5 s difference. A file 0.6 s short of its rounded length gets
+ * no such rescue and is unfinishable (P76-03).
+ *
+ * Flooring makes `authored <= file` an invariant of every measured length, so
+ * watching to the end always satisfies the gate. It gives away at most one
+ * second of required watching, which on a 25-minute lecture is nothing and errs
+ * in the only safe direction: a gate a fraction short is invisible, a gate a
+ * fraction long is a physician who cannot finish their Fortbildung.
+ *
+ * ## What is not a length
+ *
+ * A live stream reports `Infinity`; a manifest whose header has not arrived
+ * reports `NaN`. Neither is a length. Nor is anything under a second — that is
+ * not a lesson, and reporting it unmeasurable leaves the editable field and its
+ * explanation rather than storing a `0` that `contentProblems` would refuse at
+ * publish time with a less useful message.
+ *
+ * Separated from the probe because the probe needs a real media pipeline and
+ * this needs none. The decision is the part worth testing, and jsdom cannot
+ * exercise it through a `<video>`.
+ */
+export function durationFromMetadata(seconds: number): number | undefined {
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+  const floored = Math.floor(seconds);
+  return floored >= 1 ? floored : undefined;
+}
+
 export async function probeDurationSec(url: string): Promise<number | undefined> {
   return new Promise((resolve) => {
     const video = document.createElement("video");
@@ -113,10 +150,7 @@ export async function probeDurationSec(url: string): Promise<number | undefined>
     video.muted = true;
 
     video.addEventListener("loadedmetadata", () => {
-      const seconds = video.duration;
-      // A live stream reports `Infinity`, and a manifest whose header has not
-      // arrived reports `NaN`. Neither is a length.
-      finish(Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds) : undefined);
+      finish(durationFromMetadata(video.duration));
     });
     video.addEventListener("error", () => finish(undefined));
 

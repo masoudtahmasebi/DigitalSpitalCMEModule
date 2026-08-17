@@ -10,7 +10,12 @@
 
 import { describe, expect, it } from "vitest";
 import type { CourseDetail, ProgressSummary } from "@ds/sdk";
-import { itemIcon, locateContent, playbackDuration } from "./player.js";
+import {
+  itemIcon,
+  locateContent,
+  nextAvailableContent,
+  playbackDuration,
+} from "./player.js";
 
 function progress(status: ProgressSummary["status"]): Pick<ProgressSummary, "status"> {
   return { status };
@@ -162,5 +167,119 @@ describe("playbackDuration", () => {
   it("survives the NaN a media element reports before metadata loads", () => {
     expect(playbackDuration(null, Number.NaN)).toBe(0);
     expect(playbackDuration(null, Number.POSITIVE_INFINITY)).toBe(0);
+  });
+});
+
+/**
+ * The way onward from a finished section (P78-02).
+ *
+ * Reported as _"although the video is done, i can not go forward"_. The player
+ * offered „Fortbildung pausieren" and „Zurück zur Übersicht" and nothing else,
+ * so continuing meant returning to the outline and finding the next item by
+ * hand.
+ *
+ * The gate is the server's in every case below — these assert that the widget
+ * *renders* that answer and never improves on it (CLAUDE.md §4 invariant 1).
+ */
+describe("nextAvailableContent", () => {
+  function course() {
+    return {
+      modules: [
+        {
+          chapters: [
+            {
+              contents: [
+                { id: "v1", kind: "video", title: "Grundlagen" },
+                { id: "v2", kind: "video", title: "Vertiefung" },
+              ],
+            },
+          ],
+        },
+        {
+          chapters: [
+            {
+              contents: [
+                { id: "v3", kind: "video", title: "Diagnostik" },
+                { id: "quiz", kind: "quiz", title: "Lernerfolgskontrolle" },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as Parameters<typeof nextAvailableContent>[0];
+  }
+
+  function state(gates: Record<string, string>) {
+    return {
+      modules: [
+        {
+          chapters: [
+            {
+              contents: [
+                { id: "v1", gate: gates["v1"] ?? "available" },
+                { id: "v2", gate: gates["v2"] ?? "available" },
+              ],
+            },
+          ],
+        },
+        {
+          chapters: [
+            {
+              contents: [
+                { id: "v3", gate: gates["v3"] ?? "locked" },
+                { id: "quiz", gate: gates["quiz"] ?? "locked" },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as Parameters<typeof nextAvailableContent>[1];
+  }
+
+  it("offers the next section in course order", () => {
+    expect(nextAvailableContent(course(), state({}), "v1")).toEqual({
+      id: "v2",
+      title: "Vertiefung",
+    });
+  });
+
+  it("crosses a module boundary when the server has opened it", () => {
+    expect(nextAvailableContent(course(), state({ v3: "available" }), "v2")).toEqual({
+      id: "v3",
+      title: "Diagnostik",
+    });
+  });
+
+  it("offers nothing while the next module is still locked", () => {
+    // The whole point: a control that would be refused is worse than none
+    // (§9.2). The learner sees the outline's padlock instead.
+    expect(nextAvailableContent(course(), state({}), "v2")).toBeUndefined();
+  });
+
+  it("never slides into the Lernerfolgskontrolle", () => {
+    // The exam has its own button. Arriving in it by pressing "weiter" would
+    // start an assessment the learner did not choose to begin.
+    expect(
+      nextAvailableContent(course(), state({ quiz: "available" }), "v3"),
+    ).toBeUndefined();
+  });
+
+  it("offers nothing after the last section", () => {
+    const single = {
+      modules: [
+        { chapters: [{ contents: [{ id: "only", kind: "video", title: "X" }] }] },
+      ],
+    } as unknown as Parameters<typeof nextAvailableContent>[0];
+    const gates = {
+      modules: [{ chapters: [{ contents: [{ id: "only", gate: "available" }] }] }],
+    } as unknown as Parameters<typeof nextAvailableContent>[1];
+
+    expect(nextAvailableContent(single, gates, "only")).toBeUndefined();
+  });
+
+  it("says nothing about a content the enrolment has never heard of", () => {
+    expect(
+      nextAvailableContent(course(), state({}), "not-in-this-course"),
+    ).toBeUndefined();
   });
 });
