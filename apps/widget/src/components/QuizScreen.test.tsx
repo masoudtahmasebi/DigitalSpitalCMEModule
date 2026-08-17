@@ -50,6 +50,15 @@ function attempt(overrides: Partial<QuizAttemptResult>): QuizAttemptResult {
   } as QuizAttemptResult;
 }
 
+/**
+ * The exam's own name, as the catalogue tree gives it (P87-02).
+ *
+ * Deliberately not "Abschlussprüfung": a fixture using the fallback word would
+ * pass against a screen that ignores the prop entirely, which is the whole
+ * property these assertions are about.
+ */
+const EXAM_TITLE = "Lernerfolgskontrolle Modul 2";
+
 function clientReturning(result: QuizAttemptResult) {
   const submitQuiz = vi.fn(async () => result);
   return { client: { submitQuiz } as unknown as ApiClient, submitQuiz };
@@ -78,6 +87,7 @@ function renderQuiz(
       client={client}
       courseSlug="adhs-akademie-adult"
       quiz={QUIZ}
+      examTitle={EXAM_TITLE}
       onPassed={() => undefined}
       onBack={handlers.onBack ?? (() => undefined)}
       onClaimPoints={claim}
@@ -89,7 +99,7 @@ function renderQuiz(
 
 /** Start, then answer every question with its first option. */
 async function answerEverything(): Promise<void> {
-  fireEvent.click(screen.getByRole("button", { name: /Abschlussprüfung starten/ }));
+  fireEvent.click(screen.getByRole("button", { name: `${EXAM_TITLE} starten` }));
 
   for (let index = 0; index < QUIZ.questions.length; index += 1) {
     fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
@@ -121,7 +131,7 @@ describe("before starting (page 08)", () => {
 describe("answering (pages 09–10)", () => {
   it("shows one question at a time", () => {
     renderQuiz(attempt({}));
-    fireEvent.click(screen.getByRole("button", { name: /Abschlussprüfung starten/ }));
+    fireEvent.click(screen.getByRole("button", { name: `${EXAM_TITLE} starten` }));
 
     expect(screen.getByText("Frage Nummer 1?")).toBeTruthy();
     expect(screen.queryByText("Frage Nummer 2?")).toBeNull();
@@ -130,7 +140,7 @@ describe("answering (pages 09–10)", () => {
 
   it("refuses to move on until the question has an answer", () => {
     renderQuiz(attempt({}));
-    fireEvent.click(screen.getByRole("button", { name: /Abschlussprüfung starten/ }));
+    fireEvent.click(screen.getByRole("button", { name: `${EXAM_TITLE} starten` }));
 
     const next = screen.getByRole("button", { name: /Weiter/ });
     expect(next.hasAttribute("disabled")).toBe(true);
@@ -144,7 +154,7 @@ describe("answering (pages 09–10)", () => {
 
   it("lets the learner go back and keeps the answer they gave", () => {
     renderQuiz(attempt({}));
-    fireEvent.click(screen.getByRole("button", { name: /Abschlussprüfung starten/ }));
+    fireEvent.click(screen.getByRole("button", { name: `${EXAM_TITLE} starten` }));
     fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
     fireEvent.click(screen.getByRole("button", { name: /Weiter/ }));
 
@@ -179,7 +189,7 @@ describe("the result", () => {
 
     await answerEverything();
 
-    expect(screen.getByText("Abschlussprüfung bestanden!")).toBeTruthy();
+    expect(screen.getByText(`${EXAM_TITLE} bestanden!`)).toBeTruthy();
     expect(screen.getByText("91 %")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /wiederholen/ })).toBeNull();
 
@@ -207,7 +217,7 @@ describe("the result", () => {
 
     await answerEverything();
 
-    expect(screen.getByText("Abschlussprüfung bestanden!")).toBeTruthy();
+    expect(screen.getByText(`${EXAM_TITLE} bestanden!`)).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: /CME-Punkte geltend machen/ }),
     ).toBeNull();
@@ -252,7 +262,7 @@ describe("the result", () => {
     // began with the first one's selections would be scored against answers the
     // learner never re-confirmed.
     fireEvent.click(screen.getByRole("button", { name: /wiederholen/ }));
-    expect(screen.getByRole("button", { name: /Abschlussprüfung starten/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: `${EXAM_TITLE} starten` })).toBeTruthy();
   });
 
   it("never claims to show which answers were wrong", async () => {

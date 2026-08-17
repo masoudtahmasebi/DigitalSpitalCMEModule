@@ -499,7 +499,16 @@ export const de = {
 
   quiz: {
     title: "Lernerfolgskontrolle",
-    /** The heading under the eyebrow on page 08, and on every question screen. */
+    /**
+     * The heading under the eyebrow on page 08, and on every question screen.
+     *
+     * A **fallback**, not the name (P87-02). A course used to hold one exam, so
+     * one word for it was enough; with one per module the sidebar names them
+     * individually — "Lernerfolgskontrolle Diagnostik" — and a screen headed
+     * "Abschlussprüfung" two inches away leaves the physician unable to tell
+     * which one they are sitting (§9.4). The exam's own title is used wherever
+     * it is known, and this stands in for a course authored without one.
+     */
     exam: "Abschlussprüfung",
 
     /*
@@ -526,12 +535,15 @@ export const de = {
       "Beantworten Sie alle Fragen nacheinander. Das Ergebnis wird Ihnen am Ende der Prüfung angezeigt.",
     /**
      * **The layout's button says "Teilprüfung starten"** directly under a
-     * heading that says Abschlussprüfung, and no per-module assessment exists
-     * anywhere in the thirteen pages or in this budget (S20). Naming a feature
-     * that does not exist is worse than departing from the render, so the button
-     * says what it actually starts.
+     * heading that says Abschlussprüfung. When this was written no per-module
+     * assessment existed in the thirteen pages or in the budget (S20), so the
+     * button said what it actually started rather than naming a feature that
+     * did not exist.
+     *
+     * Per-module assessment exists now (P87), and the button names **this**
+     * exam — which is what the layout was reaching for all along.
      */
-    start: "Abschlussprüfung starten",
+    start: (exam: string): string => `${exam} starten`,
 
     /** "Frage 5 von 11" */
     questionOf: (current: number, total: number): string =>
@@ -552,7 +564,7 @@ export const de = {
     unanswered: "Bitte beantworten Sie diese Frage, bevor Sie fortfahren.",
 
     /* The two result screens, pages 11 and 12. */
-    passedTitle: "Abschlussprüfung bestanden!",
+    passedTitle: (exam: string): string => `${exam} bestanden!`,
     failedTitle: "Prüfung nicht bestanden",
     /** "10 / 11" over "richtige Antworten". */
     scoreOf: (correct: number, total: number): string => `${correct} / ${total}`,
@@ -562,8 +574,8 @@ export const de = {
     passedSentence: (correct: number, total: number): string =>
       `Sie haben ${correct} von ${total} Fragen richtig beantwortet.`,
     failedSentence: (correct: number, total: number, needed: number): string =>
-      `Sie haben ${correct} von ${total} Fragen richtig beantwortet. Zum Bestehen der Lernerfolgskontrolle sind mindestens ${needed} richtige Antworten erforderlich. Bitte wiederholen Sie die Abschlussprüfung.`,
-    retry: "Abschlussprüfung wiederholen",
+      `Sie haben ${correct} von ${total} Fragen richtig beantwortet. Zum Bestehen der Lernerfolgskontrolle sind mindestens ${needed} richtige Antworten erforderlich. Bitte wiederholen Sie die Prüfung.`,
+    retry: (exam: string): string => `${exam} wiederholen`,
     pause: "Fortbildung pausieren",
     pauseHint: "Prüfung zu einem späteren Zeitpunkt fortsetzen",
     claim: "CME-Punkte geltend machen",

@@ -319,6 +319,45 @@ describe("building a course from nothing", () => {
     // Zero is a course that cannot be completed. The console shows it in red.
     expect(quiz.questionCount).toBe(0);
   });
+
+  it("refuses a second Lernerfolgskontrolle in the same module, naming it", async () => {
+    /*
+     * P87-06. One exam per module is what the gate, the player's tab and the
+     * completion arithmetic can express; a second is a shape none of them can.
+     * `findQuizContent` would offer whichever came first, the other would be
+     * unreachable from the player, and `hasPassedQuiz` would still require both
+     * — so the course could not be completed at all.
+     *
+     * Accepted-and-ignored is exactly how P87-01 arose one level up, which is
+     * why this is refused at the point the author can still act on it, rather
+     * than discovered by a physician who cannot finish.
+     */
+    const { status, body } = await asAdmin(
+      "POST",
+      `/admin/chapters/${chapterIds[0]}/contents`,
+      { kind: "quiz", title: "Zweite Lernerfolgskontrolle" },
+    );
+
+    expect(status).toBe(422);
+    // Names the module the author has to go and look at, and no ids (§9.5).
+    expect(body.detail).toContain("Lernerfolgskontrolle");
+    expect(body.detail).not.toContain(quizContentId);
+  });
+
+  it("allows one in a different module — the control for the refusal above", async () => {
+    /*
+     * Without this, the assertion above would be green on an API that refused
+     * every quiz (§9.1). `chapterIds[1]` is in the second module, so its own
+     * exam is a different module's and must be accepted.
+     */
+    const { status } = await asAdmin(
+      "POST",
+      `/admin/chapters/${chapterIds[1]}/contents`,
+      { kind: "quiz", title: "Lernerfolgskontrolle des zweiten Moduls" },
+    );
+
+    expect(status).toBe(201);
+  });
 });
 
 describe("reordering is a permutation, and it survives the unique constraint", () => {
@@ -735,7 +774,37 @@ describe("an authored course is a course the learner API can serve", () => {
     expect(body.watchedPercent).toBe(50);
   });
 
+  it("holds the authored quiz shut while the module is half watched", async () => {
+    /*
+     * P87-04, on a course built through the console rather than seeded — which
+     * is the point of this file. The learner above is at 50 % of the authored
+     * 600 seconds, so this module is not finished and its Lernerfolgskontrolle
+     * is not open.
+     *
+     * It ran green here for as long as content simply inherited its chapter's
+     * gate: the video and the quiz shared a chapter, so the exam was reachable
+     * from the moment the course was.
+     */
+    const early = await asLearner(
+      "GET",
+      `/courses/${courseSlug}/contents/${quizContentId}/quiz`,
+    );
+
+    expect(early.status).toBe(403);
+    expect(early.body.detail).toContain("Videos dieses Moduls");
+  });
+
   it("serves the authored quiz to the learner with no answer key", async () => {
+    // The rest of the video, on a clock that allows it — see P55-01 for why the
+    // wall-clock budget has to move as well as the segments.
+    await backdateLearnerClock(seedPool, 3600);
+    const watched = await asLearner(
+      "POST",
+      `/courses/${courseSlug}/contents/${videoContentId}/progress`,
+      { segments: [{ startSec: 300, endSec: 600 }], positionSec: 600 },
+    );
+    expect(watched.body.watchedPercent).toBe(100);
+
     const quiz = await asLearner(
       "GET",
       `/courses/${courseSlug}/contents/${quizContentId}/quiz`,

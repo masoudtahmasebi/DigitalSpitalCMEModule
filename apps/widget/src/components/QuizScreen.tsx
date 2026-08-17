@@ -51,6 +51,19 @@ export function QuizScreen(props: {
   client: ApiClient;
   courseSlug: string;
   quiz: Quiz;
+  /**
+   * This exam's own name, from the catalogue tree (P87-02).
+   *
+   * A course used to hold one Lernerfolgskontrolle, so one word for it was
+   * enough. With one per module the sidebar names them individually and a
+   * screen headed "Abschlussprüfung" leaves the physician unable to tell which
+   * one they are sitting — and, on a failed attempt, which one to repeat.
+   *
+   * `de.quiz.exam` stands in when the tree does not know the content, which is
+   * the same fallback `locateContent` makes: an honest generic word rather than
+   * an empty heading.
+   */
+  examTitle: string;
   onPassed: () => void;
   onBack: () => void;
   /**
@@ -123,6 +136,7 @@ export function QuizScreen(props: {
     return (
       <QuizIntro
         quiz={quiz}
+        examTitle={props.examTitle}
         onStart={() => setPhase({ kind: "question", index: 0 })}
         onBack={props.onBack}
       />
@@ -133,6 +147,7 @@ export function QuizScreen(props: {
     return (
       <QuizResult
         attempt={phase.attempt}
+        examTitle={props.examTitle}
         onRetry={() => {
           setSelected({});
           setPhase({ kind: "intro" });
@@ -165,7 +180,7 @@ export function QuizScreen(props: {
     <div className="space-y-5">
       <div>
         <div className="flex items-baseline justify-between gap-4">
-          <p className="text-sm font-semibold text-brand-700">{de.quiz.exam}</p>
+          <p className="text-sm font-semibold text-brand-700">{props.examTitle}</p>
           <p className="text-sm text-gray-500">
             {de.quiz.questionOf(phase.index + 1, quiz.questions.length)}
           </p>
@@ -254,7 +269,12 @@ export function QuizScreen(props: {
  * The three stat cards are the accreditation conditions in the form a physician
  * can check at a glance, and every figure in them is the course's own.
  */
-function QuizIntro(props: { quiz: Quiz; onStart: () => void; onBack: () => void }) {
+function QuizIntro(props: {
+  quiz: Quiz;
+  examTitle: string;
+  onStart: () => void;
+  onBack: () => void;
+}) {
   const { quiz } = props;
   const total = quiz.questions.length;
   const needed = minimumCorrectAnswers(total, quiz.passThresholdPercent);
@@ -268,7 +288,7 @@ function QuizIntro(props: { quiz: Quiz; onStart: () => void; onBack: () => void 
     <div className="space-y-6">
       <div>
         <p className="text-sm font-semibold text-brand-700">{de.quiz.title}</p>
-        <h2 className="text-2xl font-bold text-gray-900">{de.quiz.exam}</h2>
+        <h2 className="text-2xl font-bold text-gray-900">{props.examTitle}</h2>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -309,7 +329,7 @@ function QuizIntro(props: { quiz: Quiz; onStart: () => void; onBack: () => void 
 
       <div className="flex flex-wrap gap-3">
         <Button variant="cta" onClick={props.onStart}>
-          {de.quiz.start}
+          {de.quiz.start(props.examTitle)}
         </Button>
         <Button variant="secondary" onClick={props.onBack}>
           {de.player.back}
@@ -406,6 +426,7 @@ function OptionList(props: {
 /** Pages 11 and 12 — the same card, two verdicts. */
 function QuizResult(props: {
   attempt: QuizAttemptResult;
+  examTitle: string;
   onRetry: () => void;
   onBack: () => void;
   onClaimPoints: (() => void) | undefined;
@@ -422,7 +443,7 @@ function QuizResult(props: {
         }`}
         role="status"
       >
-        {attempt.passed ? de.quiz.passedTitle : de.quiz.failedTitle}
+        {attempt.passed ? de.quiz.passedTitle(props.examTitle) : de.quiz.failedTitle}
       </h2>
 
       {attempt.passed ? <Rosette /> : null}
@@ -506,7 +527,7 @@ function QuizResult(props: {
         <div className="flex flex-wrap items-start justify-center gap-4">
           <Button variant="cta" onClick={props.onRetry}>
             <span aria-hidden="true">⟳</span>
-            {de.quiz.retry}
+            {de.quiz.retry(props.examTitle)}
           </Button>
           <div className="text-center">
             <Button variant="secondary" onClick={props.onBack}>

@@ -350,6 +350,59 @@ describe("the road to a CME point", () => {
     expect(body.detail).toContain("Videowiedergabe");
   });
 
+  it("refuses this module's Lernerfolgskontrolle while its video is unwatched", async () => {
+    /*
+     * P87-04, at the endpoint. The widget stops drawing the button, but hiding
+     * a control is not a gate — a physician arriving from a stale tab, a link
+     * or `curl` must get the same answer as one looking at the screen
+     * (CLAUDE.md §4 invariant 1).
+     *
+     * This is also the assertion that makes the reordering below honest. Until
+     * P87-04 this whole block took the quiz *before* watching anything, and
+     * that was not an oversight in the fixture: it was what the product
+     * allowed. Moving the watch up without saying so would have quietly
+     * removed the coverage of the state the reorder exists for.
+     */
+    const read = await call("GET", `/courses/${courseSlug}/contents/${quizId}/quiz`);
+    expect(read.status).toBe(403);
+    expect(read.body.detail).toContain("Videos dieses Moduls");
+
+    // And the write, which is the one that would award the point.
+    const submitted = await call(
+      "POST",
+      `/courses/${courseSlug}/contents/${quizId}/quiz`,
+      {
+        answers: questionIds.map((id) => ({
+          questionId: id,
+          selectedOptionIds: [correctOptionByQuestion.get(id)],
+        })),
+      },
+    );
+    expect(submitted.status).toBe(403);
+  });
+
+  it("accepts the watched video", async () => {
+    await backdateLearnerClock(seedPool, 3600); // P55-01 — see the helper.
+    const { body } = await call(
+      "POST",
+      `/courses/${courseSlug}/contents/${videoId}/progress`,
+      { segments: [{ startSec: 0, endSec: VIDEO_SEC }] },
+    );
+
+    expect(body.watchedPercent).toBe(100);
+  });
+
+  it("opens the Lernerfolgskontrolle once the video is watched", async () => {
+    // The control for the refusal two cases up: without it that assertion
+    // would be green on an API that refuses every quiz for every reason (§9.1).
+    const { status } = await call(
+      "GET",
+      `/courses/${courseSlug}/contents/${quizId}/quiz`,
+    );
+
+    expect(status).toBe(200);
+  });
+
   it("serves the quiz with no correctness marker anywhere", async () => {
     const { status, body } = await call(
       "GET",
@@ -448,24 +501,6 @@ describe("the road to a CME point", () => {
 
     const { body } = await call("GET", `/courses/${courseSlug}/enrolment`);
     expect(body.quizPassed).toBe(true);
-  });
-
-  it("still refuses completion with the video unwatched", async () => {
-    const { status, body } = await call("POST", `/courses/${courseSlug}/completion`);
-
-    expect(status).toBe(409);
-    expect(body.detail).toContain("Videowiedergabe");
-  });
-
-  it("accepts the watched video", async () => {
-    await backdateLearnerClock(seedPool, 3600); // P55-01 — see the helper.
-    const { body } = await call(
-      "POST",
-      `/courses/${courseSlug}/contents/${videoId}/progress`,
-      { segments: [{ startSec: 0, endSec: VIDEO_SEC }] },
-    );
-
-    expect(body.watchedPercent).toBe(100);
   });
 
   it("refuses an EFN that is not 15 digits, without echoing it back", async () => {
