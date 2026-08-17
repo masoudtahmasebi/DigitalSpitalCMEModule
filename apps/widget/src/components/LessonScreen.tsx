@@ -55,8 +55,8 @@
  * say "paused" over a video that was still running.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { WatchedSegment } from "@ds/domain";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { clockTime, uncoveredSpans, type WatchedSegment } from "@ds/domain";
 import type { ApiClient, LessonContent } from "@ds/sdk";
 import { isSessionExpired } from "../session.js";
 import { de } from "../locale/de.js";
@@ -134,6 +134,20 @@ function VideoLesson(props: {
     lesson.seekCeilingSec,
     lesson.lastPositionSec,
   ]);
+
+  /*
+   * The seconds the gate has not credited, from the union it did.
+   *
+   * `lesson.durationSec` is the figure the percentage is measured against, so
+   * a gap listed here is a gap in the same arithmetic — including the case
+   * where the stored length is longer than the file, which shows up as a span
+   * running to the end that a learner cannot close. That is worth seeing: it
+   * is the operator's problem and it was invisible.
+   */
+  const gaps = useMemo(
+    () => uncoveredSpans(covered, lesson.durationSec ?? 0),
+    [covered, lesson.durationSec],
+  );
 
   const flush = useCallback(async () => {
     const tracker = trackerRef.current;
@@ -216,6 +230,28 @@ function VideoLesson(props: {
           {de.content.watched(watchedPercent)}
         </span>
       </div>
+
+      {/*
+        Which seconds are still missing (P85-01).
+        
+        From `uncoveredSpans` over the union the **server** credited, so this
+        and the percentage beside it are two readings of one number rather than
+        two opinions (§4 invariant 6). Shown only when there is a gap and the
+        video is not yet fully credited, so a finished section stays quiet.
+        
+        At most three, because the point is somewhere to go rather than a
+        report: a learner facing a list of nine fragments has been given a
+        chore, not an answer.
+      */}
+      {gaps.length === 0 ? null : (
+        <p className="text-sm text-status-inProgress" role="status">
+          {de.content.gaps(
+            gaps
+              .slice(0, 3)
+              .map((gap) => `${clockTime(gap.startSec)}–${clockTime(gap.endSec)}`),
+          )}
+        </p>
+      )}
 
       <VideoPlayer
         sources={lesson.sources}
