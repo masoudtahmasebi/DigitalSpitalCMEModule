@@ -274,6 +274,56 @@ describe("branding and the consent pair", () => {
     expect((screen.getByText(de.common.save) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("names the origin lines the API would refuse, before it does", async () => {
+    /*
+     * P94-04, and §9.3's shape one layer out: `invalidEmbedOriginPatterns`
+     * exists in `@ds/domain` so a form can report a rejected value, and a rule
+     * nothing calls is the defect P41-01 was.
+     *
+     * The API's 422 names the *field*, so an operator with six origins and one
+     * typo is told "embedOrigins" and left to find it. The bare wildcard is
+     * here on purpose: it is the entry somebody reaches for first, and the
+     * refusal has to be visible rather than a save that fails.
+     */
+    render(<Organisation client={clientWith([project()])} />);
+    await openSettings();
+
+    fireEvent.change(screen.getByLabelText(de.organisation.embedOrigins), {
+      target: {
+        value: [
+          "https://www.medice.de",
+          "https://*.medice.de",
+          "http://localhost:*",
+          "https://www.medice.de/",
+          "https://*",
+        ].join("\n"),
+      },
+    });
+
+    // By its own text, not by `role="alert"`: this form has other alerts and a
+    // role query would resolve to whichever is first in the DOM, which is how a
+    // test comes to assert about a different message than the one it names.
+    const message = screen.getByText(
+      de.organisation.embedOriginsRejected(["https://www.medice.de/", "https://*"]),
+    );
+    expect(message.textContent).toContain("https://www.medice.de/");
+    // And the three good ones are not accused of anything.
+    expect(message.textContent).not.toContain("http://localhost:*");
+  });
+
+  it("says nothing while every line is one the platform accepts", async () => {
+    // The control: without it the assertion above would pass on a form that
+    // complains about everything.
+    render(<Organisation client={clientWith([project()])} />);
+    await openSettings();
+
+    fireEvent.change(screen.getByLabelText(de.organisation.embedOrigins), {
+      target: { value: "https://*.medice.de\nhttp://localhost:*" },
+    });
+
+    expect(screen.queryByText(/keine gültige|keine gültigen/u)).toBeNull();
+  });
+
   it("omits a blank field rather than storing an empty string", async () => {
     const client = clientWith([project()]);
     render(<Organisation client={client} />);

@@ -64,6 +64,12 @@ export type {
   WatchedSegment,
 } from "./watch.js";
 
+export {
+  embedOriginAllowed,
+  invalidEmbedOriginPatterns,
+  isEmbedOriginPattern,
+} from "./embed-origin.js";
+
 export { evaluateGate, evaluateSequence } from "./gating.js";
 export type { GateReason, GateResult, GateStatus, GatingItem } from "./gating.js";
 export { contentGates } from "./module-quiz.js";

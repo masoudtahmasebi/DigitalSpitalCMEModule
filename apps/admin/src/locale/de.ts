@@ -506,7 +506,21 @@ export const german = {
 
     embedOrigins: "Erlaubte Einbettungs-Domains",
     embedOriginsHint:
-      "Die Websites des Kunden, auf denen die Fortbildung eingebettet werden darf — eine pro Zeile, z. B. https://www.beispiel.de. Ohne Pfad und ohne Schrägstrich am Ende.",
+      "Die Websites des Kunden, auf denen die Fortbildung eingebettet werden darf — eine pro Zeile, ohne Pfad und ohne Schrägstrich am Ende. " +
+      "Genau eine Adresse: https://www.beispiel.de · alle Subdomains: https://*.beispiel.de (die Domain selbst ist damit nicht gemeint, dafür eine eigene Zeile) · " +
+      "jeder Port, für die lokale Entwicklung: http://localhost:*. " +
+      "Ein Stern allein oder https://* ist nicht möglich: die Fortbildung würde damit jeder beliebigen Website im Namen der angemeldeten Person antworten.",
+    /**
+     * Which lines the save would be refused for (P94-04).
+     *
+     * Names the values, because the operator typed them seconds ago and an
+     * error that will not repeat the input cannot be acted on. §9.5's rule is
+     * about values that identify a person; a hostname is not one.
+     */
+    embedOriginsRejected: (entries: readonly string[]): string =>
+      entries.length === 1
+        ? `Diese Zeile ist keine gültige Adresse: ${entries[0] ?? ""}`
+        : `Diese Zeilen sind keine gültigen Adressen: ${entries.join(", ")}`,
     identityProvider: "Anmeldeverfahren",
     identityProviderHint:
       "Wie sich die Teilnehmenden dieses Projekts anmelden. Lässt sich später ändern, betrifft dann aber alle bestehenden Zugänge.",

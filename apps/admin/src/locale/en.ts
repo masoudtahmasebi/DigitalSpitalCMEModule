@@ -386,7 +386,14 @@ export const en: DeepPartial<typeof german> = {
 
     embedOrigins: "Allowed embedding domains",
     embedOriginsHint:
-      "The customer's websites on which the course may be embedded — one per line, e.g. https://www.example.com. Without a path and without a trailing slash.",
+      "The customer's websites on which the course may be embedded — one per line, without a path and without a trailing slash. " +
+      "One exact address: https://www.example.com · every sub-domain: https://*.example.com (the domain itself is not included — give it its own line) · " +
+      "any port, for local development: http://localhost:*. " +
+      "A bare star, or https://*, is not possible: the course would then answer any website at all on behalf of the signed-in person.",
+    embedOriginsRejected: (entries: readonly string[]): string =>
+      entries.length === 1
+        ? `This line is not a valid address: ${entries[0] ?? ""}`
+        : `These lines are not valid addresses: ${entries.join(", ")}`,
     identityProvider: "Sign-in method",
     identityProviderHint:
       "How this project's participants sign in. It can be changed later, but the change then affects every existing account.",

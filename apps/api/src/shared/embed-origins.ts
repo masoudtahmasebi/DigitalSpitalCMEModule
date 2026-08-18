@@ -41,6 +41,7 @@
  */
 
 import type { Pool } from "pg";
+import { embedOriginAllowed } from "@ds/domain";
 
 /** How long a resolved set is reused. See the header. */
 const TTL_MS = 60_000;
@@ -73,7 +74,10 @@ export class ProjectOriginSource implements OriginSource {
  * would be broken in a way no customer configuration should be able to cause.
  */
 export class EmbedOriginRegistry {
-  #cached: ReadonlySet<string> = new Set();
+  /** This installation's own origins — exact, from configuration. */
+  #exact: ReadonlySet<string> = new Set();
+  /** The customers', which may be patterns (P94-04). */
+  #patterns: readonly string[] = [];
   /**
    * `undefined` until a load has actually succeeded — not `0`.
    *
@@ -92,7 +96,7 @@ export class EmbedOriginRegistry {
     private readonly always: readonly string[],
     private readonly now: () => number = () => Date.now(),
   ) {
-    this.#cached = new Set(always);
+    this.#exact = new Set(always);
   }
 
   /**
@@ -105,7 +109,26 @@ export class EmbedOriginRegistry {
    */
   isAllowed(origin: string): boolean {
     this.#refreshIfStale();
-    return this.#cached.has(origin);
+    /*
+     * A pattern match, not a set lookup (P94-04).
+     *
+     * The stored entries were exact origins and this was `Set.has`. They are
+     * now patterns — `https://*.medice.de`, `http://localhost:*` — because one
+     * customer is several environments and enumerating a preview deployment per
+     * branch is a platform setting somebody has to edit every morning, which
+     * means it gets left wide or the embed silently fails.
+     *
+     * `embedOriginAllowed` is the same rule the console validates with and the
+     * same rule `@ds/domain` tests exhaustively. A second matcher here is how
+     * "what may be stored" and "what is accepted" come to disagree, and this is
+     * the side where disagreeing means letting a page in.
+     *
+     * Linear over a small list, called per preflight. `always` is checked first
+     * and by identity because it is this installation's own two origins and
+     * they are exact.
+     */
+    if (this.#exact.has(origin)) return true;
+    return embedOriginAllowed(this.#patterns, origin);
   }
 
   /** Force a load — used at boot so the first preflight is not a cache miss. */
@@ -123,8 +146,7 @@ export class EmbedOriginRegistry {
   async #load(): Promise<void> {
     this.#inFlight ??= (async () => {
       try {
-        const origins = await this.source.load();
-        this.#cached = new Set([...this.always, ...origins]);
+        this.#patterns = await this.source.load();
         this.#loadedAt = this.now();
       } catch {
         // Deliberately keeps the previous set. See the header: an outage must
