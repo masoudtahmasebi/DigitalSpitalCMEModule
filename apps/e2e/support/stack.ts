@@ -31,6 +31,9 @@ import { startObjectStore, type ObjectStore } from "./object-store.js";
 
 export const PORTS = { api: 3100, portal: 4180, admin: 4181 } as const;
 
+/** The WordPress-shaped page `support/wordpress.ts` serves. */
+export const WORDPRESS_ORIGIN = "http://127.0.0.1:4182";
+
 export const API_BASE = `http://127.0.0.1:${PORTS.api}`;
 export const PORTAL_BASE = `http://127.0.0.1:${PORTS.portal}`;
 export const ADMIN_BASE = `http://127.0.0.1:${PORTS.admin}`;
@@ -268,7 +271,18 @@ export async function startStack(options: {
        * passed, the database was right, and a physician would have seen a page
        * saying their employer does not exist.
        */
-      ALLOWED_ORIGINS: `${PORTAL_BASE},${ADMIN_BASE}`,
+      /*
+       * The WordPress origin is in the list too (P92-01).
+       *
+       * MEDICE's physicians reach the widget from their own site, which is a
+       * *different origin* from the API — so `ALLOWED_ORIGINS` is what decides
+       * whether the browser may read a single response. Leaving it out here
+       * would model an installation where somebody forgot to add it, which is
+       * a real failure mode but not the one the WordPress suite is about: its
+       * job is what happens on a correctly configured installation, and the
+       * missing-origin case has its own test that removes it.
+       */
+      ALLOWED_ORIGINS: `${PORTAL_BASE},${ADMIN_BASE},${WORDPRESS_ORIGIN}`,
       KEYCLOAK_ISSUER: "http://127.0.0.1:1/realms/unused",
       KEYCLOAK_AUDIENCE: "unused",
       KEYCLOAK_JWKS_URI: "http://127.0.0.1:1/realms/unused/protocol/openid-connect/certs",
