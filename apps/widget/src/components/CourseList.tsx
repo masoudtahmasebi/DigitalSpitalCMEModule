@@ -401,7 +401,18 @@ function CatalogHero(props: { branding: Branding }) {
           photograph is the whole hero, so the same element re-anchors to the
           content column's right edge.
         */}
-        <div className="pointer-events-none absolute bottom-10 left-4 sm:inset-0 sm:bottom-auto sm:left-auto">
+        {/*
+          `sm:bottom-0 sm:left-0 sm:right-0 sm:top-0` and **not** `sm:inset-0`
+          with `bottom-auto`/`left-auto` (P91-01).
+
+          That was the first version and it is why the seal arrived clipped
+          into the hero's top-right corner: `bottom:auto; left:auto` shrinks
+          this box to its content, so the `h-full` below measured the seal
+          rather than the hero and `top-[44%]` centred it on itself. The four
+          sides are written out because Tailwind emits `inset-0` *before*
+          `bottom-10`, so a bare `sm:inset-0` loses to the mobile anchor.
+        */}
+        <div className="pointer-events-none absolute bottom-10 left-4 sm:bottom-0 sm:left-0 sm:right-0 sm:top-0">
           {/*
             The content column, repeated, so the seal is centred on *its* right
             edge rather than on the viewport's — which is where the layout puts
@@ -412,7 +423,17 @@ function CatalogHero(props: { branding: Branding }) {
             full is a class name it never generates.
           */}
           <div className="relative mx-auto h-full sm:w-full sm:max-w-[1082px]">
-            <div className="sm:absolute sm:right-4 sm:top-[44%] sm:-translate-y-1/2 sm:translate-x-1/2">
+            {/*
+              Inside the hero, not centred on its edge (P91-01).
+
+              The drawing centres the seal **on** the content column's right
+              edge, which works there because the hero bleeds to the viewport.
+              This hero cannot: the widget is as wide as whatever container the
+              host gives it, so half a seal would fall outside and
+              `sm:overflow-hidden` would cut it — which is exactly what the
+              portal was showing.
+            */}
+            <div className="sm:absolute sm:right-6 sm:top-1/2 sm:-translate-y-1/2">
               <HeroSeal
                 branding={branding}
                 className="h-[11rem] w-[11rem] sm:h-[8.2rem] sm:w-[8.2rem]"
