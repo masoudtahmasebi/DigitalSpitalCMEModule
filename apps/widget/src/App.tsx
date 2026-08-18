@@ -40,14 +40,15 @@ import { ProgressCard, StickyMetaBar } from "./components/CourseHeader.js";
 import { StickyProgress } from "./components/StickyProgress.js";
 import { ExpertsTab } from "./components/ExpertsTab.js";
 import { OverviewTab } from "./components/OverviewTab.js";
-import { ModuleSidebar } from "./components/ModuleSidebar.js";
+import { BrandLogo } from "./components/BrandLogo.js";
+import { CourseShell } from "./components/CourseShell.js";
 import { PlayerScreen } from "./components/PlayerScreen.js";
 import { QuizScreen } from "./components/QuizScreen.js";
 import { EvaluationScreen } from "./components/EvaluationScreen.js";
 import { CompletionScreen } from "./components/CompletionScreen.js";
 import { CertificatePanel } from "./components/CertificatePanel.js";
 import { MediathekPanel } from "./components/MediathekPanel.js";
-import { Button, ErrorNotice, Spinner, TabbedPanel } from "./components/primitives.js";
+import { ErrorNotice, Spinner, TabbedPanel } from "./components/primitives.js";
 
 /** The four tabs of the course detail (layout §4.2). */
 const TABS = ["overview", "speakers", "certification", "library"] as const;
@@ -845,163 +846,6 @@ function useAnnouncements(
  * live without turning `Loaded` into a waterfall — a learner on the
  * Zertifizierung tab never pays for the Mediathek's request.
  */
-
-/**
- * The customer's logo, when they have set one.
- *
- * Not a prop threaded from the element: a branding failure must not delay or
- * break the course render, and the colours are applied separately by
- * `element.ts` and do not depend on this at all. `useBranding` de-duplicates
- * the request, so the two places this renders and the catalogue hero share one
- * unauthenticated fetch rather than issuing three.
- *
- * `alt` is never derived: `parseBranding` refuses a logo without one, so if
- * this renders, the text came from the customer.
- */
-function BrandLogo(props: { apiBase: string; projectSlug: string }) {
-  const branding = useBranding(props.apiBase, props.projectSlug);
-
-  if (branding.logoUrl === undefined) return null;
-
-  return (
-    <img
-      src={branding.logoUrl}
-      alt={branding.logoAlt ?? ""}
-      className="max-h-12 w-auto"
-      // The logo is a customer asset on a customer CDN; no reason to tell it
-      // which page a physician is reading.
-      referrerPolicy="no-referrer"
-    />
-  );
-}
-
-/**
- * The chrome the layout draws on pages 06 to 13 (#61).
- *
- * A teal region carrying the logo, the course title and the way out, with one
- * white panel pulled up over its lower edge — the screen's content on the left,
- * **Modul Übersicht** on the right.
- *
- * ## Why five screens share it
- *
- * The player, the exam's four states and the Punktemeldung are drawn
- * identically in the layout, down to the sidebar and its ticks. They used to be
- * two different things here: the player had its own masthead and its own
- * sidebar, and the quiz, the evaluation and the completion form rendered inside
- * the *course detail's* tab panel — under a tab row the layout does not draw on
- * any of those pages, and beside no module list at all.
- *
- * Sharing it is not only fidelity. The sidebar states are gate verdicts; a
- * second copy built beside the exam would have been a second reading of which
- * chapter is unlocked, and the two would eventually disagree.
- *
- * ## Deliberately not the course hero
- *
- * These screens show one thing at a time. Repeating the course's points,
- * duration and four tabs above a running video is navigation away from the only
- * thing the learner came here to do.
- *
- * "Zurück zur Übersicht" is orange and sits top-right, which is the one place
- * the layout puts the accent on a *leaving* action — because here leaving is
- * the resume-adjacent action: it is how a learner parks a module and comes back
- * to it.
- */
-function CourseShell(props: {
-  apiBase: string;
-  projectSlug: string;
-  course: CourseDetail;
-  state: EnrolmentState;
-  /**
-   * What the sidebar should mark as current. Empty on the exam-result, the
-   * evaluation and the Punktemeldung, which are not a content — `locateContent`
-   * finds nothing and the sidebar opens no module, which is how the layout
-   * draws those pages.
-   */
-  currentContentId: string;
-  onOpen: (contentId: string) => void;
-  onBack: () => void;
-  onResume: (() => void) | undefined;
-  /**
-   * Whether the floating progress module is drawn (below `sm` only).
-   *
-   * False on the exam and on the Punktemeldung. It is `fixed` to the viewport's
-   * bottom-right, and measured at 430 px it lands over an **answer option** —
-   * where a mis-tap costs a question rather than a scroll position. Its purpose
-   * is the resume affordance, and there is nothing to resume mid-exam: the
-   * learner is in the one part of the course they cannot leave and come back
-   * into halfway.
-   */
-  progress: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      {/*
-        Full-bleed, with one large corner where it ends (layout 6.1). `-mx-4`
-        cancels the widget's own gutter — the layout runs this teal to the edge
-        of the page and rounds only its inner corner, which reads as the page
-        *becoming* white rather than as a band sitting on it.
-      */}
-      <div className="-mx-4 rounded-br-[5rem] bg-brand-600 px-6 pb-20 pt-6 sm:px-8">
-        {/*
-          `ml-auto` on the button rather than `justify-between` on the row:
-          `BrandLogo` renders nothing for a project with no logo configured,
-          and with one child `justify-between` left-aligns it — so the back
-          action drifted to the top *left* on exactly the deployments that have
-          not finished branding yet.
-        */}
-        <div className="flex flex-wrap items-start gap-4">
-          <BrandLogo apiBase={props.apiBase} projectSlug={props.projectSlug} />
-          <div className="ml-auto">
-            <Button variant="cta" onClick={props.onBack}>
-              <span aria-hidden="true">←</span>
-              {de.player.back}
-            </Button>
-          </div>
-        </div>
-
-        <h1 className="mt-6 text-2xl font-bold text-brand-contrast sm:text-3xl">
-          {props.course.title}
-        </h1>
-      </div>
-
-      {/*
-        Pulled up over the teal, the same device the course meta strip uses.
-
-        `max-sm:pb-24` is for the floating progress module. It is `fixed` to the
-        viewport's bottom-right below `sm`, so at 320 px it sits over whatever
-        happens to be there — and measured at that width, that is the video's
-        lower-right corner. The player's controls are below the video rather
-        than overlaid on it, so they are not what it covers; the padding is what
-        guarantees the last of them can always be scrolled clear of it, at every
-        scroll position rather than at most of them.
-      */}
-      <div className="-mt-14 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm max-sm:pb-24 sm:p-6">
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-          <div className="min-w-0 space-y-4">{props.children}</div>
-
-          <ModuleSidebar
-            course={props.course}
-            state={props.state}
-            currentContentId={props.currentContentId}
-            onOpen={props.onOpen}
-          />
-        </div>
-      </div>
-
-      {/*
-        The floating resume module below `sm` (P19-01). Its own comment always
-        said its whole reason for existing was "being the resume affordance
-        *while a video is playing*" — and it was rendered only inside the course
-        detail's tab panel, which the player returns before reaching. It was
-        absent from the one screen it was built for.
-      */}
-      {props.progress ? (
-        <StickyProgress state={props.state} onResume={props.onResume} />
-      ) : null}
-    </div>
-  );
-}
 
 function Player(props: {
   client: ReturnType<typeof createWidgetClient>;

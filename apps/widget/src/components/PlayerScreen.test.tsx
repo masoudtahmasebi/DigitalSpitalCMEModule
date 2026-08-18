@@ -30,6 +30,7 @@ import type {
   ModuleState,
   ProgressSummary,
 } from "@ds/sdk";
+import { CourseShell } from "./CourseShell.js";
 import { PlayerScreen } from "./PlayerScreen.js";
 
 afterEach(cleanup);
@@ -221,6 +222,20 @@ function lesson(overrides: Partial<LessonContent> = {}): LessonContent {
   } as LessonContent;
 }
 
+/**
+ * The player **inside its real shell** (P93-03).
+ *
+ * Since the layout pass, two of the things this screen decides are drawn by
+ * `CourseShell`: the progress card in the masthead and the primary action under
+ * the module list. Rendering `PlayerScreen` alone would leave both untested and
+ * the suite green — CLAUDE.md §9.7, name the caller — and rebuilding the
+ * composition here instead would be a second implementation of the wiring,
+ * which the tests would then agree with even when the product was wrong.
+ *
+ * So this renders the component the product renders. It costs a `useBranding`
+ * fetch that resolves to nothing in jsdom, which is what a project with no logo
+ * does in production too.
+ */
 function renderPlayer(
   overrides: {
     course?: CourseDetail;
@@ -232,18 +247,36 @@ function renderPlayer(
   } = {},
 ) {
   const client = { recordProgress: vi.fn() } as unknown as ApiClient;
+  const courseNode = overrides.course ?? course();
+  const enrolment = overrides.state ?? state();
+  const current = overrides.lesson ?? lesson();
+  const onOpen = overrides.onOpen ?? vi.fn();
+  const onBack = overrides.onBack ?? vi.fn();
+
   render(
-    <PlayerScreen
-      client={client}
-      courseSlug="adhs"
-      course={overrides.course ?? course()}
-      state={overrides.state ?? state()}
-      lesson={overrides.lesson ?? lesson()}
-      onProgress={vi.fn()}
-      onOpen={overrides.onOpen ?? vi.fn()}
-      onBack={overrides.onBack ?? vi.fn()}
-      onReporting={overrides.onReporting ?? vi.fn()}
-    />,
+    <CourseShell
+      apiBase="https://api.invalid"
+      projectSlug="ds"
+      course={courseNode}
+      state={enrolment}
+      currentContentId={current.id}
+      onOpen={onOpen}
+      onBack={onBack}
+      onResume={undefined}
+      progress={false}
+    >
+      <PlayerScreen
+        client={client}
+        courseSlug="adhs"
+        course={courseNode}
+        state={enrolment}
+        lesson={current}
+        onProgress={vi.fn()}
+        onOpen={onOpen}
+        onBack={onBack}
+        onReporting={overrides.onReporting ?? vi.fn()}
+      />
+    </CourseShell>,
   );
 }
 
@@ -416,10 +449,39 @@ describe("the content tabs", () => {
     expect(screen.getByRole("tab", { name: /Punktemeldung/ })).toBeTruthy();
   });
 
-  it("offers no Teilprüfung", () => {
-    // Out of the 140 h scope (docs/requirements/medice-adhs.md §6.1). A locked
-    // button for a feature that will never unlock is worse than its absence.
+  it("says which module unlocks the exam, beside a control that cannot yet open it", () => {
+    /*
+     * P93-03, and the reason it reverses an earlier decision.
+     *
+     * This used to assert the *absence* of a Teilprüfung, because a per-module
+     * exam was out of the 140 h scope and a padlocked button for a feature
+     * that would never unlock is worse than none. P87 put per-module exams in
+     * scope, so the padlock now means "not yet" rather than "never", and
+     * `Player-Ansicht-Tab-Zusammenfassung-V2` draws exactly this pair.
+     *
+     * The learner is on `v3`, whose module's exam is `quiz3` and is locked.
+     */
     renderPlayer();
+
+    expect(screen.getByText("Wird nach Modul 3 freigeschaltet")).toBeTruthy();
+    const control = screen.getByRole("button", { name: "Zur Teilprüfung" });
+    expect((control as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("stops saying it once the server opens the gate", () => {
+    // The control for the case above. A sentence about when something unlocks
+    // is wrong the moment it has, and the sidebar's action is the way in from
+    // then on — two controls for one exam is how the two come to disagree.
+    renderPlayer({ state: withQuizOpen(state(), 3) });
+
+    expect(screen.queryByText(/freigeschaltet$/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Zur Teilprüfung" })).toBeNull();
+  });
+
+  it("draws no exam announcement on a module that has no exam", () => {
+    // §9.2 at the granularity P87 gave the course: module 1 has no exam, so
+    // there is nothing for a sentence about unlocking one to be about.
+    renderPlayer({ lesson: lesson({ id: "v1", title: "Video 1" }) });
     expect(screen.queryByText(/Teilprüfung/)).toBeNull();
   });
 });
@@ -436,11 +498,43 @@ describe("the controls", () => {
     expect(screen.queryByRole("button", { name: "Fortbildung pausieren" })).toBeNull();
   });
 
-  it("leaves the player only through Zurück zur Übersicht", () => {
+  it("leaves the player through Zurück zur Übersicht", () => {
     const onBack = vi.fn();
     renderPlayer({ onBack });
-    fireEvent.click(screen.getByRole("button", { name: "Zurück zur Übersicht" }));
+    // `getAllByRole`: the shell draws the same action in the masthead, which is
+    // where the layout puts it and where the first one is.
+    const [back] = screen.getAllByRole("button", { name: /Zurück zur Übersicht/ });
+    if (back === undefined) throw new Error("no way back rendered");
+    fireEvent.click(back);
     expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it("puts the primary action under the module list, not under the video", () => {
+    /*
+     * P93-03, and the §9.7 half of it: `PlayerScreen` decides which action it
+     * is and `ModuleSidebar` draws it, so the property that matters is the
+     * report between them. Rendered through the real `CourseShell`, this goes
+     * red if the report stops arriving — which a test of either component
+     * alone would not notice.
+     */
+    renderPlayer();
+
+    const outline = screen.getByRole("navigation", { name: "Modul Übersicht" });
+    const pause = screen.getByRole("button", { name: "Fortbildung pausieren" });
+    expect(outline.contains(pause)).toBe(true);
+  });
+
+  it("swaps that action for the exam once the server opens its gate", () => {
+    const onOpen = vi.fn();
+    renderPlayer({ onOpen, state: withQuizOpen(state(), 3) });
+
+    const outline = screen.getByRole("navigation", { name: "Modul Übersicht" });
+    const begin = screen.getByRole("button", { name: "Lernerfolgskontrolle beginnen" });
+    expect(outline.contains(begin)).toBe(true);
+    expect(screen.queryByRole("button", { name: "Fortbildung pausieren" })).toBeNull();
+
+    fireEvent.click(begin);
+    expect(onOpen).toHaveBeenCalledWith("quiz3");
   });
 });
 

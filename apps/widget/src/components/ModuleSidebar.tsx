@@ -31,13 +31,25 @@ import type { CourseDetail, EnrolmentState } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { moduleHeading } from "../module-title.js";
 import { indexTitles, itemIcon, locateContent } from "../player.js";
-import { StateIcon } from "./primitives.js";
+import type { PlayerAction } from "../player-status.js";
+import { Button, StateIcon } from "./primitives.js";
 
 export function ModuleSidebar(props: {
   course: CourseDetail;
   state: EnrolmentState;
   currentContentId: string;
   onOpen: (contentId: string) => void;
+  /**
+   * The one control the layout draws under this list (P93-03) — orange
+   * **Fortbildung pausieren** while there is watching to do, teal
+   * **Lernerfolgskontrolle beginnen** once the server opens the exam gate.
+   *
+   * Supplied by the screen inside `CourseShell` rather than decided here: the
+   * pause belongs to the media element's own playing state, and the exam gate
+   * is the server's. Absent on every screen that has neither, which is what the
+   * layout draws for the exam pages.
+   */
+  action: PlayerAction | undefined;
 }) {
   const titles = indexTitles(props.course);
   const here = locateContent(props.course, props.currentContentId);
@@ -84,7 +96,11 @@ export function ModuleSidebar(props: {
                 <button
                   type="button"
                   aria-expanded={open}
-                  aria-label={de.player.toggleModule(title)}
+                  aria-label={de.player.toggleModuleProgress(
+                    title,
+                    module.progress.completedCount,
+                    module.progress.totalCount,
+                  )}
                   onClick={() => setExpanded(open ? undefined : module.id)}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-gray-900 hover:bg-brand-50"
                 >
@@ -92,9 +108,18 @@ export function ModuleSidebar(props: {
                   <span className="min-w-0 flex-1 truncate">
                     {moduleHeading(index + 1, title)}
                   </span>
-                  <span className="text-xs tabular-nums text-gray-500">
-                    {module.progress.completedCount}/{module.progress.totalCount}
-                  </span>
+                  {/*
+                    No "2/3" counter (P93-03). `Player-Ansicht-*` draws the
+                    module rows with a glyph, a title and a chevron and nothing
+                    else, and the count it replaced is not lost: the glyph says
+                    which of the four states the module is in, and expanding it
+                    lists every chapter and content with a glyph of its own.
+
+                    It stays in the toggle's accessible name, because there the
+                    glyph is announced one row at a time and the count is the
+                    only way to hear how much of a module is left without
+                    opening it.
+                  */}
                   <Chevron open={open} />
                 </button>
               </h3>
@@ -166,6 +191,28 @@ export function ModuleSidebar(props: {
           );
         })}
       </ol>
+
+      {/*
+        The layout's primary action, under the list (P93-03).
+
+        It was under the video, beside "Zurück zur Übersicht". Both places are
+        defensible in the abstract and the drawing picks this one — and having
+        looked at it, so would I: under the module list it is the last thing in
+        the column that describes the course's state, rather than one of three
+        buttons in a row where the destructive-looking one and the leaving one
+        are the same size.
+      */}
+      {props.action === undefined ? null : (
+        <div className="pt-2">
+          <Button
+            variant={props.action.variant}
+            disabled={props.action.disabled}
+            onClick={props.action.run}
+          >
+            {props.action.label}
+          </Button>
+        </div>
+      )}
     </nav>
   );
 }

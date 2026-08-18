@@ -26,6 +26,7 @@ import type {
   ProgressSummary,
 } from "@ds/sdk";
 import { ModuleSidebar } from "./ModuleSidebar.js";
+import type { PlayerAction } from "../player-status.js";
 
 afterEach(cleanup);
 
@@ -149,13 +150,16 @@ function state(overrides: Partial<EnrolmentState> = {}): EnrolmentState {
 }
 
 /** The learner is in Video 3, exactly as the player's own fixtures have it. */
-function renderSidebar(overrides: { onOpen?: (id: string) => void } = {}) {
+function renderSidebar(
+  overrides: { onOpen?: (id: string) => void; action?: PlayerAction } = {},
+) {
   render(
     <ModuleSidebar
       course={course()}
       state={state()}
       currentContentId="v3"
       onOpen={overrides.onOpen ?? vi.fn()}
+      action={overrides.action}
     />,
   );
 }
@@ -164,7 +168,7 @@ describe("the Modul Übersicht sidebar", () => {
   it("opens on the module being watched", () => {
     renderSidebar();
     const toggle = screen.getByRole("button", {
-      name: "Modul „Modul 3“ ein- oder ausklappen",
+      name: /^Modul „Modul 3“ ein- oder ausklappen/,
     });
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
   });
@@ -175,7 +179,9 @@ describe("the Modul Übersicht sidebar", () => {
     renderSidebar();
     for (const n of [1, 2, 3, 4, 5]) {
       expect(
-        screen.getByRole("button", { name: `Modul „Modul ${n}“ ein- oder ausklappen` }),
+        screen.getByRole("button", {
+          name: new RegExp(`^Modul „Modul ${n}“ ein- oder ausklappen`, "u"),
+        }),
       ).toBeTruthy();
     }
   });
@@ -188,12 +194,56 @@ describe("the Modul Übersicht sidebar", () => {
     expect(current.getAttribute("aria-current")).toBe("true");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Modul „Modul 5“ ein- oder ausklappen" }),
+      screen.getByRole("button", { name: /^Modul „Modul 5“ ein- oder ausklappen/ }),
     );
     const locked = screen.getByRole("button", { name: /Video 5/ }) as HTMLButtonElement;
     expect(locked.disabled).toBe(true);
     fireEvent.click(locked);
     expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("draws no counter beside a module row, and keeps the count in its name", () => {
+    /*
+     * P93-03. `Player-Ansicht-*` draws a glyph, a title and a chevron on each
+     * module row and nothing else; the visible "2/3" was ours.
+     *
+     * Both halves matter. Removing it from the row is the layout; keeping it in
+     * the accessible name is because a screen reader announces one row at a
+     * time, so without it "Abgeschlossen, Modul 2" and a module that is half
+     * done sound the same (§9.4).
+     */
+    renderSidebar();
+
+    const toggle = screen.getByRole("button", {
+      name: /^Modul „Modul 3“ ein- oder ausklappen/,
+    });
+    expect(toggle.textContent).not.toMatch(/\d+\s*\/\s*\d+/u);
+    expect(toggle.getAttribute("aria-label")).toContain("von");
+  });
+
+  it("draws the primary action under the list when the screen has one", () => {
+    // The action belongs to the screen inside `CourseShell` — the pause is the
+    // media element's state and the exam is the server's gate — so this only
+    // renders what it is handed, and renders nothing when handed nothing.
+    const run = vi.fn();
+    renderSidebar({
+      action: { label: "Fortbildung pausieren", variant: "cta", disabled: false, run },
+    });
+
+    const outline = screen.getByRole("navigation", { name: "Modul Übersicht" });
+    const button = screen.getByRole("button", { name: "Fortbildung pausieren" });
+    expect(outline.contains(button)).toBe(true);
+
+    fireEvent.click(button);
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("draws nothing there on a screen with no action, which is every exam page", () => {
+    renderSidebar();
+    expect(screen.queryByRole("button", { name: "Fortbildung pausieren" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Lernerfolgskontrolle beginnen" }),
+    ).toBeNull();
   });
 
   it("names each state for a screen reader, since the glyph is the only cue", () => {

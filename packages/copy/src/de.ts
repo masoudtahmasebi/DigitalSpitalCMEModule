@@ -266,6 +266,21 @@ export const de = {
 
     outline: "Modul Übersicht",
     toggleModule: (title: string): string => `Modul „${title}“ ein- oder ausklappen`,
+    /**
+     * The same control's name with the count in it (P93-03).
+     *
+     * The visible "2/3" beside each module row is gone — `Player-Ansicht-*`
+     * draws a glyph, a title and a chevron and nothing else. Sighted, that
+     * loses little: the glyph carries the state and expanding the module shows
+     * every chapter with a glyph of its own.
+     *
+     * Heard, it loses more. A screen reader announces one row at a time, so
+     * "Abgeschlossen, Modul 2 – Diagnostik" says the module is done and nothing
+     * about a module that is half done. The count moves into the name rather
+     * than out of the product.
+     */
+    toggleModuleProgress: (title: string, completed: number, total: number): string =>
+      `Modul „${title}“ ein- oder ausklappen — ${completed} von ${total} Abschnitten abgeschlossen`,
 
     /**
      * The accessible name of each sidebar state glyph. Not decorative: in the
@@ -299,6 +314,36 @@ export const de = {
      * done the exam is the way forward rather than a pause.
      */
     quizBegin: "Lernerfolgskontrolle beginnen",
+    /**
+     * The locked exam announcement between the video and the tabs (P93-03).
+     *
+     * `Player-Ansicht-Tab-Zusammenfassung-V2` draws it right-aligned there,
+     * as a sentence and a padlocked button:
+     *
+     *     Wird nach Modul 3 freigeschaltet 〔🔒 Zur Teilprüfung〕
+     *
+     * The padlocked Lernerfolgskontrolle tab already says the exam exists and
+     * is shut. What nothing on the screen said is **what opens it** — CLAUDE.md
+     * §9.4, where an action is deliberately impossible, say why at the point
+     * somebody looks for it.
+     *
+     * The button is disabled and stays drawn, which is not §9.2's "never offer
+     * what the system will refuse": it is not an offer, it is the label the
+     * sentence is about, and removing it would leave the sentence describing
+     * nothing.
+     *
+     * **On the word.** The drawing carries a *Lernerfolgskontrolle* tab and a
+     * *Zur Teilprüfung* button on the same screen, which P91-04 raised as a
+     * vocabulary question — one thing under two names, or two things? Since
+     * P87 gave every module its own exam they are the same object: the button
+     * opens this module's assessment, which is exactly what the tab beside it
+     * is. §5 makes the layout's copy authoritative, so both words are kept as
+     * drawn. Worth one sentence of confirmation from MEDICE; not worth blocking
+     * a screen the client has already said does not match.
+     */
+    examUnlocksAfter: (moduleOrdinal: number): string =>
+      `Wird nach Modul ${moduleOrdinal} freigeschaltet`,
+    examLocked: "Zur Teilprüfung",
     reportingLocked: "Wird nach bestandener Lernerfolgskontrolle freigeschaltet.",
     reportingOpen: "Zur CME Punktemeldung",
   },

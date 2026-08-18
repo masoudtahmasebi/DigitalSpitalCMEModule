@@ -822,9 +822,16 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * checking — that the watched time reached the server and came back — is
        * still checked, one line down, by the player's own percentage; and this
        * now checks the thing the fix was for.
+       *
+       * **The section's own control, not the screen's primary action** (P93-03).
+       * This was `Fortbildung pausieren`, which is the player's action only
+       * while there is still watching to do — and once the tail grace credits
+       * the video the sidebar correctly offers `Lernerfolgskontrolle beginnen`
+       * instead. Asserting a control that legitimately changes with the gate
+       * makes the test about the gate rather than about the reload.
        */
       await expect(
-        learner.getByRole("button", { name: "Fortbildung pausieren" }).first(),
+        learner.getByRole("button", { name: "Abspielen" }).first(),
         "a reload did not return to the section the learner was in (P82-04)",
       ).toBeVisible({ timeout: 30_000 });
 

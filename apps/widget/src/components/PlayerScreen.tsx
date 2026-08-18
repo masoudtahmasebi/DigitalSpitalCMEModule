@@ -54,7 +54,7 @@
  */
 
 import { useState } from "react";
-import { clockTime, germanMinutesAndSeconds, mediaLengthVerdict } from "@ds/domain";
+import { germanMinutesAndSeconds, mediaLengthVerdict } from "@ds/domain";
 import type { ApiClient, CourseDetail, EnrolmentState, LessonContent } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import {
@@ -63,6 +63,7 @@ import {
   nextAvailableContent,
   playbackDuration,
 } from "../player.js";
+import { useReportPlayerStatus } from "../player-status.js";
 import { LessonScreen, type PlaybackState } from "./LessonScreen.js";
 import { Button, LockIcon } from "./primitives.js";
 
@@ -125,7 +126,6 @@ export function PlayerScreen(props: {
   const [authLost, setAuthLost] = useState(false);
   const [tab, setTab] = useState<ContentTab>("summary");
 
-  const here = locateContent(course, lesson.id);
   // Scoped to the module this section is in (P87-02): a course with an exam on
   // every module must offer *this* module's, and a module without one must
   // offer none.
@@ -165,79 +165,88 @@ export function PlayerScreen(props: {
     requiredWatchPercent: state.requiredWatchPercent,
   });
 
+  /**
+   * Which module's completion opens this section's exam — for the announcement
+   * between the video and the tabs, and only while it is still shut.
+   *
+   * The exam's own module, not the learner's: `contentGates` blocks a module's
+   * quiz on that module's videos, so that is the module the sentence is about.
+   * They are the same module today, because `findQuizContent` is module-scoped
+   * (P87-02); saying it from the quiz keeps the sentence true if that ever
+   * stops being so.
+   */
+  const quizAt = quiz === undefined ? undefined : locateContent(course, quiz.id);
+  const quizModule =
+    quiz === undefined || quiz.gate !== "locked" || quizAt === undefined
+      ? undefined
+      : quizAt.moduleIndex + 1;
+
   /** Undefined while the server still has the quiz locked. */
   const quizOpen =
     quiz === undefined || quiz.gate === "locked"
       ? undefined
       : () => props.onOpen(quiz.id);
 
+  /*
+   * The one action the layout draws under the module list (P93-03, row 6.6):
+   * orange **Fortbildung pausieren** while there is still watching to do, teal
+   * **Lernerfolgskontrolle beginnen** once there is not.
+   *
+   * The switch is the **server's quiz gate**, not a percentage worked out here.
+   * The layout describes the swap as happening "at 100 %", and a client that
+   * decided that for itself would offer the exam to a learner the API is about
+   * to refuse — or, worse, would look right while the two disagreed about what
+   * 100 % means (union coverage, not playhead).
+   *
+   * A text lesson gets no pause, because there is nothing playing to pause.
+   */
+  const quizContentId = quiz?.id;
+  useReportPlayerStatus(
+    () => ({
+      position:
+        lesson.kind === "video"
+          ? { positionSec: playback.positionSec, durationSec: duration }
+          : undefined,
+      autosaveFailed: authLost,
+      action:
+        quizOpen !== undefined
+          ? {
+              label: de.player.quizBegin,
+              variant: "primary",
+              disabled: false,
+              run: quizOpen,
+            }
+          : lesson.kind === "video"
+            ? {
+                label: de.player.pause,
+                variant: "cta",
+                disabled: !playback.playing,
+                run: () => setPaused(true),
+              }
+            : undefined,
+    }),
+    [
+      lesson.kind,
+      playback.positionSec,
+      playback.playing,
+      duration,
+      authLost,
+      quizContentId,
+      quizOpen === undefined,
+      props.onOpen,
+    ],
+  );
+
   return (
     <div className="space-y-4">
       {/*
-        The layout's progress card (§4.3): where you are, how far in, and a bar
-        for the whole course. The bar is `state.progress.percent` — the
-        server's course figure — and never the video's own position, which is
-        what the "14:35 / 25:45" beside it already says. Drawing the playhead
-        here would put two different quantities on one strip.
-      */}
-      <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
-          {here === undefined ? null : (
-            <p className="font-bold text-gray-900">
-              {de.player.moduleOf(here.moduleIndex + 1, course.modules.length)}
-            </p>
-          )}
-
-          {lesson.kind !== "video" ? null : (
-            <p className="tabular-nums text-gray-700">
-              <span className="sr-only">{de.player.positionLabel}: </span>
-              {de.player.position(clockTime(playback.positionSec), clockTime(duration))}
-            </p>
-          )}
-        </div>
-
-        <div
-          className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-gray-200"
-          role="progressbar"
-          aria-valuenow={state.progress.percent}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={de.player.courseProgress(state.progress.percent)}
-        >
-          <div
-            className="h-full rounded-full bg-brand-600"
-            style={{ width: `${String(state.progress.percent)}%` }}
-          />
-        </div>
-
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-          <p className="text-sm font-semibold text-brand-700">
-            {de.player.courseProgress(state.progress.percent)}
-          </p>
-          {/*
-            The autosave promise, or the truth (P62-05).
-
-            "Ihr Fortschritt wird automatisch gespeichert" is a promise, and
-            once the session has lapsed it is a false one that stays on screen
-            for as long as the physician keeps watching. QA measured a
-            60-second token against a module playing on: every flush from
-            expiry onwards refused, and this line never changed.
-          */}
-          {authLost ? (
-            <p className="text-xs font-semibold text-red-700">{de.player.sessionEnded}</p>
-          ) : (
-            <p className="text-xs text-gray-500">{de.player.autosave}</p>
-          )}
-        </div>
-      </section>
-
-      {/*
         The section nobody can finish, said out loud (P76-03).
 
-        Directly under the progress card on purpose: that card is where the
-        learner reads „0 % der Fortbildung absolviert" after watching the whole
-        video, and the explanation belongs beside the number it explains rather
-        than below the player where it would sit off-screen on a phone.
+        Above the video on purpose: it explains the number the progress card
+        shows — „0 % der Fortbildung absolviert" after a complete viewing — and
+        since P93-03 that card is in the masthead directly above this, so the
+        two are still read together. Below the player it would sit off-screen on
+        a phone, which is where the learner is when they give up.
 
         `role="alert"` because it appears after `loadedmetadata` rather than at
         render, so a learner using a screen reader is not left with a silent
@@ -274,31 +283,33 @@ export function PlayerScreen(props: {
       />
 
       {/*
-        The layout's one action under the video, and which one it is depends on
-        the course's state (row 6.6): orange **Fortbildung pausieren** while
-        there is still watching to do, teal **Lernerfolgskontrolle beginnen**
-        once there is not.
+        When the exam opens, said where somebody looks for it (P93-03).
 
-        The switch is the **server's quiz gate**, not a percentage worked out
-        here. The layout describes the swap as happening "at 100 %", and a
-        client that decided that for itself would offer the exam to a learner
-        the API is about to refuse — or, worse, would look right while the two
-        disagreed about what 100 % means (union coverage, not playhead).
+        `Player-Ansicht-Tab-Zusammenfassung-V2` draws this right-aligned between
+        the video and the tabs: a sentence and a padlocked button. The
+        Lernerfolgskontrolle tab beside it already announces itself as
+        *gesperrt*, so the exam was never invisible — what nothing said is what
+        unlocks it, which is CLAUDE.md §9.4.
+
+        The module named is the exam's own, because `contentGates` blocks a
+        module's quiz on that module's videos and nothing else. Drawn only while
+        it is locked: once it opens, the action under the module list is
+        **Lernerfolgskontrolle beginnen**, and a second control for the same
+        thing on the same screen is how two of them end up disagreeing.
       */}
+      {quizModule === undefined ? null : (
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <p className="text-sm text-gray-600">
+            {de.player.examUnlocksAfter(quizModule)}
+          </p>
+          <Button variant="secondary" disabled>
+            <LockIcon className="h-4 w-4" />
+            {de.player.examLocked}
+          </Button>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-3">
-        {quizOpen === undefined ? (
-          lesson.kind !== "video" ? null : (
-            <Button
-              variant="cta"
-              disabled={!playback.playing}
-              onClick={() => setPaused(true)}
-            >
-              {de.player.pause}
-            </Button>
-          )
-        ) : (
-          <Button onClick={quizOpen}>{de.player.quizBegin}</Button>
-        )}
         {/*
           The way onward, when the server has one open (P78-02).
 
@@ -306,9 +317,9 @@ export function PlayerScreen(props: {
           „Fortbildung pausieren" and „Zurück zur Übersicht", so continuing
           meant returning to the outline and finding the next item by hand.
 
-          After the quiz CTA, so that when the Lernerfolgskontrolle is unlocked
-          it stays the primary action — the exam is the end of the course and
-          should not be competing with another chapter for attention.
+          The pause and the exam CTA left this row for the sidebar in P93-03,
+          which is where the layout draws the primary action; this row is the
+          two ways *out* of the section.
         */}
         {next === undefined ? null : (
           <Button variant="secondary" onClick={() => props.onOpen(next.id)}>
