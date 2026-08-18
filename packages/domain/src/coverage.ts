@@ -21,7 +21,11 @@
  */
 
 import type { CourseNode } from "./types.js";
-import { watchedSecondsWithin, type WatchedSegment } from "./watch.js";
+import {
+  creditedDurationSec,
+  watchedSecondsWithin,
+  type WatchedSegment,
+} from "./watch.js";
 
 /** The stored segments for one piece of video content. */
 export interface ContentSegments {
@@ -60,7 +64,16 @@ export function courseWatchCoverage(
           continue;
         }
 
-        totalSec += duration;
+        /*
+         * The **credited** length, not the raw one (P93-01).
+         *
+         * `watchedSecondsWithin` below can never return more than the credited
+         * seconds, so a raw denominator here would cap this rollup at
+         * `(duration - 3) / duration` — 92 % on a ten-second video watched to
+         * the end, which is the number the client was shown. One length, both
+         * sides of the fraction (§4 invariant 6).
+         */
+        totalSec += creditedDurationSec(duration);
         /*
          * The **same** seconds the per-content percentage is built on.
          *

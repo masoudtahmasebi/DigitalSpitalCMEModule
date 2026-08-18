@@ -65,7 +65,6 @@ import {
   clampSeekToLimit,
   clampVolume,
   clockTime,
-  coverageBars,
   nextPlaybackRate,
   nudgePositionSec,
   playerSeekLimit,
@@ -76,6 +75,7 @@ import {
   seekFraction,
   seekPositionSec,
   VOLUME_STEP,
+  watchedCoverageBars,
   type WatchedSegment,
 } from "@ds/domain";
 import type { MediaSource } from "@ds/sdk";
@@ -1004,7 +1004,7 @@ function SeekBar(props: {
           />
         ) : null}
 
-        {coverageBars(props.watchedSegments, props.durationSec).map((bar) => (
+        {watchedCoverageBars(props.watchedSegments, props.durationSec).map((bar) => (
           <span
             key={`c${bar.startPercent}`}
             aria-hidden="true"

@@ -444,7 +444,11 @@ describe("the learner journey", () => {
     );
 
     expect(status).toBe(200);
-    expect(body.watchedPercent).toBe(20);
+    // 117 s of the 597 the learner is asked for — the video is 600 s long and
+    // the last three are the tail grace (P93-01), so the 540–600 report credits
+    // 57 rather than 60. Nineteen per cent, and the property under test is
+    // untouched: a max-position implementation would still say 100.
+    expect(body.watchedPercent).toBe(19);
     expect(body.status).toBe("in_progress");
     // The seek ceiling comes back with the union it was computed from — the
     // end of what was actually watched (600), plus the tolerance. It is

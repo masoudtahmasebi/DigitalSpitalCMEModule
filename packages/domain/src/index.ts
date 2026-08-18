@@ -35,6 +35,18 @@ export type {
   ModuleNode,
 } from "./types.js";
 
+/*
+ * `creditedDurationSec` and `TAIL_GRACE_SEC` are deliberately **not** here.
+ *
+ * They are the tail grace (P93-01), and every rule that has to know about them
+ * — `watchedPercent`, `watchedSecondsWithin`, `uncoveredSpans`,
+ * `courseWatchCoverage`, `watchedCoverageBars` — already applies them inside
+ * this package. Exporting them would put a second way to reach the same
+ * arithmetic one import away from an API or a screen, which is how §4
+ * invariant 6 gets broken and how P68-02 happened: two callers of the same
+ * number that stopped agreeing. `scripts/unused-rules.mjs` says the same thing
+ * from the other direction — it reported both as exported and uncalled.
+ */
 export {
   isSeekAllowed,
   maxWatchedPosition,
@@ -89,6 +101,7 @@ export {
   seekFraction,
   seekPositionSec,
   VOLUME_STEP,
+  watchedCoverageBars,
 } from "./playback.js";
 export type { CoverageBar } from "./playback.js";
 

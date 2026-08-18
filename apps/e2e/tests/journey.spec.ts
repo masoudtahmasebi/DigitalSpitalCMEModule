@@ -65,6 +65,18 @@
  * when one does. A fixture that cannot reach a state cannot find a bug in it,
  * which is CLAUDE.md §9.13's second rule in a new place.
  *
+ * **Three of those eighteen seconds are now grace** (P93-01). The client's rule
+ * is that watching to within three seconds of the end completes a video, so
+ * this fixture's gate opens at fifteen. That is a sixth of the fixture and
+ * 0.2 %% of a real twenty-five-minute module — the fixture is where the ratio is
+ * unflattering, not the product. It is written down here rather than fixed by
+ * regenerating the file, because a longer fixture would buy no coverage: the
+ * boundary itself is pinned exactly, at the second, by
+ * `watch.test.ts`'s "the tail grace" and by `learning.service.test.ts`'s
+ * "completes a video watched to within three seconds of its end" and its
+ * control. What the journey proves is that a physician who watches the video
+ * gets through — and it still plays the whole thing, on the clock.
+ *
  * **And it is still not a real recording**, which is a known gap rather than a
  * decision (P71-02). The client supplied real 1080p H.264 files for this, and
  * `fixtures/fortbildung-modul.mp4` is one of them, committed. It uploads and

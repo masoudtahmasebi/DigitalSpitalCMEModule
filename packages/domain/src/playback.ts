@@ -23,7 +23,7 @@
  * tested as arithmetic.
  */
 
-import { mergeWatchedSegments, type WatchedSegment } from "./watch.js";
+import { mergeWatchedSegments, uncoveredSpans, type WatchedSegment } from "./watch.js";
 
 /**
  * The rates the speed menu offers.
@@ -154,6 +154,47 @@ export function coverageBars(
   }
 
   return bars;
+}
+
+/**
+ * The watched passages as bars, with the tail grace closed (P93-01).
+ *
+ * ## Why this is not just `coverageBars`
+ *
+ * `coverageBars`' own header states the property it exists for: *the bar and
+ * the number cannot tell different stories*. `TAIL_GRACE_SEC` breaks that for
+ * the watched track and only for it — a learner who has satisfied the gate is
+ * told "100 % angesehen" above a bar with an unfilled sliver at the right-hand
+ * end. On a twenty-five-minute module that sliver is two pixels. On the
+ * ten-second upload that produced the report it is a third of the bar, next to
+ * the words "100 %", which is the same defect one layer out: a screen that
+ * disagrees with the answer the server gave.
+ *
+ * So when nothing is outstanding, the bar is full. It is not a lie about where
+ * the playhead went — it is the same statement the percentage makes, drawn.
+ *
+ * `bufferedBars` deliberately does **not** go through here. Buffering is a fact
+ * about bytes, not a requirement anybody has met, and a buffer bar that reached
+ * the end three seconds early would be wrong in the ordinary way.
+ */
+export function watchedCoverageBars(
+  segments: readonly WatchedSegment[],
+  durationSec: number,
+): readonly CoverageBar[] {
+  const bars = coverageBars(segments, durationSec);
+  if (bars.length === 0) return bars;
+  if (uncoveredSpans(mergeWatchedSegments(segments), durationSec).length > 0) return bars;
+
+  const last = bars[bars.length - 1];
+  if (last === undefined) return bars;
+
+  const end = last.startPercent + last.widthPercent;
+  if (end >= 100) return bars;
+
+  return [
+    ...bars.slice(0, -1),
+    { startPercent: last.startPercent, widthPercent: 100 - last.startPercent },
+  ];
 }
 
 /**

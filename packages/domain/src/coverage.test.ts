@@ -3,7 +3,15 @@ import { courseWatchCoverage } from "./coverage.js";
 import { watchedPercent } from "./watch.js";
 import type { CourseNode } from "./types.js";
 
-/** Two videos of deliberately unequal length, so weighting is observable. */
+/**
+ * Two videos of deliberately unequal length, so weighting is observable.
+ *
+ * The lengths are 903 and 103 rather than 900 and 100 so that the **credited**
+ * lengths are round — `TAIL_GRACE_SEC` is three seconds and the rollup measures
+ * against `creditedDurationSec`, not the stored length (P93-01). Written this
+ * way round on purpose: every figure below is then a percentage of the
+ * requirement, which is the number a learner is shown and the gate compares.
+ */
 function course(): CourseNode {
   return {
     id: "course",
@@ -16,8 +24,8 @@ function course(): CourseNode {
             id: "c1",
             ordinal: 0,
             contents: [
-              { id: "long", kind: "video", durationSec: 900 },
-              { id: "short", kind: "video", durationSec: 100 },
+              { id: "long", kind: "video", durationSec: 903 },
+              { id: "short", kind: "video", durationSec: 103 },
               { id: "quiz", kind: "quiz" },
             ],
           },
@@ -69,11 +77,16 @@ describe("courseWatchCoverage agrees with watchedPercent", () => {
   });
 
   it("still refuses a video that was genuinely not finished", () => {
-    const segments = [{ startSec: 0, endSec: 6 }];
+    // Eight seconds of video, five of them required — the tail grace is three
+    // (P93-01), and on a fixture this short it is a large fraction. Three
+    // seconds watched is 60 %% of the requirement at both levels; what matters
+    // here is that the two levels say the same thing, and that "not finished"
+    // is still refused.
+    const segments = [{ startSec: 0, endSec: 3 }];
 
-    expect(watchedPercent(segments, 8)).toBe(75);
+    expect(watchedPercent(segments, 8)).toBe(60);
     expect(courseWatchCoverage(oneVideo, [{ contentId: "v", segments }]).percent).toBe(
-      75,
+      60,
     );
   });
 });
@@ -163,7 +176,7 @@ describe("courseWatchCoverage weights by duration", () => {
               contents: [
                 { id: "no-duration", kind: "video" },
                 { id: "zero", kind: "video", durationSec: 0 },
-                { id: "ok", kind: "video", durationSec: 200 },
+                { id: "ok", kind: "video", durationSec: 203 },
               ],
             },
           ],
