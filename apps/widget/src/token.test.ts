@@ -29,6 +29,50 @@ describe("resolveTokenProvider", () => {
     expect(resolveTokenProvider({ endpoint: "" })).toBeUndefined();
   });
 
+  it("sends the one header the host named", async () => {
+    // WordPress's REST nonce. Without it the token endpoint refuses, and the
+    // widget renders a signed-out state on a page whose visitor is signed in —
+    // which is what happened when the plugin stopped shipping its own script
+    // and this attribute did not yet exist (P96-03).
+    const fetchSpy = vi.fn(async () => jsonResponse({ token: "abc" }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const provider = resolveTokenProvider({
+      endpoint: "/token",
+      header: "X-WP-Nonce: nonce-123",
+    });
+    expect(await provider?.({ refresh: false })).toBe("abc");
+
+    const [, init] = fetchSpy.mock.calls[0] as unknown as [URL, RequestInit];
+    expect(init.headers).toMatchObject({
+      accept: "application/json",
+      "X-WP-Nonce": "nonce-123",
+    });
+  });
+
+  it.each([
+    ["no colon", "X-WP-Nonce"],
+    ["no name", ": value"],
+    ["no value", "X-WP-Nonce:"],
+    ["a space in the name", "X WP Nonce: value"],
+    ["a newline smuggling a second header", "X-WP-Nonce: a\r\nX-Other: b"],
+  ])(
+    "drops a header with %s rather than throwing inside the provider",
+    async (_, header) => {
+      // `fetch` throws a TypeError on an invalid header name, and it would throw
+      // *inside* the provider — surfacing as "no token", which reads as a session
+      // problem and sends whoever is debugging it to the wrong system.
+      const fetchSpy = vi.fn(async () => jsonResponse({ token: "abc" }));
+      vi.stubGlobal("fetch", fetchSpy);
+
+      const provider = resolveTokenProvider({ endpoint: "/token", header });
+      expect(await provider?.({ refresh: false })).toBe("abc");
+
+      const [, init] = fetchSpy.mock.calls[0] as unknown as [URL, RequestInit];
+      expect(init.headers).toEqual({ accept: "application/json" });
+    },
+  );
+
   it("fetches the endpoint with the session cookie and no cache", async () => {
     const fetchSpy = vi.fn(async () => jsonResponse({ token: "abc" }));
     vi.stubGlobal("fetch", fetchSpy);

@@ -20,11 +20,24 @@ declare( strict_types = 1 );
 require_once __DIR__ . '/harness.php';
 
 $plugin = dirname( __DIR__ );
-define( 'DS_LMS_VERSION', '0.1.0' );
+
+/*
+ * The version is read from the plugin, never restated here (P96-02).
+ *
+ * A test carrying its own copy of the number it is checking is a test that
+ * cannot notice the number changing — and the assertions below are precisely
+ * about three copies of it agreeing.
+ */
+$ds_lms_bootstrap = (string) file_get_contents( $plugin . '/ds-lms.php' );
+preg_match( '/^ \* Version:\s+(\S+)$/m', $ds_lms_bootstrap, $ds_header_version );
+preg_match( "/define\( 'DS_LMS_VERSION', '([^']+)' \)/", $ds_lms_bootstrap, $ds_constant_version );
+
+define( 'DS_LMS_VERSION', $ds_constant_version[1] ?? '' );
 define( 'DS_LMS_DIR', $plugin . '/' );
 define( 'DS_LMS_URL', 'https://medice.example/wp-content/plugins/ds-lms/' );
 
 require_once $plugin . '/includes/class-ds-lms-settings.php';
+require_once $plugin . '/includes/class-ds-lms-diagnostics.php';
 require_once $plugin . '/includes/class-ds-lms-token-source.php';
 require_once $plugin . '/includes/class-ds-lms-token-endpoint.php';
 require_once $plugin . '/includes/class-ds-lms-renderer.php';
@@ -203,8 +216,7 @@ echo "\nWhat reaches the page\n";
 ds_test_reset();
 configure();
 sign_in( 7, SECRET_TOKEN );
-$html   = DS_LMS_Renderer::shortcode( array() );
-$inline = implode( "\n", $GLOBALS['ds_test']['inline'] );
+$html = DS_LMS_Renderer::shortcode( array() );
 
 check( 'the shortcode renders the element', str_contains( $html, '<ds-lms ' ) );
 check(
@@ -213,14 +225,25 @@ check(
 		&& str_contains( $html, 'course="adhs-akademie-adult"' )
 );
 check( 'no token in the rendered HTML', ! str_contains( $html, SECRET_TOKEN ) );
-check( 'no token in the inline script either', ! str_contains( $inline, SECRET_TOKEN ) );
+
+// P96-03: the plugin states *where* a token comes from and says nothing about
+// *how* it is fetched. The how is the widget's, and updates with the widget.
+check( 'the plugin ships no JavaScript at all', array() === $GLOBALS['ds_test']['inline'] );
 check(
-	'the inline script installs a token provider',
-	str_contains( $inline, 'tokenProvider' )
+	'the element names the token endpoint',
+	str_contains( $html, 'token-endpoint="' )
+		&& str_contains( $html, 'ds-lms/v1/token' )
 );
 check(
-	'and sends the REST nonce, which is what binds the call to this session',
-	str_contains( $inline, 'X-WP-Nonce' )
+	'and carries the REST nonce, which is what binds the call to this session',
+	str_contains( $html, 'token-header="X-WP-Nonce: ' )
+);
+// The nonce is not a credential — it is worthless without this visitor's own
+// cookie — but the token is, and it must never be within reach of the markup.
+check( 'the nonce is not the token', ! str_contains( $html, SECRET_TOKEN ) );
+check(
+	'the element says which plugin rendered it',
+	str_contains( $html, 'data-ds-plugin="' . DS_LMS_VERSION . '"' )
 );
 check( 'the bundle is enqueued for this page', in_array( 'ds-lms-widget', $GLOBALS['ds_test']['enqueued'], true ) );
 
@@ -229,8 +252,10 @@ configure();
 // Not logged in: nothing to provide, so no provider is installed.
 $html = DS_LMS_Renderer::shortcode( array() );
 check(
-	'a logged-out visitor gets the element but no token provider',
-	str_contains( $html, '<ds-lms ' ) && array() === $GLOBALS['ds_test']['inline']
+	'a logged-out visitor gets the element but no token endpoint',
+	str_contains( $html, '<ds-lms ' )
+		&& ! str_contains( $html, 'token-endpoint' )
+		&& ! str_contains( $html, 'token-header' )
 );
 
 ds_test_reset();
@@ -266,7 +291,9 @@ $html = DS_LMS_Renderer::shortcode( array( 'course' => '" onload="alert(1)' ) );
 check(
 	'a shortcode attribute cannot break out of the attribute',
 	1 === preg_match(
-		'/^<ds-lms api-base="[^"]*" project="[^"]*"(?: course="[a-z0-9-]+")?><\/ds-lms>$/',
+		'/^<ds-lms api-base="[^"]*" project="[^"]*"(?: course="[a-z0-9-]+")?'
+			. '(?: token-endpoint="[^"]*")?(?: token-header="[^"]*")?'
+			. ' data-ds-plugin="[^"]*"><\/ds-lms>$/',
 		$html
 	)
 );
@@ -558,6 +585,175 @@ check(
 check(
 	'and refuses one that is not a URL',
 	'' === DS_LMS_Settings::sanitize( array( 'widget_url' => 'javascript:alert(1)' ) )['widget_url']
+);
+
+// ---------------------------------------------------------------------------
+echo "\nOne version, in three places that cannot drift (P96-02)\n";
+// ---------------------------------------------------------------------------
+
+// WordPress reads the `Version:` header and nothing else. PHP can only see the
+// constant. A person deciding whether a site needs updating reads the changelog.
+// A plugin whose three answers disagree is worse than one with no version at
+// all, because the wrong one is the one somebody will act on.
+
+check(
+	'the plugin declares a version header',
+	isset( $ds_header_version[1] ) && '' !== $ds_header_version[1]
+);
+check(
+	'and a DS_LMS_VERSION constant',
+	'' !== DS_LMS_VERSION
+);
+check(
+	'and they are the same version',
+	( $ds_header_version[1] ?? null ) === DS_LMS_VERSION
+);
+
+$ds_changelog = (string) file_get_contents( $plugin . '/CHANGELOG.md' );
+preg_match( '/^## (\d+\.\d+\.\d+)/m', $ds_changelog, $ds_changelog_version );
+check(
+	'the changelog names the version that is shipping',
+	( $ds_changelog_version[1] ?? null ) === DS_LMS_VERSION
+);
+
+// Semver, because the whole promise of P96-01 is that this number stands still
+// while the product moves — which is only legible if the number means something.
+check(
+	'the version is semver',
+	1 === preg_match( '/^\d+\.\d+\.\d+$/', DS_LMS_VERSION )
+);
+
+// An operator asking "which plugin is on this site" should not need FTP
+// (CLAUDE.md §9.9 — a report about a running system is a report about a build).
+ds_test_reset();
+configure();
+sign_in( 7, SECRET_TOKEN );
+check(
+	'the version reaches the page it renders',
+	str_contains( DS_LMS_Renderer::shortcode( array() ), 'data-ds-plugin="' . DS_LMS_VERSION . '"' )
+);
+
+// ---------------------------------------------------------------------------
+echo "\nIs the platform this site points at actually there? (P96-04)\n";
+// ---------------------------------------------------------------------------
+
+/** Shorthand for a WP_Http-shaped response. */
+function http_answers( string $url, int $code, array $headers = array() ): void {
+	$GLOBALS['ds_test']['http'][ $url ] = array(
+		'response' => array( 'code' => $code ),
+		'headers'  => $headers,
+	);
+}
+
+/**
+ * The one line of $report about $label.
+ *
+ * A lookup over a report the caller ran, not a runner: `run()` is what makes
+ * the requests, and one of the checks below is about exactly which requests
+ * were made. A helper that ran it per label would double them.
+ */
+function result_for( array $report, string $label ): array {
+	foreach ( $report as $result ) {
+		if ( $result['label'] === $label ) {
+			return $result;
+		}
+	}
+	return array( 'label' => $label, 'ok' => false, 'detail' => '(no such line)' );
+}
+
+ds_test_reset();
+update_option(
+	DS_LMS_Settings::OPTION,
+	array( 'base_domain' => 'digitalspital.com', 'project_slug' => 'medice-adhs' )
+);
+http_answers(
+	'https://widget.digitalspital.com/ds-lms.js',
+	200,
+	array( 'Access-Control-Allow-Origin' => '*' )
+);
+http_answers( 'https://api.digitalspital.com/health', 200 );
+
+$report = DS_LMS_Diagnostics::run();
+check( 'a reachable widget host is reported reachable', result_for( $report, 'Widget-JavaScript' )['ok'] );
+check( 'a reachable API is reported reachable', result_for( $report, 'API' )['ok'] );
+check(
+	'and it asked for the two addresses it is configured with, and nothing else',
+	array(
+		'HEAD https://widget.digitalspital.com/ds-lms.js',
+		'GET https://api.digitalspital.com/health',
+	) === $GLOBALS['ds_test']['requests']
+);
+
+// The report that would have saved this ticket: the 404 the client found by
+// opening the URL by hand.
+ds_test_reset();
+update_option( DS_LMS_Settings::OPTION, array( 'base_domain' => 'digitalspital.com' ) );
+http_answers( 'https://widget.digitalspital.com/ds-lms.js', 404 );
+$report = DS_LMS_Diagnostics::run();
+$widget = result_for( $report, 'Widget-JavaScript' );
+check( 'a 404 on the bundle is reported as a failure', ! $widget['ok'] );
+check( 'and the status code is named', str_contains( $widget['detail'], '404' ) );
+
+// A host that answers 200 without CORS: the file downloads and the browser
+// refuses to run it. From the site owner's chair that is indistinguishable
+// from a widget that does nothing, which is the whole reason this line exists.
+ds_test_reset();
+update_option( DS_LMS_Settings::OPTION, array( 'base_domain' => 'digitalspital.com' ) );
+http_answers( 'https://widget.digitalspital.com/ds-lms.js', 200 );
+$report = DS_LMS_Diagnostics::run();
+$widget = result_for( $report, 'Widget-JavaScript' );
+check( '200 without CORS is still a failure', ! $widget['ok'] );
+check(
+	'and it says which header is missing',
+	str_contains( $widget['detail'], 'Access-Control-Allow-Origin' )
+);
+
+// Nothing answers at all — the default, because an address leading nowhere is
+// the case the diagnostics exist for.
+ds_test_reset();
+update_option( DS_LMS_Settings::OPTION, array( 'base_domain' => 'nirgendwo.example' ) );
+$report = DS_LMS_Diagnostics::run();
+check( 'an unreachable host is a failure', ! result_for( $report, 'Widget-JavaScript' )['ok'] );
+check( 'and so is an unreachable API', ! result_for( $report, 'API' )['ok'] );
+
+// Nothing configured: say which field, not "an error occurred".
+ds_test_reset();
+update_option( DS_LMS_Settings::OPTION, array() );
+$report = DS_LMS_Diagnostics::run();
+check(
+	'an unconfigured widget address names the fields that set it',
+	str_contains( result_for( $report, 'Widget-JavaScript' )['detail'], 'Basis-Domain' )
+);
+check(
+	'an unconfigured API address names its own field',
+	str_contains( result_for( $report, 'API' )['detail'], 'API-Basis-URL' )
+);
+check( 'and neither made a request', array() === $GLOBALS['ds_test']['requests'] );
+
+// The API line must not claim to have answered a question it cannot: a
+// server-to-server request carries no Origin, so it would pass while every
+// visitor's browser was refused (§9.1 — a check that is green for the wrong
+// reason).
+ds_test_reset();
+update_option( DS_LMS_Settings::OPTION, array( 'base_domain' => 'digitalspital.com' ) );
+http_answers( 'https://api.digitalspital.com/health', 200 );
+$report = DS_LMS_Diagnostics::run();
+check(
+	'a reachable API says that CORS is a separate question',
+	str_contains( result_for( $report, 'API' )['detail'], 'Einbettungs-Domains' )
+);
+
+// SSRF: the addresses come from the stored settings and never from the
+// request. Anybody who could name the target could make this server fetch it.
+ds_test_reset();
+update_option( DS_LMS_Settings::OPTION, array( 'base_domain' => 'digitalspital.com' ) );
+$_GET['widget_url'] = 'http://169.254.169.254/latest/meta-data/';
+$_GET['api_base']   = 'http://169.254.169.254/';
+DS_LMS_Diagnostics::run();
+unset( $_GET['widget_url'], $_GET['api_base'] );
+check(
+	'a URL in the request is not fetched',
+	! str_contains( implode( "\n", $GLOBALS['ds_test']['requests'] ), '169.254.169.254' )
 );
 
 // ---------------------------------------------------------------------------

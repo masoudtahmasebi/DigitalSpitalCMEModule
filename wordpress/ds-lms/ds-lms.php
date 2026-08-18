@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       DS Education — CME-Modul
  * Description:       Bindet das DigitalSpital CME-Lernmodul als <ds-lms> in Seiten und Beiträge ein.
- * Version:           0.1.0
+ * Version:           1.0.0
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            DigitalSpital
@@ -33,12 +33,27 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'DS_LMS_VERSION', '0.1.0' );
+/*
+ * The version, and the three places it has to agree (P96-02).
+ *
+ * WordPress reads the `Version:` header above and nothing else; this constant
+ * is what PHP can see. They are separate strings, so they can drift — and a
+ * plugin whose header says one thing and whose screens say another is worse
+ * than one with no version at all, because the wrong answer is the one an
+ * operator will act on. `tests/security-test.php` refuses a mismatch between
+ * these two and the newest entry in CHANGELOG.md.
+ *
+ * It is **not** a cache-busting token for the widget bundle. That is loaded
+ * from the platform and versioned by the platform (P96-01); putting a plugin
+ * version in its URL would restore exactly the coupling that removed.
+ */
+define( 'DS_LMS_VERSION', '1.0.0' );
 define( 'DS_LMS_FILE', __FILE__ );
 define( 'DS_LMS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DS_LMS_URL', plugin_dir_url( __FILE__ ) );
 
 require_once DS_LMS_DIR . 'includes/class-ds-lms-settings.php';
+require_once DS_LMS_DIR . 'includes/class-ds-lms-diagnostics.php';
 require_once DS_LMS_DIR . 'includes/class-ds-lms-token-source.php';
 require_once DS_LMS_DIR . 'includes/class-ds-lms-token-endpoint.php';
 require_once DS_LMS_DIR . 'includes/class-ds-lms-renderer.php';

@@ -195,7 +195,6 @@ final class DS_LMS_Renderer {
 
 		wp_enqueue_script( self::HANDLE );
 		add_filter( 'script_loader_tag', array( self::class, 'as_module' ), 10, 2 );
-		self::attach_token_provider();
 
 		// The attribute is omitted entirely rather than emitted empty: the
 		// widget distinguishes "no course attribute" (show the catalogue) from
@@ -205,83 +204,63 @@ final class DS_LMS_Renderer {
 			: sprintf( ' course="%s"', esc_attr( $course ) );
 
 		return sprintf(
-			'<ds-lms api-base="%1$s" project="%2$s"%3$s></ds-lms>',
+			'<ds-lms api-base="%1$s" project="%2$s"%3$s%4$s data-ds-plugin="%5$s"></ds-lms>',
 			esc_url( $settings['api_base'] ),
 			esc_attr( $settings['project_slug'] ),
-			$course_attribute
+			$course_attribute,
+			self::token_attributes(),
+			// Which plugin is on this site, answerable from the browser rather
+			// than over FTP. The widget writes `data-ds-build` beside it, so
+			// one element carries both halves of "which build?" (§9.9).
+			esc_attr( DS_LMS_VERSION )
 		);
 	}
 
 	/**
-	 * Teach the widget how to get a token from WordPress.
+	 * Where the widget can get a token, and the header it must send.
 	 *
-	 * The widget knows nothing about WordPress and should not: it exposes a
-	 * `tokenProvider` property, and this is the WordPress implementation of it.
-	 * Doing it here rather than teaching the widget about `X-WP-Nonce` keeps
-	 * the widget host-agnostic — the same bundle runs in the dev harness and,
-	 * later, anywhere else.
+	 * ## What used to be here, and why it is not
 	 *
-	 * Nothing in this script is secret. The nonce is bound to the visitor's own
-	 * session and is useless without their cookie.
+	 * Forty lines of inline JavaScript: a `fetch` of the token endpoint with
+	 * `X-WP-Nonce`, a `refresh=1` query parameter, error handling, and the
+	 * property assignment that survives a custom element upgrading late.
+	 *
+	 * Every one of those lines already existed inside the widget, in
+	 * `apps/widget/src/token.ts`. Two implementations of one behaviour is the
+	 * shape CLAUDE.md warns about generally; here it had a specific cost, and
+	 * it is the cost the client asked to be rid of: **a change to how a token
+	 * is fetched needed a plugin update on every customer site.** A retry, a
+	 * timeout, a different failure — all of it was frozen at whatever version
+	 * of the plugin that site last installed (P96-03).
+	 *
+	 * So the page now says *where* and *what header*, and says nothing about
+	 * *how*. The how ships with the bundle and updates with it.
+	 *
+	 * ## What is in the attributes
+	 *
+	 * The endpoint URL, which is public, and a WordPress REST nonce, which is
+	 * not a credential: it is bound to this visitor's own session and is
+	 * useless without their cookie. It was already in the page — in the script
+	 * that is gone — so nothing is exposed here that was not before.
+	 *
+	 * **No token.** There has never been one in the markup and there must never
+	 * be one.
+	 *
+	 * @return string The attributes, ready to concatenate, or empty.
 	 */
-	private static function attach_token_provider(): void {
+	private static function token_attributes(): string {
 		if ( ! is_user_logged_in() ) {
-			// No session, no token, no point installing a provider — the widget
-			// will show its "not signed in" state.
-			return;
+			// No session, no token, no point naming an endpoint that will
+			// refuse — the widget shows its "not signed in" state instead.
+			return '';
 		}
 
 		$endpoint = rest_url( DS_LMS_Token_Endpoint::NAMESPACE . DS_LMS_Token_Endpoint::ROUTE );
-		$nonce    = wp_create_nonce( 'wp_rest' );
 
-		$script = sprintf(
-			<<<'JS'
-(function () {
-  var endpoint = %1$s;
-  var nonce = %2$s;
-
-  function provider(request) {
-    var url = new URL(endpoint, window.location.href);
-    if (request && request.refresh) url.searchParams.set("refresh", "1");
-
-    return fetch(url, {
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: { accept: "application/json", "X-WP-Nonce": nonce },
-    })
-      .then(function (response) {
-        return response.ok ? response.json() : null;
-      })
-      .then(function (body) {
-        return body && typeof body.token === "string" ? body.token : undefined;
-      })
-      .catch(function () {
-        return undefined;
-      });
-  }
-
-  // Custom elements upgrade asynchronously, and the element may be parsed
-  // before or after this script runs. Assigning the property works either way:
-  // it lands on the instance, and connectedCallback reads it when it fires.
-  function attach() {
-    document.querySelectorAll("ds-lms").forEach(function (element) {
-      element.tokenProvider = provider;
-    });
-  }
-
-  attach();
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", attach);
-  }
-})();
-JS
-			,
-			wp_json_encode( $endpoint ),
-			wp_json_encode( $nonce )
+		return sprintf(
+			' token-endpoint="%1$s" token-header="%2$s"',
+			esc_url( $endpoint ),
+			esc_attr( 'X-WP-Nonce: ' . wp_create_nonce( 'wp_rest' ) )
 		);
-
-		// `before` so the provider is assigned prior to the module executing
-		// and upgrading the element.
-		wp_add_inline_script( self::HANDLE, $script, 'before' );
 	}
 }

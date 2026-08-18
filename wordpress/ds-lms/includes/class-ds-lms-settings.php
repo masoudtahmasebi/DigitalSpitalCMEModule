@@ -445,7 +445,79 @@ final class DS_LMS_Settings {
 				</table>
 				<?php submit_button(); ?>
 			</form>
+
+			<?php self::render_diagnostics(); ?>
+
+			<p class="description">
+				<?php
+				printf(
+					/* translators: %s: the plugin's version number. */
+					esc_html__( 'DS Education — CME-Modul, Version %s.', 'ds-lms' ),
+					esc_html( DS_LMS_VERSION )
+				);
+				echo ' ';
+				esc_html_e(
+					'Das Lernmodul selbst wird von der Plattform geladen und dort aktualisiert — dafür ist kein Plugin-Update nötig.',
+					'ds-lms'
+				);
+				?>
+			</p>
 		</div>
 		<?php
+	}
+
+	/**
+	 * "Is the platform this site points at actually there?" (P96-04)
+	 *
+	 * Only on request, because it makes two outbound HTTP calls and a settings
+	 * screen that does that on every load is a settings screen nobody opens
+	 * while a platform is down.
+	 *
+	 * The nonce is the whole authorisation story alongside `manage_options`
+	 * above: without it, a link an administrator follows becomes two requests
+	 * this server makes on somebody else's behalf. It cannot be pointed
+	 * anywhere — `DS_LMS_Diagnostics` reads the stored settings and never the
+	 * request — but a check that costs nothing to trigger is still a check
+	 * worth binding to an intent.
+	 */
+	private static function render_diagnostics(): void {
+		$requested = isset( $_GET[ DS_LMS_Diagnostics::ACTION ] )
+			&& check_admin_referer( DS_LMS_Diagnostics::ACTION );
+
+		$url = wp_nonce_url(
+			add_query_arg(
+				array( 'page' => 'ds-lms', DS_LMS_Diagnostics::ACTION => '1' ),
+				admin_url( 'options-general.php' )
+			),
+			DS_LMS_Diagnostics::ACTION
+		);
+		?>
+		<h2><?php esc_html_e( 'Verbindung prüfen', 'ds-lms' ); ?></h2>
+		<p class="description">
+			<?php
+			esc_html_e(
+				'Prüft von diesem Server aus, ob die oben hinterlegten Adressen antworten. Speichern Sie Änderungen zuerst — geprüft wird der gespeicherte Stand.',
+				'ds-lms'
+			);
+			?>
+		</p>
+		<p>
+			<a class="button" href="<?php echo esc_url( $url ); ?>">
+				<?php esc_html_e( 'Jetzt prüfen', 'ds-lms' ); ?>
+			</a>
+		</p>
+		<?php
+		if ( ! $requested ) {
+			return;
+		}
+
+		foreach ( DS_LMS_Diagnostics::run() as $result ) {
+			printf(
+				'<div class="notice notice-%1$s inline"><p><strong>%2$s:</strong> %3$s</p></div>',
+				$result['ok'] ? 'success' : 'error',
+				esc_html( $result['label'] ),
+				esc_html( $result['detail'] )
+			);
+		}
 	}
 }

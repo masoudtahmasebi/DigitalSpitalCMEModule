@@ -32,6 +32,17 @@ $GLOBALS['ds_test'] = array(
 	'enqueued'     => array(),
 	'inline'       => array(),
 	'capabilities' => array(),
+	/*
+	 * The outbound HTTP the plugin is allowed to make (P96-04).
+	 *
+	 * Keyed by URL: either an array shaped like a WP_Http response, or a
+	 * WP_Error. A URL with no entry is a host that does not answer, which is
+	 * the case worth having as the default — the diagnostics exist because
+	 * an address that leads nowhere looked exactly like one that worked.
+	 */
+	'http'         => array(),
+	/** Every URL the plugin asked for, in order. */
+	'requests'     => array(),
 );
 
 function ds_test_reset(): void {
@@ -41,6 +52,8 @@ function ds_test_reset(): void {
 	$GLOBALS['ds_test']['user_meta'] = array();
 	$GLOBALS['ds_test']['routes']    = array();
 	$GLOBALS['ds_test']['scripts']   = array();
+	$GLOBALS['ds_test']['http']      = array();
+	$GLOBALS['ds_test']['requests']  = array();
 	$GLOBALS['ds_test']['enqueued']  = array();
 	$GLOBALS['ds_test']['inline']    = array();
 	$GLOBALS['ds_test']['filters']   = array();
@@ -203,6 +216,61 @@ function wp_enqueue_script( string $handle ): void {
 
 function wp_add_inline_script( string $handle, string $data, string $position = 'after' ): void {
 	$GLOBALS['ds_test']['inline'][] = $data;
+}
+
+function wp_remote_head( string $url, array $args = array() ) {
+	return ds_test_http( 'HEAD', $url );
+}
+
+function wp_remote_get( string $url, array $args = array() ) {
+	return ds_test_http( 'GET', $url );
+}
+
+function ds_test_http( string $method, string $url ) {
+	$GLOBALS['ds_test']['requests'][] = $method . ' ' . $url;
+	return $GLOBALS['ds_test']['http'][ $url ]
+		?? new WP_Error( 'http_request_failed', 'could not resolve host' );
+}
+
+function wp_remote_retrieve_response_code( $response ): int {
+	return is_array( $response ) ? (int) ( $response['response']['code'] ?? 0 ) : 0;
+}
+
+function wp_remote_retrieve_header( $response, string $name ): string {
+	if ( ! is_array( $response ) ) {
+		return '';
+	}
+	foreach ( $response['headers'] ?? array() as $key => $value ) {
+		if ( strtolower( (string) $key ) === strtolower( $name ) ) {
+			return (string) $value;
+		}
+	}
+	return '';
+}
+
+function is_wp_error( $thing ): bool {
+	return $thing instanceof WP_Error;
+}
+
+class WP_Error {
+	public function __construct( public string $code = '', public string $message = '' ) {}
+}
+
+function check_admin_referer( string $action = '-1', string $query_arg = '_wpnonce' ) {
+	return wp_verify_nonce( $_GET[ $query_arg ] ?? '', $action );
+}
+
+function wp_nonce_url( string $url, string $action = '-1', string $name = '_wpnonce' ): string {
+	return add_query_arg( array( $name => wp_create_nonce( $action ) ), $url );
+}
+
+function add_query_arg( array $args, string $url ): string {
+	$separator = str_contains( $url, '?' ) ? '&' : '?';
+	return $url . $separator . http_build_query( $args );
+}
+
+function admin_url( string $path = '' ): string {
+	return 'https://medice.example/wp-admin/' . ltrim( $path, '/' );
 }
 
 function wp_json_encode( $value ) {

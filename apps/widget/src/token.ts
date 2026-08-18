@@ -28,6 +28,20 @@
  *    for the WordPress case the caller is authenticated by the WP session
  *    cookie and the endpoint mints a token from it.
  *
+ *    A host whose endpoint needs one extra request header supplies it as
+ *    `token-header="X-WP-Nonce: abc123"`. That is deliberately one header and
+ *    not a mechanism: WordPress needs exactly this — a nonce proving the
+ *    request came from a page it rendered rather than from another origin
+ *    borrowing the visitor's cookie — and a general header facility would be a
+ *    way for a page to make the widget send anything anywhere.
+ *
+ *    This attribute is why the WordPress plugin ships no JavaScript (P96-03).
+ *    It used to inline a provider that did precisely what `endpointProvider`
+ *    below does, which meant every change to *how a token is fetched* needed a
+ *    plugin update on every customer's site. The plugin now states where the
+ *    endpoint is and what header it wants; everything about the fetching is
+ *    here, and ships with the bundle.
+ *
  * If neither is present the widget renders its "not correctly embedded"
  * message. It deliberately does not fall back to an unauthenticated request:
  * every learner endpoint requires a token, so that would produce a wall of
@@ -68,15 +82,49 @@ export class TokenUnavailableError extends Error {
 export function resolveTokenProvider(options: {
   readonly provider?: TokenProvider | undefined;
   readonly endpoint?: string | undefined;
+  readonly header?: string | undefined;
 }): TokenProvider | undefined {
   if (typeof options.provider === "function") return options.provider;
   if (options.endpoint !== undefined && options.endpoint !== "") {
-    return endpointProvider(options.endpoint);
+    return endpointProvider(options.endpoint, parseHeader(options.header));
   }
   return undefined;
 }
 
-function endpointProvider(endpoint: string): TokenProvider {
+/**
+ * `"X-WP-Nonce: abc123"` → `{ "X-WP-Nonce": "abc123" }`, or nothing.
+ *
+ * Anything that is not one field name followed by a colon is dropped in
+ * silence, because the alternative is worse: `fetch` throws a `TypeError` on an
+ * invalid header name, and it would throw inside the provider — surfacing as
+ * "no token", which reads as a session problem and sends whoever is debugging
+ * it to the wrong system entirely.
+ *
+ * The name is checked against RFC 7230's `token` production rather than trusted
+ * from the attribute. A host page cannot use this to inject a second header:
+ * everything after the first colon is one value, and a newline is not in the
+ * permitted set on either side.
+ */
+function parseHeader(header: string | undefined): Record<string, string> {
+  if (header === undefined || header === "") return {};
+  const separator = header.indexOf(":");
+  if (separator <= 0) return {};
+
+  const name = header.slice(0, separator).trim();
+  const value = header.slice(separator + 1).trim();
+  if (value === "" || !/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/u.test(name)) return {};
+  // A control character in the value is the other half of the same injection,
+  // and is likewise refused rather than passed to `fetch` to throw over.
+  // eslint-disable-next-line no-control-regex -- refusing control characters is the point
+  if (/[\u0000-\u001f\u007f]/u.test(value)) return {};
+
+  return { [name]: value };
+}
+
+function endpointProvider(
+  endpoint: string,
+  extraHeaders: Record<string, string>,
+): TokenProvider {
   return async ({ refresh }) => {
     const url = new URL(endpoint, window.location.href);
     if (refresh) url.searchParams.set("refresh", "1");
@@ -86,7 +134,7 @@ function endpointProvider(endpoint: string): TokenProvider {
       credentials: "same-origin",
       // A cached token is a token that may already have expired.
       cache: "no-store",
-      headers: { accept: "application/json" },
+      headers: { accept: "application/json", ...extraHeaders },
     });
 
     if (!response.ok) return undefined;

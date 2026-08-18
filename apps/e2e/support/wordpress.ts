@@ -22,18 +22,19 @@
  *
  * Faithful, because each is a real failure mode:
  *
- * - **The tag order the plugin emits.** An inline classic script assigns
- *   `element.tokenProvider` *before* the deferred module that defines the
- *   element runs. That ordering is what `#upgradeProperty` exists for, and
- *   getting it wrong renders "nicht korrekt eingebunden" inside a closed shadow
- *   root — invisible, with no failed request to notice.
+ * - **The markup the plugin emits, and only markup.** Since P96-03 the plugin
+ *   ships no JavaScript: the element carries `token-endpoint` and
+ *   `token-header`, and the widget's own `resolveTokenProvider` does the
+ *   fetching. Getting either attribute wrong renders "nicht korrekt
+ *   eingebunden" inside a closed shadow root — invisible, with no failed
+ *   request to notice — so this is asserted through the browser or not at all.
  * - **Three separate origins.** `127.0.0.1:4182` (the page) is not
  *   `127.0.0.1:3100` (the API), so every API call is cross-origin and
  *   `ALLOWED_ORIGINS` genuinely decides — and since P96-01 the bundle itself
  *   comes from a third, `127.0.0.1:4183`, standing in for `widget.<base>`.
  * - **The token endpoint's shape.** Same-origin `fetch` with `X-WP-Nonce`,
- *   answering `{ "token": … }` — the contract the plugin's inline provider
- *   expects, so a change to either side shows up here.
+ *   answering `{ "token": … }` — the contract the widget's own endpoint
+ *   provider expects, so a change to either side shows up here.
  * - **A real signed token**, from the dev Keycloak stub, verified by the API
  *   against a real JWKS. Nothing is bypassed.
  *
@@ -186,10 +187,16 @@ export function startWordPress(options: {
 /**
  * The markup, in the plugin's own order.
  *
- * The element first (it is in the post content), then — in the footer — the
- * inline provider and *then* the deferred module. `defer` on a module is
- * redundant in the spec and is what `wp_register_script` emits, so it is here
- * too: this file's job is to be what WordPress produces, not what is tidiest.
+ * The element in the post content and, in the footer, the deferred module.
+ * `defer` on a module is redundant in the spec and is what `wp_register_script`
+ * emits, so it is here too: this file's job is to be what WordPress produces,
+ * not what is tidiest.
+ *
+ * There is no inline script any more, and that absence is the assertion. The
+ * plugin's own `token_attributes()` writes these two attributes and nothing
+ * else; if the widget stopped reading either of them, the page below would
+ * render a signed-out widget for a signed-in visitor and this suite would say
+ * so (P96-03).
  */
 function page(apiBase: string, course: string | undefined): string {
   const courseAttribute = course === undefined ? "" : ` course="${course}"`;
@@ -203,45 +210,8 @@ function page(apiBase: string, course: string | undefined): string {
   <body>
     <header><h1>ADHS bei Erwachsenen</h1></header>
     <main>
-      <ds-lms api-base="${apiBase}" project="${WP_PROJECT_SLUG}"${courseAttribute}></ds-lms>
+      <ds-lms api-base="${apiBase}" project="${WP_PROJECT_SLUG}"${courseAttribute} token-endpoint="/wp-json/ds-lms/v1/token" token-header="X-WP-Nonce: ${NONCE}" data-ds-plugin="1.0.0"></ds-lms>
     </main>
-    <script>
-      (function () {
-        var endpoint = "/wp-json/ds-lms/v1/token";
-        var nonce = ${JSON.stringify(NONCE)};
-
-        function provider(request) {
-          var url = new URL(endpoint, window.location.href);
-          if (request && request.refresh) url.searchParams.set("refresh", "1");
-
-          return fetch(url, {
-            credentials: "same-origin",
-            cache: "no-store",
-            headers: { accept: "application/json", "X-WP-Nonce": nonce },
-          })
-            .then(function (response) {
-              return response.ok ? response.json() : null;
-            })
-            .then(function (body) {
-              return body && typeof body.token === "string" ? body.token : undefined;
-            })
-            .catch(function () {
-              return undefined;
-            });
-        }
-
-        function attach() {
-          document.querySelectorAll("ds-lms").forEach(function (element) {
-            element.tokenProvider = provider;
-          });
-        }
-
-        attach();
-        if (document.readyState === "loading") {
-          document.addEventListener("DOMContentLoaded", attach);
-        }
-      })();
-    </script>
     <script type="module" defer src="${WIDGET_BUNDLE_URL}"></script>
   </body>
 </html>`;

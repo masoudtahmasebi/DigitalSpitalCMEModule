@@ -255,6 +255,7 @@ export class DsLmsElement extends HTMLElement {
     const provider = resolveTokenProvider({
       provider: this.tokenProvider,
       endpoint: this.getAttribute("token-endpoint") ?? undefined,
+      header: this.getAttribute("token-header") ?? undefined,
     });
 
     const apiBase = this.getAttribute("api-base") ?? "";

@@ -48,6 +48,37 @@ the plugin taken from this repository was missing it** — the browser 404'd, th
 staging install found it exactly that way. CLAUDE.md §9.9: a step documented for
 a human to perform is a step that does not happen.
 
+### Is it actually reachable from here?
+
+**Settings → DS Education → Verbindung prüfen** asks this WordPress server
+whether the configured addresses answer, and says what came back — a 404, an
+unreachable host, or a bundle served without the CORS header a browser needs to
+execute it.
+
+It checks the **saved** settings, never a URL from the request, so save before
+checking. The API line reports reachability only: whether _this site's origin_
+may call the API is decided per project in the DigitalSpital console, and a
+server-to-server request carries no `Origin`, so it would pass while every
+visitor's browser was refused.
+
+This exists because the first person to notice that the bundle 404'd noticed by
+typing its URL into a browser.
+
+---
+
+## Pointing a site at staging, or at any other installation
+
+One field decides it: **Basis-Domain**. Both addresses derive from it —
+`api.<domain>` and `widget.<domain>` — so a staging WordPress fills in the
+staging domain and is done, and nothing about the plugin differs between the
+two. A platform whose hostnames follow no convention is what the two optional
+URL fields are for.
+
+The bundle is served with `Access-Control-Allow-Origin: *`, which is correct and
+is not a weakening: it is public JavaScript carrying no credentials. Any number
+of sites — production, staging, a developer's `localhost` — can load the same
+file. The narrow policy is the API's, and it is per project.
+
 ### What the customer's site has to allow
 
 If the site sends a `Content-Security-Policy`, it must name the widget host in
@@ -128,20 +159,44 @@ If they add that, none of the fallback strategies run.
 
 ---
 
-## Why the token provider is installed by an inline script
+## Why the plugin ships no JavaScript
 
-The widget exposes a `tokenProvider` property and knows nothing about
-WordPress — no nonce header, no REST route, no cookie assumptions. The
-WordPress-specific half lives in `DS_LMS_Renderer::attach_token_provider()`, so
-the same bundle runs unchanged in the dev harness and anywhere else it is
-embedded later.
+The page carries two attributes and no script:
 
-The inline script runs **before** the deferred module that defines the custom
-element, so it assigns the property to an element that has not upgraded yet.
-The widget handles that explicitly (`#upgradeProperty` in `element.ts`); the
-naive implementation loses the value at upgrade and shows "not correctly
-embedded" on a perfectly configured page. There is a test for that exact
-ordering.
+```html
+<ds-lms
+  api-base="…"
+  project="…"
+  course="…"
+  token-endpoint="/wp-json/ds-lms/v1/token"
+  token-header="X-WP-Nonce: …"
+  data-ds-plugin="1.0.0"
+></ds-lms>
+```
+
+Until 1.0.0 the plugin inlined about forty lines of JavaScript that fetched the
+endpoint, handled the refresh case and assigned a `tokenProvider` property. Every
+one of those lines already existed inside the widget, in
+`apps/widget/src/token.ts` — so a change to _how a token is fetched_ meant a
+plugin update on every site (P96-03).
+
+Now the plugin says **where** and **what header**, and the widget owns the
+**how**. The widget is still host-agnostic: it knows "fetch a token from this URL
+with this header", not "WordPress".
+
+`token-header` is deliberately one header and not a mechanism. WordPress needs
+exactly this — a nonce proving the request came from a page it rendered rather
+than from another origin borrowing the visitor's cookie — and a general header
+facility would be a way for a page to make the widget send anything anywhere. A
+malformed value is dropped rather than passed to `fetch`, which would throw
+inside the provider and surface as "no token".
+
+Neither attribute is emitted for a logged-out visitor: there is no token to
+fetch, and the widget shows its signed-out state.
+
+**`data-ds-plugin`** is the plugin's version, beside the `data-ds-build` the
+widget writes for its own. Between them, "which build is this site running?" is
+answerable from a browser rather than over FTP.
 
 ---
 
