@@ -246,6 +246,24 @@ describe("the Modul Übersicht sidebar", () => {
     ).toBeNull();
   });
 
+  it("calls the module under way *bearbeitet* and the chapter in it *angesehen*", () => {
+    /*
+     * P94-02. The layout gives the module you are inside a pause glyph and the
+     * chapter you are on a play arrow, which is a real distinction rather than
+     * a decoration: the module is a container you are part-way through, the
+     * chapter is the thing in front of you. "Wird angesehen" on a module would
+     * be a claim about five chapters at once.
+     */
+    renderSidebar();
+
+    expect(
+      screen.getAllByRole("img", { name: "Wird bearbeitet" }).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByRole("img", { name: "Wird angesehen" }).length).toBeGreaterThan(
+      0,
+    );
+  });
+
   it("names each state for a screen reader, since the glyph is the only cue", () => {
     renderSidebar();
     expect(screen.getAllByRole("img", { name: "Wird angesehen" }).length).toBeGreaterThan(

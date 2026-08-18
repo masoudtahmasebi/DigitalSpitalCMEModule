@@ -291,6 +291,16 @@ export const de = {
       completed: "Abgeschlossen",
       playing: "Wird angesehen",
       paused: "Pausiert",
+      /**
+       * A **module** that is under way (P94-02).
+       *
+       * The layout draws the module you are inside with a pause glyph and the
+       * chapter you are on with a play arrow, and the distinction is real: the
+       * module is a container you are part-way through, the chapter is the
+       * thing in front of you. "Wird angesehen" on a module would be a claim
+       * about five chapters at once.
+       */
+      inProgress: "Wird bearbeitet",
       available: "Verfügbar",
       locked: "Gesperrt",
     },

@@ -77,21 +77,33 @@ export function ModuleSidebar(props: {
     <nav aria-label={de.player.outline} className="min-w-0 space-y-2">
       <h2 className="text-sm font-semibold text-gray-900">{de.player.outline}</h2>
 
-      <ol className="space-y-1">
+      {/*
+        Rows separated by a rule, not boxed (P94-02).
+
+        `Player-Ansicht-*` draws one panel with hairlines between the modules;
+        ours drew five bordered cards, which reads as five separate things
+        rather than one outline of one course. `first:border-t-0` so the list
+        does not open with a rule against the heading.
+      */}
+      <ol className="overflow-hidden rounded-[var(--ds-radius)] border border-gray-200">
         {props.state.modules.map((module, index) => {
           const title = titles.modules.get(module.id) ?? "";
           const open = expanded === module.id;
-          const state = itemIcon({
+          /*
+            A module you are inside is *under way*, not *being watched*
+            (P94-02). The layout gives it the pause glyph and gives the play
+            arrow to the chapter, which is the honest split: one is a container
+            you are part-way through, the other is the thing in front of you.
+          */
+          const drawn = itemIcon({
             gate: module.gate,
             progress: module.progress,
             current: here?.moduleId === module.id,
           });
+          const state = drawn === "playing" ? "inProgress" : drawn;
 
           return (
-            <li
-              key={module.id}
-              className="rounded-[var(--ds-radius)] border border-gray-200"
-            >
+            <li key={module.id} className="border-t border-gray-200 first:border-t-0">
               <h3>
                 <button
                   type="button"
@@ -203,7 +215,7 @@ export function ModuleSidebar(props: {
         are the same size.
       */}
       {props.action === undefined ? null : (
-        <div className="pt-2">
+        <div className="pt-2 [&>button]:w-full">
           <Button
             variant={props.action.variant}
             disabled={props.action.disabled}

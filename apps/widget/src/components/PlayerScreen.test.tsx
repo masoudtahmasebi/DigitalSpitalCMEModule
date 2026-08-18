@@ -524,6 +524,51 @@ describe("the controls", () => {
     expect(outline.contains(pause)).toBe(true);
   });
 
+  it("draws the exam as the accent action, and only once", () => {
+    /*
+     * P94-02, from the report —
+     *
+     *   > "although being complete and next step being lernerfolgskontrolle,
+     *   >  but there is no button for it with being also CTA. when i click on
+     *   >  the title of lernerfolgskontrolle it goes to lernerfolgskontrolle,
+     *   >  but the user does not know it"
+     *
+     * Two halves. The control was teal, so it did not read as the thing to do;
+     * and `nextAvailableContent` drew a **second** one beside it labelled with
+     * the exam's own title and nothing to say it was an exam, so clicking the
+     * obvious-looking one started a Lernerfolgskontrolle unannounced.
+     *
+     * The class is the assertion because the class *is* the token: `cta` is
+     * what `tailwind.preset.js` defines as "resume the thing you started", and
+     * a test that only counted buttons would stay green on the teal one.
+     */
+    renderPlayer({ state: withQuizOpen(state(), 3) });
+
+    const begin = screen.getByRole("button", { name: "Lernerfolgskontrolle beginnen" });
+    expect(begin.className).toContain("bg-cta-500");
+
+    // And nothing else on the screen offers the same exam.
+    expect(screen.queryByText(/Weiter: .*Prüfung|Weiter: .*Lernerfolg/u)).toBeNull();
+    expect(
+      screen.getAllByRole("button", { name: /Lernerfolgskontrolle beginnen/ }),
+    ).toHaveLength(1);
+  });
+
+  it("does not draw a second Weiter control pointing at the exam", () => {
+    /*
+     * The control for the case above. `nextAvailableContent` returns whatever
+     * the server has open, and once a module's video is done that is the
+     * module's own quiz — so without the guard this row carries a secondary
+     * button labelled with the quiz's title.
+     */
+    const openState = withQuizOpen(state(), 3);
+    renderPlayer({ state: openState });
+
+    for (const button of screen.getAllByRole("button")) {
+      expect(button.textContent ?? "").not.toContain("Weiter: Abschlussprüfung");
+    }
+  });
+
   it("swaps that action for the exam once the server opens its gate", () => {
     const onOpen = vi.fn();
     renderPlayer({ onOpen, state: withQuizOpen(state(), 3) });

@@ -211,8 +211,24 @@ export function PlayerScreen(props: {
       action:
         quizOpen !== undefined
           ? {
+              /*
+               * Orange, like every other "carry on with what you started"
+               * (P94-02). It was teal, on the reasoning that the accent marks
+               * the course in progress and the exam is the way out of it. The
+               * client read the screen and found no call to action at all —
+               *
+               *   > "although being complete and next step being
+               *   >  lernerfolgskontrolle, but there is no button for it with
+               *   >  being also CTA"
+               *
+               * — which settles it: the one thing a physician should do next
+               * is the one thing drawn in the accent colour, whatever that
+               * thing is. `tailwind.preset.js` already says orange means
+               * "resume the thing you started", and finishing a Fortbildung is
+               * that.
+               */
               label: de.player.quizBegin,
-              variant: "primary",
+              variant: "cta",
               disabled: false,
               run: quizOpen,
             }
@@ -320,8 +336,17 @@ export function PlayerScreen(props: {
           The pause and the exam CTA left this row for the sidebar in P93-03,
           which is where the layout draws the primary action; this row is the
           two ways *out* of the section.
+
+          **Never the exam** (P94-02). `nextAvailableContent` returns whatever
+          the server has open, and once a module's video is done that is the
+          module's Lernerfolgskontrolle — so this drew a second control for it,
+          labelled with the exam's own title and nothing to say it *was* the
+          exam. The client met it as "Weiter: Patienteninformation Modul 4 –
+          Psychotherapie & Coaching", clicked it, and arrived at a
+          Lernerfolgskontrolle they had not been told they were starting
+          (§9.4). One exam, one control, and it is the orange one.
         */}
-        {next === undefined ? null : (
+        {next === undefined || next.id === quiz?.id ? null : (
           <Button variant="secondary" onClick={() => props.onOpen(next.id)}>
             {de.player.nextSection(next.title)}
           </Button>

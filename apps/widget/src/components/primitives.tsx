@@ -475,8 +475,7 @@ export function LockIcon(props: { className?: string }) {
 }
 
 /**
- * The four state glyphs of the player's Modul Übersicht (layout §4.3), plus
- * the fifth the layout implies — see `ItemState`.
+ * The state glyphs of the player's Modul Übersicht (layout §4.3).
  *
  * `role="img"` with a name rather than `aria-hidden`, because in this sidebar
  * the icon is the *only* thing distinguishing a finished chapter from a locked
@@ -485,17 +484,35 @@ export function LockIcon(props: { className?: string }) {
  *
  * Colour carries the same information a second time and never alone (WCAG
  * 1.4.1): every state has a distinct shape.
+ *
+ * ## The palette is the layout's, and it is the brand's (P94-02)
+ *
+ * `Player-Ansicht-*` draws a finished module as an **orange disc with a white
+ * tick** and a module under way as an orange disc with white pause bars. Ours
+ * were green and teal — a generic status palette rather than this product's,
+ * and the client read the difference immediately.
+ *
+ * Orange is not decoration here: `tailwind.preset.js` says what the token
+ * means — *"orange is resume the thing you started"* — which is exactly what a
+ * finished-or-running module is in a list you are working down. `cta` is also
+ * a **branded** variable, so a customer restyling the widget restyles these
+ * with it; `status.completed` was a fixed green no customer could reach.
+ *
+ * The disc is filled and the tick is the hole in it, so the readable pairing is
+ * white-on-orange rather than orange-on-white — which is what keeps this above
+ * the contrast floor at 16 px while matching the drawing.
  */
 export function StateIcon(props: {
-  state: "completed" | "playing" | "paused" | "available" | "locked";
+  state: "completed" | "playing" | "paused" | "inProgress" | "available" | "locked";
   label: string;
 }) {
   const skin: Record<typeof props.state, string> = {
-    completed: "text-status-completed",
+    completed: "text-cta-500",
     playing: "text-brand-600",
-    paused: "text-brand-600",
+    paused: "text-cta-500",
+    inProgress: "text-cta-500",
     available: "text-gray-400",
-    locked: "text-status-locked",
+    locked: "text-gray-700",
   };
 
   return (
@@ -515,7 +532,7 @@ export function StateIcon(props: {
         >
           {props.state === "completed" ? (
             <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm3.86 5.9-4.5 5a1 1 0 0 1-1.46.04L3.9 8.94a1 1 0 1 1 1.42-1.42l1.25 1.25 3.8-4.22a1 1 0 0 1 1.49 1.34Z" />
-          ) : props.state === "paused" ? (
+          ) : props.state === "paused" || props.state === "inProgress" ? (
             <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0ZM7 11H5.5V5H7v6Zm3.5 0H9V5h1.5v6Z" />
           ) : props.state === "playing" ? (
             <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm-1.5 4.6 4.4 2.9a.6.6 0 0 1 0 1L6.5 11.4a.6.6 0 0 1-.93-.5V5.1a.6.6 0 0 1 .93-.5Z" />

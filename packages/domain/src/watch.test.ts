@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { WatchedSegment } from "./watch.js";
 import {
   creditedDurationSec,
   isSeekAllowed,
@@ -92,15 +93,14 @@ describe("watchedPercent", () => {
   });
 
   it("does not inflate when the same interval is re-watched", () => {
-    // 103 s of content, 100 of them credited.
-    const once = watchedPercent([{ startSec: 0, endSec: 50 }], 103);
+    const once = watchedPercent([{ startSec: 0, endSec: 50 }], 100);
     const thrice = watchedPercent(
       [
         { startSec: 0, endSec: 50 },
         { startSec: 0, endSec: 50 },
         { startSec: 10, endSec: 40 },
       ],
-      103,
+      100,
     );
     expect(once).toBe(50);
     expect(thrice).toBe(50);
@@ -158,17 +158,51 @@ describe("watchedPercent", () => {
       expect(watchedPercent([{ startSec: 1, endSec: 1000 }], 1000)).toBe(99);
     });
 
-    it("never closes a hole in the middle, however small", () => {
-      // The two ends are exact; the gap is a tenth of a second and stays one.
-      // This is the case the tolerance must never be mistaken for.
+    it("never closes a hole a person could go and watch", () => {
+      // A one-second hole in the middle of a 1000 s video is content, and stays
+      // content: the two ends are exact and the number still refuses to reach
+      // 100. This is the case the tolerance must never be mistaken for.
       const withHole = watchedPercent(
         [
-          { startSec: 0, endSec: 499.95 },
-          { startSec: 500.05, endSec: 1000 },
+          { startSec: 0, endSec: 499.5 },
+          { startSec: 500.5, endSec: 1000 },
         ],
         1000,
       );
       expect(withHole).toBe(99);
+    });
+
+    it("does forgive a hole below one playback sample, and says so both ways", () => {
+      /*
+       * A tenth of a second in the middle. Nobody can go and watch it, and
+       * before P94-01 this sat at 99 %% with an empty "Diese Stellen fehlen
+       * noch" list beside it — correct and unusable, which is P85-01's report
+       * and CLAUDE.md §9.10.
+       *
+       * The tolerance is now a budget for the **whole** video rather than per
+       * gap, so forgiving it here cannot be repeated a hundred times to skip
+       * half the file.
+       */
+      const segments = [
+        { startSec: 0, endSec: 499.95 },
+        { startSec: 500.05, endSec: 1000 },
+      ];
+      expect(uncoveredSpans(mergeWatchedSegments(segments), 1000)).toEqual([]);
+      expect(watchedPercent(segments, 1000)).toBe(100);
+    });
+
+    it("refuses to forgive many small holes that add up", () => {
+      // The attack a per-gap tolerance would allow: every hole is under a
+      // quarter second on its own, and together they are two seconds of
+      // unwatched content.
+      const segments = [];
+      for (let start = 0; start < 100; start += 10) {
+        segments.push({ startSec: start, endSec: start + 9.8 });
+      }
+      expect(uncoveredSpans(mergeWatchedSegments(segments), 100).length).toBeGreaterThan(
+        0,
+      );
+      expect(watchedPercent(segments, 100)).toBeLessThan(100);
     });
 
     it("does not credit an unwatched course as complete", () => {
@@ -181,9 +215,8 @@ describe("watchedPercent", () => {
   });
 
   it("handles the 80 %% threshold boundary exactly", () => {
-    // 103 s of content, 100 of them credited, so the figures read as percentages.
-    expect(watchedPercent([{ startSec: 0, endSec: 80 }], 103)).toBe(80);
-    expect(watchedPercent([{ startSec: 0, endSec: 79 }], 103)).toBe(79);
+    expect(watchedPercent([{ startSec: 0, endSec: 80 }], 100)).toBe(80);
+    expect(watchedPercent([{ startSec: 0, endSec: 79 }], 100)).toBe(79);
   });
 
   it("returns 0 for a zero or missing duration rather than dividing by zero", () => {
@@ -192,15 +225,15 @@ describe("watchedPercent", () => {
   });
 
   it("sums disjoint segments, leaving the hole between them a hole", () => {
-    // 0–10 and 20–30 of a 33 s video (30 credited) is twenty seconds watched,
-    // not thirty: the ten-second gap is content the learner did not see, and
-    // the tail grace does not touch a hole in the middle.
+    // 0–10 and 20–30 of a 30 s video is twenty seconds watched, not thirty:
+    // the ten-second gap is content the learner did not see, and the tail
+    // grace does not touch a hole in the middle.
     const disjoint = [
       { startSec: 0, endSec: 10 },
       { startSec: 20, endSec: 30 },
     ];
-    expect(watchedSecondsWithin(disjoint, 33)).toBe(20);
-    expect(watchedPercent(disjoint, 33)).toBe(66);
+    expect(watchedSecondsWithin(disjoint, 30)).toBe(20);
+    expect(watchedPercent(disjoint, 30)).toBe(66);
   });
 
   it("never credits more seconds than the content has", () => {
@@ -209,9 +242,7 @@ describe("watchedPercent", () => {
     // overrunning the duration — which a `<video>` reporting past its own end
     // produces — credited more than the file contains, and a course-level sum
     // of those figures disagreed with the per-content percentage.
-    expect(watchedSecondsWithin([{ startSec: 0, endSec: 400 }], 300)).toBe(
-      creditedDurationSec(300),
-    );
+    expect(watchedSecondsWithin([{ startSec: 0, endSec: 400 }], 300)).toBe(300);
     expect(watchedPercent([{ startSec: 0, endSec: 400 }], 300)).toBe(100);
   });
 });
@@ -241,19 +272,23 @@ describe("the tail grace", () => {
 
   it("does not credit a video stopped before the tail", () => {
     // A second short of the requirement is a second short. The grace moves the
-    // finish line; it does not remove it.
-    expect(watchedPercent([{ startSec: 0, endSec: 6 }], 10)).toBe(85);
+    // finish line; it does not remove it — and the number is six of ten
+    // seconds seen, which is what the learner can check against the clock.
+    expect(watchedPercent([{ startSec: 0, endSec: 6 }], 10)).toBe(60);
     expect(watchedPercent([{ startSec: 0, endSec: 6 }], 10)).toBeLessThan(100);
   });
 
   it("still refuses a scrub to the end", () => {
     // §4 invariant 5 is what the grace must not weaken: the seconds before the
-    // tail have to be genuinely covered.
-    expect(watchedPercent([{ startSec: 9, endSec: 10 }], 10)).toBe(0);
+    // tail have to be genuinely covered. The one second actually played is
+    // credited, because it was — what a scrub cannot buy is the other nine.
+    expect(watchedPercent([{ startSec: 9, endSec: 10 }], 10)).toBe(10);
     expect(watchedPercent([{ startSec: 1400, endSec: 1500 }], 1500)).toBe(6);
   });
 
   it("keeps a hole in the middle a hole", () => {
+    // Eight of ten seconds seen, and the two unseen ones are inside the
+    // requirement, so it is not complete however far the playhead reached.
     expect(
       watchedPercent(
         [
@@ -262,7 +297,7 @@ describe("the tail grace", () => {
         ],
         10,
       ),
-    ).toBe(71);
+    ).toBe(80);
   });
 
   it("does not shrink a video shorter than the grace to nothing", () => {
@@ -274,6 +309,42 @@ describe("the tail grace", () => {
     expect(watchedPercent([{ startSec: 0, endSec: 2 }], 2)).toBe(100);
   });
 
+  it("agrees with the list of gaps, in both directions", () => {
+    /*
+     * The property P94-01 is for, and the one the client was reading against:
+     *
+     *     watchedPercent === 100   ⟺   uncoveredSpans is empty
+     *
+     * Two screens draw these — the percentage beside the section title and the
+     * "Diese Stellen fehlen noch" line under the player — and P68-02 was
+     * exactly the state where one said finished and the other did not.
+     */
+    const cases: ReadonlyArray<readonly [readonly WatchedSegment[], number]> = [
+      [[], 10],
+      [[{ startSec: 0, endSec: 1 }], 10],
+      [[{ startSec: 0, endSec: 6.9 }], 10],
+      [[{ startSec: 0, endSec: 7 }], 10],
+      [[{ startSec: 0, endSec: 10 }], 10],
+      [[{ startSec: 9, endSec: 10 }], 10],
+      [
+        [
+          { startSec: 0, endSec: 4 },
+          { startSec: 6, endSec: 10 },
+        ],
+        10,
+      ],
+      [[{ startSec: 0, endSec: 1497 }], 1500],
+      [[{ startSec: 0, endSec: 1400 }], 1500],
+    ];
+
+    for (const [segments, duration] of cases) {
+      const complete = watchedPercent(segments, duration) === 100;
+      const nothingLeft =
+        uncoveredSpans(mergeWatchedSegments(segments), duration).length === 0;
+      expect(complete, `duration=${String(duration)}`).toBe(nothingLeft);
+    }
+  });
+
   it("is three seconds, and 0.2 %% of an accredited module", () => {
     // Twenty-five minutes is the shape of MEDICE's course. The grace has to be
     // large enough to cover a browser that stops reporting early and small
@@ -281,6 +352,10 @@ describe("the tail grace", () => {
     expect(creditedDurationSec(1500)).toBe(1497);
     expect(watchedPercent([{ startSec: 0, endSec: 1497 }], 1500)).toBe(100);
     expect(watchedPercent([{ startSec: 0, endSec: 1400 }], 1500)).toBe(93);
+    // And the ten-second upload the client tested with, where three seconds is
+    // 30 %% of the file: seven seconds seen is complete, six is not.
+    expect(watchedPercent([{ startSec: 0, endSec: 7 }], 10)).toBe(100);
+    expect(watchedPercent([{ startSec: 0, endSec: 6 }], 10)).toBe(60);
   });
 
   it("answers zero for a length it cannot use", () => {

@@ -3,15 +3,7 @@ import { courseWatchCoverage } from "./coverage.js";
 import { watchedPercent } from "./watch.js";
 import type { CourseNode } from "./types.js";
 
-/**
- * Two videos of deliberately unequal length, so weighting is observable.
- *
- * The lengths are 903 and 103 rather than 900 and 100 so that the **credited**
- * lengths are round — `TAIL_GRACE_SEC` is three seconds and the rollup measures
- * against `creditedDurationSec`, not the stored length (P93-01). Written this
- * way round on purpose: every figure below is then a percentage of the
- * requirement, which is the number a learner is shown and the gate compares.
- */
+/** Two videos of deliberately unequal length, so weighting is observable. */
 function course(): CourseNode {
   return {
     id: "course",
@@ -24,8 +16,8 @@ function course(): CourseNode {
             id: "c1",
             ordinal: 0,
             contents: [
-              { id: "long", kind: "video", durationSec: 903 },
-              { id: "short", kind: "video", durationSec: 103 },
+              { id: "long", kind: "video", durationSec: 900 },
+              { id: "short", kind: "video", durationSec: 100 },
               { id: "quiz", kind: "quiz" },
             ],
           },
@@ -77,16 +69,15 @@ describe("courseWatchCoverage agrees with watchedPercent", () => {
   });
 
   it("still refuses a video that was genuinely not finished", () => {
-    // Eight seconds of video, five of them required — the tail grace is three
-    // (P93-01), and on a fixture this short it is a large fraction. Three
-    // seconds watched is 60 %% of the requirement at both levels; what matters
-    // here is that the two levels say the same thing, and that "not finished"
-    // is still refused.
+    // Three of eight seconds. The figure is a fraction of the **video**
+    // (P94-01), so it is 37 and not 60 — five seconds are still missing and
+    // two of them are inside the requirement. What matters here is that the
+    // two levels say the same thing, and that "not finished" is still refused.
     const segments = [{ startSec: 0, endSec: 3 }];
 
-    expect(watchedPercent(segments, 8)).toBe(60);
+    expect(watchedPercent(segments, 8)).toBe(37);
     expect(courseWatchCoverage(oneVideo, [{ contentId: "v", segments }]).percent).toBe(
-      60,
+      37,
     );
   });
 });
@@ -176,7 +167,7 @@ describe("courseWatchCoverage weights by duration", () => {
               contents: [
                 { id: "no-duration", kind: "video" },
                 { id: "zero", kind: "video", durationSec: 0 },
-                { id: "ok", kind: "video", durationSec: 203 },
+                { id: "ok", kind: "video", durationSec: 200 },
               ],
             },
           ],
@@ -216,12 +207,26 @@ describe("courseWatchCoverage weights by duration", () => {
   });
 
   it("floors rather than rounds, so 99.9 % never reads as complete", () => {
+    // Ten seconds short on the long video — outside the three-second tail
+    // grace, so it is genuinely unwatched content and 990/1000 floors to 99.
     const coverage = courseWatchCoverage(course(), [
-      { contentId: "long", segments: [{ startSec: 0, endSec: 899 }] },
+      { contentId: "long", segments: [{ startSec: 0, endSec: 890 }] },
       { contentId: "short", segments: [{ startSec: 0, endSec: 100 }] },
     ]);
 
     expect(coverage.percent).toBe(99);
+  });
+
+  it("credits a video whose last three seconds were not reported", () => {
+    // The control for the case above, and the client's rule at course level:
+    // one second short is inside the grace, so the course is fully watched
+    // rather than stuck at 99 with nothing left to watch.
+    const coverage = courseWatchCoverage(course(), [
+      { contentId: "long", segments: [{ startSec: 0, endSec: 899 }] },
+      { contentId: "short", segments: [{ startSec: 0, endSec: 99 }] },
+    ]);
+
+    expect(coverage).toEqual({ percent: 100, watchedSec: 1000, totalSec: 1000 });
   });
 
   it("is pure — repeated calls with the same input agree", () => {

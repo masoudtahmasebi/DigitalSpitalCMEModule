@@ -91,9 +91,34 @@ export function PlayerProgressCard(props: {
         {props.status?.autosaveFailed === true ? (
           <p className="text-xs font-semibold text-red-700">{de.player.sessionEnded}</p>
         ) : (
-          <p className="text-xs text-gray-500">{de.player.autosave}</p>
+          <p className="flex items-center gap-1.5 text-xs text-gray-500">
+            <SaveIcon />
+            {de.player.autosave}
+          </p>
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * The floppy the layout puts before "Ihr Fortschritt wird automatisch
+ * gespeichert" (P94-02).
+ *
+ * Decorative: the sentence beside it says the same thing in words, so a screen
+ * reader announcing "Bild" here would add nothing. It earns its place visually
+ * — the line is small grey text at the bottom of a card, and the glyph is what
+ * makes a physician notice the reassurance at all.
+ */
+function SaveIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="h-3.5 w-3.5 shrink-0"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M2.5 2h8.7L14 4.8v8.7a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5Zm2 1v3.5h6V3h-6Zm-.5 6v4h8V9H4Z" />
+    </svg>
   );
 }
