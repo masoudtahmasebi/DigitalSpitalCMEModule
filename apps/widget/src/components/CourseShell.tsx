@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from "react";
 import type { CourseDetail, EnrolmentState } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { locateContent } from "../player.js";
+import { indexTitles, locateContent } from "../player.js";
 import { PlayerStatusContext, type PlayerStatus } from "../player-status.js";
 import { BrandLogo } from "./BrandLogo.js";
-import { ModuleSidebar } from "./ModuleSidebar.js";
+import { ModuleSidebar, type ExamRow } from "./ModuleSidebar.js";
 import { PlayerProgressCard } from "./PlayerProgressCard.js";
 import { StickyProgress } from "./StickyProgress.js";
 import { Button } from "./primitives.js";
@@ -160,7 +160,8 @@ export function CourseShell(props: {
             state={props.state}
             currentContentId={props.currentContentId}
             onOpen={props.onOpen}
-            action={status?.action}
+            actions={status?.actions ?? []}
+            exams={examRows(props.course, props.state)}
           />
         </div>
       </div>
@@ -177,4 +178,58 @@ export function CourseShell(props: {
       ) : null}
     </div>
   );
+}
+
+/**
+ * The Lernerfolgskontrollen, as rows under the module list (P95-01).
+ *
+ * ## Why this is derived here and not decided by the sidebar
+ *
+ * The sidebar renders what it is given; which exams a course has and whether
+ * each is open is a reading of the catalogue tree against the server's gates,
+ * and that reading already exists twice too often. `indexTitles` is the one
+ * place titles and kinds are zipped onto the enrolment's gates, so it is used
+ * here too rather than a fourth walk of the tree.
+ *
+ * ## The label
+ *
+ * The layout draws one row, labelled simply **Lernerfolgskontrolle**. Since
+ * P87 a course may have one per module, so a course with several names them —
+ * a physician looking at three identical rows cannot tell which is which, and
+ * that is the defect P87-05 found on the exam screen itself. One exam keeps the
+ * layout's word.
+ *
+ * ## Locked
+ *
+ * Straight from `gate`, which is the server's (§4 invariant 1). The widget
+ * nowhere decides that finishing a module opens its exam; it draws the answer.
+ */
+function examRows(course: CourseDetail, state: EnrolmentState): readonly ExamRow[] {
+  const titles = indexTitles(course);
+  const rows: ExamRow[] = [];
+
+  state.modules.forEach((module, index) => {
+    for (const chapter of module.chapters) {
+      for (const content of chapter.contents) {
+        const meta = titles.contents.get(content.id);
+        if (meta?.kind !== "quiz") continue;
+        rows.push({
+          id: content.id,
+          title: meta.title,
+          moduleOrdinal: index + 1,
+          locked: content.gate === "locked",
+        });
+      }
+    }
+  });
+
+  // One exam keeps the layout's word. Several are told apart by their module,
+  // because an author naming all of them "Lernerfolgskontrolle" is the obvious
+  // thing to type and no amount of authoring discipline fixes that from here.
+  return rows.length === 1 && rows[0] !== undefined
+    ? [{ ...rows[0], title: de.player.tabs.quiz }]
+    : rows.map((row) => ({
+        ...row,
+        title: de.player.examInModule(row.title, row.moduleOrdinal),
+      }));
 }

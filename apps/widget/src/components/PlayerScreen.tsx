@@ -57,39 +57,17 @@ import { useState } from "react";
 import { germanMinutesAndSeconds, mediaLengthVerdict } from "@ds/domain";
 import type { ApiClient, CourseDetail, EnrolmentState, LessonContent } from "@ds/sdk";
 import { de } from "../locale/de.js";
+import { moduleHeading } from "../module-title.js";
 import {
   findQuizContent,
+  indexTitles,
   locateContent,
   nextAvailableContent,
   playbackDuration,
 } from "../player.js";
 import { useReportPlayerStatus } from "../player-status.js";
 import { LessonScreen, type PlaybackState } from "./LessonScreen.js";
-import { Button, LockIcon } from "./primitives.js";
-
-const CONTENT_TABS = ["summary", "quiz", "reporting"] as const;
-type ContentTab = (typeof CONTENT_TABS)[number];
-
-/**
- * Which tabs this course actually has (P82-03).
- *
- * A course without a Lernerfolgskontrolle used to render the tab anyway,
- * padlocked, forever — reported as *"if a module does not have erfolgs
- * controlle, it should not appear"*. The padlock says "not yet", and for a
- * course with no quiz content there is no yet: nothing will ever unlock it.
- *
- * That is the same judgement the module header already records for
- * **Zur Teilprüfung**, which is deliberately not drawn because the feature does
- * not exist — *"the learner would wait for something that is never going to
- * unlock"*. The reasoning was written down and then not applied to the case
- * beside it (CLAUDE.md §9.2).
- *
- * The Punktemeldung tab follows it: with no Lernerfolgskontrolle there is no
- * `quizPassed` to reach, so the tab could only ever be locked as well.
- */
-function tabsFor(hasQuiz: boolean): readonly ContentTab[] {
-  return hasQuiz ? CONTENT_TABS : CONTENT_TABS.filter((tab) => tab === "summary");
-}
+import { Button } from "./primitives.js";
 
 export function PlayerScreen(props: {
   client: ApiClient;
@@ -124,7 +102,6 @@ export function PlayerScreen(props: {
    * reload — which is exactly what the message asks for.
    */
   const [authLost, setAuthLost] = useState(false);
-  const [tab, setTab] = useState<ContentTab>("summary");
 
   // Scoped to the module this section is in (P87-02): a course with an exam on
   // every module must offer *this* module's, and a module without one must
@@ -165,21 +142,9 @@ export function PlayerScreen(props: {
     requiredWatchPercent: state.requiredWatchPercent,
   });
 
-  /**
-   * Which module's completion opens this section's exam — for the announcement
-   * between the video and the tabs, and only while it is still shut.
-   *
-   * The exam's own module, not the learner's: `contentGates` blocks a module's
-   * quiz on that module's videos, so that is the module the sentence is about.
-   * They are the same module today, because `findQuizContent` is module-scoped
-   * (P87-02); saying it from the quiz keeps the sentence true if that ever
-   * stops being so.
-   */
-  const quizAt = quiz === undefined ? undefined : locateContent(course, quiz.id);
-  const quizModule =
-    quiz === undefined || quiz.gate !== "locked" || quizAt === undefined
-      ? undefined
-      : quizAt.moduleIndex + 1;
+  /** Where this section sits, for the headings the layout draws under the video. */
+  const here = locateContent(course, lesson.id);
+  const titles = indexTitles(course);
 
   /** Undefined while the server still has the quiz locked. */
   const quizOpen =
@@ -188,15 +153,18 @@ export function PlayerScreen(props: {
       : () => props.onOpen(quiz.id);
 
   /*
-   * The one action the layout draws under the module list (P93-03, row 6.6):
-   * orange **Fortbildung pausieren** while there is still watching to do, teal
-   * **Lernerfolgskontrolle beginnen** once there is not.
+   * The controls the layout draws under the module list (P95-02).
    *
-   * The switch is the **server's quiz gate**, not a percentage worked out here.
-   * The layout describes the swap as happening "at 100 %", and a client that
-   * decided that for itself would offer the exam to a learner the API is about
-   * to refuse — or, worse, would look right while the two disagreed about what
-   * 100 % means (union coverage, not playhead).
+   * The complete desktop layout stacks **both** once the exam opens: orange
+   * *Lernerfolgskontrolle beginnen* above outlined *Fortbildung pausieren*.
+   * P94-02 swapped one for the other, from an older export in which only one is
+   * drawn — they are different actions, and a learner who wants to stop for
+   * today should not have to give up the exam to find it.
+   *
+   * The gate is the **server's**, not a percentage worked out here. A client
+   * that decided it for itself would offer the exam to a learner the API is
+   * about to refuse — or, worse, would look right while the two disagreed about
+   * what 100 % means (union coverage, not playhead).
    *
    * A text lesson gets no pause, because there is nothing playing to pause.
    */
@@ -208,38 +176,31 @@ export function PlayerScreen(props: {
           ? { positionSec: playback.positionSec, durationSec: duration }
           : undefined,
       autosaveFailed: authLost,
-      action:
-        quizOpen !== undefined
-          ? {
-              /*
-               * Orange, like every other "carry on with what you started"
-               * (P94-02). It was teal, on the reasoning that the accent marks
-               * the course in progress and the exam is the way out of it. The
-               * client read the screen and found no call to action at all —
-               *
-               *   > "although being complete and next step being
-               *   >  lernerfolgskontrolle, but there is no button for it with
-               *   >  being also CTA"
-               *
-               * — which settles it: the one thing a physician should do next
-               * is the one thing drawn in the accent colour, whatever that
-               * thing is. `tailwind.preset.js` already says orange means
-               * "resume the thing you started", and finishing a Fortbildung is
-               * that.
-               */
-              label: de.player.quizBegin,
-              variant: "cta",
-              disabled: false,
-              run: quizOpen,
-            }
-          : lesson.kind === "video"
-            ? {
+      actions: [
+        ...(quizOpen === undefined
+          ? []
+          : [
+              {
+                label: de.player.quizBegin,
+                variant: "cta" as const,
+                disabled: false,
+                run: quizOpen,
+              },
+            ]),
+        ...(lesson.kind !== "video"
+          ? []
+          : [
+              {
                 label: de.player.pause,
-                variant: "cta",
+                // Outlined, as drawn: the pause is the alternative to the
+                // thing in the accent colour, never the thing itself.
+                variant: "secondary" as const,
                 disabled: !playback.playing,
+                icon: "pause" as const,
                 run: () => setPaused(true),
-              }
-            : undefined,
+              },
+            ]),
+      ],
     }),
     [
       lesson.kind,
@@ -298,33 +259,6 @@ export function PlayerScreen(props: {
         }}
       />
 
-      {/*
-        When the exam opens, said where somebody looks for it (P93-03).
-
-        `Player-Ansicht-Tab-Zusammenfassung-V2` draws this right-aligned between
-        the video and the tabs: a sentence and a padlocked button. The
-        Lernerfolgskontrolle tab beside it already announces itself as
-        *gesperrt*, so the exam was never invisible — what nothing said is what
-        unlocks it, which is CLAUDE.md §9.4.
-
-        The module named is the exam's own, because `contentGates` blocks a
-        module's quiz on that module's videos and nothing else. Drawn only while
-        it is locked: once it opens, the action under the module list is
-        **Lernerfolgskontrolle beginnen**, and a second control for the same
-        thing on the same screen is how two of them end up disagreeing.
-      */}
-      {quizModule === undefined ? null : (
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          <p className="text-sm text-gray-600">
-            {de.player.examUnlocksAfter(quizModule)}
-          </p>
-          <Button variant="secondary" disabled>
-            <LockIcon className="h-4 w-4" />
-            {de.player.examLocked}
-          </Button>
-        </div>
-      )}
-
       <div className="flex flex-wrap gap-3">
         {/*
           The way onward, when the server has one open (P78-02).
@@ -357,105 +291,33 @@ export function PlayerScreen(props: {
         </Button>
       </div>
 
-      <ContentTabs
-        tab={tab}
-        onTab={setTab}
-        lesson={lesson}
-        tabs={tabsFor(quiz !== undefined)}
-        quizLocked={quiz === undefined || quiz.gate === "locked"}
-        reportingLocked={!state.quizPassed}
-        onQuiz={quizOpen}
-        onReporting={props.onReporting}
-      />
+      {/*
+        The Zusammenfassung, directly under the player (P95-01).
+
+        It was a tab, beside **Lernerfolgskontrolle** and **CME Punktemeldung**.
+        The complete desktop layout has no tab row at all: the module and
+        chapter headings sit under the video with the text below them, the exam
+        is a row in the Modul Übersicht, and the Punktemeldung is where the
+        passed exam sends you. Three destinations, none of them a tab.
+
+        That is the better shape for the reason P82-03 was about — the exam
+        belongs to the course's structure, which is the column on the right,
+        rather than to whichever section a learner happens to be watching. It
+        also removes the last place where a padlocked control sat next to the
+        thing it was not.
+      */}
+      <Summary lesson={lesson} here={here} titles={titles} />
     </div>
   );
 }
 
-function ContentTabs(props: {
-  tab: ContentTab;
-  onTab: (tab: ContentTab) => void;
-  lesson: LessonContent;
-  /** The tabs this course has — see `tabsFor`. */
-  tabs: readonly ContentTab[];
-  quizLocked: boolean;
-  reportingLocked: boolean;
-  onQuiz: (() => void) | undefined;
-  onReporting: () => void;
-}) {
-  const locked: Record<ContentTab, boolean> = {
-    summary: false,
-    quiz: props.quizLocked,
-    reporting: props.reportingLocked,
-  };
-
-  return (
-    <section>
-      <div
-        role="tablist"
-        aria-label={de.player.tabsLabel}
-        className="flex flex-wrap gap-2"
-      >
-        {props.tabs.map((entry) => (
-          <button
-            key={entry}
-            type="button"
-            role="tab"
-            id={`ds-player-tab-${entry}`}
-            aria-selected={props.tab === entry}
-            aria-controls={`ds-player-panel-${entry}`}
-            // A locked tab is still selectable: opening it is how the learner
-            // finds out *why* it is locked. Marking it `disabled` would leave
-            // the padlock as the only explanation, and a padlock does not say
-            // what to do next.
-            onClick={() => props.onTab(entry)}
-            className={`flex items-center gap-2 rounded-t-xl px-5 py-2.5 text-sm font-semibold ${
-              props.tab === entry
-                ? "border border-b-0 border-gray-200 bg-white text-brand-700"
-                : "bg-brand-600 text-brand-contrast hover:bg-brand-700"
-            }`}
-          >
-            {locked[entry] ? (
-              <>
-                <LockIcon />
-                <span className="sr-only">{de.player.tabLocked}, </span>
-              </>
-            ) : null}
-            {de.player.tabs[entry]}
-          </button>
-        ))}
-      </div>
-
-      <div
-        role="tabpanel"
-        id={`ds-player-panel-${props.tab}`}
-        aria-labelledby={`ds-player-tab-${props.tab}`}
-        tabIndex={0}
-        className="rounded-2xl rounded-tl-none border border-gray-200 bg-white p-5"
-      >
-        {props.tab === "summary" ? (
-          <Summary lesson={props.lesson} />
-        ) : props.tab === "quiz" ? (
-          <Gated
-            locked={props.quizLocked}
-            reason={de.player.quizLocked}
-            action={de.player.quizOpen}
-            onAction={props.onQuiz}
-          />
-        ) : (
-          <Gated
-            locked={props.reportingLocked}
-            reason={de.player.reportingLocked}
-            action={de.player.reportingOpen}
-            onAction={props.onReporting}
-          />
-        )}
-      </div>
-    </section>
-  );
-}
-
 /**
- * The Zusammenfassung.
+ * The module and chapter headings, and the section's prose (layout page 5).
+ *
+ * The drawing puts **Modul 3 – Therapie** in black above **Kapitel 2 –
+ * Pharmakotherapie** in teal, then the text. Both come from the catalogue tree
+ * the sidebar already reads, so a learner who has scrolled the video out of
+ * view still knows where they are.
  *
  * A video's `body` is the summary written alongside it. A text lesson's `body`
  * *is* the lesson and is already rendered above, so repeating it here would
@@ -465,38 +327,45 @@ function ContentTabs(props: {
  * markup injected into a shadow root that holds a bearer token would make a
  * careless admin account a scripting vector.
  */
-function Summary(props: { lesson: LessonContent }) {
+function Summary(props: {
+  lesson: LessonContent;
+  here: ReturnType<typeof locateContent>;
+  titles: ReturnType<typeof indexTitles>;
+}) {
   const body = props.lesson.kind === "video" ? (props.lesson.body ?? "") : "";
   const paragraphs = body.split(/\n{2,}/).filter((part) => part.trim() !== "");
 
-  if (paragraphs.length === 0) {
-    return <p className="text-sm text-gray-600">{de.player.noSummary}</p>;
-  }
+  const moduleTitle =
+    props.here === undefined
+      ? undefined
+      : moduleHeading(
+          props.here.moduleIndex + 1,
+          props.titles.modules.get(props.here.moduleId) ?? "",
+        );
+  const chapterTitle =
+    props.here === undefined
+      ? undefined
+      : props.titles.chapters.get(props.here.chapterId);
 
   return (
-    <div className="space-y-3 text-sm leading-relaxed text-gray-800">
-      {paragraphs.map((paragraph, index) => (
-        // Paragraphs have no id and never reorder, so the index is stable.
-        <p key={index}>{paragraph}</p>
-      ))}
-    </div>
+    <section className="space-y-3">
+      {moduleTitle === undefined ? null : (
+        <h2 className="text-lg font-bold text-gray-900">{moduleTitle}</h2>
+      )}
+      {chapterTitle === undefined || chapterTitle === "" ? null : (
+        <h3 className="text-sm font-semibold text-brand-700">{chapterTitle}</h3>
+      )}
+
+      {paragraphs.length === 0 ? (
+        <p className="text-sm text-gray-600">{de.player.noSummary}</p>
+      ) : (
+        <div className="space-y-3 text-sm leading-relaxed text-gray-800">
+          {paragraphs.map((paragraph, index) => (
+            // Paragraphs have no id and never reorder, so the index is stable.
+            <p key={index}>{paragraph}</p>
+          ))}
+        </div>
+      )}
+    </section>
   );
-}
-
-function Gated(props: {
-  locked: boolean;
-  reason: string;
-  action: string;
-  onAction: (() => void) | undefined;
-}) {
-  if (props.locked || props.onAction === undefined) {
-    return (
-      <p className="flex items-center gap-2 text-sm text-gray-600">
-        <LockIcon className="h-4 w-4 shrink-0 text-status-locked" />
-        {props.reason}
-      </p>
-    );
-  }
-
-  return <Button onClick={props.onAction}>{props.action}</Button>;
 }

@@ -25,7 +25,7 @@ import type {
   ModuleState,
   ProgressSummary,
 } from "@ds/sdk";
-import { ModuleSidebar } from "./ModuleSidebar.js";
+import { ModuleSidebar, type ExamRow } from "./ModuleSidebar.js";
 import type { PlayerAction } from "../player-status.js";
 
 afterEach(cleanup);
@@ -151,7 +151,11 @@ function state(overrides: Partial<EnrolmentState> = {}): EnrolmentState {
 
 /** The learner is in Video 3, exactly as the player's own fixtures have it. */
 function renderSidebar(
-  overrides: { onOpen?: (id: string) => void; action?: PlayerAction } = {},
+  overrides: {
+    onOpen?: (id: string) => void;
+    actions?: readonly PlayerAction[];
+    exams?: readonly ExamRow[];
+  } = {},
 ) {
   render(
     <ModuleSidebar
@@ -159,7 +163,8 @@ function renderSidebar(
       state={state()}
       currentContentId="v3"
       onOpen={overrides.onOpen ?? vi.fn()}
-      action={overrides.action}
+      actions={overrides.actions ?? []}
+      exams={overrides.exams ?? []}
     />,
   );
 }
@@ -227,7 +232,9 @@ describe("the Modul Übersicht sidebar", () => {
     // renders what it is handed, and renders nothing when handed nothing.
     const run = vi.fn();
     renderSidebar({
-      action: { label: "Fortbildung pausieren", variant: "cta", disabled: false, run },
+      actions: [
+        { label: "Fortbildung pausieren", variant: "secondary", disabled: false, run },
+      ],
     });
 
     const outline = screen.getByRole("navigation", { name: "Modul Übersicht" });

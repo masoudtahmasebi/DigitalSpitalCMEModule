@@ -351,9 +351,19 @@ export const de = {
      * drawn. Worth one sentence of confirmation from MEDICE; not worth blocking
      * a screen the client has already said does not match.
      */
-    examUnlocksAfter: (moduleOrdinal: number): string =>
-      `Wird nach Modul ${moduleOrdinal} freigeschaltet`,
-    examLocked: "Zur Teilprüfung",
+    /**
+     * One exam row among several (P95-01).
+     *
+     * The layout draws a single **Lernerfolgskontrolle** row under the module
+     * list, and that word is what a course with one exam gets. Since P87 a
+     * course may have one per module — and an author naming all of them
+     * "Lernerfolgskontrolle" is not a mistake, it is the obvious thing to type —
+     * so when there is more than one the module is what tells them apart.
+     * Three identical rows are three rows a physician cannot choose between
+     * (§9.4), and no amount of authoring discipline fixes that from here.
+     */
+    examInModule: (title: string, moduleOrdinal: number): string =>
+      `${title} – Modul ${moduleOrdinal}`,
     reportingLocked: "Wird nach bestandener Lernerfolgskontrolle freigeschaltet.",
     reportingOpen: "Zur CME Punktemeldung",
   },

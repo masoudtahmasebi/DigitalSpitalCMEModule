@@ -34,11 +34,17 @@
 
 import { createContext, useContext, useEffect } from "react";
 
-/** The one control the layout draws under the module list. */
+/** One of the controls the layout draws under the module list. */
 export interface PlayerAction {
   readonly label: string;
-  readonly variant: "primary" | "cta";
+  readonly variant: "primary" | "cta" | "secondary";
   readonly disabled: boolean;
+  /**
+   * The layout puts pause bars inside **Fortbildung pausieren** and nothing in
+   * the others. Named rather than passed as a node so the status stays plain
+   * data — see this file's header for why that matters to the re-render path.
+   */
+  readonly icon?: "pause";
   readonly run: () => void;
 }
 
@@ -48,7 +54,14 @@ export interface PlayerStatus {
     { readonly positionSec: number; readonly durationSec: number } | undefined;
   /** True once the session has lapsed and nothing more will be credited (P62-05). */
   readonly autosaveFailed: boolean;
-  readonly action: PlayerAction | undefined;
+  /**
+   * In the order the layout stacks them: the exam above the pause, once both
+   * exist (P95-02). A list rather than one control, because the complete design
+   * draws both and P94-02 swapped one for the other — they are different
+   * actions, and a learner who wants to stop for today should not have to give
+   * up the exam to find it.
+   */
+  readonly actions: readonly PlayerAction[];
 }
 
 export type ReportPlayerStatus = (status: PlayerStatus | undefined) => void;

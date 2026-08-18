@@ -485,34 +485,43 @@ export function LockIcon(props: { className?: string }) {
  * Colour carries the same information a second time and never alone (WCAG
  * 1.4.1): every state has a distinct shape.
  *
- * ## The palette is the layout's, and it is the brand's (P94-02)
+ * ## The palette is the layout's, and I had half of it backwards (P95-02)
  *
- * `Player-Ansicht-*` draws a finished module as an **orange disc with a white
- * tick** and a module under way as an orange disc with white pause bars. Ours
- * were green and teal — a generic status palette rather than this product's,
- * and the client read the difference immediately.
+ * The complete desktop layout draws a **finished module as a teal disc with a
+ * white tick** and a **module under way as an orange disc with pause bars**.
+ * P94-02 made both orange, from an older Zeplin export in which the finished
+ * module is orange too — the newer PDF is the authority and this follows it.
  *
- * Orange is not decoration here: `tailwind.preset.js` says what the token
- * means — *"orange is resume the thing you started"* — which is exactly what a
- * finished-or-running module is in a list you are working down. `cta` is also
- * a **branded** variable, so a customer restyling the widget restyles these
- * with it; `status.completed` was a fixed green no customer could reach.
+ * The split is meaningful and worth keeping straight: teal is the platform's
+ * own colour and marks what is *done*; orange is what
+ * `tailwind.preset.js` calls *"resume the thing you started"* and marks the one
+ * place in the list that wants the learner back. Making both orange gives a
+ * finished course five things all asking for attention.
  *
- * The disc is filled and the tick is the hole in it, so the readable pairing is
- * white-on-orange rather than orange-on-white — which is what keeps this above
- * the contrast floor at 16 px while matching the drawing.
+ * `tone` is the level the glyph is drawn at. A finished **chapter** is a bare
+ * orange tick in the drawing rather than a disc — the disc belongs to the
+ * module, which is the row somebody scans for. Both are branded variables, so a
+ * customer restyling the widget restyles these; `status.completed` was a fixed
+ * green no customer could reach.
+ *
+ * A disc is filled and its tick is the hole in it, so the readable pairing is
+ * white-on-colour rather than colour-on-white, which is what keeps it above the
+ * contrast floor at 16 px while matching the drawing.
  */
 export function StateIcon(props: {
   state: "completed" | "playing" | "paused" | "inProgress" | "available" | "locked";
   label: string;
+  /** `module` is the disc; `item` is the lighter glyph a chapter or content gets. */
+  tone?: "module" | "item";
 }) {
+  const item = props.tone === "item";
   const skin: Record<typeof props.state, string> = {
-    completed: "text-cta-500",
+    completed: item ? "text-cta-500" : "text-brand-600",
     playing: "text-brand-600",
     paused: "text-cta-500",
     inProgress: "text-cta-500",
     available: "text-gray-400",
-    locked: "text-gray-700",
+    locked: "text-gray-500",
   };
 
   return (
@@ -531,7 +540,12 @@ export function StateIcon(props: {
           aria-hidden="true"
         >
           {props.state === "completed" ? (
-            <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm3.86 5.9-4.5 5a1 1 0 0 1-1.46.04L3.9 8.94a1 1 0 1 1 1.42-1.42l1.25 1.25 3.8-4.22a1 1 0 0 1 1.49 1.34Z" />
+            item ? (
+              /* A bare tick, as the drawing gives a finished chapter. */
+              <path d="M6.2 12.3 2.4 8.5a1 1 0 0 1 1.42-1.42l2.4 2.4 6-6.06A1 1 0 0 1 13.6 4.8l-6.7 6.75a1 1 0 0 1-1.42 0Z" />
+            ) : (
+              <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm3.86 5.9-4.5 5a1 1 0 0 1-1.46.04L3.9 8.94a1 1 0 1 1 1.42-1.42l1.25 1.25 3.8-4.22a1 1 0 0 1 1.49 1.34Z" />
+            )
           ) : props.state === "paused" || props.state === "inProgress" ? (
             <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0ZM7 11H5.5V5H7v6Zm3.5 0H9V5h1.5v6Z" />
           ) : props.state === "playing" ? (

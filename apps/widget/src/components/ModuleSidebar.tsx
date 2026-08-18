@@ -32,7 +32,7 @@ import { de } from "../locale/de.js";
 import { moduleHeading } from "../module-title.js";
 import { indexTitles, itemIcon, locateContent } from "../player.js";
 import type { PlayerAction } from "../player-status.js";
-import { Button, StateIcon } from "./primitives.js";
+import { Button, LockIcon, StateIcon } from "./primitives.js";
 
 export function ModuleSidebar(props: {
   course: CourseDetail;
@@ -40,16 +40,25 @@ export function ModuleSidebar(props: {
   currentContentId: string;
   onOpen: (contentId: string) => void;
   /**
-   * The one control the layout draws under this list (P93-03) — orange
-   * **Fortbildung pausieren** while there is watching to do, teal
-   * **Lernerfolgskontrolle beginnen** once the server opens the exam gate.
+   * The controls the layout draws under this list, in order.
+   *
+   * A list rather than one (P95-02): the complete design shows **both** an
+   * orange *Lernerfolgskontrolle beginnen* and an outlined *Fortbildung
+   * pausieren* once the exam opens, and P94-02 swapped one for the other. They
+   * are different actions — start the exam, and stop for today — and a learner
+   * who wants the second should not have to give up the first to find it.
    *
    * Supplied by the screen inside `CourseShell` rather than decided here: the
    * pause belongs to the media element's own playing state, and the exam gate
-   * is the server's. Absent on every screen that has neither, which is what the
+   * is the server's. Empty on every screen that has neither, which is what the
    * layout draws for the exam pages.
    */
-  action: PlayerAction | undefined;
+  actions: readonly PlayerAction[];
+  /**
+   * The course's Lernerfolgskontrollen, as the layout draws them: rows under
+   * the module list rather than a tab beside the video (P95-01).
+   */
+  exams: readonly ExamRow[];
 }) {
   const titles = indexTitles(props.course);
   const here = locateContent(props.course, props.currentContentId);
@@ -116,7 +125,7 @@ export function ModuleSidebar(props: {
                   onClick={() => setExpanded(open ? undefined : module.id)}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-gray-900 hover:bg-brand-50"
                 >
-                  <StateIcon state={state} label={de.player.state[state]} />
+                  <StateIcon state={state} label={de.player.state[state]} tone="module" />
                   <span className="min-w-0 flex-1 truncate">
                     {moduleHeading(index + 1, title)}
                   </span>
@@ -151,6 +160,7 @@ export function ModuleSidebar(props: {
                           <StateIcon
                             state={chapterState}
                             label={de.player.state[chapterState]}
+                            tone="item"
                           />
                           <span className="min-w-0 flex-1">
                             {titles.chapters.get(chapter.id) ?? ""}
@@ -161,6 +171,14 @@ export function ModuleSidebar(props: {
                           {chapter.contents.map((content) => {
                             const meta = titles.contents.get(content.id);
                             if (meta === undefined) return null;
+                            /*
+                              A Lernerfolgskontrolle is not a chapter's content
+                              here (P95-01). It has its own row under the module
+                              list, as the layout draws it, and listing it twice
+                              would be two controls for one exam — the defect
+                              P94-02 removed from under the video.
+                            */
+                            if (meta.kind === "quiz") return null;
 
                             const current = content.id === props.currentContentId;
                             const contentState = itemIcon({
@@ -187,6 +205,7 @@ export function ModuleSidebar(props: {
                                   <StateIcon
                                     state={contentState}
                                     label={de.player.state[contentState]}
+                                    tone="item"
                                   />
                                   <span className="min-w-0 flex-1">{meta.title}</span>
                                 </button>
@@ -204,6 +223,8 @@ export function ModuleSidebar(props: {
         })}
       </ol>
 
+      <ExamRows exams={props.exams} onOpen={props.onOpen} />
+
       {/*
         The layout's primary action, under the list (P93-03).
 
@@ -214,18 +235,102 @@ export function ModuleSidebar(props: {
         buttons in a row where the destructive-looking one and the leaving one
         are the same size.
       */}
-      {props.action === undefined ? null : (
-        <div className="pt-2 [&>button]:w-full">
-          <Button
-            variant={props.action.variant}
-            disabled={props.action.disabled}
-            onClick={props.action.run}
-          >
-            {props.action.label}
-          </Button>
+      {props.actions.length === 0 ? null : (
+        <div className="space-y-2 pt-2 [&>button]:w-full">
+          {props.actions.map((action) => (
+            <Button
+              key={action.label}
+              variant={action.variant}
+              disabled={action.disabled}
+              onClick={action.run}
+            >
+              {action.icon === "pause" ? <PauseGlyph /> : null}
+              {action.label}
+            </Button>
+          ))}
         </div>
       )}
     </nav>
+  );
+}
+
+/**
+ * A Lernerfolgskontrolle, under the module list (P95-01).
+ *
+ * ## Why it is here and not a tab
+ *
+ * It was a tab beside the video, with **CME Punktemeldung** next to it. The
+ * complete desktop layout has neither: the summary sits directly under the
+ * player and the exam is a row in the Modul Übersicht, padlocked until the
+ * module it belongs to is done. That is the better shape for the reason P82-03
+ * was about — the exam belongs to the course's structure, which is what this
+ * column is, rather than to the section a learner happens to be watching.
+ *
+ * Locked is a dark padlock and unclickable; open is the layout's orange
+ * padlock and orange label. There is no third state drawn — pages 7 to 12 keep
+ * the open padlock through the exam and after it — so a passed exam stays
+ * open, which is also true: a learner may look at it again.
+ */
+export interface ExamRow {
+  readonly id: string;
+  readonly title: string;
+  /** Which module it belongs to — used to tell several exams apart. */
+  readonly moduleOrdinal: number;
+  readonly locked: boolean;
+}
+
+function ExamRows(props: {
+  exams: readonly ExamRow[];
+  onOpen: (contentId: string) => void;
+}) {
+  if (props.exams.length === 0) return null;
+
+  return (
+    <ul className="space-y-1 pt-1">
+      {props.exams.map((exam) => (
+        <li key={exam.id}>
+          <button
+            type="button"
+            disabled={exam.locked}
+            onClick={() => props.onOpen(exam.id)}
+            className={`flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm font-semibold disabled:cursor-not-allowed ${
+              exam.locked ? "text-gray-600" : "text-cta-600 hover:bg-cta-50"
+            }`}
+          >
+            {exam.locked ? (
+              <LockIcon className="h-4 w-4 shrink-0 text-gray-700" />
+            ) : (
+              <OpenLockIcon className="h-4 w-4 shrink-0" />
+            )}
+            <span className="min-w-0 flex-1">{exam.title}</span>
+            {exam.locked ? <span className="sr-only">{de.player.tabLocked}</span> : null}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The open padlock the layout gives an unlocked Lernerfolgskontrolle. */
+function OpenLockIcon(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={props.className ?? "h-4 w-4"}
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M11 1a3 3 0 0 0-3 3v2H4.5A1.5 1.5 0 0 0 3 7.5v6A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 11.5 6H10V4a1 1 0 1 1 2 0 1 1 0 1 0 2 0 3 3 0 0 0-3-3Z" />
+    </svg>
+  );
+}
+
+/** The pause bars the layout puts inside **Fortbildung pausieren**. */
+function PauseGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+      <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0ZM7 11H5.5V5H7v6Zm3.5 0H9V5h1.5v6Z" />
+    </svg>
   );
 }
 
