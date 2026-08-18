@@ -40,17 +40,54 @@ final class DS_LMS_Renderer {
 	}
 
 	public static function register(): void {
+		/*
+		 * The bundle comes from the platform, not from this plugin (P96-01).
+		 *
+		 * It used to be `DS_LMS_URL . 'assets/ds-lms.js'` — a copy placed in
+		 * the plugin by `pnpm wp:bundle`, which is a build step a human had to
+		 * remember before packaging. The file is a build artefact and is
+		 * gitignored, so **every copy of this plugin taken from the repository
+		 * was missing it**, and nothing said so: `wp_register_script` happily
+		 * points at a URL, the browser 404s, and the page renders a `<ds-lms>`
+		 * element that never upgrades. A staging install found it exactly that
+		 * way. CLAUDE.md §9.9 — a step documented for a human is a step that
+		 * does not happen.
+		 *
+		 * Loading it from the platform's own widget host fixes the class
+		 * rather than the instance, and is what the client asked for: a fix to
+		 * the widget reaches every site on our next deploy, with no plugin
+		 * update anywhere. `infra/nginx/widget.conf` serves it with the CORS
+		 * and cache headers that makes that safe and quick.
+		 *
+		 * **No version query string.** `DS_LMS_VERSION` is the *plugin's*
+		 * version and would pin visitors to whatever bundle was current when
+		 * the plugin was last released — which is the coupling this removes.
+		 * Freshness is the cache header's job now, not the URL's.
+		 */
+		$widget_url = DS_LMS_Settings::all()['widget_url'];
+		if ( '' === $widget_url ) {
+			// Nothing to register. `render()` says so where somebody can act
+			// on it, rather than enqueuing a handle that resolves to nothing.
+			self::register_content_hooks();
+			return;
+		}
+
 		wp_register_script(
 			self::HANDLE,
-			DS_LMS_URL . 'assets/ds-lms.js',
+			$widget_url,
 			array(),
-			DS_LMS_VERSION,
+			null,
 			// In the footer, and as a module: the widget is a custom element
 			// and upgrades markup that was already parsed, so it does not need
 			// to block rendering.
 			array( 'strategy' => 'defer', 'in_footer' => true )
 		);
 
+		self::register_content_hooks();
+	}
+
+	/** The block and the shortcode, which exist whether or not a bundle does. */
+	private static function register_content_hooks(): void {
 		add_shortcode( 'ds_lms', array( self::class, 'shortcode' ) );
 
 		// The block is registered from block.json so the editor and the front
@@ -126,6 +163,30 @@ final class DS_LMS_Renderer {
 			if ( current_user_can( 'edit_posts' ) ) {
 				return '<p>' . esc_html__(
 					'DS Education: Bitte API-Basis-URL und Projekt-Slug in den Einstellungen hinterlegen.',
+					'ds-lms'
+				) . '</p>';
+			}
+			return '';
+		}
+
+		/*
+		 * The bundle's address, checked separately and named separately
+		 * (P96-01).
+		 *
+		 * Folding it into the test above would tell an editor to fill in the
+		 * API base they have already filled in. This is a different field with
+		 * a different fix, and the message says which — §9.4, say what the
+		 * person does next.
+		 *
+		 * It can only be empty when `base_domain` is empty too *and* nobody
+		 * typed a URL, so in practice the first guard catches it; this exists
+		 * for the case that is left, and so that the silent 404 the staging
+		 * install met can never happen again without somebody being told.
+		 */
+		if ( '' === $settings['widget_url'] ) {
+			if ( current_user_can( 'edit_posts' ) ) {
+				return '<p>' . esc_html__(
+					'DS Education: Es ist keine Adresse für das Widget-JavaScript hinterlegt. Bitte Basis-Domain oder Widget-URL in den Einstellungen eintragen.',
 					'ds-lms'
 				) . '</p>';
 			}

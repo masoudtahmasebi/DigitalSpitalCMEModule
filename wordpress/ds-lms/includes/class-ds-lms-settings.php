@@ -50,9 +50,23 @@ final class DS_LMS_Settings {
 	private const API_LABEL = 'api';
 
 	/**
+	 * The label the widget bundle is served from. Mirrors `WIDGET_LABEL` in
+	 * domains.sh, the same way `API_LABEL` mirrors `API_LABEL` (P96-01).
+	 *
+	 * A separate host and not a path on the API, deliberately: the bundle goes
+	 * out with `Access-Control-Allow-Origin: *` because it is public
+	 * JavaScript fetched by a `<script type="module">` on the customer's
+	 * origin, and the API's policy is a narrow allowlist that also sends
+	 * credentials. The fetch specification forbids that pair, so the two
+	 * cannot share an origin. `infra/nginx/widget.conf` is where those headers
+	 * live.
+	 */
+	private const WIDGET_LABEL = 'widget';
+
+	/**
 	 * The stored settings, with defaults filled in and `api_base` derived.
 	 *
-	 * @return array{base_domain:string,api_base:string,project_slug:string,course_slug:string,token_endpoint_enabled:bool}
+	 * @return array{base_domain:string,api_base:string,widget_url:string,project_slug:string,course_slug:string,token_endpoint_enabled:bool}
 	 */
 	public static function all(): array {
 		$stored = get_option( self::OPTION, array() );
@@ -62,6 +76,7 @@ final class DS_LMS_Settings {
 
 		$base_domain = isset( $stored['base_domain'] ) ? (string) $stored['base_domain'] : '';
 		$api_base    = isset( $stored['api_base'] ) ? (string) $stored['api_base'] : '';
+		$widget_url  = isset( $stored['widget_url'] ) ? (string) $stored['widget_url'] : '';
 
 		return array(
 			'base_domain'  => $base_domain,
@@ -69,6 +84,23 @@ final class DS_LMS_Settings {
 			// renderer treats that as "not configured yet" and says so to an
 			// editor rather than emitting a broken element to a visitor.
 			'api_base'     => '' !== $api_base ? $api_base : self::derive_api_base( $base_domain ),
+			/*
+			 * Where the widget's JavaScript comes from (P96-01).
+			 *
+			 * **The platform's host, not this plugin's directory.** The bundle
+			 * used to be copied into `assets/` by a build step somebody had to
+			 * run before packaging the plugin — and a build artefact that a
+			 * human must remember to produce is one that is missing, which is
+			 * exactly how a staging install came to answer 404 for
+			 * `assets/ds-lms.js` with the plugin reporting nothing at all.
+			 *
+			 * Loading it from us is also what the client asked for and the
+			 * better arrangement on its own terms: a fix to the widget reaches
+			 * every customer's site on the next deploy, without anybody
+			 * reinstalling a plugin. `widget.conf` serves it with a
+			 * five-minute revalidating cache so that stays true within minutes.
+			 */
+			'widget_url'   => self::resolve_widget_url( $widget_url, $base_domain, $api_base ),
 			'project_slug' => isset( $stored['project_slug'] ) ? (string) $stored['project_slug'] : '',
 			'course_slug'  => isset( $stored['course_slug'] ) ? (string) $stored['course_slug'] : '',
 			// The kill switch for P6-02. Default **off**: a token endpoint that
@@ -92,6 +124,81 @@ final class DS_LMS_Settings {
 			return '';
 		}
 		return 'https://' . self::API_LABEL . '.' . $base_domain;
+	}
+
+	/**
+	 * Where the bundle is, in the order the answers are trustworthy.
+	 *
+	 * 1. **What the operator typed.** Always wins; a derivation that cannot be
+	 *    overridden is one you eventually delete.
+	 * 2. **From `base_domain`,** the same rule `domains.sh` uses, so the two
+	 *    cannot disagree by being typed twice.
+	 * 3. **From `api_base`, only when it is the conventional `api.` sibling.**
+	 *
+	 * The third exists because `api_base` is settable on its own — a customer
+	 * pointing at a staging API is expected to use it — and requiring a second
+	 * URL from them for a host we can name would be a field nobody should have
+	 * to fill in. It is deliberately narrow: the leading label must be exactly
+	 * `api`, or this answers nothing and the renderer says so. Guessing harder
+	 * would produce a URL that 404s far from the field that caused it, which is
+	 * the failure this whole change is about.
+	 *
+	 * @param string $explicit    The stored `widget_url`, possibly empty.
+	 * @param string $base_domain The stored bare domain, possibly empty.
+	 * @param string $api_base    The stored API base, possibly empty.
+	 */
+	private static function resolve_widget_url(
+		string $explicit,
+		string $base_domain,
+		string $api_base
+	): string {
+		if ( '' !== $explicit ) {
+			return $explicit;
+		}
+		if ( '' !== $base_domain ) {
+			return self::derive_widget_url( $base_domain );
+		}
+		return self::widget_url_beside( $api_base );
+	}
+
+	/**
+	 * `https://api.medice.example` → `https://widget.medice.example/ds-lms.js`.
+	 *
+	 * Anything whose first label is not `api` answers empty rather than
+	 * guessing — see `resolve_widget_url`.
+	 *
+	 * @param string $api_base A full URL, or empty.
+	 */
+	private static function widget_url_beside( string $api_base ): string {
+		if ( '' === $api_base ) {
+			return '';
+		}
+		$host = wp_parse_url( $api_base, PHP_URL_HOST );
+		if ( ! is_string( $host ) || '' === $host ) {
+			return '';
+		}
+		$prefix = self::API_LABEL . '.';
+		if ( 0 !== strpos( $host, $prefix ) ) {
+			return '';
+		}
+		return 'https://' . self::WIDGET_LABEL . '.' . substr( $host, strlen( $prefix ) ) . '/ds-lms.js';
+	}
+
+	/**
+	 * `digitalspital.com` → `https://widget.digitalspital.com/ds-lms.js`.
+	 *
+	 * The filename is part of the derivation because it is part of the
+	 * deployment: `domains.sh` sets `WIDGET_URL` to exactly this, and a
+	 * customer who overrides the field is giving a whole URL rather than a
+	 * host, which is the honest shape for "where is the file".
+	 *
+	 * @param string $base_domain Bare domain, already sanitised.
+	 */
+	public static function derive_widget_url( string $base_domain ): string {
+		if ( '' === $base_domain ) {
+			return '';
+		}
+		return 'https://' . self::WIDGET_LABEL . '.' . $base_domain . '/ds-lms.js';
 	}
 
 	/**
@@ -146,11 +253,13 @@ final class DS_LMS_Settings {
 		// `esc_url_raw` on the API base: it ends up in an HTML attribute the
 		// browser will fetch from, and an unvalidated one would let an editor
 		// point the widget at any host.
-		$api_base = isset( $input['api_base'] ) ? esc_url_raw( trim( (string) $input['api_base'] ) ) : '';
+		$api_base   = isset( $input['api_base'] ) ? esc_url_raw( trim( (string) $input['api_base'] ) ) : '';
+		$widget_url = isset( $input['widget_url'] ) ? esc_url_raw( trim( (string) $input['widget_url'] ) ) : '';
 
 		return array(
 			'base_domain'            => self::sanitize_domain( $input['base_domain'] ?? '' ),
 			'api_base'               => $api_base,
+			'widget_url'             => $widget_url,
 			'project_slug'           => self::sanitize_slug( $input['project_slug'] ?? '' ),
 			'course_slug'            => self::sanitize_slug( $input['course_slug'] ?? '' ),
 			'token_endpoint_enabled' => ! empty( $input['token_endpoint_enabled'] ),
@@ -194,6 +303,9 @@ final class DS_LMS_Settings {
 		$stored_api_base = is_array( $stored ) && isset( $stored['api_base'] )
 			? (string) $stored['api_base']
 			: '';
+		$stored_widget_url = is_array( $stored ) && isset( $stored['widget_url'] )
+			? (string) $stored['widget_url']
+			: '';
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'DS Education — CME-Modul', 'ds-lms' ); ?></h1>
@@ -227,6 +339,12 @@ final class DS_LMS_Settings {
 									<code><?php echo esc_html( $settings['api_base'] ); ?></code>
 								</p>
 							<?php endif; ?>
+							<?php if ( '' !== $settings['widget_url'] ) : ?>
+								<p class="description">
+									<strong><?php esc_html_e( 'Verwendetes Widget-JavaScript:', 'ds-lms' ); ?></strong>
+									<code><?php echo esc_html( $settings['widget_url'] ); ?></code>
+								</p>
+							<?php endif; ?>
 						</td>
 					</tr>
 					<tr>
@@ -245,6 +363,28 @@ final class DS_LMS_Settings {
 								<?php
 								esc_html_e(
 									'Nur ausfüllen, wenn die API nicht unter api.<Basis-Domain> erreichbar ist — etwa auf einem Testsystem. Leer lassen heißt: abgeleitet.',
+									'ds-lms'
+								);
+								?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">
+							<label for="ds-lms-widget-url"><?php esc_html_e( 'Widget-JavaScript-URL (optional)', 'ds-lms' ); ?></label>
+						</th>
+						<td>
+							<input
+								id="ds-lms-widget-url"
+								name="<?php echo esc_attr( self::OPTION ); ?>[widget_url]"
+								type="url"
+								class="regular-text"
+								value="<?php echo esc_attr( $stored_widget_url ); ?>"
+							/>
+							<p class="description">
+								<?php
+								esc_html_e(
+									'Das Widget-JavaScript wird von der Plattform geladen, nicht aus diesem Plugin — Aktualisierungen erreichen die Seite damit ohne Plugin-Update. Nur ausfüllen, wenn eine andere Adresse gilt. Leer lassen heißt: abgeleitet aus der Basis-Domain.',
 									'ds-lms'
 								);
 								?>

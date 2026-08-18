@@ -328,13 +328,14 @@ RUN chmod +x /docker-entrypoint.d/20-ds-runtime-config.sh
 EXPOSE 80
 
 # ---------------------------------------------------------------------------
-# widget — ds-lms.js, for a host that would rather not ship it
+# widget — ds-lms.js, the one copy every host loads
 # ---------------------------------------------------------------------------
-# The WordPress plugin can ship `assets/ds-lms.js` itself, and for MEDICE it
-# does. This image is for the other case: a customer whose site should load the
-# widget from a URL we control, so a fix reaches them without them redeploying
-# a plugin. Consequently the one thing that matters here is CORS — the script
-# is fetched cross-origin by definition, and `widget.conf` sets the headers.
+# This image is how the bundle reaches a customer's site. The WordPress plugin
+# used to ship `assets/ds-lms.js` itself; since P96-01 it does not, and points
+# at `widget.<base>` instead, so a fix to the widget reaches every site on our
+# next deploy without anybody updating a plugin. The one thing that matters
+# here is therefore CORS — the script is fetched cross-origin by definition,
+# and `widget.conf` sets the headers.
 FROM nginx:1.27-alpine AS widget
 COPY --from=build-web /repo/apps/widget/dist /usr/share/nginx/html
 COPY infra/nginx/widget.conf /etc/nginx/conf.d/default.conf

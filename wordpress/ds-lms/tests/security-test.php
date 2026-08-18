@@ -423,6 +423,144 @@ check(
 );
 
 // ---------------------------------------------------------------------------
+echo "\nThe bundle comes from the platform, not from the plugin (P96-01)\n";
+// ---------------------------------------------------------------------------
+
+// The defect this replaces: `assets/ds-lms.js` is a gitignored build artefact,
+// so every checkout of the plugin shipped without it and the browser 404'd
+// while WordPress reported nothing. Loading it from the widget host also means
+// a widget fix reaches every site on our deploy, with no plugin update.
+
+check(
+	'a base domain derives the widget bundle beside the API',
+	'https://widget.digitalspital.com/ds-lms.js'
+		=== DS_LMS_Settings::derive_widget_url( 'digitalspital.com' )
+);
+
+check(
+	'no base domain derives nothing rather than guessing a host',
+	'' === DS_LMS_Settings::derive_widget_url( '' )
+);
+
+// A site configured before P16-03 has an `api_base` and no `base_domain`. The
+// widget host sits beside the API host, so it is derivable — but only when the
+// API address follows the convention. Anything else answers empty and the
+// editor is asked, rather than a plausible-looking 404 being emitted.
+ds_test_reset();
+update_option(
+	DS_LMS_Settings::OPTION,
+	array( 'api_base' => 'https://api.digitalspital.com', 'project_slug' => 'medice-adhs' )
+);
+check(
+	'an api.* base alone still yields the widget URL',
+	'https://widget.digitalspital.com/ds-lms.js' === DS_LMS_Settings::all()['widget_url']
+);
+
+ds_test_reset();
+update_option(
+	DS_LMS_Settings::OPTION,
+	array( 'api_base' => 'https://staging-api.example.org', 'project_slug' => 'medice-adhs' )
+);
+check(
+	'an API host following no convention derives no widget URL',
+	'' === DS_LMS_Settings::all()['widget_url']
+);
+
+// And an editor is told which field to fill, naming the widget rather than the
+// API base they have already filled in (§9.4).
+$GLOBALS['ds_test']['capabilities'] = array( 'edit_posts' );
+$message = DS_LMS_Renderer::shortcode( array() );
+check(
+	'an editor is told the widget address is missing',
+	str_contains( $message, 'Widget' ) && str_contains( $message, 'Basis-Domain' )
+);
+check(
+	'and it is not the API-base message repeated',
+	! str_contains( $message, 'API-Basis-URL' )
+);
+$GLOBALS['ds_test']['capabilities'] = array();
+check(
+	'a visitor sees nothing rather than a widget that cannot load',
+	'' === DS_LMS_Renderer::shortcode( array() )
+);
+
+// An explicit URL wins over both derivations: a customer serving the bundle
+// from their own CDN, or a developer pointing at a local Vite server, has to
+// remain able to say so.
+ds_test_reset();
+update_option(
+	DS_LMS_Settings::OPTION,
+	array(
+		'base_domain'  => 'digitalspital.com',
+		'widget_url'   => 'https://cdn.medice.example/ds-lms.js',
+		'project_slug' => 'medice-adhs',
+	)
+);
+check(
+	'an explicit widget URL still wins',
+	'https://cdn.medice.example/ds-lms.js' === DS_LMS_Settings::all()['widget_url']
+);
+
+// What actually reaches the page. `register()` is where the address is
+// decided, so the assertion is on the registration rather than on the
+// derivation it used — §9.7, name the caller.
+ds_test_reset();
+update_option(
+	DS_LMS_Settings::OPTION,
+	array( 'base_domain' => 'digitalspital.com', 'project_slug' => 'medice-adhs' )
+);
+DS_LMS_Renderer::register();
+$script = $GLOBALS['ds_test']['scripts']['ds-lms-widget'] ?? null;
+check(
+	'the registered bundle is the platform widget host',
+	is_array( $script ) && 'https://widget.digitalspital.com/ds-lms.js' === $script['src']
+);
+check(
+	'and never a file inside the plugin',
+	is_array( $script ) && ! str_contains( $script['src'], DS_LMS_URL )
+);
+// `?ver=0.1.0` would pin every visitor to the bundle current when the plugin
+// was last released, which is precisely the coupling this removes. Freshness
+// is the cache header's job — see infra/nginx/widget.conf.
+check(
+	'with no plugin version pinning the bundle',
+	is_array( $script ) && null === $script['version']
+);
+check(
+	'the shortcode still enqueues that handle',
+	str_contains( DS_LMS_Renderer::shortcode( array() ), '<ds-lms' )
+		&& in_array( 'ds-lms-widget', $GLOBALS['ds_test']['enqueued'], true )
+);
+
+// With no bundle address there is nothing to register, and the block and the
+// shortcode must still exist — otherwise `[ds_lms]` renders as literal text on
+// a live page instead of as the editor message above.
+ds_test_reset();
+update_option( DS_LMS_Settings::OPTION, array( 'api_base' => 'https://staging-api.example.org' ) );
+DS_LMS_Renderer::register();
+check(
+	'no widget URL registers no script',
+	! isset( $GLOBALS['ds_test']['scripts']['ds-lms-widget'] )
+);
+check(
+	'but the shortcode is registered either way',
+	isset( $GLOBALS['ds_test']['shortcodes']['ds_lms'] )
+);
+
+// The form has to keep the field, or the setting is unsettable and the only
+// path left is the derivation.
+check(
+	'the form stores an explicit widget URL',
+	'https://cdn.medice.example/ds-lms.js' === DS_LMS_Settings::sanitize(
+		array( 'widget_url' => 'https://cdn.medice.example/ds-lms.js' )
+	)['widget_url']
+);
+check(
+	'and refuses one that is not a URL',
+	'' === DS_LMS_Settings::sanitize( array( 'widget_url' => 'javascript:alert(1)' ) )['widget_url']
+);
+
+// ---------------------------------------------------------------------------
 
 echo "\n$checks checks, $failures failed\n";
 exit( $failures === 0 ? 0 : 1 );

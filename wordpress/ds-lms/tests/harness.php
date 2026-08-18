@@ -40,6 +40,7 @@ function ds_test_reset(): void {
 	$GLOBALS['ds_test']['options']   = array();
 	$GLOBALS['ds_test']['user_meta'] = array();
 	$GLOBALS['ds_test']['routes']    = array();
+	$GLOBALS['ds_test']['scripts']   = array();
 	$GLOBALS['ds_test']['enqueued']  = array();
 	$GLOBALS['ds_test']['inline']    = array();
 	$GLOBALS['ds_test']['filters']   = array();
@@ -115,6 +116,15 @@ function wp_unslash( $value ) {
 	return is_string( $value ) ? stripslashes( $value ) : $value;
 }
 
+/**
+ * WordPress's own wp_parse_url() is a thin wrapper over parse_url() with a
+ * default component of -1. The plugin uses it because WordPress asks plugins
+ * to, so the harness has to answer the same way.
+ */
+function wp_parse_url( string $url, int $component = -1 ) {
+	return parse_url( $url, $component );
+}
+
 function esc_url_raw( string $url ): string {
 	return filter_var( $url, FILTER_VALIDATE_URL ) === false ? '' : $url;
 }
@@ -177,7 +187,14 @@ function shortcode_atts( array $pairs, $atts, string $shortcode = '' ): array {
 function register_block_type( string $path, array $args = array() ): void {}
 
 function wp_register_script( string $handle, string $src, array $deps, $version, $args = array() ): void {
-	$GLOBALS['ds_test']['scripts'][ $handle ] = $src;
+	// The version is kept as well as the source: a plugin version appended as
+	// `?ver=` is exactly what P96-01 removes, and a test cannot see it if the
+	// harness throws it away.
+	$GLOBALS['ds_test']['scripts'][ $handle ] = array(
+		'src'     => $src,
+		'version' => $version,
+		'args'    => $args,
+	);
 }
 
 function wp_enqueue_script( string $handle ): void {

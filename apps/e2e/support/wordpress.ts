@@ -27,8 +27,10 @@
  *   element runs. That ordering is what `#upgradeProperty` exists for, and
  *   getting it wrong renders "nicht korrekt eingebunden" inside a closed shadow
  *   root — invisible, with no failed request to notice.
- * - **A separate origin.** `127.0.0.1:4182` is not `127.0.0.1:3100`, so every
- *   API call is cross-origin and `ALLOWED_ORIGINS` genuinely decides.
+ * - **Three separate origins.** `127.0.0.1:4182` (the page) is not
+ *   `127.0.0.1:3100` (the API), so every API call is cross-origin and
+ *   `ALLOWED_ORIGINS` genuinely decides — and since P96-01 the bundle itself
+ *   comes from a third, `127.0.0.1:4183`, standing in for `widget.<base>`.
  * - **The token endpoint's shape.** Same-origin `fetch` with `X-WP-Nonce`,
  *   answering `{ "token": … }` — the contract the plugin's inline provider
  *   expects, so a change to either side shows up here.
@@ -44,9 +46,8 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { WORDPRESS_ORIGIN } from "./stack.js";
+import { WIDGET_BUNDLE_URL, startWidgetHost, type WidgetHost } from "./widget-host.js";
 
 /** The stub binds this, and the seeds' `keycloak_issuer` names it. */
 export const KEYCLOAK_PORT = 8080;
@@ -114,11 +115,17 @@ export async function startKeycloak(repo: string): Promise<ChildProcess> {
 }
 
 /**
- * Serve the page the plugin would have rendered, plus the bundle it enqueues.
+ * Serve the page the plugin would have rendered — and, on its own origin, the
+ * bundle it points at.
  *
- * The bundle is read from `apps/widget/dist` — the same file `pnpm wp:bundle`
- * copies into the plugin's `assets/`, so this drives the artefact that ships
- * rather than a dev-server transpile.
+ * The customer's server does **not** serve the bundle any more (P96-01): the
+ * plugin enqueues `https://widget.<base>/ds-lms.js` from the platform, so a
+ * widget fix needs no plugin update anywhere. `startWidgetHost` is that host,
+ * under the headers `infra/nginx/widget.conf` really sets, because everything
+ * that can go wrong with a cross-origin script goes wrong in a header.
+ *
+ * The bundle is read from `apps/widget/dist`, so this drives the artefact that
+ * ships rather than a dev-server transpile.
  */
 export function startWordPress(options: {
   repo: string;
@@ -126,17 +133,10 @@ export function startWordPress(options: {
   token: string | undefined;
   course?: string | undefined;
 }): Promise<WordPressSite> {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a path built from the repo root and a literal
-  const bundle = readFileSync(join(options.repo, "apps/widget/dist/ds-lms.js"), "utf8");
+  let widget: WidgetHost | undefined;
 
   const server: Server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", WORDPRESS_ORIGIN);
-
-    if (url.pathname === "/ds-lms.js") {
-      response.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
-      response.end(bundle);
-      return;
-    }
 
     // The plugin's REST route, in shape: same origin, nonce required, and the
     // token in a `token` field. A missing nonce is refused, because a page that
@@ -165,14 +165,19 @@ export function startWordPress(options: {
     response.end(page(options.apiBase, options.course));
   });
 
-  return new Promise((resolve) => {
-    server.listen(WORDPRESS_PORT, "127.0.0.1", () => {
-      resolve({
-        url: (path = "/") => `${WORDPRESS_ORIGIN}${path}`,
-        stop: () =>
-          new Promise<void>((done) => {
-            server.close(() => done());
-          }),
+  return startWidgetHost(options.repo).then((host) => {
+    widget = host;
+    return new Promise<WordPressSite>((resolve) => {
+      server.listen(WORDPRESS_PORT, "127.0.0.1", () => {
+        resolve({
+          url: (path = "/") => `${WORDPRESS_ORIGIN}${path}`,
+          stop: async () => {
+            await new Promise<void>((done) => {
+              server.close(() => done());
+            });
+            await widget?.stop();
+          },
+        });
       });
     });
   });
@@ -237,7 +242,7 @@ function page(apiBase: string, course: string | undefined): string {
         }
       })();
     </script>
-    <script type="module" defer src="/ds-lms.js"></script>
+    <script type="module" defer src="${WIDGET_BUNDLE_URL}"></script>
   </body>
 </html>`;
 }

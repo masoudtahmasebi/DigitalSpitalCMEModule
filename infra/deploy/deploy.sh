@@ -896,6 +896,54 @@ if ! ds_policies_match 15; then
 fi
 log "Caddy serves the policy this checkout defines"
 
+# ---------------------------------------------------------------------------
+# 6d. The widget bundle is reachable, and loadable from somebody else's page
+# ---------------------------------------------------------------------------
+#
+# Since P96-01 every customer's WordPress site loads `ds-lms.js` from here
+# rather than shipping its own copy — which is what makes a widget fix reach
+# them without a plugin update, and also what makes this host a single point of
+# failure for every embedded Fortbildung on the platform.
+#
+# Two things can go wrong and neither appears in any log of ours:
+#
+#   * the host does not answer — DNS, a certificate, a container that did not
+#     start — and every embedding page renders an empty area;
+#   * it answers **without CORS**, and the browser fetches the file, refuses to
+#     execute it, and says so only in a console nobody on our side is looking
+#     at. That is P70-01's bucket, one origin over.
+#
+# So the deploy asks the same question a customer's browser will. A `HEAD`,
+# because the bytes are not in question and the headers are.
+log "Verifying the widget bundle"
+ds_widget_headers=""
+for attempt in $(seq 1 20); do
+  ds_widget_headers="$(
+    curl --fail --silent --show-error --max-time 10 --head "${WIDGET_URL}" 2>/dev/null || true
+  )"
+  [[ -n "$ds_widget_headers" ]] && break
+  # First deploy: Caddy may still be completing the ACME challenge for this
+  # hostname, exactly as for the API above.
+  [[ "$attempt" == "20" ]] && {
+    die "${WIDGET_URL} did not answer. Every WordPress site embedding a
+   Fortbildung loads its JavaScript from there, so each of them is currently
+   rendering an empty page with nothing in our logs to say so. Check that
+   ${WIDGET_DOMAIN} resolves to this host and that the widget container is up."
+  }
+  sleep 5
+done
+
+if ! printf '%s' "$ds_widget_headers" \
+  | grep -qi '^access-control-allow-origin: *\*'; then
+  die "${WIDGET_URL} answers, but without an Access-Control-Allow-Origin header.
+   A browser on a customer's own domain will download the file and refuse to
+   execute it, which looks to them like a widget that does nothing and to us
+   like a successful request. infra/nginx/widget.conf sets the header — note
+   that nginx drops every inherited header the moment a location block declares
+   one of its own, so check that block rather than the server."
+fi
+log "${WIDGET_URL} is reachable and loadable cross-origin"
+
 # Old images and build layers accumulate fast on a host that builds; a full
 # disk is its own outage. A week keeps enough tags for a rollback to be
 # instant, which is the point of tagging by commit.

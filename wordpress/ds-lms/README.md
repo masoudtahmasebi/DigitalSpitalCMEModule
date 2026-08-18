@@ -11,19 +11,56 @@ JWKS regardless of what this plugin says (ADR-0003, CLAUDE.md §4 invariant 2).
 
 ## Installing
 
-1. Build the widget bundle and copy it in:
+1. Copy `wordpress/ds-lms/` into `wp-content/plugins/` and activate it.
 
-   ```
-   pnpm wp:bundle
-   ```
+2. **Settings → DS Education**: Basis-Domain, Projekt-Slug, default course.
 
-   This writes `assets/ds-lms.js`. It is **not committed** — it is a build
-   artefact of `apps/widget`, and a committed copy would drift from the source
-   it was built from.
+There is no build step and no bundle to copy. The plugin folder in this
+repository is the plugin — what you see is what you install.
 
-2. Copy `wordpress/ds-lms/` into `wp-content/plugins/` and activate it.
+---
 
-3. **Settings → DS Education**: API base URL, project slug, default course.
+## Where the JavaScript comes from
+
+Not from this plugin. `<ds-lms>` is loaded from the platform's own widget host:
+
+```
+https://widget.<Basis-Domain>/ds-lms.js
+```
+
+derived from the Basis-Domain by the same rule `infra/deploy/domains.sh` uses,
+so the two cannot disagree. **Widget-JavaScript-URL** overrides it when a
+customer serves the file from somewhere else.
+
+Two consequences, and both are the point:
+
+- **A fix to the widget needs no plugin update.** It ships on our next deploy
+  and reaches every site within the five minutes `infra/nginx/widget.conf`
+  allows a browser to cache it.
+- **There is no `?ver=`.** A plugin version in the URL would pin visitors to
+  whatever bundle was current when the plugin was last released, which is the
+  coupling this removes. Freshness is the cache header's job.
+
+Until P96-01 the plugin enqueued its own `assets/ds-lms.js`, written by
+`pnpm wp:bundle`. That file was a gitignored build artefact, so **every copy of
+the plugin taken from this repository was missing it** — the browser 404'd, the
+`<ds-lms>` element never upgraded, and WordPress reported nothing at all. A
+staging install found it exactly that way. CLAUDE.md §9.9: a step documented for
+a human to perform is a step that does not happen.
+
+### What the customer's site has to allow
+
+If the site sends a `Content-Security-Policy`, it must name the widget host in
+`script-src` — otherwise the browser refuses the script and the page shows an
+empty area with the reason only in its console:
+
+```
+script-src 'self' https://widget.digitalspital.de;
+```
+
+The API is a separate permission: the site's origin has to be listed in the
+project's **Erlaubte Einbettungs-Domains** in the admin console, or every request the widget
+makes is refused by CORS.
 
 ---
 
