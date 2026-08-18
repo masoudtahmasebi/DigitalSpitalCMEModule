@@ -46,7 +46,6 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Pool } from "pg";
 import { WORDPRESS_ORIGIN } from "./stack.js";
 
 /** The stub binds this, and the seeds' `keycloak_issuer` names it. */
@@ -241,59 +240,4 @@ function page(apiBase: string, course: string | undefined): string {
     <script type="module" defer src="/ds-lms.js"></script>
   </body>
 </html>`;
-}
-
-/**
- * Give a Keycloak-provisioned learner the grant the guard looks for.
- *
- * ## Why a test has to do this at all
- *
- * The guard provisions the **person** on first sight — `provision_learner`
- * writes `users` and `user_identities` — and nothing anywhere writes the
- * `user_customers` membership or the `user_roles` grant that
- * `resolveTenantContext` then requires. The portal's participants get theirs
- * from the console's "Zugang anlegen" (`participant.repository.ts`), which
- * creates a **local** credential; a Keycloak arrival is a different credential
- * and therefore, by ADR-0013's rule that credentials are never matched by
- * email, a different person.
- *
- * So this function stands in for a provisioning path the platform does not
- * have yet (P92-02). It is deliberately not hidden inside the harness's setup:
- * the test calls it in the middle, after asserting what an unprovisioned
- * physician sees, so the gap is visible in the spec rather than papered over.
- */
-export async function grantLearnerRole(subject: string): Promise<void> {
-  const superuser = process.env["POSTGRES_SUPERUSER_URL"];
-  if (superuser === undefined) throw new Error("POSTGRES_SUPERUSER_URL is not set");
-  const url = new URL(superuser);
-  url.pathname = "/ds_education_e2e";
-
-  // eslint-disable-next-line no-restricted-syntax -- apps/e2e cannot import @ds/postgres; see `world.ts`
-  const pool = new Pool({ connectionString: url.toString() });
-  pool.on("error", () => {
-    /* the suite drops this database underneath us; see `world.ts` */
-  });
-  try {
-    await pool.query(
-      `INSERT INTO user_customers (user_id, customer_id)
-       SELECT ui.user_id, p.customer_id
-         FROM user_identities ui, projects p
-        WHERE ui.provider = 'keycloak' AND ui.subject = $1 AND p.slug = $2
-       ON CONFLICT (user_id, customer_id) DO NOTHING`,
-      [subject, WP_PROJECT_SLUG],
-    );
-    await pool.query(
-      `INSERT INTO user_roles (user_id, role, customer_id)
-       SELECT ui.user_id, 'learner', p.customer_id
-         FROM user_identities ui, projects p
-        WHERE ui.provider = 'keycloak' AND ui.subject = $1 AND p.slug = $2
-          AND NOT EXISTS (
-            SELECT 1 FROM user_roles r
-             WHERE r.user_id = ui.user_id AND r.role = 'learner'
-               AND r.customer_id = p.customer_id AND r.department_id IS NULL)`,
-      [subject, WP_PROJECT_SLUG],
-    );
-  } finally {
-    await pool.end();
-  }
 }

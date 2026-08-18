@@ -195,7 +195,38 @@ export class AuthGuard implements CanActivate {
       identity.issuer,
       identity,
     );
-    const grants = await this.deps.userService.rolesFor(user.id);
+    let grants = await this.deps.userService.rolesFor(user.id);
+
+    /*
+     * A physician arriving from the host site becomes a participant (P94-03).
+     *
+     * P1-02 provisioned the *person* from the token and stopped, and nothing
+     * anywhere wrote the membership — so every learner reaching the widget from
+     * MEDICE's WordPress met the 403 below, naming a user id they had never
+     * seen. Half a rule, with the missing half one layer up (§9.3).
+     *
+     * Only on the federated plane, and only for the customer this project is
+     * bound to. The binding is the platform's own row; the token is the
+     * customer's own IdP vouching for this person, which is exactly the trust
+     * ADR-0003 is built on. A `local` project's participants come from the
+     * portal's invite flow and are never created here — there, an unknown
+     * subject really is somebody who should not be let in.
+     *
+     * `grants.length === 0` rather than "no grant for this customer": a person
+     * who already holds a grant somewhere is a known participant, and quietly
+     * widening their reach to a second customer because they opened a different
+     * project is not provisioning, it is privilege escalation. Their arrival is
+     * refused below and an operator decides.
+     */
+    if (provider === "keycloak" && grants.length === 0) {
+      await this.deps.userService.provisionLearnerFor(user.id, binding.customerId);
+      await this.deps.audit.recordForCustomer(binding.customerId, {
+        actor: { identity: "learner", id: user.id },
+        action: "auth.learner_provisioned",
+        detail: { projectSlug },
+      });
+      grants = await this.deps.userService.rolesFor(user.id);
+    }
 
     const resolution = resolveTenantContext(grants, binding.customerId);
     if (!resolution.ok) {

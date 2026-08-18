@@ -15,7 +15,6 @@ import { fileURLToPath } from "node:url";
 import { openWidgetShadowRoots } from "../support/shadow.js";
 import { API_BASE } from "../support/stack.js";
 import {
-  grantLearnerRole,
   mintKeycloakToken,
   startKeycloak,
   startWordPress,
@@ -40,9 +39,9 @@ test.describe("die WordPress-Einbindung", () => {
 
   test("mountet, holt sich einen Token und zeigt den Katalog", async ({ browser }) => {
     /*
-     * One test for two states, because the second needs the first to have
-     * happened: the guard provisions the person on first sight, so there is
-     * nobody to grant a role to until a request has been made.
+     * The whole embedded path in one browser: WordPress mints a token from its
+     * own session, the element upgrades, and a physician the platform has never
+     * seen reaches a catalogue — provisioned on the way through (P94-03).
      */
     const keycloak = await startKeycloak(REPO);
     let site: WordPressSite | undefined;
@@ -112,39 +111,27 @@ test.describe("die WordPress-Einbindung", () => {
       ].join("\n");
 
       /*
-       * ## The first state: a physician nobody has provisioned (P92-02)
+       * ## A physician nobody has provisioned gets in (P94-03)
        *
-       * The bearer token verifies, the person is created — and the catalogue
-       * answers **403**, because `provision_learner` writes `users` and
-       * `user_identities` and nothing writes the `user_roles` grant that
-       * `resolveTenantContext` requires. The console's "Zugang anlegen" writes
-       * one, for a **local** credential, which by ADR-0013 is a different
-       * person from the same physician arriving through Keycloak.
+       * This asserted the opposite until today, and said so: *"this records
+       * today's behaviour rather than endorsing it. The day a provisioning path
+       * exists, it fails here — loudly, in the file whose subject is the
+       * WordPress channel."* It did, and this is that day.
        *
-       * This assertion records today's behaviour rather than endorsing it. The
-       * day a provisioning path exists, it fails here — loudly, in the file
-       * whose subject is the WordPress channel — which is the right place for
-       * that news to arrive.
+       * The client's rule: a user whose details reach us from WordPress becomes
+       * a participant if they are not one already, and goes on if they are. The
+       * guard writes the membership and the `learner` grant on first sight, for
+       * the customer the project is bound to — so there is no 403 and nothing
+       * for an operator to do by hand.
+       *
+       * No reload, no grant call, no second state: the first request is the
+       * whole test now.
        */
       expect(
         answers.some((line) => line.startsWith("403 ")),
-        `an unprovisioned Keycloak learner was NOT refused — has provisioning been added?\n${report}`,
-      ).toBe(true);
-      expect(
-        before,
-        `the widget said nothing at all about the refusal.\n${report}`,
-      ).toContain("Fehler");
+        `a Keycloak learner was refused — has provisioning stopped working?\n${report}`,
+      ).toBe(false);
 
-      // ## The second state: the same physician, with a grant
-      await grantLearnerRole("wp-physician@medice.example");
-      await page.reload();
-
-      /*
-       * Polled, not read once. The reload re-fetches the branding and the
-       * catalogue, and the first paint after it says „Wird geladen …" — reading
-       * the text at that instant asserts against a spinner and reports a
-       * working embed as broken.
-       */
       await expect.poll(() => widgetText(page), { timeout: 20_000 }).toContain("DS Demo");
 
       const text = await widgetText(page);
