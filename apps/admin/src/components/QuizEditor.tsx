@@ -41,7 +41,8 @@ import {
   IconButton,
   LoadFailure,
   Notice,
-  Panel,
+  Row,
+  RowList,
   SaveProblem,
   Select,
   Spinner,
@@ -145,7 +146,7 @@ export function QuizEditor(props: {
       {questions.length === 0 ? (
         <p className="text-sm text-gray-600">{de.quiz.empty}</p>
       ) : (
-        <ol className="space-y-4">
+        <RowList ordered>
           {questions.map((question, index) => (
             <li key={question.key}>
               <QuestionBlock
@@ -159,7 +160,7 @@ export function QuizEditor(props: {
               />
             </li>
           ))}
-        </ol>
+        </RowList>
       )}
 
       <div className="flex flex-wrap gap-2">
@@ -234,16 +235,23 @@ function QuestionBlock(props: {
     });
   };
 
+  /*
+   * The prompt is the row's title (P100-02).
+   *
+   * A card headed "3." says nothing about which question it is — an author
+   * scrolling eleven of them was reading the first field of each to find the
+   * one they wanted. `answered` moves to the meta line for the same reason:
+   * it is a fact about the row, not a control.
+   */
+  const prompt = question.prompt.trim();
+
   return (
-    <Panel
-      title={`${index + 1}.`}
+    <Row
+      eyebrow={`${index + 1}.`}
+      title={prompt === "" ? de.quiz.unnamed : prompt}
+      meta={question.answerCount > 0 ? de.quiz.answered(question.answerCount) : undefined}
       actions={
         <>
-          {question.answerCount > 0 ? (
-            <span className="text-xs text-gray-500">
-              {de.quiz.answered(question.answerCount)}
-            </span>
-          ) : null}
           <IconButton
             label={de.common.moveUp}
             glyph="↑"
@@ -263,6 +271,7 @@ function QuestionBlock(props: {
             disabledReason={
               question.answerCount > 0 ? de.quiz.lockedByAnswers : undefined
             }
+            lockedLabel={de.structure.locked}
             onConfirm={props.onDelete}
           />
         </>
@@ -343,7 +352,7 @@ function QuestionBlock(props: {
           </p>
         ))}
       </div>
-    </Panel>
+    </Row>
   );
 }
 

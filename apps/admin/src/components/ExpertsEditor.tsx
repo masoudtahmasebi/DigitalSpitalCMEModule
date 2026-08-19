@@ -25,7 +25,8 @@ import {
   IconButton,
   LoadFailure,
   Notice,
-  Panel,
+  Row,
+  RowList,
   SaveProblem,
   Spinner,
   TextArea,
@@ -86,11 +87,15 @@ export function ExpertsEditor(props: { client: ApiClient; courseSlug: string }) 
       {experts.length === 0 ? (
         <p className="text-sm text-gray-600">{de.experts.empty}</p>
       ) : (
-        <ol className="space-y-3">
+        <RowList ordered>
           {experts.map((expert, index) => (
             <li key={expert.key}>
-              <Panel
-                title={`${index + 1}.`}
+              <Row
+                eyebrow={`${index + 1}.`}
+                title={
+                  expert.name.trim() === "" ? de.experts.unnamed : expert.name.trim()
+                }
+                meta={expert.roleLabel.trim() === "" ? undefined : expert.roleLabel}
                 actions={
                   <>
                     <IconButton
@@ -119,10 +124,10 @@ export function ExpertsEditor(props: { client: ApiClient; courseSlug: string }) 
                     setExperts(experts.map((e, i) => (i === index ? next : e)))
                   }
                 />
-              </Panel>
+              </Row>
             </li>
           ))}
-        </ol>
+        </RowList>
       )}
 
       <div className="flex flex-wrap gap-2">

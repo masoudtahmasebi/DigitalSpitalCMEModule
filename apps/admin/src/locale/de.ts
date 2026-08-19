@@ -806,6 +806,8 @@ export const german = {
       "Erscheinen im Reiter „Referenten“ der Lernoberfläche. Die Liste wird vollständig ersetzt.",
     empty: "Es sind keine Referenten hinterlegt.",
     add: "Referent hinzufügen",
+    /** The row's title before a name has been typed (P100-02). */
+    unnamed: "Neuer Referent",
     roleLabel: "Rolle",
     roleLabelHint: "Zum Beispiel „Wissenschaftliche Leitung“ oder „Referent“.",
     name: "Name",
@@ -842,6 +844,8 @@ export const german = {
     isCorrect: "richtig",
     answered: (count: number): string =>
       count === 1 ? "1 Antwort erfasst" : `${count} Antworten erfasst`,
+    /** The row's title before a prompt has been typed (P100-02). */
+    unnamed: "Neue Frage",
     lockedByAnswers:
       "Kann nicht gelöscht werden: diese Frage wurde bereits beantwortet. Ein abgegebener Versuch muss weiter das bedeuten, was er bei der Bewertung bedeutet hat.",
 

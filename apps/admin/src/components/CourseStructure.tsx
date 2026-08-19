@@ -64,7 +64,9 @@ import {
   IconButton,
   LoadFailure,
   Notice,
-  Panel,
+  Row,
+  RowList,
+  FormColumn,
   SaveProblem,
   Select,
   Spinner,
@@ -154,7 +156,7 @@ export function CourseStructureEditor(props: {
       {modules.length === 0 ? (
         <p className="text-sm text-gray-600">{de.structure.empty}</p>
       ) : (
-        <ol className="space-y-4">
+        <RowList ordered>
           {modules.map((module, index) => (
             <li key={module.id}>
               <ModuleBlock
@@ -169,7 +171,7 @@ export function CourseStructureEditor(props: {
               />
             </li>
           ))}
-        </ol>
+        </RowList>
       )}
 
       <AddForm
@@ -210,21 +212,10 @@ function ModuleBlock(props: {
   const blockedBy = recordsUnderModule(module);
 
   return (
-    <Panel
-      title={
-        <span>
-          <span className="text-xs font-normal uppercase tracking-wide text-gray-500">
-            {de.structure.module} {index + 1}
-          </span>
-          <br />
-          {module.title}
-          {module.subtitle === null ? null : (
-            <span className="ml-2 text-sm font-normal text-gray-600">
-              {module.subtitle}
-            </span>
-          )}
-        </span>
-      }
+    <Row
+      eyebrow={`${de.structure.module} ${index + 1}`}
+      title={module.title}
+      meta={module.subtitle}
       actions={
         <>
           <IconButton
@@ -279,11 +270,11 @@ function ModuleBlock(props: {
         />
       ) : null}
 
-      <div className="mt-3 space-y-3">
+      <div className="space-y-2">
         {module.chapters.length === 0 ? (
           <p className="text-sm text-gray-600">{de.structure.noChapters}</p>
         ) : (
-          <ol className="space-y-3">
+          <RowList ordered>
             {module.chapters.map((chapter, chapterIndex) => (
               <li key={chapter.id}>
                 <ChapterBlock
@@ -299,7 +290,7 @@ function ModuleBlock(props: {
                 />
               </li>
             ))}
-          </ol>
+          </RowList>
         )}
 
         <AddForm
@@ -311,7 +302,7 @@ function ModuleBlock(props: {
           onDone={(next) => props.onMutate(async () => next)}
         />
       </div>
-    </Panel>
+    </Row>
   );
 }
 
@@ -340,17 +331,9 @@ function ChapterBlock(props: {
   );
 
   return (
-    <Panel
-      tone="nested"
-      title={
-        <span>
-          <span className="text-xs font-normal uppercase tracking-wide text-gray-500">
-            {de.structure.chapter} {index + 1}
-          </span>
-          <br />
-          {chapter.title}
-        </span>
-      }
+    <Row
+      eyebrow={`${de.structure.chapter} ${index + 1}`}
+      title={chapter.title}
       actions={
         <>
           <IconButton
@@ -438,11 +421,11 @@ function ChapterBlock(props: {
         />
       ) : null}
 
-      <div className="mt-3 space-y-2">
+      <div className="space-y-2">
         {chapter.contents.length === 0 ? (
           <p className="text-sm text-gray-600">{de.structure.noContents}</p>
         ) : (
-          <ol className="space-y-2">
+          <RowList ordered flush>
             {chapter.contents.map((content, contentIndex) => (
               <li key={content.id}>
                 <ContentRow
@@ -458,7 +441,7 @@ function ChapterBlock(props: {
                 />
               </li>
             ))}
-          </ol>
+          </RowList>
         )}
 
         <NewContent
@@ -468,7 +451,7 @@ function ChapterBlock(props: {
           onDone={(next) => props.onMutate(async () => next)}
         />
       </div>
-    </Panel>
+    </Row>
   );
 }
 
@@ -493,29 +476,28 @@ function ContentRow(props: {
   const move = (to: number) =>
     props.onReorder(withContents(modules, chapter.id, swap(chapter.contents, index, to)));
 
-  return (
-    <div className="rounded border border-gray-200 bg-white p-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <span className="text-xs uppercase tracking-wide text-gray-500">
-            {de.structure.kinds[content.kind]}
-          </span>
-          <p className="truncate text-sm font-medium text-gray-900">{content.title}</p>
-          <p className="text-xs text-gray-500">
-            {content.learnerRecords > 0
-              ? de.structure.learnerRecords(content.learnerRecords)
-              : null}
-            {content.kind === "quiz" ? (
-              <span className={content.learnerRecords > 0 ? "ml-2" : ""}>
-                {content.questionCount === null || content.questionCount === 0
-                  ? de.structure.noQuestions
-                  : de.structure.questionCount(content.questionCount)}
-              </span>
-            ) : null}
-          </p>
-        </div>
+  const meta = (
+    <>
+      {content.learnerRecords > 0
+        ? de.structure.learnerRecords(content.learnerRecords)
+        : null}
+      {content.kind === "quiz" ? (
+        <span className={content.learnerRecords > 0 ? "ml-2" : ""}>
+          {content.questionCount === null || content.questionCount === 0
+            ? de.structure.noQuestions
+            : de.structure.questionCount(content.questionCount)}
+        </span>
+      ) : null}
+    </>
+  );
 
-        <div className="flex flex-wrap items-center gap-2">
+  return (
+    <Row
+      eyebrow={de.structure.kinds[content.kind]}
+      title={content.title}
+      meta={meta}
+      actions={
+        <>
           <IconButton
             label={de.common.moveUp}
             glyph="↑"
@@ -549,26 +531,24 @@ function ContentRow(props: {
             lockedLabel={de.structure.locked}
             onConfirm={() => props.onMutate(() => client.adminDeleteContent(content.id))}
           />
-        </div>
-      </div>
-
+        </>
+      }
+    >
       {editing ? (
-        <div className="mt-3 border-t border-gray-100 pt-3">
-          <ContentForm
-            client={client}
-            courseSlug={props.courseSlug}
-            initial={content}
-            submitLabel={de.common.save}
-            onSubmit={(write) => client.adminUpdateContent(content.id, write)}
-            onDone={(next) => {
-              props.onMutate(async () => next);
-              setEditing(false);
-            }}
-            onCancel={() => setEditing(false)}
-          />
-        </div>
+        <ContentForm
+          client={client}
+          courseSlug={props.courseSlug}
+          initial={content}
+          submitLabel={de.common.save}
+          onSubmit={(write) => client.adminUpdateContent(content.id, write)}
+          onDone={(next) => {
+            props.onMutate(async () => next);
+            setEditing(false);
+          }}
+          onCancel={() => setEditing(false)}
+        />
       ) : null}
-    </div>
+    </Row>
   );
 }
 
@@ -645,7 +625,6 @@ function ContentForm(props: {
 
   return (
     <form
-      className="space-y-3"
       onSubmit={(event) => {
         event.preventDefault();
         void saver.run(async () =>
@@ -673,36 +652,42 @@ function ContentForm(props: {
         );
       }}
     >
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={de.structure.kind} htmlFor={id("kind")}>
-          <Select
-            id={id("kind")}
-            value={kind}
-            options={CONTENT_KINDS}
-            onChange={setKind}
-          />
-        </Field>
-        <Field label={de.common.title} htmlFor={id("title")}>
-          <TextInput id={id("title")} value={title} maxLength={300} onChange={setTitle} />
-        </Field>
-      </div>
+      <FormColumn>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={de.structure.kind} htmlFor={id("kind")}>
+            <Select
+              id={id("kind")}
+              value={kind}
+              options={CONTENT_KINDS}
+              onChange={setKind}
+            />
+          </Field>
+          <Field label={de.common.title} htmlFor={id("title")}>
+            <TextInput
+              id={id("title")}
+              value={title}
+              maxLength={300}
+              onChange={setTitle}
+            />
+          </Field>
+        </div>
 
-      {kind === "video" ? (
-        <>
-          <SourcesEditor
-            sources={sources}
-            onChange={setSources}
-            idFor={id}
-            client={props.client}
-            courseSlug={props.courseSlug}
-          />
+        {kind === "video" ? (
+          <>
+            <SourcesEditor
+              sources={sources}
+              onChange={setSources}
+              idFor={id}
+              client={props.client}
+              courseSlug={props.courseSlug}
+            />
 
-          {sources.filter((source) => source.url.trim() !== "").length === 0 ? (
-            <Notice tone="warning">{de.structure.sourcesMissing}</Notice>
-          ) : null}
+            {sources.filter((source) => source.url.trim() !== "").length === 0 ? (
+              <Notice tone="warning">{de.structure.sourcesMissing}</Notice>
+            ) : null}
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            {/*
+            <div className="grid gap-3 sm:grid-cols-2">
+              {/*
               The length is **measured**, not typed (P75-01).
 
               It was a number field with a button beside it, and the client's
@@ -716,50 +701,50 @@ function ContentForm(props: {
               wrong, and nothing downstream can tell. So the file decides, and
               the only escape hatch is the one case where no file can be read.
             */}
-            <MeasuredDuration
-              id={id("duration")}
-              sources={sources}
-              client={props.client}
-              courseSlug={props.courseSlug}
-              value={durationSec}
-              state={probe}
-              onState={setProbe}
-              onChange={setDurationSec}
-            />
-            <AutoPoster
-              id={id("poster")}
-              sources={sources}
-              value={posterUrl}
-              client={props.client}
-              courseSlug={props.courseSlug}
-              onChange={setPosterUrl}
-            />
-            <UploadField
-              label={de.structure.captionsUrl}
-              hint={de.structure.captionsHint}
-              id={id("captions")}
-              value={captionsUrl}
-              purpose="captions"
-              client={props.client}
-              courseSlug={props.courseSlug}
-              onChange={setCaptionsUrl}
-            />
-          </div>
-        </>
-      ) : null}
+              <MeasuredDuration
+                id={id("duration")}
+                sources={sources}
+                client={props.client}
+                courseSlug={props.courseSlug}
+                value={durationSec}
+                state={probe}
+                onState={setProbe}
+                onChange={setDurationSec}
+              />
+              <AutoPoster
+                id={id("poster")}
+                sources={sources}
+                value={posterUrl}
+                client={props.client}
+                courseSlug={props.courseSlug}
+                onChange={setPosterUrl}
+              />
+              <UploadField
+                label={de.structure.captionsUrl}
+                hint={de.structure.captionsHint}
+                id={id("captions")}
+                value={captionsUrl}
+                purpose="captions"
+                client={props.client}
+                courseSlug={props.courseSlug}
+                onChange={setCaptionsUrl}
+              />
+            </div>
+          </>
+        ) : null}
 
-      {/*
+        {/*
         Not a refusal. WCAG 1.2.2 is Level A and every video with speech owes
         captions, but a slide-only recording legitimately has none and neither
         this form nor the server can tell the two apart. Saying what is owed and
         why is the honest middle — blocking the save would stop valid content,
         and saying nothing would let an author not know.
       */}
-      {kind === "video" && captionsUrl.trim() === "" ? (
-        <Notice tone="warning">{de.structure.captionsMissing}</Notice>
-      ) : null}
+        {kind === "video" && captionsUrl.trim() === "" ? (
+          <Notice tone="warning">{de.structure.captionsMissing}</Notice>
+        ) : null}
 
-      {/*
+        {/*
         `material` is here too, and that was the missing half of the Mediathek
         card.
 
@@ -771,48 +756,52 @@ function ContentForm(props: {
         Same column, same 20 000 cap, different label: on a download it is the
         sentence that says what the file is for, not the lesson's prose.
       */}
-      {kind === "text" || kind === "details" || kind === "material" ? (
-        <Field
-          label={kind === "material" ? de.structure.materialBody : de.structure.body}
-          htmlFor={id("body")}
-        >
-          <TextArea
-            id={id("body")}
-            value={body}
-            rows={kind === "material" ? 3 : 6}
-            maxLength={20_000}
-            onChange={setBody}
-          />
-        </Field>
-      ) : null}
+        {kind === "text" || kind === "details" || kind === "material" ? (
+          <Field
+            label={kind === "material" ? de.structure.materialBody : de.structure.body}
+            htmlFor={id("body")}
+          >
+            <TextArea
+              id={id("body")}
+              value={body}
+              rows={kind === "material" ? 3 : 6}
+              maxLength={20_000}
+              onChange={setBody}
+            />
+          </Field>
+        ) : null}
 
-      {kind === "material" ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <UploadField
-            label={de.structure.fileUrl}
-            id={id("file")}
-            value={fileUrl}
-            purpose="material"
-            client={props.client}
-            courseSlug={props.courseSlug}
-            onChange={setFileUrl}
-            // The bucket's own answer, not the file picker's claim — and it
-            // saves an author typing "application/pdf" into a free-text field.
-            onMimeType={setMimeType}
-          />
+        {kind === "material" ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <UploadField
+              label={de.structure.fileUrl}
+              id={id("file")}
+              value={fileUrl}
+              purpose="material"
+              client={props.client}
+              courseSlug={props.courseSlug}
+              onChange={setFileUrl}
+              // The bucket's own answer, not the file picker's claim — and it
+              // saves an author typing "application/pdf" into a free-text field.
+              onMimeType={setMimeType}
+            />
+          </div>
+        ) : null}
+
+        <SaveProblem title={de.error.title} problem={saver.problem} />
+
+        <div className="flex gap-2">
+          <Button
+            type="submit"
+            disabled={saver.state === "saving" || title.trim() === ""}
+          >
+            {saver.state === "saving" ? de.common.saving : props.submitLabel}
+          </Button>
+          <Button variant="secondary" onClick={props.onCancel}>
+            {de.common.cancel}
+          </Button>
         </div>
-      ) : null}
-
-      <SaveProblem title={de.error.title} problem={saver.problem} />
-
-      <div className="flex gap-2">
-        <Button type="submit" disabled={saver.state === "saving" || title.trim() === ""}>
-          {saver.state === "saving" ? de.common.saving : props.submitLabel}
-        </Button>
-        <Button variant="secondary" onClick={props.onCancel}>
-          {de.common.cancel}
-        </Button>
-      </div>
+      </FormColumn>
     </form>
   );
 }
@@ -883,55 +872,56 @@ function EditForm(props: {
 
   return (
     <form
-      className="space-y-3"
       onSubmit={(event) => {
         event.preventDefault();
         void saver.run(async () => props.onDone(await props.onSubmit(values)));
       }}
     >
-      {props.fields.map((field) => {
-        const id = `field-${field.key}-${props.fields.length}`;
-        return (
-          <Field
-            key={field.key}
-            label={
-              field.optional === true
-                ? `${field.label} (${de.common.optional})`
-                : field.label
-            }
-            htmlFor={id}
-          >
-            {field.multiline === true ? (
-              <TextArea
-                id={id}
-                value={values[field.key] ?? ""}
-                maxLength={field.maxLength}
-                onChange={(value) => setValues({ ...values, [field.key]: value })}
-              />
-            ) : (
-              <TextInput
-                id={id}
-                value={values[field.key] ?? ""}
-                maxLength={field.maxLength}
-                onChange={(value) => setValues({ ...values, [field.key]: value })}
-              />
-            )}
-          </Field>
-        );
-      })}
+      <FormColumn>
+        {props.fields.map((field) => {
+          const id = `field-${field.key}-${props.fields.length}`;
+          return (
+            <Field
+              key={field.key}
+              label={
+                field.optional === true
+                  ? `${field.label} (${de.common.optional})`
+                  : field.label
+              }
+              htmlFor={id}
+            >
+              {field.multiline === true ? (
+                <TextArea
+                  id={id}
+                  value={values[field.key] ?? ""}
+                  maxLength={field.maxLength}
+                  onChange={(value) => setValues({ ...values, [field.key]: value })}
+                />
+              ) : (
+                <TextInput
+                  id={id}
+                  value={values[field.key] ?? ""}
+                  maxLength={field.maxLength}
+                  onChange={(value) => setValues({ ...values, [field.key]: value })}
+                />
+              )}
+            </Field>
+          );
+        })}
 
-      <SaveProblem title={de.error.title} problem={saver.problem} />
+        <SaveProblem title={de.error.title} problem={saver.problem} />
 
-      <div className="flex gap-2">
-        <Button type="submit" disabled={saver.state === "saving" || incomplete}>
-          {saver.state === "saving"
-            ? de.common.saving
-            : (props.submitLabel ?? de.common.save)}
-        </Button>
-        <Button variant="secondary" onClick={props.onCancel}>
-          {de.common.cancel}
-        </Button>
-      </div>
+        <div className="flex gap-2">
+          <Button type="submit" disabled={saver.state === "saving" || incomplete}>
+            {saver.state === "saving"
+              ? de.common.saving
+              : (props.submitLabel ?? de.common.save)}
+          </Button>
+          <Button variant="secondary" onClick={props.onCancel}>
+            {de.common.cancel}
+          </Button>
+        </div>
+      </FormColumn>
     </form>
   );
 }

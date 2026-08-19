@@ -404,6 +404,129 @@ export function ConfirmButton(props: {
   );
 }
 
+/**
+ * One row of a hierarchy — module, chapter, content (P100-02).
+ *
+ * ## The pattern, and why it is not a card
+ *
+ * The authoring tree drew a bordered `Panel` per level, nested three deep. Every
+ * dashboard that handles hierarchical content well — Linear's issue tree,
+ * Vercel's project settings, Stripe's nested resources, react-admin's own
+ * `Datagrid` — uses **rows separated by hairlines inside one surface**, not a
+ * card per item. Three reasons, all of which the console was paying:
+ *
+ * 1. A card per row spends 2 × border + 2 × padding on *every* item, so ten
+ *    modules cost twenty borders of vertical space that carry no information.
+ * 2. Nested cards make the deepest item — the one with the most controls —
+ *    the narrowest, because it has paid that padding three times.
+ * 3. Cards imply "separate things". A module and its chapters are one thing.
+ *
+ * ## The anatomy, which is the actually load-bearing part
+ *
+ * ```
+ * ┌───────────────────────────────────────────────────────────────┐
+ * │ MODUL 1  Grundlagen                        [↑] [↓] [Bearbeiten] │
+ * │ ADHS-Definition · Epidemiologie                       Gesperrt  │
+ * └───────────────────────────────────────────────────────────────┘
+ *   eyebrow  title                                          actions
+ *   meta ────────────────────────────────────────────────────────
+ * ```
+ *
+ * The eyebrow sits **inline** with the title. It used to be followed by `<br/>`,
+ * which spent a whole line on the word "MODULE" — on a screen that stacks
+ * module, chapter and content, that is three lines of nothing before any
+ * content. Actions are right-aligned and grouped, so the eye finds them in the
+ * same place on every row instead of wherever the title happened to end.
+ */
+export function Row(props: {
+  /** "MODUL 1" — small, muted, inline before the title. */
+  eyebrow?: string;
+  title: ReactNode;
+  /** Subtitle, counts, anything that qualifies the title. One muted line. */
+  meta?: ReactNode;
+  actions?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="px-3 py-2.5">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            {props.eyebrow === undefined ? null : (
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                {props.eyebrow}
+              </span>
+            )}
+            <span className="text-sm font-semibold text-gray-900">{props.title}</span>
+          </div>
+          {props.meta === undefined ? null : (
+            <div className="mt-0.5 text-xs text-gray-600">{props.meta}</div>
+          )}
+        </div>
+        {props.actions === undefined ? null : (
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+            {props.actions}
+          </div>
+        )}
+      </div>
+      {props.children === undefined || props.children === null ? null : (
+        <div className="mt-2.5 empty:mt-0">{props.children}</div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The surface rows live on: one border for the whole list, hairlines between.
+ *
+ * `first:border-t-0` rather than a border on each row, so the list has no double
+ * rule at the top and none dangling at the bottom.
+ */
+export function RowList(props: {
+  children: ReactNode;
+  /**
+   * Render an `<ol>` rather than a `<div>`.
+   *
+   * The authoring tree is ordered — the whole screen is about which module
+   * comes first — and the move buttons are meaningless without that. The list
+   * semantics have to survive the change of skin, so the ordering is still
+   * announced rather than merely drawn.
+   */
+  ordered?: boolean;
+  /**
+   * Drop the border and the surface, keeping the hairlines and taking an indent
+   * guide instead — `Panel`'s `flush`, for a list.
+   *
+   * A nested level does not need a second box to be understood as nested; it
+   * needs to start further in. Three bordered surfaces is how the innermost row
+   * ended up with the least room for the most controls.
+   */
+  flush?: boolean;
+}) {
+  const skin = props.flush
+    ? "divide-y divide-gray-100 border-l-2 border-gray-200"
+    : "divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 bg-white";
+
+  return props.ordered === true ? (
+    <ol className={skin}>{props.children}</ol>
+  ) : (
+    <div className={skin}>{props.children}</div>
+  );
+}
+
+/**
+ * A form's field column, at prose measure (P100-02).
+ *
+ * Settings screens in Vercel, Stripe and Linear all cap their field column at
+ * roughly 40–48rem regardless of viewport, because a text input 1400 px wide is
+ * harder to use than one at 600 — the eye loses the line, and the label is
+ * nowhere near the value. The console let every form span whatever the card
+ * was, which on a wide monitor put "Titel" a foot from its input.
+ */
+export function FormColumn(props: { children: ReactNode }) {
+  return <div className="max-w-2xl space-y-3">{props.children}</div>;
+}
+
 function LockGlyph() {
   return (
     <svg aria-hidden viewBox="0 0 16 16" className="h-3 w-3" fill="currentColor">

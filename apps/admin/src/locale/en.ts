@@ -591,6 +591,7 @@ export const en: DeepPartial<typeof german> = {
       "Appear under the “Referenten” tab of the learner interface. The list is replaced in full.",
     empty: "No speakers are stored.",
     add: "Add speaker",
+    unnamed: "New speaker",
     roleLabel: "Role",
     roleLabelHint: "For example “scientific lead” or “speaker”.",
     name: "Name",
@@ -616,6 +617,7 @@ export const en: DeepPartial<typeof german> = {
     option: "Answer option",
     addOption: "Add answer option",
     isCorrect: "correct",
+    unnamed: "New question",
     lockedByAnswers:
       "Cannot be deleted: this question has already been answered. A submitted attempt has to keep meaning what it meant when it was marked.",
 

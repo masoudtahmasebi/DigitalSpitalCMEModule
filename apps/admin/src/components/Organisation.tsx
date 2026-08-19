@@ -34,6 +34,8 @@ import {
   Field,
   Notice,
   Panel,
+  Row,
+  RowList,
   SaveProblem,
   Select,
   Spinner,
@@ -312,11 +314,10 @@ function Projects(props: {
       ) : props.projects.length === 0 ? (
         <p className="text-sm text-gray-600">{de.organisation.projectsEmpty}</p>
       ) : (
-        <div className="space-y-3">
+        <RowList>
           {props.projects.map((project) => (
-            <Panel
+            <Row
               key={project.slug}
-              tone="nested"
               title={
                 <span>
                   {project.name}{" "}
@@ -368,9 +369,9 @@ function Projects(props: {
                   />
                 </dl>
               )}
-            </Panel>
+            </Row>
           ))}
-        </div>
+        </RowList>
       )}
     </Panel>
   );
