@@ -360,11 +360,9 @@ sign_in( 7, SECRET_TOKEN );
 $html = DS_LMS_Renderer::shortcode( array() );
 
 check( 'the shortcode renders the element', str_contains( $html, '<ds-lms ' ) );
-check(
-	'with the configured project and course',
-	str_contains( $html, 'project="medice-adhs"' )
-		&& str_contains( $html, 'course="adhs-akademie-adult"' )
-);
+check( 'with the configured project', str_contains( $html, 'project="medice-adhs"' ) );
+// And no course, because a bare shortcode is the catalogue since 2.0.0.
+check( 'and no course, which is the catalogue', ! str_contains( $html, ' course=' ) );
 check( 'no token in the rendered HTML', ! str_contains( $html, SECRET_TOKEN ) );
 
 // P96-03: the plugin states *where* a token comes from and says nothing about
@@ -448,12 +446,21 @@ $settings = DS_LMS_Settings::sanitize(
 	array(
 		'api_base'     => 'javascript:alert(1)',
 		'project_slug' => 'Böse<script>',
-		'course_slug'  => '../../etc/passwd',
 	)
 );
 check( 'a javascript: API base is rejected', '' === $settings['api_base'] );
 check( 'a project slug is reduced to [a-z0-9-]', 'bsescript' === $settings['project_slug'] );
-check( 'and so is a course slug', 'etcpasswd' === $settings['course_slug'] );
+
+// The course slug is no longer a setting, so the constraint that matters moved
+// to where it is now written — the shortcode. Migrated rather than deleted:
+// the property is the same one, on the input that still exists.
+check(
+	'a course slug from a shortcode is reduced to [a-z0-9-]',
+	str_contains(
+		DS_LMS_Renderer::shortcode( array( 'course' => '../../etc/passwd' ) ),
+		'course="etcpasswd"'
+	)
+);
 
 // ---------------------------------------------------------------------------
 echo "\nCatalogue mode\n";
@@ -1278,28 +1285,47 @@ echo "\nEvery Fortbildung, or one (P99-04)\n";
 // and unreachable from any page whose site had configured a default course.
 
 ds_test_reset();
-configure(); // configure() sets course_slug = adhs-akademie-adult
+configure();
 check(
-	'a bare shortcode still honours the configured default course',
-	str_contains( DS_LMS_Renderer::shortcode( array() ), 'course="adhs-akademie-adult"' )
+	'a bare shortcode is the catalogue — no course attribute at all',
+	! str_contains( DS_LMS_Renderer::shortcode( array() ), ' course=' )
 );
 check(
-	'catalogue="1" overrides it and asks for every Fortbildung',
+	'and still renders the element',
+	str_contains( DS_LMS_Renderer::shortcode( array() ), '<ds-lms ' )
+);
+check(
+	'a named course still opens that course',
+	str_contains(
+		DS_LMS_Renderer::shortcode( array( 'course' => 'adhs-akademie-adult' ) ),
+		'course="adhs-akademie-adult"'
+	)
+);
+// Kept as a synonym: pages were written with it during the hours it was the
+// only way to ask, and breaking them would buy nothing.
+check(
+	'catalogue="1" still means the catalogue',
 	! str_contains( DS_LMS_Renderer::shortcode( array( 'catalogue' => '1' ) ), ' course=' )
 );
 check(
-	'and the element is still rendered, not suppressed',
-	str_contains( DS_LMS_Renderer::shortcode( array( 'catalogue' => '1' ) ), '<ds-lms ' )
-);
-check(
-	'catalogue="0" is not a request for the catalogue',
-	str_contains( DS_LMS_Renderer::shortcode( array( 'catalogue' => '0' ) ), 'course="adhs-akademie-adult"' )
-);
-check(
-	'and a course beside it does not quietly win',
+	'and wins over a course written beside it',
 	! str_contains(
 		DS_LMS_Renderer::shortcode( array( 'catalogue' => '1', 'course' => 'kurs-zwei' ) ),
 		' course='
+	)
+);
+
+// The setting is gone, not merely unread: a Standard-Fortbildung field that no
+// code consults is a control that looks like a decision and is not one (§9.2).
+check(
+	'there is no default-course setting left to mislead anybody',
+	! array_key_exists( 'course_slug', DS_LMS_Settings::all() )
+);
+check(
+	'and the form cannot store one',
+	! array_key_exists(
+		'course_slug',
+		DS_LMS_Settings::sanitize( array( 'course_slug' => 'adhs-akademie-adult' ) )
 	)
 );
 

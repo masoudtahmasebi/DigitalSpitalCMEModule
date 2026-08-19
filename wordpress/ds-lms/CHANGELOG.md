@@ -13,6 +13,36 @@ something is missing, and which WordPress and PHP versions are required.
 Newest first. `tests/security-test.php` refuses a release whose newest entry
 here disagrees with `Version:` in `ds-lms.php`.
 
+## 2.0.0 — 19.08.2026
+
+**Breaking:** a page that renders `[ds_lms]` now shows the catalogue where it
+previously showed the Standard-Fortbildung. Any page that wants one Fortbildung
+must name it: `[ds_lms course="adhs-akademie-adult"]`.
+
+### `[ds_lms]` means every Fortbildung (P99-05)
+
+Asked for immediately after 1.4.0 shipped `catalogue="1"`: _"can we make it the
+default behaviour?"_ — and yes, because the alternative was worse than it looked.
+
+A bare `[ds_lms]` used to mean "the Standard-Fortbildung setting, and the
+catalogue only if that happens to be empty". So the commonest thing a page wants
+— the list — depended on a field in a _different screen_ being blank, and a page
+author reading `[ds_lms]` could not tell what it would render.
+
+- `[ds_lms]` → the catalogue.
+- `[ds_lms course="…"]` → that one Fortbildung, unchanged.
+- `[ds_lms catalogue="1"]` → kept as a synonym, because pages were written with
+  it during the hours it was the only way to ask.
+
+### The Standard-Fortbildung setting is removed, not merely unread
+
+A field that no code consults is a control that looks like a decision and is not
+one (CLAUDE.md §9.2). Leaving it would have been worse than the bug: an operator
+would set it, save, see "Gespeichert", and watch nothing change.
+
+Existing stored values are ignored and dropped on the next save. Nothing else
+read the field.
+
 ## 1.4.0 — 19.08.2026
 
 ### `[ds_lms catalogue="1"]` — the Fortbildungsbereich, not one Fortbildung (P99-04)

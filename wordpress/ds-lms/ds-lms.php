@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       DS Education — CME-Modul
  * Description:       Bindet das DigitalSpital CME-Lernmodul als <ds-lms> in Seiten und Beiträge ein.
- * Version:           1.4.0
+ * Version:           2.0.0
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            DigitalSpital
@@ -47,7 +47,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * from the platform and versioned by the platform (P96-01); putting a plugin
  * version in its URL would restore exactly the coupling that removed.
  */
-define( 'DS_LMS_VERSION', '1.4.0' );
+define( 'DS_LMS_VERSION', '2.0.0' );
 define( 'DS_LMS_FILE', __FILE__ );
 define( 'DS_LMS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DS_LMS_URL', plugin_dir_url( __FILE__ ) );

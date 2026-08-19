@@ -69,7 +69,7 @@ final class DS_LMS_Settings {
 	/**
 	 * The stored settings, with defaults filled in and `api_base` derived.
 	 *
-	 * @return array{base_domain:string,api_base:string,widget_url:string,project_slug:string,course_slug:string,session_key:string,sign_in_url:string,token_endpoint_enabled:bool}
+	 * @return array{base_domain:string,api_base:string,widget_url:string,project_slug:string,session_key:string,sign_in_url:string,token_endpoint_enabled:bool}
 	 */
 	public static function all(): array {
 		$stored = get_option( self::OPTION, array() );
@@ -106,7 +106,6 @@ final class DS_LMS_Settings {
 			 */
 			'widget_url'   => self::resolve_widget_url( $widget_url, $base_domain, $api_base ),
 			'project_slug' => isset( $stored['project_slug'] ) ? (string) $stored['project_slug'] : '',
-			'course_slug'  => isset( $stored['course_slug'] ) ? (string) $stored['course_slug'] : '',
 			/*
 			 * The host's login session key (P98-01).
 			 *
@@ -277,7 +276,6 @@ final class DS_LMS_Settings {
 			'api_base'               => $api_base,
 			'widget_url'             => $widget_url,
 			'project_slug'           => self::sanitize_slug( $input['project_slug'] ?? '' ),
-			'course_slug'            => self::sanitize_slug( $input['course_slug'] ?? '' ),
 			// Validated, not stripped.
 			//
 			// Stripping `LOGIN']['x` down to `LOGINx` would store a key that
@@ -488,23 +486,6 @@ final class DS_LMS_Settings {
 							/>
 							<p class="description">
 								<?php esc_html_e( 'Wird als X-DS-Project gesendet und bestimmt Mandant und Keycloak-Realm.', 'ds-lms' ); ?>
-							</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row">
-							<label for="ds-lms-course"><?php esc_html_e( 'Standard-Fortbildung', 'ds-lms' ); ?></label>
-						</th>
-						<td>
-							<input
-								id="ds-lms-course"
-								name="<?php echo esc_attr( self::OPTION ); ?>[course_slug]"
-								type="text"
-								class="regular-text"
-								value="<?php echo esc_attr( $settings['course_slug'] ); ?>"
-							/>
-							<p class="description">
-								<?php esc_html_e( 'Kann je Block oder Shortcode überschrieben werden.', 'ds-lms' ); ?>
 							</p>
 						</td>
 					</tr>

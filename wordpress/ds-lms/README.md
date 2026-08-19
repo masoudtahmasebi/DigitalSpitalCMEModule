@@ -13,7 +13,7 @@ JWKS regardless of what this plugin says (ADR-0003, CLAUDE.md §4 invariant 2).
 
 1. Copy `wordpress/ds-lms/` into `wp-content/plugins/` and activate it.
 
-2. **Settings → DS Education**: Basis-Domain, Projekt-Slug, default course.
+2. **Settings → DS Education**: Basis-Domain and Projekt-Slug.
 
 There is no build step and no bundle to copy. The plugin folder in this
 repository is the plugin — what you see is what you install.
@@ -100,17 +100,22 @@ makes is refused by CORS.
 Either the block (**DS Education — Fortbildung**) or the shortcode:
 
 ```
-[ds_lms catalogue="1"]              every Fortbildung — the Fortbildungsbereich
+[ds_lms]                                every Fortbildung — the Fortbildungsbereich
 [ds_lms course="adhs-akademie-adult"]   one, opened directly
-[ds_lms]                            the Standard-Fortbildung, or the catalogue
-                                    when no default is configured
 ```
 
-**`catalogue="1"` is the one to use for a landing page.** A bare `[ds_lms]`
-falls back to **Standard-Fortbildung**, so on a site that has configured one it
-can never show the list — which is the whole first screen of the layout: the
+**The default is the list**, which is the whole first screen of the layout: the
 teal hero, the CME seal, the Thema and Altersgruppe filters, and a card per
-Fortbildung.
+Fortbildung. A page that wants a single Fortbildung names it, which is one word
+longer and says exactly what it does.
+
+`[ds_lms catalogue="1"]` still works and means the same as `[ds_lms]`. It exists
+because it was briefly the only way to ask.
+
+There is deliberately **no Standard-Fortbildung setting**. Until 2.0.0 there was,
+and a bare `[ds_lms]` fell back to it — so the commonest thing a page wants
+depended on a field in a different screen being blank, and a site that had filled
+it in could not show the list at all.
 
 Both go through the same `DS_LMS_Renderer::render()`, so they cannot disagree
 about what they produce. The bundle is enqueued only on pages that actually use

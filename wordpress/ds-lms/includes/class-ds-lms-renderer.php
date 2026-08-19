@@ -121,17 +121,13 @@ final class DS_LMS_Renderer {
 			array(
 				'course' => '',
 				/*
-				 * `[ds_lms catalogue="1"]` — every Fortbildung, never one
-				 * (P99-04).
+				 * Retained, and now a synonym for the default (P99-05).
 				 *
-				 * Without this there was no way to ask for the catalogue from a
-				 * page once **Standard-Fortbildung** was configured: a bare
-				 * `[ds_lms]` fell back to that setting, so a site with a default
-				 * course could only ever render that course. The catalogue —
-				 * the hero, the CME seal, the Thema and Altersgruppe filters,
-				 * the whole first screen of the layout — was built, shipped and
-				 * unreachable, which is §9.2's mirror image: not offering what
-				 * the system will do.
+				 * `[ds_lms]` *is* the catalogue since 2.0.0, so this attribute
+				 * says nothing new. It stays because pages were written with it
+				 * during the hours it was the only way to ask — removing it
+				 * would break them for no gain, and "explicit" is a legitimate
+				 * thing for a page author to want.
 				 */
 				'catalogue' => '',
 			),
@@ -140,7 +136,7 @@ final class DS_LMS_Renderer {
 		);
 
 		if ( '' !== (string) $atts['catalogue'] && '0' !== (string) $atts['catalogue'] ) {
-			return self::render( '', true );
+			return self::render( '' );
 		}
 
 		return self::render( (string) $atts['course'] );
@@ -169,18 +165,28 @@ final class DS_LMS_Renderer {
 	 * to fill in a field it did not need.
 	 *
 	 * @param string $course_override Course slug from the block or shortcode.
-	 * @param bool   $catalogue       Force the catalogue, ignoring the default.
 	 */
-	private static function render( string $course_override, bool $catalogue = false ): string {
+	private static function render( string $course_override ): string {
 		$settings = DS_LMS_Settings::all();
 
-		if ( $catalogue ) {
-			$course = '';
-		} elseif ( '' !== $course_override ) {
-			$course = (string) preg_replace( '/[^a-z0-9-]/', '', strtolower( $course_override ) );
-		} else {
-			$course = $settings['course_slug'];
-		}
+		/*
+		 * No slug means the catalogue. Full stop (P99-05).
+		 *
+		 * It used to mean "the Standard-Fortbildung setting, and the catalogue
+		 * only if that happened to be empty" — which made the commonest thing a
+		 * page wants, the list of every Fortbildung, depend on a field in a
+		 * different screen being blank. A page said `[ds_lms]` and got
+		 * something decided elsewhere.
+		 *
+		 * The setting is gone rather than merely unused: a **Standard-
+		 * Fortbildung** field that no code reads is a control that looks like a
+		 * decision and is not one (§9.2). A page that wants one Fortbildung
+		 * names it — `[ds_lms course="…"]` — which is one word longer and says
+		 * exactly what it does.
+		 */
+		$course = '' !== $course_override
+			? (string) preg_replace( '/[^a-z0-9-]/', '', strtolower( $course_override ) )
+			: '';
 
 		if ( '' === $settings['api_base'] || '' === $settings['project_slug'] ) {
 			// Editors see what is wrong; visitors see nothing at all rather
