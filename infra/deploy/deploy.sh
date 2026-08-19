@@ -596,6 +596,19 @@ fi
 # ---------------------------------------------------------------------------
 # 4b. The portal's realm and the project's realm are the same realm
 # ---------------------------------------------------------------------------
+# The loopback pattern, named once (P101-03).
+#
+# `packages/seed/src/keycloak-binding.ts` is the authority — it parses the URL
+# and asks the hostname, which is the right way and is unit-tested against nine
+# addresses. This is the same question asked in POSIX ERE because step 4b runs
+# before the API image does, with nothing but `psql`.
+#
+# Two implementations of one rule is exactly what §9.11 warns about, so this one
+# is pinned by `keycloak-issuer.test.sh` over the same fixture table, including
+# the case that makes a naive pattern wrong: `localhost.medice.com` is a public
+# host and must not match.
+DS_LOOPBACK_ISSUER_RE='^https?://(127\.[0-9.]+|localhost|\[::1\]|[^/]*\.localhost)(:[0-9]+)?(/|$)'
+
 # A half-configured Keycloak binding, on any project (P24-01).
 #
 # The API validates a learner's token against that project's own
@@ -626,6 +639,43 @@ if [[ "$RUN_MIGRATIONS" == "1" ]]; then
       "A learner will sign in successfully and then have every request refused. Set both, or neither, in the console." >&2
   else
     log "No half-configured Keycloak bindings"
+  fi
+
+  # A *complete* binding that points at this machine (P101-03).
+  #
+  # ## Why the check above was green for months on a broken project
+  #
+  # It asks whether the pair is complete. `medice-adhs` had both columns set —
+  # to `http://127.0.0.1:8080/realms/ds-dev` and `ds-education-api`, the seed's
+  # old fallback — so it passed, printed "No half-configured Keycloak bindings",
+  # and an operator reading that line reasonably concluded the bindings were
+  # fine. Every physician arriving from MEDICE's WordPress got a bare 401 on a
+  # real, correctly-signed token, because the API was comparing its `iss`
+  # against an address inside the API container.
+  #
+  # That is CLAUDE.md §9.1's second form: a check that silently covers less than
+  # its own success message claims. Completeness was never the property that
+  # mattered — reachability from a physician's browser was.
+  #
+  # The seed now refuses outright, which is the hard gate. This stays a warning
+  # and stays here because it covers what the seed cannot: a project somebody
+  # created by hand in the console, on an installation whose seeds never ran.
+  loopback_bound="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
+    psql -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
+    -c "SELECT string_agg(slug, ', ' ORDER BY slug)
+          FROM projects
+         WHERE keycloak_issuer ~* '${DS_LOOPBACK_ISSUER_RE}'" \
+    2>/dev/null | tr -d '\n' || true)"
+
+  if [[ -n "$loopback_bound" ]]; then
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "These projects are bound to a Keycloak on loopback: ${loopback_bound}." >&2
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "No learner can sign in to them — the token's issuer is compared against an address inside this container." >&2
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "Fix: Verwaltung -> Organisation -> Projekte -> <project> -> Bearbeiten (Issuer, Audience, Realm)." >&2
+  else
+    log "No project bound to a Keycloak on loopback"
   fi
 fi
 

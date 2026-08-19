@@ -52,6 +52,19 @@ import { requireEnv } from "./support/env.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 
+/*
+ * The seeds refuse to invent a Keycloak binding (P101-03), so this suite has to
+ * state one — exactly as the dev stack and the e2e rig do.
+ *
+ * A host that never set it is the case the refusal exists for, and it gets its
+ * own test below rather than being the ambient condition of every other one.
+ * `127.0.0.1:1` is the repository's established unreachable-on-purpose address:
+ * nothing here performs an OIDC flow, and a value that could accidentally
+ * resolve would make a future test pass for the wrong reason.
+ */
+process.env["KEYCLOAK_ISSUER"] ??= "http://127.0.0.1:1/realms/unused";
+process.env["KEYCLOAK_AUDIENCE"] ??= "ds-education-api";
+
 /**
  * Name → the function `apps/api/src/seed-<name>.ts` calls.
  *
@@ -269,4 +282,104 @@ describe("what the seeds leave behind", () => {
       { slug: "ds-ohne-punkte", reveal: true },
     ]);
   });
+
+  /*
+   * The Keycloak binding (P101-03).
+   *
+   * These two are the ticket. The pure rules have their own exhaustive tests in
+   * `packages/seed/src/keycloak-binding.test.ts` — these assert that the seed
+   * *calls* them, and what the database is left holding, which is the half a
+   * unit test structurally cannot reach (§9.7).
+   */
+  it("does not overwrite a Keycloak binding an operator set in the console", async () => {
+    /*
+     * The half that made this a *recurring* fault rather than one bad value.
+     *
+     * The upsert read `SET keycloak_issuer = EXCLUDED.keycloak_issuer`, and
+     * `deploy.sh` runs this seed on every deploy — so an operator who corrected
+     * the issuer in Verwaltung had it silently reverted the next time anything
+     * shipped, and the 401 came back with nothing in between to explain it.
+     */
+    await admin.query(
+      `UPDATE projects
+          SET keycloak_issuer = $1, keycloak_audience = $2, keycloak_realm = $3
+        WHERE slug = 'medice-adhs'`,
+      ["https://login.medice.com/auth/realms/medicerealm", "account", "medicerealm"],
+    );
+
+    const seeder = openSeeder();
+    try {
+      await seedMediceAdhs(seeder, { onlyIfMissing: true, revealPassword: false });
+    } finally {
+      await seeder.end();
+    }
+
+    const { rows } = await admin.query<{
+      issuer: string | null;
+      audience: string | null;
+      realm: string | null;
+    }>(
+      `SELECT keycloak_issuer AS issuer, keycloak_audience AS audience,
+              keycloak_realm AS realm
+         FROM projects WHERE slug = 'medice-adhs'`,
+    );
+
+    expect(rows[0]).toEqual({
+      issuer: "https://login.medice.com/auth/realms/medicerealm",
+      audience: "account",
+      realm: "medicerealm",
+    });
+  }, 60_000);
+
+  it("refuses to finish when the project is bound to nothing real", async () => {
+    /*
+     * A host that never set the variables, which is every host this platform
+     * has ever had — `KEYCLOAK_ISSUER` is a development variable and is
+     * deliberately not in `infra/deploy/config.env.example`.
+     *
+     * The seed used to answer `http://127.0.0.1:8080/realms/ds-dev` here and
+     * exit 0. The deploy went green, and every physician arriving from MEDICE's
+     * WordPress got a bare 401 on a token that was real, unexpired and
+     * correctly signed.
+     */
+    await admin.query(
+      `UPDATE projects
+          SET keycloak_issuer = NULL, keycloak_audience = NULL, keycloak_realm = NULL
+        WHERE slug = 'medice-adhs'`,
+    );
+
+    const issuer = process.env["KEYCLOAK_ISSUER"];
+    const audience = process.env["KEYCLOAK_AUDIENCE"];
+    delete process.env["KEYCLOAK_ISSUER"];
+    delete process.env["KEYCLOAK_AUDIENCE"];
+
+    const seeder = openSeeder();
+    try {
+      await expect(
+        seedMediceAdhs(seeder, { onlyIfMissing: true, revealPassword: false }),
+      ).rejects.toThrow(/Verwaltung -> Organisation -> Projekte -> medice-adhs/u);
+    } finally {
+      await seeder.end();
+      // Restored here rather than in an afterEach: this is the only case that
+      // touches them, and a global reset would hide it from whoever reads the
+      // case next. `localStorage` taught the same lesson in P22-08 — ambient
+      // state that outlives a test gets attributed to the wrong code.
+      if (issuer !== undefined) process.env["KEYCLOAK_ISSUER"] = issuer;
+      if (audience !== undefined) process.env["KEYCLOAK_AUDIENCE"] = audience;
+    }
+
+    // And it rolled back rather than leaving the tenant half-seeded.
+    const { rows } = await admin.query<{ n: string }>(
+      "SELECT count(*)::text AS n FROM projects WHERE slug = 'medice-adhs'",
+    );
+    expect(rows[0]?.n).toBe("1");
+
+    // Put the row back for any case that runs after this one.
+    const restore = openSeeder();
+    try {
+      await seedMediceAdhs(restore, { onlyIfMissing: true, revealPassword: false });
+    } finally {
+      await restore.end();
+    }
+  }, 60_000);
 });

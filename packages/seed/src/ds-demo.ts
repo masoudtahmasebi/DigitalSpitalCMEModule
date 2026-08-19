@@ -55,6 +55,7 @@ import {
   upsert,
   hasNoEvaluation,
 } from "./lib.js";
+import { seedKeycloakBinding } from "./keycloak-binding.js";
 import { describeDemoStaff, seedDemoStaff } from "./staff.js";
 import type { TenantSeedOptions } from "./medice-adhs.js";
 
@@ -247,14 +248,35 @@ export async function seedDsDemo(
      * Overridable so a local run can point both at one dev realm when that is
      * what is being worked on.
      */
+    /*
+     * Stated or absent, never invented — the same rule as `medice-adhs.ts`
+     * (P101-03), and here for the same reason rather than for symmetry: this
+     * default was `http://127.0.0.1:8080/realms/ds-demo`, and
+     * `DS_DEMO_KEYCLOAK_ISSUER` is blank in `.env.example` and absent from
+     * `infra/deploy/config.env.example`, so every installation carried it too.
+     *
+     * No `bindingProblem` throw here, and that is the one deliberate
+     * difference. The demo tenant is a fixture: it exists to be clicked
+     * through, its participants sign in through the portal's local provider,
+     * and failing a deploy over a federated binding nobody uses would be a gate
+     * that goes red for a reason nobody acts on. It is written honestly empty
+     * and the console shows it as such.
+     */
+    const binding = seedKeycloakBinding({
+      issuer: process.env["DS_DEMO_KEYCLOAK_ISSUER"],
+      audience: process.env["DS_DEMO_KEYCLOAK_AUDIENCE"],
+      realm: process.env["DS_DEMO_KEYCLOAK_REALM"],
+    });
+
     const projectId = await upsert(
       pool,
       `INSERT INTO projects (customer_id, department_id, slug, name, keycloak_issuer, keycloak_audience, keycloak_realm)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT (department_id, slug) DO UPDATE
          SET name = EXCLUDED.name,
-             keycloak_issuer = EXCLUDED.keycloak_issuer,
-             keycloak_audience = EXCLUDED.keycloak_audience,
+             keycloak_issuer = COALESCE(projects.keycloak_issuer, EXCLUDED.keycloak_issuer),
+             keycloak_audience = COALESCE(projects.keycloak_audience, EXCLUDED.keycloak_audience),
+             keycloak_realm = COALESCE(projects.keycloak_realm, EXCLUDED.keycloak_realm),
              updated_at = now()
        RETURNING id`,
       [
@@ -262,9 +284,9 @@ export async function seedDsDemo(
         departmentId,
         PROJECT_SLUG,
         "DS Demo",
-        process.env["DS_DEMO_KEYCLOAK_ISSUER"] ?? "http://127.0.0.1:8080/realms/ds-demo",
-        process.env["DS_DEMO_KEYCLOAK_AUDIENCE"] ?? "ds-education-api",
-        "ds-demo",
+        binding.issuer,
+        binding.audience,
+        binding.realm,
       ],
     );
 

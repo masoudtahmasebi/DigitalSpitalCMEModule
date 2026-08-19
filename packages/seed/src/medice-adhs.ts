@@ -49,6 +49,7 @@ import {
   upsert,
   hasNoEvaluation,
 } from "./lib.js";
+import { bindingProblem, seedKeycloakBinding } from "./keycloak-binding.js";
 
 /**
  * A fixed id, not a generated one, and that is load-bearing.
@@ -300,14 +301,35 @@ export async function seedMediceAdhs(
       [customerId, "adhs", "ADHS"],
     );
 
+    /*
+     * The Keycloak binding: stated or absent, never invented (P101-03).
+     *
+     * Both halves matter and only together. `seedKeycloakBinding` removes the
+     * `?? "http://127.0.0.1:8080/realms/ds-dev"` that bound MEDICE's project to
+     * a Keycloak on the API container's own loopback on every installation this
+     * platform has ever had — and the `COALESCE`s below stop a re-run reverting
+     * an operator who fixed it in the console, which is what turned one wrong
+     * value into a fault that came back after every deploy.
+     *
+     * Same shape as `vnr_password_enc` two statements down, and for the same
+     * reason: a seed converges structure, and a credential somebody typed is
+     * not structure.
+     */
+    const binding = seedKeycloakBinding({
+      issuer: process.env["KEYCLOAK_ISSUER"],
+      audience: process.env["KEYCLOAK_AUDIENCE"],
+      realm: process.env["KEYCLOAK_REALM"],
+    });
+
     const projectId = await upsert(
       pool,
       `INSERT INTO projects (customer_id, department_id, slug, name, keycloak_issuer, keycloak_audience, keycloak_realm)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT (department_id, slug) DO UPDATE
          SET name = EXCLUDED.name,
-             keycloak_issuer = EXCLUDED.keycloak_issuer,
-             keycloak_audience = EXCLUDED.keycloak_audience,
+             keycloak_issuer = COALESCE(projects.keycloak_issuer, EXCLUDED.keycloak_issuer),
+             keycloak_audience = COALESCE(projects.keycloak_audience, EXCLUDED.keycloak_audience),
+             keycloak_realm = COALESCE(projects.keycloak_realm, EXCLUDED.keycloak_realm),
              updated_at = now()
        RETURNING id`,
       [
@@ -315,11 +337,33 @@ export async function seedMediceAdhs(
         departmentId,
         PROJECT_SLUG,
         "ADHS Akademie",
-        process.env["KEYCLOAK_ISSUER"] ?? "http://127.0.0.1:8080/realms/ds-dev",
-        process.env["KEYCLOAK_AUDIENCE"] ?? "ds-education-api",
-        "ds-dev",
+        binding.issuer,
+        binding.audience,
+        binding.realm,
       ],
     );
+
+    /*
+     * And then read back what the row actually holds (§9.1).
+     *
+     * Not `binding` — that is what this process would have written, and the
+     * `COALESCE`s above mean it frequently is not what is stored. The question
+     * a deploy has to answer is "can this project authenticate a physician",
+     * and only the row can answer it.
+     *
+     * This throws. A federated project with no issuer, or with the loopback
+     * default a previous seed wrote, is a project on which every learner gets a
+     * 401 — so the installation is already broken and a green deploy is the
+     * lie. §9.9's strongest form: if a deploy cannot apply a setting, it checks
+     * it and fails.
+     */
+    const stored = await storedBinding(pool, projectId);
+    const problem = bindingProblem({
+      projectSlug: PROJECT_SLUG,
+      stored,
+      issuerRequested: binding.issuer !== null,
+    });
+    if (problem !== undefined) throw new Error(problem);
 
     // The second channel: the standalone portal at /medice, whose participants
     // hold a password here rather than a MEDICE Keycloak account. Same
@@ -699,6 +743,45 @@ export async function seedMediceAdhs(
  * needs to read this: the VNR password is used server-side only and is never
  * returned by any API.
  */
+
+/**
+ * What the `projects` row now holds, read inside the tenant context.
+ *
+ * `enterTenant` has already run — `projects` is under FORCE ROW LEVEL SECURITY
+ * and a read on the bare pool matches zero rows, which would arrive here as an
+ * all-null shape indistinguishable from "not configured" (§9.6). The seed is
+ * inside its transaction and its tenant, so this reads the row it just wrote.
+ */
+async function storedBinding(
+  pool: pg.Pool,
+  projectId: string,
+): Promise<{ issuer: string | null; audience: string | null; realm: string | null }> {
+  const result = await pool.query<{
+    keycloak_issuer: string | null;
+    keycloak_audience: string | null;
+    keycloak_realm: string | null;
+  }>(
+    `SELECT keycloak_issuer, keycloak_audience, keycloak_realm
+       FROM projects WHERE id = $1`,
+    [projectId],
+  );
+
+  const row = result.rows[0];
+  if (row === undefined) {
+    // Zero rows here is not "unconfigured" — it is the tenant context being
+    // wrong, and saying "no issuer" would send the reader to the console to
+    // fix a row they can see is already right.
+    throw new Error(
+      `projects row id=${projectId} is not visible; the seed's tenant context is wrong`,
+    );
+  }
+
+  return {
+    issuer: row.keycloak_issuer,
+    audience: row.keycloak_audience,
+    realm: row.keycloak_realm,
+  };
+}
 
 function seededVnrPassword(): Buffer {
   const cipher = createSecretCipher(
