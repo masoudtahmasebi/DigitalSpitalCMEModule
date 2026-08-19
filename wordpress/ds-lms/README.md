@@ -100,9 +100,17 @@ makes is refused by CORS.
 Either the block (**DS Education — Fortbildung**) or the shortcode:
 
 ```
-[ds_lms]
-[ds_lms course="adhs-akademie-adult"]
+[ds_lms catalogue="1"]              every Fortbildung — the Fortbildungsbereich
+[ds_lms course="adhs-akademie-adult"]   one, opened directly
+[ds_lms]                            the Standard-Fortbildung, or the catalogue
+                                    when no default is configured
 ```
+
+**`catalogue="1"` is the one to use for a landing page.** A bare `[ds_lms]`
+falls back to **Standard-Fortbildung**, so on a site that has configured one it
+can never show the list — which is the whole first screen of the layout: the
+teal hero, the CME seal, the Thema and Altersgruppe filters, and a card per
+Fortbildung.
 
 Both go through the same `DS_LMS_Renderer::render()`, so they cannot disagree
 about what they produce. The bundle is enqueued only on pages that actually use

@@ -118,10 +118,30 @@ final class DS_LMS_Renderer {
 	 */
 	public static function shortcode( $atts ): string {
 		$atts = shortcode_atts(
-			array( 'course' => '' ),
+			array(
+				'course' => '',
+				/*
+				 * `[ds_lms catalogue="1"]` — every Fortbildung, never one
+				 * (P99-04).
+				 *
+				 * Without this there was no way to ask for the catalogue from a
+				 * page once **Standard-Fortbildung** was configured: a bare
+				 * `[ds_lms]` fell back to that setting, so a site with a default
+				 * course could only ever render that course. The catalogue —
+				 * the hero, the CME seal, the Thema and Altersgruppe filters,
+				 * the whole first screen of the layout — was built, shipped and
+				 * unreachable, which is §9.2's mirror image: not offering what
+				 * the system will do.
+				 */
+				'catalogue' => '',
+			),
 			is_array( $atts ) ? $atts : array(),
 			'ds_lms'
 		);
+
+		if ( '' !== (string) $atts['catalogue'] && '0' !== (string) $atts['catalogue'] ) {
+			return self::render( '', true );
+		}
 
 		return self::render( (string) $atts['course'] );
 	}
@@ -149,13 +169,18 @@ final class DS_LMS_Renderer {
 	 * to fill in a field it did not need.
 	 *
 	 * @param string $course_override Course slug from the block or shortcode.
+	 * @param bool   $catalogue       Force the catalogue, ignoring the default.
 	 */
-	private static function render( string $course_override ): string {
+	private static function render( string $course_override, bool $catalogue = false ): string {
 		$settings = DS_LMS_Settings::all();
 
-		$course = '' !== $course_override
-			? (string) preg_replace( '/[^a-z0-9-]/', '', strtolower( $course_override ) )
-			: $settings['course_slug'];
+		if ( $catalogue ) {
+			$course = '';
+		} elseif ( '' !== $course_override ) {
+			$course = (string) preg_replace( '/[^a-z0-9-]/', '', strtolower( $course_override ) );
+		} else {
+			$course = $settings['course_slug'];
+		}
 
 		if ( '' === $settings['api_base'] || '' === $settings['project_slug'] ) {
 			// Editors see what is wrong; visitors see nothing at all rather

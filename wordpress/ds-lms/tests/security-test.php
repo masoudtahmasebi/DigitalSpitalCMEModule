@@ -1271,6 +1271,39 @@ check(
 unset( $_SERVER['REQUEST_URI'] );
 
 // ---------------------------------------------------------------------------
+echo "\nEvery Fortbildung, or one (P99-04)\n";
+// ---------------------------------------------------------------------------
+
+// The catalogue — hero, CME seal, Thema and Altersgruppe filters — was built
+// and unreachable from any page whose site had configured a default course.
+
+ds_test_reset();
+configure(); // configure() sets course_slug = adhs-akademie-adult
+check(
+	'a bare shortcode still honours the configured default course',
+	str_contains( DS_LMS_Renderer::shortcode( array() ), 'course="adhs-akademie-adult"' )
+);
+check(
+	'catalogue="1" overrides it and asks for every Fortbildung',
+	! str_contains( DS_LMS_Renderer::shortcode( array( 'catalogue' => '1' ) ), ' course=' )
+);
+check(
+	'and the element is still rendered, not suppressed',
+	str_contains( DS_LMS_Renderer::shortcode( array( 'catalogue' => '1' ) ), '<ds-lms ' )
+);
+check(
+	'catalogue="0" is not a request for the catalogue',
+	str_contains( DS_LMS_Renderer::shortcode( array( 'catalogue' => '0' ) ), 'course="adhs-akademie-adult"' )
+);
+check(
+	'and a course beside it does not quietly win',
+	! str_contains(
+		DS_LMS_Renderer::shortcode( array( 'catalogue' => '1', 'course' => 'kurs-zwei' ) ),
+		' course='
+	)
+);
+
+// ---------------------------------------------------------------------------
 
 echo "\n$checks checks, $failures failed\n";
 exit( $failures === 0 ? 0 : 1 );

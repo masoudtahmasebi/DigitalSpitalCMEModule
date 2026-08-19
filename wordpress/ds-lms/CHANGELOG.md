@@ -13,6 +13,22 @@ something is missing, and which WordPress and PHP versions are required.
 Newest first. `tests/security-test.php` refuses a release whose newest entry
 here disagrees with `Version:` in `ds-lms.php`.
 
+## 1.4.0 — 19.08.2026
+
+### `[ds_lms catalogue="1"]` — the Fortbildungsbereich, not one Fortbildung (P99-04)
+
+Reported: _"the original page … should load all of the courses, not a certain
+course"_.
+
+A bare `[ds_lms]` falls back to **Standard-Fortbildung**, so on a site that has
+configured one there was **no way to ask for the list at all**. The catalogue —
+the teal hero, the CME seal, the Thema and Altersgruppe filters, a card per
+Fortbildung — has been built since P58 and was unreachable from any such page.
+§9.2's mirror image: not offering what the system will do.
+
+`catalogue="1"` overrides the default and any `course` beside it, so a landing
+page says what it wants and gets it.
+
 ## 1.3.0 — 19.08.2026
 
 ### The page says whether somebody is signed in, so the widget stops guessing (P99-03)
