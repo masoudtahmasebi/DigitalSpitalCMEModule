@@ -108,6 +108,51 @@ Both go through the same `DS_LMS_Renderer::render()`, so they cannot disagree
 about what they produce. The bundle is enqueued only on pages that actually use
 one of them.
 
+### First check: does the theme render the page body at all?
+
+A shortcode only runs if something prints the content it is written in, and a
+component-driven theme very often does not. MEDICE's `page.php` is exactly that
+shape:
+
+```php
+if ( have_rows( 'components' ) ) {
+    while ( have_rows( 'components' ) ) { the_row();
+        get_template_part( 'components/' . get_row_layout() ); }
+}
+```
+
+No `the_content()` anywhere — so `[ds_lms …]` typed into the editor is never
+printed, produces no markup, logs nothing, and looks from the front end exactly
+like a plugin that does not work. It cost an afternoon to find, so it is the
+first thing to check on any new site: **view source and look for `<ds-lms`.** If
+it is absent, the shortcode never ran; if it is present and nothing renders, the
+problem is the bundle or the API and _Verbindung prüfen_ will say which.
+
+The fix is one page template that calls `the_content()`:
+
+```php
+<?php
+/** Template Name: CME-Fortbildung */
+get_header();
+?>
+<main class="w-full site-content-padding py-12 lg:py-20">
+	<?php while ( have_posts() ) { the_post(); the_content(); } ?>
+</main>
+<?php get_footer();
+```
+
+Create the page, choose that template, paste the shortcode.
+
+### What the container has to give it
+
+Very little. `<ds-lms>` is `display: block; max-width: 100%` and every screen
+inside carries the widths from the layout — the catalogue grid, the player's
+video-plus-sidebar split, the exam column. It constrains itself.
+
+What it must **not** be given is a prose container. A theme's text column
+(`container mx-auto` and friends) is sized for paragraphs and will squash the
+player. Full width plus the site's own horizontal padding is right.
+
 ---
 
 ## How somebody is recognised — and it is not WordPress
