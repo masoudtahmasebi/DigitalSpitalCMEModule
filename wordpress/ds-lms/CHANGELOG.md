@@ -13,6 +13,49 @@ something is missing, and which WordPress and PHP versions are required.
 Newest first. `tests/security-test.php` refuses a release whose newest entry
 here disagrees with `Version:` in `ds-lms.php`.
 
+## 1.1.0 — 19.08.2026
+
+### The MEDICE login is recognised, and WordPress is out of it (P98-01)
+
+The client supplied their Keycloak plugin **and their theme**, which settled a
+question that had been open since July and answered it the other way round from
+what we had recorded.
+
+**The token was there all along.** `theme/functions/login-class.php` stores the
+entire Keycloak token response — `access_token`, `refresh_token`, `expires_in` —
+in `$_SESSION['LOGIN_SESSION']`, and the grant requests `offline_access`. Our
+28.07 note said no token was persisted; that was written after reading the
+plugin and not the theme.
+
+**But no physician is a WordPress user.** There is no `wp_signon`,
+`wp_set_auth_cookie` or `wp_insert_user` anywhere in either. `is_user_logged_in()`
+is false for all of them — and this plugin gated three separate things on it, so
+a physician got an element with no way to authenticate, an endpoint that refused
+them, and a token source that returned null.
+
+All three now ask the only question that means anything on that site: **is there
+an access token in this request's session?**
+
+- **New setting: Session-Schlüssel des Logins**, defaulting to `LOGIN_SESSION`.
+  Only `access_token` is read from it.
+- **DocCheck logins** are handled honestly: no Keycloak token, no token
+  endpoint, and the widget's signed-out state rather than a broken screen.
+- **Removed:** the user-meta strategies. They needed a WordPress user id, there
+  is never one, and code that cannot run is worse than absent.
+- **Verbindung prüfen** now separates "no PHP session on this request" from "a
+  session with no token in it", and when a token _is_ present it prints the
+  token's **Issuer** and **Audience** — the two values that must match the
+  project's `keycloak_issuer` and `keycloak_audience` in the DigitalSpital
+  console, and the next thing that would otherwise have failed as a silent 401.
+  Never the token, the subject or any personal claim.
+
+**Security note, because the change is real:** the token endpoint used to
+require a WordPress user and now requires a session holding a token. Same-origin
+is checked explicitly rather than inherited from WordPress's CORS defaults. The
+`wp_rest` nonce is retained but is **not** a defence here — with no user id
+behind it, every anonymous visitor shares a value that is readable from a public
+page. This was reviewed as an auth change, not a refactor.
+
 ## 1.0.1 — 19.08.2026
 
 ### The token endpoint's two 404s are now distinguishable (P97-01)

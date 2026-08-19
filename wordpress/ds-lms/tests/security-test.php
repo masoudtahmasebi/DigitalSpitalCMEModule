@@ -17,6 +17,18 @@
 
 declare( strict_types = 1 );
 
+/*
+ * A session, started before anything is echoed.
+ *
+ * The MEDICE site's identity *is* the PHP session (P98-01), so a suite that
+ * cannot start one cannot test the plugin at all. It has to happen before the
+ * first byte of output: `session_start()` after output fails and returns false,
+ * which is a silent way for every session-dependent check to go red for a
+ * reason that has nothing to do with the plugin.
+ */
+ini_set( 'session.use_cookies', '0' );
+session_start();
+
 require_once __DIR__ . '/harness.php';
 
 $plugin = dirname( __DIR__ );
@@ -73,13 +85,30 @@ function configure( array $overrides = array() ): void {
 	);
 }
 
+/**
+ * Sign somebody in the way the MEDICE site actually does (P98-01).
+ *
+ * **No WordPress user.** Their theme puts the whole Keycloak token response
+ * into `$_SESSION['LOGIN_SESSION']` and creates no `wp_users` row at all, so a
+ * helper that set `logged_in` would be testing a state no physician is ever in
+ * — and that is precisely the state the plugin used to require.
+ *
+ * `$user_id` is kept in the signature and deliberately unused: it is what the
+ * old helper took, and leaving the parameter makes every call site that still
+ * passes one a visible reminder that identity here is the session, not a user.
+ */
 function sign_in( int $user_id, string $token = null ): void {
-	$GLOBALS['ds_test']['logged_in'] = true;
-	$GLOBALS['ds_test']['user_id']   = $user_id;
-	if ( null !== $token ) {
-		$GLOBALS['ds_test']['user_meta'][ $user_id ]['keycloak_access_token'] = $token;
+	$_SESSION[ DS_LMS_Settings::DEFAULT_SESSION_KEY ] = array(
+		'access_token'  => $token ?? '',
+		'refresh_token' => 'a-refresh-token-we-never-read',
+		'userinfo'      => array( 'email' => 'aerztin@example.test' ),
+	);
+	if ( null === $token ) {
+		// Signed in, but no Keycloak token — a DocCheck visitor.
+		unset( $_SESSION[ DS_LMS_Settings::DEFAULT_SESSION_KEY ]['access_token'] );
 	}
 }
+
 
 const SECRET_TOKEN = 'eyJhbGciOiJSUzI1NiJ9.this-is-the-users-token.sig';
 
@@ -231,10 +260,39 @@ check(
 	'from-medice-plugin' === DS_LMS_Token_Source::current()
 );
 
+/*
+ * Migrated, not deleted (P98-01).
+ *
+ * This used to assert that the filter yields nothing "when nobody is logged
+ * in", where logged-in meant `is_user_logged_in()`. On the site this is for,
+ * that is false for every physician, so the property it protected — a host
+ * hook cannot hand a token to somebody who is not signed in — no longer has a
+ * WordPress-shaped meaning. What replaces it is the honest pair: with no
+ * session and no hook there is nothing, and a hook's answer is the host
+ * deciding, which is what a hook is.
+ */
 ds_test_reset();
-add_filter( 'ds_lms_access_token', static fn() => 'from-medice-plugin' );
 check(
-	'and even that filter yields nothing when nobody is logged in',
+	'no session and no filter yields no token',
+	null === DS_LMS_Token_Source::current()
+);
+check( 'and therefore nothing to offer', ! DS_LMS_Token_Source::available() );
+
+ds_test_reset();
+add_filter( 'ds_lms_access_token', static fn() => 'from-the-host' );
+check(
+	'a host that supplies a token through the filter is believed — that is what a filter is',
+	'from-the-host' === DS_LMS_Token_Source::current()
+);
+
+// The one WordPress-shaped thing that must stay gone: no user id is ever
+// consulted, so there is no per-user store to read the wrong row from.
+ds_test_reset();
+$GLOBALS['ds_test']['user_meta'][7]['keycloak_access_token'] = 'from-user-meta';
+$GLOBALS['ds_test']['logged_in'] = true;
+$GLOBALS['ds_test']['user_id']   = 7;
+check(
+	'a WordPress user with a token in user meta is not a source any more',
 	null === DS_LMS_Token_Source::current()
 );
 
@@ -788,8 +846,12 @@ $report = DS_LMS_Diagnostics::run();
 $token  = result_for( $report, 'Token-Endpunkt' );
 check( 'enabled but tokenless is a different failure', ! $token['ok'] );
 check(
-	'and it names the filter the Keycloak plugin has to call',
-	str_contains( $token['detail'], 'ds_lms_access_token' )
+	'and it names the session key it looked under',
+	str_contains( $token['detail'], DS_LMS_Settings::DEFAULT_SESSION_KEY )
+);
+check(
+	'and says DocCheck logins are expected to have none',
+	str_contains( $token['detail'], 'DocCheck' )
 );
 check(
 	'and does not tell the operator to switch on what is already on',
@@ -816,6 +878,151 @@ check(
 	'a URL in the request is not fetched',
 	! str_contains( implode( "\n", $GLOBALS['ds_test']['requests'] ), '169.254.169.254' )
 );
+
+// ---------------------------------------------------------------------------
+echo "\nThe MEDICE login, which is not a WordPress login (P98-01)\n";
+// ---------------------------------------------------------------------------
+
+// Their theme stores the whole Keycloak token response under one $_SESSION key
+// and creates no WordPress user at all. Everything below is about that shape.
+
+ds_test_reset();
+configure();
+$_SESSION['LOGIN_SESSION'] = array(
+	'access_token'  => SECRET_TOKEN,
+	'refresh_token' => 'offline-token',
+	'expires_in'    => 300,
+	'userinfo'      => array( 'email' => 'aerztin@example.test' ),
+);
+check(
+	'the token is read from the theme session',
+	SECRET_TOKEN === DS_LMS_Token_Source::current()
+);
+check( 'and nothing else in that session is touched', DS_LMS_Token_Source::available() );
+
+// A DocCheck visitor: signed in to the site, no Keycloak anywhere near it.
+ds_test_reset();
+configure();
+$_SESSION['DocCheckLoggedIn'] = true;
+check(
+	'a DocCheck login yields no token, which is correct rather than broken',
+	null === DS_LMS_Token_Source::current()
+);
+check(
+	'so the element offers no token endpoint to a DocCheck visitor',
+	! str_contains( DS_LMS_Renderer::shortcode( array() ), 'token-endpoint' )
+);
+check(
+	'and still renders the widget, which shows its own signed-out state',
+	str_contains( DS_LMS_Renderer::shortcode( array() ), '<ds-lms ' )
+);
+
+// The key is a setting, because it belongs to the host's login code.
+ds_test_reset();
+configure( array( 'session_key' => 'ANOTHER_KEY' ) );
+$_SESSION['ANOTHER_KEY'] = array( 'access_token' => SECRET_TOKEN );
+check( 'a site with a different session key is configurable', SECRET_TOKEN === DS_LMS_Token_Source::current() );
+
+ds_test_reset();
+configure();
+$_SESSION['ANOTHER_KEY'] = array( 'access_token' => SECRET_TOKEN );
+check(
+	'and a token under a key we were not told about is not found',
+	null === DS_LMS_Token_Source::current()
+);
+
+check(
+	'the key defaults to what MEDICE uses',
+	DS_LMS_Settings::DEFAULT_SESSION_KEY === DS_LMS_Settings::all()['session_key']
+);
+check(
+	'and a key that is not a PHP identifier is rejected rather than stored',
+	'' === DS_LMS_Settings::sanitize( array( 'session_key' => "LOGIN']['x" ) )['session_key']
+);
+
+// ---------------------------------------------------------------------------
+echo "\nWho the token endpoint answers, now that WordPress has no opinion\n";
+// ---------------------------------------------------------------------------
+
+// The gate is: this request's own session already holds a token. Nothing is
+// minted, looked up by id, or derived from a claim.
+ds_test_reset();
+configure();
+$_SERVER['HTTP_X_WP_NONCE'] = 'good-nonce';
+check(
+	'a visitor with no session is refused — there is nothing to return',
+	false === DS_LMS_Token_Endpoint::permitted()
+);
+
+ds_test_reset();
+configure();
+sign_in( 7, SECRET_TOKEN );
+$_SERVER['HTTP_X_WP_NONCE'] = 'good-nonce';
+check(
+	'a MEDICE-logged-in visitor is allowed, with no WordPress user anywhere',
+	true === DS_LMS_Token_Endpoint::permitted()
+);
+check(
+	'and WordPress still considers them logged out',
+	false === is_user_logged_in()
+);
+
+// Same-origin is the real boundary now, so it is ours and it is asserted.
+// A browser omits Origin on same-origin GETs; present-and-different is the
+// case that matters.
+ds_test_reset();
+configure();
+sign_in( 7, SECRET_TOKEN );
+$_SERVER['HTTP_X_WP_NONCE'] = 'good-nonce';
+$_SERVER['HTTP_ORIGIN']     = 'https://boese.example';
+check(
+	'another origin is refused even holding a valid nonce and session',
+	false === DS_LMS_Token_Endpoint::permitted()
+);
+
+ds_test_reset();
+configure();
+sign_in( 7, SECRET_TOKEN );
+$_SERVER['HTTP_X_WP_NONCE'] = 'good-nonce';
+$_SERVER['HTTP_ORIGIN']     = 'https://medice.example';
+check( 'this site\'s own origin is allowed', true === DS_LMS_Token_Endpoint::permitted() );
+
+// The nonce is defence in depth and is still required, so an accidental call
+// from other code on the site does not walk away with a token.
+ds_test_reset();
+configure();
+sign_in( 7, SECRET_TOKEN );
+check( 'a request with no nonce is still refused', false === DS_LMS_Token_Endpoint::permitted() );
+
+// ---------------------------------------------------------------------------
+echo "\nWhat the operator needs to configure, shown to them (P98-01)\n";
+// ---------------------------------------------------------------------------
+
+// A token whose `aud` does not match the project's `keycloak_audience` is
+// refused by our API and reaches the browser as a 401 that looks exactly like
+// "not signed in". The two values to copy are therefore printed.
+ds_test_reset();
+configure();
+$payload = base64_encode( wp_json_encode( array(
+	'iss' => 'https://sso.medice.example/realms/medice',
+	'aud' => array( 'account', 'ds-education' ),
+	'sub' => 'must-not-be-shown',
+	'email' => 'aerztin@example.test',
+) ) );
+$_SESSION['LOGIN_SESSION'] = array( 'access_token' => 'header.' . $payload . '.sig' );
+$report = DS_LMS_Diagnostics::run();
+$token  = result_for( $report, 'Token-Endpunkt' );
+check( 'a present token is reported working', $token['ok'] );
+check( 'and the issuer is shown, to be copied into the project', str_contains( $token['detail'], 'https://sso.medice.example/realms/medice' ) );
+check( 'and the audience, which is the claim that silently refuses', str_contains( $token['detail'], 'ds-education' ) );
+check( 'and never the subject', ! str_contains( $token['detail'], 'must-not-be-shown' ) );
+check( 'and never the participant\'s email', ! str_contains( $token['detail'], 'aerztin@example.test' ) );
+check( 'and never the token itself', ! str_contains( $token['detail'], $payload ) );
+
+// A session that is not running at all is its own failure with its own fix.
+ds_test_reset();
+configure();
+check( 'a running session is what the suite and the MEDICE theme both provide', DS_LMS_Token_Source::session_active() );
 
 // ---------------------------------------------------------------------------
 

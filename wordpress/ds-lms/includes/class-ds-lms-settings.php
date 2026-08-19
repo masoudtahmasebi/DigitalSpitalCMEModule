@@ -63,10 +63,13 @@ final class DS_LMS_Settings {
 	 */
 	private const WIDGET_LABEL = 'widget';
 
+	/** MEDICE's `Profile::$LOGIN_SESSION_KEY`. See `all()`. */
+	public const DEFAULT_SESSION_KEY = 'LOGIN_SESSION';
+
 	/**
 	 * The stored settings, with defaults filled in and `api_base` derived.
 	 *
-	 * @return array{base_domain:string,api_base:string,widget_url:string,project_slug:string,course_slug:string,token_endpoint_enabled:bool}
+	 * @return array{base_domain:string,api_base:string,widget_url:string,project_slug:string,course_slug:string,session_key:string,token_endpoint_enabled:bool}
 	 */
 	public static function all(): array {
 		$stored = get_option( self::OPTION, array() );
@@ -77,6 +80,7 @@ final class DS_LMS_Settings {
 		$base_domain = isset( $stored['base_domain'] ) ? (string) $stored['base_domain'] : '';
 		$api_base    = isset( $stored['api_base'] ) ? (string) $stored['api_base'] : '';
 		$widget_url  = isset( $stored['widget_url'] ) ? (string) $stored['widget_url'] : '';
+		$session_key = isset( $stored['session_key'] ) ? (string) $stored['session_key'] : '';
 
 		return array(
 			'base_domain'  => $base_domain,
@@ -103,6 +107,16 @@ final class DS_LMS_Settings {
 			'widget_url'   => self::resolve_widget_url( $widget_url, $base_domain, $api_base ),
 			'project_slug' => isset( $stored['project_slug'] ) ? (string) $stored['project_slug'] : '',
 			'course_slug'  => isset( $stored['course_slug'] ) ? (string) $stored['course_slug'] : '',
+			/*
+			 * The host's login session key (P98-01).
+			 *
+			 * `LOGIN_SESSION` by default because that is what MEDICE's theme
+			 * uses — `Profile::$LOGIN_SESSION_KEY` in
+			 * `functions/login-class.php` — and MEDICE is who this plugin is
+			 * for. A site whose login code uses another key changes a field
+			 * rather than waiting for a release.
+			 */
+			'session_key'  => '' !== $session_key ? $session_key : self::DEFAULT_SESSION_KEY,
 			// The kill switch for P6-02. Default **off**: a token endpoint that
 			// appears the moment the plugin is activated is not a decision
 			// anyone made.
@@ -262,6 +276,14 @@ final class DS_LMS_Settings {
 			'widget_url'             => $widget_url,
 			'project_slug'           => self::sanitize_slug( $input['project_slug'] ?? '' ),
 			'course_slug'            => self::sanitize_slug( $input['course_slug'] ?? '' ),
+			// Validated, not stripped.
+			//
+			// Stripping `LOGIN']['x` down to `LOGINx` would store a key that
+			// looks configured and reads nothing — the worst of the three
+			// outcomes, because the screen would then show a setting that is
+			// quietly wrong. An unusable value is refused instead, which leaves
+			// the field empty and the documented default in force.
+			'session_key'            => self::sanitize_session_key( $input['session_key'] ?? '' ),
 			'token_endpoint_enabled' => ! empty( $input['token_endpoint_enabled'] ),
 		);
 	}
@@ -277,6 +299,16 @@ final class DS_LMS_Settings {
 	 */
 	private static function sanitize_slug( $value ): string {
 		return (string) preg_replace( '/[^a-z0-9-]/', '', strtolower( trim( (string) $value ) ) );
+	}
+
+	/**
+	 * A PHP array key, or nothing.
+	 *
+	 * @param mixed $value Raw value.
+	 */
+	private static function sanitize_session_key( $value ): string {
+		$key = trim( (string) $value );
+		return 1 === preg_match( '/^[A-Za-z0-9_]+$/', $key ) ? $key : '';
 	}
 
 	public static function add_page(): void {
@@ -422,6 +454,29 @@ final class DS_LMS_Settings {
 							/>
 							<p class="description">
 								<?php esc_html_e( 'Kann je Block oder Shortcode überschrieben werden.', 'ds-lms' ); ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">
+							<label for="ds-lms-session-key"><?php esc_html_e( 'Session-Schlüssel des Logins', 'ds-lms' ); ?></label>
+						</th>
+						<td>
+							<input
+								id="ds-lms-session-key"
+								name="<?php echo esc_attr( self::OPTION ); ?>[session_key]"
+								type="text"
+								class="regular-text"
+								value="<?php echo esc_attr( $settings['session_key'] ); ?>"
+								placeholder="<?php echo esc_attr( self::DEFAULT_SESSION_KEY ); ?>"
+							/>
+							<p class="description">
+								<?php
+								esc_html_e(
+									'Der Schlüssel in $_SESSION, unter dem die Anmeldung dieser Seite die Keycloak-Antwort ablegt. Das Lernmodul liest daraus nur „access_token". Bei MEDICE ist das LOGIN_SESSION.',
+									'ds-lms'
+								);
+								?>
 							</p>
 						</td>
 					</tr>

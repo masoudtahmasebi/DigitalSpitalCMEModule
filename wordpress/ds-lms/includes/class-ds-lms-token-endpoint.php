@@ -71,21 +71,85 @@ final class DS_LMS_Token_Endpoint {
 		);
 	}
 
+	/**
+	 * Who may call this, now that WordPress has no opinion (P98-01).
+	 *
+	 * ## What changed, and it is a real change
+	 *
+	 * This used to begin `if ( ! is_user_logged_in() ) return false;`. On the
+	 * site this exists for, that is false for **every physician** — MEDICE's
+	 * login is a theme-level PHP session and creates no WordPress user at all.
+	 * The check did not protect anything; it refused everybody.
+	 *
+	 * So the gate is now: **there is a token in this request's own session.**
+	 * A caller with no session gets nothing because there is nothing to get,
+	 * which is a stronger statement than a role check — the endpoint cannot
+	 * return a token that the caller's own session did not already contain.
+	 *
+	 * ## What actually stops another site reading a physician's token
+	 *
+	 * **Same origin, and it is checked here rather than inherited.** A page on
+	 * another origin can cause this request (a plain GET is not preflighted)
+	 * but cannot *read* the reply: WordPress sends
+	 * `Access-Control-Allow-Origin` only for its own origins, so the browser
+	 * refuses the response to the calling script. That is the boundary. Relying
+	 * on it silently would make it invisible, so an `Origin` that is present
+	 * and not ours is refused explicitly, by us, where a test can see it.
+	 *
+	 * ## And what does *not* protect it, stated so nobody mistakes it for
+	 * protection
+	 *
+	 * **The nonce is not a defence for this endpoint any more.** WordPress
+	 * binds a nonce to the user id, and there is no user — so every anonymous
+	 * visitor within a tick shares one value, and the page carrying it is
+	 * public, so anybody can read a valid nonce by fetching the page. It is
+	 * kept because it costs nothing and stops accidental calls from other code
+	 * on the site, and because removing it would change two things at once. It
+	 * is **not** what makes this safe, and a comment claiming otherwise would
+	 * be worse than none (§9.10a).
+	 *
+	 * This is why the ticket is marked `needs-human-review`: the set of callers
+	 * this endpoint answers has genuinely widened, from "WordPress users" to
+	 * "browsers on this origin holding a MEDICE session", and that is a
+	 * decision, not a refactor.
+	 */
 	public static function permitted(): bool {
-		if ( ! is_user_logged_in() ) {
+		if ( ! self::same_origin() ) {
 			return false;
 		}
 
-		// WordPress checks the `wp_rest` nonce for cookie-authenticated
-		// requests itself, but only after this callback — and a missing nonce
-		// surfaces as a confusing 403 from a different layer. Checking here
-		// makes the refusal this endpoint's own and keeps the two conditions
-		// in one place.
+		// Kept as defence in depth only — see the docblock. A visitor with no
+		// WordPress user still gets a valid `wp_rest` nonce, so this filters
+		// accidents rather than attackers.
 		$nonce = isset( $_SERVER['HTTP_X_WP_NONCE'] )
 			? sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_WP_NONCE'] ) )
 			: '';
+		if ( ! wp_verify_nonce( $nonce, 'wp_rest' ) ) {
+			return false;
+		}
 
-		return (bool) wp_verify_nonce( $nonce, 'wp_rest' );
+		// The only real credential: this request's own session already holds a
+		// token. Nothing is minted, looked up by id, or derived from a claim.
+		return DS_LMS_Token_Source::available();
+	}
+
+	/**
+	 * Refuse a request whose `Origin` is somebody else's.
+	 *
+	 * Absent `Origin` is allowed: browsers omit it on same-origin GETs, and a
+	 * server-to-server call has no browser to protect. Present-and-different is
+	 * refused, which is the case that matters and the one worth being able to
+	 * test.
+	 */
+	private static function same_origin(): bool {
+		$origin = isset( $_SERVER['HTTP_ORIGIN'] )
+			? sanitize_text_field( wp_unslash( $_SERVER['HTTP_ORIGIN'] ) )
+			: '';
+		if ( '' === $origin ) {
+			return true;
+		}
+
+		return untrailingslashit( $origin ) === untrailingslashit( home_url() );
 	}
 
 	/**

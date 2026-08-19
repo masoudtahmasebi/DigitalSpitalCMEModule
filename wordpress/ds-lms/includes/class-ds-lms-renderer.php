@@ -249,9 +249,19 @@ final class DS_LMS_Renderer {
 	 * @return string The attributes, ready to concatenate, or empty.
 	 */
 	private static function token_attributes(): string {
-		if ( ! is_user_logged_in() ) {
-			// No session, no token, no point naming an endpoint that will
-			// refuse — the widget shows its "not signed in" state instead.
+		if ( ! DS_LMS_Token_Source::available() ) {
+			/*
+			 * Not `is_user_logged_in()` (P98-01).
+			 *
+			 * MEDICE's physicians are never WordPress users — their login is a
+			 * theme-level PHP session — so that test was false for every one of
+			 * them and the element went out with no way to authenticate at all.
+			 *
+			 * The honest question is whether there is a token to fetch, and it
+			 * is asked without producing one. A DocCheck visitor reaches here
+			 * too: signed in to the site, holding no Keycloak token, which is
+			 * exactly the case the widget's signed-out state is for.
+			 */
 			return '';
 		}
 

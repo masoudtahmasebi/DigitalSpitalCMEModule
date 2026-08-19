@@ -251,7 +251,49 @@ matters at all.
 
 ---
 
-## S2 · The WordPress plugin does **not** persist a token — **ANSWERED 28.07, and the answer is the bad one**
+## S2 · The token was there all along — **CLOSED 19.08. The 28.07 answer was wrong, and it was ours**
+
+> **19.08 — the client supplied the theme, and it changes the answer (P98-01).**
+>
+> This entry has said since 28.07 that MEDICE persists no token, so nothing
+> could be read and the integration was blocked on their developer. **That was
+> a reading error on our side.** The 28.07 analysis read
+> `keycloakwordpressplugin` and concluded about the system; the login lives in
+> the **theme**:
+>
+> ```php
+> // theme/functions/login-class.php
+> $tokenResponse = Keycloak::getAccessTokenByUnamePass($username, $password);
+> $data          = array_merge($tokenResponse['data'], ['userinfo' => …]);
+> self::storeIntoSession($data);          // → $_SESSION['LOGIN_SESSION']
+> ```
+>
+> `$tokenResponse['data']` is the whole token response, so the session holds
+> `access_token`, `refresh_token`, `expires_in` and `refresh_expires_in`, and
+> the grant's scope includes **`offline_access`**.
+>
+> **Consequences:**
+>
+> - **No MEDICE code change is required.** Plugin 1.1.0 reads the session
+>   directly, at a configurable key defaulting to `LOGIN_SESSION`.
+> - **The lifespan concern below is softened, not removed.** There is a refresh
+>   token and it is offline, so a 25-minute module no longer depends on a long
+>   access-token lifespan. 30 minutes remains the comfortable setting.
+> - **The real blocker was different and is fixed.** MEDICE create no WordPress
+>   user at all — no `wp_signon`, no `wp_set_auth_cookie` — so
+>   `is_user_logged_in()` was false for every physician, and our plugin gated
+>   three separate things on it. See P98.
+>
+> **What replaces this as the open question:** the project's `keycloak_issuer`
+> and `keycloak_audience` must match the claims in MEDICE's token, or the API
+> refuses it as a 401 that looks like "not signed in". The plugin's _Verbindung
+> prüfen_ now prints both values from the live token so they can be copied.
+> Owner: **DigitalSpital**, one console setting.
+
+<details>
+<summary>The superseded 28.07 analysis, kept because the mistake is instructive</summary>
+
+**The WordPress plugin does not persist a token — ANSWERED 28.07, and the answer is the bad one**
 
 > **19.08 — now observed in production, not predicted (P97-01).** The client
 > signed into the MEDICE staging WordPress as a Keycloak user, with the plugin
@@ -454,6 +496,8 @@ same remedy — credentials belong in the environment or a secret store, never i
 source.
 
 ---
+
+</details>
 
 ## S3 · WordPress repository access
 

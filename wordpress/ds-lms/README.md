@@ -110,6 +110,40 @@ one of them.
 
 ---
 
+## How somebody is recognised — and it is not WordPress
+
+**No physician on the MEDICE site is a WordPress user.** Their login is
+`theme/functions/login-class.php`: a password grant against Keycloak, whose
+whole response is stored in `$_SESSION['LOGIN_SESSION']`. There is no
+`wp_signon`, no `wp_set_auth_cookie` and no `wp_insert_user` anywhere in the
+theme or the Keycloak plugin, so `is_user_logged_in()` is **false** for every
+one of them.
+
+This plugin therefore does not ask WordPress anything about identity. It asks
+one question: **is there an access token in this request's session?**
+
+| Setting                          | Meaning                                                              |
+| -------------------------------- | -------------------------------------------------------------------- |
+| **Session-Schlüssel des Logins** | The `$_SESSION` key the site's login writes. MEDICE: `LOGIN_SESSION` |
+
+Only `access_token` is read from it. The refresh token, the userinfo and
+everything else in that array are left alone.
+
+A **DocCheck** login is the site's other sign-in and involves no Keycloak: such
+a visitor holds no access token, gets no token endpoint on the element, and sees
+the widget's signed-out state. That is correct rather than broken — DocCheck
+does not identify a physician to the accreditation chain, and a CME point cannot
+be awarded to somebody it cannot name.
+
+A host that would rather hand the token over explicitly can still do so, and
+nothing else changes:
+
+```php
+add_filter( 'ds_lms_access_token', fn() => $token_you_already_have );
+```
+
+---
+
 ## The token endpoint
 
 `GET /wp-json/ds-lms/v1/token` returns the **calling user's own** Keycloak

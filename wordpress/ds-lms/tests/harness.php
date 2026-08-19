@@ -52,12 +52,15 @@ function ds_test_reset(): void {
 	$GLOBALS['ds_test']['user_meta'] = array();
 	$GLOBALS['ds_test']['routes']    = array();
 	$GLOBALS['ds_test']['scripts']   = array();
+	// The host's login session. §9.8: every ambient store, not only the one
+	// that broke — and this one decides whether the plugin sees a physician.
+	$_SESSION = array();
 	$GLOBALS['ds_test']['http']      = array();
 	$GLOBALS['ds_test']['requests']  = array();
 	$GLOBALS['ds_test']['enqueued']  = array();
 	$GLOBALS['ds_test']['inline']    = array();
 	$GLOBALS['ds_test']['filters']   = array();
-	unset( $_SERVER['HTTP_X_WP_NONCE'] );
+	unset( $_SERVER['HTTP_X_WP_NONCE'], $_SERVER['HTTP_ORIGIN'] );
 }
 
 // --- WordPress API surface the plugin uses ---------------------------------
@@ -267,6 +270,14 @@ function wp_nonce_url( string $url, string $action = '-1', string $name = '_wpno
 function add_query_arg( array $args, string $url ): string {
 	$separator = str_contains( $url, '?' ) ? '&' : '?';
 	return $url . $separator . http_build_query( $args );
+}
+
+function home_url( string $path = '' ): string {
+	return 'https://medice.example' . $path;
+}
+
+function untrailingslashit( string $value ): string {
+	return rtrim( $value, '/\\' );
 }
 
 function admin_url( string $path = '' ): string {

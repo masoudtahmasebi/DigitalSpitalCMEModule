@@ -117,30 +117,93 @@ final class DS_LMS_Diagnostics {
 			);
 		}
 
-		if ( ! is_user_logged_in() ) {
+		// "No session at all" and "a session holding no token" are different
+		// problems with different fixes, and a null token cannot tell them
+		// apart (§9.4).
+		if ( ! DS_LMS_Token_Source::session_active() ) {
 			return self::result(
 				$label,
 				false,
-				__( 'Aktiv. Für eine Aussage über den Token müssen Sie angemeldet sein.', 'ds-lms' )
+				__( 'Aktiv, aber auf diesem Aufruf läuft keine PHP-Session — es kann also gar kein Login gelesen werden. Auf der MEDICE-Seite startet das Theme die Session bei jedem Aufruf.', 'ds-lms' )
 			);
 		}
 
-		if ( null === DS_LMS_Token_Source::current() ) {
+		$token = DS_LMS_Token_Source::current();
+		if ( null === $token ) {
 			return self::result(
 				$label,
 				false,
-				__(
-					'Aktiv, aber für Ihre Sitzung liegt kein Keycloak-Token vor — das Lernmodul erhält deshalb keines und die API antwortet mit 401. Das Keycloak-Plugin muss den Token beim Login über den Filter „ds_lms_access_token" bereitstellen. Siehe README, Abschnitt „The token endpoint".',
-					'ds-lms'
+				sprintf(
+					/* translators: %s: the configured $_SESSION key. */
+					__( 'Aktiv, aber unter $_SESSION[„%s"] liegt kein „access_token". Melden Sie sich in einem Fenster über den MEDICE-Login an und prüfen Sie erneut. Bei DocCheck-Anmeldungen ist das erwartet: dort gibt es keinen Keycloak-Token.', 'ds-lms' ),
+					DS_LMS_Settings::all()['session_key']
 				)
 			);
 		}
 
+		/*
+		 * The two claims that decide whether our API will accept this token
+		 * (P98-01).
+		 *
+		 * The API validates every bearer against the realm's JWKS with the
+		 * project's `keycloak_issuer` and `keycloak_audience` as **required**
+		 * claims. A token that is perfectly valid and carries a different `aud`
+		 * — which is the default for a Keycloak client with no audience mapper
+		 * — is refused, and the refusal reaches the browser as a 401 that looks
+		 * exactly like "not signed in".
+		 *
+		 * So the two values an operator has to copy into the project are
+		 * printed here, from the token this site actually produces. They are
+		 * public registered claims, not secrets. **The token itself, `sub` and
+		 * every personal claim stay out of this screen** — the payload is
+		 * decoded, two fields are read, and the rest is dropped.
+		 *
+		 * Decoded, not verified: this is a display of what the site holds, and
+		 * verification is the API's job against keys this server does not have.
+		 */
+		$claims = self::readable_claims( $token );
+
 		return self::result(
 			$label,
 			true,
-			__( 'Aktiv, und für Ihre Sitzung liegt ein Token vor. Das Lernmodul kann sich anmelden.', 'ds-lms' )
+			'' === $claims
+				? __( 'Aktiv, und für Ihre Sitzung liegt ein Token vor. Das Lernmodul kann sich anmelden.', 'ds-lms' )
+				: sprintf(
+					/* translators: %s: the token's iss and aud claims. */
+					__( 'Aktiv, und für Ihre Sitzung liegt ein Token vor. Diese Werte müssen im DigitalSpital-Verwaltungsbereich beim Projekt hinterlegt sein — %s', 'ds-lms' ),
+					$claims
+				)
 		);
+	}
+
+	/**
+	 * `iss` and `aud` from a JWT payload, for display. Never anything else.
+	 *
+	 * @param string $token A JWT. Not verified here — see the caller.
+	 */
+	private static function readable_claims( string $token ): string {
+		$parts = explode( '.', $token );
+		if ( 3 !== count( $parts ) ) {
+			return '';
+		}
+
+		$payload = json_decode(
+			(string) base64_decode( strtr( $parts[1], '-_', '+/' ), false ),
+			true
+		);
+		if ( ! is_array( $payload ) ) {
+			return '';
+		}
+
+		$issuer   = isset( $payload['iss'] ) && is_string( $payload['iss'] ) ? $payload['iss'] : '';
+		$audience = $payload['aud'] ?? '';
+		$audience = is_array( $audience ) ? implode( ', ', array_filter( $audience, 'is_string' ) ) : (string) $audience;
+
+		if ( '' === $issuer && '' === $audience ) {
+			return '';
+		}
+
+		return sprintf( 'Issuer: %1$s · Audience: %2$s', $issuer, $audience );
 	}
 
 	/**
