@@ -71,12 +71,45 @@ export interface TokenRequest {
 
 export type TokenProvider = (request: TokenRequest) => Promise<string | undefined>;
 
+/**
+ * The host page was asked for a token and could not produce one (P101-03).
+ *
+ * ## Why this is thrown rather than answered with `undefined`
+ *
+ * It used to return `undefined`, and the SDK omits the `Authorization` header
+ * when `getToken` yields nothing — so the request went out unauthenticated,
+ * the API answered 401 as it must, and the widget said **"Ihre Sitzung ist
+ * abgelaufen"**. That sentence is wrong twice over: the physician's MEDICE
+ * session was fine, and the fix it implies — sign in again — cannot work,
+ * because nothing about signing in changes a token endpoint that is answering
+ * 404.
+ *
+ * Two completely different failures produced one message, and the message
+ * named the one thing that was working. That is P97-01's shape exactly, one
+ * layer out: an unauthenticated request that is *certain* to 401 is not a
+ * request, it is a guess with a misleading answer attached.
+ *
+ * ## `reason` is a token, not a sentence
+ *
+ * It reaches a screen, so it must not be prose from a server we do not own.
+ * `no_token_held` is the endpoint's own word for "this visitor is not signed
+ * in"; `endpoint_404`, `endpoint_401` and the rest describe the endpoint
+ * itself. The widget maps the first to "please sign in" and the others to
+ * "this page could not obtain a token", which are the two different things a
+ * person can act on.
+ */
 export class TokenUnavailableError extends Error {
+  readonly reason: string;
+
   constructor(reason: string) {
     super(`no bearer token available: ${reason}`);
     this.name = "TokenUnavailableError";
+    this.reason = reason;
   }
 }
+
+/** The endpoint's word for "this visitor holds no session token". */
+export const NO_TOKEN_HELD = "no_token_held";
 
 /** Builds a provider from whatever the host page supplied. */
 export function resolveTokenProvider(options: {
@@ -137,10 +170,23 @@ function endpointProvider(
       headers: { accept: "application/json", ...extraHeaders },
     });
 
-    if (!response.ok) return undefined;
+    if (!response.ok) {
+      // The status, not the body: an error page from a proxy or a WAF is not
+      // this endpoint's JSON, and `404` is the single most useful fact about
+      // it — it is the difference between "the plugin is not installed or the
+      // setting is off" and "the endpoint refused this caller".
+      throw new TokenUnavailableError(`endpoint_${response.status}`);
+    }
 
     const body: unknown = await response.json();
-    return readToken(body);
+    const token = readToken(body);
+    if (token === undefined) {
+      // A 200 with no token is the endpoint working correctly and saying the
+      // visitor has no session — a different fact from the endpoint failing,
+      // and the only one of the two a physician can act on themselves.
+      throw new TokenUnavailableError(reasonOf(body) ?? NO_TOKEN_HELD);
+    }
+    return token;
   };
 }
 
@@ -162,6 +208,17 @@ function readToken(body: unknown): string | undefined {
     if (typeof value === "string" && value !== "") return value;
   }
   return undefined;
+}
+
+/** The endpoint's own `reason`, when it sent one. */
+function reasonOf(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const value = (body as Record<string, unknown>)["reason"];
+  // Bounded and character-restricted: it is the host page's string and it
+  // reaches a screen. A token, never a sentence — see the error's docblock.
+  return typeof value === "string" && /^[a-z0-9_]{1,64}$/u.test(value)
+    ? value
+    : undefined;
 }
 
 /**

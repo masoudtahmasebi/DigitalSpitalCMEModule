@@ -20,6 +20,8 @@ import {
   type ApiClient,
   type ApiError,
 } from "@ds/sdk";
+import { de } from "./locale/de.js";
+import { NO_TOKEN_HELD, TokenUnavailableError } from "./token.js";
 
 export interface AsyncState<T> {
   readonly data: T | undefined;
@@ -90,12 +92,27 @@ export function useEnrolment(client: ApiClient, courseSlug: string) {
  * `ApiError`. What stays here is the copy: a 401 means "the host page could
  * not produce a valid token", which a physician fixes by reloading and logging
  * in — not by retrying, and not by reading whatever the API called it.
+ *
+ * ## Except when the request never carried a token at all (P101-03)
+ *
+ * `TokenUnavailableError` is raised before any request goes out, by the
+ * provider that could not get one from the host page. It is checked *first*
+ * because the alternative was the whole defect: the widget sent an
+ * unauthenticated request, got the 401 it was always going to get, and told a
+ * signed-in physician their session had expired. Signing in again cannot fix a
+ * token endpoint answering 404, so that sentence sent the one person who could
+ * not help into a loop and told nobody who could.
  */
 export function describeError(
   error: Error | undefined,
   copy: { unauthenticated: string; generic: string; noCourse: string },
 ): string {
   if (error === undefined) return copy.generic;
+  if (error instanceof TokenUnavailableError) {
+    return error.reason === NO_TOKEN_HELD
+      ? de.signedOut.message
+      : `${de.tokenUnavailable.message} ${de.tokenUnavailable.detail(error.reason)}`;
+  }
   if (isUnauthenticated(error)) return copy.unauthenticated;
   if (isNotFound(error)) return copy.noCourse;
   // `detail` is the German message the API wrote for a learner to read; it is

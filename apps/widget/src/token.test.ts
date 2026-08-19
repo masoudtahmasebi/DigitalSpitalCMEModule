@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cachingProvider, resolveTokenProvider } from "./token.js";
+import {
+  NO_TOKEN_HELD,
+  TokenUnavailableError,
+  cachingProvider,
+  resolveTokenProvider,
+} from "./token.js";
+import { ApiError } from "@ds/sdk";
+import { describeError } from "./hooks.js";
+import { de } from "./locale/de.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -108,11 +116,52 @@ describe("resolveTokenProvider", () => {
     }
   });
 
-  it("returns undefined rather than throwing when the endpoint fails", async () => {
+  /*
+   * These three replace one case that asserted the opposite (P101-03).
+   *
+   * It read "returns undefined rather than throwing when the endpoint fails",
+   * and it was the defect written down as a requirement: the SDK omits the
+   * `Authorization` header when `getToken` yields nothing, so the request went
+   * out unauthenticated, came back 401 as it always would, and the widget told
+   * a signed-in physician their session had expired. The old test was green
+   * throughout.
+   */
+  it("throws with the status when the endpoint refuses", async () => {
     vi.stubGlobal("fetch", async () => new Response("", { status: 403 }));
 
     const provider = resolveTokenProvider({ endpoint: "/token" });
-    expect(await provider?.({ refresh: false })).toBeUndefined();
+    await expect(provider?.({ refresh: false })).rejects.toMatchObject({
+      name: "TokenUnavailableError",
+      // The status is the useful half: 404 is "not installed or switched off",
+      // 403 is "installed and refusing this caller".
+      reason: "endpoint_403",
+    });
+  });
+
+  it("throws with the endpoint's own reason when it answers 200 and no token", async () => {
+    // The signed-out case, and it is not a failure of anything — the widget
+    // maps this one to "bitte melden Sie sich an", not to a technical notice.
+    vi.stubGlobal("fetch", async () =>
+      jsonResponse({ token: null, reason: "no_token_held" }),
+    );
+
+    const provider = resolveTokenProvider({ endpoint: "/token" });
+    await expect(provider?.({ refresh: false })).rejects.toMatchObject({
+      reason: "no_token_held",
+    });
+  });
+
+  it("refuses a reason that is prose rather than a token", async () => {
+    // It reaches a screen, and it comes from a server we do not own. Anything
+    // that is not a short lowercase identifier falls back to the default.
+    vi.stubGlobal("fetch", async () =>
+      jsonResponse({ token: null, reason: "<img src=x onerror=alert(1)>" }),
+    );
+
+    const provider = resolveTokenProvider({ endpoint: "/token" });
+    await expect(provider?.({ refresh: false })).rejects.toMatchObject({
+      reason: "no_token_held",
+    });
   });
 });
 
@@ -180,3 +229,42 @@ function jsonResponse(body: unknown): Response {
     headers: { "content-type": "application/json" },
   });
 }
+
+/*
+ * The message a person actually reads (P101-03).
+ *
+ * `describeError` is the one place every screen routes a failure through, and
+ * until now a token that could not be fetched arrived there as a plain 401 —
+ * indistinguishable from a real expiry. These assert the mapping rather than
+ * the throwing, which is the half that was wrong on the client's site: the
+ * provider could have thrown all day and still produced "Ihre Sitzung ist
+ * abgelaufen" if nothing downstream told the two apart (§9.7 — name the
+ * caller).
+ */
+describe("describeError, for a token that never arrived", () => {
+  it("does not blame the physician's session when the endpoint failed", async () => {
+    const message = describeError(new TokenUnavailableError("endpoint_404"), de.error);
+
+    // The old sentence, and the whole defect: it is not their session.
+    expect(message).not.toContain(de.error.unauthenticated);
+    expect(message).toContain(de.tokenUnavailable.message);
+    // And enough for whoever maintains the site to act on.
+    expect(message).toContain("endpoint_404");
+  });
+
+  it("asks a signed-out visitor to sign in, with no technical detail", () => {
+    const message = describeError(new TokenUnavailableError(NO_TOKEN_HELD), de.error);
+
+    expect(message).toBe(de.signedOut.message);
+    expect(message).not.toContain("no_token_held");
+  });
+
+  it("still says a real 401 is a real 401", () => {
+    // The other direction, so this cannot pass by never reaching the old path.
+    const expired = new ApiError(
+      { type: "about:blank", title: "Unauthorized", status: 401 },
+      new Response("", { status: 401 }),
+    );
+    expect(describeError(expired, de.error)).toBe(de.error.unauthenticated);
+  });
+});

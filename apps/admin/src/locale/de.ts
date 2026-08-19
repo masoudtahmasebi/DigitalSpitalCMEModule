@@ -786,8 +786,14 @@ export const german = {
      * stated once, in `lockedRule` at the top of the screen. What a row needs
      * is a marker that something is locked and, on hover or to a screen
      * reader, why.
+     *
+     * "In Verwendung" rather than "Gesperrt" (P101-01). The client read the
+     * first wording as a state somebody had *imposed* — something to unlock —
+     * when the fact is that the row is referenced by data elsewhere. A marker
+     * naming the cause sends the reader to the right question; one naming only
+     * the effect sends them looking for the switch that turned it on.
      */
-    locked: "Gesperrt",
+    locked: "In Verwendung",
     lockedRule:
       "Module, Kapitel und Inhalte mit erfassten Teilnahmen lassen sich nicht mehr löschen — diese Daten sind der Nachweis für bereits vergebene Punkte.",
     questionCount: (count: number): string =>
@@ -1052,6 +1058,27 @@ export const german = {
     /** "3 von 12 abgeschlossen" */
     completedOf: (completed: number, total: number): string =>
       `${completed} von ${total} abgeschlossen`,
+
+    /*
+     * Deleting a Fortbildung (P101-02).
+     *
+     * `DELETE /admin/courses/{slug}` has existed since P12-04 and no screen
+     * offered it, so the only way to remove a course created by mistake was a
+     * request nobody in the console could make. §9.2's mirror: an action the
+     * system performs and the screen hides is as misleading as one it refuses.
+     *
+     * Same rule as the structure rows — a course with recorded participations
+     * is evidence for points already awarded — so the same marker and the same
+     * sentence, rather than a second vocabulary for one rule.
+     */
+    columnActions: "Aktionen",
+    delete: "Löschen",
+    deleteConfirm: "Wirklich löschen?",
+    deleteAria: (title: string): string => `Fortbildung „${title}“ löschen`,
+    lockedByEnrolments:
+      "Kann nicht gelöscht werden: es sind bereits Teilnahmen erfasst. Diese Daten sind der Nachweis für bereits vergebene Punkte.",
+    deleteRule:
+      "Eine Fortbildung ohne erfasste Teilnahmen kann gelöscht werden; mit Teilnahmen nicht mehr.",
   },
 
   course: {

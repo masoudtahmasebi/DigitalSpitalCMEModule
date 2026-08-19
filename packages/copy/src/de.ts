@@ -199,6 +199,28 @@ export const de = {
       "Ihr Fortschritt ist gespeichert. Bitte melden Sie sich erneut an, um dort weiterzumachen, wo Sie aufgehört haben.",
   },
 
+  /**
+   * The page could not obtain a token, and that is not the reader's fault
+   * (P101-03).
+   *
+   * Every other message here is written for a physician. This one has two
+   * audiences and cannot pretend otherwise: the physician needs to know it is
+   * not them and that nothing they do will help, and whoever maintains the site
+   * needs enough to act — which is the endpoint and the status it answered.
+   *
+   * So the sentence is plain and the technical fact is a separate, quieter
+   * line. Telling the physician to "sign in again" here — which is what this
+   * screen used to say — sends the one person who cannot fix it into a loop,
+   * while the person who can fix it never hears about it at all.
+   */
+  tokenUnavailable: {
+    title: "Die Fortbildung kann gerade nicht geladen werden",
+    message:
+      "Diese Seite konnte keine Anmeldedaten für das Lernmodul abrufen. Das liegt nicht an Ihrem Konto — bitte versuchen Sie es später erneut oder wenden Sie sich an den Betreiber der Seite.",
+    /** "Technische Angabe: Token-Endpunkt antwortete 404." */
+    detail: (reason: string): string => `Technische Angabe: Token-Endpunkt — ${reason}.`,
+  },
+
   /** The meta strip under the course hero. */
   duration: (seconds: number): string => duration(seconds),
 

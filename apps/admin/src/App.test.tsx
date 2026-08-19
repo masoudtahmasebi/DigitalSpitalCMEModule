@@ -690,3 +690,95 @@ describe("the build footer (P46-01)", () => {
     expect(screen.queryByText(de.build.skew)).toBeNull();
   });
 });
+
+/*
+ * Deleting a Fortbildung (P101-02).
+ *
+ * The client asked "there is no way to delete a course, can you check if delete
+ * for all of the entities in admin panel is actually there?" — and the answer
+ * was that `DELETE /admin/courses/{slug}` had worked since P12-04 and no screen
+ * had ever offered it. §9.2's mirror: hiding an action the system performs
+ * misleads exactly as much as offering one it refuses, and it is the harder of
+ * the two to notice, because nothing appears on the screen to be wrong about.
+ *
+ * Neither case would go red if the button were simply removed again unless the
+ * second one exists too: "no delete button" is what the broken screen looked
+ * like, so the test that matters is the pair.
+ */
+describe("removing a course", () => {
+  const COURSE = {
+    slug: "adhs-akademie-adult",
+    status: "published" as const,
+    title: "ADHS Akademie adult",
+    description: null,
+    deliveryType: "on_demand" as const,
+    thema: [],
+    altersgruppe: [],
+    learningObjectives: [],
+    targetAudience: null,
+    prerequisites: null,
+    heroImageUrl: null,
+    fortbildungsnummer: null,
+    validFrom: null,
+    validTo: null,
+    vnr: null,
+    cmePoints: null,
+    cmeCategory: null,
+    requiredWatchPercent: 90,
+    passThresholdPercent: 70,
+    enrolmentCount: 0,
+    completedCount: 0,
+    certificateReady: false,
+    missingCertificateFields: [],
+  };
+
+  async function withCourses(courses: readonly unknown[]) {
+    const adminDeleteCourse = vi.fn().mockResolvedValue(undefined);
+    const admin = fakeClient({
+      adminListCourses: vi.fn().mockResolvedValue([...courses]),
+      adminDeleteCourse,
+    });
+    // The customer registry is the *platform* client's, not the tenant one's.
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    renderConsole({ admin, platform });
+
+    // P22-03: no customer chosen means no course list is even requested, so
+    // the picker has to be used before there is a row to delete.
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+
+    await screen.findByText("ADHS Akademie adult");
+    return { adminDeleteCourse };
+  }
+
+  it("offers a delete on a course nobody has enrolled in, and asks first", async () => {
+    const { adminDeleteCourse } = await withCourses([COURSE]);
+
+    const remove = screen.getByRole("button", {
+      name: de.courses.deleteAria("ADHS Akademie adult"),
+    });
+
+    // One click arms, it does not delete. A course is a term's work and the
+    // API's refusal cannot help once there are no enrolments to refuse over.
+    fireEvent.click(remove);
+    expect(adminDeleteCourse).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: de.courses.deleteConfirm }));
+    await waitFor(() => expect(adminDeleteCourse).toHaveBeenCalledWith(COURSE.slug));
+  });
+
+  it("marks a course with participations instead of offering a button that 409s", async () => {
+    const { adminDeleteCourse } = await withCourses([{ ...COURSE, enrolmentCount: 4 }]);
+
+    expect(
+      screen.queryByRole("button", {
+        name: de.courses.deleteAria("ADHS Akademie adult"),
+      }),
+    ).toBeNull();
+    // The marker, and the reason as its accessible name — not the button.
+    expect(screen.getByLabelText(de.courses.lockedByEnrolments)).toBeTruthy();
+    expect(adminDeleteCourse).not.toHaveBeenCalled();
+  });
+});

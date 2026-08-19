@@ -575,7 +575,7 @@ export const en: DeepPartial<typeof german> = {
 
     lockedByRecords:
       "Cannot be deleted: participations have already been recorded. This data is the evidence for points already awarded.",
-    locked: "Locked",
+    locked: "In use",
     lockedRule:
       "Modules, chapters and contents with recorded participations can no longer be deleted — this data is the evidence for points already awarded.",
     noQuestions: "No questions — nobody can pass this Lernerfolgskontrolle.",
@@ -778,6 +778,14 @@ export const en: DeepPartial<typeof german> = {
     columnCertificate: "Certificate",
     certificateReady: "ready",
     certificateNotReady: "incomplete",
+    columnActions: "Actions",
+    delete: "Delete",
+    deleteConfirm: "Really delete?",
+    deleteAria: (title: string): string => `Delete course “${title}”`,
+    lockedByEnrolments:
+      "Cannot be deleted: participations have already been recorded. This data is the evidence for points already awarded.",
+    deleteRule:
+      "A course with no recorded participations can be deleted; one with participations cannot.",
   },
 
   course: {

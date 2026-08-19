@@ -43,7 +43,7 @@ import {
   isForbidden,
 } from "./api.js";
 import { de } from "./locale/de.js";
-import { Badge, Button, Notice, Spinner, Table } from "./components/ui.js";
+import { Badge, Button, ConfirmButton, Notice, Spinner, Table } from "./components/ui.js";
 import { EmptyState, Page, type Crumb } from "./components/page.js";
 import { CopySettings } from "./components/CopySettings.js";
 import { MediaLibrary } from "./components/MediaLibrary.js";
@@ -759,6 +759,30 @@ export function Console(props: {
     }
   }, [client, customerId]);
 
+  /*
+   * Deleting a Fortbildung (P101-02).
+   *
+   * The list is re-read rather than filtered locally: the API refuses a course
+   * with recorded participations, and `enrolmentCount` here is a snapshot that
+   * may be older than the enrolment that arrived while this screen was open.
+   * Dropping the row on a request the server refused would show a course as
+   * gone until the next reload — the console holding a shape the server does
+   * not, which is the mistake CourseStructure's header warns about one screen
+   * over.
+   */
+  const removeCourse = useCallback(
+    async (slug: string) => {
+      setProblem(undefined);
+      try {
+        await client.adminDeleteCourse(slug);
+      } catch (error) {
+        setProblem(describeError(error, de.error.generic));
+      }
+      await loadCourses();
+    },
+    [client, loadCourses],
+  );
+
   useEffect(() => {
     void loadCourses();
   }, [loadCourses]);
@@ -1159,47 +1183,73 @@ export function Console(props: {
           }
         />
       ) : (
-        <Table
-          headers={[
-            de.courses.columnTitle,
-            de.courses.columnVnr,
-            de.courses.columnPoints,
-            de.courses.columnParticipants,
-            de.courses.columnCertificate,
-          ]}
-        >
-          {courses.map((course) => (
-            <tr key={course.slug} className="border-b border-gray-100">
-              <td className="px-3 py-2">
-                <button
-                  type="button"
-                  className="font-medium text-brand-700 underline"
-                  onClick={() =>
-                    setView({ kind: "course", slug: course.slug, tab: "structure" })
-                  }
-                >
-                  {course.title}
-                </button>
-              </td>
-              <td className="px-3 py-2 text-gray-600">{course.vnr ?? "—"}</td>
-              <td className="px-3 py-2">
-                {course.cmePoints === null
-                  ? "—"
-                  : `${course.cmePoints} (${course.cmeCategory ?? "?"})`}
-              </td>
-              <td className="px-3 py-2 text-gray-700">
-                {de.courses.completedOf(course.completedCount, course.enrolmentCount)}
-              </td>
-              <td className="px-3 py-2">
-                <Badge tone={course.certificateReady ? "ok" : "warn"}>
-                  {course.certificateReady
-                    ? de.courses.certificateReady
-                    : de.courses.certificateNotReady}
-                </Badge>
-              </td>
-            </tr>
-          ))}
-        </Table>
+        <>
+          {/*
+          The rule, once, above the table — the same shape as the structure
+          screen (P100-01): identical on every row, so it belongs where the
+          screen is explained rather than repeated per line.
+        */}
+          <p className="mb-3 max-w-3xl text-sm text-gray-600">{de.courses.deleteRule}</p>
+          <Table
+            headers={[
+              de.courses.columnTitle,
+              de.courses.columnVnr,
+              de.courses.columnPoints,
+              de.courses.columnParticipants,
+              de.courses.columnCertificate,
+              de.courses.columnActions,
+            ]}
+          >
+            {courses.map((course) => (
+              <tr key={course.slug} className="border-b border-gray-100">
+                <td className="px-3 py-2">
+                  <button
+                    type="button"
+                    className="font-medium text-brand-700 underline"
+                    onClick={() =>
+                      setView({ kind: "course", slug: course.slug, tab: "structure" })
+                    }
+                  >
+                    {course.title}
+                  </button>
+                </td>
+                <td className="px-3 py-2 text-gray-600">{course.vnr ?? "—"}</td>
+                <td className="px-3 py-2">
+                  {course.cmePoints === null
+                    ? "—"
+                    : `${course.cmePoints} (${course.cmeCategory ?? "?"})`}
+                </td>
+                <td className="px-3 py-2 text-gray-700">
+                  {de.courses.completedOf(course.completedCount, course.enrolmentCount)}
+                </td>
+                <td className="px-3 py-2">
+                  <Badge tone={course.certificateReady ? "ok" : "warn"}>
+                    {course.certificateReady
+                      ? de.courses.certificateReady
+                      : de.courses.certificateNotReady}
+                  </Badge>
+                </td>
+                <td className="px-3 py-2">
+                  <ConfirmButton
+                    label={de.courses.delete}
+                    ariaLabel={de.courses.deleteAria(course.title)}
+                    confirmLabel={de.courses.deleteConfirm}
+                    cancelLabel={de.common.cancel}
+                    disabledReason={
+                      course.enrolmentCount > 0
+                        ? de.courses.lockedByEnrolments
+                        : undefined
+                    }
+                    lockedLabel={de.structure.locked}
+                    onConfirm={() => {
+                      void removeCourse(course.slug);
+                    }}
+                  />
+                </td>
+              </tr>
+            ))}
+          </Table>
+        </>
       )}
     </>,
     /*

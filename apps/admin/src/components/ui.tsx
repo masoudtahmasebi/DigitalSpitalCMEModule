@@ -344,6 +344,15 @@ export function ConfirmButton(props: {
    * lost, it is only no longer shouted on every line.
    */
   lockedLabel?: string | undefined;
+  /**
+   * The accessible name, when "Löschen" alone does not say what (P101-02).
+   *
+   * A list screen draws one of these per row, and eleven buttons all named
+   * "Löschen" is a name collision: a screen reader announces the same thing
+   * eleven times and the rows become distinguishable only by counting. The
+   * visible label stays short; the name says which course.
+   */
+  ariaLabel?: string | undefined;
   onConfirm: () => void;
 }) {
   const [armed, setArmed] = useState(false);
@@ -380,7 +389,11 @@ export function ConfirmButton(props: {
 
   if (!armed) {
     return (
-      <Button variant="secondary" onClick={() => setArmed(true)}>
+      <Button
+        variant="secondary"
+        {...(props.ariaLabel === undefined ? {} : { ariaLabel: props.ariaLabel })}
+        onClick={() => setArmed(true)}
+      >
         {props.label}
       </Button>
     );
