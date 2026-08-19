@@ -75,6 +75,71 @@ final class DS_LMS_Diagnostics {
 		return array(
 			self::check_widget( (string) $settings['widget_url'] ),
 			self::check_api( (string) $settings['api_base'] ),
+			self::check_token( (bool) $settings['token_endpoint_enabled'] ),
+		);
+	}
+
+	/**
+	 * Can this site actually produce a Keycloak token for the person asking?
+	 *
+	 * ## The report this line exists because of (P97-01)
+	 *
+	 * The widget was signed out on a site where a MEDICE Keycloak user *was*
+	 * logged in, and the console showed `404 (Not Found)` on the token
+	 * endpoint. The operator turned the feature flag on, then off, and the
+	 * console said exactly the same thing both times — because two unrelated
+	 * conditions answer 404:
+	 *
+	 *   - flag off, so WordPress has no route to match;
+	 *   - flag on, route ran, and nothing is holding a token.
+	 *
+	 * Both are invisible from the browser and the second is the real one. This
+	 * line separates them where somebody is already looking for an answer,
+	 * rather than leaving it to be inferred from a status code.
+	 *
+	 * ## Why it reports on the *administrator's own* session
+	 *
+	 * It can only speak for the person pressing the button — `current()` takes
+	 * no user and must not. That is a genuine limit and it is stated in the
+	 * message: an administrator who is not themselves signed in through
+	 * Keycloak will see "no token", which is true of them and says nothing
+	 * about the physicians. It still distinguishes the two 404s, which is the
+	 * question that was actually unanswerable.
+	 */
+	private static function check_token( bool $enabled ): array {
+		$label = __( 'Token-Endpunkt', 'ds-lms' );
+
+		if ( ! $enabled ) {
+			return self::result(
+				$label,
+				false,
+				__( 'Abgeschaltet. Ohne den Token-Endpunkt kann das Lernmodul niemanden anmelden — bitte oben aktivieren.', 'ds-lms' )
+			);
+		}
+
+		if ( ! is_user_logged_in() ) {
+			return self::result(
+				$label,
+				false,
+				__( 'Aktiv. Für eine Aussage über den Token müssen Sie angemeldet sein.', 'ds-lms' )
+			);
+		}
+
+		if ( null === DS_LMS_Token_Source::current() ) {
+			return self::result(
+				$label,
+				false,
+				__(
+					'Aktiv, aber für Ihre Sitzung liegt kein Keycloak-Token vor — das Lernmodul erhält deshalb keines und die API antwortet mit 401. Das Keycloak-Plugin muss den Token beim Login über den Filter „ds_lms_access_token" bereitstellen. Siehe README, Abschnitt „The token endpoint".',
+					'ds-lms'
+				)
+			);
+		}
+
+		return self::result(
+			$label,
+			true,
+			__( 'Aktiv, und für Ihre Sitzung liegt ein Token vor. Das Lernmodul kann sich anmelden.', 'ds-lms' )
 		);
 	}
 

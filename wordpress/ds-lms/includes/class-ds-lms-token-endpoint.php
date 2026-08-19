@@ -88,6 +88,31 @@ final class DS_LMS_Token_Endpoint {
 		return (bool) wp_verify_nonce( $nonce, 'wp_rest' );
 	}
 
+	/**
+	 * The body's `reason` when there is no token — and why saying it is safe.
+	 *
+	 * Two entirely different conditions used to produce an identical bare 404,
+	 * and it cost a day of a client's time (P97-01):
+	 *
+	 * | Condition                       | Status | Body                       |
+	 * | ------------------------------- | ------ | -------------------------- |
+	 * | Feature flag off, no route      | 404    | `{"code":"rest_no_route"}` |
+	 * | Route present, nothing held     | 404    | `{"token":null}`           |
+	 *
+	 * A browser console prints `404 (Not Found)` for both, so toggling the
+	 * setting changed nothing an observer could see, and the obvious reading —
+	 * "the endpoint is missing" — was the wrong one.
+	 *
+	 * Naming the reason is **not** the §9.5 oracle risk. That rule is about not
+	 * answering a stranger's question about somebody else. This caller has
+	 * already presented their own session cookie and a valid `wp_rest` nonce:
+	 * they are the subject, they know they are signed in, and "WordPress is not
+	 * holding a Keycloak token for you" is a fact about their own session.
+	 * Nothing here discloses whether another user has one, or that any
+	 * particular account exists.
+	 */
+	private const NO_TOKEN_REASON = 'no_token_held';
+
 	public static function handle( WP_REST_Request $request ): WP_REST_Response {
 		// `refresh=1` is what the widget sends after a 401. There is nothing to
 		// do with it here — the source is read fresh on every call, since
@@ -107,9 +132,7 @@ final class DS_LMS_Token_Endpoint {
 
 		$response = new WP_REST_Response(
 			null === $token
-				// No token, and deliberately no explanation: whether the
-				// Keycloak plugin holds one is not the caller's business.
-				? array( 'token' => null )
+				? array( 'token' => null, 'reason' => self::NO_TOKEN_REASON )
 				: array( 'token' => $token ),
 			null === $token ? 404 : 200
 		);

@@ -178,6 +178,35 @@ $response = DS_LMS_Token_Endpoint::handle( new WP_REST_Request() );
 check( 'no token yields null, not somebody else\'s', null === $response->data['token'] );
 check( 'with a 404', 404 === $response->status );
 
+// P97-01: the two 404s a browser cannot tell apart.
+//
+// "Feature flag off, so no route exists" and "route ran, nothing held" both
+// print `404 (Not Found)` in a console, and toggling the setting therefore
+// changed nothing an observer could see. It cost a day. The body now says
+// which, to a caller who has already presented their own cookie and nonce —
+// that is a fact about their own session, not an oracle about anyone else.
+check(
+	'and a reason, so it is not the flag-off 404 in disguise',
+	'no_token_held' === ( $response->data['reason'] ?? null )
+);
+
+ds_test_reset();
+configure();
+sign_in( 7, SECRET_TOKEN );
+$response = DS_LMS_Token_Endpoint::handle( new WP_REST_Request() );
+check( 'a successful response carries no reason', ! isset( $response->data['reason'] ) );
+check( 'and never explains anything about the token', ! str_contains( wp_json_encode( $response->data ), 'reason' ) );
+
+// The flag-off case is the *other* 404, and it is WordPress's, not ours: the
+// route is never registered, so nothing here runs at all.
+ds_test_reset();
+configure( array( 'token_endpoint_enabled' => false ) );
+DS_LMS_Token_Endpoint::register();
+check(
+	'with the flag off there is no route to answer at all',
+	array() === $GLOBALS['ds_test']['routes']
+);
+
 // The endpoint must not be talked into another user's token. There is no
 // parameter for it, so this asserts that adding one changes nothing.
 ds_test_reset();
@@ -742,6 +771,38 @@ check(
 	'a reachable API says that CORS is a separate question',
 	str_contains( result_for( $report, 'API' )['detail'], 'Einbettungs-Domains' )
 );
+
+// The line that would have ended the report this ticket came from: three
+// states, told apart, where somebody is already looking (P97-01).
+ds_test_reset();
+configure( array( 'token_endpoint_enabled' => false ) );
+$report = DS_LMS_Diagnostics::run();
+$token  = result_for( $report, 'Token-Endpunkt' );
+check( 'a disabled token endpoint is reported as a failure', ! $token['ok'] );
+check( 'and says to switch it on', str_contains( $token['detail'], 'aktivieren' ) );
+
+ds_test_reset();
+configure();
+sign_in( 7 ); // signed in to WordPress, but nothing holds a Keycloak token
+$report = DS_LMS_Diagnostics::run();
+$token  = result_for( $report, 'Token-Endpunkt' );
+check( 'enabled but tokenless is a different failure', ! $token['ok'] );
+check(
+	'and it names the filter the Keycloak plugin has to call',
+	str_contains( $token['detail'], 'ds_lms_access_token' )
+);
+check(
+	'and does not tell the operator to switch on what is already on',
+	! str_contains( $token['detail'], 'aktivieren' )
+);
+
+ds_test_reset();
+configure();
+sign_in( 7, SECRET_TOKEN );
+$report = DS_LMS_Diagnostics::run();
+$token  = result_for( $report, 'Token-Endpunkt' );
+check( 'a token that is actually there is reported working', $token['ok'] );
+check( 'and the token itself never reaches the screen', ! str_contains( $token['detail'], SECRET_TOKEN ) );
 
 // SSRF: the addresses come from the stored settings and never from the
 // request. Anybody who could name the target could make this server fetch it.

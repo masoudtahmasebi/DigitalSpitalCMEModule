@@ -253,6 +253,36 @@ matters at all.
 
 ## S2 · The WordPress plugin does **not** persist a token — **ANSWERED 28.07, and the answer is the bad one**
 
+> **19.08 — now observed in production, not predicted (P97-01).** The client
+> signed into the MEDICE staging WordPress as a Keycloak user, with the plugin
+> installed, the origin allowed and the bundle loading. The widget was still
+> signed out, and the chain is exactly the one this entry predicted three weeks
+> ago:
+>
+> ```
+> GET /wp-json/ds-lms/v1/token            → 404  (route ran; nothing held)
+> GET  api…/courses/adhs-akademie-adult   → 401  (no bearer to send)
+> PUT  api…/courses/…/enrolment           → 401
+> ```
+>
+> **Nothing on our side is broken and nothing on our side can fix it.** The
+> plugin, the widget, the API and the CORS policy all behave exactly as
+> specified. `keycloakwordpressplugin` obtains an access token by password grant,
+> uses it for a userinfo lookup, and drops it — so `DS_LMS_Token_Source` has
+> nothing to read, by construction.
+>
+> **This is now on the critical path to launch, not a risk.** The unblocking
+> change is one `add_filter( 'ds_lms_access_token', … )` in whatever performs the
+> login, plus persisting the token at login if it is not already held. Owner:
+> **MEDICE**. Until it lands, no physician can start a Fortbildung from
+> WordPress.
+>
+> One thing we did get wrong and have fixed: both "the endpoint is switched off"
+> and "the endpoint answered and there is no token" produced a bare `404`, so
+> toggling the setting changed nothing an observer could see and the report was
+> misread for a day. Plugin 1.0.1 names the reason and the settings screen tells
+> the three states apart.
+
 > **12.08 — measured rather than argued (P62-04).** The dev realm was set to a
 > 60-second access-token lifespan and a module watched across the expiry.
 >

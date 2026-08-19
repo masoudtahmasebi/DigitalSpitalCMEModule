@@ -13,6 +13,28 @@ something is missing, and which WordPress and PHP versions are required.
 Newest first. `tests/security-test.php` refuses a release whose newest entry
 here disagrees with `Version:` in `ds-lms.php`.
 
+## 1.0.1 — 19.08.2026
+
+### The token endpoint's two 404s are now distinguishable (P97-01)
+
+Reported from production: the widget was signed out on a site where a MEDICE
+Keycloak user _was_ logged in, and the console showed `404` on the token
+endpoint. Turning **Token-Endpunkt aktivieren** on and then off produced exactly
+the same console output both times — because two unrelated conditions answer
+404, and a browser prints only the status:
+
+- the flag is off, so WordPress has no route to match;
+- the flag is on, the route ran, and nothing is holding a token.
+
+The second now answers `{"token":null,"reason":"no_token_held"}`, and
+**Verbindung prüfen** gained a **Token-Endpunkt** line that says which of the
+three states the site is in — off, on-but-tokenless, or working — and names the
+`ds_lms_access_token` filter when that is what is missing.
+
+The underlying cause is not in this plugin: MEDICE's Keycloak plugin obtains an
+access token by password grant and does not persist it, so there is nothing for
+`DS_LMS_Token_Source` to read. See `docs/show-stoppers.md` S2.
+
 ## 1.0.0 — 18.08.2026
 
 The release that makes the plugin stop needing releases.

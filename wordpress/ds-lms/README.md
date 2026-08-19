@@ -120,11 +120,22 @@ kill switch that takes effect immediately with no deployment.
 
 | Condition         | Behaviour                                                        |
 | ----------------- | ---------------------------------------------------------------- |
-| Feature flag off  | Route is not registered at all — 404, not a 403 that confirms it |
+| Feature flag off  | Route is not registered at all — 404 `{"code":"rest_no_route"}`  |
 | Not logged in     | 401 from the permission callback; the handler never runs         |
 | Missing/bad nonce | Refused. `X-WP-Nonce` for `wp_rest` is required                  |
-| No token held     | `404 {"token": null}` — whether one exists is not disclosed      |
+| No token held     | 404 `{"token":null,"reason":"no_token_held"}`                    |
 | Any request       | `Cache-Control: no-store, private` plus WordPress's no-cache set |
+
+**The two 404s are different, and the body is the only thing that says so.** A
+browser console prints `404 (Not Found)` for both, so switching the feature flag
+on and off changes nothing an observer can see — which is exactly how a
+production report was misread for a day (P97-01). The first means _no route_;
+the second means _the route ran and WordPress is holding no Keycloak token for
+you_. **Verbindung prüfen** tells them apart in words.
+
+Naming the reason is not a disclosure: the caller has already presented their
+own session cookie and a valid nonce, so it is a fact about their own session,
+not an answer about anybody else's.
 
 **There is no `user` parameter, and there cannot be one.**
 `DS_LMS_Token_Source::current()` takes no arguments — "returns only the
