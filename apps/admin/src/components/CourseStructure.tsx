@@ -131,7 +131,18 @@ export function CourseStructureEditor(props: {
 
   return (
     <section className="space-y-4">
-      <p className="max-w-3xl text-sm text-gray-600">{de.structure.intro}</p>
+      {/*
+        Both rules, once, in prose measure (P100-01).
+
+        The second one used to be repeated verbatim beside every locked row —
+        three times on a course with one module, one chapter and one content,
+        and it is 118 characters. A rule that is the same on every row belongs
+        where the screen is explained; what the row needs is the marker.
+      */}
+      <div className="max-w-3xl space-y-1.5 text-sm text-gray-600">
+        <p>{de.structure.intro}</p>
+        <p>{de.structure.lockedRule}</p>
+      </div>
 
       <SaveProblem title={de.error.title} problem={saver.problem} />
       {saver.state === "saving" ? (
@@ -236,6 +247,7 @@ function ModuleBlock(props: {
             confirmLabel={de.common.confirmDelete}
             cancelLabel={de.common.cancel}
             disabledReason={blockedBy > 0 ? de.structure.lockedByRecords : undefined}
+            lockedLabel={de.structure.locked}
             onConfirm={() => props.onMutate(() => client.adminDeleteModule(module.id))}
           />
         </>
@@ -388,6 +400,7 @@ function ChapterBlock(props: {
             confirmLabel={de.common.confirmDelete}
             cancelLabel={de.common.cancel}
             disabledReason={blocked ? de.structure.lockedByRecords : undefined}
+            lockedLabel={de.structure.locked}
             onConfirm={() => props.onMutate(() => client.adminDeleteChapter(chapter.id))}
           />
         </>
@@ -533,6 +546,7 @@ function ContentRow(props: {
             disabledReason={
               content.learnerRecords > 0 ? de.structure.lockedByRecords : undefined
             }
+            lockedLabel={de.structure.locked}
             onConfirm={() => props.onMutate(() => client.adminDeleteContent(content.id))}
           />
         </div>

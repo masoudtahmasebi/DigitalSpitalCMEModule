@@ -575,6 +575,9 @@ export const en: DeepPartial<typeof german> = {
 
     lockedByRecords:
       "Cannot be deleted: participations have already been recorded. This data is the evidence for points already awarded.",
+    locked: "Locked",
+    lockedRule:
+      "Modules, chapters and contents with recorded participations can no longer be deleted — this data is the evidence for points already awarded.",
     noQuestions: "No questions — nobody can pass this Lernerfolgskontrolle.",
     editQuiz: "Edit questions",
 

@@ -1339,14 +1339,24 @@ function CourseScreen(props: {
       }
       trail={trail}
     >
-      <nav className="flex flex-wrap gap-1 border-b border-gray-200">
+      {/*
+        Scrolls, never wraps (P100-01).
+
+        `flex-wrap` put the six course tabs on two rows below about 700px — the
+        second row reading as a separate control, and the whole header growing
+        by a line exactly when vertical space is scarcest. A horizontal scroller
+        keeps them one row at any width, which is what every tab strip on a
+        phone does. `scrollbar-none` hides the bar; the overflow is still
+        keyboard- and touch-scrollable, and the fade at the edge is the affordance.
+      */}
+      <nav className="flex gap-1 overflow-x-auto border-b border-gray-200 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {COURSE_TABS.map(([value, label]) => (
           <button
             key={value}
             type="button"
             aria-current={tab === value ? "page" : undefined}
             onClick={() => props.onTab(value)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${
               tab === value
                 ? "border-brand-600 text-brand-700"
                 : "border-transparent text-gray-600"

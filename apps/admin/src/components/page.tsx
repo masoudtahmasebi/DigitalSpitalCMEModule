@@ -64,8 +64,16 @@ export function Page(props: {
   trail?: readonly Crumb[];
   children: ReactNode;
 }) {
+  /*
+   * `space-y-4`, not 5 (P100-01).
+   *
+   * Every screen inherits this rhythm, so a single step is worth ~20 px per
+   * gap and there are typically six or seven of them down a screen. The old
+   * value was chosen when screens held two things; they now hold six, and the
+   * loosest possible rhythm is what makes a full screen read as a sparse one.
+   */
   return (
-    <section className="space-y-5">
+    <section className="space-y-4">
       {props.trail === undefined || props.trail.length === 0 ? null : (
         <Breadcrumbs trail={props.trail} />
       )}

@@ -778,6 +778,18 @@ export const german = {
       count === 1 ? "1 Teilnahme erfasst" : `${count} Teilnahmen erfasst`,
     lockedByRecords:
       "Kann nicht gelöscht werden: es sind bereits Teilnahmen erfasst. Diese Daten sind der Nachweis für bereits vergebene Punkte.",
+    /**
+     * The two words on the row; `lockedByRecords` stays as its title and
+     * accessible name (P100-01).
+     *
+     * The long sentence is the *rule* and is identical on every row — it is
+     * stated once, in `lockedRule` at the top of the screen. What a row needs
+     * is a marker that something is locked and, on hover or to a screen
+     * reader, why.
+     */
+    locked: "Gesperrt",
+    lockedRule:
+      "Module, Kapitel und Inhalte mit erfassten Teilnahmen lassen sich nicht mehr löschen — diese Daten sind der Nachweis für bereits vergebene Punkte.",
     questionCount: (count: number): string =>
       count === 1 ? "1 Frage" : `${count} Fragen`,
     noQuestions: "Keine Fragen — diese Lernerfolgskontrolle kann niemand bestehen.",

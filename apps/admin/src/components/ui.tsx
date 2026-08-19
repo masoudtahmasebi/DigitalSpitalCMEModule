@@ -338,14 +338,42 @@ export function ConfirmButton(props: {
   confirmLabel: string;
   cancelLabel: string;
   disabledReason?: string | undefined;
+  /**
+   * The short form shown on the row — two or three words. The full
+   * `disabledReason` stays as the title and the accessible name, so nothing is
+   * lost, it is only no longer shouted on every line.
+   */
+  lockedLabel?: string | undefined;
   onConfirm: () => void;
 }) {
   const [armed, setArmed] = useState(false);
 
+  /*
+   * A refused delete is marked, not narrated (P100-01).
+   *
+   * This used to render the whole reason inline, where the button would be —
+   * on the course structure screen that is the same 118-character sentence
+   * three times, once per level, and it is what pushed every row to full width
+   * and left the right-hand side of the screen empty. On a phone it was three
+   * lines per row.
+   *
+   * The information design was also inverted: the *rule* is identical on every
+   * row and the *fact* is what varies. So the row carries a short marker with
+   * the reason as its accessible name, and the screen states the rule once —
+   * which is what §9.4 asks for, rather than three verbatim repetitions of it.
+   *
+   * `title` and `aria-label` both, because a title alone is unreachable by
+   * touch and by a screen reader that does not announce it.
+   */
   if (props.disabledReason !== undefined) {
     return (
-      <span className="text-xs text-gray-500" title={props.disabledReason}>
-        {props.disabledReason}
+      <span
+        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600"
+        title={props.disabledReason}
+        aria-label={props.disabledReason}
+      >
+        <LockGlyph />
+        {props.lockedLabel ?? props.disabledReason}
       </span>
     );
   }
@@ -376,21 +404,42 @@ export function ConfirmButton(props: {
   );
 }
 
+function LockGlyph() {
+  return (
+    <svg aria-hidden viewBox="0 0 16 16" className="h-3 w-3" fill="currentColor">
+      <path d="M8 1a3 3 0 0 0-3 3v2H4.5A1.5 1.5 0 0 0 3 7.5v6A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 11.5 6H11V4a3 3 0 0 0-3-3Zm0 1.5A1.5 1.5 0 0 1 9.5 4v2h-3V4A1.5 1.5 0 0 1 8 2.5Z" />
+    </svg>
+  );
+}
+
 /** A bordered block. Used to separate levels of the authoring tree visually. */
 export function Panel(props: {
   title?: ReactNode;
   actions?: ReactNode;
   tone?: "default" | "nested";
+  /**
+   * `flush` drops the border and the surface, keeping only the padding
+   * (P100-01).
+   *
+   * The course structure nests module → chapter → content, and with every
+   * level a bordered box inside a bordered box the innermost row — which
+   * carries the most controls — has the least room, having paid two borders and
+   * two paddings to get there. A nested level that only needs *grouping* takes
+   * an indent guide instead.
+   */
+  flush?: boolean;
   children: ReactNode;
 }) {
-  return (
-    <div
-      className={`rounded-md border p-3 ${
+  const skin = props.flush
+    ? "border-l-2 border-gray-200 pl-3"
+    : `rounded-md border p-3 ${
         props.tone === "nested"
           ? "border-gray-200 bg-gray-50"
           : "border-gray-300 bg-white"
-      }`}
-    >
+      }`;
+
+  return (
+    <div className={skin}>
       {props.title === undefined && props.actions === undefined ? null : (
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="text-sm font-semibold text-gray-900">{props.title}</div>
