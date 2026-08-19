@@ -69,7 +69,7 @@ final class DS_LMS_Settings {
 	/**
 	 * The stored settings, with defaults filled in and `api_base` derived.
 	 *
-	 * @return array{base_domain:string,api_base:string,widget_url:string,project_slug:string,course_slug:string,session_key:string,token_endpoint_enabled:bool}
+	 * @return array{base_domain:string,api_base:string,widget_url:string,project_slug:string,course_slug:string,session_key:string,sign_in_url:string,token_endpoint_enabled:bool}
 	 */
 	public static function all(): array {
 		$stored = get_option( self::OPTION, array() );
@@ -117,6 +117,8 @@ final class DS_LMS_Settings {
 			 * rather than waiting for a release.
 			 */
 			'session_key'  => '' !== $session_key ? $session_key : self::DEFAULT_SESSION_KEY,
+			// Empty means "derive MEDICE's own login trigger" — see sign_in_url().
+			'sign_in_url'  => isset( $stored['sign_in_url'] ) ? (string) $stored['sign_in_url'] : '',
 			// The kill switch for P6-02. Default **off**: a token endpoint that
 			// appears the moment the plugin is activated is not a decision
 			// anyone made.
@@ -284,6 +286,7 @@ final class DS_LMS_Settings {
 			// quietly wrong. An unusable value is refused instead, which leaves
 			// the field empty and the documented default in force.
 			'session_key'            => self::sanitize_session_key( $input['session_key'] ?? '' ),
+			'sign_in_url'            => esc_url_raw( trim( (string) ( $input['sign_in_url'] ?? '' ) ) ),
 			'token_endpoint_enabled' => ! empty( $input['token_endpoint_enabled'] ),
 		);
 	}
@@ -309,6 +312,54 @@ final class DS_LMS_Settings {
 	private static function sanitize_session_key( $value ): string {
 		$key = trim( (string) $value );
 		return 1 === preg_match( '/^[A-Za-z0-9_]+$/', $key ) ? $key : '';
+	}
+
+	/**
+	 * Where this site signs somebody in, returning them here afterwards.
+	 *
+	 * Default is MEDICE's own trigger, read out of their theme:
+	 * `header-menu.php` opens the login modal when `showLoginPopup` is present,
+	 * and `onlyMediceLogin=1` narrows it to the Keycloak login — which is the
+	 * one that matters, because DocCheck yields no token and therefore no CME
+	 * point. `redirect_hscp_url` is the theme's own return parameter.
+	 *
+	 * A setting, because all three of those names belong to a theme rather than
+	 * to this plugin, and a site that renames them should change a field rather
+	 * than wait for a release. `%s` in a stored value is replaced by the
+	 * current page.
+	 */
+	public static function sign_in_url(): string {
+		$stored = self::all()['sign_in_url'];
+		$here   = self::current_url();
+
+		if ( '' !== $stored ) {
+			return str_contains( $stored, '%s' )
+				? str_replace( '%s', rawurlencode( $here ), $stored )
+				: $stored;
+		}
+
+		return add_query_arg(
+			array(
+				'showLoginPopup'    => 'required',
+				'onlyMediceLogin'   => '1',
+				'redirect_hscp_url' => $here,
+			),
+			$here
+		);
+	}
+
+	/**
+	 * This request's own address, for returning to after signing in.
+	 *
+	 * Built from `home_url()` plus the path, **never** from the `Host` header.
+	 * A sign-in link is somewhere we send a person; a caller-supplied host in
+	 * it is an open redirect wearing our name.
+	 */
+	private static function current_url(): string {
+		$path = isset( $_SERVER['REQUEST_URI'] )
+			? (string) wp_unslash( $_SERVER['REQUEST_URI'] )
+			: '/';
+		return home_url( strtok( $path, '?' ) );
 	}
 
 	public static function add_page(): void {

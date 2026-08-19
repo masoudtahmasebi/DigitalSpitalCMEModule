@@ -48,7 +48,12 @@ import { EvaluationScreen } from "./components/EvaluationScreen.js";
 import { CompletionScreen } from "./components/CompletionScreen.js";
 import { CertificatePanel } from "./components/CertificatePanel.js";
 import { MediathekPanel } from "./components/MediathekPanel.js";
-import { ErrorNotice, Spinner, TabbedPanel } from "./components/primitives.js";
+import {
+  ErrorNotice,
+  SignedOutNotice,
+  Spinner,
+  TabbedPanel,
+} from "./components/primitives.js";
 
 /** The four tabs of the course detail (layout §4.2). */
 const TABS = ["overview", "speakers", "certification", "library"] as const;
@@ -147,6 +152,19 @@ function screenFor(course: CourseDetail, contentId: string): Screen | undefined 
 export interface AppProps extends WidgetConfig {
   readonly getToken: TokenProvider | undefined;
   /**
+   * The host page's statement about **its own** session (P99-03).
+   *
+   * `undefined` when the page said nothing, which is every host that has not
+   * been updated — those keep the previous behaviour exactly. `false` is a
+   * page telling us nobody is signed in, and it is believed for one purpose
+   * only: deciding what to render. It confers no access. Every request still
+   * carries a token the API validates against Keycloak (§4 invariant 2), so a
+   * page claiming `true` gains a caller nothing at all.
+   */
+  readonly signedIn?: boolean | undefined;
+  /** Where the host signs somebody in. Rendered as a link, never fetched. */
+  readonly signInUrl?: string | undefined;
+  /**
    * Announce a catalogue pick to the host page. Returns `false` when the host
    * has taken over navigation, in which case this widget stays put — see
    * `element.ts`. Absent in tests and in any host that does not route.
@@ -201,6 +219,36 @@ export interface CourseCompleteDetail {
 }
 
 export function App(props: AppProps) {
+  /*
+   * Three states that used to be one, and the one was the wrong one (P99-03).
+   *
+   * Until now anything that failed to produce a token rendered
+   * `error.misconfigured` — *"wenden Sie sich an den Betreiber der Seite"*. On
+   * the MEDICE site the commonest reason for no token is simply that the
+   * visitor has not logged in, so a physician was being told to ring the
+   * webmaster about their own sign-in.
+   *
+   * The host page knows which it is, and now says so on the element. Order
+   * matters here: `signedIn === false` is checked **first**, because a page
+   * that says nobody is signed in has told us why there is no token, and
+   * calling it a misconfiguration on top of that would be a second wrong
+   * answer.
+   *
+   * This is presentation and nothing else. The API still validates every
+   * bearer against Keycloak's JWKS, so a page asserting `signed-in="yes"` buys
+   * a caller precisely nothing (CLAUDE.md §4 invariant 2).
+   */
+  if (props.signedIn === false) {
+    return (
+      <SignedOutNotice
+        title={de.signedOut.title}
+        message={de.signedOut.message}
+        actionLabel={de.signedOut.action}
+        signInUrl={props.signInUrl}
+      />
+    );
+  }
+
   // A missing api-base or project is a page-integration mistake, not a learner
   // problem, so it gets its own message rather than a wall of failed requests.
   if (!isConfigured(props) || props.getToken === undefined) {

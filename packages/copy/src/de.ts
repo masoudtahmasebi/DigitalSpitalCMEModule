@@ -162,6 +162,43 @@ export const de = {
       "Diese Fortbildung ist nicht korrekt eingebunden. Bitte wenden Sie sich an den Betreiber der Seite.",
   },
 
+  /**
+   * Not signed in — which is not an error, and used to be shown as one.
+   *
+   * Before P99-03 a visitor who was simply not signed in got
+   * `error.misconfigured`: *"Diese Fortbildung ist nicht korrekt eingebunden.
+   * Bitte wenden Sie sich an den Betreiber der Seite."* — a physician told to
+   * ring the webmaster because they had not logged in. Everything about that is
+   * wrong: the diagnosis, the audience, and the absence of anything to do.
+   *
+   * The host page knows perfectly well whether somebody is signed in, so it now
+   * says so on the element and the widget renders this instead — with a link
+   * that actually signs them in, and **without calling the API at all**, so a
+   * signed-out page produces no failed requests.
+   *
+   * This is presentation only. It decides what a person sees, never what they
+   * may do: every request still carries a token the API validates against
+   * Keycloak's JWKS, and a page claiming somebody is signed in gains them
+   * nothing (CLAUDE.md §4 invariant 2).
+   */
+  signedOut: {
+    title: "Bitte melden Sie sich an",
+    /** Both the never-signed-in and the DocCheck cases land here. */
+    message:
+      "Diese Fortbildung ist Fachkreisangehörigen vorbehalten. Bitte melden Sie sich mit Ihrem MEDICE-Konto an, um sie zu starten.",
+    action: "Anmelden",
+    /**
+     * The session ended mid-course, and a reload will not fix it.
+     *
+     * Distinct from the above because the fix differs: the previous copy said
+     * "laden Sie die Seite neu", which re-reads the same expired session and
+     * changes nothing (P99-02).
+     */
+    expiredTitle: "Ihre Anmeldung ist abgelaufen",
+    expiredMessage:
+      "Ihr Fortschritt ist gespeichert. Bitte melden Sie sich erneut an, um dort weiterzumachen, wo Sie aufgehört haben.",
+  },
+
   /** The meta strip under the course hero. */
   duration: (seconds: number): string => duration(seconds),
 

@@ -261,10 +261,24 @@ export class DsLmsElement extends HTMLElement {
     const apiBase = this.getAttribute("api-base") ?? "";
     const projectSlug = this.getAttribute("project") ?? "";
 
+    /*
+     * `signed-in` is tri-state on purpose (P99-03): "yes", "no", or absent.
+     *
+     * Absent means the host said nothing, and every host that predates this
+     * attribute is in that case — they must keep behaving exactly as before,
+     * so absent maps to `undefined` rather than to `false`. Reading a missing
+     * attribute as "not signed in" would blank the widget on every page that
+     * has not been updated.
+     */
+    const declared = this.getAttribute("signed-in");
+    const signedIn = declared === null ? undefined : declared !== "no";
+
     root.render(
       createElement(App, {
         apiBase,
         projectSlug,
+        signedIn,
+        signInUrl: this.getAttribute("sign-in-url") ?? undefined,
         courseSlug: this.getAttribute("course") ?? "",
         // `open-at="resume"` puts a course-pinned element straight into the
         // content the learner left off at, which is how a routing host honours

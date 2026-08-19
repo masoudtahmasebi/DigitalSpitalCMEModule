@@ -204,15 +204,55 @@ final class DS_LMS_Renderer {
 			: sprintf( ' course="%s"', esc_attr( $course ) );
 
 		return sprintf(
-			'<ds-lms api-base="%1$s" project="%2$s"%3$s%4$s data-ds-plugin="%5$s"></ds-lms>',
+			'<ds-lms api-base="%1$s" project="%2$s"%3$s%4$s%5$s data-ds-plugin="%6$s"></ds-lms>',
 			esc_url( $settings['api_base'] ),
 			esc_attr( $settings['project_slug'] ),
 			$course_attribute,
+			self::session_attributes(),
 			self::token_attributes(),
 			// Which plugin is on this site, answerable from the browser rather
 			// than over FTP. The widget writes `data-ds-build` beside it, so
 			// one element carries both halves of "which build?" (§9.9).
 			esc_attr( DS_LMS_VERSION )
+		);
+	}
+
+	/**
+	 * What this page knows about its own visitor (P99-03).
+	 *
+	 * ## Why the page gets to answer this
+	 *
+	 * Because it is the only thing that can. Signing in happens on this site,
+	 * in this site's session, and the widget has no way to see it. Without the
+	 * answer the widget could only infer "no token, therefore something is
+	 * broken", and it said so — a physician who had simply not logged in was
+	 * told the Fortbildung was *nicht korrekt eingebunden* and to contact the
+	 * site's operator.
+	 *
+	 * ## What this is not
+	 *
+	 * **It is not authorisation, and it must never be mistaken for it.** This
+	 * decides what a person sees; it decides nothing about what they may do.
+	 * Every request the widget makes still carries a token the API validates
+	 * against Keycloak's JWKS — signature, issuer, audience, expiry — so a page
+	 * asserting `signed-in="yes"` gains a caller precisely nothing. CLAUDE.md
+	 * §4 invariant 2 is untouched: **never trust WordPress that a user is
+	 * authenticated.** We trust it only about what to draw.
+	 *
+	 * ## Signed in for this purpose means "holds a Keycloak token"
+	 *
+	 * Not "is signed in to the website". A DocCheck visitor is signed in and
+	 * has no Keycloak token, and a CME point cannot be awarded to somebody the
+	 * accreditation chain cannot name — so they are shown the same invitation
+	 * to sign in with a MEDICE account, which is exactly what they need to do.
+	 */
+	private static function session_attributes(): string {
+		$signed_in = DS_LMS_Token_Source::available();
+
+		return sprintf(
+			' signed-in="%1$s" sign-in-url="%2$s"',
+			$signed_in ? 'yes' : 'no',
+			esc_url( DS_LMS_Settings::sign_in_url() )
 		);
 	}
 

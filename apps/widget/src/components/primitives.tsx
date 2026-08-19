@@ -609,6 +609,43 @@ export function ErrorNotice(props: {
   );
 }
 
+/**
+ * Not signed in — deliberately not an `ErrorNotice` (P99-03).
+ *
+ * A red alert box with `role="alert"` is for something the learner did not
+ * cause and cannot see coming. Not being signed in is neither: it is the
+ * ordinary state of anybody who has not logged in yet, and the only thing it
+ * needs is a way to do so. Rendering it as a failure is what produced the
+ * previous message — a physician told to contact the site's operator because
+ * they had not logged in.
+ *
+ * The action is an `<a>`, not a button: signing in is a navigation, it belongs
+ * in the browser's history, and a physician may reasonably want it in a new
+ * tab.
+ */
+export function SignedOutNotice(props: {
+  title: string;
+  message: string;
+  actionLabel: string;
+  /** Where signing in happens. Absent when the host named none. */
+  signInUrl?: string | undefined;
+}) {
+  return (
+    <div className="rounded-md border border-gray-200 bg-gray-50 p-6 text-center">
+      <p className="text-base font-semibold text-gray-900">{props.title}</p>
+      <p className="mx-auto mt-2 max-w-prose text-sm text-gray-700">{props.message}</p>
+      {props.signInUrl !== undefined && props.signInUrl !== "" ? (
+        <a
+          className="mt-4 inline-block rounded-full bg-cta-500 px-6 py-2.5 text-sm font-semibold text-white no-underline hover:opacity-90"
+          href={props.signInUrl}
+        >
+          {props.actionLabel}
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
 export function Section(props: {
   title: string;
   children: ReactNode;

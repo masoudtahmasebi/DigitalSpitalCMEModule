@@ -433,6 +433,7 @@ check(
 	'a shortcode attribute cannot break out of the attribute',
 	1 === preg_match(
 		'/^<ds-lms api-base="[^"]*" project="[^"]*"(?: course="[a-z0-9-]+")?'
+			. ' signed-in="(?:yes|no)" sign-in-url="[^"]*"'
 			. '(?: token-endpoint="[^"]*")?(?: token-header="[^"]*")?'
 			. ' data-ds-plugin="[^"]*"><\/ds-lms>$/',
 		$html
@@ -1196,6 +1197,78 @@ check(
 	'a token supplied by the host filter is not second-guessed',
 	EXPIRED_TOKEN === DS_LMS_Token_Source::current()
 );
+
+// ---------------------------------------------------------------------------
+echo "\nThe page says whether somebody is signed in (P99-03)\n";
+// ---------------------------------------------------------------------------
+
+// Presentation only. It decides what the widget draws and nothing about what
+// the API allows — every request still carries a token Keycloak's JWKS decides
+// on (§4 invariant 2).
+
+ds_test_reset();
+configure();
+$_SESSION['LOGIN_SESSION'] = array( 'access_token' => SECRET_TOKEN );
+check(
+	'a MEDICE session is declared to the widget',
+	str_contains( DS_LMS_Renderer::shortcode( array() ), 'signed-in="yes"' )
+);
+
+ds_test_reset();
+configure();
+check(
+	'and a visitor with no session is declared as such, rather than left to guess',
+	str_contains( DS_LMS_Renderer::shortcode( array() ), 'signed-in="no"' )
+);
+
+// DocCheck: signed in to the site, no Keycloak token. Signed in for the
+// website's purposes and not for ours, and it is ours the widget must reflect
+// — a CME point cannot be awarded to somebody the accreditation chain cannot
+// name.
+ds_test_reset();
+configure();
+$_SESSION['DocCheckLoggedIn'] = true;
+check(
+	'a DocCheck visitor is signed out as far as the Fortbildung is concerned',
+	str_contains( DS_LMS_Renderer::shortcode( array() ), 'signed-in="no"' )
+);
+
+// The link has to actually sign them in, and come back here afterwards.
+ds_test_reset();
+configure();
+$_SERVER['REQUEST_URI'] = '/fachkreis/cme-fortbildung/?utm=x';
+$html                   = DS_LMS_Renderer::shortcode( array() );
+check( 'the sign-in link opens the login', str_contains( $html, 'showLoginPopup' ) );
+check(
+	'specifically the MEDICE login, because DocCheck cannot yield a token',
+	str_contains( $html, 'onlyMediceLogin' )
+);
+check(
+	'and returns to the page the Fortbildung is on',
+	str_contains( $html, rawurlencode( 'https://medice.example/fachkreis/cme-fortbildung/' ) )
+		|| str_contains( $html, 'fachkreis' )
+);
+
+// The return address is built from home_url(), never from the request's Host:
+// a sign-in link is somewhere we send a person, and a caller-supplied host in
+// it is an open redirect wearing our name.
+$_SERVER['HTTP_HOST'] = 'boese.example';
+check(
+	'and never from a host the caller supplied',
+	! str_contains( DS_LMS_Renderer::shortcode( array() ), 'boese.example' )
+);
+unset( $_SERVER['HTTP_HOST'], $_SERVER['REQUEST_URI'] );
+
+// A site whose login lives elsewhere sets it, and %s is where it wants the
+// return address.
+ds_test_reset();
+configure( array( 'sign_in_url' => 'https://medice.example/login?next=%s' ) );
+$_SERVER['REQUEST_URI'] = '/kurs/';
+check(
+	'a configured sign-in URL wins',
+	str_contains( DS_LMS_Renderer::shortcode( array() ), 'https://medice.example/login?next=' )
+);
+unset( $_SERVER['REQUEST_URI'] );
 
 // ---------------------------------------------------------------------------
 

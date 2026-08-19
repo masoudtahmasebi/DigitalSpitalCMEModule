@@ -13,6 +13,44 @@ something is missing, and which WordPress and PHP versions are required.
 Newest first. `tests/security-test.php` refuses a release whose newest entry
 here disagrees with `Version:` in `ds-lms.php`.
 
+## 1.3.0 — 19.08.2026
+
+### The page says whether somebody is signed in, so the widget stops guessing (P99-03)
+
+Asked for directly: _"if the user is not logged in to medice keycloak, we don't
+even show the errors, we tell them to login, and our source of truth for being
+logged in can even be the website"_.
+
+The element now carries **`signed-in="yes|no"`** and **`sign-in-url`**. A
+visitor with no Keycloak token sees an invitation to sign in with a working
+**Anmelden** link, and the widget makes **no API request at all** — so a
+signed-out page has a clean console instead of a wall of 401s.
+
+Until now that visitor got _"Diese Fortbildung ist nicht korrekt eingebunden.
+Bitte wenden Sie sich an den Betreiber der Seite."_ — a physician told to ring
+the webmaster because they had not logged in. Wrong diagnosis, wrong audience,
+nothing to click.
+
+**This is presentation, and only presentation.** It decides what a person sees
+and nothing about what they may do: every request still carries a token the API
+validates against Keycloak's JWKS, so a page asserting `signed-in="yes"` gains a
+caller precisely nothing. CLAUDE.md §4 invariant 2 — _never trust WordPress that
+a user is authenticated_ — is untouched. We trust the page about what to draw.
+
+- **DocCheck counts as signed out here**, because it yields no Keycloak token
+  and a CME point cannot be awarded to somebody the accreditation chain cannot
+  name. Those visitors get the same invitation, which is what they need.
+- **New setting: Anmelde-URL.** Empty derives MEDICE's own trigger, read from
+  their theme — `showLoginPopup=required&onlyMediceLogin=1&redirect_hscp_url=…`.
+  `onlyMediceLogin=1` is deliberate: it excludes DocCheck. `%s` in a custom
+  value is replaced by the current page.
+- The return address is built from `home_url()`, **never** from the `Host`
+  header: a sign-in link is somewhere we send a person, and a caller-supplied
+  host in it is an open redirect wearing our name.
+
+**Requires the platform deploy that ships widget support for these attributes.**
+An older widget ignores them and behaves exactly as before.
+
 ## 1.2.0 — 19.08.2026
 
 ### The token is renewed instead of expiring under the learner (P99-02)
