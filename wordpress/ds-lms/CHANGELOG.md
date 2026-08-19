@@ -13,6 +13,45 @@ something is missing, and which WordPress and PHP versions are required.
 Newest first. `tests/security-test.php` refuses a release whose newest entry
 here disagrees with `Version:` in `ds-lms.php`.
 
+## 1.2.0 — 19.08.2026
+
+### The token is renewed instead of expiring under the learner (P99-02)
+
+Reported from the live site: _"my user was still logged in on the wordpress
+website for medice keycloak, but our system said your session is done, please
+try again, and it had the try again button, and that did not work"_.
+
+The theme writes the Keycloak token response into the session **once, at login**,
+and nothing anywhere ever touches it again — `grep refresh_token` across the
+theme and the Keycloak plugin finds nothing. A Keycloak access token lives five
+minutes by default; a MEDICE session lives as long as the browser does. So the
+_normal_ state of the site an hour after anyone signed in was a live session
+holding a dead token, the API refusing it, and a **Erneut versuchen** button that
+re-read the same dead token and could never succeed. A 25-minute module could not
+be completed at all.
+
+The `refresh_token` was in the same array the whole time, and the login grant
+asks for `offline_access`, so it outlives the access token by design.
+
+- An expired token — or one within a minute of expiring, because four seconds
+  left is a race that reads as a random sign-out — is **refreshed** before it is
+  handed over.
+- The new pair is **written back into the session**, which is what the login
+  wrote, so the whole site gets the fresh token rather than just the widget.
+- The client id, secret and realm come from **MEDICE's own plugin**
+  (`Keycloak::getSettings()`), so there is exactly one client secret on the site
+  and nothing to keep in step.
+- A refresh the realm refuses — a revoked offline token — yields no token and
+  says so. That person really must sign in again, and the realm's error text
+  never reaches a screen or a log: it is about their credential.
+- Without the Keycloak plugin present, refresh is unavailable and **Verbindung
+  prüfen** says so in those words, instead of the product failing mid-video.
+
+**Verbindung prüfen** now also shows how many minutes the current token has left.
+Without it, the condition that caused this had no symptom on any screen: the
+website said signed in, the widget said signed out, and nothing mentioned a
+clock.
+
 ## 1.1.0 — 19.08.2026
 
 ### The MEDICE login is recognised, and WordPress is out of it (P98-01)

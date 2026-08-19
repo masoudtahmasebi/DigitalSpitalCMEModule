@@ -203,7 +203,37 @@ final class DS_LMS_Diagnostics {
 			return '';
 		}
 
-		return sprintf( 'Issuer: %1$s · Audience: %2$s', $issuer, $audience );
+		$parts = array( sprintf( 'Issuer: %s', $issuer ), sprintf( 'Audience: %s', $audience ) );
+
+		/*
+		 * How long this token has left, and whether anything can renew it
+		 * (P99-02).
+		 *
+		 * The defect that made this necessary: a MEDICE session lives for days
+		 * and the access token inside it for five minutes, so the *normal*
+		 * state of a site an hour after anybody logged in is a live session
+		 * holding a dead token. That was invisible from every screen — the
+		 * website said signed in, the widget said signed out, and neither
+		 * mentioned a clock.
+		 */
+		$expiry = isset( $payload['exp'] ) && is_numeric( $payload['exp'] )
+			? (int) $payload['exp'] - time()
+			: null;
+		if ( null !== $expiry ) {
+			$parts[] = $expiry > 0
+				? sprintf(
+					/* translators: %d: whole minutes. */
+					__( 'gültig noch %d Min.', 'ds-lms' ),
+					(int) floor( $expiry / 60 )
+				)
+				: __( 'abgelaufen', 'ds-lms' );
+		}
+
+		$parts[] = DS_LMS_Token_Source::can_refresh()
+			? __( 'Erneuerung möglich', 'ds-lms' )
+			: __( 'KEINE Erneuerung möglich — nach Ablauf muss sich die Person neu anmelden', 'ds-lms' );
+
+		return implode( ' · ', $parts );
 	}
 
 	/**

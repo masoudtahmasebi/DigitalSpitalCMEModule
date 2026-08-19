@@ -43,6 +43,8 @@ $GLOBALS['ds_test'] = array(
 	'http'         => array(),
 	/** Every URL the plugin asked for, in order. */
 	'requests'     => array(),
+	/** POST bodies, keyed by URL — so a refresh can be inspected. */
+	'posted'       => array(),
 );
 
 function ds_test_reset(): void {
@@ -57,6 +59,7 @@ function ds_test_reset(): void {
 	$_SESSION = array();
 	$GLOBALS['ds_test']['http']      = array();
 	$GLOBALS['ds_test']['requests']  = array();
+	$GLOBALS['ds_test']['posted']    = array();
 	$GLOBALS['ds_test']['enqueued']  = array();
 	$GLOBALS['ds_test']['inline']    = array();
 	$GLOBALS['ds_test']['filters']   = array();
@@ -223,6 +226,15 @@ function wp_add_inline_script( string $handle, string $data, string $position = 
 
 function wp_remote_head( string $url, array $args = array() ) {
 	return ds_test_http( 'HEAD', $url );
+}
+
+function wp_remote_post( string $url, array $args = array() ) {
+	$GLOBALS['ds_test']['posted'][ $url ] = $args['body'] ?? array();
+	return ds_test_http( 'POST', $url );
+}
+
+function wp_remote_retrieve_body( $response ): string {
+	return is_array( $response ) ? (string) ( $response['body'] ?? '' ) : '';
 }
 
 function wp_remote_get( string $url, array $args = array() ) {

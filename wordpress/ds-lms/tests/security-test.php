@@ -110,7 +110,61 @@ function sign_in( int $user_id, string $token = null ): void {
 }
 
 
-const SECRET_TOKEN = 'eyJhbGciOiJSUzI1NiJ9.this-is-the-users-token.sig';
+/**
+ * A token shaped like the real one, because its shape now decides behaviour.
+ *
+ * Since P99-02 the plugin reads `exp` and refuses to hand over a token that is
+ * spent. A fixture that is not a readable JWT is therefore indistinguishable
+ * from an expired one — correctly, and it would make every check below test
+ * the expiry path by accident.
+ */
+function jwt( array $claims ): string {
+	$payload = rtrim( strtr( base64_encode( (string) wp_json_encode( $claims ) ), '+/', '-_' ), '=' );
+	return 'eyJhbGciOiJSUzI1NiJ9.' . $payload . '.sig';
+}
+
+/** Valid for another hour. */
+define( 'SECRET_TOKEN', jwt( array( 'exp' => time() + 3600, 'sub' => 'the-physician' ) ) );
+
+/** MEDICE's plugin, as far as this plugin is concerned: one static method. */
+if ( ! class_exists( 'DigitalSpital\Plugins\Keycloak\Inc\Keycloak' ) ) {
+	eval(
+		'namespace DigitalSpital\Plugins\Keycloak\Inc;
+		 abstract class Keycloak {
+			 public static $settings = array();
+			 public static function getSettings() { return self::$settings; }
+		 }'
+	);
+}
+
+const TOKEN_URL = 'https://login.medice.example/realms/medicerealm/protocol/openid-connect/token';
+
+function keycloak_configured( bool $yes = true ): void {
+	\DigitalSpital\Plugins\Keycloak\Inc\Keycloak::$settings = $yes
+		? array(
+			'auth_server_url'    => 'https://login.medice.example',
+			'realm'              => 'medicerealm',
+			'resource'           => 'medice-client',
+			'credentials_secret' => 'the-client-secret',
+		)
+		: array();
+}
+
+/** The realm answers a refresh with a new pair. */
+function refresh_succeeds( string $new_token ): void {
+	$GLOBALS['ds_test']['http'][ TOKEN_URL ] = array(
+		'response' => array( 'code' => 200 ),
+		'headers'  => array(),
+		'body'     => (string) wp_json_encode( array(
+			'access_token'  => $new_token,
+			'refresh_token' => 'a-newer-refresh-token',
+			'expires_in'    => 300,
+		) ),
+	);
+}
+
+/** Spent an hour ago — the state a MEDICE session sits in all day. */
+define( 'EXPIRED_TOKEN', jwt( array( 'exp' => time() - 3600, 'sub' => 'the-physician' ) ) );
 
 // ---------------------------------------------------------------------------
 echo "\nThe token endpoint is off unless somebody turns it on\n";
@@ -1003,13 +1057,15 @@ echo "\nWhat the operator needs to configure, shown to them (P98-01)\n";
 // "not signed in". The two values to copy are therefore printed.
 ds_test_reset();
 configure();
-$payload = base64_encode( wp_json_encode( array(
-	'iss' => 'https://sso.medice.example/realms/medice',
-	'aud' => array( 'account', 'ds-education' ),
-	'sub' => 'must-not-be-shown',
+$live_token = jwt( array(
+	'iss'   => 'https://sso.medice.example/realms/medice',
+	'aud'   => array( 'account', 'ds-education' ),
+	'sub'   => 'must-not-be-shown',
 	'email' => 'aerztin@example.test',
-) ) );
-$_SESSION['LOGIN_SESSION'] = array( 'access_token' => 'header.' . $payload . '.sig' );
+	'exp'   => time() + 3600,
+) );
+$payload                   = explode( '.', $live_token )[1];
+$_SESSION['LOGIN_SESSION'] = array( 'access_token' => $live_token );
 $report = DS_LMS_Diagnostics::run();
 $token  = result_for( $report, 'Token-Endpunkt' );
 check( 'a present token is reported working', $token['ok'] );
@@ -1019,10 +1075,127 @@ check( 'and never the subject', ! str_contains( $token['detail'], 'must-not-be-s
 check( 'and never the participant\'s email', ! str_contains( $token['detail'], 'aerztin@example.test' ) );
 check( 'and never the token itself', ! str_contains( $token['detail'], $payload ) );
 
+// The clock, which is the whole of P99-02 made visible. Without it the normal
+// state of the site — live session, dead token — has no symptom on any screen.
+check( 'and how long the token has left', str_contains( $token['detail'], 'gültig noch' ) );
+keycloak_configured();
+$_SESSION['LOGIN_SESSION']['refresh_token'] = 'r';
+check(
+	'and that renewal is possible when it is',
+	str_contains( result_for( DS_LMS_Diagnostics::run(), 'Token-Endpunkt' )['detail'], 'Erneuerung möglich' )
+);
+keycloak_configured( false );
+check(
+	'and warns plainly when it is not',
+	str_contains( result_for( DS_LMS_Diagnostics::run(), 'Token-Endpunkt' )['detail'], 'KEINE Erneuerung' )
+);
+
 // A session that is not running at all is its own failure with its own fix.
 ds_test_reset();
 configure();
 check( 'a running session is what the suite and the MEDICE theme both provide', DS_LMS_Token_Source::session_active() );
+
+// ---------------------------------------------------------------------------
+echo "\nThe session outlives the token, and something has to renew it (P99-02)\n";
+// ---------------------------------------------------------------------------
+
+// The reported defect, exactly: signed in to the site, token long dead.
+ds_test_reset();
+configure();
+keycloak_configured();
+$_SESSION['LOGIN_SESSION'] = array(
+	'access_token'  => EXPIRED_TOKEN,
+	'refresh_token' => 'the-offline-refresh-token',
+);
+$fresh = jwt( array( 'exp' => time() + 3600, 'sub' => 'the-physician' ) );
+refresh_succeeds( $fresh );
+
+check( 'an expired token is renewed rather than handed over', $fresh === DS_LMS_Token_Source::current() );
+check(
+	'using the refresh token from the session',
+	( $GLOBALS['ds_test']['posted'][ TOKEN_URL ]['refresh_token'] ?? '' ) === 'the-offline-refresh-token'
+);
+check(
+	'as the grant Keycloak expects',
+	( $GLOBALS['ds_test']['posted'][ TOKEN_URL ]['grant_type'] ?? '' ) === 'refresh_token'
+);
+check(
+	'with the client identity from MEDICE\'s own plugin, not a second copy',
+	( $GLOBALS['ds_test']['posted'][ TOKEN_URL ]['client_id'] ?? '' ) === 'medice-client'
+);
+
+// The whole site benefits, not just the widget: the login wrote this array and
+// a refresh writes the same fields back.
+check( 'the new token is written back into the session', $fresh === $_SESSION['LOGIN_SESSION']['access_token'] );
+check(
+	'and so is the new refresh token, or the next renewal replays a spent one',
+	'a-newer-refresh-token' === $_SESSION['LOGIN_SESSION']['refresh_token']
+);
+
+// A token about to expire is renewed too. Handing over one with four seconds
+// left is a race that presents as an intermittent, unreproducible sign-out.
+ds_test_reset();
+configure();
+keycloak_configured();
+$_SESSION['LOGIN_SESSION'] = array(
+	'access_token'  => jwt( array( 'exp' => time() + 5 ) ),
+	'refresh_token' => 'the-offline-refresh-token',
+);
+refresh_succeeds( $fresh );
+check( 'a token expiring in five seconds is renewed before it is sent', $fresh === DS_LMS_Token_Source::current() );
+
+// A healthy token is left alone — no round trip per request.
+ds_test_reset();
+configure();
+keycloak_configured();
+$_SESSION['LOGIN_SESSION'] = array( 'access_token' => SECRET_TOKEN, 'refresh_token' => 'r' );
+check( 'a healthy token is returned unchanged', SECRET_TOKEN === DS_LMS_Token_Source::current() );
+check( 'and costs no request to the realm', array() === $GLOBALS['ds_test']['requests'] );
+
+// A revoked offline token: the person really must sign in again, and saying so
+// is the honest answer. What must not happen is a token nobody can use.
+ds_test_reset();
+configure();
+keycloak_configured();
+$_SESSION['LOGIN_SESSION'] = array(
+	'access_token'  => EXPIRED_TOKEN,
+	'refresh_token' => 'a-revoked-refresh-token',
+);
+$GLOBALS['ds_test']['http'][ TOKEN_URL ] = array(
+	'response' => array( 'code' => 400 ),
+	'headers'  => array(),
+	'body'     => '{"error":"invalid_grant","error_description":"Token is not active"}',
+);
+check( 'a refused refresh yields no token', null === DS_LMS_Token_Source::current() );
+check( 'and never the expired one', EXPIRED_TOKEN !== DS_LMS_Token_Source::current() );
+
+// And the realm's own error text is about this person's credential. It must
+// not reach a screen or a log.
+$report = DS_LMS_Diagnostics::run();
+check(
+	'the realm\'s refusal is not echoed into the admin screen',
+	! str_contains( result_for( $report, 'Token-Endpunkt' )['detail'], 'invalid_grant' )
+);
+
+// No Keycloak plugin: refresh is unavailable, and the screen says so rather
+// than the product failing mid-video.
+ds_test_reset();
+configure();
+keycloak_configured( false );
+$_SESSION['LOGIN_SESSION'] = array( 'access_token' => EXPIRED_TOKEN, 'refresh_token' => 'r' );
+check( 'without the Keycloak plugin no refresh is attempted', ! DS_LMS_Token_Source::can_refresh() );
+check( 'and no token is produced', null === DS_LMS_Token_Source::current() );
+check( 'and nothing was sent anywhere', array() === $GLOBALS['ds_test']['requests'] );
+
+// The filter is the host managing its own token; expiry is then their business.
+ds_test_reset();
+configure();
+keycloak_configured();
+add_filter( 'ds_lms_access_token', static fn() => EXPIRED_TOKEN );
+check(
+	'a token supplied by the host filter is not second-guessed',
+	EXPIRED_TOKEN === DS_LMS_Token_Source::current()
+);
 
 // ---------------------------------------------------------------------------
 
