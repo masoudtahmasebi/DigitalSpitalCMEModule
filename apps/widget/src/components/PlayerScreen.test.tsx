@@ -621,3 +621,55 @@ describe("a section whose configured length the file cannot satisfy", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
+
+/**
+ * "Diese Stellen fehlen noch" (P85-01, P102-01).
+ *
+ * The message is right and useful *after* somebody has watched part of a video
+ * and left a hole. Before that it is the whole credited length, printed at a
+ * physician who has done nothing but open the page — and it tells them to seek,
+ * one line above the player's own "Vorspulen ist nicht möglich".
+ *
+ * The client reported it as a question rather than a bug: *"didn't we say the
+ * percentage watched is calculated on the fly? so what is this text now then?"*
+ * — which is the tell. A sentence nobody can place is a sentence that should
+ * not be there.
+ */
+describe("the list of missing spans", () => {
+  it("says nothing on a video the learner has not started", () => {
+    renderPlayer({
+      lesson: lesson({ durationSec: 15, watchedPercent: 0, watchedSegments: [] }),
+    });
+
+    // Not "0:00–0:12" — the credited length of a 15-second video, which is what
+    // an empty union correctly produces and what nobody needed to be told.
+    expect(screen.queryByText(/Diese Stellen fehlen noch/u)).toBeNull();
+  });
+
+  it("names the hole once the learner has left one", () => {
+    // Watched from 0:05 to the end of the credited length: the first five
+    // seconds are genuinely missing, they are behind the seek ceiling, and
+    // seeking back to them is a thing the player permits.
+    renderPlayer({
+      lesson: lesson({
+        durationSec: 15,
+        watchedPercent: 58,
+        watchedSegments: [{ startSec: 5, endSec: 12 }],
+      }),
+    });
+
+    expect(screen.getByText(/Diese Stellen fehlen noch: 0:00–0:05/u)).toBeTruthy();
+  });
+
+  it("stays quiet when the credited length is fully covered", () => {
+    renderPlayer({
+      lesson: lesson({
+        durationSec: 15,
+        watchedPercent: 100,
+        watchedSegments: [{ startSec: 0, endSec: 12 }],
+      }),
+    });
+
+    expect(screen.queryByText(/Diese Stellen fehlen noch/u)).toBeNull();
+  });
+});
