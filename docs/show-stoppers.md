@@ -57,30 +57,30 @@ at all**, so P6-02's premise is void and MEDICE has a decision to make this
 week. And it surfaced **S15**, a live API key hardcoded in that file, which
 wants action today.
 
-| #       | Item                                                                               | Blocks           | Needed by | Owner              |
-| ------- | ---------------------------------------------------------------------------------- | ---------------- | --------- | ------------------ |
-| ~~S12~~ | ~~"Originalstempel" may invalidate an emailed certificate~~                        | **CLOSED 11.08** | —         | —                  |
-| ~~S15~~ | ~~Live API key hardcoded in the MEDICE plugin~~ — **rotated by MEDICE 11.08**      | **CLOSED 11.08** | —         | —                  |
-| S18     | **Offline refresh token exposed — revoke, and stop requesting `offline_access`**   | —                | **today** | MEDICE             |
-| S17     | **Token `aud` is `account`; add an audience mapper or no learner can log in**      | M1 · 09.08       | **31.07** | MEDICE dev         |
-| S2      | **The WP plugin stores no token.** Decide how it will — lifespan now known (600 s) | M1 · 09.08       | **31.07** | MEDICE dev         |
-| S4      | Scope decision on 4 layout features not in the 140 h                               | M2 · 23.08       | **06.08** | PM + DigitalSpital |
-| S11     | Confirm `Veranstaltungsende` = the learner's completion date                       | M3 · 30.08       | 07.08     | ÄKWL               |
-| S5      | Certificate-after-EIV vs the launch fallback                                       | M3 · 30.08       | 14.08     | PM + MEDICE        |
-| S7      | `required_watch_percent`: 80 % or 100 %, in writing                                | M2 · 23.08       | 14.08     | MEDICE             |
-| S8      | ADHS SMTP configuration, and which MEDICE account sends                            | M3 · 30.08       | 21.08     | MEDICE             |
-| S14     | Accreditation expires 12.10.2026; platform change must be notified                 | post-launch      | 24.08     | MEDICE             |
-| S9      | Hetzner account ownership and DNS                                                  | M4 · 06.09       | 24.08     | DigitalSpital      |
-| S10     | VNR password was shared over chat                                                  | —                | now       | DigitalSpital      |
-| S23     | **VNR format, and whether any VNR-less completion already exists**                 | —                | 14.08     | MEDICE / ÄKWL      |
-| S25     | **Which point flags may a completion claim for this VNR?**                         | M3 · 30.08       | **14.08** | MEDICE / ÄKWL      |
-| S26     | **The production EIV API base URL is not published**                               | M3 · 30.08       | 21.08     | MEDICE             |
-| S27     | **Test-system credentials from EIV support, so the client can be proven**          | M3 · 30.08       | **14.08** | MEDICE             |
-| ~~S24~~ | ~~Export the EIV Veranstalter Swagger~~                                            | **CLOSED 09.08** | —         | —                  |
-| ~~S3~~  | ~~WordPress repository access~~                                                    | **CLOSED 28.07** | —         | —                  |
-| ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                               | **CLOSED 28.07** | —         | —                  |
-| ~~S6~~  | ~~Signature/stamp asset~~                                                          | **CLOSED 28.07** | —         | —                  |
-| ~~S1~~  | ~~Repository write access~~                                                        | **CLOSED 27.07** | —         | —                  |
+| #       | Item                                                                               | Blocks           | Needed by | Owner         |
+| ------- | ---------------------------------------------------------------------------------- | ---------------- | --------- | ------------- |
+| ~~S12~~ | ~~"Originalstempel" may invalidate an emailed certificate~~                        | **CLOSED 11.08** | —         | —             |
+| ~~S15~~ | ~~Live API key hardcoded in the MEDICE plugin~~ — **rotated by MEDICE 11.08**      | **CLOSED 11.08** | —         | —             |
+| S18     | **Offline refresh token exposed — revoke, and stop requesting `offline_access`**   | —                | **today** | MEDICE        |
+| S17     | **Token `aud` is `account`; add an audience mapper or no learner can log in**      | M1 · 09.08       | **31.07** | MEDICE dev    |
+| S2      | **The WP plugin stores no token.** Decide how it will — lifespan now known (600 s) | M1 · 09.08       | **31.07** | MEDICE dev    |
+| S4      | Scope decision on 4 layout features not in the 140 h — **PM is deciding**          | M2 · 23.08       | **06.08** | PM            |
+| S11     | Confirm `Veranstaltungsende` = the learner's completion date                       | M3 · 30.08       | 07.08     | ÄKWL          |
+| S5      | Certificate-after-EIV vs the launch fallback                                       | M3 · 30.08       | 14.08     | PM + MEDICE   |
+| ~~S7~~  | ~~80 % or 100 %~~ — **already per course; a field, not a constant. 20.08**         | **CLOSED 20.08** | —         | —             |
+| S8      | ADHS SMTP configuration — **PM is setting it in the console**                      | M3 · 30.08       | 21.08     | PM            |
+| S14     | Accreditation expires 12.10.2026; change must be notified — **PM accepted**        | post-launch      | 24.08     | PM            |
+| ~~S9~~  | ~~Hetzner account ownership and DNS~~ — **DigitalSpital's own, confirmed 20.08**   | **CLOSED 20.08** | —         | —             |
+| S10     | VNR password shared over chat — **rotation requested from MEDICE in a call 20.08** | —                | now       | MEDICE        |
+| S23     | **VNR format, and whether any VNR-less completion already exists**                 | —                | 14.08     | MEDICE / ÄKWL |
+| S25     | **Which point flags may a completion claim for this VNR?**                         | M3 · 30.08       | **14.08** | MEDICE / ÄKWL |
+| ~~S26~~ | ~~Production EIV API base URL~~ — **`https://backend.eiv-fobi.de`, 20.08**         | **CLOSED 20.08** | —         | —             |
+| S27     | **Test-system credentials from EIV support, so the client can be proven**          | M3 · 30.08       | **14.08** | MEDICE        |
+| ~~S24~~ | ~~Export the EIV Veranstalter Swagger~~                                            | **CLOSED 09.08** | —         | —             |
+| ~~S3~~  | ~~WordPress repository access~~                                                    | **CLOSED 28.07** | —         | —             |
+| ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                               | **CLOSED 28.07** | —         | —             |
+| ~~S6~~  | ~~Signature/stamp asset~~                                                          | **CLOSED 28.07** | —         | —             |
+| ~~S1~~  | ~~Repository write access~~                                                        | **CLOSED 27.07** | —         | —             |
 
 S11 drops from first place to fifth: the Muster answers it, and the answer is
 already what the code does. It stays open because confirming a reading is not
