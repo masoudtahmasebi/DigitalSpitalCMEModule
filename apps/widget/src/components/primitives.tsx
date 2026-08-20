@@ -513,6 +513,21 @@ export function StateIcon(props: {
   label: string;
   /** `module` is the disc; `item` is the lighter glyph a chapter or content gets. */
   tone?: "module" | "item";
+  /**
+   * `exam` draws a clipboard instead of the neutral circle (P103-02).
+   *
+   * A Lernerfolgskontrolle now sits in its chapter beside the videos, and in a
+   * list of identical circles the only thing marking it as the exam is its
+   * title — which an author may have called anything. The glyph says what kind
+   * of thing it is at a glance, which is what the client asked for.
+   *
+   * Deliberately **not** applied to `locked` or `completed`. Those two shapes
+   * carry information no other row carries — may I open this, and did I pass —
+   * and replacing either with a clipboard would trade a state a physician needs
+   * for a category they can read in the title. Every state keeps a distinct
+   * shape (WCAG 1.4.1); this only replaces the two neutral ones.
+   */
+  kind?: "exam";
 }) {
   const item = props.tone === "item";
   const skin: Record<typeof props.state, string> = {
@@ -532,6 +547,8 @@ export function StateIcon(props: {
     >
       {props.state === "locked" ? (
         <LockIcon className="h-4 w-4" />
+      ) : props.kind === "exam" && props.state !== "completed" ? (
+        <ExamIcon className="h-4 w-4" />
       ) : (
         <svg
           viewBox="0 0 16 16"
@@ -557,6 +574,32 @@ export function StateIcon(props: {
         </svg>
       )}
     </span>
+  );
+}
+
+/**
+ * A clipboard with a tick — the Lernerfolgskontrolle's own glyph (P103-02).
+ *
+ * A clipboard rather than a question mark or a pencil: the exam is a checklist
+ * the physician works through and is marked on, and a question mark reads as
+ * "help" in every other interface they use that day. `aria-hidden` because
+ * `StateIcon` names the row; a second announcement of "exam" beside a row
+ * already titled *Lernerfolgskontrolle* is noise to a screen reader.
+ */
+export function ExamIcon(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={props.className}
+      fill="currentColor"
+      aria-hidden="true"
+      // Named so a test can tell this glyph from the state circle. Without it
+      // `querySelector("svg")` is true of every row and the assertion cannot go
+      // red — a gate that only ever agrees (§9.1).
+      data-ds-icon="exam"
+    >
+      <path d="M6 1.5A1.5 1.5 0 0 1 7.5 0h1A1.5 1.5 0 0 1 10 1.5V2h.5A1.5 1.5 0 0 1 12 3.5v11A1.5 1.5 0 0 1 10.5 16h-5A1.5 1.5 0 0 1 4 14.5v-11A1.5 1.5 0 0 1 5.5 2H6v-.5Zm1.5 0V2h1v-.5h-1ZM6.9 12.1 5.1 10.3a.8.8 0 1 1 1.13-1.13l1.24 1.24 2.5-2.5A.8.8 0 0 1 11.1 9.04L8.03 12.1a.8.8 0 0 1-1.13 0Z" />
+    </svg>
   );
 }
 

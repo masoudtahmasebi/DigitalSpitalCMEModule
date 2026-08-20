@@ -18,7 +18,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type {
   ApiClient,
   ChapterState,
@@ -334,16 +334,37 @@ describe("the progress panel", () => {
 });
 
 /**
- * The exam, where the complete desktop layout puts it (P95-01).
+ * The Lernerfolgskontrolle, in the chapter it examines (P95-01, moved by
+ * P103-02).
  *
- * These replace "the content tabs". That describe covered a row of
- * Zusammenfassung / Lernerfolgskontrolle / CME Punktemeldung tabs beside the
- * video, and the complete layout has no tab row at all: the summary sits under
- * the player and the exam is a row in the Modul Übersicht. The properties the
- * old block pinned are still properties — a module without an exam offers none,
- * a locked exam cannot be opened, an open one opens *this* module's — so they
- * are carried over rather than dropped, against the control that now exists.
+ * P95-01 gave the exam its own row *under* the module list, following a layout
+ * drawn for a course with one exam at the end. A course with an exam per module
+ * is a different shape, and the client asked for the other arrangement: the
+ * exam belongs to the content it examines, so it is a row in its own chapter
+ * with a glyph of its own.
+ *
+ * The properties the old block pinned are properties either way and are carried
+ * over rather than dropped — a module without an exam offers none, a locked one
+ * cannot be opened, an open one opens *this* module's, and it appears exactly
+ * once. What changed is where the control is and what tells two of them apart.
  */
+/**
+ * The row's exact accessible name.
+ *
+ * Anchored at the end, and both halves of that matter. The name is not the bare
+ * title — `StateIcon` is inside the button and contributes its own label, so it
+ * reads "Verfügbar Lernerfolgskontrolle". And once the gate opens the sidebar
+ * also carries the primary action **Lernerfolgskontrolle beginnen**, which an
+ * unanchored match sweeps up — so "there are two of these" would fail for a
+ * reason that has nothing to do with the row.
+ */
+const EXAM_ROW = /Lernerfolgskontrolle$/u;
+
+/** The sidebar, so a query can be scoped away from the player's own controls. */
+function outline(): HTMLElement {
+  return screen.getByRole("navigation", { name: "Modul Übersicht" });
+}
+
 describe("the Lernerfolgskontrolle in the module outline", () => {
   it("draws no tab row beside the video", () => {
     renderPlayer();
@@ -354,76 +375,68 @@ describe("the Lernerfolgskontrolle in the module outline", () => {
   it("is a row in the outline, padlocked until the server opens its gate", () => {
     renderPlayer();
 
-    const outline = screen.getByRole("navigation", { name: "Modul Übersicht" });
-    // The fixture has an exam on modules 2 and 3, both titled
-    // "Lernerfolgskontrolle" — which is what an author types — so the module
-    // is what tells them apart. The learner is on `v3`.
-    const exam = screen.getByRole("button", { name: /Lernerfolgskontrolle – Modul 3/ });
-    expect(outline.contains(exam)).toBe(true);
+    const exam = within(outline()).getByRole("button", { name: EXAM_ROW });
     expect((exam as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("opens **this module's** exam once the gate is open", () => {
     /*
-     * The assertion P87-02 is for, moved to the control that now exists. The
-     * learner is on `v3`, and the course has an exam on module 2 *and* on
-     * module 3 — the row must open module 3's. The old course-wide search
-     * returned the first quiz anywhere, which here is module 2's.
+     * The assertion P87-02 is for, at the control that now exists. The learner
+     * is on `v3`, so module 3 is the open one — and the fixture has an exam on
+     * module 2 as well, which is what the old course-wide search returned.
      */
     const onOpen = vi.fn();
     renderPlayer({ onOpen, state: withQuizOpen(state(), 3) });
 
-    const exam = screen.getByRole("button", { name: /Lernerfolgskontrolle – Modul 3/ });
+    /*
+     * Scoped to the outline. Once the gate opens, the player *also* offers the
+     * exam as its primary action under the video — a different control for the
+     * same destination, which is the layout's and not a duplicate row. An
+     * unscoped query matches both and would fail for the wrong reason.
+     */
+    const exam = within(outline()).getByRole("button", { name: EXAM_ROW });
     expect((exam as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(exam);
     expect(onOpen).toHaveBeenCalledWith("quiz3");
   });
 
-  it("tells several exams apart by their module", () => {
+  it("tells several exams apart by the module they sit in", () => {
     /*
-     * The layout draws one row, labelled simply "Lernerfolgskontrolle", and a
-     * course with one exam gets exactly that. Since P87 a course may have one
-     * per module — and the fixture's two are **both** titled
-     * "Lernerfolgskontrolle", which is what an author types — so without the
-     * module a physician sees two identical rows and cannot choose (§9.4).
+     * The fixture's two exams are **both** titled "Lernerfolgskontrolle",
+     * which is what an author types. Under the old arrangement they were two
+     * adjacent identical rows and needed a "– Modul 3" suffix to be told apart
+     * (§9.4).
+     *
+     * Nesting them does that job better: only the open module's exam is on the
+     * screen, so there is never a choice between two identical labels — and the
+     * suffix, which repeated information the surrounding heading already
+     * carried, is gone.
      */
     renderPlayer();
 
-    expect(
-      screen.getByRole("button", { name: /Lernerfolgskontrolle – Modul 2/ }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: /Lernerfolgskontrolle – Modul 3/ }),
-    ).toBeTruthy();
+    expect(within(outline()).getAllByRole("button", { name: EXAM_ROW })).toHaveLength(1);
+    expect(screen.queryByText(/– Modul \d/u)).toBeNull();
   });
 
-  it("keeps the layout's bare word when a course has exactly one", () => {
-    const oneExam = course();
-    let seen = false;
-    for (const module of oneExam.modules) {
-      for (const chapter of module.chapters) {
-        (chapter as { contents: unknown[] }).contents = chapter.contents.filter(
-          (content) => {
-            if (content.kind !== "quiz") return true;
-            if (seen) return false;
-            seen = true;
-            return true;
-          },
-        );
-      }
-    }
+  it("marks the exam with its own glyph, not a video's", () => {
+    // The client's ask. In a list of chapter contents the title is the only
+    // thing saying which row is the exam, and an author may have called it
+    // anything.
+    renderPlayer({ state: withQuizOpen(state(), 3) });
 
-    renderPlayer({ course: oneExam });
+    const exam = within(outline()).getByRole("button", { name: EXAM_ROW });
+    expect(exam.querySelector('[data-ds-icon="exam"]')).not.toBeNull();
 
-    expect(screen.getByRole("button", { name: /^Lernerfolgskontrolle/ })).toBeTruthy();
-    expect(screen.queryByText(/– Modul \d/u)).toBeNull();
+    // And a video row does not get it — otherwise the assertion above passes on
+    // a component that gives every row the same glyph.
+    const video = within(outline()).getByRole("button", { name: /Video 3$/u });
+    expect(video.querySelector('[data-ds-icon="exam"]')).toBeNull();
   });
 
   it("draws no exam row at all on a course that has none", () => {
     /*
-     * P82-03's rule, at the control that replaced the tab: *"if a module does
-     * not have erfolgs controlle, it should not appear"*. A padlock that can
-     * never open is worse than no row.
+     * P82-03's rule: *"if a module does not have erfolgs controlle, it should
+     * not appear"*. A padlock that can never open is worse than no row.
      */
     const withoutQuiz = course();
     for (const module of withoutQuiz.modules) {
@@ -436,17 +449,16 @@ describe("the Lernerfolgskontrolle in the module outline", () => {
 
     renderPlayer({ course: withoutQuiz });
 
-    expect(screen.queryByRole("button", { name: /Lernerfolgskontrolle/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: EXAM_ROW })).toBeNull();
   });
 
   it("lists an exam once, not twice", () => {
-    // It used to be a chapter's content *and* a tab. Two controls for one exam
-    // is what P94-02 removed from under the video, and putting the row back
-    // must not reintroduce it one column over.
+    // It used to be a chapter's content *and* a tab, and then a chapter's
+    // content *and* a row under the modules. Two controls for one exam is what
+    // P94-02 removed from under the video; moving the row must not reintroduce
+    // it, so `ExamRows` was deleted rather than kept alongside.
     renderPlayer({ state: withQuizOpen(state(), 3) });
-    expect(
-      screen.getAllByRole("button", { name: /Lernerfolgskontrolle – Modul 3/ }),
-    ).toHaveLength(1);
+    expect(within(outline()).getAllByRole("button", { name: EXAM_ROW })).toHaveLength(1);
   });
 });
 

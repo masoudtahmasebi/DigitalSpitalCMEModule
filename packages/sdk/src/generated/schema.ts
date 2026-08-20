@@ -930,6 +930,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/courses/{slug}/eiv/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Prove this course's VNR and password reach EIV
+         * @description Runs the EIV handshake and both read-only queries, and reports each step
+         *     separately. Creates nothing.
+         *
+         *     **It cannot file a Punktemeldung.** The handler reaches the two
+         *     read-only capabilities of the reporter and never `submit`. That matters
+         *     more than it sounds: a Punktemeldung cannot be taken back — a
+         *     withdrawal is a further entry on the record, not an erasure — so a
+         *     "test" button that could reach `push_teilnahme` would be a button that
+         *     credits CME points to a real physician's EFN the first time somebody
+         *     clicks it to see what happens.
+         *
+         *     The reason for the screen is the deadline. The worker talks to EIV after
+         *     a physician has completed a course, by which point the clock has
+         *     started: eight days to report, seven more to correct, then the window
+         *     closes permanently. A wrong password found there is found too late.
+         *     This answers the same question before anybody enrols.
+         *
+         *     `vnrPassword` is optional. Absent uses the stored credential; supplying
+         *     one proves a password **before** saving it, so testing a new credential
+         *     does not mean overwriting a working one. It is never echoed back, never
+         *     logged and never written to the audit detail — the audit records only
+         *     whether one was supplied.
+         *
+         *     `POST` rather than `GET` because of that field: a password in a query
+         *     string reaches the access log, the browser history and every proxy in
+         *     between.
+         */
+        post: operations["adminCheckEivConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/courses/{slug}/eiv/event": {
         parameters: {
             query?: never;
@@ -3162,6 +3207,55 @@ export interface components {
              */
             certificateReady: boolean;
             missingCertificateFields: string[];
+        };
+        /**
+         * @description One leg of the connection check.
+         *
+         *     `kind` is the client's own classification of the failure and is what
+         *     decides an operator's next move: `auth` means retype the password,
+         *     `rate_limited` and `server` mean wait, `network` means the host is
+         *     unreachable from here. A single "EIV did not answer" would send half of
+         *     those to the wrong place.
+         */
+        EivCheckStep: {
+            /** @enum {string} */
+            step: "authenticate" | "event" | "reported";
+            ok: boolean;
+            /** @description Present only on a failure. The client's failure class. */
+            kind?: string;
+            /**
+             * @description Present only on a failure. The authority's own words. Never
+             *     contains a credential — the password travels in a header and the
+             *     recorded request body is redacted.
+             */
+            detail?: string;
+        };
+        /**
+         * @description The result of `POST /admin/courses/{slug}/eiv/check`. Contains no
+         *     password field of any kind, not even a masked one — a masked secret in
+         *     a response is still a secret in a response.
+         */
+        EivConnectionReport: {
+            /**
+             * @description Which host was contacted. On the screen because "it works" and "it
+             *     works against the mock" are different sentences (§9.9).
+             */
+            endpoint: string;
+            vnr: string;
+            /**
+             * @description False when the caller supplied one. A check that passes with a
+             *     supplied password and fails with the stored one is somebody who
+             *     proved a credential and did not save it.
+             */
+            usedStoredPassword: boolean;
+            steps: components["schemas"]["EivCheckStep"][];
+            /** @description Present when the event read succeeded. */
+            event?: components["schemas"]["EivEvent"];
+            /**
+             * @description How many participations EIV already holds for this VNR. Present
+             *     when that read succeeded. A count, never the EFNs (ADR-0004).
+             */
+            reportedCount?: number;
         };
         /**
          * @description What the Ärztekammer holds about an accredited event. Every field
@@ -6575,6 +6669,84 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminCheckEivConnection: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description Test this password instead of the stored one. Write-only:
+                     *     no response of this API ever contains it, masked or
+                     *     otherwise.
+                     */
+                    vnrPassword?: string;
+                };
+            };
+        };
+        responses: {
+            /**
+             * @description The check ran. **A 200 does not mean the connection works** — it
+             *     means the report below is trustworthy. Read `steps`.
+             */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EivConnectionReport"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The course has no VNR at all, so there is nothing to check. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             422: components["responses"]["ValidationFailed"];
         };
     };

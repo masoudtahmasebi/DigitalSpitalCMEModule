@@ -25,7 +25,7 @@ import type {
   ModuleState,
   ProgressSummary,
 } from "@ds/sdk";
-import { ModuleSidebar, type ExamRow } from "./ModuleSidebar.js";
+import { ModuleSidebar } from "./ModuleSidebar.js";
 import type { PlayerAction } from "../player-status.js";
 
 afterEach(cleanup);
@@ -154,7 +154,6 @@ function renderSidebar(
   overrides: {
     onOpen?: (id: string) => void;
     actions?: readonly PlayerAction[];
-    exams?: readonly ExamRow[];
   } = {},
 ) {
   render(
@@ -164,7 +163,6 @@ function renderSidebar(
       currentContentId="v3"
       onOpen={overrides.onOpen ?? vi.fn()}
       actions={overrides.actions ?? []}
-      exams={overrides.exams ?? []}
     />,
   );
 }

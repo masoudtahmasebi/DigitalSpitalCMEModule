@@ -1342,6 +1342,78 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+  /admin/courses/{slug}/eiv/check:
+    post:
+      tags: [admin]
+      operationId: adminCheckEivConnection
+      summary: Prove this course's VNR and password reach EIV
+      description: |
+        Runs the EIV handshake and both read-only queries, and reports each step
+        separately. Creates nothing.
+
+        **It cannot file a Punktemeldung.** The handler reaches the two
+        read-only capabilities of the reporter and never `submit`. That matters
+        more than it sounds: a Punktemeldung cannot be taken back — a
+        withdrawal is a further entry on the record, not an erasure — so a
+        "test" button that could reach `push_teilnahme` would be a button that
+        credits CME points to a real physician's EFN the first time somebody
+        clicks it to see what happens.
+
+        The reason for the screen is the deadline. The worker talks to EIV after
+        a physician has completed a course, by which point the clock has
+        started: eight days to report, seven more to correct, then the window
+        closes permanently. A wrong password found there is found too late.
+        This answers the same question before anybody enrols.
+
+        `vnrPassword` is optional. Absent uses the stored credential; supplying
+        one proves a password **before** saving it, so testing a new credential
+        does not mean overwriting a working one. It is never echoed back, never
+        logged and never written to the audit detail — the audit records only
+        whether one was supplied.
+
+        `POST` rather than `GET` because of that field: a password in a query
+        string reaches the access log, the browser history and every proxy in
+        between.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                vnrPassword:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  writeOnly: true
+                  description: |
+                    Test this password instead of the stored one. Write-only:
+                    no response of this API ever contains it, masked or
+                    otherwise.
+      responses:
+        "200":
+          description: |
+            The check ran. **A 200 does not mean the connection works** — it
+            means the report below is trustworthy. Read `steps`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EivConnectionReport" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The course has no VNR at all, so there is nothing to check.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
   /admin/courses/{slug}/eiv/event:
     get:
       tags: [admin]
@@ -4714,6 +4786,66 @@ components:
         missingCertificateFields:
           type: array
           items: { type: string }
+
+    EivCheckStep:
+      type: object
+      required: [step, ok]
+      description: |
+        One leg of the connection check.
+
+        `kind` is the client's own classification of the failure and is what
+        decides an operator's next move: `auth` means retype the password,
+        `rate_limited` and `server` mean wait, `network` means the host is
+        unreachable from here. A single "EIV did not answer" would send half of
+        those to the wrong place.
+      properties:
+        step:
+          type: string
+          enum: [authenticate, event, reported]
+        ok: { type: boolean }
+        kind:
+          type: string
+          description: Present only on a failure. The client's failure class.
+        detail:
+          type: string
+          description: |
+            Present only on a failure. The authority's own words. Never
+            contains a credential — the password travels in a header and the
+            recorded request body is redacted.
+      additionalProperties: false
+
+    EivConnectionReport:
+      type: object
+      required: [endpoint, vnr, usedStoredPassword, steps]
+      description: |
+        The result of `POST /admin/courses/{slug}/eiv/check`. Contains no
+        password field of any kind, not even a masked one — a masked secret in
+        a response is still a secret in a response.
+      properties:
+        endpoint:
+          type: string
+          description: |
+            Which host was contacted. On the screen because "it works" and "it
+            works against the mock" are different sentences (§9.9).
+        vnr: { type: string }
+        usedStoredPassword:
+          type: boolean
+          description: |
+            False when the caller supplied one. A check that passes with a
+            supplied password and fails with the stored one is somebody who
+            proved a credential and did not save it.
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/EivCheckStep" }
+        event:
+          allOf: [{ $ref: "#/components/schemas/EivEvent" }]
+          description: Present when the event read succeeded.
+        reportedCount:
+          type: integer
+          description: |
+            How many participations EIV already holds for this VNR. Present
+            when that read succeeded. A count, never the EFNs (ADR-0004).
+      additionalProperties: false
 
     EivEvent:
       type: object

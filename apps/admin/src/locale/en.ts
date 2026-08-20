@@ -766,6 +766,64 @@ export const en: DeepPartial<typeof german> = {
       "The administration console is not configured correctly. Please check the environment variables.",
   },
 
+  eivCheck: {
+    title: "Check the EIV connection",
+    intro:
+      "Uses this course's VNR and password to check that reporting to the Ärztekammer works — before the first participation has to be reported.",
+    readOnly: "Nothing is reported and nothing is changed. Data is only read.",
+    needsVnr:
+      "No VNR is stored for this course yet. Enter the VNR and VNR password above and save, then the connection can be checked.",
+
+    password: "VNR password (optional)",
+    passwordHint:
+      "Leave empty to check the stored password. A password entered here is used only for this check and is not saved — so a new password can be tested without overwriting the working one.",
+    action: "Check connection",
+    running: "Checking …",
+
+    resultOk: "The EIV connection works. The Ärztekammer accepts this VNR and password.",
+    resultAuthFailed:
+      "The Ärztekammer rejected the VNR or the password. Please check both against the Anerkennungsbescheid.",
+    resultUnreachable:
+      "The credentials were accepted, but one of the queries failed. Details below — often the service is only temporarily unavailable.",
+
+    endpoint: "Address checked",
+    reportedCount: "Participations already reported",
+    passwordSource: "Password",
+    passwordTyped: "entered here, not saved",
+
+    eventTitle: "What the Ärztekammer holds for this VNR",
+    eventName: "Event",
+    eventCategory: "Category",
+    eventPeriod: "Accreditation period",
+    eventPoints: "Points",
+    pointsValue: (attendance: number | null, assessment: number | null): string =>
+      `Attendance ${attendance ?? "—"} · Lernerfolg ${assessment ?? "—"}`,
+    lernerfolgMismatch:
+      "This course reports the Lernerfolg point, but the Ärztekammer holds none for this VNR. A submission claiming it would be refused.",
+    eventLocked:
+      "This event is closed for reporting at the Ärztekammer. No further participation can be reported.",
+
+    detailToggle: "Technical details",
+    steps: {
+      authenticate: "Sign in with VNR and password",
+      event: "Read event data",
+      reported: "Read points already reported",
+    },
+    stepOk: "succeeded",
+    stepFailed: "failed",
+
+    advice: {
+      auth: "Check the VNR and password — both are on the Anerkennungsbescheid.",
+      rate_limited: "Too many requests. Check again in a few minutes.",
+      server: "EIV reported an error. Check again later.",
+      network: "EIV was unreachable from this server. Check the network or the address.",
+      business:
+        "The Ärztekammer rejected the request on its merits. Please check the Anerkennungsbescheid.",
+      format: "EIV's response was shaped unexpectedly. Please involve support.",
+      unknown: "Unexpected error. The technical message is shown beside it.",
+    },
+  },
+
   courses: {
     title: "Courses",
     empty: "No courses are stored for this tenant.",

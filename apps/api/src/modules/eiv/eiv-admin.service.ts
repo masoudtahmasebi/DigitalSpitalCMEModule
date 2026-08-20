@@ -29,7 +29,11 @@
 
 import { eivDeadlines } from "@ds/domain";
 import { EivError, EIV_PASSWORD_KEY } from "@ds/eiv-client";
-import type { AccreditedEvent, ReportedParticipation } from "@ds/plugin-api";
+import type {
+  AccreditedEvent,
+  AuthorityQuery,
+  ReportedParticipation,
+} from "@ds/plugin-api";
 import type { AuditServicePort } from "../../audit/audit.service.js";
 import { AppError } from "../../shared/problem-details.js";
 import type { EivSubmitterPort } from "./eiv.service.js";
@@ -54,6 +58,41 @@ export interface Reconciliation {
   readonly rows: readonly ReconciliationRow[];
   readonly onlyHere: number;
   readonly onlyThere: number;
+}
+
+/**
+ * One step of the connection check, and what it found (P103-01).
+ *
+ * `kind` is the client's own classification — `auth`, `rate_limited`, `server`,
+ * `business`, `format`, `network` — and it is what decides whether an operator
+ * should retype a password, wait, or call EIV. `detail` is the authority's own
+ * words. Neither ever carries a credential: the password travels in a header
+ * and `EivError` records a redacted request.
+ */
+export interface EivCheckStep {
+  readonly step: "authenticate" | "event" | "reported";
+  readonly ok: boolean;
+  readonly kind?: string;
+  readonly detail?: string;
+}
+
+/**
+ * What the screen renders. Deliberately contains no password field of any
+ * kind — not even a masked one, because a masked secret in a response is still
+ * a secret in a response.
+ */
+export interface EivConnectionReport {
+  readonly endpoint: string;
+  readonly vnr: string;
+  readonly usedStoredPassword: boolean;
+  readonly steps: readonly EivCheckStep[];
+  readonly event?: AccreditedEvent;
+  readonly reportedCount?: number;
+}
+
+/** The two diagnostic fields, present only on a failure. */
+function describe(kind: string, detail: string): { kind: string; detail: string } {
+  return { kind, detail };
 }
 
 /** Statuses meaning "we believe the Ärztekammer has this". */
@@ -87,6 +126,168 @@ export class EivAdminService {
         credentials: { [EIV_PASSWORD_KEY]: course.vnrPassword },
       }),
     );
+  }
+
+  /**
+   * Does this VNR and password actually reach EIV? (P103-01)
+   *
+   * ## Why a screen for this, when the worker already talks to EIV
+   *
+   * The worker talks to EIV *after* a physician has completed a course, and by
+   * then the deadline clock has started: eight days to report, seven more to
+   * correct, then the window closes permanently. A wrong password discovered
+   * there is discovered with a statutory deadline running and a learner already
+   * holding a Teilnahmebescheinigung. An operator needs to know it works
+   * **before** anybody enrols, and until now the only way to find out was to
+   * let a real completion try (§9.9: a setting nobody has exercised is a
+   * setting nobody knows the state of).
+   *
+   * ## What it cannot do, structurally
+   *
+   * There is **no path from here to `push_teilnahme`**. This method reaches the
+   * two read-only capabilities and nothing else — a `Reporter` exposes `submit`
+   * as a separate method and this one never names it. That is deliberate and is
+   * the difference between "we chose not to push" and "pushing is unreachable":
+   * a button on a settings screen that could file a Punktemeldung against a
+   * real physician's EFN is a button somebody eventually clicks to see what
+   * happens, and a Punktemeldung cannot be taken back — a retraction is another
+   * entry on the record, not an erasure.
+   *
+   * ## The password
+   *
+   * `supplied` lets an operator prove a credential *before* saving it, which is
+   * the order somebody actually works in — otherwise the only way to test a new
+   * password is to overwrite the working one. When it is absent the stored one
+   * is used. Either way it goes to EIV in a header, never into the response,
+   * never into the audit `detail`, and never into a log (CLAUDE.md §5).
+   */
+  async checkConnection(
+    slug: string,
+    supplied: string | undefined,
+    actor: EivOperatorContext,
+  ): Promise<EivConnectionReport> {
+    const course = await this.requireAccreditedVnr(slug, supplied);
+
+    const query = {
+      vnr: course.vnr,
+      endpoint: this.options.baseUrl,
+      credentials: { [EIV_PASSWORD_KEY]: course.vnrPassword },
+    };
+
+    const steps: EivCheckStep[] = [];
+    let event: AccreditedEvent | undefined;
+    let reportedCount: number | undefined;
+
+    /*
+     * `describeEvent` authenticates and then reads the event, so one call
+     * covers two of the four endpoints. The failure is split back apart by
+     * `EivError.kind`: `auth` is a 401/403 from the token exchange and means
+     * the credentials are wrong; anything else means they were accepted and
+     * something later went wrong. Those two send an operator to completely
+     * different places, and a single "EIV did not answer" would send them to
+     * the wrong one half the time (§9.4).
+     */
+    try {
+      event = await this.describeVia(query);
+      steps.push({ step: "authenticate", ok: true });
+      steps.push({ step: "event", ok: true });
+    } catch (error) {
+      const kind = error instanceof EivError ? error.kind : "unknown";
+      const detail = error instanceof EivError ? error.message : "unexpected failure";
+      steps.push({
+        step: "authenticate",
+        ok: kind !== "auth",
+        ...describe(kind, detail),
+      });
+      steps.push({ step: "event", ok: false, ...describe(kind, detail) });
+    }
+
+    /*
+     * Attempted even when the event read failed, because the two can fail
+     * independently and an operator wants the whole picture from one click
+     * rather than a screen that stops at the first problem and hides the
+     * second.
+     */
+    try {
+      const rows = await this.listVia(query);
+      reportedCount = rows.length;
+      steps.push({ step: "reported", ok: true });
+    } catch (error) {
+      const kind = error instanceof EivError ? error.kind : "unknown";
+      const detail = error instanceof EivError ? error.message : "unexpected failure";
+      steps.push({ step: "reported", ok: false, ...describe(kind, detail) });
+    }
+
+    /*
+     * Audited, because it sends a customer's credential to a third party. The
+     * `detail` names the endpoint and the outcome and nothing else — never the
+     * password, and never the VNR's own password field (§4 invariant 7).
+     */
+    await this.audit.recordForCustomer(actor.customerId, {
+      actor: { identity: "staff", id: actor.staffUserId },
+      action: "eiv.connection_checked",
+      subject: slug,
+      detail: {
+        endpoint: this.options.baseUrl,
+        ok: steps.every((entry) => entry.ok),
+        // *Whether* one was typed, never the value — and useful, because a
+        // check that passed with a supplied password and fails with the stored
+        // one means somebody proved a credential and did not save it.
+        suppliedPassword: supplied !== undefined,
+      },
+    });
+
+    return {
+      endpoint: this.options.baseUrl,
+      vnr: course.vnr,
+      usedStoredPassword: supplied === undefined,
+      steps,
+      ...(event === undefined ? {} : { event }),
+      ...(reportedCount === undefined ? {} : { reportedCount }),
+    };
+  }
+
+  /** `describeEvent`, or a refusal naming the capability rather than a crash. */
+  private async describeVia(query: AuthorityQuery): Promise<AccreditedEvent> {
+    if (this.submitter.describeEvent === undefined) {
+      throw new EivError("unknown", "reporter cannot describe an event");
+    }
+    return this.submitter.describeEvent(query);
+  }
+
+  private async listVia(
+    query: AuthorityQuery,
+  ): Promise<readonly ReportedParticipation[]> {
+    if (this.submitter.listReported === undefined) {
+      throw new EivError("unknown", "reporter cannot list reported participations");
+    }
+    return this.submitter.listReported(query);
+  }
+
+  /**
+   * The VNR, and whichever password this check is proving.
+   *
+   * Separate from `requireAccredited` because a supplied password makes the
+   * stored one irrelevant — refusing "no password stored" while the operator is
+   * typing one into the box is exactly the refusal §9.2 is about.
+   */
+  private async requireAccreditedVnr(
+    slug: string,
+    supplied: string | undefined,
+  ): Promise<{ readonly vnr: string; readonly vnrPassword: string }> {
+    if (supplied === undefined) return this.requireAccredited(slug);
+
+    const course = await this.repository.accreditationForCourse(slug);
+    if (course === undefined) throw new AppError("not_found", "no such course");
+    if (course.vnr === null || course.vnr === "") {
+      throw new AppError(
+        "conflict",
+        "course has no vnr",
+        "Für diese Fortbildung ist keine VNR hinterlegt.",
+      );
+    }
+
+    return { vnr: course.vnr, vnrPassword: supplied };
   }
 
   /**

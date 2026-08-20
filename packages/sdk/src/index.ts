@@ -78,6 +78,8 @@ export type ParticipantMergePreview = components["schemas"]["ParticipantMergePre
 export type ParticipantMergeParty = components["schemas"]["ParticipantMergeParty"];
 export type CertificateRecord = components["schemas"]["CertificateRecord"];
 export type EivEvent = components["schemas"]["EivEvent"];
+export type EivConnectionReport = components["schemas"]["EivConnectionReport"];
+export type EivCheckStep = components["schemas"]["EivCheckStep"];
 export type EivReconciliation = components["schemas"]["EivReconciliation"];
 export type EivReconciliationRow = components["schemas"]["EivReconciliationRow"];
 export type StaffAccount = components["schemas"]["StaffAccount"];
@@ -624,6 +626,27 @@ export function createClient(options: ClientOptions) {
      */
     adminDescribeEivEvent: (slug: string): Promise<EivEvent> =>
       request(`/admin/courses/${seg(slug)}/eiv/event`),
+
+    /**
+     * Prove the VNR and password reach EIV (P103-01).
+     *
+     * `vnrPassword` is optional and goes in the **body**, never the path or a
+     * query — a password in a URL reaches the access log, the history and every
+     * proxy between here and the server. Nothing in the response carries it
+     * back.
+     *
+     * A resolved promise does not mean the connection works. It means the
+     * report is trustworthy; the caller reads `steps`.
+     */
+    adminCheckEivConnection: (
+      slug: string,
+      input: { vnrPassword?: string } = {},
+    ): Promise<EivConnectionReport> =>
+      request(`/admin/courses/${seg(slug)}/eiv/check`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      }),
 
     /** What we sent, against what the authority holds. */
     adminReconcileEiv: (slug: string): Promise<EivReconciliation> =>

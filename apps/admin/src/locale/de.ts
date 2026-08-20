@@ -1043,6 +1043,92 @@ export const german = {
       "Die Verwaltung ist nicht korrekt konfiguriert. Bitte prüfen Sie die Umgebungsvariablen.",
   },
 
+  /**
+   * The EIV connection check (P103-01).
+   *
+   * Two registers on purpose, and the order is the point. The headline is for
+   * whoever has to decide something — a PM reading "Die Verbindung zum EIV
+   * funktioniert" needs nothing else. The `advice` strings are for whoever has
+   * to fix it, and each one names an action rather than a diagnosis: a person
+   * told `rate_limited` learns nothing they can do.
+   */
+  eivCheck: {
+    title: "Verbindung zum EIV prüfen",
+    intro:
+      "Prüft mit der VNR und dem Passwort dieser Fortbildung, ob die Meldung an die Ärztekammer funktioniert — bevor die erste Teilnahme gemeldet werden muss.",
+    /*
+     * Stated, not implied.
+     *
+     * An operator who is unsure whether a button reports somebody will not
+     * press it, and one who assumes it does not — wrongly — is the person this
+     * platform must never have. The endpoint behind this genuinely cannot
+     * reach `push_teilnahme`; saying so is reporting a fact, not reassuring.
+     */
+    readOnly:
+      "Dabei wird nichts gemeldet und nichts verändert. Es werden ausschließlich Daten gelesen.",
+    needsVnr:
+      "Für diese Fortbildung ist noch keine VNR hinterlegt. Tragen Sie die VNR und das VNR-Passwort oben ein und speichern Sie, dann kann die Verbindung geprüft werden.",
+
+    password: "VNR-Passwort (optional)",
+    passwordHint:
+      "Leer lassen, um das gespeicherte Passwort zu prüfen. Ein hier eingetragenes Passwort wird nur für diese Prüfung verwendet und nicht gespeichert — so lässt sich ein neues Passwort testen, ohne das funktionierende zu überschreiben.",
+    action: "Verbindung prüfen",
+    running: "Prüfung läuft …",
+
+    resultOk:
+      "Die Verbindung zum EIV funktioniert. VNR und Passwort werden von der Ärztekammer akzeptiert.",
+    resultAuthFailed:
+      "Die Ärztekammer hat die VNR oder das Passwort abgelehnt. Bitte prüfen Sie beide Angaben aus dem Anerkennungsbescheid.",
+    resultUnreachable:
+      "Die Zugangsdaten wurden akzeptiert, aber eine der Abfragen ist fehlgeschlagen. Details unten — häufig ist der Dienst nur vorübergehend nicht erreichbar.",
+
+    endpoint: "Geprüfte Adresse",
+    reportedCount: "Bereits gemeldete Teilnahmen",
+    passwordSource: "Passwort",
+    passwordTyped: "hier eingegeben, nicht gespeichert",
+
+    eventTitle: "Das sagt die Ärztekammer zu dieser VNR",
+    eventName: "Veranstaltung",
+    eventCategory: "Kategorie",
+    /*
+     * The accredited period, which is not decoration.
+     *
+     * A `teilnahmedatum` outside this window is refused, and for an on-demand
+     * Fortbildung taken across a year that is potentially every completion.
+     */
+    eventPeriod: "Anerkennungszeitraum",
+    eventPoints: "Punkte",
+    pointsValue: (attendance: number | null, assessment: number | null): string =>
+      `Teilnahme ${attendance ?? "—"} · Lernerfolg ${assessment ?? "—"}`,
+    lernerfolgMismatch:
+      "Diese Fortbildung meldet den Lernerfolgspunkt, die Ärztekammer führt für diese VNR aber keinen. Eine Meldung mit Lernerfolg würde abgelehnt.",
+    eventLocked:
+      "Diese Veranstaltung ist bei der Ärztekammer für Meldungen gesperrt. Es kann keine weitere Teilnahme gemeldet werden.",
+
+    detailToggle: "Technische Details",
+    steps: {
+      authenticate: "Anmeldung mit VNR und Passwort",
+      event: "Veranstaltungsdaten lesen",
+      reported: "Bereits gemeldete Punkte lesen",
+    },
+    stepOk: "erfolgreich",
+    stepFailed: "fehlgeschlagen",
+
+    /** Each names what to do, not what happened. */
+    advice: {
+      auth: "VNR und Passwort prüfen — beide stehen im Anerkennungsbescheid.",
+      rate_limited: "Zu viele Anfragen. In einigen Minuten erneut prüfen.",
+      server: "Beim EIV ist ein Fehler aufgetreten. Später erneut prüfen.",
+      network:
+        "Der EIV war von diesem Server aus nicht erreichbar. Netzwerk oder Adresse prüfen.",
+      business:
+        "Die Ärztekammer hat die Anfrage inhaltlich abgelehnt. Bitte den Anerkennungsbescheid prüfen.",
+      format:
+        "Die Antwort des EIV war unerwartet aufgebaut. Bitte den Support einschalten.",
+      unknown: "Unerwarteter Fehler. Die technische Meldung steht daneben.",
+    },
+  },
+
   courses: {
     title: "Fortbildungen",
     empty: "Für diesen Mandanten sind keine Fortbildungen hinterlegt.",

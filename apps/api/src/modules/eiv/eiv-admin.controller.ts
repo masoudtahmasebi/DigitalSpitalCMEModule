@@ -42,6 +42,7 @@ import { z } from "zod";
 import { Roles } from "../../auth/roles.decorator.js";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
+import { AppError } from "../../shared/problem-details.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
 import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
@@ -60,6 +61,24 @@ const Withdrawal = z.object({
    * Teilnehmerin, Ticket 4711" — never about the person.
    */
   reason: z.string().trim().min(1).max(200),
+});
+
+/**
+ * The connection check's body (P103-01).
+ *
+ * `vnrPassword` optional: absent means "use the one already stored", which is
+ * the ordinary case once a course is configured. Present means an operator is
+ * proving a credential *before* saving it — the order somebody actually works
+ * in, since otherwise the only way to test a new password is to overwrite the
+ * working one.
+ *
+ * Not trimmed. A password is bytes the Ärztekammer issued, and silently
+ * removing a leading space would make this check disagree with the worker,
+ * which sends what is stored. `.max()` only so an unbounded body cannot become
+ * an unbounded header.
+ */
+const eivCheckSchema = z.object({
+  vnrPassword: z.string().min(1).max(200).optional(),
 });
 
 @Controller("admin")
@@ -90,6 +109,49 @@ export class EivAdminController {
       assessmentPoints: event.assessmentPoints ?? null,
       locked: event.locked ?? null,
     };
+  }
+
+  /**
+   * Prove the VNR and password reach EIV, before a physician's deadline
+   * depends on it (P103-01).
+   *
+   * `POST` rather than `GET` because it carries a credential in the body and a
+   * password must never land in a URL — a query string reaches the access log,
+   * the browser history and any proxy in between.
+   *
+   * **This route cannot file a Punktemeldung.** It reaches
+   * `EivAdminService.checkConnection`, which touches the two read-only
+   * capabilities and never names `submit`. That is a property of the code
+   * rather than of this comment; see the service for why it is drawn there.
+   *
+   * `customer_admin` and above, matching every other operation on this
+   * controller: the VNR password is the customer's credential with the
+   * Ärztekammer, and proving it is an act on their accreditation.
+   */
+  @Post("courses/:slug/eiv/check")
+  @Roles(...MODERATOR_ROLES)
+  async checkConnection(
+    @Param("slug") slug: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    const parsed = eivCheckSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new AppError(
+        "validation",
+        `invalid eiv check body: ${parsed.error.message}`,
+        // Names the field, never the value — the value here is a password
+        // (§9.5).
+        "Das angegebene VNR-Passwort ist ungültig.",
+      );
+    }
+
+    return this.service(db).checkConnection(
+      slug,
+      parsed.data.vnrPassword,
+      context(principal),
+    );
   }
 
   @Get("courses/:slug/eiv/reported")

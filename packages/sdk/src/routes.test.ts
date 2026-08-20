@@ -146,6 +146,11 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
     }),
   adminCorrectLearnerName: (c) => c.adminCorrectLearnerName(ID, "Dr. Anna Schmidt"),
   adminEraseSubject: (c) => c.adminEraseSubject(ID, "Löschantrag"),
+  /*
+   * With a password, because that is the shape the console sends and the one
+   * where a mistake matters: it must reach the **body**, never the path.
+   */
+  adminCheckEivConnection: (c) => c.adminCheckEivConnection("adhs", { vnrPassword: "x" }),
   adminDescribeEivEvent: (c) => c.adminDescribeEivEvent("adhs"),
   adminReconcileEiv: (c) => c.adminReconcileEiv("adhs"),
   adminRequeueEivSubmission: (c) => c.adminRequeueEivSubmission(ID),

@@ -32,7 +32,7 @@ import { de } from "../locale/de.js";
 import { moduleHeading } from "../module-title.js";
 import { indexTitles, itemIcon, locateContent } from "../player.js";
 import type { PlayerAction } from "../player-status.js";
-import { Button, LockIcon, StateIcon } from "./primitives.js";
+import { Button, StateIcon } from "./primitives.js";
 
 export function ModuleSidebar(props: {
   course: CourseDetail;
@@ -58,7 +58,6 @@ export function ModuleSidebar(props: {
    * The course's Lernerfolgskontrollen, as the layout draws them: rows under
    * the module list rather than a tab beside the video (P95-01).
    */
-  exams: readonly ExamRow[];
 }) {
   const titles = indexTitles(props.course);
   const here = locateContent(props.course, props.currentContentId);
@@ -172,14 +171,25 @@ export function ModuleSidebar(props: {
                             const meta = titles.contents.get(content.id);
                             if (meta === undefined) return null;
                             /*
-                              A Lernerfolgskontrolle is not a chapter's content
-                              here (P95-01). It has its own row under the module
-                              list, as the layout draws it, and listing it twice
-                              would be two controls for one exam — the defect
-                              P94-02 removed from under the video.
+                              The Lernerfolgskontrolle sits in its chapter
+                              (P103-02).
+                              
+                              P95-01 pulled it out into its own list under the
+                              modules, following the layout — which draws a
+                              course with one exam at the end. A course with an
+                              exam *per module* is a different shape: the exam
+                              belongs to the content it examines, and separating
+                              them put a physician's next step in a different
+                              part of the screen from the chapter they had just
+                              finished.
+                              
+                              It is drawn once, here. `ExamRows` is gone rather
+                              than kept alongside — two controls for one exam is
+                              the defect P94-02 removed from under the video, and
+                              it does not become acceptable by being in a
+                              sidebar.
                             */
-                            if (meta.kind === "quiz") return null;
-
+                            const isExam = meta.kind === "quiz";
                             const current = content.id === props.currentContentId;
                             const contentState = itemIcon({
                               gate: content.gate,
@@ -206,8 +216,13 @@ export function ModuleSidebar(props: {
                                     state={contentState}
                                     label={de.player.state[contentState]}
                                     tone="item"
+                                    {...(isExam ? { kind: "exam" as const } : {})}
                                   />
-                                  <span className="min-w-0 flex-1">{meta.title}</span>
+                                  <span
+                                    className={`min-w-0 flex-1 ${isExam ? "font-medium" : ""}`}
+                                  >
+                                    {meta.title}
+                                  </span>
                                 </button>
                               </li>
                             );
@@ -222,8 +237,6 @@ export function ModuleSidebar(props: {
           );
         })}
       </ol>
-
-      <ExamRows exams={props.exams} onOpen={props.onOpen} />
 
       {/*
         The layout's primary action, under the list (P93-03).
@@ -251,77 +264,6 @@ export function ModuleSidebar(props: {
         </div>
       )}
     </nav>
-  );
-}
-
-/**
- * A Lernerfolgskontrolle, under the module list (P95-01).
- *
- * ## Why it is here and not a tab
- *
- * It was a tab beside the video, with **CME Punktemeldung** next to it. The
- * complete desktop layout has neither: the summary sits directly under the
- * player and the exam is a row in the Modul Übersicht, padlocked until the
- * module it belongs to is done. That is the better shape for the reason P82-03
- * was about — the exam belongs to the course's structure, which is what this
- * column is, rather than to the section a learner happens to be watching.
- *
- * Locked is a dark padlock and unclickable; open is the layout's orange
- * padlock and orange label. There is no third state drawn — pages 7 to 12 keep
- * the open padlock through the exam and after it — so a passed exam stays
- * open, which is also true: a learner may look at it again.
- */
-export interface ExamRow {
-  readonly id: string;
-  readonly title: string;
-  /** Which module it belongs to — used to tell several exams apart. */
-  readonly moduleOrdinal: number;
-  readonly locked: boolean;
-}
-
-function ExamRows(props: {
-  exams: readonly ExamRow[];
-  onOpen: (contentId: string) => void;
-}) {
-  if (props.exams.length === 0) return null;
-
-  return (
-    <ul className="space-y-1 pt-1">
-      {props.exams.map((exam) => (
-        <li key={exam.id}>
-          <button
-            type="button"
-            disabled={exam.locked}
-            onClick={() => props.onOpen(exam.id)}
-            className={`flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm font-semibold disabled:cursor-not-allowed ${
-              exam.locked ? "text-gray-600" : "text-cta-600 hover:bg-cta-50"
-            }`}
-          >
-            {exam.locked ? (
-              <LockIcon className="h-4 w-4 shrink-0 text-gray-700" />
-            ) : (
-              <OpenLockIcon className="h-4 w-4 shrink-0" />
-            )}
-            <span className="min-w-0 flex-1">{exam.title}</span>
-            {exam.locked ? <span className="sr-only">{de.player.tabLocked}</span> : null}
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** The open padlock the layout gives an unlocked Lernerfolgskontrolle. */
-function OpenLockIcon(props: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      className={props.className ?? "h-4 w-4"}
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path d="M11 1a3 3 0 0 0-3 3v2H4.5A1.5 1.5 0 0 0 3 7.5v6A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 11.5 6H10V4a1 1 0 1 1 2 0 1 1 0 1 0 2 0 3 3 0 0 0-3-3Z" />
-    </svg>
   );
 }
 
