@@ -175,6 +175,54 @@ final class DS_LMS_Token_Source {
 		return is_array( $payload ) ? $payload : array();
 	}
 
+	/**
+	 * The physician's own name and address, from the host's session (P105-01).
+	 *
+	 * MEDICE's realm puts no `email`, `given_name` or `family_name` in the access
+	 * token, so the platform had nothing to print on a Teilnahmebescheinigung —
+	 * and a certificate with no name is not a valid document.
+	 *
+	 * The theme already has it. `Keycloak::getUserInfoByToken()` runs at sign-in
+	 * and the result is stored beside the token, under `userinfo`, in the same
+	 * session array this class already reads. Nothing new is fetched or kept: this
+	 * only forwards what the login put there.
+	 *
+	 * **It does not say who the user is.** The API decides that from the token's
+	 * own signature and ignores anything here that the token itself carries — see
+	 * `apps/api/src/auth/profile-hint.ts`. If MEDICE add the claim mappers, this
+	 * stops being used with no change on either side.
+	 *
+	 * @return array<string,string> Empty when the session holds no profile.
+	 */
+	public static function profile(): array {
+		if ( ! self::session_active() ) {
+			return array();
+		}
+
+		$key = DS_LMS_Settings::all()['session_key'];
+		if ( '' === $key || ! isset( $_SESSION[ $key ]['userinfo'] ) ) {
+			return array();
+		}
+
+		$info = $_SESSION[ $key ]['userinfo'];
+		if ( ! is_array( $info ) ) {
+			return array();
+		}
+
+		$profile = array();
+		foreach ( array(
+			'email'      => 'email',
+			'given_name' => 'firstName',
+			'family_name' => 'lastName',
+		) as $from => $to ) {
+			if ( isset( $info[ $from ] ) && is_string( $info[ $from ] ) && '' !== $info[ $from ] ) {
+				$profile[ $to ] = $info[ $from ];
+			}
+		}
+
+		return $profile;
+	}
+
 	/** Is a refresh even possible on this installation? */
 	public static function can_refresh(): bool {
 		return array() !== self::connection() && null !== self::stored( 'refresh_token' );

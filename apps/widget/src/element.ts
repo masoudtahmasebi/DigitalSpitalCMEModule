@@ -280,6 +280,8 @@ export class DsLmsElement extends HTMLElement {
         signedIn,
         signInUrl: this.getAttribute("sign-in-url") ?? undefined,
         courseSlug: this.getAttribute("course") ?? "",
+        // Forwarded, never parsed here (P105-01).
+        profileHint: this.getAttribute("learner-profile") ?? undefined,
         // `open-at="resume"` puts a course-pinned element straight into the
         // content the learner left off at, which is how a routing host honours
         // the catalogue's **Fortbildung fortsetzen** across its own navigation.

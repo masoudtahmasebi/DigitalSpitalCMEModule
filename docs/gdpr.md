@@ -46,6 +46,40 @@ Everything in one table, because the honest version of this document is short.
 | Certificate state                       | `certificates`                                                             | Status and the name printed. The serving path renders on demand (P59). **Since P60-01 the issued bytes are also archived in object storage** — see §2.2 — and the row holds the key and a SHA-256, never a URL.                               |
 | Admin actions                           | `audit_log`                                                                | Ids, counts and field names. Never a name, an EFN or an answer.                                                                                                                                                                               |
 
+### 2.3 Name and email forwarded by the host site (P105-01)
+
+MEDICE's Keycloak realm issues access tokens carrying no `email`, `given_name`
+or `family_name`. Without them a completed course has no name to print on the
+Teilnahmebescheinigung, and a certificate with no name is not a valid document.
+
+Their own theme already holds the data: it calls `getUserInfoByToken()` at
+sign-in and keeps the profile in the PHP session. The `ds-lms` plugin now
+forwards **three fields — email, given name, family name** — to the platform
+alongside the token it was already sending.
+
+|                        |                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Category**           | Name, email address                                                                                                 |
+| **Source**             | The customer's own site, from their own Keycloak's userinfo                                                         |
+| **Legal basis**        | The same as the rest of the enrolment record — Art. 6(1)(b), performance of the CME service the physician asked for |
+| **Retention**          | As `users.email`, `first_name`, `last_name`. No separate copy is kept                                               |
+| **Purpose limitation** | Filling the certificate and addressing its delivery. Nothing else reads these fields                                |
+
+Two properties worth recording because they bound the risk:
+
+1. **It cannot decide who anybody is.** Identity comes from the `sub` of a token
+   verified against the customer's JWKS. `provision_learner` matches on
+   `(provider, realm, sub)`; email is never a lookup key.
+2. **A claim in the token always wins.** The forwarded value fills only a field
+   the token left empty, so a realm that adds the mappers later silently stops
+   using it.
+
+**The learner is told.** The widget says that name and email come from the
+MEDICE account and that progress is held against it — on the screen, where a
+physician can see it, rather than only here. That was the client's own
+instruction and it is the right instinct: a transfer nobody is told about is one
+nobody can object to.
+
 ### 2.2 The one artefact outside the database (P60-01)
 
 Every other item above is a column, and `erase_subject` can redact a column.

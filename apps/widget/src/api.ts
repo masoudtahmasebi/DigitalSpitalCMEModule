@@ -19,6 +19,14 @@ export interface WidgetConfig {
    * opens the catalogue, which is what a host page that lists several needs.
    */
   readonly courseSlug: string;
+  /**
+   * The host page's `learner-profile` attribute, forwarded untouched (P105-01).
+   *
+   * Opaque to the widget on purpose: it is base64url JSON the API validates,
+   * and a widget that parsed it would be a second implementation of a rule
+   * whose whole point is that the *server* decides what to trust.
+   */
+  readonly profileHint?: string | undefined;
 }
 
 export function createWidgetClient(
@@ -28,6 +36,8 @@ export function createWidgetClient(
   return createClient({
     baseUrl: config.apiBase,
     projectSlug: config.projectSlug,
+    ...(config.profileHint === undefined ? {} : { profileHint: config.profileHint }),
+    ...(config.profileHint === undefined ? {} : { profileHint: config.profileHint }),
     getToken: () => getToken({ refresh: false }),
     // Exactly one refresh per 401, enforced by the SDK — see its `isRetry`.
     onUnauthorized: () => getToken({ refresh: true }),

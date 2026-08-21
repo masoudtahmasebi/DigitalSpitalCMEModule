@@ -433,6 +433,10 @@ check(
 		'/^<ds-lms api-base="[^"]*" project="[^"]*"(?: course="[a-z0-9-]+")?'
 			. ' signed-in="(?:yes|no)" sign-in-url="[^"]*"'
 			. '(?: token-endpoint="[^"]*")?(?: token-header="[^"]*")?'
+			// base64url only, which is a stronger claim than `[^"]*`: the
+			// profile is the one attribute whose value is a physician's name,
+			// and it must be unreadable as markup even before escaping (P105-01).
+			. '(?: learner-profile="[A-Za-z0-9_-]*")?'
 			. ' data-ds-plugin="[^"]*"><\/ds-lms>$/',
 		$html
 	)

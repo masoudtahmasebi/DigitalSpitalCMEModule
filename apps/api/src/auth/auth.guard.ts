@@ -45,6 +45,7 @@ import type {
   StaffService,
 } from "../modules/staff/staff.service.js";
 import { broadestRole, staffTenantContext } from "../modules/staff/staff.service.js";
+import { parseProfileHint, withProfileHint } from "./profile-hint.js";
 import { TokenInvalidError } from "./token-verifier.js";
 import {
   IdentityProviderRegistry,
@@ -53,6 +54,11 @@ import {
 } from "./identity-provider.js";
 
 const PROJECT_HEADER = "x-ds-project";
+/**
+ * The host page's profile hint (P105-01). Never consulted for identity — see
+ * `profile-hint.ts`.
+ */
+const PROFILE_HEADER = "x-ds-profile";
 /** How an operator names a tenant that has no project yet (P22-03). */
 const CUSTOMER_HEADER = "x-ds-customer";
 
@@ -190,10 +196,32 @@ export class AuthGuard implements CanActivate {
     // create a *second* person — one with no membership and no role, so the
     // participant signed in successfully and was then refused by
     // `resolveTenantContext` with a 403 naming a user id they have never had.
+    /*
+     * The name and email the host page holds, where the token has none
+     * (P105-01).
+     *
+     * MEDICE's realm sends no `email`, `given_name` or `family_name`, so every
+     * physician arriving from their WordPress reached a completed course with
+     * nothing to print on the Teilnahmebescheinigung. Their theme *does* have
+     * the profile — it calls `getUserInfoByToken()` at sign-in — and the plugin
+     * now passes it alongside the token it was already passing.
+     *
+     * Applied here rather than anywhere else because this is the one place an
+     * identity is assembled, and `withProfileHint` fills only what the token
+     * left empty. It cannot decide *who* this is: that is `identity.subject`,
+     * from a signature this guard verified, and `provision_learner` keys on
+     * `(provider, realm, sub)` with email as a plain attribute. See
+     * `profile-hint.ts` for why that distinction is the whole safety argument.
+     */
+    const hinted = withProfileHint(
+      identity,
+      parseProfileHint(request.headers[PROFILE_HEADER]),
+    );
+
     const user = await this.deps.userService.syncFromToken(
       provider,
       identity.issuer,
-      identity,
+      hinted,
     );
     let grants = await this.deps.userService.rolesFor(user.id);
 

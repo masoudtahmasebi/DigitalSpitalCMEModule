@@ -338,10 +338,30 @@ final class DS_LMS_Renderer {
 
 		$endpoint = rest_url( DS_LMS_Token_Endpoint::NAMESPACE . DS_LMS_Token_Endpoint::ROUTE );
 
+		/*
+		 * The profile, base64url'd (P105-01).
+		 *
+		 * An attribute rather than a second endpoint, because it is the same
+		 * fact as the token and travels the same way. Base64 because a name may
+		 * contain any UTF-8 and this becomes a header, where a raw umlaut is not
+		 * expressible and a newline is a response-splitting primitive.
+		 *
+		 * Absent when the session holds no profile, so a host that has one adds
+		 * an attribute and one that does not is unchanged.
+		 */
+		$profile = DS_LMS_Token_Source::profile();
+		$hint    = array() === $profile
+			? ''
+			: sprintf(
+				' learner-profile="%s"',
+				esc_attr( rtrim( strtr( base64_encode( (string) wp_json_encode( $profile ) ), '+/', '-_' ), '=' ) )
+			);
+
 		return sprintf(
-			' token-endpoint="%1$s" token-header="%2$s"',
+			' token-endpoint="%1$s" token-header="%2$s"%3$s',
 			esc_url( $endpoint ),
-			esc_attr( 'X-WP-Nonce: ' . wp_create_nonce( 'wp_rest' ) )
+			esc_attr( 'X-WP-Nonce: ' . wp_create_nonce( 'wp_rest' ) ),
+			$hint
 		);
 	}
 }

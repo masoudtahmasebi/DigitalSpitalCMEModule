@@ -181,6 +181,28 @@ export const de = {
    * Keycloak's JWKS, and a page claiming somebody is signed in gains them
    * nothing (CLAUDE.md §4 invariant 2).
    */
+  /**
+   * That the physician's name and email come from their MEDICE account
+   * (P105-01).
+   *
+   * A new category of personal data crosses from the host site, and the client
+   * asked for it to be visible rather than buried: *"we should add a sign that
+   * your progress is synced with your medice account."* That is the right
+   * instinct — a transfer nobody is told about is one nobody can object to.
+   *
+   * Drawn beside the account details rather than as a banner over the whole
+   * widget, because it is a fact about *those fields* and a physician reading
+   * their own name is exactly who it concerns.
+   */
+  accountSync: {
+    title: "Ihr MEDICE-Konto",
+    /** Says what is taken, from where, and what it is used for. */
+    message:
+      "Name und E-Mail-Adresse stammen aus Ihrem MEDICE-Konto. Ihr Fortbildungsfortschritt und Ihre Teilnahmebescheinigung werden dazu gespeichert.",
+    /** Where to change it — this platform is not where a name is corrected. */
+    change: "Ihre Angaben ändern Sie in Ihrem MEDICE-Konto.",
+  },
+
   signedOut: {
     title: "Bitte melden Sie sich an",
     /** Both the never-signed-in and the DocCheck cases land here. */

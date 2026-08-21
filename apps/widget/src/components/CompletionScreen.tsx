@@ -356,6 +356,25 @@ export function CompletionScreen(props: {
           </div>
         )}
 
+        {/*
+          Where name and email come from (P105-01).
+
+          On this screen rather than as a banner over the widget, because this is
+          where those fields are *used*: the Teilnahmebescheinigung is about to
+          be issued in that name. The EFN above is the one thing here a physician
+          types themselves — everything else came from their MEDICE account, and
+          saying so is what makes that difference visible.
+
+          The client asked for it in those words: *"we should add a sign that
+          your progress is synced with your medice account."* A transfer nobody
+          is told about is one nobody can object to.
+        */}
+        <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+          <p className="text-sm font-semibold text-gray-900">{de.accountSync.title}</p>
+          <p className="mt-1 text-xs text-gray-600">{de.accountSync.message}</p>
+          <p className="mt-1 text-xs text-gray-600">{de.accountSync.change}</p>
+        </div>
+
         {correcting ? (
           <div className="flex gap-2">
             <Button

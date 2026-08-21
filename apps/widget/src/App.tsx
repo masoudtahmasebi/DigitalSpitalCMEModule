@@ -197,6 +197,8 @@ export interface AppProps extends WidgetConfig {
  */
 export interface ProgressDetail {
   readonly courseSlug: string;
+  /** Forwarded to the client, opaque here (P105-01). */
+  readonly profileHint?: string | undefined;
   readonly watchedPercent: number;
   readonly requiredWatchPercent: number;
   readonly coursePercent: number;
@@ -215,6 +217,8 @@ export interface ProgressDetail {
 
 export interface CourseCompleteDetail {
   readonly courseSlug: string;
+  /** Forwarded to the client, opaque here (P105-01). */
+  readonly profileHint?: string | undefined;
   readonly completedAt: string;
 }
 
@@ -275,10 +279,20 @@ function Routed(
   },
 ) {
   const { apiBase, projectSlug, courseSlug, getToken, onCourseOpen } = props;
+  const { profileHint } = props;
 
   const client = useMemo(
-    () => createWidgetClient({ apiBase, projectSlug, courseSlug }, getToken),
-    [apiBase, projectSlug, courseSlug, getToken],
+    () =>
+      createWidgetClient(
+        {
+          apiBase,
+          projectSlug,
+          courseSlug,
+          ...(profileHint === undefined ? {} : { profileHint }),
+        },
+        getToken,
+      ),
+    [apiBase, projectSlug, courseSlug, profileHint, getToken],
   );
 
   // The attribute wins for the whole lifetime of the element: a page that

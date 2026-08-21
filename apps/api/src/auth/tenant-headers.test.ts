@@ -28,7 +28,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { TENANT_HEADERS } from "../configure-app.js";
+import { GUARD_HEADERS, TENANT_HEADERS } from "../configure-app.js";
 
 const guardSource = readFileSync(
   fileURLToPath(new URL("./auth.guard.ts", import.meta.url)),
@@ -54,7 +54,7 @@ describe("the guard's headers and the CORS allow-list", () => {
   });
 
   it("reads no tenant header the preflight would refuse", () => {
-    const allowed = new Set<string>([...TENANT_HEADERS, "x-ds-csrf"]);
+    const allowed = new Set<string>([...TENANT_HEADERS, ...GUARD_HEADERS, "x-ds-csrf"]);
 
     for (const header of tenantHeaderLiterals(guardSource)) {
       // A header the guard reads but CORS does not allow never arrives from a
@@ -71,7 +71,7 @@ describe("the guard's headers and the CORS allow-list", () => {
     // runtime — but it is how a rename leaves a dead entry behind, which is the
     // state that makes the list untrustworthy the next time somebody reads it.
     const read = new Set(tenantHeaderLiterals(guardSource));
-    for (const header of TENANT_HEADERS) {
+    for (const header of [...TENANT_HEADERS, ...GUARD_HEADERS]) {
       expect(
         read.has(header),
         `${header} is allowed by CORS but no longer read by auth.guard.ts`,
