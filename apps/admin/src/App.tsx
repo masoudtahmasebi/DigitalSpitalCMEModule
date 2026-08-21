@@ -314,9 +314,22 @@ function Shell(props: {
         </header>
 
         <main className="min-w-0 flex-1 p-5">
-          <div className={signedIn ? "mx-auto max-w-6xl" : "mx-auto max-w-md pt-12"}>
-            {props.children}
-          </div>
+          {/*
+            No width cap on the content once signed in (P104-02).
+
+            `max-w-6xl` centred every screen in a 72rem column, which on a wide
+            monitor left a band of empty grey on both sides of a *table* — and a
+            table is the one thing that genuinely wants the width, because the
+            alternative is truncated titles and a horizontal scrollbar. P100-01
+            capped the things that should be capped: prose at `max-w-3xl`, form
+            fields at `max-w-2xl`, each where it is rendered. A second cap on the
+            whole page then constrained the lists as well, which was never the
+            intent.
+
+            The sign-in screen keeps its own — a lone form centred in a full
+            screen is the one case where the column *is* the layout.
+          */}
+          <div className={signedIn ? "" : "mx-auto max-w-md pt-12"}>{props.children}</div>
         </main>
 
         {/* Rendered by Shell rather than passed in at each of the five call

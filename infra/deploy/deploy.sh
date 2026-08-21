@@ -256,9 +256,27 @@ done
 
 # The EIV live guard, at deploy time rather than at submission time. A
 # Punktemeldung cannot be withdrawn once the correction window closes, so
-# pointing at the real endpoint has to be a deliberate act (ADR-0005).
-if [[ "${EIV_BASE_URL:-}" == *"eiv-fobi.de"* && "${EIV_ALLOW_LIVE:-}" != "yes" ]]; then
-  die "EIV_BASE_URL points at the live endpoint but EIV_ALLOW_LIVE is not 'yes'"
+# pointing at the real register has to be a deliberate act (ADR-0005).
+#
+# ## The test system is not the live one (P104-01)
+#
+# This used to match `*eiv-fobi.de*`, which is true of
+# `backend-test.eiv-fobi.de` as well — EIV's **test** system, the one they
+# instruct integrators to develop against. So configuring the platform against
+# the safe system required setting `EIV_ALLOW_LIVE=yes`, and an operator who
+# did that then had a deployment that would also submit to the production
+# register the moment somebody edited a URL. A safety flag that must be
+# switched off to do ordinary work is a flag that is always off.
+#
+# The rule now lives in `packages/eiv-client/src/endpoint.ts` and is unit
+# tested there; `eiv-endpoint.sh` is the shell reading of it, and
+# `eiv-endpoint.test.sh` drives both over one fixture table so they cannot
+# drift (§9.11).
+# shellcheck source=./eiv-endpoint.sh
+source "$(dirname "${BASH_SOURCE[0]}")/eiv-endpoint.sh"
+
+if ds_eiv_requires_live_consent "${EIV_BASE_URL:-}" && [[ "${EIV_ALLOW_LIVE:-}" != "yes" ]]; then
+  die "EIV_BASE_URL is the live register (or an unrecognised host) but EIV_ALLOW_LIVE is not 'yes'"
 fi
 
 # The API never reads a VNR or its password from the environment, and an

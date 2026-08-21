@@ -75,6 +75,7 @@ wants action today.
 | S23     | **VNR format, and whether any VNR-less completion already exists**                 | —                | 14.08     | MEDICE / ÄKWL |
 | S25     | **Which point flags may a completion claim for this VNR?**                         | M3 · 30.08       | **14.08** | MEDICE / ÄKWL |
 | ~~S26~~ | ~~Production EIV API base URL~~ — **`https://backend.eiv-fobi.de`, 20.08**         | **CLOSED 20.08** | —         | —             |
+| S28     | **Learner tokens carry no name or email — the certificate cannot be filled**       | M3 · 30.08       | **24.08** | MEDICE / DS   |
 | S27     | **Test-system credentials from EIV support, so the client can be proven**          | M3 · 30.08       | **14.08** | MEDICE        |
 | ~~S24~~ | ~~Export the EIV Veranstalter Swagger~~                                            | **CLOSED 09.08** | —         | —             |
 | ~~S3~~  | ~~WordPress repository access~~                                                    | **CLOSED 28.07** | —         | —             |

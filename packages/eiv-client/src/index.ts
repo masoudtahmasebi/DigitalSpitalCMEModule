@@ -40,3 +40,10 @@ export {
   type MockOptions,
   type MockRecord,
 } from "./mock/server.js";
+
+export {
+  eivEndpointTier,
+  requiresLiveConsent,
+  EIV_TEST_HOST,
+  type EivEndpointTier,
+} from "./endpoint.js";

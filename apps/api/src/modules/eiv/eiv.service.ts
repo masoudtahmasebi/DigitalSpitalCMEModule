@@ -17,7 +17,12 @@
  * stored `last_error` — only the failure *kind* does.
  */
 
-import { EivError, EIV_PASSWORD_KEY, type EivFailureKind } from "@ds/eiv-client";
+import {
+  EivError,
+  EIV_PASSWORD_KEY,
+  requiresLiveConsent,
+  type EivFailureKind,
+} from "@ds/eiv-client";
 import type { AccreditationReporter } from "@ds/plugin-api";
 import { eivDeadlines, planEivAttempt, type EivAttemptFailure } from "@ds/domain";
 import { SYSTEM_ACTOR, type AuditServicePort } from "../../audit/audit.service.js";
@@ -138,7 +143,7 @@ export class EivService {
       return "abandoned";
     }
 
-    if (!this.options.allowLive && !isLocal(this.options.baseUrl)) {
+    if (!this.options.allowLive && requiresLiveConsent(this.options.baseUrl)) {
       // Refusing loudly beats submitting real data to the Ärztekammer from a
       // misconfigured environment.
       await this.abandon(claim, row, "live_submission_not_allowed");
@@ -343,20 +348,5 @@ function toFailure(kind: EivFailureKind | string): EivAttemptFailure {
       return kind;
     default:
       return "unknown";
-  }
-}
-
-/** Localhost and the docker-compose mock; anything else is "live". */
-function isLocal(baseUrl: string): boolean {
-  try {
-    const { hostname } = new URL(baseUrl);
-    return (
-      hostname === "127.0.0.1" ||
-      hostname === "localhost" ||
-      hostname === "::1" ||
-      hostname === "eiv-mock"
-    );
-  } catch {
-    return false;
   }
 }
