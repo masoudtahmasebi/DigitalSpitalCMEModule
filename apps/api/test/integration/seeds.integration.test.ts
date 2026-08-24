@@ -318,6 +318,69 @@ describe("what the seeds leave behind", () => {
     expect(rows[0]?.stamp).not.toBeNull();
   }, 60_000);
 
+  it("corrects its own placeholder VNR, and only that (P109-01)", async () => {
+    /*
+     * The client: *"vnr i want dynamic … the vnr i have already given you, you
+     * can set that for now."* Both halves, and they pull opposite ways.
+     *
+     * P28-03 seeded a synthetic VNR so a seeded environment could not file test
+     * participations against MEDICE's real accreditation. It worked, and it
+     * also meant every installation started inert with a human told to fix it
+     * by hand — which none did (§9.9's corollary). The real number is the
+     * default now; the guards that actually prevent a filing are the VNR
+     * *password*, still a placeholder, and the NOT NULL 15-digit EFN a
+     * submission row requires.
+     *
+     * So the seed has to correct installations carrying the old placeholder
+     * without touching a VNR an operator typed — the P108-01 rule, for a
+     * NOT NULL column where COALESCE cannot express it. Both directions are
+     * asserted here, because a CASE that always fires and one that never fires
+     * are the two ways this silently stops working and neither shows up in a
+     * test of one direction.
+     */
+    const PLACEHOLDER = "0000000000000000000";
+
+    // An installation seeded before P109-01.
+    await admin.query("UPDATE courses SET vnr = $1 WHERE slug = $2", [
+      PLACEHOLDER,
+      "adhs-akademie-adult",
+    ]);
+
+    let seeder = openSeeder();
+    try {
+      await seedMediceAdhs(seeder);
+    } finally {
+      await seeder.end();
+    }
+
+    const corrected = await admin.query<{ vnr: string }>(
+      "SELECT vnr FROM courses WHERE slug = 'adhs-akademie-adult'",
+    );
+    expect(corrected.rows[0]?.vnr).not.toBe(PLACEHOLDER);
+    // From the Anerkennungsbescheid: 19 digits, and not the sentinel.
+    expect(corrected.rows[0]?.vnr).toMatch(/^\d{19}$/u);
+
+    // And an operator's own number survives, which is the half that matters
+    // once a second accredited course exists.
+    const mine = "1111111111111111111";
+    await admin.query("UPDATE courses SET vnr = $1 WHERE slug = $2", [
+      mine,
+      "adhs-akademie-adult",
+    ]);
+
+    seeder = openSeeder();
+    try {
+      await seedMediceAdhs(seeder);
+    } finally {
+      await seeder.end();
+    }
+
+    const kept = await admin.query<{ vnr: string }>(
+      "SELECT vnr FROM courses WHERE slug = 'adhs-akademie-adult'",
+    );
+    expect(kept.rows[0]?.vnr).toBe(mine);
+  }, 60_000);
+
   it("leaves learner-facing content alone on a second run with --if-missing", async () => {
     /*
      * The property `deploy.sh` depends on (P65-01), stated the way P65-03

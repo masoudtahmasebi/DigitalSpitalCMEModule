@@ -25,11 +25,14 @@
  * running this does not quietly manufacture an answer to a question the
  * Ärztekammer has not given (CLAUDE.md §7).
  *
- * **The VNR and the VNR password are placeholders.** Both are needed for the
- * course to be publishable at all, and neither authenticates anything: a
- * Punktemeldung carrying them is refused by EIV-FOBI, and cannot reach it
- * without `EIV_ALLOW_LIVE=yes` (ADR-0005). The real pair is set through the
- * console, and a re-run of this seed does not overwrite them.
+ * **The VNR is real; the VNR password is a placeholder.** Since P109-01 the
+ * seeded VNR is MEDICE's own from the Anerkennungsbescheid — it is not a
+ * secret, being printed and twice barcoded on every Teilnahmebescheinigung
+ * (S13) — while the password, which is the half that authenticates, is a
+ * placeholder until an operator sets the real one through the console's
+ * write-only field. A Punktemeldung carrying the placeholder password is
+ * refused by EIV-FOBI, and cannot reach it at all without `EIV_ALLOW_LIVE=yes`
+ * (ADR-0005). A re-run overwrites neither once they are set.
  *
  * Idempotent, keyed on the slugs: re-running updates rather than duplicating.
  */
@@ -89,23 +92,54 @@ const PORTAL_PROJECT_SLUG = CUSTOMER_SLUG;
 const PARTICIPANT_EMAIL = "demo@medice.example";
 
 /**
- * The Veranstaltungsnummer, from the environment.
+ * The Veranstaltungsnummer.
  *
- * It used to be the real one from the Bescheid, hardcoded. That was defensible
- * while a VNR was inert data — and it stopped being defensible with P28-03,
- * which made a completion queue a Punktemeldung against whatever VNR the course
- * carries. A seeded environment plus `EIV_ALLOW_LIVE=yes` is then a path to
- * submitting **test participations against MEDICE's real accreditation**, which
- * is not a mistake anyone gets to make twice: the Ärztekammer would be told that
- * physicians who do not exist attended.
+ * ## Why the real one is the default again (P109-01)
  *
- * The placeholder is obviously synthetic, so a submission attempt with it fails
- * loudly at the Ärztekammer rather than succeeding quietly somewhere real. The
- * real number lives in `config.env` next to the password it goes with —
- * `docs/requirements/medice-adhs.md` records what it is, which is where a fact
- * about the accreditation belongs.
+ * P28-03 replaced it with a synthetic placeholder, for a reason that was sound:
+ * a completion queues a Punktemeldung against whatever VNR the course carries,
+ * so a seeded environment plus `EIV_ALLOW_LIVE=yes` was a path to filing **test
+ * participations against MEDICE's real accreditation**. A placeholder fails
+ * loudly at the Ärztekammer instead of succeeding quietly somewhere real.
+ *
+ * It also meant every installation started inert and somebody had to know to
+ * fix it — which nobody did, on any installation, until the deploy printed the
+ * warning and the client read it. That is §9.9's corollary: a value a human is
+ * told to set by hand is a value that is not set.
+ *
+ * The client's instruction is explicit — *"vnr i want dynamic … the vnr i have
+ * already given you, you can set that for now"* — so the default is the real
+ * number from the Anerkennungsbescheid (ÄKWL, 18.06.2026), and the two guards
+ * that actually stop an accidental filing stay where they are:
+ *
+ * 1. **A Punktemeldung needs the VNR password too**, and that is still a
+ *    placeholder until an operator sets the real one through the console's
+ *    write-only field. A VNR alone authenticates nothing.
+ * 2. **A submission row needs an EFN** — `eiv_submissions.efn` is NOT NULL and
+ *    `CHECK (efn ~ '^[0-9]{15}$')`. The seeded demo participant has none, so no
+ *    completion of theirs can produce one. A real filing takes a real physician
+ *    deliberately entering their own EFN, which is the intended flow rather
+ *    than an accident of seeding.
+ *
+ * The VNR is not a secret in any case: it is printed on the
+ * Teilnahmebescheinigung and encoded on it twice, as Code 39 and as Datamatrix
+ * (S13). The **password** is the secret, and it is not in this file or any
+ * other.
+ *
+ * `SEED_MEDICE_VNR` still overrides, which is what makes it dynamic for a
+ * second customer or a rehearsal against a different accreditation.
  */
-const VNR = process.env["SEED_MEDICE_VNR"] ?? "0000000000000000000";
+const VNR = process.env["SEED_MEDICE_VNR"] ?? "2760552025919300018";
+
+/**
+ * What P28-03 used to seed.
+ *
+ * Kept, and named, because the ON CONFLICT below has to tell **its own
+ * placeholder** apart from a number an operator typed. Installations seeded
+ * before P109-01 are carrying this, and they are the ones that need correcting;
+ * a course whose VNR somebody set in the console is not.
+ */
+const PLACEHOLDER_VNR = "0000000000000000000";
 
 interface ModuleSeed {
   readonly title: string;
@@ -461,6 +495,13 @@ export async function seedMediceAdhs(
          -- Only when there is nothing there: the seed supplies a starting value
          -- and a placeholder asset, never a replacement for what an operator
          -- put in through the console.
+         -- The seed replaces its **own** placeholder and nothing else
+         -- (P109-01). COALESCE cannot express this: vnr is NOT NULL, so there
+         -- is no empty state to fall back from and the sentinel has to be the
+         -- old placeholder itself. An installation seeded before P109-01 gets
+         -- the real number on the next deploy; a course whose VNR an operator
+         -- typed in the console keeps it, which is P108-01's rule holding.
+         vnr = CASE WHEN courses.vnr = $18 THEN EXCLUDED.vnr ELSE courses.vnr END,
          vnr_password_enc = COALESCE(courses.vnr_password_enc, EXCLUDED.vnr_password_enc),
          stamp_image = COALESCE(courses.stamp_image, EXCLUDED.stamp_image),
          stamp_image_mime = COALESCE(courses.stamp_image_mime, EXCLUDED.stamp_image_mime),
@@ -509,6 +550,8 @@ export async function seedMediceAdhs(
         // Placeholder, and overwritten by the console's write-only field the
         // moment a real one is set. See `seededVnrPassword`.
         seededVnrPassword(),
+        // $18 — the sentinel the ON CONFLICT compares against, never inserted.
+        PLACEHOLDER_VNR,
       ],
     );
 
@@ -739,11 +782,14 @@ export async function seedMediceAdhs(
       "",
       "ADHS Akademie adult is PUBLISHED and visible to participants now.",
       "",
-      "The seeded VNR and VNR password are placeholders and authenticate",
-      "nothing. Before any real Punktemeldung, set both under",
-      "Verwaltung -> Fortbildungen -> ADHS Akademie adult: the VNR from the",
-      "Anerkennungsbescheid, and the VNR-Passwort from EIV-FOBI. A re-run of",
-      "this seed will not overwrite a password you set there.",
+      `The VNR is ${VNR}, from the Anerkennungsbescheid (P109-01). Change it`,
+      "per course under Verwaltung -> Fortbildungen; a re-run will not",
+      "overwrite one you set there.",
+      "",
+      "The VNR PASSWORD is still a placeholder and authenticates nothing. Set",
+      "the real one from EIV-FOBI on the same screen — it is write-only and",
+      "encrypted at rest, and a re-run will not replace it. Until then every",
+      "Punktemeldung is abandoned missing_vnr_password.",
       "",
       "Stamp and signature are 1x1 placeholder PNGs so a certificate renders",
       "locally. Replace them with the real assets of the course's",
