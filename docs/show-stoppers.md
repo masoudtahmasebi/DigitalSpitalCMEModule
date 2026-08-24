@@ -57,32 +57,32 @@ at all**, so P6-02's premise is void and MEDICE has a decision to make this
 week. And it surfaced **S15**, a live API key hardcoded in that file, which
 wants action today.
 
-| #       | Item                                                                               | Blocks           | Needed by | Owner         |
-| ------- | ---------------------------------------------------------------------------------- | ---------------- | --------- | ------------- |
-| ~~S12~~ | ~~"Originalstempel" may invalidate an emailed certificate~~                        | **CLOSED 11.08** | —         | —             |
-| ~~S15~~ | ~~Live API key hardcoded in the MEDICE plugin~~ — **rotated by MEDICE 11.08**      | **CLOSED 11.08** | —         | —             |
-| S18     | **Offline refresh token exposed — revoke, and stop requesting `offline_access`**   | —                | **today** | MEDICE        |
-| S17     | **Token `aud` is `account`; add an audience mapper or no learner can log in**      | M1 · 09.08       | **31.07** | MEDICE dev    |
-| S2      | **The WP plugin stores no token.** Decide how it will — lifespan now known (600 s) | M1 · 09.08       | **31.07** | MEDICE dev    |
-| S4      | Scope decision on 4 layout features not in the 140 h — **PM is deciding**          | M2 · 23.08       | **06.08** | PM            |
-| S11     | **The register holds a one-day event; correct the period, or name the date**       | **launch**       | 07.08     | ÄKWL          |
-| S5      | Certificate-after-EIV vs the launch fallback                                       | M3 · 30.08       | 14.08     | PM + MEDICE   |
-| ~~S7~~  | ~~80 % or 100 %~~ — **already per course; a field, not a constant. 20.08**         | **CLOSED 20.08** | —         | —             |
-| S8      | ADHS SMTP configuration — **PM is setting it in the console**                      | M3 · 30.08       | 21.08     | PM            |
-| S14     | Accreditation expires 12.10.2026; change must be notified — **PM accepted**        | post-launch      | 24.08     | PM            |
-| ~~S9~~  | ~~Hetzner account ownership and DNS~~ — **DigitalSpital's own, confirmed 20.08**   | **CLOSED 20.08** | —         | —             |
-| S10     | VNR password shared over chat — **rotation requested from MEDICE in a call 20.08** | —                | now       | MEDICE        |
-| S23     | **VNR format, and whether any VNR-less completion already exists**                 | —                | 14.08     | MEDICE / ÄKWL |
-| S25     | **Which point flags may a completion claim for this VNR?**                         | M3 · 30.08       | **14.08** | MEDICE / ÄKWL |
-| ~~S26~~ | ~~Production EIV API base URL~~ — **`https://backend.eiv-fobi.de`, 20.08**         | **CLOSED 20.08** | —         | —             |
-| S28     | **Learner tokens carry no name or email — the certificate cannot be filled**       | M3 · 30.08       | **24.08** | MEDICE / DS   |
-| S27     | **Test-system credentials from EIV support, so the client can be proven**          | M3 · 30.08       | **14.08** | MEDICE        |
-| S29     | **The Veranstalter interface we integrate against has an announced shutdown**      | **launch**       | **now**   | EIV / BÄK     |
-| ~~S24~~ | ~~Export the EIV Veranstalter Swagger~~                                            | **CLOSED 09.08** | —         | —             |
-| ~~S3~~  | ~~WordPress repository access~~                                                    | **CLOSED 28.07** | —         | —             |
-| ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                               | **CLOSED 28.07** | —         | —             |
-| ~~S6~~  | ~~Signature/stamp asset~~                                                          | **CLOSED 28.07** | —         | —             |
-| ~~S1~~  | ~~Repository write access~~                                                        | **CLOSED 27.07** | —         | —             |
+| #       | Item                                                                                      | Blocks           | Needed by | Owner         |
+| ------- | ----------------------------------------------------------------------------------------- | ---------------- | --------- | ------------- |
+| ~~S12~~ | ~~"Originalstempel" may invalidate an emailed certificate~~                               | **CLOSED 11.08** | —         | —             |
+| ~~S15~~ | ~~Live API key hardcoded in the MEDICE plugin~~ — **rotated by MEDICE 11.08**             | **CLOSED 11.08** | —         | —             |
+| S18     | **Offline refresh token exposed — revoke, and stop requesting `offline_access`**          | —                | **today** | MEDICE        |
+| S17     | **Token `aud` is `account`; add an audience mapper or no learner can log in**             | M1 · 09.08       | **31.07** | MEDICE dev    |
+| S2      | **The WP plugin stores no token.** Decide how it will — lifespan now known (600 s)        | M1 · 09.08       | **31.07** | MEDICE dev    |
+| S4      | Scope decision on 4 layout features not in the 140 h — **PM is deciding**                 | M2 · 23.08       | **06.08** | PM            |
+| S11     | **The register holds a one-day event; correct the period, or name the date**              | **launch**       | 07.08     | ÄKWL          |
+| ~~S5~~  | ~~Certificate-after-EIV vs the launch fallback~~ — **decided 24.08: issue on completion** | **CLOSED 24.08** | —         | —             |
+| ~~S7~~  | ~~80 % or 100 %~~ — **already per course; a field, not a constant. 20.08**                | **CLOSED 20.08** | —         | —             |
+| S8      | ADHS SMTP configuration — **PM is setting it in the console**                             | M3 · 30.08       | 21.08     | PM            |
+| S14     | Accreditation expires 12.10.2026; change must be notified — **PM accepted**               | post-launch      | 24.08     | PM            |
+| ~~S9~~  | ~~Hetzner account ownership and DNS~~ — **DigitalSpital's own, confirmed 20.08**          | **CLOSED 20.08** | —         | —             |
+| S10     | VNR password shared over chat — **rotation requested from MEDICE in a call 20.08**        | —                | now       | MEDICE        |
+| S23     | **VNR format, and whether any VNR-less completion already exists**                        | —                | 14.08     | MEDICE / ÄKWL |
+| S25     | **Which point flags may a completion claim for this VNR?**                                | M3 · 30.08       | **14.08** | MEDICE / ÄKWL |
+| ~~S26~~ | ~~Production EIV API base URL~~ — **`https://backend.eiv-fobi.de`, 20.08**                | **CLOSED 20.08** | —         | —             |
+| S28     | **Learner tokens carry no name or email — the certificate cannot be filled**              | M3 · 30.08       | **24.08** | MEDICE / DS   |
+| S27     | **Test-system credentials from EIV support, so the client can be proven**                 | M3 · 30.08       | **14.08** | MEDICE        |
+| S29     | **The Veranstalter interface we integrate against has an announced shutdown**             | **launch**       | **now**   | EIV / BÄK     |
+| ~~S24~~ | ~~Export the EIV Veranstalter Swagger~~                                                   | **CLOSED 09.08** | —         | —             |
+| ~~S3~~  | ~~WordPress repository access~~                                                           | **CLOSED 28.07** | —         | —             |
+| ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                                      | **CLOSED 28.07** | —         | —             |
+| ~~S6~~  | ~~Signature/stamp asset~~                                                                 | **CLOSED 28.07** | —         | —             |
+| ~~S1~~  | ~~Repository write access~~                                                               | **CLOSED 27.07** | —         | —             |
 
 S11 drops from first place to fifth: the Muster answers it, and the answer is
 already what the code does. It stays open because confirming a reading is not
@@ -1432,12 +1432,43 @@ sitting in the queue behind it.
 and asking as somebody **migrating** rather than somebody **stuck** makes the
 test-system request land better.
 
-(3) needs nobody: **pull the OpenAPI document behind that Swagger UI and diff it
-against `packages/eiv-client`.** If it is contract-compatible, the migration is
-a base URL and an auth change. It could not be done from the build sandbox —
-the network policy refuses `eiv-fobi.de` at the proxy, `connect_rejected` on
-CONNECT — so somebody on an ordinary connection has to fetch the document and
-attach it to this ticket.
+(3) was expected to need nobody — **it does.** Checked from an unrestricted
+connection on 24.08: `veranstalter-swagger-ui.eiv-fobi.de` answers, and the
+specification is **not served from it**. Every springdoc and swagger-ui-dist
+convention returns nginx's own 404:
+
+| Path                                                           |                                 |
+| -------------------------------------------------------------- | ------------------------------- |
+| `/`, `/index.html`                                             | 200, empty body — the JS shell  |
+| `/v3/api-docs`, `/v2/api-docs`                                 | 404 (nginx, not an application) |
+| `/swagger-config`, `/v3/api-docs/swagger-config`               | 404                             |
+| `/swagger-ui/index.html`, `/swagger-ui/swagger-ui.html`        | 404                             |
+| `/swagger-initializer.js`, `/openapi.json`, `/api/v3/api-docs` | 404                             |
+| `veranstalter-api.eiv-fobi.de`                                 | does not resolve                |
+
+That reads as a **static Swagger UI bundle served by nginx against a spec URL on
+another host** — plausibly one requiring Veranstalter credentials, plausibly not
+public at all. Two consequences:
+
+- The spec URL is in the page's JavaScript. Somebody with a real browser can
+  read it from the network tab — and what to look for is the request the page
+  fires _after_ load, to a host that is probably not this one. **The URL is the
+  deliverable, not only the JSON.**
+- Failing that, this is a second thing to ask EIV support for, and it makes the
+  request concrete: _your Veranstalter pages point integrators at this URL, the
+  UI loads, and the specification is not retrievable — please send the OpenAPI
+  document and the API base URL._ That is answerable in one reply, and it pairs
+  with S27 because both are "we are integrating, give us what integrators get".
+
+**So S29 is blocked on the same mail as S27**, not on somebody finding the right
+URL. That is worth knowing: it moves the migration from an unknown to a waiting
+item with a named owner.
+
+**A faster path than a support ticket.** The Bayerische Landesärztekammer
+publish a support line for exactly these questions — **089 4147-123** — and
+their own migration notice records that the FobiApp has been unsupported since
+March 2025, replaced by FobiApp-Web and the new Punktemeldung. A phone call is
+likely to produce the spec URL before a ticket does.
 
 ### Not the same question as the endpoint tier
 
@@ -1445,3 +1476,41 @@ P104-01 taught the platform to tell EIV's **test** system from the **live**
 register, and P107-01 put that on screen. Both of those hosts are the **old**
 interface. A correct tier decision about a switched-off interface is still a
 switched-off interface.
+
+---
+
+## S5 · Certificate-after-EIV — **CLOSED 24.08: issue on completion**
+
+The client's decision, and the reasoning is worth keeping because it is the one
+that makes a launch under an unresolved S11 survivable:
+
+> Issue the certificate on completion, do not wait for EIV. The two facts are
+> independent — the physician completed the Fortbildung, and the points were
+> reported. Coupling them means an EIV outage withholds a document the learner
+> has earned, and S11 proves the EIV can refuse for reasons that have nothing to
+> do with the learner. The reporting status belongs in the portal and the
+> console, not on the PDF.
+
+**No code change: the platform already does this.** `completion.service.ts`
+issues the certificate the moment it is earned (P59-01) and queues the
+Punktemeldung alongside it, not before — a failure in either does not fail the
+other. P51-01 had already split course completion from CME certification.
+
+The consequence the decision buys: **a launch with S11 still open degrades
+gracefully.** Physicians receive valid Teilnahmebescheinigungen carrying the VNR
+and the accredited points, and can self-report — the pre-EIV process the Kammern
+still accept — while the register question is settled.
+
+---
+
+## S7 · 80 % or 100 % — **REOPENED and settled 24.08: 100**
+
+Closed on 20.08 as "already per course; a field, not a constant", which answered
+the mechanism and not the value. The seed shipped 100, then 90, and 90 is the
+worst of the three: it satisfies neither source and is indefensible if the ÄKWL
+asks why.
+
+**Seeded at 100**, on the client's call: the layout is a design artifact and
+MEDICE-292 is the compliance record, so where they disagree the compliance
+record wins. The layout's 80 is overridden deliberately, and it stays a per
+course field so another customer can differ.

@@ -381,6 +381,48 @@ describe("what the seeds leave behind", () => {
     expect(kept.rows[0]?.vnr).toBe(mine);
   }, 60_000);
 
+  it("creates no demo participant unless one is asked for (P111-01)", async () => {
+    /*
+     * The client, 24.08: *"delete the demo participant now … testing against a
+     * live tenant with a known password is the thing you'd be unable to explain
+     * afterwards."*
+     *
+     * It used to be unconditional, so MEDICE's production tenant carried
+     * `demo@medice.example` with a password printed into a GitHub Actions log.
+     * Deleting it is the remedy for installations that already have one; not
+     * creating it is the fix, and this is the test that keeps it that way —
+     * the default is the whole property, and a default is exactly the kind of
+     * thing a later edit flips back without anybody noticing.
+     */
+    await admin.query("DELETE FROM users WHERE email = $1", ["demo@medice.example"]);
+
+    let seeder = openSeeder();
+    try {
+      await seedMediceAdhs(seeder);
+    } finally {
+      await seeder.end();
+    }
+
+    const absent = await admin.query("SELECT 1 FROM users WHERE email = $1", [
+      "demo@medice.example",
+    ]);
+    expect(absent.rowCount).toBe(0);
+
+    // And the account is still creatable, by something that says so — a guard
+    // that made the demo tenants unusable would be traded for a different bug.
+    seeder = openSeeder();
+    try {
+      await seedMediceAdhs(seeder, { withDemoParticipant: true, revealPassword: false });
+    } finally {
+      await seeder.end();
+    }
+
+    const present = await admin.query("SELECT 1 FROM users WHERE email = $1", [
+      "demo@medice.example",
+    ]);
+    expect(present.rowCount).toBe(1);
+  }, 60_000);
+
   it("leaves learner-facing content alone on a second run with --if-missing", async () => {
     /*
      * The property `deploy.sh` depends on (P65-01), stated the way P65-03

@@ -300,6 +300,20 @@ const QUESTION_COUNT = 11;
 export interface TenantSeedOptions {
   readonly onlyIfMissing?: boolean;
   readonly revealPassword?: boolean;
+  /**
+   * Create the demo participant? **Off by default since P111-01.**
+   *
+   * It used to be unconditional, so every installation — including MEDICE's
+   * production tenant — carried `demo@medice.example` with a password printed
+   * in a deploy log. The client's call on 24.08: *"delete the demo participant
+   * now … testing against a live tenant with a known password is the thing
+   * you'd be unable to explain afterwards."*
+   *
+   * The dev and demo seeds pass `true` explicitly, which is the whole point:
+   * an account that exists to be signed into should be created by something
+   * that says so, not inherited by a customer tenant that never asked.
+   */
+  readonly withDemoParticipant?: boolean;
 }
 
 export async function seedMediceAdhs(
@@ -308,6 +322,7 @@ export async function seedMediceAdhs(
 ): Promise<string> {
   const onlyIfMissing = options.onlyIfMissing ?? false;
   const revealPassword = options.revealPassword ?? true;
+  const withDemoParticipant = options.withDemoParticipant ?? false;
   try {
     await pool.query("BEGIN");
 
@@ -409,14 +424,24 @@ export async function seedMediceAdhs(
       name: "ADHS Akademie (Portal)",
     });
 
-    const password = await participantPassword();
-    await seedParticipant(pool, {
-      customerId,
-      email: PARTICIPANT_EMAIL,
-      firstName: "Demo",
-      lastName: "Teilnehmende",
-      passwordHash: password.hash,
-    });
+    /*
+     * The demo participant, only when somebody asked for one (P111-01).
+     *
+     * A live tenant serving real physicians must not carry an account with a
+     * password that was printed in a build log. Deleting it after the fact is
+     * the remedy for installations that already have one; not creating it is
+     * the fix.
+     */
+    const password = withDemoParticipant ? await participantPassword() : undefined;
+    if (password !== undefined) {
+      await seedParticipant(pool, {
+        customerId,
+        email: PARTICIPANT_EMAIL,
+        firstName: "Demo",
+        lastName: "Teilnehmende",
+        passwordHash: password.hash,
+      });
+    }
 
     const courseId = await upsert(
       pool,
@@ -452,7 +477,7 @@ export async function seedMediceAdhs(
          $1,$2,$3,$4,$5,'on_demand','published',
          ARRAY['ADHS'], ARRAY['Erwachsene'], $6, $7, 4, 'D',
          'online', $8, $9, $10,
-         90, 70, NULL,
+         100, 70, NULL,
          false, $11, $12,
          $13, $14, $15,
          $16, 'image/png', $16, 'image/png',
@@ -757,28 +782,42 @@ export async function seedMediceAdhs(
       `  course    ${COURSE_SLUG}`,
       `  modules   ${MODULES.length}, ${QUESTION_COUNT} quiz questions`,
       "",
-      `Portal sign-in at /${PORTAL_PROJECT_SLUG}:`,
-      `  E-Mail    ${PARTICIPANT_EMAIL}`,
-      password.supplied
-        ? "  Passwort  as supplied in SEED_PARTICIPANT_PASSWORD"
-        : revealPassword
-          ? `  Passwort  ${password.plaintext}`
-          : "  Passwort  generiert — im Konsolenbereich Zugänge neu setzen",
-      "",
-      password.supplied
-        ? ""
-        : "That password is printed once and stored only as an Argon2id hash.\n" +
-          "Re-run the seed to set a new one, or set SEED_PARTICIPANT_PASSWORD\n" +
-          "to choose it. It is a demo account: delete it before MEDICE's own\n" +
-          "physicians use this tenant in earnest.",
-      "",
-      "required_watch_percent is seeded at 90 and is then yours: set it per",
+      /*
+       * The demo account's block, only when one was created (P111-01). A
+       * standing "Portal sign-in" section naming an account that does not
+       * exist is worse than none: somebody would go looking for it.
+       */
+      ...(password === undefined
+        ? [
+            `No demo participant was created. Pass withDemoParticipant to make`,
+            `one — a tenant serving real physicians should not carry an account`,
+            `whose password was printed in a build log.`,
+            "",
+          ]
+        : [
+            `Portal sign-in at /${PORTAL_PROJECT_SLUG}:`,
+            `  E-Mail    ${PARTICIPANT_EMAIL}`,
+            password.supplied
+              ? "  Passwort  as supplied in SEED_PARTICIPANT_PASSWORD"
+              : revealPassword
+                ? `  Passwort  ${password.plaintext}`
+                : "  Passwort  generiert — im Konsolenbereich Zugänge neu setzen",
+            "",
+            password.supplied
+              ? ""
+              : "That password is printed once and stored only as an Argon2id hash.\n" +
+                "Re-run the seed to set a new one, or set SEED_PARTICIPANT_PASSWORD\n" +
+                "to choose it. It is a demo account: delete it before MEDICE's own\n" +
+                "physicians use this tenant in earnest.",
+            "",
+          ]),
+      "required_watch_percent is seeded at 100 and is then yours: set it per",
       "course under Verwaltung -> Fortbildungen. A re-run of this seed will",
       "not overwrite it, nor the Stempel, the Unterschrift, the",
       "Wissenschaftliche Leitung or the VNR password (P108-01).",
       "",
-      "90 is a decision, not the answer: the layout says 80 and MEDICE-292",
-      "says 100. See docs/show-stoppers.md — it is still open.",
+      "100 follows MEDICE-292, which is the compliance record. The layout",
+      "says 80 and was overridden deliberately (S7, decided 24.08).",
       "",
       "ADHS Akademie adult is PUBLISHED and visible to participants now.",
       "",
