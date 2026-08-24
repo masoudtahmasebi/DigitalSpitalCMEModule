@@ -4816,7 +4816,7 @@ components:
 
     EivConnectionReport:
       type: object
-      required: [endpoint, vnr, usedStoredPassword, steps]
+      required: [endpoint, tier, submissionsEnabled, vnr, usedStoredPassword, steps]
       description: |
         The result of `POST /admin/courses/{slug}/eiv/check`. Contains no
         password field of any kind, not even a masked one — a masked secret in
@@ -4827,6 +4827,25 @@ components:
           description: |
             Which host was contacted. On the screen because "it works" and "it
             works against the mock" are different sentences (§9.9).
+        tier:
+          type: string
+          enum: [mock, test, live, unknown]
+          description: |
+            Which register `endpoint` is. On the screen because the hostname
+            alone does not answer it: EIV name their sandbox
+            `backend-test.eiv-fobi.de` and the live register
+            `backend.eiv-fobi.de`, so the difference between a rehearsal and a
+            statutory filing is one word an operator has no reason to know
+            (§9.4). Derived by `eivEndpointTier`, the same function the deploy
+            guard and the worker use.
+        submissionsEnabled:
+          type: boolean
+          description: |
+            Whether the worker is armed (`EIV_WORKER_ENABLED`). The other half
+            of the only question this screen exists to answer: a live endpoint
+            with the worker off is a credential test, and a live endpoint with
+            the worker on files real Punktemeldungen against real EFNs. Until
+            this field it was visible nowhere in the product.
         vnr: { type: string }
         usedStoredPassword:
           type: boolean

@@ -208,7 +208,12 @@ export class EivAdminController {
       // instances would be two places a second Ärztekammer had to be wired in.
       pluginRegistry().require("accreditationReporter"),
       new AuditService(this.pool),
-      { baseUrl: this.config.EIV_BASE_URL },
+      {
+        baseUrl: this.config.EIV_BASE_URL,
+        // The worker's own flag, so the screen reports the installation the
+        // operator actually has rather than the one the code could support.
+        submissionsEnabled: this.config.EIV_WORKER_ENABLED,
+      },
     );
   }
 }

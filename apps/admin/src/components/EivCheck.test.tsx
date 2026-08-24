@@ -30,6 +30,15 @@ afterEach(cleanup);
 
 const WORKING: EivConnectionReport = {
   endpoint: "https://backend.eiv-fobi.de",
+  /*
+   * `live` with the worker **off** is the default fixture on purpose: it is the
+   * state the client was asked to deploy in, and it is the one where the screen
+   * must be informative without raising an alarm. The armed case gets its own
+   * test below, so a warning that rendered unconditionally would fail here
+   * rather than pass everywhere.
+   */
+  tier: "live",
+  submissionsEnabled: false,
   vnr: "2760552025919300018",
   usedStoredPassword: true,
   steps: [
@@ -78,12 +87,98 @@ it("leads with a sentence a project manager can act on", async () => {
   expect(screen.getByText(de.eivCheck.detailToggle)).toBeTruthy();
 });
 
+/*
+ * P107-01 — which register, and is it armed.
+ *
+ * The client set `EIV_BASE_URL=https://backend.eiv-fobi.de` and reported
+ * *"i updated this, still shows with test in verwaltung"*: they were reading
+ * the previous value (the deploy had not run), and they had no way to tell
+ * `backend-test.eiv-fobi.de` from `backend.eiv-fobi.de` in the first place.
+ * One word separates EIV's sandbox from the Ärztekammer's live register, and
+ * the screen printed only the URL.
+ *
+ * The armed state matters more than the address. It lived in `config.env` and
+ * appeared nowhere in the product, so the one person entitled to decide whether
+ * to go live could not see the current state of that decision (§9.4, §9.10).
+ */
+it("says in words which register the address is", async () => {
+  mount(WORKING);
+  fireEvent.click(screen.getByRole("button", { name: de.eivCheck.action }));
+
+  // Both: the literal string for an operator reconciling against config.env,
+  // and the sentence for one deciding whether to go live.
+  expect(await screen.findByText("https://backend.eiv-fobi.de")).toBeTruthy();
+  expect(screen.getByText(de.eivCheck.tier.live)).toBeTruthy();
+});
+
+it("tells EIV's test system apart from the live register", async () => {
+  // The distinction the whole ticket is about. Same shape of URL, opposite
+  // consequence.
+  mount({ ...WORKING, endpoint: "https://backend-test.eiv-fobi.de", tier: "test" });
+  fireEvent.click(screen.getByRole("button", { name: de.eivCheck.action }));
+
+  expect(await screen.findByText(de.eivCheck.tier.test)).toBeTruthy();
+  expect(screen.queryByText(de.eivCheck.tier.live)).toBeNull();
+});
+
+it("says whether the worker is armed, either way", async () => {
+  mount(WORKING);
+  fireEvent.click(screen.getByRole("button", { name: de.eivCheck.action }));
+  expect(await screen.findByText(de.eivCheck.submissionsOff)).toBeTruthy();
+
+  cleanup();
+  mount({ ...WORKING, submissionsEnabled: true });
+  fireEvent.click(screen.getByRole("button", { name: de.eivCheck.action }));
+  expect(await screen.findByText(de.eivCheck.submissionsOn)).toBeTruthy();
+});
+
+it("warns only when a real Punktemeldung is actually possible", async () => {
+  /*
+   * Four states, and only one of them is dangerous. A warning on the live
+   * endpoint alone would fire during exactly the credential test the client was
+   * told to run first — and a warning nobody can avoid is a warning nobody
+   * reads (§9.2's cousin).
+   */
+  for (const report of [
+    WORKING, // live, worker off — the credential test
+    { ...WORKING, tier: "test" as const, submissionsEnabled: true },
+    { ...WORKING, tier: "mock" as const, submissionsEnabled: true },
+  ]) {
+    mount(report);
+    fireEvent.click(screen.getByRole("button", { name: de.eivCheck.action }));
+    await screen.findByText(de.eivCheck.endpoint);
+    expect(screen.queryByText(de.eivCheck.liveArmed)).toBeNull();
+    cleanup();
+  }
+
+  mount({ ...WORKING, submissionsEnabled: true });
+  fireEvent.click(screen.getByRole("button", { name: de.eivCheck.action }));
+  expect(await screen.findByText(de.eivCheck.liveArmed)).toBeTruthy();
+});
+
+it("treats an unrecognised host as live, as every other guard does", async () => {
+  // `requiresLiveConsent` fails closed on an unknown host. A warning that
+  // stopped at the recognised one would be quieter than the rule it describes.
+  mount({
+    ...WORKING,
+    endpoint: "https://eiv-proxy.internal",
+    tier: "unknown",
+    submissionsEnabled: true,
+  });
+  fireEvent.click(screen.getByRole("button", { name: de.eivCheck.action }));
+
+  expect(await screen.findByText(de.eivCheck.liveArmed)).toBeTruthy();
+  expect(screen.getByText(de.eivCheck.tier.unknown)).toBeTruthy();
+});
+
 it("says the password is wrong when it is, and does not blame the network", async () => {
   // No `event` and no `reportedCount`: the handshake failed, so neither read
   // produced anything. Omitted rather than set to undefined — the contract
   // marks them optional and `exactOptionalPropertyTypes` holds us to it.
   mount({
     endpoint: WORKING.endpoint,
+    tier: WORKING.tier,
+    submissionsEnabled: false,
     vnr: WORKING.vnr,
     usedStoredPassword: true,
     steps: [

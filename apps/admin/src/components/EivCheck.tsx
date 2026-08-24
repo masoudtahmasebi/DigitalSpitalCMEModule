@@ -176,6 +176,23 @@ function Report(props: { report: EivConnectionReport; claimsLernerfolg: boolean 
         </p>
       )}
 
+      {/*
+        The one state on this screen worth more than a label (P107-01).
+
+        Everything else here is a statement of fact. This is the combination in
+        which the next physician to finish a course files a statutory report
+        against their own EFN — and it is reached by editing two lines in a file
+        on a server, with nothing in between that says so out loud.
+
+        `unknown` is included because it is treated as live everywhere else in
+        the platform; a warning that stopped at the recognised host would be
+        quieter than the guard it describes.
+      */}
+      {report.submissionsEnabled &&
+      (report.tier === "live" || report.tier === "unknown") ? (
+        <Notice tone="warning">{de.eivCheck.liveArmed}</Notice>
+      ) : null}
+
       <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-2">
         {/*
           Which host answered. On the screen because "it works" and "it works
@@ -183,6 +200,28 @@ function Report(props: { report: EivConnectionReport; claimsLernerfolg: boolean 
           a physician's points will be reported (§9.9).
         */}
         <Summary label={de.eivCheck.endpoint} value={report.endpoint} />
+        {/*
+          The address in words (P107-01).
+
+          Beside it rather than instead of it: an operator reconciling against
+          `config.env` needs the literal string, and an operator deciding
+          whether to go live needs the sentence. Printing only the URL was the
+          defect — `backend-test.eiv-fobi.de` and `backend.eiv-fobi.de` differ
+          by one word that means "rehearsal" or "statutory filing", and nothing
+          on the screen said which.
+        */}
+        <Summary
+          label={de.eivCheck.tierLabel}
+          value={de.eivCheck.tier[report.tier] ?? de.eivCheck.tier.unknown}
+        />
+        <Summary
+          label={de.eivCheck.submissionsLabel}
+          value={
+            report.submissionsEnabled
+              ? de.eivCheck.submissionsOn
+              : de.eivCheck.submissionsOff
+          }
+        />
         <Summary label={de.course.vnr} value={report.vnr} />
         {report.reportedCount === undefined ? null : (
           <Summary

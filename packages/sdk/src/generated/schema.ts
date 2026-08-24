@@ -3241,6 +3241,25 @@ export interface components {
              *     works against the mock" are different sentences (§9.9).
              */
             endpoint: string;
+            /**
+             * @description Which register `endpoint` is. On the screen because the hostname
+             *     alone does not answer it: EIV name their sandbox
+             *     `backend-test.eiv-fobi.de` and the live register
+             *     `backend.eiv-fobi.de`, so the difference between a rehearsal and a
+             *     statutory filing is one word an operator has no reason to know
+             *     (§9.4). Derived by `eivEndpointTier`, the same function the deploy
+             *     guard and the worker use.
+             * @enum {string}
+             */
+            tier: "mock" | "test" | "live" | "unknown";
+            /**
+             * @description Whether the worker is armed (`EIV_WORKER_ENABLED`). The other half
+             *     of the only question this screen exists to answer: a live endpoint
+             *     with the worker off is a credential test, and a live endpoint with
+             *     the worker on files real Punktemeldungen against real EFNs. Until
+             *     this field it was visible nowhere in the product.
+             */
+            submissionsEnabled: boolean;
             vnr: string;
             /**
              * @description False when the caller supplied one. A check that passes with a

@@ -166,7 +166,10 @@ async function withService<T>(run: (service: EivAdminService) => Promise<T>): Pr
           new EivAdminRepository(db, cipher),
           new EivAccreditationReporter(),
           new AuditService(seedPool),
-          { baseUrl: mock.url },
+          // Armed, so the report's `submissionsEnabled` has a value that is
+          // not the type's default — a fixture pinned to `false` could not tell
+          // "reports the flag" from "reports nothing".
+          { baseUrl: mock.url, submissionsEnabled: true },
         ),
       ),
   );
@@ -183,6 +186,51 @@ async function statusOf(submissionId: string): Promise<string> {
   );
   return rows[0]?.status ?? "";
 }
+
+describe("the connection check says which installation this is (P107-01)", () => {
+  /*
+   * The client set the live endpoint, read the console, and reported
+   * *"i updated this, still shows with test in verwaltung"* — the deploy had
+   * not run, and nothing on the screen distinguished
+   * `backend-test.eiv-fobi.de` from `backend.eiv-fobi.de` anyway.
+   *
+   * Tested here rather than only in the console, because the console renders
+   * whatever it is handed: the property that matters is that the API derives
+   * the tier from the endpoint it is *actually configured with*, and reports
+   * the worker's real flag rather than a constant. `eivEndpointTier` itself is
+   * exhaustively unit-tested in `@ds/eiv-client`; this names its caller (§9.7).
+   */
+  it("derives the tier from the endpoint the API is running against", async () => {
+    // The fixture points at the local mock, so this is the honest answer for
+    // this installation — and it is the one that must never read `live`.
+    const report = await withService((service) =>
+      service.checkConnection(courseSlug, undefined, actor()),
+    );
+
+    expect(report.endpoint).toBe(mock.url);
+    expect(report.tier).toBe("mock");
+  });
+
+  it("reports the worker's own flag, not a constant", async () => {
+    // `withService` arms it; a report that said `false` here would be reading
+    // something other than `EIV_WORKER_ENABLED`.
+    const report = await withService((service) =>
+      service.checkConnection(courseSlug, undefined, actor()),
+    );
+
+    expect(report.submissionsEnabled).toBe(true);
+  });
+
+  it("still carries no password field of any kind", async () => {
+    // The field added beside it must not have loosened this. A masked secret
+    // in a response is still a secret in a response (§4 invariant 7).
+    const report = await withService((service) =>
+      service.checkConnection(courseSlug, undefined, actor()),
+    );
+
+    expect(JSON.stringify(report)).not.toContain(VNR_PASSWORD);
+  });
+});
 
 describe("asking the authority about the event (P31-02)", () => {
   it("reads the accredited period and the point values", async () => {

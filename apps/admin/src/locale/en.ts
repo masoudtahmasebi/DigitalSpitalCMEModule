@@ -787,6 +787,24 @@ export const en: DeepPartial<typeof german> = {
       "The credentials were accepted, but one of the queries failed. Details below — often the service is only temporarily unavailable.",
 
     endpoint: "Address checked",
+
+    tierLabel: "System",
+    tier: {
+      mock: "The platform's own local test system — does not reach the Ärztekammer",
+      test: "EIV's test system — reports land in no real register",
+      live: "The Ärztekammer's live register — reports are binding",
+      unknown: "Unrecognised address — treated as a live register",
+    },
+
+    submissionsLabel: "Punktemeldung",
+    submissionsOn: "Armed — completed courses are reported",
+    submissionsOff: "Switched off — nothing is reported",
+
+    liveArmed:
+      "This installation reports points bindingly to the Ärztekammer. " +
+      "Every completed course files a real Punktemeldung against the " +
+      "participant's own EFN.",
+
     reportedCount: "Participations already reported",
     passwordSource: "Password",
     passwordTyped: "entered here, not saved",

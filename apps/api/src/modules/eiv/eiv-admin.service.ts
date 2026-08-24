@@ -28,7 +28,12 @@
  */
 
 import { eivDeadlines } from "@ds/domain";
-import { EivError, EIV_PASSWORD_KEY } from "@ds/eiv-client";
+import {
+  EivError,
+  EIV_PASSWORD_KEY,
+  eivEndpointTier,
+  type EivEndpointTier,
+} from "@ds/eiv-client";
 import type {
   AccreditedEvent,
   AuthorityQuery,
@@ -83,6 +88,38 @@ export interface EivCheckStep {
  */
 export interface EivConnectionReport {
   readonly endpoint: string;
+  /**
+   * Which register that address is, decided here rather than read off the
+   * hostname by the person looking at it (P107-01).
+   *
+   * The screen showed the URL and nothing else, and the client's report was
+   * *"i updated this, still shows with test in verwaltung"* — reading
+   * `backend-test.eiv-fobi.de` against `backend.eiv-fobi.de` and having no way
+   * to know that the one-word difference is the difference between EIV's
+   * sandbox and the Ärztekammer's live register. A URL is not an answer to
+   * "which system am I about to file statutory reports into" unless you already
+   * know EIV's naming convention (§9.4).
+   *
+   * The same `eivEndpointTier` the deploy guard and the worker use — one
+   * definition, so the screen cannot develop a second opinion about which
+   * endpoint is dangerous.
+   */
+  readonly tier: EivEndpointTier;
+  /**
+   * Is the worker armed? (P107-01)
+   *
+   * `EIV_WORKER_ENABLED`, which decides whether a completed enrolment actually
+   * files a Punktemeldung. It is on this report because it is the other half of
+   * the only question that matters here — a live endpoint with the worker off
+   * is a credential test, and a live endpoint with the worker on is a statutory
+   * filing against a real physician's EFN — and until now it was visible
+   * **nowhere in the product**: an operator could read it only by opening
+   * `config.env` on the host over SSH.
+   *
+   * §9.2's mirror. A control that can only fail must not be offered; a
+   * consequence the system *will* produce must not be hidden.
+   */
+  readonly submissionsEnabled: boolean;
   readonly vnr: string;
   readonly usedStoredPassword: boolean;
   readonly steps: readonly EivCheckStep[];
@@ -103,7 +140,10 @@ export class EivAdminService {
     private readonly repository: EivAdminRepositoryPort,
     private readonly submitter: EivSubmitterPort,
     private readonly audit: AuditServicePort,
-    private readonly options: { readonly baseUrl: string },
+    private readonly options: {
+      readonly baseUrl: string;
+      readonly submissionsEnabled: boolean;
+    },
   ) {}
 
   async describeEvent(slug: string): Promise<AccreditedEvent> {
@@ -238,12 +278,32 @@ export class EivAdminService {
     });
 
     return {
-      endpoint: this.options.baseUrl,
+      ...this.reportContext(),
       vnr: course.vnr,
       usedStoredPassword: supplied === undefined,
       steps,
       ...(event === undefined ? {} : { event }),
       ...(reportedCount === undefined ? {} : { reportedCount }),
+    };
+  }
+
+  /**
+   * The three fields that describe *the installation* rather than the check.
+   *
+   * One method rather than three properties spelled at each call site, so a
+   * future report cannot carry the address without the tier beside it — which
+   * is the whole defect this was written for. `EivConnectionReport` requires
+   * all three, so omitting the spread does not compile.
+   */
+  private reportContext(): {
+    endpoint: string;
+    tier: EivEndpointTier;
+    submissionsEnabled: boolean;
+  } {
+    return {
+      endpoint: this.options.baseUrl,
+      tier: eivEndpointTier(this.options.baseUrl),
+      submissionsEnabled: this.options.submissionsEnabled,
     };
   }
 

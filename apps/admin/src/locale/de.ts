@@ -1083,6 +1083,48 @@ export const german = {
       "Die Zugangsdaten wurden akzeptiert, aber eine der Abfragen ist fehlgeschlagen. Details unten — häufig ist der Dienst nur vorübergehend nicht erreichbar.",
 
     endpoint: "Geprüfte Adresse",
+
+    /*
+     * Which register, in words (P107-01).
+     *
+     * The address alone does not answer it. EIV call their sandbox
+     * `backend-test.eiv-fobi.de` and the live register `backend.eiv-fobi.de`,
+     * so one word separates a rehearsal from a statutory filing — and the
+     * client read the two as the same thing, which is exactly the outcome to
+     * expect from anyone who has not memorised EIV's naming (§9.4).
+     *
+     * "Echtsystem" and "Testsystem" rather than "live"/"test": these are the
+     * words a German operator uses about a system they are afraid of breaking.
+     */
+    tierLabel: "System",
+    tier: {
+      mock: "Lokales Testsystem der Plattform — erreicht die Ärztekammer nicht",
+      test: "Testsystem der EIV — Meldungen landen in keinem echten Register",
+      live: "Echtsystem der Ärztekammer — Meldungen sind verbindlich",
+      unknown: "Unbekannte Adresse — wird wie ein Echtsystem behandelt",
+    },
+
+    /*
+     * Whether the worker is armed, which decides what a completed Fortbildung
+     * actually does. It was readable only in `config.env` over SSH — so the one
+     * person who can decide whether to go live could not see the current state
+     * of the decision.
+     */
+    submissionsLabel: "Punktemeldung",
+    submissionsOn: "Aktiv — abgeschlossene Fortbildungen werden gemeldet",
+    submissionsOff: "Abgeschaltet — es wird nichts gemeldet",
+
+    /*
+     * The one combination worth a warning rather than a label. Everything else
+     * on this screen is a statement; this is the state in which the next
+     * physician to finish files a statutory report against their own EFN, and
+     * the person reading it should know before they close the tab.
+     */
+    liveArmed:
+      "Diese Installation meldet Punkte verbindlich an die Ärztekammer. " +
+      "Jede abgeschlossene Fortbildung erzeugt eine echte Punktemeldung auf die " +
+      "EFN der teilnehmenden Person.",
+
     reportedCount: "Bereits gemeldete Teilnahmen",
     passwordSource: "Passwort",
     passwordTyped: "hier eingegeben, nicht gespeichert",
