@@ -98,7 +98,7 @@ export function MediathekPanel(props: { library: MaterialLibrary }) {
           <h3 className="border-b border-gray-200 pb-2 text-sm text-gray-700">
             {de.library.groupHeading(group.ordinal + 1)}{" "}
             <span className="font-semibold text-gray-900">
-              ({moduleTopic(group.ordinal + 1, group.moduleTitle)})
+              ({moduleTopic(group.moduleTitle)})
             </span>
           </h3>
 

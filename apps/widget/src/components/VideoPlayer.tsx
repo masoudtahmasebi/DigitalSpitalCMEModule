@@ -659,17 +659,59 @@ export function VideoPlayer(props: VideoPlayerProps) {
           </p>
         ) : null}
 
-        {/* The layout's centred play button, over the poster. */}
-        {!state.playing && failure === undefined ? (
+        {/*
+          The layout's centred play button over the poster — and, once playback
+          starts, the same button with nothing drawn in it (P106-02).
+
+          It used to be `!state.playing && …`, so it vanished the moment the
+          video started and clicking the picture did nothing at all. Every video
+          a physician has ever watched pauses when they click it, so the click
+          reads as a broken player rather than as an unsupported gesture — and
+          the widget is *specifically* the place somebody wants to stop
+          mid-sentence and write something down.
+
+          One control rather than a second click layer: it keeps the label, the
+          focus ring and the keyboard behaviour that already existed, and there
+          is no state in which the picture and the button below it disagree
+          about what a click does. `<video>` itself gets no handler — an element
+          with `controls={false}` is not an interactive one, and putting a click
+          on it is what `jsx-a11y` objects to for good reason.
+
+          Hidden entirely on a failure, where the message underneath is the
+          thing to click.
+        */}
+        {failure === undefined ? (
           <button
             type="button"
             onClick={togglePlay}
-            aria-label={state.ended ? de.media.replay : de.media.play}
-            className="absolute inset-0 flex items-center justify-center"
+            aria-label={
+              state.playing
+                ? de.media.pause
+                : state.ended
+                  ? de.media.replay
+                  : de.media.play
+            }
+            /*
+              Out of the tab order, and named so a test can address exactly
+              this control.
+
+              `tabIndex={-1}` because the Controls bar below already has a
+              real, visible play/pause button with the same label: leaving both
+              in the sequence puts an invisible stop between the picture and
+              the controls, doing what the next stop does. It keeps its
+              accessible name — it is still a labelled control for anything
+              exploring the page rather than tabbing it — and every keyboard
+              route to pausing (Space, K, the Controls button) is untouched.
+            */
+            tabIndex={-1}
+            data-ds-control="surface"
+            className="absolute inset-0 flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-white"
           >
-            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 text-brand-700 shadow-lg">
-              <PlayIcon className="h-8 w-8" />
-            </span>
+            {state.playing ? null : (
+              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 text-brand-700 shadow-lg">
+                <PlayIcon className="h-8 w-8" />
+              </span>
+            )}
           </button>
         ) : null}
       </div>

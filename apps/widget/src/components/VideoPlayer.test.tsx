@@ -493,6 +493,86 @@ describe("failures", () => {
   });
 });
 
+describe("clicking the picture", () => {
+  /*
+   * P106-02. The client: *"when video is being played, clicking one more time
+   * on it, the click doesn't stop the video."*
+   *
+   * The cause was a condition, not a missing feature: the centred play button
+   * covered the whole picture and was rendered `!state.playing`, so the first
+   * click started playback and removed the only thing that could receive the
+   * second. Nothing was broken enough to notice from the code — the button
+   * worked, the shortcut worked, the Controls button worked — and clicking a
+   * video is what every physician does without thinking about it.
+   *
+   * jsdom implements no media pipeline, so `paused` is redefined and `pause` is
+   * a spy. That is enough: what is under test is which control exists and what
+   * it calls, not whether a video decodes.
+   */
+  function playing() {
+    const { container } = renderPlayer();
+    const video = container.querySelector("video") as HTMLVideoElement;
+    Object.defineProperty(video, "paused", { value: false, configurable: true });
+    video.pause = vi.fn();
+    fireEvent.play(video);
+    return { container, video };
+  }
+
+  function surface(container: HTMLElement): HTMLButtonElement {
+    const node = container.querySelector('[data-ds-control="surface"]');
+    if (node === null) throw new Error("the video has no click surface");
+    return node as HTMLButtonElement;
+  }
+
+  it("pauses a video that is playing", () => {
+    const { container, video } = playing();
+    fireEvent.click(surface(container));
+    expect(video.pause).toHaveBeenCalled();
+  });
+
+  it("is labelled for what the next click will do", () => {
+    // Not decoration: it is the accessible name of a control covering the
+    // whole picture, and "Abspielen" on a playing video is a lie.
+    const { container } = renderPlayer();
+    expect(surface(container).getAttribute("aria-label")).toBe("Abspielen");
+
+    cleanup();
+    const started = playing();
+    expect(surface(started.container).getAttribute("aria-label")).toBe("Pause");
+  });
+
+  it("draws the centred play button only while stopped", () => {
+    // The surface stays; what is drawn in it does not. A play circle sitting
+    // over a running video is the same defect from the other side.
+    const { container } = renderPlayer();
+    expect(surface(container).querySelector("svg")).not.toBeNull();
+
+    cleanup();
+    const started = playing();
+    expect(surface(started.container).querySelector("svg")).toBeNull();
+  });
+
+  it("adds no second stop to the tab order", () => {
+    // The Controls bar already has a visible play/pause button with the same
+    // name. Two, one of them invisible, is a keyboard user tabbing through
+    // nothing.
+    const { container } = renderPlayer();
+    expect(surface(container).getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("gets out of the way of a failure", () => {
+    // On an error the overlay underneath carries the message and the retry.
+    // A transparent full-size button over it would swallow both.
+    const { container } = renderPlayer();
+    const video = container.querySelector("video") as HTMLVideoElement;
+    Object.defineProperty(video, "error", { value: { code: 2 }, configurable: true });
+    fireEvent.error(video);
+
+    expect(container.querySelector('[data-ds-control="surface"]')).toBeNull();
+    expect(screen.getByRole("button", { name: "Erneut laden" })).toBeTruthy();
+  });
+});
+
 describe("reporting upward", () => {
   it("feeds every tick to the watch tracker, not only whole seconds", () => {
     // The tracker treats a gap beyond its tolerance as a seek. Sampling coarsely

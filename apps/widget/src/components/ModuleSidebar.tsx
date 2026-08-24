@@ -147,15 +147,33 @@ export function ModuleSidebar(props: {
               {!open ? null : (
                 <ul className="space-y-2 border-t border-gray-100 px-3 py-2">
                   {module.chapters.map((chapter) => {
+                    const inChapter = here?.chapterId === chapter.id;
                     const chapterState = itemIcon({
                       gate: chapter.gate,
                       progress: chapter.progress,
-                      current: here?.chapterId === chapter.id,
+                      current: inChapter,
                     });
 
                     return (
                       <li key={chapter.id}>
-                        <p className="flex items-center gap-2 text-xs font-medium text-gray-700">
+                        {/*
+                          The chapter you are inside is named as such (P106-03).
+
+                          Its glyph already changed and its title did not, so a
+                          physician three levels down had one 16 px circle
+                          telling them where they were — the client's report was
+                          *"now i am doing kapitel 1 module 4, and this is the
+                          view, it is not like i am doing that"*. The title now
+                          darkens and thickens with it, which is the same signal
+                          the content row one level down already gets.
+                        */}
+                        <p
+                          className={`flex items-center gap-2 text-xs ${
+                            inChapter
+                              ? "font-semibold text-gray-900"
+                              : "font-medium text-gray-700"
+                          }`}
+                        >
                           <StateIcon
                             state={chapterState}
                             label={de.player.state[chapterState]}
@@ -166,7 +184,27 @@ export function ModuleSidebar(props: {
                           </span>
                         </p>
 
-                        <ul className="mt-1 space-y-0.5 pl-6">
+                        {/*
+                          An indent **guide**, not indentation (P106-03).
+
+                          `pl-6` alone put the contents further right and left
+                          them floating: nothing drew the line between "Kapitel
+                          1" and the two rows belonging to it, so the outline
+                          read as five levels of near-identical small text.
+                          A rule down the left edge is what says *these are
+                          inside that*, and it costs one border.
+
+                          It takes the brand colour for the chapter the learner
+                          is actually in, so the containing chapter is findable
+                          at a glance in a module with several — which is the
+                          part of the report a bigger indent would not have
+                          fixed.
+                        */}
+                        <ul
+                          className={`ml-2 mt-1 space-y-0.5 border-l-2 pl-3 ${
+                            inChapter ? "border-brand-400" : "border-gray-200"
+                          }`}
+                        >
                           {chapter.contents.map((content) => {
                             const meta = titles.contents.get(content.id);
                             if (meta === undefined) return null;

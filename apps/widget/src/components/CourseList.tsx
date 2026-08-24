@@ -76,12 +76,28 @@ const CONTENT = `mx-auto ${CONTENT_WIDTH} px-4`;
 export interface CatalogSection {
   readonly id: string;
   readonly label: string;
+  /**
+   * One line saying what this section *is*, above its filters (P106-01).
+   *
+   * The overview layout heads the list **"On-Demand-Fortbildungen – volle
+   * Flexibilität und jederzeit verfügbar"**, and the tab that replaced it
+   * (P58-02, so Live and Zoom have somewhere to go) kept the first half and
+   * dropped the second. A tab label is a *name*; this is the sentence that
+   * tells a physician why they would pick it — which is the only part of the
+   * heading doing any work, since the name is already on the tab above.
+   *
+   * Per section rather than one line above the tabs, because it differs per
+   * section: "jederzeit verfügbar" is exactly what a live event is not.
+   */
+  readonly description: string;
   readonly Panel: (props: CatalogPanelProps) => ReactElement;
 }
 
 export interface CatalogPanelProps {
   readonly client: ApiClient;
   readonly onOpen: (slug: string, intent: "start" | "resume") => void;
+  /** The section's own line, drawn above its filters (P106-01). */
+  readonly description?: string | undefined;
 }
 
 /**
@@ -94,11 +110,13 @@ export const CATALOG_SECTIONS: readonly CatalogSection[] = [
   {
     id: "on-demand",
     label: de.catalog.sections.onDemand,
+    description: de.catalog.sections.onDemandDescription,
     Panel: (props) => <CoursePanel {...props} deliveryTypes={["on_demand"]} />,
   },
   {
     id: "weitere",
     label: de.catalog.sections.weitere,
+    description: de.catalog.sections.weitereDescription,
     // Everything that is not on-demand. Named by exclusion rather than by
     // listing `live` and `praesenz`, so a delivery type added later appears
     // here instead of silently belonging to no tab at all.
@@ -150,7 +168,11 @@ export function CourseList(props: {
           label={de.catalog.title}
           onSelect={setSectionId}
         >
-          <section.Panel client={props.client} onOpen={props.onOpen} />
+          <section.Panel
+            client={props.client}
+            onOpen={props.onOpen}
+            description={section.description}
+          />
         </TabbedPanel>
       </div>
     </section>
@@ -247,6 +269,23 @@ function CoursePanel(
   return (
     <div className={panel}>
       <div className="border-b border-gray-200 p-5 sm:p-7">
+        {/*
+          What this section is, above the controls that narrow it (P106-01).
+
+          The overview layout puts it exactly here, in the brand teal, and it
+          is the right place: a physician decides *whether this list is the one
+          they want* before they start narrowing it, and two dropdowns above an
+          unheaded list answer the second question without having answered the
+          first.
+
+          An `<h2>` rather than a styled paragraph. The hero's title is the
+          `<h1>`, so this is the only thing between it and the course titles —
+          without it, somebody moving by headings goes from the page's name
+          straight into a list of courses with nothing saying what the list is.
+        */}
+        {props.description === undefined ? null : (
+          <h2 className="mb-6 text-lg font-bold text-brand-600">{props.description}</h2>
+        )}
         <div className="grid gap-5 sm:grid-cols-2">
           <FacetSelect
             id={`ds-thema-${props.deliveryTypes.join("-")}`}

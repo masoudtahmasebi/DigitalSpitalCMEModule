@@ -80,7 +80,31 @@ export const de = {
      */
     sections: {
       onDemand: "On Demand",
+      /*
+       * The layout's own section heading, verbatim (§5 — the layout copy is
+       * authoritative).
+       *
+       * The drawing has no tab row: this line *is* how the list is introduced.
+       * P58-02 added the tabs so Live and Zoom would have somewhere to go, kept
+       * the name and dropped the sentence — and the sentence is the half doing
+       * the work, because "On Demand" says what the courses are called and
+       * "jederzeit verfügbar" says why a physician would open them.
+       *
+       * It repeats the tab's own word, which is deliberate rather than
+       * overlooked: trimming it to fit the tab would be editing a string the
+       * client's designer wrote, to accommodate a control they did not draw.
+       */
+      onDemandDescription:
+        "On-Demand-Fortbildungen – volle Flexibilität und jederzeit verfügbar",
       weitere: "Weitere",
+      /*
+       * Not from the layout — there is no drawing of this tab yet. Written to
+       * the same shape as the line above so the two read as one family, and
+       * kept to what the platform can actually deliver: a date. It claims
+       * nothing about registration or places, neither of which is modelled.
+       */
+      weitereDescription:
+        "Live-Veranstaltungen und Präsenzfortbildungen – zu festen Terminen",
     },
 
     deliveryType: {

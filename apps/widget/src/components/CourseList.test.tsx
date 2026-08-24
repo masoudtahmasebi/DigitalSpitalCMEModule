@@ -142,6 +142,50 @@ describe("the catalogue asks the server, it does not filter locally", () => {
   });
 });
 
+describe("the section says what it is, above the controls that narrow it", () => {
+  /*
+   * P106-01. The layout heads the list "On-Demand-Fortbildungen – volle
+   * Flexibilität und jederzeit verfügbar"; the tab row that replaced that
+   * heading (P58-02) kept the name and dropped the sentence, and for eight
+   * phases the screen went straight from the hero into two dropdowns.
+   *
+   * Tested here rather than in the copy package, because a string in a locale
+   * file is a rule nothing calls (CLAUDE.md §9.3): the caller is what makes it
+   * a heading a physician reads, and this is the test that goes red if the
+   * `description` prop stops being passed or stops being rendered.
+   */
+  it("heads the on-demand list with the layout's own sentence", async () => {
+    const { client } = stubClient(1);
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
+    await screen.findByText("Kurs k1");
+
+    expect(
+      screen.getByRole("heading", {
+        name: "On-Demand-Fortbildungen – volle Flexibilität und jederzeit verfügbar",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("says something different on the other tab, because it is a different offer", async () => {
+    // "jederzeit verfügbar" is precisely what a live event is not, which is why
+    // the line belongs to the section rather than sitting once above the tabs.
+    const { client } = stubClient(1);
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
+    await screen.findByText("Kurs k1");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Weitere" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", {
+          name: "Live-Veranstaltungen und Präsenzfortbildungen – zu festen Terminen",
+        }),
+      ).toBeTruthy(),
+    );
+    expect(screen.queryByText(/jederzeit verfügbar/u)).toBeNull();
+  });
+});
+
 describe("filters and their chips are one piece of state", () => {
   it("shows a chip for an active filter and clears it from the chip", async () => {
     const { client, queries } = stubClient(1);

@@ -578,27 +578,49 @@ export function StateIcon(props: {
 }
 
 /**
- * A clipboard with a tick — the Lernerfolgskontrolle's own glyph (P103-02).
+ * A ticked checklist — the Lernerfolgskontrolle's own glyph (P103-02, P106-03).
  *
- * A clipboard rather than a question mark or a pencil: the exam is a checklist
- * the physician works through and is marked on, and a question mark reads as
- * "help" in every other interface they use that day. `aria-hidden` because
- * `StateIcon` names the row; a second announcement of "exam" beside a row
- * already titled *Lernerfolgskontrolle* is noise to a screen reader.
+ * A checklist rather than a question mark or a pencil: the exam is a set of
+ * questions the physician works through and is marked on, and a question mark
+ * reads as "help" in every other interface they use that day. `aria-hidden`
+ * because `StateIcon` names the row; a second announcement of "exam" beside a
+ * row already titled *Lernerfolgskontrolle* is noise to a screen reader.
+ *
+ * ## Why it is not the clipboard it started as
+ *
+ * The clipboard was drawn eight units wide in a sixteen-unit box, full height —
+ * a tall, narrow, rounded shape. At the 16 px this actually renders at, in
+ * `text-gray-400`, beside a column of circles, it read as a grey pill: the
+ * client's report was *"maybe another icon for Lernerfolgskontrolle to make it
+ * distinguished"*, and looking at the screenshot it is not distinguishable at
+ * all — the detail that made it a clipboard is below the size it is used at.
+ *
+ * This one is built out of the box's full width in strokes, so what survives
+ * downscaling is the silhouette — two ticks and two lines — rather than an
+ * outline whose interior disappears. Nothing else in the sidebar is wider than
+ * it is tall, which is the property doing the work.
  */
 export function ExamIcon(props: { className?: string }) {
   return (
     <svg
       viewBox="0 0 16 16"
       className={props.className}
-      fill="currentColor"
       aria-hidden="true"
       // Named so a test can tell this glyph from the state circle. Without it
       // `querySelector("svg")` is true of every row and the assertion cannot go
       // red — a gate that only ever agrees (§9.1).
       data-ds-icon="exam"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     >
-      <path d="M6 1.5A1.5 1.5 0 0 1 7.5 0h1A1.5 1.5 0 0 1 10 1.5V2h.5A1.5 1.5 0 0 1 12 3.5v11A1.5 1.5 0 0 1 10.5 16h-5A1.5 1.5 0 0 1 4 14.5v-11A1.5 1.5 0 0 1 5.5 2H6v-.5Zm1.5 0V2h1v-.5h-1ZM6.9 12.1 5.1 10.3a.8.8 0 1 1 1.13-1.13l1.24 1.24 2.5-2.5A.8.8 0 0 1 11.1 9.04L8.03 12.1a.8.8 0 0 1-1.13 0Z" />
+      {/* Two ticked items. The ticks are the half that says "answered". */}
+      <path d="M0.9 4.1 2.4 5.6 5.1 2.5" />
+      <path d="M0.9 11.6 2.4 13.1 5.1 10" />
+      <path d="M7.6 4.4h7.5" />
+      <path d="M7.6 11.9h7.5" />
     </svg>
   );
 }

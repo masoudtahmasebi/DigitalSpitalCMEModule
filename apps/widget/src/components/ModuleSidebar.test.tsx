@@ -167,6 +167,107 @@ function renderSidebar(
   );
 }
 
+describe("which chapter the learner is inside", () => {
+  /*
+   * P106-03. The client, from the running product: *"now i am doing kapitel 1
+   * module 4, and this is the view, it is not like i am doing that, maybe an
+   * indention would help?"*
+   *
+   * Three levels of small grey text at three paddings do not say which one
+   * contains you. Two things now do, and both are asserted here rather than
+   * eyeballed: the containing chapter's own row changes weight, and the list of
+   * its contents carries a coloured rule down its left edge.
+   *
+   * These are class assertions, which are usually a bad trade — so they are
+   * written as **comparisons between two sibling chapters in one render**. A
+   * marker applied to every chapter and a marker applied to none are the two
+   * ways this silently stops working, and both fail the comparison; a Tailwind
+   * shade change does not.
+   */
+  function twoChapters(): { course: CourseDetail; state: EnrolmentState } {
+    const detail = course();
+    const enrolment = state();
+    const module = detail.modules[2];
+    const moduleState = enrolment.modules[2];
+    if (module === undefined || moduleState === undefined) {
+      throw new Error("the fixture has no third module");
+    }
+
+    module.chapters.push({
+      id: "c3b",
+      ordinal: 1,
+      title: "Kapitel 3b",
+      contents: [
+        {
+          id: "v3b",
+          ordinal: 0,
+          kind: "video",
+          title: "Video 3b",
+          durationSec: 600,
+          mimeType: null,
+        } satisfies ContentSummary,
+      ],
+    });
+    moduleState.chapters.push({
+      id: "c3b",
+      gate: "available",
+      progress: progress(),
+      contents: [{ id: "v3b", gate: "available", progress: progress() }],
+    });
+
+    return { course: detail, state: enrolment };
+  }
+
+  /** The `<ul>` of contents drawn under a chapter's own row. */
+  function contentsOf(chapterTitle: string): HTMLElement {
+    const row = screen.getByText(chapterTitle).closest("li");
+    const list = row?.querySelector("ul");
+    if (list === null || list === undefined) {
+      throw new Error(`no contents drawn under ${chapterTitle}`);
+    }
+    return list as HTMLElement;
+  }
+
+  function renderTwo() {
+    const fixture = twoChapters();
+    render(
+      <ModuleSidebar
+        course={fixture.course}
+        state={fixture.state}
+        currentContentId="v3"
+        onOpen={vi.fn()}
+        actions={[]}
+      />,
+    );
+  }
+
+  it("draws the indent guide in the brand colour under the chapter you are in", () => {
+    renderTwo();
+    // "Kapitel 3" holds Video 3, which is where the learner is. "Kapitel 3b" is
+    // its sibling in the same open module and must not be marked.
+    expect(contentsOf("Kapitel 3").className).toContain("border-brand");
+    expect(contentsOf("Kapitel 3b").className).not.toContain("border-brand");
+  });
+
+  it("gives every chapter's contents a guide, marked or not", () => {
+    // The rule is what says "these belong to that". Only its colour carries
+    // the you-are-here; without the rule itself the contents float under a
+    // heading they are merely near.
+    renderTwo();
+    for (const title of ["Kapitel 3", "Kapitel 3b"]) {
+      expect(contentsOf(title).className).toContain("border-l-2");
+    }
+  });
+
+  it("weights the containing chapter's title differently from its sibling's", () => {
+    renderTwo();
+    const here = screen.getByText("Kapitel 3").parentElement;
+    const other = screen.getByText("Kapitel 3b").parentElement;
+    expect(here?.className).not.toBe(other?.className);
+    expect(here?.className).toContain("font-semibold");
+  });
+});
+
 describe("the Modul Übersicht sidebar", () => {
   it("opens on the module being watched", () => {
     renderSidebar();
