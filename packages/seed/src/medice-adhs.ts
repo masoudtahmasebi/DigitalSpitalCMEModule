@@ -418,31 +418,61 @@ export async function seedMediceAdhs(
          $1,$2,$3,$4,$5,'on_demand','published',
          ARRAY['ADHS'], ARRAY['Erwachsene'], $6, $7, 4, 'D',
          'online', $8, $9, $10,
-         100, 70, NULL,
+         90, 70, NULL,
          false, $11, $12,
          $13, $14, $15,
          $16, 'image/png', $16, 'image/png',
          $17
        )
+       /*
+        * ON CONFLICT: **the seed creates, the console owns** (P108-01).
+        *
+        * The deploy runs this seed on every push, so anything named here is
+        * reset on every deploy — silently, on a green deploy, minutes after an
+        * operator saved it. The client asked for required_watch_percent to
+        * be configurable in the admin panel. It already was, and had been for
+        * phases: the field is on the Fortbildung's settings screen, it saves,
+        * and the next deploy put 100 back. A setting that does not survive is
+        * not a setting, and nothing anywhere said so.
+        *
+        * Two fields had already been rescued one at a time — status, because
+        * a re-run must not republish a course somebody unpublished, and
+        * vnr_password_enc, because a re-run must not replace a real
+        * credential. Both are the same defect, found twice, fixed twice,
+        * without the class being named. It is named now (§9.11).
+        *
+        * The line: a field is updated here only when the **Anerkennungsbescheid
+        * is authoritative over it** and an install with stale text is wrong.
+        * That is the course's identity — its title, its points, its category.
+        * Everything an operator can edit in Verwaltung is theirs after the
+        * first insert.
+        *
+        * The one that would have been worst is stamp_image: the seed writes a
+        * 1x1 placeholder PNG, and the deploy's own output tells the operator to
+        * replace it with the real Stempel before anything ships. Had they, the
+        * next deploy would have put the 1x1 back — and a Teilnahmebescheinigung
+        * without a stamp is not a valid document (S11). Nothing would have
+        * failed; the PDF would simply have come out wrong.
+        */
        ON CONFLICT (project_id, slug) DO UPDATE SET
          title = EXCLUDED.title,
-         description = EXCLUDED.description,
          cme_points = EXCLUDED.cme_points,
          cme_category = EXCLUDED.cme_category,
-         pass_threshold_percent = EXCLUDED.pass_threshold_percent,
-         required_watch_percent = EXCLUDED.required_watch_percent,
-         learning_objectives = EXCLUDED.learning_objectives,
-         target_audience = EXCLUDED.target_audience,
-         scientific_lead_name = EXCLUDED.scientific_lead_name,
-         scientific_lead_title = EXCLUDED.scientific_lead_title,
-         certificate_issue_place = EXCLUDED.certificate_issue_place,
-         stamp_image = EXCLUDED.stamp_image,
-         stamp_image_mime = EXCLUDED.stamp_image_mime,
-         signature_image = EXCLUDED.signature_image,
-         signature_image_mime = EXCLUDED.signature_image_mime,
-         -- Only when there is not one already: an operator who set the real
-         -- credential through the console must not have it replaced by a re-run.
+         -- Only when there is nothing there: the seed supplies a starting value
+         -- and a placeholder asset, never a replacement for what an operator
+         -- put in through the console.
          vnr_password_enc = COALESCE(courses.vnr_password_enc, EXCLUDED.vnr_password_enc),
+         stamp_image = COALESCE(courses.stamp_image, EXCLUDED.stamp_image),
+         stamp_image_mime = COALESCE(courses.stamp_image_mime, EXCLUDED.stamp_image_mime),
+         signature_image = COALESCE(courses.signature_image, EXCLUDED.signature_image),
+         signature_image_mime =
+           COALESCE(courses.signature_image_mime, EXCLUDED.signature_image_mime),
+         scientific_lead_name =
+           COALESCE(courses.scientific_lead_name, EXCLUDED.scientific_lead_name),
+         scientific_lead_title =
+           COALESCE(courses.scientific_lead_title, EXCLUDED.scientific_lead_title),
+         certificate_issue_place =
+           COALESCE(courses.certificate_issue_place, EXCLUDED.certificate_issue_place),
          updated_at = now()
        RETURNING id`,
       [
@@ -699,9 +729,13 @@ export async function seedMediceAdhs(
           "to choose it. It is a demo account: delete it before MEDICE's own\n" +
           "physicians use this tenant in earnest.",
       "",
-      "required_watch_percent is seeded at 100 — the stricter of the two",
-      "readings (layout says 80, MEDICE-292 says 100). See",
-      "docs/show-stoppers.md before treating it as settled.",
+      "required_watch_percent is seeded at 90 and is then yours: set it per",
+      "course under Verwaltung -> Fortbildungen. A re-run of this seed will",
+      "not overwrite it, nor the Stempel, the Unterschrift, the",
+      "Wissenschaftliche Leitung or the VNR password (P108-01).",
+      "",
+      "90 is a decision, not the answer: the layout says 80 and MEDICE-292",
+      "says 100. See docs/show-stoppers.md — it is still open.",
       "",
       "ADHS Akademie adult is PUBLISHED and visible to participants now.",
       "",

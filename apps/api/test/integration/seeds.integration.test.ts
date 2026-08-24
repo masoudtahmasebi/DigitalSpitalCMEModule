@@ -197,6 +197,127 @@ describe("what the seeds leave behind", () => {
     expect(rows[0]?.enc.equals(mine)).toBe(true);
   }, 60_000);
 
+  it("does not overwrite what an operator set in the console (P108-01)", async () => {
+    /*
+     * The third instance of one defect, and the first time it is tested as a
+     * class rather than as a field.
+     *
+     * `deploy.sh` runs this seed on every deploy, and its `ON CONFLICT DO
+     * UPDATE` used to name `required_watch_percent`, `pass_threshold_percent`,
+     * the Wissenschaftliche Leitung, the Stempel and the Unterschrift. So the
+     * client's request — *"required_watch_percent should be configurable from
+     * the admin panel"* — described something that already existed and did not
+     * work: the field is on the settings screen, it saves, and the next deploy
+     * put the seeded value back. Silently, on a green deploy.
+     *
+     * `stamp_image` is the one that would have mattered most. The seed writes a
+     * 1x1 placeholder and the deploy's own output tells the operator to replace
+     * it with the real Stempel before anything ships. Had they done so, the
+     * next deploy would have restored the 1x1 — and a Teilnahmebescheinigung
+     * without a stamp is not a valid document (S11). Nothing would have failed.
+     *
+     * Every field an operator can edit in Verwaltung is asserted here together,
+     * so a field added to the DO UPDATE later has to delete a named case to
+     * pass.
+     */
+    const stamp = Buffer.from("a-real-stamp-not-the-1x1-placeholder");
+    await admin.query(
+      `UPDATE courses
+          SET required_watch_percent = 55,
+              pass_threshold_percent  = 80,
+              scientific_lead_name    = 'Prof. Dr. Operator',
+              scientific_lead_title   = 'Wissenschaftliche Leitung',
+              certificate_issue_place = 'Iserlohn',
+              stamp_image             = $1,
+              stamp_image_mime        = 'image/png',
+              signature_image         = $1,
+              signature_image_mime    = 'image/png'
+        WHERE slug = $2`,
+      [stamp, "adhs-akademie-adult"],
+    );
+
+    const seeder = openSeeder();
+    try {
+      await seedMediceAdhs(seeder);
+    } finally {
+      await seeder.end();
+    }
+
+    const { rows } = await admin.query<{
+      watch: number;
+      pass: number;
+      lead: string | null;
+      leadTitle: string | null;
+      place: string | null;
+      stamp: Buffer | null;
+      signature: Buffer | null;
+    }>(
+      `SELECT required_watch_percent AS watch,
+              pass_threshold_percent AS pass,
+              scientific_lead_name    AS lead,
+              scientific_lead_title   AS "leadTitle",
+              certificate_issue_place AS place,
+              stamp_image             AS stamp,
+              signature_image         AS signature
+         FROM courses WHERE slug = 'adhs-akademie-adult'`,
+    );
+
+    const row = rows[0];
+    expect(row?.watch).toBe(55);
+    expect(row?.pass).toBe(80);
+    expect(row?.lead).toBe("Prof. Dr. Operator");
+    expect(row?.leadTitle).toBe("Wissenschaftliche Leitung");
+    expect(row?.place).toBe("Iserlohn");
+    expect(row?.stamp?.equals(stamp)).toBe(true);
+    expect(row?.signature?.equals(stamp)).toBe(true);
+  }, 60_000);
+
+  it("still supplies a starting value on a course that has none (P108-01)", async () => {
+    /*
+     * The other half, and the reason this is COALESCE rather than dropping the
+     * fields from the update entirely: a fresh install must still get a working
+     * course. A guard that protected the operator's value by never writing one
+     * would leave every new installation with no stamp and no
+     * Wissenschaftliche Leitung — §9.1, a fix whose success is indistinguishable
+     * from doing nothing.
+     *
+     * The course is unpublished first, and that is a finding rather than
+     * plumbing: `courses_published_cme_is_complete` refuses to let a PUBLISHED
+     * CME course hold a null stamp or a null Wissenschaftliche Leitung at all.
+     * The first version of this test did not unpublish and failed on its own
+     * setup — which is the constraint doing exactly its job.
+     *
+     * It also bounds how bad P108-01 could have been, and it is worth being
+     * accurate about: the constraint guarantees those fields are *not null*, so
+     * no published course could ever have lost its stamp entirely. What it does
+     * not check is whether the stamp is a **real** one, and the seed's value is
+     * a 1x1 placeholder. So the overwrite was still live — a valid-looking row
+     * with a blank image on the certificate, which no constraint can see.
+     */
+    await admin.query(
+      `UPDATE courses
+          SET status               = 'draft',
+              scientific_lead_name = NULL,
+              stamp_image          = NULL,
+              stamp_image_mime     = NULL
+        WHERE slug = 'adhs-akademie-adult'`,
+    );
+
+    const seeder = openSeeder();
+    try {
+      await seedMediceAdhs(seeder);
+    } finally {
+      await seeder.end();
+    }
+
+    const { rows } = await admin.query<{ lead: string | null; stamp: Buffer | null }>(
+      `SELECT scientific_lead_name AS lead, stamp_image AS stamp
+         FROM courses WHERE slug = 'adhs-akademie-adult'`,
+    );
+    expect(rows[0]?.lead).not.toBeNull();
+    expect(rows[0]?.stamp).not.toBeNull();
+  }, 60_000);
+
   it("leaves learner-facing content alone on a second run with --if-missing", async () => {
     /*
      * The property `deploy.sh` depends on (P65-01), stated the way P65-03
