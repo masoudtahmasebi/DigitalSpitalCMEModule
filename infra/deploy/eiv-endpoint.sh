@@ -36,3 +36,29 @@ ds_eiv_requires_live_consent() {
     *) return 0 ;;
   esac
 }
+
+# Will arming the worker file a real Punktemeldung? (P107-02)
+#
+# The endpoint rule above answers "may a submission go here without consent".
+# This answers the operational question one step on: *given this installation's
+# two settings, is the worker about to file at a real register.* Both halves
+# have to be true, and they live in different places — the endpoint in
+# `EIV_BASE_URL`, the arming in `EIV_WORKER_ENABLED` — which is exactly why the
+# combination had never been written down anywhere a person could see it.
+#
+# A function rather than a condition spelled inline in deploy.sh, so
+# `eiv-endpoint.test.sh` drives the thing the deploy actually calls. A test that
+# re-implements the condition beside it would pass on a deploy that had the
+# condition backwards (CLAUDE.md §9.7).
+#
+# $1 base URL, $2 the value of EIV_WORKER_ENABLED (empty means the default,
+# which is on). Returns 0 when a live filing is possible.
+ds_eiv_worker_will_file_live() {
+  local url="${1:-}" worker="${2:-}"
+
+  # Anything other than an explicit "no" leaves the worker running — the same
+  # default the scheduler applies, spelled the same way round.
+  [[ "$worker" != "no" ]] || return 1
+
+  ds_eiv_requires_live_consent "$url"
+}

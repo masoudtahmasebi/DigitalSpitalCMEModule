@@ -642,6 +642,45 @@ DS_LOOPBACK_ISSUER_RE='^https?://(127\.[0-9.]+|localhost|\[::1\]|[^/]*\.localhos
 # A warning, never a refusal. On a first deploy there are no projects at all,
 # and a check that can fail an install is worse than no check. `|| true`
 # throughout for the same reason.
+# What the worker will do on its first tick, before it does it (P107-02).
+#
+# Arming the worker against the live register is not only a decision about the
+# *next* physician to finish. `claim_due_eiv_submissions` claims every row in
+# `queued` or `failed_retryable` whose `next_attempt_at` has passed — so the
+# first sweep after the deploy flushes whatever is already sitting in the
+# queue, in a batch, to the Ärztekammer. On an installation that has been
+# tested against the mock or against EIV's test system, that backlog is exactly
+# the set of rows nobody intends to file.
+#
+# It is invisible: there is no queue screen in the console, and the operator
+# arming the worker edits two lines in a file with nothing in between that says
+# how much is behind them.
+#
+# So the deploy counts them and says so, to the person who is already trusted
+# with the answer (§9.10) at the moment it is actionable. A count and a due
+# date, never an EFN — ADR-0004 holds here as everywhere else.
+#
+# A warning, not a refusal: a backlog is a legitimate state (the worker may
+# simply have been off for an hour), and only the operator knows which it is.
+if [[ "$RUN_MIGRATIONS" == "1" ]] &&
+  ds_eiv_worker_will_file_live "${EIV_BASE_URL:-}" "${EIV_WORKER_ENABLED:-}"; then
+  queued="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
+    psql -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
+    -c "SELECT count(*) FROM eiv_submissions
+         WHERE status IN ('queued', 'failed_retryable')
+           AND (next_attempt_at IS NULL OR next_attempt_at <= now())" \
+    2>/dev/null | tr -d '\n' || true)"
+
+  if [[ -n "$queued" && "$queued" != "0" ]]; then
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "${queued} Punktemeldung(en) are due and the worker is armed against ${EIV_BASE_URL:-?}." >&2
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "The first sweep after this deploy files them at the Ärztekammer. Set EIV_WORKER_ENABLED=no and re-deploy if that is not intended." >&2
+  else
+    log "EIV queue empty — arming the worker files nothing that already exists"
+  fi
+fi
+
 if [[ "$RUN_MIGRATIONS" == "1" ]]; then
   half_bound="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
     psql -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
