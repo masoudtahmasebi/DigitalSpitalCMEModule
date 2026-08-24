@@ -65,7 +65,7 @@ wants action today.
 | S17     | **Token `aud` is `account`; add an audience mapper or no learner can log in**      | M1 · 09.08       | **31.07** | MEDICE dev    |
 | S2      | **The WP plugin stores no token.** Decide how it will — lifespan now known (600 s) | M1 · 09.08       | **31.07** | MEDICE dev    |
 | S4      | Scope decision on 4 layout features not in the 140 h — **PM is deciding**          | M2 · 23.08       | **06.08** | PM            |
-| S11     | Confirm `Veranstaltungsende` = the learner's completion date                       | M3 · 30.08       | 07.08     | ÄKWL          |
+| S11     | **The register holds a one-day event; correct the period, or name the date**       | **launch**       | 07.08     | ÄKWL          |
 | S5      | Certificate-after-EIV vs the launch fallback                                       | M3 · 30.08       | 14.08     | PM + MEDICE   |
 | ~~S7~~  | ~~80 % or 100 %~~ — **already per course; a field, not a constant. 20.08**         | **CLOSED 20.08** | —         | —             |
 | S8      | ADHS SMTP configuration — **PM is setting it in the console**                      | M3 · 30.08       | 21.08     | PM            |
@@ -77,6 +77,7 @@ wants action today.
 | ~~S26~~ | ~~Production EIV API base URL~~ — **`https://backend.eiv-fobi.de`, 20.08**         | **CLOSED 20.08** | —         | —             |
 | S28     | **Learner tokens carry no name or email — the certificate cannot be filled**       | M3 · 30.08       | **24.08** | MEDICE / DS   |
 | S27     | **Test-system credentials from EIV support, so the client can be proven**          | M3 · 30.08       | **14.08** | MEDICE        |
+| S29     | **The Veranstalter interface we integrate against has an announced shutdown**      | **launch**       | **now**   | EIV / BÄK     |
 | ~~S24~~ | ~~Export the EIV Veranstalter Swagger~~                                            | **CLOSED 09.08** | —         | —             |
 | ~~S3~~  | ~~WordPress repository access~~                                                    | **CLOSED 28.07** | —         | —             |
 | ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                               | **CLOSED 28.07** | —         | —             |
@@ -89,7 +90,45 @@ the same as having one.
 
 ---
 
-## S11 · What is `Veranstaltungsende` for an on-demand course? — **the Muster answers it; confirm it**
+## S11 · The register holds a one-day event for a twelve-month Fortbildung
+
+> **Updated 24.08.2026 — the value is known now, and it is the bad one.**
+>
+> The connection check against the live register returned the accredited period
+> EIV holds for VNR 2760552025919300018:
+>
+> ```
+> beginn  2025-10-12T22:00:00.000Z   → 13.10.2025 00:00 (MESZ)
+> ende    2025-10-13T21:00:00.000Z   → 13.10.2025 23:00 (MESZ)
+> ```
+>
+> One day. `push_teilnahme` refuses a `teilnahmedatum` outside the accredited
+> period with a **406**, so on today's data **every completion this platform
+> reports is refused** — which is what the 09.08 note below predicted would
+> happen if `ende` turned out to be 13.10.2025.
+>
+> **This is now two questions, not one, and the first is the better one.**
+>
+> The ÄKWL's own _Richtlinien zur Anerkennung und Bewertung von
+> Fortbildungsmaßnahmen_ work with an **Anerkennungszeitraum** inside which many
+> individual sessions may fall, and recognise **Fortbildungsreihen** for a
+> calendar year. A twelve-month accredited period with a completion date
+> anywhere inside it is therefore a shape the ÄKWL already handles — and a
+> one-day `beginn`/`ende` on a twelve-month on-demand Fortbildung looks like a
+> register field filled in as though it were a live event.
+>
+> So ask both, in one sentence, and accept either answer:
+>
+> 1. **Should the accredited period be corrected** to the recognition period
+>    from the Anerkennungsbescheid, 13.10.2025 – 12.10.2026?
+> 2. **If not, which `teilnahmedatum` do you expect** for an on-demand
+>    Fortbildung taken across that period?
+>
+> (1) unblocks the platform as built and needs no code. (2) is only needed if
+> (1) is refused, and it is the one that may cost an implementation. Asking (1)
+> first is not politeness — it is the reading their own Richtlinien support.
+
+## S11 (original) · What is `Veranstaltungsende` for an on-demand course? — **the Muster answers it; confirm it**
 
 > **Plain-language version of the question, since it was asked on 28.07:**
 >
@@ -1349,3 +1388,60 @@ inventing a rule (CLAUDE.md §7).
 
 One sentence from MEDICE or the ÄKWL: _"Fortbildungsnummer is / is not the
 VNR."_ Everything else follows.
+
+---
+
+## S29 · We may be integrated against an interface that is being switched off
+
+- **Owner:** EIV / Bundesärztekammer (via MEDICE) · **Blocks:** the launch ·
+  **Raised:** 24.08.2026, by the client, from the official sources
+
+### What was found
+
+The Bundesärztekammer now runs the Punktemeldung on a **new platform with its
+own REST API**, documented at `veranstalter-swagger-ui.eiv-fobi.de`. Its own
+pages state that support for the old Java client ended **31.12.2024**, and that
+for the old XML interface _"Eine Abschaltung der Schnittstelle steht an."_
+Ärztekammer Bremen goes further: from **01.01.2026** organisers may report only
+via `punkte.eiv-fobi.de` / `punktemeldung.eiv-fobi.de`, and the old interface is
+then switched off.
+
+### Why this is a show-stopper and not a nice-to-know
+
+`packages/eiv-client` speaks the **old Veranstalter interface**:
+`POST /fobi/veranstalter/push_teilnahme` against `eiv-fobi.de`, VNR and password
+exchanged for a JWT. It works — the connection check on 24.08 proves it end to
+end against the live register — but a Bremen-level reading says it should
+already be off.
+
+So the platform is about to put a **statutory** reporting path onto an interface
+with an announced shutdown, with no migration ticket and no knowledge of whether
+the new API is contract-compatible. The failure mode is the worst available: it
+works on launch day and stops working later, quietly, with physicians' points
+sitting in the queue behind it.
+
+### What has to be established
+
+1. Which endpoint should a **new** Veranstalter system integrate against as of
+   06.09.2026?
+2. Until when is the current interface available?
+3. Is the new API contract-compatible with `push_teilnahme`, or a different
+   shape?
+
+(1) and (2) are one extra sentence in the EIV support mail S27 already needs —
+and asking as somebody **migrating** rather than somebody **stuck** makes the
+test-system request land better.
+
+(3) needs nobody: **pull the OpenAPI document behind that Swagger UI and diff it
+against `packages/eiv-client`.** If it is contract-compatible, the migration is
+a base URL and an auth change. It could not be done from the build sandbox —
+the network policy refuses `eiv-fobi.de` at the proxy, `connect_rejected` on
+CONNECT — so somebody on an ordinary connection has to fetch the document and
+attach it to this ticket.
+
+### Not the same question as the endpoint tier
+
+P104-01 taught the platform to tell EIV's **test** system from the **live**
+register, and P107-01 put that on screen. Both of those hosts are the **old**
+interface. A correct tier decision about a switched-off interface is still a
+switched-off interface.
