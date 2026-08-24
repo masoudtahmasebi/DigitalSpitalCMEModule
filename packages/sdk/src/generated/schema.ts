@@ -1041,6 +1041,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/eiv/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Punktemeldung queue
+         * @description Every Punktemeldung this customer has, and what state it is in.
+         *
+         *     This existed nowhere until P110-01, and its absence was a live defect
+         *     rather than a missing convenience. Two endpoints already act on a
+         *     submission by id — `adminRequeueEivSubmission` and
+         *     `adminWithdrawEivSubmission` — and nothing enumerated them, so an
+         *     operator could only act on a row whose identifier they had obtained
+         *     from the database by hand. A control you cannot reach is not a control.
+         *
+         *     It also answers the question the deploy started asking on the way past:
+         *     arming the worker flushes whatever is already queued, and until now the
+         *     only place that count appeared was a deploy log.
+         *
+         *     Read-only. It contacts EIV not at all — this is what *we* hold, which is
+         *     deliberately a different question from `adminReconcileEiv`, which asks
+         *     the authority.
+         *
+         *     **No EFN.** `efnMasked` carries the last four digits, the same shape
+         *     `EivReconciliationRow` uses and for the same reason (ADR-0004): enough
+         *     to recognise a row beside a person you are already looking at, not a
+         *     disclosure.
+         */
+        get: operations["adminListEivSubmissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/learners/{enrolmentId}/eiv": {
         parameters: {
             query?: never;
@@ -3301,6 +3341,55 @@ export interface components {
              *     further point will ever be credited against it.
              */
             locked?: boolean | null;
+        };
+        EivSubmissionPage: {
+            items: components["schemas"]["EivSubmissionRow"][];
+            total: number;
+            page: number;
+            perPage: number;
+            /**
+             * @description How many rows the next sweep would claim — `queued` or
+             *     `failed_retryable` with the retry time passed. Counted across the
+             *     whole queue, not the page, because it is the number an operator
+             *     arming the worker needs and it must not change when they page.
+             */
+            dueNow: number;
+        };
+        /**
+         * @description One Punktemeldung as this platform holds it. Keyed by `enrolmentId`
+         *     rather than by the submission's own id, because that is what the
+         *     requeue and withdraw routes take — a row an operator can read and then
+         *     act on without translating an identifier.
+         */
+        EivSubmissionRow: {
+            /** Format: uuid */
+            enrolmentId: string;
+            /** @description Last four digits only (ADR-0004). */
+            efnMasked: string;
+            courseSlug: string;
+            courseTitle?: string | null;
+            vnr?: string;
+            /** @enum {string} */
+            status: "queued" | "held" | "submitted" | "failed_retryable" | "failed_permanent" | "window_closed" | "withdrawn";
+            attemptCount: number;
+            /**
+             * @description The participant's own completion instant — what the 8-day clock runs
+             *     from and what is printed on their Teilnahmebescheinigung (S11).
+             */
+            eventEndAt: string;
+            /** @description The statutory deadline this submission is racing. */
+            reportDueAt: string;
+            nextAttemptAt?: string | null;
+            firstSubmittedAt?: string | null;
+            /** @description The authority's own reference, once it has accepted. */
+            externalReference?: string | null;
+            /**
+             * @description The last failure, as the worker recorded it. Already redacted of
+             *     credentials by the EIV client; never contains the EFN.
+             */
+            lastError?: string | null;
+            /** @description The next sweep would claim this row. */
+            dueNow: boolean;
         };
         /** @description What this platform sent, against what the authority holds. */
         EivReconciliation: {
@@ -6879,6 +6968,37 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             502: components["responses"]["BadGateway"];
+        };
+    };
+    adminListEivSubmissions: {
+        parameters: {
+            query?: {
+                /**
+                 * @description One state, or every state when omitted. `queued` and
+                 *     `failed_retryable` together are what the next sweep will attempt.
+                 */
+                status?: "queued" | "held" | "submitted" | "failed_retryable" | "failed_permanent" | "window_closed" | "withdrawn";
+                page?: number;
+                perPage?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The queue. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EivSubmissionPage"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     adminRequeueEivSubmission: {

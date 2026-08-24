@@ -61,6 +61,7 @@ import { Customers } from "./components/Customers.js";
 import { Learners } from "./components/Learners.js";
 import { ParticipantAccounts } from "./components/ParticipantAccounts.js";
 import { Certificates } from "./components/Certificates.js";
+import { EivQueue } from "./components/EivQueue.js";
 import { StaffAccounts } from "./components/StaffAccounts.js";
 import { Security } from "./components/Security.js";
 import { SignIn } from "./components/SignIn.js";
@@ -391,6 +392,7 @@ type View =
   | { kind: "branding" }
   | { kind: "copy" }
   | { kind: "media" }
+  | { kind: "punktemeldungen" }
   | { kind: "customers" }
   | { kind: "participants" }
   | { kind: "learners" }
@@ -528,6 +530,23 @@ const NAV: readonly NavGroup[] = [
         label: de.certificates.title,
         title: de.certificates.title,
         description: de.certificates.intro,
+        capability: "certificate",
+      },
+      /*
+       * The Punktemeldung queue (P110-01), beside the certificates it produces
+       * — they are two halves of one completion, and an operator looking at a
+       * physician's certificate is one row away from the point it reports.
+       *
+       * `certificate`, the same capability: this row is about one person's CME
+       * record, which is exactly what that capability governs. A weaker one
+       * would put a masked EFN and a statutory deadline in front of somebody
+       * the platform does not trust with the certificate itself.
+       */
+      {
+        kind: "punktemeldungen",
+        label: de.eivQueue.nav,
+        title: de.eivQueue.title,
+        description: de.eivQueue.screenIntro,
         capability: "certificate",
       },
     ],
@@ -1121,6 +1140,10 @@ export function Console(props: {
 
   if (view.kind === "certificates") {
     return headed(<Certificates client={client} />);
+  }
+
+  if (view.kind === "punktemeldungen") {
+    return headed(<EivQueue client={client} />);
   }
 
   if (view.kind === "staff") {

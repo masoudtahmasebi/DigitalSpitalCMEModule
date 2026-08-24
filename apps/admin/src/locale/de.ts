@@ -1052,6 +1052,60 @@ export const german = {
    * to fix it, and each one names an action rather than a diagnosis: a person
    * told `rate_limited` learns nothing they can do.
    */
+  /** The Punktemeldung queue (P110-01). */
+  eivQueue: {
+    nav: "Punktemeldungen",
+    title: "Punktemeldungen",
+    screenIntro:
+      "Jede Punktemeldung dieser Installation und ihr Stand. Die Liste ist nach Frist sortiert — oben steht die Meldung, deren gesetzliche Acht-Tage-Frist am nächsten ist, nicht die neueste.",
+
+    loadFailed: "Die Punktemeldungen konnten nicht geladen werden.",
+    actionFailed: "Die Aktion ist fehlgeschlagen.",
+
+    filter: "Nach Status filtern",
+    statusAll: "Alle",
+    status: {
+      queued: "In der Warteschlange",
+      held: "Zurückgestellt",
+      submitted: "Gemeldet",
+      failed_retryable: "Erneuter Versuch geplant",
+      failed_permanent: "Endgültig fehlgeschlagen",
+      window_closed: "Frist abgelaufen",
+      withdrawn: "Widerrufen",
+    },
+
+    participant: "EFN",
+    course: "Fortbildung",
+    status_: "Status",
+    due: "Meldefrist",
+    attempts: "Versuche",
+    vnr: "VNR",
+    lastError: "Letzter Fehler",
+    dueNow: "Wird beim nächsten Durchlauf gemeldet",
+
+    dueTitle: "Fällige Meldungen",
+    dueBody: (count: number): string =>
+      count === 1
+        ? "Eine Punktemeldung wird beim nächsten Durchlauf des Workers an die Ärztekammer übermittelt."
+        : `${String(count)} Punktemeldungen werden beim nächsten Durchlauf des Workers an die Ärztekammer übermittelt.`,
+
+    empty: "Keine Punktemeldungen",
+    emptyHint:
+      "Sobald eine Person eine Fortbildung abschließt und ihre EFN angibt, erscheint die Meldung hier.",
+
+    requeue: "Erneut einreihen",
+    withdraw: "Widerrufen",
+    withdrawConfirm: "Wirklich widerrufen?",
+    withdrawCancel: "Abbrechen",
+    withdrawFor: (efn: string): string => `Punktemeldung für ${efn} widerrufen`,
+    withdrawReason: "Widerruf durch die Verwaltung",
+
+    previous: "Zurück",
+    next: "Weiter",
+    pageOf: (page: number, last: number): string =>
+      `Seite ${String(page)} von ${String(last)}`,
+  },
+
   eivCheck: {
     title: "Verbindung zum EIV prüfen",
     intro:

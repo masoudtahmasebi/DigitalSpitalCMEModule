@@ -48,6 +48,7 @@ export type Route =
   | { kind: "branding" }
   | { kind: "copy" }
   | { kind: "media" }
+  | { kind: "punktemeldungen" }
   | { kind: "customers" }
   | { kind: "participants" }
   | { kind: "learners" }
@@ -93,6 +94,8 @@ const SEGMENTS: Readonly<Record<Exclude<Route["kind"], "course">, string>> = {
   participants: "zugaenge",
   learners: "teilnehmende",
   certificates: "bescheinigungen",
+  // The Punktemeldung queue (P110-01), beside the certificates it produces.
+  punktemeldungen: "punktemeldungen",
   staff: "konten",
   security: "sicherheit",
 };

@@ -766,6 +766,63 @@ export const en: DeepPartial<typeof german> = {
       "The administration console is not configured correctly. Please check the environment variables.",
   },
 
+  /** The Punktemeldung queue (P110-01). */
+  eivQueue: {
+    // German on purpose: Punktemeldung, VNR and EFN appear verbatim on the
+    // Anerkennungsbescheid and in the EIV-FOBI interface, and an operator
+    // reconciling a screen against the paperwork needs the same token in both.
+    nav: "Punktemeldungen",
+    title: "Punktemeldungen",
+    screenIntro:
+      "Every Punktemeldung on this installation and its state. Sorted by deadline — the report whose statutory eight-day limit is nearest is at the top, not the newest one.",
+
+    loadFailed: "The Punktemeldungen could not be loaded.",
+    actionFailed: "The action failed.",
+
+    filter: "Filter by status",
+    statusAll: "All",
+    status: {
+      queued: "Queued",
+      held: "Held back",
+      submitted: "Reported",
+      failed_retryable: "Retry scheduled",
+      failed_permanent: "Permanently failed",
+      window_closed: "Deadline passed",
+      withdrawn: "Withdrawn",
+    },
+
+    participant: "EFN",
+    course: "Course",
+    status_: "Status",
+    due: "Reporting deadline",
+    attempts: "Attempts",
+    vnr: "VNR",
+    lastError: "Last error",
+    dueNow: "Will be reported on the next sweep",
+
+    dueTitle: "Reports due",
+    dueBody: (count: number): string =>
+      count === 1
+        ? "One Punktemeldung will be sent to the Ärztekammer on the worker's next sweep."
+        : `${String(count)} Punktemeldungen will be sent to the Ärztekammer on the worker's next sweep.`,
+
+    empty: "No Punktemeldungen",
+    emptyHint:
+      "Once somebody completes a course and supplies their EFN, the report appears here.",
+
+    requeue: "Queue again",
+    withdraw: "Withdraw",
+    withdrawConfirm: "Really withdraw?",
+    withdrawCancel: "Cancel",
+    withdrawFor: (efn: string): string => `Withdraw the Punktemeldung for ${efn}`,
+    withdrawReason: "Withdrawn by an administrator",
+
+    previous: "Back",
+    next: "Next",
+    pageOf: (page: number, last: number): string =>
+      `Page ${String(page)} of ${String(last)}`,
+  },
+
   eivCheck: {
     title: "Check the EIV connection",
     intro:

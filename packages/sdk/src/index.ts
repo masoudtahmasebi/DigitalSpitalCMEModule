@@ -81,6 +81,11 @@ export type EivEvent = components["schemas"]["EivEvent"];
 export type EivConnectionReport = components["schemas"]["EivConnectionReport"];
 export type EivCheckStep = components["schemas"]["EivCheckStep"];
 export type EivReconciliation = components["schemas"]["EivReconciliation"];
+export type EivSubmissionPage = components["schemas"]["EivSubmissionPage"];
+export type EivSubmissionRow = components["schemas"]["EivSubmissionRow"];
+export type EivSubmissionQuery = NonNullable<
+  operations["adminListEivSubmissions"]["parameters"]["query"]
+>;
 export type EivReconciliationRow = components["schemas"]["EivReconciliationRow"];
 export type StaffAccount = components["schemas"]["StaffAccount"];
 export type StaffScope = components["schemas"]["StaffScope"];
@@ -651,6 +656,25 @@ export function createClient(options: ClientOptions) {
     /** What we sent, against what the authority holds. */
     adminReconcileEiv: (slug: string): Promise<EivReconciliation> =>
       request(`/admin/courses/${seg(slug)}/eiv/reported`),
+
+    /**
+     * The Punktemeldung queue (P110-01).
+     *
+     * The listing the requeue and withdraw methods below always needed: they
+     * take an `enrolmentId` and, until this existed, nothing produced one.
+     */
+    adminListEivSubmissions: (
+      query: EivSubmissionQuery = {},
+    ): Promise<EivSubmissionPage> => {
+      const search = new URLSearchParams();
+      for (const [key, value] of Object.entries(query)) {
+        if (value !== undefined) search.set(key, String(value));
+      }
+      const qs = search.toString();
+      return request(
+        qs === "" ? "/admin/eiv/submissions" : `/admin/eiv/submissions?${qs}`,
+      );
+    },
 
     /** Put an abandoned Punktemeldung back in the worker's queue. */
     adminRequeueEivSubmission: (enrolmentId: string): Promise<void> =>

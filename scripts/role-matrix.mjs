@@ -56,6 +56,9 @@ const SCREEN_LOADS = {
   // Mediathek (P88-01). One read at mount — the customer's own file index,
   // bounded by RLS rather than by a course.
   media: ["GET /admin/media"],
+  // Punktemeldungen (P110-01). One read at mount, bounded by RLS to the
+  // caller's customer — the queue is per installation, not per course.
+  punktemeldungen: ["GET /admin/eiv/submissions"],
   security: ["GET /admin/auth/second-factor/policy"],
 };
 

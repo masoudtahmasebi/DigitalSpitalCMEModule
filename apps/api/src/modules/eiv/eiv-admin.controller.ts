@@ -36,6 +36,7 @@ import {
   Inject,
   Param,
   Post,
+  Query,
 } from "@nestjs/common";
 import type { Pool } from "pg";
 import { z } from "zod";
@@ -51,6 +52,7 @@ import { createSecretCipher } from "../../shared/secret-cipher.js";
 import type { AppConfig } from "../../config/config.js";
 import { pluginRegistry } from "../../plugins.js";
 import { EivAdminRepository } from "./eiv-admin.repository.js";
+import { listEivSubmissionsQuerySchema } from "./eiv-admin.dto.js";
 import { EivAdminService, type EivOperatorContext } from "./eiv-admin.service.js";
 
 const MODERATOR_ROLES = ["customer_admin", "super_admin"] as const;
@@ -87,6 +89,65 @@ export class EivAdminController {
     @Inject(PG_POOL) private readonly pool: Pool,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
+
+  /**
+   * The Punktemeldung queue (P110-01).
+   *
+   * Two routes have taken a submission id since P31-02 — requeue and withdraw —
+   * and nothing listed them, so the console offered actions on rows an operator
+   * had no way to find. §9.2 in its second form: not a control that cannot
+   * work, but a control that cannot be reached.
+   *
+   * Dates cross as ISO strings because that is what the contract says and what
+   * every other admin route does; the console formats them in German local
+   * time, which is a presentation concern (§5).
+   */
+  @Get("eiv/submissions")
+  @Roles(...MODERATOR_ROLES)
+  async listEivSubmissions(
+    @Query() rawQuery: Record<string, unknown>,
+    @TenantDb() db: Db,
+  ) {
+    const parsed = listEivSubmissionsQuerySchema.safeParse(rawQuery);
+    if (!parsed.success) {
+      throw new AppError(
+        "validation",
+        `invalid EIV submission query: ${parsed.error.message}`,
+        "Einer der Filter ist ungültig.",
+      );
+    }
+    const query = parsed.data;
+
+    const page = await this.service(db).listSubmissions({
+      ...(query.status === undefined ? {} : { status: query.status }),
+      page: query.page,
+      perPage: query.perPage,
+      now: new Date(),
+    });
+
+    return {
+      items: page.items.map((row) => ({
+        enrolmentId: row.enrolmentId,
+        efnMasked: row.efnMasked,
+        courseSlug: row.courseSlug,
+        courseTitle: row.courseTitle,
+        vnr: row.vnr,
+        status: row.status,
+        attemptCount: row.attemptCount,
+        eventEndAt: row.eventEndAt.toISOString(),
+        reportDueAt: row.reportDueAt.toISOString(),
+        nextAttemptAt: row.nextAttemptAt?.toISOString() ?? null,
+        firstSubmittedAt: row.firstSubmittedAt?.toISOString() ?? null,
+        externalReference: row.externalReference,
+        lastError: row.lastError,
+        dueNow: row.dueNow,
+      })),
+      total: page.total,
+      page: query.page,
+      perPage: query.perPage,
+      dueNow: page.dueNow,
+    };
+  }
 
   /**
    * Read-only, so no rate limit beyond the global one: an operator refreshing

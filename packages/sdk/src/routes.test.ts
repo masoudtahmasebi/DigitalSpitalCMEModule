@@ -153,6 +153,15 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
   adminCheckEivConnection: (c) => c.adminCheckEivConnection("adhs", { vnrPassword: "x" }),
   adminDescribeEivEvent: (c) => c.adminDescribeEivEvent("adhs"),
   adminReconcileEiv: (c) => c.adminReconcileEiv("adhs"),
+  /*
+   * With a filter, so the property under test is that the status reaches the
+   * **query string** — the queue screen's whole job is narrowing to
+   * `failed_permanent` or `queued`, and a filter dropped on the way to the API
+   * returns every row and looks like a screen with no filter rather than a
+   * broken one.
+   */
+  adminListEivSubmissions: (c) =>
+    c.adminListEivSubmissions({ status: "failed_permanent", page: 2 }),
   adminRequeueEivSubmission: (c) => c.adminRequeueEivSubmission(ID),
   adminWithdrawEivSubmission: (c) => c.adminWithdrawEivSubmission(ID, "Widerruf"),
   adminListCertificates: (c) => c.adminListCertificates(),

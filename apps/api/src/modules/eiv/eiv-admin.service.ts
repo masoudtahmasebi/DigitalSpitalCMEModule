@@ -42,7 +42,11 @@ import type {
 import type { AuditServicePort } from "../../audit/audit.service.js";
 import { AppError } from "../../shared/problem-details.js";
 import type { EivSubmitterPort } from "./eiv.service.js";
-import type { EivAdminRepositoryPort } from "./eiv-admin.repository.js";
+import type {
+  EivAdminRepositoryPort,
+  EivSubmissionStatus,
+  SubmissionPage,
+} from "./eiv-admin.repository.js";
 
 export interface EivOperatorContext {
   readonly customerId: string;
@@ -305,6 +309,28 @@ export class EivAdminService {
       tier: eivEndpointTier(this.options.baseUrl),
       submissionsEnabled: this.options.submissionsEnabled,
     };
+  }
+
+  /**
+   * The Punktemeldung queue (P110-01).
+   *
+   * A read, and deliberately a read of **our own records** rather than of the
+   * authority — `reconcile` already asks EIV what they hold, and conflating the
+   * two would produce a screen that cannot be opened when EIV is down. An
+   * operator whose submissions are stuck needs the screen most at exactly the
+   * moment the authority is unreachable.
+   *
+   * Not audited: it contacts nobody, discloses no EFN, and an audit entry per
+   * page view would bury the entries that matter (`eiv.connection_checked`,
+   * every submission attempt) under navigation noise.
+   */
+  async listSubmissions(query: {
+    readonly status?: EivSubmissionStatus;
+    readonly page: number;
+    readonly perPage: number;
+    readonly now: Date;
+  }): Promise<SubmissionPage> {
+    return this.repository.listSubmissions(query);
   }
 
   /** `describeEvent`, or a refusal naming the capability rather than a crash. */
