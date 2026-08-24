@@ -1514,3 +1514,48 @@ asks why.
 MEDICE-292 is the compliance record, so where they disagree the compliance
 record wins. The layout's 80 is overridden deliberately, and it stays a per
 course field so another customer can differ.
+
+---
+
+## P112-01 · CI's seed step failed, and the guard that failed it was right
+
+Not a show-stopper — recorded here because the _shape_ is one this file keeps
+teaching, and it caught me from the other side.
+
+The 24.08 CI run failed on **Integration tests (real Postgres)**. All 544 tests
+passed; the job failed at the next step, `pnpm db:seed`:
+
+```
+Error: Project "medice-adhs" is bound to a Keycloak on loopback:
+  http://127.0.0.1:1/realms/unused
+```
+
+That is the guard added after the client's 401 — `bindingProblem` refuses a
+project holding a loopback issuer **that nobody asked for**, which is the
+production fault where every physician arriving from the customer's site is
+refused with a token that is otherwise valid.
+
+**It was telling the truth.** The integration suites run first, against the same
+database, and set `KEYCLOAK_ISSUER=http://127.0.0.1:1/realms/unused` as a
+deliberately unroutable sentinel. The seed step then declared no issuer of its
+own — so "nobody asked for loopback, yet loopback is stored" was literally the
+state of the database.
+
+**The fix is CI's, not the guard's.** The seed step now states the same
+sentinel. CI genuinely _means_ loopback: it has no Keycloak and nobody will ever
+sign in there. Weakening the guard, or giving it an escape hatch, would have
+been the §9.1 trap — an escape hatch CI sets is an escape hatch production can
+set.
+
+Verified by exercising the pure function directly rather than by re-running a
+database:
+
+| `issuerRequested`                               | result                |
+| ----------------------------------------------- | --------------------- |
+| `false` (CI before)                             | the exact error above |
+| `true` (CI after)                               | no problem            |
+| `false`, loopback stored (the production fault) | still fires           |
+
+`keycloak-binding.test.ts` covers all thirteen branches, so the seed step was
+never the thing testing this — it had simply become an accidental second
+assertion, and a step that is not about Keycloak should not be one.
