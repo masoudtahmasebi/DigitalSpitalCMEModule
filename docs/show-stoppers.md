@@ -827,6 +827,23 @@ disagreed with the percentage next to it.
 
 Owner: MEDICE (Keycloak admin). Needed by **31.07**, with S2. Blocks M1.
 
+> **25.08 — the request is drafted and ready to send:**
+> `docs/correspondence/S17-keycloak-audience-mapper.md`, in German for the
+> Keycloak administrator with a plain-language summary for the PM. It carries
+> the click-path, the verification step (`aud` on a fresh token), and the
+> instruction to send S18 with it since the same administrator does both.
+>
+> **Still true, and still the largest non-EIV blocker.** Verified again on 25.08
+> against the code: nothing in `apps/api/src/auth/` accepts `azp`, and no
+> per-project fallback column exists. The strict check is exactly as described
+> below.
+>
+> **Why nobody has noticed it in testing** (§9.13): every suite runs on the `ds`
+> tenant with local participants and never touches MEDICE's Keycloak. This
+> defect is structurally invisible to all of them. The check that closes S17 is
+> one real MEDICE account signing in at `/medice` and opening one course — and
+> it cannot be run until the mapper exists.
+
 The access token from `login.medice.com` carries:
 
 ```
