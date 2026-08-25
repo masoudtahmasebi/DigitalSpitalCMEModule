@@ -30,7 +30,7 @@ import { useEffect, useState } from "react";
 import type { CourseDetail, EnrolmentState } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { moduleHeading } from "../module-title.js";
-import { indexTitles, itemIcon, locateContent } from "../player.js";
+import { indexTitles, itemIcon, locateContent, moduleNumber } from "../player.js";
 import type { PlayerAction } from "../player-status.js";
 import { Button, StateIcon } from "./primitives.js";
 
@@ -94,8 +94,36 @@ export function ModuleSidebar(props: {
         does not open with a rule against the heading.
       */}
       <ol className="overflow-hidden rounded-[var(--ds-radius)] border border-gray-200">
-        {props.state.modules.map((module, index) => {
+        {props.state.modules.map((module) => {
           const title = titles.modules.get(module.id) ?? "";
+          /*
+            The module's number comes from the **course**, not from this list's
+            own position (P115-01).
+            
+            It used to be `index + 1` over `props.state.modules`, while the
+            heading under the video used `locateContent(props.course, …)
+            .moduleIndex + 1` over `props.course.modules`. Two arrays, two
+            positions, one number — and the client's screenshot has the sidebar
+            saying "Modul 4 – Psychotherapie & Coaching" three inches above a
+            heading saying "Modul 5 – Psychotherapie & Coaching", for the same
+            chapter of the same module.
+            
+            Both lists are ordered by `modules.ordinal` in their own queries, so
+            they agree until their *membership* differs — the catalogue and the
+            enrolment state are separate reads and nothing has ever required
+            them to hold the same modules. That is CLAUDE.md §4 invariant 6 in
+            miniature: two paths to one number, free to disagree, and disagreeing
+            numbers on a CME record is a compliance problem.
+            
+            So there is one source now. `moduleNumber` looks the module up in
+            `props.course`, which is what `locateContent` walks, which is what
+            the heading uses. If a module is somehow absent from the course it
+            falls back to this list's position rather than rendering nothing —
+            a number that might be wrong is still better than a module with no
+            identity, and the fallback is the case that cannot happen if the two
+            reads agree.
+          */
+          const index = moduleNumber(props.course, module.id) ?? 0;
           const open = expanded === module.id;
           /*
             A module you are inside is *under way*, not *being watched*

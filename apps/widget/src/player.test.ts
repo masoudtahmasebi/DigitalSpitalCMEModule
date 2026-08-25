@@ -13,6 +13,7 @@ import type { CourseDetail, ProgressSummary } from "@ds/sdk";
 import {
   itemIcon,
   locateContent,
+  moduleNumber,
   nextAvailableContent,
   playbackDuration,
 } from "./player.js";
@@ -102,6 +103,45 @@ describe("locateContent", () => {
 
   it("is undefined for a course with no modules", () => {
     expect(locateContent({ modules: [] }, "x1")).toBeUndefined();
+  });
+});
+
+describe("moduleNumber — the sidebar and the heading must agree (P115-01)", () => {
+  it("gives a module the same position locateContent gives its content", () => {
+    /*
+     * The property the client's screenshot broke: the sidebar said
+     * "Modul 4 – Psychotherapie & Coaching" and the heading below the video
+     * said "Modul 5 – Psychotherapie & Coaching", for the same chapter.
+     *
+     * The heading numbers from `locateContent`; the sidebar numbered from its
+     * own position in a *different* list. This asserts the two answer the same
+     * thing for every module in the course.
+     */
+    for (const [expected, module] of course.modules.entries()) {
+      const anyContentId = module.chapters[0]?.contents[0]?.id;
+      expect(moduleNumber(course, module.id)).toBe(expected);
+      if (anyContentId !== undefined) {
+        expect(locateContent(course, anyContentId)?.moduleIndex).toBe(expected);
+      }
+    }
+  });
+
+  it("numbers by the course, not by the order it is asked in", () => {
+    // The sidebar walks the enrolment state, which is a separate read and may
+    // hold the modules in another order or omit one. Asking out of order must
+    // not change the answer — that is the whole point of a single source.
+    const reversed = [...course.modules].reverse();
+    for (const module of reversed) {
+      expect(moduleNumber(course, module.id)).toBe(
+        course.modules.findIndex((m) => m.id === module.id),
+      );
+    }
+  });
+
+  it("is undefined for a module the course does not hold", () => {
+    // The sidebar falls back to its own position here rather than rendering a
+    // module with no number — but it has to be able to tell.
+    expect(moduleNumber(course, "not-a-module")).toBeUndefined();
   });
 });
 
