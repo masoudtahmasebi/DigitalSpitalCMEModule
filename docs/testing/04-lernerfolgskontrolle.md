@@ -1,53 +1,51 @@
-# 04 · Lernerfolgskontrolle
+# 04 · Lernerfolgskontrolle (the exam)
 
-**Zuweisung: Philipp Burka**
-**Bereich:** Teilnehmenden-Portal · **Dauer:** ca. 30 Minuten
+**Assignee: Philipp Burka**
+**Area:** Participant portal · **Duration:** approx. 30 minutes
 
-## Ziel
+## Goal
 
-Prüfen, dass die Prüfung sich fair verhält: dass klar ist, welche Prüfung man
-gerade schreibt, was zum Bestehen nötig ist, und wie es danach weitergeht.
+Check that the exam behaves fairly: that it is clear which exam you are sitting,
+what is needed to pass, and how you continue afterwards.
 
-## Voraussetzungen
+## Prerequisites
 
-- Eine Test-Fortbildung mit einer Lernerfolgskontrolle **je Modul**
-- Die Videos des ersten Moduls vollständig angesehen (Ticket 03)
+- A test course with a Lernerfolgskontrolle **per module**
+- The first module's videos fully watched (ticket 03)
 
-## Testschritte
+## Steps
 
-1. Ein Modul öffnen, dessen Videos **noch nicht** fertig sind, und die
-   Lernerfolgskontrolle anklicken. Was passiert?
-2. Ein Modul mit fertigen Videos öffnen und die Prüfung starten.
-3. Auf **Weiter** klicken, **ohne** zu antworten. Was sagt der Bildschirm?
-4. Die Prüfung **absichtlich falsch** ausfüllen und abgeben.
-5. Das Ergebnis lesen: Steht dort, wie viele richtig waren und wie viele nötig
-   gewesen wären?
-6. Prüfung wiederholen und bestehen.
-7. Den Bestanden-Bildschirm ansehen: **Welche Knöpfe gibt es?** Komme ich von
-   hier aus weiter zum nächsten Thema, oder nur zurück zur Übersicht?
-8. In der Seitenleiste prüfen: Ist die bestandene Prüfung als erledigt markiert?
-9. Die bestandene Prüfung **erneut** öffnen. Was wird angeboten?
+1. Open a module whose videos are **not** finished and click its
+   Lernerfolgskontrolle. What happens?
+2. Open a module with finished videos and start the exam.
+3. Click **Weiter** **without** answering. What does the screen say?
+4. Fill the exam in **deliberately wrong** and submit.
+5. Read the result: does it say how many were correct and how many were needed?
+6. Retake and pass.
+7. Look at the passed screen: **which buttons are there?** Can I go forward to
+   the next topic from here, or only back to the overview?
+8. Check the sidebar: is the passed exam marked as done?
+9. Open the passed exam **again**. What is offered?
 
-## Erwartetes Ergebnis
+## Expected
 
-- Schritt 1: Die Prüfung ist gesperrt und der Bildschirm sagt **welches Video**
-  noch fehlt — nicht nur „gesperrt".
-- Schritt 2 und 5: Die Prüfung trägt **ihren eigenen Namen**, damit erkennbar
-  ist, welches Moduls Prüfung das ist.
-- Schritt 3: Eine klare Aufforderung, nicht ein stiller Nicht-Effekt.
-- Schritt 7: **Von hier muss es vorwärts gehen.** Ein Bildschirm, der nur
-  zurückführt, ist ein Befund — bitte melden.
-- Schritt 9: Ein bestandener Versuch bleibt bestanden; ein neuer Versuch nimmt
-  das Bestehen nicht zurück.
+- Step 1: the exam is locked and the screen names **which video** is still
+  outstanding — not merely "locked".
+- Steps 2 and 5: the exam carries **its own name**, so it is clear which
+  module's exam this is.
+- Step 3: a clear prompt, not a silent non-effect.
+- Step 7: **it must be possible to go forward from here.** A screen that only
+  leads back is a finding — please report it.
+- Step 9: a passed attempt stays passed; a new attempt does not withdraw it.
 
-## Wichtig zur Einordnung
+## Important context
 
-- Richtige Antworten werden nach Abgabe **nicht angezeigt** — das ist eine
-  Anforderung der Zertifizierung, kein Fehler.
-- Die Bestehensgrenze der MEDICE-Fortbildung liegt bei **70 %** und ist Auflage
-  des Anerkennungsbescheids. Auf der Testfortbildung darf sie anders sein.
+- Correct answers are **not shown** after submission — that is a requirement of
+  the certification, not a defect.
+- The MEDICE course's pass mark is **70 %** and is a condition of the
+  Anerkennungsbescheid. On a test course it may differ.
 
-## Rückmeldung bitte mit
+## Please report with
 
-Screenshot des Bestanden-Bildschirms **vollständig**, sodass alle Knöpfe darauf
-zu sehen sind.
+A screenshot of the passed screen **in full**, so that every button on it is
+visible.

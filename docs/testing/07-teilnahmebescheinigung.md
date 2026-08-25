@@ -1,55 +1,52 @@
-# 07 · Teilnahmebescheinigung (PDF)
+# 07 · Teilnahmebescheinigung (certificate PDF)
 
-**Zuweisung: Philipp Burka**
-**Bereich:** Teilnehmenden-Portal · **Dauer:** ca. 25 Minuten
+**Assignee: Philipp Burka**
+**Area:** Participant portal · **Duration:** approx. 25 minutes
 
-## Ziel
+## Goal
 
-Prüfen, dass die erzeugte Bescheinigung inhaltlich dem entspricht, was die
-Ärztekammer im Muster verlangt. Dies ist das Dokument, das eine Ärztin
-aufbewahrt und im Zweifel vorlegt.
+Check that the generated certificate matches what the Ärztekammer requires in
+its Muster. This is the document a physician keeps and produces if asked.
 
-## Voraussetzungen
+## Prerequisites
 
-- Eine abgeschlossene Test-Fortbildung (Tickets 03, 04, 06 durchlaufen)
-- Das Muster der Teilnahmebescheinigung aus dem Anerkennungsbescheid zum
-  Vergleich
+- A completed test course (tickets 03, 04, 06 done)
+- The Teilnahmebescheinigung Muster from the Anerkennungsbescheid, for comparison
 
-## Testschritte
+## Steps
 
-1. Die Bescheinigung herunterladen.
-2. Das PDF **gegen das Muster** durchgehen und Feld für Feld abhaken:
+1. Download the certificate.
+2. Go through the PDF **against the Muster** and tick off field by field:
    - Veranstalter
-   - Titel der Fortbildung
-   - Datum
-   - Name der Teilnehmerin / des Teilnehmers
+   - course title
+   - date
+   - participant's name
    - **VNR**
-   - anerkennende Landesärztekammer
+   - the recognising Landesärztekammer
    - Kategorie
-   - Anzahl der Punkte
+   - number of points
    - EFN
-   - Stempel und Unterschrift der wissenschaftlichen Leitung
-3. Prüfen, ob die **VNR als Barcode** enthalten ist (Code 39 und Datamatrix).
-4. Das PDF ausdrucken oder in der Druckvorschau ansehen. Passt alles auf die
-   Seite?
-5. Die Bescheinigung ein zweites Mal herunterladen. Ist es dasselbe Dokument?
-6. Prüfen, ob Umlaute und `ß` korrekt dargestellt sind.
+   - stamp and signature of the wissenschaftliche Leitung
+3. Check that the **VNR appears as a barcode** (Code 39 and Datamatrix).
+4. Print it, or use print preview. Does everything fit on the page?
+5. Download it a second time. Is it the same document?
+6. Check that umlauts and `ß` render correctly.
 
-## Erwartetes Ergebnis
+## Expected
 
-- Alle Felder aus Schritt 2 sind vorhanden und gefüllt.
-- Die Bescheinigung wird **bei Abschluss** ausgestellt und wartet nicht auf die
-  Punktemeldung — das ist so entschieden.
+- Every field from step 2 is present and populated.
+- The certificate is issued **on completion** and does not wait for the
+  Punktemeldung — that is decided.
 
-## Besonders achten auf
+## Pay particular attention to
 
-- **Fehlt ein Feld oder ist es leer**, bitte genau benennen welches. Eine
-  Bescheinigung mit leerem Pflichtfeld ist laut Muster ungültig.
-- Die Zeile **„Anschrift"** bleibt leer — das ist abgestimmt, weil wir die
-  Adresse nicht erheben. Bitte **nicht** als Fehler melden, aber bestätigen,
-  dass die Zeile sauber leer aussieht und nicht wie ein Darstellungsfehler.
-- Steht der **Name** so, wie die Ärztin ihn angegeben hat?
+- **If a field is missing or empty**, please name exactly which. Per the Muster,
+  a certificate with an empty mandatory field is invalid.
+- The **"Anschrift"** line stays empty — this is agreed, because we do not
+  collect the address. Please do **not** report it as a defect, but do confirm
+  the line looks cleanly empty rather than like a rendering fault.
+- Does the **name** appear as the physician entered it?
 
-## Rückmeldung bitte mit
+## Please report with
 
-Das PDF selbst, und eine abgehakte Liste der Felder aus Schritt 2.
+The PDF itself, and a ticked-off list of the fields from step 2.
