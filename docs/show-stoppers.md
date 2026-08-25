@@ -1104,7 +1104,41 @@ is in `reporter.ts`:
 
 A wrong answer that fails is recoverable; a wrong answer that succeeds is not.
 
-**One command settles it** once S27 provides test credentials:
+**Update 25.08 — this needs no email and no test credentials. The answer is
+already on a screen nobody has opened.**
+
+Asked "what is the email for S25", and the honest answer is that there isn't
+one. `GET /fobi/veranstalter/veranstaltung` returns `punkte_basis` and
+`punkte_lernerfolg` for the VNR, the client has parsed both since P31-01
+(`client.ts`, `readNumber(body, "punkte_basis")`), the contract carries them as
+`attendancePoints` / `assessmentPoints` on `EivEvent`, and
+`apps/admin/src/components/EivCheck.tsx` renders both — with a warning on
+exactly this trap when `assessmentPoints === 0` and the course claims
+Lernerfolg.
+
+It is the **same call** whose response produced the S11 evidence above. The
+accredited period was read out of it and written down; the two point values came
+back in the same body and were not.
+
+So: **Verwaltung → the ADHS course → EIV-Abgleich, and read two numbers.** No
+test system needed — this is a read against the register, not a submission, and
+it is the read that already ran successfully on 24.08.
+
+What each outcome means:
+
+| `assessmentPoints` | What it means                                                                                                     |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| **4** (or any > 0) | the event carries Lernerfolg credit; sending both flags true is right, S25 closes                                 |
+| **0**              | the 4 Punkte are all `punkte_basis`; sending `punkte_lernerfolg_flag` risks a 406, and the screen already says so |
+
+Only if it is `0` is there a question left for ÄKWL — and it is then a precise
+one worth one line, not a general enquiry: _the Bescheid awards 4 Punkte
+Kategorie D with 70 % on the Lernerfolgskontrolle as a condition; the register
+carries those 4 as Basispunkte with 0 Lernerfolgspunkte — should a Meldung set
+`punkte_lernerfolg_flag`?_
+
+The harness reaches the same data from a terminal, against the **test** system
+once S27 lands:
 
 ```bash
 EIV_BASE_URL=https://backend-test.eiv-fobi.de EIV_ALLOW_LIVE=yes \
