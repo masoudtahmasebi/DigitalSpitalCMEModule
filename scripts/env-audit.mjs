@@ -97,6 +97,23 @@ const READ_WITHOUT_DOCUMENTATION = new Set([
   "KEYCLOAK_ORIGIN",
   "API_ORIGIN",
   "CORS_ALLOWED_ORIGINS",
+  /*
+   * Whether the installation files Punktemeldungen for real (P113-01).
+   *
+   * Computed by `deploy.yml`'s `derive` step from the **host's** own
+   * `EIV_BASE_URL` and `EIV_WORKER_ENABLED`, through the host's own
+   * `ds_eiv_worker_will_file_live`, and handed to the smoke job as a job
+   * output. It is an answer *about* a machine, not a setting *of* one.
+   *
+   * Deliberately in neither template, and this is the strongest case in this
+   * list: the variable it replaced was `EIV_ALLOW_LIVE`, read in the runner
+   * where nothing had ever set it, so the guard always concluded "not live" and
+   * could never fire. A template entry is an invitation to set it by hand —
+   * and a hand-set `EIV_REPORTS_LIVE=no` is precisely that failure restored,
+   * with the smoke test cheerfully driving an installation that reports to the
+   * Ärztekammer.
+   */
+  "EIV_REPORTS_LIVE",
   // Where the browser suite finds Chromium (P35-01). Deliberately in neither
   // template: `run-e2e.mjs` locates the pre-installed browser itself and
   // refuses to start if there is none, so neither is a value anybody sets by
