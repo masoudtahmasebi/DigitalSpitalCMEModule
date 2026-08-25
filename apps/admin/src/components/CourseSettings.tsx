@@ -284,6 +284,23 @@ export function CourseSettings(props: {
           hint={de.course.vnrPasswordHint}
           htmlFor="vnrPassword"
         >
+          {/*
+            `maxLength` is a bound, not a rule, and there is deliberately no
+            other validation on this field.
+
+            The VNR password's length is **not the same at every Ärztekammer**:
+            Baden-Württemberg documents an 8-stellige TAN, the Pfalz a
+            4-stellige one. A `minLength`, a digit pattern or an exact length
+            derived from whichever Kammer we happened to look at first would
+            refuse a legitimate credential from another — and it would refuse it
+            at the one moment an operator is configuring a course they cannot
+            report without.
+
+            That is the same trap as the VNR check digit and the EFN Prüfziffer
+            (S23, S21): a rule inferred from a sample of one, rejecting valid
+            input at the last step. `CLAUDE.md` §7. Let the authority refuse a
+            wrong password — it is the only party that knows.
+          */}
           <TextInput
             id="vnrPassword"
             type="password"

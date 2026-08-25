@@ -14,6 +14,22 @@ it, a completed course cannot be reported to EIV-FOBI and the learner does not
 receive their CME points. It is the single most important user-supplied datum in
 the system.
 
+**It is a standardised national identifier, not a convention of this project or
+of any one Kammer** (corroborated 25.08, S21). It is documented as 15-stellig,
+personengebunden, lebenslang gültig and bundesweit einheitlich aufgebaut across
+four Landesärztekammern, and it has its own HL7 FHIR identifier system:
+
+```
+http://fhir.de/sid/bundesaerztekammer/efn
+```
+
+That matters to this decision in two ways. It is why holding the number
+ourselves is holding a **national identifier for a named physician** — which is
+the whole reason for the minimisation and non-disclosure rules below, and why
+the EFN never reaches a log, an audit `detail`, an error message or any other
+person's response. And it is why the 15-digit length is not negotiable per
+customer: a per-tenant EFN format would be a contradiction in terms.
+
 Three places could have held it:
 
 - a custom attribute on the user's MEDICE Keycloak account,

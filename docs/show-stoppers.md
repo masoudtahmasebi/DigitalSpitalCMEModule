@@ -128,6 +128,46 @@ the same as having one.
 > (1) is refused, and it is the one that may cost an implementation. Asking (1)
 > first is not politeness — it is the reading their own Richtlinien support.
 
+### 25.08 — S11 and S25 are one defect, not two, and that changes how to ask
+
+EIV publishes how a VNR's dataset comes into being:
+
+> _"Aus den Angaben des Antrages wird von der Ärztekammer zu der VNR ein
+> Datensatz (u.a. Titel, Datum, Ort, Kategorie, Anzahl Fortbildungspunkte) …
+> angelegt und an den EIV übertragen"_
+> — `eiv-fobi.de/fuer-veranstalter`
+
+So the register's `beginn`/`ende` **and** its `punkte_basis`/`punkte_lernerfolg`
+split come from the **same source**: the Antrag, as transcribed by the Kammer.
+S11 and S25 are not two independent surprises about two fields. They are one
+question about one dataset, and it is a **data-entry correction the Kammer can
+make** — not a workaround for us to choose.
+
+That is a materially stronger request, and it should be sent as one:
+
+> Der bei der EIV hinterlegte Datensatz zur VNR `2760552025919300018` weicht in
+> zwei Punkten vom Anerkennungsbescheid vom 18.06.2026 ab:
+>
+> 1. **Anerkennungszeitraum.** Die Schnittstelle liefert `beginn` und `ende`
+>    beide am 13.10.2025, also einen einzigen Tag. Der Bescheid erkennt die
+>    Fortbildung vom 13.10.2025 bis 12.10.2026 an. Da es sich um eine
+>    On-Demand-Fortbildung handelt, liegt das Teilnahmedatum jeder Teilnehmerin
+>    zwangsläufig innerhalb dieses Jahres — `push_teilnahme` weist ein
+>    Teilnahmedatum außerhalb des hinterlegten Zeitraums jedoch mit HTTP 406 ab.
+>    **Derzeit ist damit jede Punktemeldung zu dieser Fortbildung unmöglich.**
+> 2. **Punkteaufteilung.** Der Bescheid vergibt 4 Punkte der Kategorie D unter
+>    der Voraussetzung von mindestens 70 % richtig beantworteter Fragen. Bitte
+>    bestätigen Sie, wie sich diese 4 Punkte im Datensatz auf `punkte_basis` und
+>    `punkte_lernerfolg` verteilen, damit die Meldung die richtigen Flags setzt.
+>
+> Wir bitten um Korrektur bzw. Bestätigung des Datensatzes.
+
+Point 2 is only needed if the EIV-Abgleich screen shows `assessmentPoints: 0` —
+see S25, which can be read off a screen today without asking anybody. Sending
+both together is still right when point 1 has to be sent regardless: it is one
+correction to one dataset, and splitting it across two mails invites two partial
+answers.
+
 ## S11 (original) · What is `Veranstaltungsende` for an on-demand course? — **the Muster answers it; confirm it**
 
 > **Plain-language version of the question, since it was asked on 28.07:**
@@ -1030,6 +1070,38 @@ Worth asking for anyway, because the payoff is real: a local check digit turns a
 "validation" failure discovered _after_ the certificate was shown into a typo caught
 in the form.
 
+### Corroborated 25.08 — four Kammern, a national identifier namespace, and a route to the Prüfziffer
+
+**15 is now confirmed well past the point of doubt.** The EFN is documented as
+15-stellig, personengebunden, lebenslang gültig and bundesweit einheitlich
+aufgebaut by the Ärztekammer Hamburg, DocCheck Flexikon and Springer Medizin;
+Sachsen-Anhalt names it as "15 Ziffern auf den Fortbildungsbarcodes oder dem
+Fortbildungsausweis".
+
+There is also a **HL7 FHIR identifier system** for it —
+`http://fhir.de/sid/bundesaerztekammer/efn` (`ig.fhir.de/basisprofile-de`). That
+is worth recording beyond "the length is right": it establishes the EFN as a
+**standardised national identifier with its own namespace**, not a MEDICE or
+ÄKWL convention. Noted in ADR-0004, which is where our handling of it is
+justified.
+
+So `isValidEfn` is right, and **page 13's caption is a designer fix with a
+citation attached** — not an open question, and not something to wait on. It
+must read _Die 15-stellige EFN_, and the eighteen-character placeholder must
+shrink, before it goes in front of a physician.
+
+**What remains open here is only the Prüfziffer**, and S23 above now offers a
+route to it that did not exist on 08.08: the Ärztekammer Hamburg documents that
+_"Die VNR ist analog der Elektronischen Fortbildungsnummer (EFN) aufgebaut"_, and
+the one real VNR we hold satisfies Luhn while the two other simple mod-10
+schemes do not. Confirm Luhn on the VNR and it becomes evidence for the EFN.
+
+**It does not become proof.** "Analog aufgebaut" is a sentence in an FAQ, not an
+algorithm, and one valid specimen of each number is still a sample of one. The
+rule stands: two or three known-valid EFNs, checked, before `isValidEfn` gains a
+check digit. The cost of being wrong is unchanged — a valid EFN refused at the
+last step of a completed Fortbildung, silently, for only some physicians.
+
 ---
 
 ## S24 · The EIV Veranstalter API — **CLOSED 09.08, and five of our six assumptions were wrong**
@@ -1308,7 +1380,48 @@ time, and `CLAUDE.md` §7 is explicit about inventing rules of that kind. A
 format confirmed against the real interface would let the console reject a
 typo where the operator can see it, instead of at submission time.
 
-**New evidence, 25.08 — and it says the answer is obtainable without asking
+**Documented, 25.08 — the Ärztekammer Hamburg says the VNR carries a check
+digit, in terms.** Their FAQ:
+
+> _"Die VNR ist 19-stellig … **Die VNR ist analog der Elektronischen
+> Fortbildungsnummer (EFN) aufgebaut**"_
+> — `aerztekammer-hamburg.org/…/FAQ_VNR.pdf`
+
+S21 below establishes that the EFN's 15th digit **is** a Prüfziffer derived from
+the preceding digits. So a check digit on the VNR is now **specified**, not
+inferred from a form refusing our fixture. That moves this from "something in
+their JavaScript rejects it" to "the number is defined to have one, and their
+form enforces it."
+
+**And the field narrows to one candidate.** Of the three simple mod-10 schemes,
+only Luhn is consistent with the one real specimen:
+
+| Scheme                       | Predicts for `276055202591930001?` | Actual |
+| ---------------------------- | ---------------------------------- | ------ |
+| Luhn (mod 10)                | **8**                              | 8 ✓    |
+| plain digit-sum mod 10       | 3                                  | 8 ✗    |
+| ten's complement of that sum | 3                                  | 8 ✗    |
+
+So the experiment below has exactly **one** hypothesis to kill rather than
+several — which is what makes it worth running rather than guessing.
+
+**The bigger prize, if it holds.** "Analog der EFN aufgebaut" cuts both ways: a
+confirmed Luhn on the VNR is evidence for Luhn on the **EFN**, which is S21's
+deliberately-unimplemented half and the more valuable of the two. An EFN check
+digit turns a rejection discovered _after_ a physician has completed a
+Fortbildung into a typo caught in the form. Test a known-valid EFN against Luhn
+the moment one is available — and note that a _single_ valid EFN is the same
+sample-of-one problem again, so this needs two or three before it is
+implementable.
+
+**A warning for the field one along: do not validate the VNR password's
+length.** It is not the same at every Kammer — Baden-Württemberg documents an
+**8-stellige** TAN, the Pfalz a **4-stellige** one. A length rule derived from
+whichever we looked at first would refuse a legitimate credential at the moment
+an operator configures a course. The console field carries only a generous
+`maxLength` bound and a comment saying why, so nobody "tightens" it later.
+
+**The original finding, 25.08 — the answer is obtainable without asking
 anybody.** The client pasted the e2e fixture's VNR `2760000000000000000` into
 EIV's own web application at `punktemeldung.eiv-fobi.de` and it was refused
 **before submit**: red outline, error icon, "Veranstaltung hinzufügen" greyed
@@ -1467,6 +1580,35 @@ inventing a rule (CLAUDE.md §7).
 
 One sentence from MEDICE or the ÄKWL: _"Fortbildungsnummer is / is not the
 VNR."_ Everything else follows.
+
+### 25.08 — reading 1 is very probably right, so ask it as a confirmation
+
+Several Kammern call the VNR exactly that, in those words. Baden-Württemberg:
+_"die 19-stellige **Nummer der Fortbildung** (VNR)"_; the Ärztekammer Pfalz uses
+the identical phrasing in its Rundschreiben an Fortbildungsveranstalter. And
+nothing in any published source describes a **second** Kammer reference for an
+event — EIV's own Veranstalter page describes one number per anerkannte
+Maßnahme, plus its password.
+
+So "Fortbildungsnummer" reads as colloquial Kammer usage for the VNR, and
+reading 1 is the likely answer. That does not change what we need — a column is
+still not deleted on an inference — but it changes the **shape** of the ask, and
+a confirmation gets answered faster than an open question:
+
+> Ist mit "Fortbildungsnummer" auf der Zertifizierungs-Seite die VNR gemeint,
+> oder gibt es dazu eine weitere Nummer der Ärztekammer?
+
+**If confirmed:** drop `courses.fortbildungsnummer`, render `vnr` on the
+Zertifizierung tab. Until then the current behaviour is the safe one — the line
+is omitted when the column is NULL, so nothing wrong is shown to a physician,
+and the risk it guards against (an operator entering two different numbers, the
+platform showing one and reporting the other) only materialises if somebody
+fills the field in.
+
+**Worth saying to the operator in the meantime**, since the field is editable
+and its meaning is unresolved: it is a candidate for a hint on the course
+settings screen telling an author to leave it empty pending that answer. Not
+built — flagged.
 
 ---
 
