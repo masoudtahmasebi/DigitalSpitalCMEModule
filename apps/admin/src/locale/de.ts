@@ -852,8 +852,24 @@ export const german = {
       count === 1 ? "1 Antwort erfasst" : `${count} Antworten erfasst`,
     /** The row's title before a prompt has been typed (P100-02). */
     unnamed: "Neue Frage",
-    lockedByAnswers:
-      "Kann nicht gelöscht werden: diese Frage wurde bereits beantwortet. Ein abgegebener Versuch muss weiter das bedeuten, was er bei der Bewertung bedeutet hat.",
+    /**
+     * Not a refusal any more (P114-01).
+     *
+     * This used to read "Kann nicht gelöscht werden" and it was the whole
+     * defect: one recorded answer froze the exam for ever. The row still cannot
+     * be deleted — it is the evidence behind a CME point — but the *question*
+     * can leave the exam, which is what the author was asking for. So the
+     * sentence now says what the button will do, in the order it happens.
+     */
+    retireOnRemove:
+      "Diese Frage wurde bereits beantwortet. Sie wird deshalb nicht gelöscht, sondern aus der Lernerfolgskontrolle entfernt: künftige Teilnehmende sehen sie nicht mehr, bereits abgegebene Versuche behalten ihr Ergebnis.",
+    confirmRetire: "Aus Prüfung entfernen",
+    /** What the exam holds that is no longer in it. */
+    retiredNotice: (count: number): string =>
+      count === 1
+        ? "1 Frage wurde aus dieser Lernerfolgskontrolle entfernt. Sie bleibt gespeichert, weil bereits abgegebene Versuche sie als Nachweis brauchen."
+        : `${count} Fragen wurden aus dieser Lernerfolgskontrolle entfernt. Sie bleiben gespeichert, weil bereits abgegebene Versuche sie als Nachweis brauchen.`,
+    retiredTitle: "Entfernte Fragen",
 
     noCorrect: "Mindestens eine Antwortoption muss als richtig markiert sein.",
     tooManyCorrect:

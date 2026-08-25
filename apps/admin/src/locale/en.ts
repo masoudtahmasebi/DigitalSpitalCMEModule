@@ -618,8 +618,14 @@ export const en: DeepPartial<typeof german> = {
     addOption: "Add answer option",
     isCorrect: "correct",
     unnamed: "New question",
-    lockedByAnswers:
-      "Cannot be deleted: this question has already been answered. A submitted attempt has to keep meaning what it meant when it was marked.",
+    retireOnRemove:
+      "This question has already been answered. It will therefore not be deleted but removed from the exam: future participants will not see it, and attempts already submitted keep their result.",
+    confirmRetire: "Remove from exam",
+    retiredNotice: (count: number): string =>
+      count === 1
+        ? "1 question has been removed from this exam. It is kept on record because attempts already submitted rely on it as evidence."
+        : `${count} questions have been removed from this exam. They are kept on record because attempts already submitted rely on them as evidence.`,
+    retiredTitle: "Removed questions",
 
     noCorrect: "At least one answer option has to be marked correct.",
     tooManyCorrect: "With “one correct answer” exactly one option may be marked correct.",

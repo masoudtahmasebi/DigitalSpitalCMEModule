@@ -122,6 +122,7 @@ export type { Branding } from "./branding.js";
 export {
   canDelete,
   deletionVerdict,
+  questionRemoval,
   contentProblems,
   correctOptionCount,
   questionProblems,
@@ -134,6 +135,7 @@ export type {
   ContentProblem,
   DeletionVerdict,
   HierarchyLevel,
+  QuestionRemoval,
   OrderedKind,
   QuestionDraft,
   QuestionProblem,

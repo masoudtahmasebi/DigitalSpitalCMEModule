@@ -445,7 +445,10 @@ export const authoringQuizSchema = z.object({
       id: uuid,
       prompt: z.string(),
       kind: z.enum(["single", "multi"]),
-      /** Answers recorded against this question. Non-zero blocks deletion. */
+      /**
+       * Answers recorded against this question. Non-zero means removing it
+       * retires it rather than deleting it (P114-01).
+       */
       answerCount: z.number().int().nonnegative(),
       options: z.array(
         z.object({
@@ -456,15 +459,25 @@ export const authoringQuizSchema = z.object({
       ),
     }),
   ),
+  /**
+   * Questions retired out of this exam (P114-01). Live questions only appear
+   * above; this is how many are no longer part of it but still on record.
+   */
+  retiredCount: z.number().int().nonnegative(),
 });
 
 /**
  * A quiz edit.
  *
  * `id` present means "this is the existing row, changed"; absent means "new".
- * Anything the server holds and this document does not name is a deletion — and
- * a deletion of something a learner has answered is refused, which is what
- * keeps an already-submitted attempt meaningful.
+ * Anything the server holds and this document does not name is a removal.
+ *
+ * A question nobody has answered is deleted. A question a physician **has**
+ * answered is **retired** (P114-01): dropped from the exam, row and answers
+ * kept, never served or scored again. That is what keeps an already-submitted
+ * attempt meaningful without freezing the exam for ever — the previous rule
+ * refused the edit outright, and one answer was enough to make a
+ * Lernerfolgskontrolle permanently uneditable.
  */
 export const quizWriteSchema = z.object({
   questions: z

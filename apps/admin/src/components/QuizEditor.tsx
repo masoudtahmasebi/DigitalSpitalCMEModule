@@ -133,6 +133,22 @@ export function QuizEditor(props: {
           the course editor knows a quiz is open and puts it in the path. */}
       <p className="max-w-3xl text-sm text-gray-600">{de.quiz.intro}</p>
 
+      {/*
+        Questions that used to be in this exam and no longer are (P114-01).
+
+        Shown only when there are some. An exam that went from eleven questions
+        to two otherwise reads as data loss to whoever opens it next — the rows
+        are still there, and nothing on the screen said so. The questions
+        themselves are deliberately not listed: they are not the
+        Lernerfolgskontrolle any more, so every control on them would be one the
+        server refuses.
+      */}
+      {quiz !== undefined && quiz.retiredCount > 0 ? (
+        <Notice tone="info" title={de.quiz.retiredTitle}>
+          {de.quiz.retiredNotice(quiz.retiredCount)}
+        </Notice>
+      ) : null}
+
       <SaveProblem title={de.error.title} problem={saver.problem} />
       {saver.state === "saved" && draft === undefined ? (
         <Notice tone="success">{de.common.saved}</Notice>
@@ -264,14 +280,26 @@ function QuestionBlock(props: {
             disabled={index === props.total - 1}
             onClick={() => props.onMove(index + 1)}
           />
+          {/*
+            Removing an answered question is now possible, and does something
+            different (P114-01): the server retires it rather than deleting it.
+            Until then this control was disabled with "Kann nicht gelöscht
+            werden", and one recorded answer made an exam permanently
+            uneditable — reported as "I want to make it to only 2 questions and
+            i can not."
+
+            The confirm step is where the difference is stated, because that is
+            the moment somebody decides. An answered question says it will
+            leave the exam and keep its record; an unanswered one is an ordinary
+            delete and says so.
+          */}
           <ConfirmButton
             label={de.common.delete}
-            confirmLabel={de.common.confirmDelete}
-            cancelLabel={de.common.cancel}
-            disabledReason={
-              question.answerCount > 0 ? de.quiz.lockedByAnswers : undefined
+            confirmLabel={
+              question.answerCount > 0 ? de.quiz.confirmRetire : de.common.confirmDelete
             }
-            lockedLabel={de.structure.locked}
+            cancelLabel={de.common.cancel}
+            ariaLabel={question.answerCount > 0 ? de.quiz.retireOnRemove : undefined}
             onConfirm={props.onDelete}
           />
         </>

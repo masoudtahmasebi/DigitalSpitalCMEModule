@@ -4322,6 +4322,12 @@ export interface components {
         AuthoringQuiz: {
             /** Format: uuid */
             contentId: string;
+            /**
+             * @description The **live** exam, in order. Retired questions are not listed: they
+             *     are no longer part of the Lernerfolgskontrolle, and offering an
+             *     author a row they cannot reorder, score or remove would be a
+             *     control that can only produce an error.
+             */
             questions: {
                 /** Format: uuid */
                 id: string;
@@ -4329,9 +4335,11 @@ export interface components {
                 /** @enum {string} */
                 kind: "single" | "multi";
                 /**
-                 * @description Answers recorded against this question. Non-zero refuses
-                 *     deletion: an already-submitted attempt has to keep meaning
-                 *     what it meant when it was scored.
+                 * @description Answers recorded against this question. Non-zero means
+                 *     removing it **retires** it rather than deleting it: the row
+                 *     and its answers stay, so an already-submitted attempt keeps
+                 *     meaning what it meant when it was scored, and the question
+                 *     leaves the exam.
                  */
                 answerCount: number;
                 options: {
@@ -4341,12 +4349,29 @@ export interface components {
                     isCorrect: boolean;
                 }[];
             }[];
+            /**
+             * @description How many questions have been retired out of this exam. They are not
+             *     in `questions` — they are no longer the Lernerfolgskontrolle — but
+             *     an exam that went from eleven questions to two reads as data loss
+             *     unless a screen can say that nine were retired on purpose.
+             */
+            retiredCount: number;
         };
         /**
          * @description Diffed, not wiped and rewritten. `id` present means "the existing row,
          *     changed"; absent means "new"; anything the server holds and this
-         *     document does not name is a deletion — refused, with the count, if a
-         *     learner has answered it.
+         *     document does not name is a removal.
+         *
+         *     A question nobody has answered is **deleted**. A question a physician
+         *     has answered is **retired**: it leaves the exam and its row and answers
+         *     are kept, so it is never served or scored again and every attempt
+         *     already submitted still means what it meant. Before this, such a removal
+         *     was refused outright — one recorded answer made an exam permanently
+         *     uneditable.
+         *
+         *     Removing an **option** from an answered question is still refused. A
+         *     retired question loses a whole unit of meaning cleanly; a deleted option
+         *     leaves a recorded answer pointing at a label nobody can reconstruct.
          *
          *     Two refusals no form should be trusted with: a question with **no**
          *     correct option cannot be passed by anybody, and a `single` question with
