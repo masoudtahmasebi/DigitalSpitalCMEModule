@@ -53,6 +53,31 @@ import /etc/caddy/sites/*.caddy
 	# could frame it could read a physician's certificate.
 	header X-Frame-Options "DENY"
 
+	# `/metrics` is not for the internet (P113-02).
+	#
+	# `MetricsController` is `@Public()` — a Prometheus scraper cannot present a
+	# bearer token — and *both* that controller and `observability/metrics.ts`
+	# justified publishing `ds_build_info{commit="…"}` there with the same
+	# sentence: that this file "does not route /metrics from the edge, so an
+	# external scraper needs an SSH tunnel".
+	#
+	# It did route it. A site block whose only handler is a bare `reverse_proxy`
+	# is a catch-all: it matches every path, and nothing below filtered one out.
+	# So the sentence described a matcher nobody had written, and the version
+	# fingerprint that comment was explicitly avoiding putting on a public
+	# endpoint has been served to anyone who asked for it.
+	#
+	# That is §9.1 exactly — a property asserted in two files, checked in none,
+	# and therefore unable to go red. `deploy-vars.test.sh` now checks it, and
+	# the matcher below is what it checks for.
+	#
+	# `respond 404` and not `403`: a 403 confirms that something is there, which
+	# is the oracle §9.5 refuses. An operator still scrapes it the way the
+	# comment always claimed they did — from inside the Docker network, against
+	# `api:3000`, where Caddy is not in the path at all.
+	@metrics path /metrics /metrics/*
+	respond @metrics 404
+
 	# CORS is handled by the API itself, from CORS_ALLOWED_ORIGINS — not here.
 	# Two places deciding which origins may call the API is one place too many,
 	# and the API is the one that can refuse the request as well as the

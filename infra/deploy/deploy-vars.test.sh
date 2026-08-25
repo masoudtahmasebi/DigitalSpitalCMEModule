@@ -239,6 +239,37 @@ if ! grep -q "media-src 'self' {\$S3_ORIGIN}" Caddyfile; then
   printf '   length, and "Aus Video ermitteln" silently does nothing.\n\n' >&2
 fi
 
+# ---------------------------------------------------------------------------
+# /metrics is not routed from the edge (P113-02)
+# ---------------------------------------------------------------------------
+#
+# `health.controller.ts` and `observability/metrics.ts` each state that this
+# Caddyfile "does not route /metrics from the edge", and each uses that to
+# justify what they put there: request counts by route, and
+# `ds_build_info{commit="…"}` — a version fingerprint the second comment
+# explicitly did not want on a public endpoint.
+#
+# Neither had ever been true. The API site block's only handler was a bare
+# `reverse_proxy`, which in Caddy is a catch-all matching every path, so
+# `/metrics` was served to the internet for as long as the endpoint has
+# existed. Two files asserting a security property and nothing checking it is
+# §9.1 in its purest form.
+#
+# This is the check. Break it by deleting the `respond @metrics 404` lines from
+# the Caddyfile and it goes red — which is the whole point, because the version
+# of this file that had only the comments could not.
+if ! grep -q '^[[:space:]]*@metrics path /metrics /metrics/\*' Caddyfile ||
+  ! grep -q '^[[:space:]]*respond @metrics 404' Caddyfile; then
+  failed=$((failed + 1))
+  printf 'xx the API site block does not refuse /metrics from the edge.\n' >&2
+  printf '   A bare reverse_proxy matches every path, so the Prometheus\n' >&2
+  printf '   endpoint — request counts by route, and the commit this build\n' >&2
+  printf '   was made from — is served to anyone who asks for it.\n' >&2
+  printf '   Expected, in the {$API_DOMAIN} block:\n' >&2
+  printf '     @metrics path /metrics /metrics/*\n' >&2
+  printf '     respond @metrics 404\n\n' >&2
+fi
+
 if [[ "$failed" == "0" ]]; then
   printf '\n%s shell + %s compose references checked, all guaranteed\n' \
     "${#referenced[@]}" "${#compose_bare[@]}"

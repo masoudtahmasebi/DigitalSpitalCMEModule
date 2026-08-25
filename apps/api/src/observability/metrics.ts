@@ -170,9 +170,18 @@ export class Metrics {
      * **Here and not on `/health`,** which is public — a load balancer cannot
      * present a bearer token. A version string on a public endpoint is a
      * fingerprint that tells anyone which vulnerabilities to try. `/metrics` is
-     * `@Public()` in the same sense but is not routed from the edge
-     * (`infra/deploy/Caddyfile`), so reaching it needs a place inside the
-     * Docker network — which an operator has and the internet does not.
+     * `@Public()` in the same sense, and is refused at the edge, so reaching it
+     * needs a place inside the Docker network — which an operator has and the
+     * internet does not.
+     *
+     * **That last clause was false from the day it was written until P113-02.**
+     * It said `/metrics` "is not routed from the edge (`infra/deploy/Caddyfile`)"
+     * — but the API site block's only handler was a bare `reverse_proxy`, which
+     * in Caddy matches every path. Nothing filtered `/metrics` out, so the
+     * fingerprint this paragraph exists to keep off a public endpoint was on
+     * one. Two files asserted the property and nothing checked it (§9.1); the
+     * Caddyfile now carries a `respond @metrics 404` and
+     * `infra/deploy/deploy-vars.test.sh` fails without it.
      *
      * One series, constant labels, and the `_info` gauge-at-1 convention that
      * `node_exporter` and `prom-client` both use, so it joins in a dashboard.

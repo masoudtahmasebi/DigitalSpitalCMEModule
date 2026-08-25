@@ -1274,6 +1274,51 @@ time, and `CLAUDE.md` §7 is explicit about inventing rules of that kind. A
 format confirmed against the real interface would let the console reject a
 typo where the operator can see it, instead of at submission time.
 
+**New evidence, 25.08 — and it says the answer is obtainable without asking
+anybody.** The client pasted the e2e fixture's VNR `2760000000000000000` into
+EIV's own web application at `punktemeldung.eiv-fobi.de` and it was refused
+**before submit**: red outline, error icon, "Veranstaltung hinzufügen" greyed
+out. Nineteen digits, all numeric, correct `2760` Kammer prefix — so a
+length-and-digits rule would have accepted it. Something in their page computes
+a **check digit**, which means the rule is in JavaScript a browser has already
+downloaded, and is readable.
+
+A Luhn (mod-10) check fits both specimens:
+
+| VNR                                  | Luhn sum mod 10 | implied last digit | actual |
+| ------------------------------------ | --------------- | ------------------ | ------ |
+| `2760552025919300018` (the Bescheid) | **0** — valid   | 8                  | 8      |
+| `2760000000000000000` (the fixture)  | 3 — invalid     | 7                  | 0      |
+
+**This is not enough to implement, and it has deliberately not been
+implemented.** One real specimen passing Luhn is a one-in-ten coincidence, and
+S23 above is the standing reason: the same trade was refused for the EFN's
+Prüfziffer, where a wrong Modulo would reject a _valid_ number at the last step
+of a completed Fortbildung. A VNR check digit guessed wrong stops MEDICE saving
+their own accredited course.
+
+**The experiment that settles it — thirty seconds, and anybody with the EIV
+login can run it.** In that same form, enter each of these and note whether the
+red outline appears:
+
+| VNR                   | Luhn    | If the field accepts it                                   |
+| --------------------- | ------- | --------------------------------------------------------- |
+| `2760000000000000007` | valid   | the rule **is** a mod-10 check digit — implement it       |
+| `2760000000000000000` | invalid | (the known refusal, as a control)                         |
+| `2760000000000000001` | invalid | if this is _also_ accepted, the rule is not a check digit |
+
+If the first is accepted and the third refused, we have the algorithm from
+observation rather than from guessing, and the console can catch a mistyped VNR
+in the form instead of eight days later as a `failed_permanent` Punktemeldung.
+Reading the page's own JavaScript would confirm it outright.
+
+**Why it matters more than it looks.** Nothing in the platform validates the
+VNR at all today — not the console field, not the authoring DTO, not the
+schema. An operator can mistype it, the console answers "Gespeichert.", the
+course publishes, and the first evidence is a refused submission with the
+statutory 8-day clock already running. That is §9.4: EIV's own form tells you at
+the moment you type, and ours does not.
+
 **Worth naming as a class**, because it is the third of its kind found in this
 project: a control that is present, looks implemented, and does nothing. The
 others were the `Mehr lesen…` toggle (P27-01) and the participant sign-in that

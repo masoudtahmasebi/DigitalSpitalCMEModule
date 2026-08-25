@@ -155,6 +155,10 @@ jobs:
       api_domain: ${{ steps.derive.outputs.api_domain }}
       portal_domain: ${{ steps.derive.outputs.portal_domain }}
       admin_domain: ${{ steps.derive.outputs.admin_domain }}
+      # Whether the host will file real Punktemeldungen (P113-01). The smoke
+      # job refuses to run when this is "yes", and refuses just as loudly when
+      # it is absent — see scripts/run-smoke.mjs.
+      eiv_reports_live: ${{ steps.derive.outputs.eiv_reports_live }}
     env:
       REPO_DIR: ${{ vars.DEPLOY_REPO_DIR || '~/Repositories/DigitalSpitalCMEModule' }}
       SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -228,8 +232,39 @@ jobs:
             echo "::error::the host reported no portal or admin domain"; exit 1; }
           echo "Portal domain: ${portal_domain}"
           echo "Admin domain: ${admin_domain}"
+
+          # And the one thing this workflow never asked the host: does it file
+          # Punktemeldungen for real? (P113-01)
+          #
+          # The post-deploy journey publishes an accredited Fortbildung and
+          # completes it, which queues a submission. The guard against that
+          # reaching the Ärztekammer used to read `EIV_ALLOW_LIVE` in the
+          # runner — a variable only ever set in the host's config.env. It was
+          # therefore always empty, always concluded "not live", and could not
+          # fire (CLAUDE.md §9.1).
+          #
+          # Asked the same way as the hostnames above, and for the same reason:
+          # the host's own `ds_eiv_worker_will_file_live`, over the host's own
+          # EIV_BASE_URL and EIV_WORKER_ENABLED, so the smoke cannot disagree
+          # with the server about what the server does.
+          eiv_reports_live=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd ${REPO_DIR}/infra/deploy && . ./eiv-endpoint.sh && \
+             set -a && . \$HOME/ds-education/config.env && set +a && \
+             if ds_eiv_worker_will_file_live \"\${EIV_BASE_URL:-}\" \"\${EIV_WORKER_ENABLED:-}\"; then
+               printf 'yes'
+             else
+               printf 'no'
+             fi")
+
+          case "${eiv_reports_live}" in
+            yes|no) ;;
+            *) echo "::error::the host gave no usable answer for EIV reporting posture"; exit 1 ;;
+          esac
+          echo "Files Punktemeldungen live: ${eiv_reports_live}"
           echo "portal_domain=${portal_domain}" >> "$GITHUB_OUTPUT"
           echo "admin_domain=${admin_domain}" >> "$GITHUB_OUTPUT"
+          echo "eiv_reports_live=${eiv_reports_live}" >> "$GITHUB_OUTPUT"
 
       # Detached at an exact commit, not a branch tip. A `git pull` would
       # deploy whatever `main` had become in the twenty minutes since CI went
@@ -362,6 +397,10 @@ jobs:
           # here and unset there means both use the seed's own default, which is
           # self-describing rather than realistic on purpose (P33-02).
           SEED_TEST_STAFF_PASSWORD: ${{ secrets.SEED_TEST_STAFF_PASSWORD || 'ds-test-operator-2026' }}
+          # From the host, not from this runner (P113-01). `run-smoke.mjs`
+          # refuses on "yes", and refuses on anything else — including unset,
+          # which is what the variable this replaced always was.
+          EIV_REPORTS_LIVE: ${{ needs.deploy.outputs.eiv_reports_live }}
         run: pnpm test:smoke
 
       - name: Keep the trace when it fails
