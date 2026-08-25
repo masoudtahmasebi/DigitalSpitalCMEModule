@@ -197,6 +197,105 @@ GitHub next.
 
 ---
 
+## 3a. Reaching the host from CI once a firewall is in front of it
+
+Added 25.08, after a firewall was put on the server and the deploy stopped at
+`ssh: connect to host … port 22: Connection timed out`. Nothing was deployed —
+the workflow fails before it checks anything out — but a deploy pipeline that
+cannot reach the host is not a deploy pipeline.
+
+### The move to not make
+
+GitHub publishes its runner addresses at `https://api.github.com/meta` under
+`actions`, and allow-listing them is the obvious idea. Three reasons not to:
+
+- **It is thousands of CIDR blocks**, not a handful. Hetzner Cloud Firewalls cap
+  the rules per firewall far below that, so it may not physically fit.
+- **It changes.** The allow-list rots, and the symptom arrives weeks later as a
+  deploy that times out for no reason anyone remembers.
+- **It is not a boundary.** Those are shared Azure ranges. "Allow GitHub" means
+  "allow anybody who can start a VM in Azure" — the whole maintenance cost, and
+  almost none of the isolation you wanted when you added the firewall.
+
+### Option A — a private network between the runner and the host (recommended)
+
+The runner joins a tailnet and reaches the host over it. **Port 22 stays closed
+to the internet.**
+
+This is recommended because it changes the least. The SSH design here was never
+the weak part — it pins the host key rather than trusting on first use, and
+nothing from the runner is copied to the server. Only the _path_ broke, so only
+the path is replaced.
+
+On the host:
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --ssh=false --hostname=ds-education
+```
+
+In the tailnet's ACLs, give CI a tag that may reach this host **and nothing
+else** — a deploy runner has no business anywhere but this machine.
+
+In the repository, add two secrets from a Tailscale OAuth client:
+
+| Secret               |                                                   |
+| -------------------- | ------------------------------------------------- |
+| `TS_OAUTH_CLIENT_ID` | its presence is what switches the private path on |
+| `TS_OAUTH_SECRET`    |                                                   |
+
+Then repoint `DEPLOY_HOST` at the tailnet name (`ds-education`, or the full
+MagicDNS name) and close 22 in the Hetzner firewall.
+
+The workflow step is **conditional on `TS_OAUTH_CLIENT_ID`**: with no secret it
+is skipped and the deploy behaves exactly as before. There is no flag day — set
+the secrets when ready, and the next run takes the new path.
+
+> Check the action's current major tag before relying on it
+> (`tailscale/github-action`). The version pinned in the workflow was written
+> from memory and has not been executed here.
+
+### Option B — a self-hosted runner on the host
+
+Removes SSH from the deploy entirely: the runner polls GitHub **outbound**,
+picks the job up automatically, and runs `deploy.sh` locally. Automatic CI/CD is
+unaffected — same triggers, same workflow — and `DEPLOY_SSH_KEY`,
+`DEPLOY_KNOWN_HOSTS` and the SSH steps all disappear.
+
+It fits ADR-0013, where the host already builds its own images from its own
+checkout. The reason it is second rather than first: it puts a long-lived agent
+on the production machine that executes workflow code, so anyone who can trigger
+the workflow can run commands there. The current SSH user has a full shell, so
+the delta is smaller than it sounds — but it is a persistent agent rather than a
+key used for one command, and it wants `--ephemeral`, an unprivileged user and a
+protected `production` environment with required reviewers.
+
+### Option C — keep 22 open, harden it
+
+What was in place before the firewall, and a normal posture: key-only
+authentication, no root login, fail2ban. Fine on its own terms; listed so the
+choice is deliberate rather than a reversal by default.
+
+### Doing a deploy by hand meanwhile
+
+Nothing above is needed to deploy. The workflow only does three things, and they
+can be run from any machine that can reach the host:
+
+```bash
+ssh <user>@<host>
+cd ~/Repositories/DigitalSpitalCMEModule
+git fetch origin && git checkout --force <sha>
+git status --porcelain          # must print nothing
+cd infra/deploy && ./deploy.sh
+```
+
+Then, from anywhere, check what the internet sees:
+
+```bash
+curl -sS https://<api-domain>/health
+curl -sS -o /dev/null -w '%{http_code}\n' https://<api-domain>/metrics   # expect 404
+```
+
 ## 4. Configuration
 
 Two files on the server, and four secrets in GitHub. Nothing that unlocks the
