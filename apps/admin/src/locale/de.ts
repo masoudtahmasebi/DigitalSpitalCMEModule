@@ -769,6 +769,10 @@ export const german = {
     captionsMissing:
       "Für dieses Video sind keine Untertitel hinterlegt. Bei Videos mit Sprache ist das ein Barrierefreiheitsmangel. Reine Folienaufzeichnungen ohne Ton benötigen keine.",
     body: "Text",
+    /** The Zusammenfassung under the player (P115-02). */
+    videoBody: "Zusammenfassung",
+    videoBodyHint:
+      "Erscheint im Player unter dem Video. Ohne Eintrag steht dort „Für diesen Abschnitt ist keine Zusammenfassung hinterlegt.“ — Absätze durch eine Leerzeile trennen.",
     /** On a download: the paragraph the Mediathek card shows (page-05). */
     materialBody: "Beschreibung (erscheint auf der Materialkarte)",
     fileUrl: "Datei-URL",

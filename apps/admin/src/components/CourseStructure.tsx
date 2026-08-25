@@ -756,9 +756,19 @@ function ContentForm(props: {
         Same column, same 20 000 cap, different label: on a download it is the
         sentence that says what the file is for, not the lesson's prose.
       */}
-        {kind === "text" || kind === "details" || kind === "material" ? (
+        {kind === "text" ||
+        kind === "details" ||
+        kind === "material" ||
+        kind === "video" ? (
           <Field
-            label={kind === "material" ? de.structure.materialBody : de.structure.body}
+            label={
+              kind === "material"
+                ? de.structure.materialBody
+                : kind === "video"
+                  ? de.structure.videoBody
+                  : de.structure.body
+            }
+            {...(kind === "video" ? { hint: de.structure.videoBodyHint } : {})}
             htmlFor={id("body")}
           >
             <TextArea

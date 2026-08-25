@@ -570,6 +570,9 @@ export const en: DeepPartial<typeof german> = {
     captionsMissing:
       "No subtitles are stored for this video. For videos with speech that is an accessibility defect. Silent slide recordings need none.",
     body: "Text",
+    videoBody: "Summary",
+    videoBodyHint:
+      "Appears in the player below the video. With nothing here it reads “no summary is stored for this section”. Separate paragraphs with a blank line.",
     materialBody: "Description (appears on the media card)",
     fileUrl: "File URL",
 
