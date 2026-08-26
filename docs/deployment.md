@@ -236,8 +236,12 @@ mistake this paragraph exists to stop.
 #### 1. Declare the tags, before any machine claims one
 
 Admin console → **Access controls → Policies → JSON editor**. Not the "Add rule"
-form: that form writes `acls` entries and cannot declare a tag's owner, which is
-the part `--advertise-tags` checks.
+form: that form writes access rules and cannot declare a tag's _owner_, which is
+the field `--advertise-tags` checks.
+
+A current tailnet's default policy is written in **`grants`**, not the older
+`acls`. Both are accepted, but match whichever your editor already contains
+rather than pasting the other — a file carrying both is legal and unreadable.
 
 ```jsonc
 {
@@ -293,11 +297,32 @@ one machine, on one port:
     "tag:server": ["autogroup:admin"],
     "tag:ci": ["autogroup:admin"],
   },
-  "acls": [{ "action": "accept", "src": ["tag:ci"], "dst": ["tag:server:22"] }],
+
+  "grants": [
+    // Replaces the default {"src": ["*"], "dst": ["*"], "ip": ["*"]}.
+    // People, to the server, on anything.
+    { "src": ["autogroup:member"], "dst": ["tag:server"], "ip": ["*"] },
+    // CI, to the server, on SSH and nothing else.
+    { "src": ["tag:ci"], "dst": ["tag:server"], "ip": ["22"] },
+  ],
 }
 ```
 
-Port 22 only. The runner needs to run one command over SSH and nothing else.
+Port 22 only for CI: the runner runs one command over SSH and has no business
+anywhere else.
+
+**Keep the first grant.** Tagging the machine is what makes the second one
+necessary, and it is easy to write only the second — which locks you out of your
+own server over the tailnet, quietly, in the same edit that secured it.
+
+Which is this setting's other side, and the reason it deserves a paragraph
+(§9.10a). A tagged device **stops being yours**: ownership moves to the tag, so
+`autogroup:self` no longer covers it, and neither does anything else naming a
+person. That is the point — a server nobody personally owns cannot be
+disconnected by somebody leaving — and it is also why access has to be granted
+back explicitly. The `ssh` block in the default policy is Tailscale SSH, which
+this host does not run (`--ssh=false`), so it does not fill the gap: the deploy
+uses the host's own `sshd` with the host key pinned, and that is deliberate.
 
 #### 4. Give the runner its own identity
 
