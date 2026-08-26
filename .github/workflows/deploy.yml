@@ -229,6 +229,50 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
 
+      # ## Why the reachability check is separate from the SSH step
+      #
+      # Every way the private path can be half-configured produces the *same*
+      # symptom at the first `ssh`: a twenty-second timeout and
+      # "Connection timed out", which is what an internet firewall looks like
+      # too. That sent an hour into the wrong file once already, so the causes
+      # are separated here while the tailnet is still the subject.
+      #
+      # The four, and all of them are silent:
+      #
+      #   * the host is not tagged, so the ACL granting `tag:ci` does not
+      #     match it;
+      #   * the ACL has no rule from `tag:ci` to the host at all;
+      #   * `DEPLOY_HOST` still points at the public address, so the packets
+      #     leave the tailnet and meet the firewall;
+      #   * **the host's node key expired.** A machine registered under a user
+      #     account expires on Tailscale's default schedule and drops off the
+      #     tailnet on a day nobody chose. Tag the host, or disable key expiry
+      #     on it — a server that logs itself out is §9.9a's shape: nothing
+      #     failed, the file is right, and the thing stopped answering.
+      #
+      # `tailscale status` names which one. It is not a gate — the deploy fails
+      # at the next step regardless — it is the difference between an error
+      # about the network and an error about SSH.
+      - name: The host is reachable over the tailnet
+        if: env.TS_CLIENT_ID != ''
+        run: |
+          host='${{ secrets.DEPLOY_HOST }}'
+          if tailscale ping --timeout=5s --c=3 "$host" >/dev/null 2>&1; then
+            echo "tailnet: $host answers"
+            exit 0
+          fi
+
+          echo "::error::the runner joined the tailnet but cannot reach ${host}."
+          echo "Not an SSH problem — the packets are not arriving. One of:"
+          echo "  * the host is not tagged, so the tag:ci ACL rule does not match it"
+          echo "  * there is no ACL rule from tag:ci to this host"
+          echo "  * DEPLOY_HOST is still the public address, so this left the tailnet"
+          echo "  * the host's node key expired and it is no longer on the tailnet"
+          echo
+          echo "What this runner can see:"
+          tailscale status || true
+          exit 1
+
       # No checkout: nothing from this runner reaches the server. The host has
       # the repository and fetches the commit itself.
       - name: Configure SSH

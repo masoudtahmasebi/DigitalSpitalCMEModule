@@ -234,8 +234,41 @@ curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up --ssh=false --hostname=ds-education
 ```
 
+**Then tag the host**, before anything else:
+
+```bash
+sudo tailscale up --ssh=false --hostname=ds-education --advertise-tags=tag:server
+```
+
+This is not cosmetic and it is the step most likely to be skipped, because
+everything appears to work without it. Two things depend on it:
+
+- **The ACL rule needs something to match.** A rule granting `tag:ci` access to
+  `tag:server` does not apply to a machine that carries no tag.
+- **A machine registered under a user account expires.** Tailscale's default
+  node-key lifetime applies to user-owned devices, so the server signs itself
+  out of the tailnet some months later, on a day nobody chose, and the deploy
+  starts timing out with nothing having changed. Tagged devices do not expire.
+  (Disabling key expiry on the machine in the admin console works too, and is
+  the same decision made in a place nobody reads again.)
+
+  This is §9.9a's shape: the file is right, the deploy was green, and the thing
+  quietly stopped answering. It is worth the extra command now.
+
 In the tailnet's ACLs, give CI a tag that may reach this host **and nothing
-else** — a deploy runner has no business anywhere but this machine.
+else** — a deploy runner has no business anywhere but this machine. Roughly:
+
+```jsonc
+{
+  "tagOwners": {
+    "tag:ci": ["autogroup:admin"],
+    "tag:server": ["autogroup:admin"],
+  },
+  "acls": [{ "action": "accept", "src": ["tag:ci"], "dst": ["tag:server:22"] }],
+}
+```
+
+Port 22 only. The runner needs to run one command over SSH and nothing else.
 
 In the repository, add two secrets from a Tailscale OAuth client:
 
@@ -246,6 +279,18 @@ In the repository, add two secrets from a Tailscale OAuth client:
 
 Then repoint `DEPLOY_HOST` at the tailnet name (`ds-education`, or the full
 MagicDNS name) and close 22 in the Hetzner firewall.
+
+The workflow checks reachability over the tailnet **before** the first `ssh`,
+because every way this can be half-configured — untagged host, missing ACL rule,
+`DEPLOY_HOST` still public, expired node key — produces the identical twenty-
+second SSH timeout, which is also what an internet firewall looks like. The
+check names which one instead.
+
+One thing to confirm on the host once 22 is closed publicly: `sshd` must still
+accept connections arriving on the `tailscale0` interface. If the host firewall
+is `ufw` or `nftables` rather than only Hetzner's, allow in on that interface —
+Hetzner Cloud Firewalls do not see tailnet traffic at all, so closing 22 there is
+enough for the internet and irrelevant to the private path.
 
 The workflow step is **conditional on `TS_OAUTH_CLIENT_ID`**: with no secret it
 is skipped and the deploy behaves exactly as before. There is no flag day — set
