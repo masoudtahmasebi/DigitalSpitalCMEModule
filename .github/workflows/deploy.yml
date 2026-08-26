@@ -311,6 +311,38 @@ jobs:
           printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+          # ## Why this is checked here and not left to ssh
+          #
+          # A `known_hosts` entry is keyed by the **name you connect to**, not
+          # by the key. The host's key does not change when the route to it
+          # does — but moving `DEPLOY_HOST` from the public address to the
+          # tailnet name means nothing in the file matches any more, and ssh
+          # says only:
+          #
+          #     Host key verification failed.
+          #
+          # Which is the same sentence it prints when a key has genuinely
+          # changed — the one case where the right response is to stop and
+          # investigate rather than to update the pin. Two very different
+          # situations, one message, no mention of the name that was looked up
+          # (§9.4). This says which it is while the fix is still cheap.
+          if ! ssh-keygen -F "${{ secrets.DEPLOY_HOST }}" -f ~/.ssh/known_hosts >/dev/null; then
+            echo "::error::DEPLOY_KNOWN_HOSTS has no entry for the host named in DEPLOY_HOST."
+            echo "Not a changed key — a missing one. known_hosts is looked up by name,"
+            echo "so a DEPLOY_HOST that moved (a public address to a tailnet name, say)"
+            echo "no longer matches the pin, however unchanged the server's key is."
+            echo
+            echo "On the host, print the lines for the new name:"
+            echo
+            echo "  for f in /etc/ssh/ssh_host_*_key.pub; do"
+            echo "    printf '%s %s\n' \"\$(hostname -f)\" \"\$(cut -d\" \" -f1,2 \"\$f\")\""
+            echo "  done"
+            echo
+            echo "and APPEND them to DEPLOY_KNOWN_HOSTS, keeping the existing lines so"
+            echo "the old address still verifies if you ever deploy over it again."
+            exit 1
+          fi
+
       # The host's own preflight, over SSH, before anything is checked out or
       # built. `--check` runs the whole thing — the generated credentials, the
       # derived domains and their mutual consistency — and changes nothing.

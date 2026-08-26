@@ -370,8 +370,32 @@ The MagicDNS name rather than `100.74.161.46`: the tailnet address is stable in
 practice but is not a promise, and the name is the thing the ACL and the admin
 console both talk about.
 
-`DEPLOY_KNOWN_HOSTS` does **not** change. It pins the host's SSH key, which is
-the same key however the packets arrived.
+`DEPLOY_KNOWN_HOSTS` **does** change, and this is the step that is easy to get
+wrong because the reasoning against it sounds right: the server's SSH key is the
+same key however the packets arrived, so why re-pin it?
+
+Because a `known_hosts` entry is keyed by the **name you connect to**. Move
+`DEPLOY_HOST` from the public address to the tailnet name and nothing in the file
+matches, and `ssh` says only `Host key verification failed.` — the same sentence
+it prints when a key has genuinely _changed_, which is the one case where the
+right response is to stop rather than to re-pin. The workflow now tells the two
+apart before connecting.
+
+On the host, print the lines for the new name:
+
+```bash
+for f in /etc/ssh/ssh_host_*_key.pub; do
+  printf '%s %s\n' "ds-cme.tail5262f6.ts.net" "$(cut -d' ' -f1,2 "$f")"
+done
+```
+
+**Append** them to `DEPLOY_KNOWN_HOSTS`, keeping the existing lines. Two names for
+one key is normal, and it means a deploy over the public address still verifies
+if the tailnet is ever unavailable.
+
+`ssh-keyscan` is the usual way to produce these and is not available here: it
+would have to run from a machine already on the tailnet, and the only one is the
+server itself.
 
 The workflow checks reachability over the tailnet **before** the first `ssh`,
 because every way this can be half-configured — untagged host, missing ACL rule,
