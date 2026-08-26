@@ -253,12 +253,32 @@ jobs:
       # `tailscale status` names which one. It is not a gate — the deploy fails
       # at the next step regardless — it is the difference between an error
       # about the network and an error about SSH.
+      #
+      # ## Why not `tailscale ping`
+      #
+      # Because it asks a different question, and the first run of this step
+      # proved it by failing on a healthy tailnet. `tailscale ping` defaults to
+      # `--until-direct`, so it keeps going until it gets a **direct** pong and
+      # exits non-zero if it only ever gets a relayed one. A peer showing
+      # `active; relay "nue"` is perfectly reachable — DERP relaying is the
+      # designed fallback when inbound UDP 41641 is closed, which it is on a
+      # host behind a cloud firewall.
+      #
+      # So the check was red on a working system, which is §9.1's other
+      # direction and worse than useless: it blocks a correct deploy and it
+      # trains whoever sees it to ignore this step.
+      #
+      # What actually has to be true is that **TCP 22 opens over the tailnet**,
+      # so that is what is asserted — the same thing the next step needs, one
+      # layer down from SSH's own error message. `/dev/tcp` rather than `nc` to
+      # depend on nothing the runner image might drop.
       - name: The host is reachable over the tailnet
         if: env.TS_CLIENT_ID != ''
         run: |
           host='${{ secrets.DEPLOY_HOST }}'
-          if tailscale ping --timeout=5s --c=3 "$host" >/dev/null 2>&1; then
-            echo "tailnet: $host answers"
+          if timeout 10 bash -c "exec 3<>/dev/tcp/${host}/22" 2>/dev/null; then
+            echo "tailnet: ${host}:22 accepts connections"
+            tailscale status || true
             exit 0
           fi
 
@@ -268,6 +288,10 @@ jobs:
           echo "  * there is no ACL rule from tag:ci to this host"
           echo "  * DEPLOY_HOST is still the public address, so this left the tailnet"
           echo "  * the host's node key expired and it is no longer on the tailnet"
+          echo "  * sshd is not listening on the tailnet interface"
+          echo
+          echo "A peer listed below as 'active; relay \"...\"' IS reachable —"
+          echo "relaying is the fallback when inbound UDP 41641 is closed, not a fault."
           echo
           echo "What this runner can see:"
           tailscale status || true
