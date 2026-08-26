@@ -38,6 +38,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { PLACEHOLDER_VNR as DOMAIN_PLACEHOLDER_VNR } from "@ds/domain";
 import { createSecretCipher } from "@ds/secrets";
 import type pg from "pg";
 import {
@@ -139,7 +140,15 @@ const VNR = process.env["SEED_MEDICE_VNR"] ?? "2760552025919300018";
  * before P109-01 are carrying this, and they are the ones that need correcting;
  * a course whose VNR somebody set in the console is not.
  */
-const PLACEHOLDER_VNR = "0000000000000000000";
+/*
+ * Re-exported from `@ds/domain` rather than declared here (P117-01).
+ *
+ * The domain has to know this string in order to refuse it — a course carrying
+ * it must not publish and must not produce a Teilnahmebescheinigung. Two copies
+ * of the literal would be two things to keep in step, and the day they drifted
+ * the seed would write a placeholder the gates no longer recognised.
+ */
+const PLACEHOLDER_VNR = DOMAIN_PLACEHOLDER_VNR;
 
 interface ModuleSeed {
   readonly title: string;
@@ -460,9 +469,9 @@ export async function seedMediceAdhs(
        * console's write-only field, and the DO UPDATE below will not overwrite
        * it on a re-run.
        *
-       * `status` is absent from the DO UPDATE on purpose: a re-run must not
-       * take a course an operator deliberately unpublished back onto the
-       * catalogue.
+       * `status` is in the DO UPDATE only as a repair guarded by the seed's own
+       * placeholder VNR (P117-01). A re-run must not otherwise take a course an
+       * operator deliberately unpublished back onto the catalogue.
        */
       `INSERT INTO courses (
          customer_id, project_id, slug, title, description, delivery_type, status,
@@ -495,7 +504,10 @@ export async function seedMediceAdhs(
         * not a setting, and nothing anywhere said so.
         *
         * Two fields had already been rescued one at a time — status, because
-        * a re-run must not republish a course somebody unpublished, and
+        * a re-run must not republish a course somebody unpublished (P117-01
+        * added the one exception, narrowly: a course still carrying the seed's
+        * own placeholder VNR, which migration 0047 demoted and only this seed
+        * can repair — see the line itself), and
         * vnr_password_enc, because a re-run must not replace a real
         * credential. Both are the same defect, found twice, fixed twice,
         * without the class being named. It is named now (§9.11).
@@ -527,6 +539,28 @@ export async function seedMediceAdhs(
          -- the real number on the next deploy; a course whose VNR an operator
          -- typed in the console keeps it, which is P108-01's rule holding.
          vnr = CASE WHEN courses.vnr = $18 THEN EXCLUDED.vnr ELSE courses.vnr END,
+         /*
+          * The other half of that repair (P117-01).
+          *
+          * Migration 0047 demotes any published course carrying the
+          * placeholder, because a course awarding CME points against a VNR no
+          * Ärztekammer issued must not be on a catalogue. The migration cannot
+          * repair it — the real number is per-installation and lives here, in
+          * SEED_MEDICE_VNR or the Bescheid default -- so without this line the
+          * deploy that fixes the VNR leaves MEDICE's course a draft, off the
+          * catalogue, with nothing saying why.
+          *
+          * Conditioned on the **same sentinel** as the line above, so it is the
+          * repair completing itself and not a general re-publish: this branch
+          * can only be taken by a row still carrying our own placeholder, which
+          * on any installation is true exactly once. A course an operator
+          * unpublished has a VNR they typed, so courses.vnr <> $18 and the
+          * ELSE keeps their decision — P108-01's rule, still holding.
+          *
+          * courses.status on both sides of the CASE reads the pre-UPDATE row,
+          * so this and the vnr line above see the same sentinel.
+          */
+         status = CASE WHEN courses.vnr = $18 THEN 'published' ELSE courses.status END,
          vnr_password_enc = COALESCE(courses.vnr_password_enc, EXCLUDED.vnr_password_enc),
          stamp_image = COALESCE(courses.stamp_image, EXCLUDED.stamp_image),
          stamp_image_mime = COALESCE(courses.stamp_image_mime, EXCLUDED.stamp_image_mime),

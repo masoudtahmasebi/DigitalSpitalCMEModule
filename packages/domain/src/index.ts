@@ -194,7 +194,9 @@ export type { Answer, Question, QuestionKind, QuizResult } from "./assessment.js
 export {
   CORRECTION_WINDOW_DAYS,
   eivDeadlines,
+  isPlaceholderVnr,
   isValidEfn,
+  PLACEHOLDER_VNR,
   REPORTING_WINDOW_DAYS,
 } from "./eiv.js";
 

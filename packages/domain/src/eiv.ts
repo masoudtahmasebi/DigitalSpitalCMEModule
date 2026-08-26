@@ -126,6 +126,46 @@ function resolvePhase(
 }
 
 /**
+ * The VNR the seed writes when it has no real one (P117-01).
+ *
+ * Nineteen zeros. It exists so a seeded course is structurally complete, and
+ * `medice-adhs.ts` replaces it with the number from the Anerkennungsbescheid on
+ * the next run — but only its **own** placeholder, never an operator's value.
+ *
+ * Defined here rather than in `packages/seed` because the checks that must
+ * refuse it live in the domain, and a second copy of the literal is a second
+ * thing to keep in step. The seed imports this one.
+ */
+export const PLACEHOLDER_VNR = "0000000000000000000";
+
+/**
+ * Is this the placeholder rather than an accredited event's number?
+ *
+ * ## Why a check for exactly one value, and not a format rule
+ *
+ * `0000000000000000000` is nineteen characters and not blank, so it satisfies
+ * every test that was ever written for a *missing* VNR — `isBlank` in
+ * `publishing.ts` and `certificate.ts`, and `vnr IS NULL OR btrim(vnr) = ''` in
+ * migration `0042`. It published, it generated a Teilnahmebescheinigung, and it
+ * printed nineteen zeros where an Ärztekammer expects a Veranstaltungsnummer —
+ * with nothing anywhere reporting a problem, because from every gate's point of
+ * view nothing was missing.
+ *
+ * A certificate carrying that number is **not valid**: it names an event the
+ * register does not hold. It was issued to a named physician anyway.
+ *
+ * This deliberately does **not** validate the VNR's format. S23 records why:
+ * the check digit is documented but unconfirmed, and a rule guessed from a
+ * sample of one would refuse a legitimate number from another Kammer at the one
+ * moment an operator is configuring a course they cannot report without. What
+ * this knows is narrower and certain — **this exact string is ours**, and no
+ * Ärztekammer issued it.
+ */
+export function isPlaceholderVnr(vnr: string | null | undefined): boolean {
+  return (vnr ?? "").trim() === PLACEHOLDER_VNR;
+}
+
+/**
  * EFN format check.
  *
  * The EFN is a 15-digit identifier, permanent per physician. Validated at

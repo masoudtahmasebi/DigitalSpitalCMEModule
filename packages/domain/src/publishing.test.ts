@@ -5,6 +5,7 @@ import {
   publishBlockers,
   type PublishCandidate,
 } from "./publishing.js";
+import { PLACEHOLDER_VNR } from "./eiv.js";
 
 /** Everything a certificate and a Punktemeldung need, present. */
 const complete: PublishCandidate = {
@@ -61,6 +62,22 @@ describe("the trigger", () => {
 describe("each field that would fail at the end", () => {
   it("names the missing VNR", () => {
     expect(publishBlockers({ ...complete, vnr: null })).toEqual(["vnr"]);
+  });
+
+  /*
+   * P117-01. This course published, ran, and issued a Teilnahmebescheinigung
+   * printing nineteen zeros where an Ärztekammer expects a Veranstaltungs-
+   * nummer — because the seed's placeholder is neither null nor blank, and
+   * `isBlank` was the only question anybody asked.
+   */
+  it("names the seed's placeholder, which is not blank and is not a VNR", () => {
+    expect(publishBlockers({ ...complete, vnr: PLACEHOLDER_VNR })).toEqual(["vnr"]);
+  });
+
+  it("names it around whitespace too", () => {
+    expect(publishBlockers({ ...complete, vnr: ` ${PLACEHOLDER_VNR} ` })).toEqual([
+      "vnr",
+    ]);
   });
 
   it("names the missing VNR password, which nothing else would notice", () => {

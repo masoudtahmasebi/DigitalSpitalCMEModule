@@ -48,6 +48,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import { createPool } from "@ds/postgres";
 import { seedDsDefault, seedDsDemo, seedDsTest, seedMediceAdhs } from "@ds/seed";
+import { PLACEHOLDER_VNR } from "@ds/domain";
 import { requireEnv } from "./support/env.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
@@ -607,5 +608,83 @@ describe("what the seeds leave behind", () => {
     } finally {
       await restore.end();
     }
+  }, 60_000);
+});
+
+/**
+ * The repair path, end to end (P117-01).
+ *
+ * Every installation seeded before P109-01 is carrying `PLACEHOLDER_VNR` on its
+ * accredited course — nineteen zeros, which is present, is nineteen characters,
+ * is not blank, and is not a number any Ärztekammer issued. It published, it
+ * ran, and it printed itself on a physician's Teilnahmebescheinigung.
+ *
+ * The fix has two halves that only work together, so they are tested together:
+ *
+ *   * **migration 0047** demotes such a course, because a CME course on a
+ *     catalogue against a VNR no register holds must not enrol anybody;
+ *   * **this seed** replaces the placeholder with the real number and, in the
+ *     same statement and under the same sentinel, puts the course back.
+ *
+ * Without the second half the deploy that fixes the VNR leaves MEDICE's course
+ * a draft, off `/medice`, with nothing saying why — which is the shape of the
+ * report that started P64-02.
+ */
+describe("a course carrying the seed's placeholder VNR", () => {
+  const SLUG = "adhs-akademie-adult";
+
+  it("is repaired and re-published by the next seed run", async () => {
+    // The state migration 0047 leaves behind on an installation seeded before
+    // P109-01. Written here rather than borrowed from a fixture so the case
+    // does not depend on what a previous describe left.
+    await admin.query(`UPDATE courses SET vnr = $1, status = 'draft' WHERE slug = $2`, [
+      PLACEHOLDER_VNR,
+      SLUG,
+    ]);
+
+    const seeder = openSeeder();
+    try {
+      await seedMediceAdhs(seeder, { revealPassword: false });
+    } finally {
+      await seeder.end();
+    }
+
+    const { rows } = await admin.query<{ vnr: string; status: string }>(
+      "SELECT vnr, status FROM courses WHERE slug = $1",
+      [SLUG],
+    );
+
+    expect(rows[0]?.vnr).not.toBe(PLACEHOLDER_VNR);
+    expect(rows[0]?.status).toBe("published");
+  }, 60_000);
+
+  it("does not re-publish a course an operator unpublished", async () => {
+    /*
+     * The control, and the reason the repair is conditioned on the sentinel
+     * rather than on `status = 'draft'`. P108-01's rule: the seed creates, the
+     * console owns. A course with a VNR somebody typed keeps its status,
+     * whatever the seed would prefer.
+     */
+    await admin.query(
+      `UPDATE courses SET vnr = '2760552025919300018', status = 'draft'
+        WHERE slug = $1`,
+      [SLUG],
+    );
+
+    const seeder = openSeeder();
+    try {
+      await seedMediceAdhs(seeder, { revealPassword: false });
+    } finally {
+      await seeder.end();
+    }
+
+    const { rows } = await admin.query<{ status: string }>(
+      "SELECT status FROM courses WHERE slug = $1",
+      [SLUG],
+    );
+    expect(rows[0]?.status).toBe("draft");
+
+    // Put it back for anything that runs after this file.
+    await admin.query("UPDATE courses SET status = 'published' WHERE slug = $1", [SLUG]);
   }, 60_000);
 });

@@ -5,6 +5,7 @@ import {
   missingCertificateFields,
   type CertificateInput,
 } from "./certificate.js";
+import { PLACEHOLDER_VNR } from "./eiv.js";
 
 const medice: CertificateInput = {
   vnr: "9999999999999999999",
@@ -86,6 +87,28 @@ describe("missingCertificateFields", () => {
     expect(empty).toContain("vnr");
     expect(empty).toContain("courseTitle");
     expect(empty).toContain("participantName");
+  });
+
+  /*
+   * P117-01, and the reason this file changed at all: a certificate was issued
+   * to a named physician carrying nineteen zeros. It is not a valid document —
+   * it names a Veranstaltung no register holds — and every check passed,
+   * because the placeholder is present, is nineteen characters, and is not
+   * blank. "Present" was never the property that mattered.
+   */
+  it("names the seed's placeholder VNR as missing", () => {
+    expect(missingCertificateFields({ ...medice, vnr: PLACEHOLDER_VNR })).toContain(
+      "vnr",
+    );
+    expect(missingCertificateFields({ ...medice, vnr: ` ${PLACEHOLDER_VNR}` })).toContain(
+      "vnr",
+    );
+  });
+
+  it("still accepts a real VNR", () => {
+    expect(
+      missingCertificateFields({ ...medice, vnr: "2760552025919300018" }),
+    ).not.toContain("vnr");
   });
 
   it("treats zero or non-integer CME points as missing", () => {

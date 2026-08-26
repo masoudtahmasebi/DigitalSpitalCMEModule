@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   CORRECTION_WINDOW_DAYS,
   eivDeadlines,
+  isPlaceholderVnr,
   isValidEfn,
+  PLACEHOLDER_VNR,
   REPORTING_WINDOW_DAYS,
 } from "./eiv.js";
 import { addCalendarDays, berlinDateOf, endOfBerlinDay } from "./berlin.js";
@@ -217,6 +219,50 @@ describe("isValidEfn", () => {
     expect(isValidEfn(" 123456789012345")).toBe(false);
     expect(isValidEfn("123456789012345 ")).toBe(false);
     expect(isValidEfn("12345-789012345")).toBe(false);
+  });
+});
+
+describe("isPlaceholderVnr", () => {
+  it("recognises the seed's own placeholder", () => {
+    expect(isPlaceholderVnr(PLACEHOLDER_VNR)).toBe(true);
+    expect(isPlaceholderVnr("0000000000000000000")).toBe(true);
+  });
+
+  it("recognises it around whitespace, because a pasted value carries it", () => {
+    expect(isPlaceholderVnr("  0000000000000000000 ")).toBe(true);
+    expect(isPlaceholderVnr("\n0000000000000000000")).toBe(true);
+  });
+
+  it("accepts a real VNR from the Anerkennungsbescheid", () => {
+    expect(isPlaceholderVnr("2760552025919300018")).toBe(false);
+  });
+
+  /*
+   * The point of the narrow rule (S23): a number we cannot verify the shape of
+   * must still pass. A guessed check digit would refuse a legitimate VNR from
+   * another Kammer, at the one moment an operator is configuring a course.
+   */
+  it("does not become a format rule", () => {
+    expect(isPlaceholderVnr("0000000000000000001")).toBe(false);
+    expect(isPlaceholderVnr("000000000000000000")).toBe(false);
+    expect(isPlaceholderVnr("00000000000000000000")).toBe(false);
+    expect(isPlaceholderVnr("2760000000000000000")).toBe(false);
+  });
+
+  it("treats absent and blank as not-the-placeholder — that is isBlank's job", () => {
+    expect(isPlaceholderVnr(null)).toBe(false);
+    expect(isPlaceholderVnr(undefined)).toBe(false);
+    expect(isPlaceholderVnr("")).toBe(false);
+    expect(isPlaceholderVnr("   ")).toBe(false);
+  });
+
+  /*
+   * The defect this was written for (P117-01): nineteen zeros is neither null
+   * nor blank, so every gate that only tested for *missing* let it through.
+   */
+  it("is exactly what a blank check does not catch", () => {
+    expect(PLACEHOLDER_VNR).toHaveLength(19);
+    expect(PLACEHOLDER_VNR.trim()).not.toBe("");
   });
 });
 

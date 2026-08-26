@@ -31,6 +31,8 @@
  * message just gets worse.
  */
 
+import { isPlaceholderVnr } from "./eiv.js";
+
 /**
  * The fields the Teilnahmebescheinigung and the Punktemeldung read.
  *
@@ -92,7 +94,15 @@ export function publishBlockers(course: PublishCandidate): readonly PublishBlock
 
   const missing: PublishBlocker[] = [];
 
-  if (isBlank(course.vnr)) missing.push("vnr");
+  /*
+   * Blank **or** the seed's placeholder (P117-01).
+   *
+   * Nineteen zeros is not blank, so this test used to pass it — and a course
+   * published that way issued a Teilnahmebescheinigung printing a VNR no
+   * Ärztekammer ever assigned, with no gate anywhere objecting. `isBlank` was
+   * asking "is anything there", when the question is "is a real event named".
+   */
+  if (isBlank(course.vnr) || isPlaceholderVnr(course.vnr)) missing.push("vnr");
   // A boolean, not the ciphertext: the domain is pure and must never be handed
   // a credential, encrypted or otherwise (CLAUDE.md §4 invariant 7).
   if (!course.hasVnrPassword) missing.push("vnrPassword");
