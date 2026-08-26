@@ -311,6 +311,25 @@ one machine, on one port:
 Port 22 only for CI: the runner runs one command over SSH and has no business
 anywhere else.
 
+And assert it, in the same file, because Tailscale runs `tests` on every save —
+a gate where the work happens rather than one somebody remembers to check
+(§9.11):
+
+```jsonc
+  "tests": [
+    {
+      "src": "tag:ci",
+      "accept": ["ds-cme.tail5262f6.ts.net:22"],
+      "deny": ["ds-cme.tail5262f6.ts.net:443"],
+    },
+  ],
+```
+
+The `deny` line is the half that matters. `accept` alone would pass on the
+allow-all policy this replaced — it could not have gone red (§9.1). The pair
+says the rule is a restriction and not merely a permission, and a later edit
+that widens `tag:ci` back to `["*"]` fails on save instead of at leisure.
+
 **Keep the first grant.** Tagging the machine is what makes the second one
 necessary, and it is easy to write only the second — which locks you out of your
 own server over the tailnet, quietly, in the same edit that secured it.
