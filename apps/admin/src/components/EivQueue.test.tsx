@@ -39,6 +39,7 @@ function row(over: Partial<EivSubmissionRow> = {}): EivSubmissionRow {
     firstSubmittedAt: null,
     externalReference: null,
     lastError: null,
+    failureKind: null,
     dueNow: false,
     ...over,
   };
@@ -186,5 +187,65 @@ describe("the deadline, in the time zone it is reckoned in", () => {
     // 22:30 UTC on 1 September is 00:30 on the 2nd in Berlin — the case where
     // printing the UTC date would name the wrong day.
     expect(await screen.findByText(/02\.09\.2026/u)).toBeTruthy();
+  });
+});
+
+/**
+ * P119-03. `permanent_rejection` in `lastError` was the answer to two different
+ * questions and no answer to either: it collapses a refused EFN, a blocked VNR
+ * and a missing credential into one word, and each of those sends the operator
+ * somewhere else. Migration 0048 keeps EIV's own answer; this is the screen
+ * saying it in the operator's language.
+ *
+ * The case that matters most is `validation`, where the correct instruction is
+ * **do not go looking for a fix** — support cannot set another person's EFN
+ * (ADR-0004), and a screen that stayed silent would send them hunting for a
+ * control that does not and must not exist (§9.2, §9.4).
+ */
+describe("what EIV actually said", () => {
+  it("names the operator's own next step for a refused event", async () => {
+    mount({ items: [row({ status: "failed_permanent", failureKind: "business" })] });
+
+    await waitFor(() =>
+      expect(screen.getByText(de.eivQueue.failureKind.business)).toBeTruthy(),
+    );
+  });
+
+  it("names the setting to fill for a credential failure", async () => {
+    mount({ items: [row({ status: "failed_permanent", failureKind: "auth" })] });
+
+    await waitFor(() =>
+      expect(screen.getByText(de.eivQueue.failureKind.auth)).toBeTruthy(),
+    );
+  });
+
+  it("tells the operator a refused EFN is not theirs to fix", async () => {
+    mount({ items: [row({ status: "failed_permanent", failureKind: "validation" })] });
+
+    await waitFor(() =>
+      expect(screen.getByText(de.eivQueue.failureKind.validation)).toBeTruthy(),
+    );
+  });
+
+  /*
+   * The control. A row with no kind — everything written before P119-01, where
+   * EIV's answer was discarded before it was stored — must not acquire a
+   * sentence it has no evidence for. Saying nothing is the honest outcome, and
+   * `lastError` below it is still there for whoever is debugging the worker.
+   */
+  it("invents nothing for a row from before the kind was kept", async () => {
+    mount({
+      items: [
+        row({
+          status: "failed_permanent",
+          failureKind: null,
+          lastError: "permanent_rejection",
+        }),
+      ],
+    });
+
+    await waitFor(() => expect(screen.getByText(de.eivQueue.lastError)).toBeTruthy());
+    expect(screen.queryByText(de.eivQueue.failureKind.validation)).toBeNull();
+    expect(screen.queryByText(de.eivQueue.failureKind.business)).toBeNull();
   });
 });

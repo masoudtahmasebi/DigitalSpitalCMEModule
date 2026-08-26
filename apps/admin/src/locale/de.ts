@@ -1090,6 +1090,30 @@ export const german = {
    */
   /** The Punktemeldung queue (P110-01). */
   eivQueue: {
+    /*
+     * What EIV said, as a sentence naming who can act (P119-03).
+     *
+     * The API's vocabulary is `validation`, `business`, `auth`. An operator
+     * reading `validation` in a table has been told the truth in a language
+     * that is not theirs — and worse, for the one value where the answer is
+     * "this is not yours to fix, the physician has been asked", they would go
+     * looking for a way to fix it and find none (§9.2, §9.4).
+     */
+    failureKind: {
+      validation:
+        "Die Ärztekammer hat die EFN der teilnehmenden Person abgelehnt. Das kann nur sie selbst korrigieren — sie wurde in ihrem Kursabschluss darauf hingewiesen. Nach der Korrektur wird die Meldung automatisch erneut eingereicht.",
+      business:
+        "Die Ärztekammer hat die Veranstaltung abgelehnt — meist eine unbekannte oder gesperrte VNR, oder ein Datum außerhalb des Anerkennungszeitraums. Bitte prüfen Sie die VNR der Fortbildung.",
+      auth: "Die Zugangsdaten wurden abgelehnt oder fehlen. Bitte hinterlegen Sie das VNR-Passwort in den Einstellungen der Fortbildung.",
+      transport:
+        "Die Ärztekammer war nicht erreichbar. Wird automatisch erneut versucht.",
+      server:
+        "Die Ärztekammer hat einen Serverfehler gemeldet. Wird automatisch erneut versucht.",
+      rate_limited:
+        "Die Ärztekammer hat zu viele Anfragen gemeldet. Wird automatisch erneut versucht.",
+      unknown:
+        "Die Antwort der Ärztekammer war nicht eindeutig. Bitte prüfen Sie den technischen Fehler unten.",
+    },
     nav: "Punktemeldungen",
     title: "Punktemeldungen",
     screenIntro:

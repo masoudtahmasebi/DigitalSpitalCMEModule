@@ -502,6 +502,19 @@ export const eivSubmissions = pgTable("eiv_submissions", {
   correctionWindowEndsAt: timestamp("correction_window_ends_at", { withTimezone: true }),
   nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
   lastError: text("last_error"),
+  /*
+   * What EIV said, as distinct from why we stopped (P119-01).
+   *
+   * `last_error` is the queue's own reasoning — `attempts_exhausted`,
+   * `permanent_rejection`, `missing_vnr_password`. It collapses `auth`,
+   * `business` and `validation` into one word, which is fine for deciding
+   * whether to retry and useless for deciding **who can fix it**: a 422 means
+   * the physician's EFN was refused and a 406 means the event was, and only one
+   * of those is something a physician can act on.
+   *
+   * See migration 0048.
+   */
+  failureKind: text("failure_kind"),
   ...timestamps,
 });
 

@@ -213,6 +213,7 @@ function fakeRepository(
     upsertProgress: async (input) => {
       written.push({ ...input });
     },
+    findSubmissionState: async () => undefined,
     hasEfn: async () => state.efn,
     hasEvaluationResponse: async () => state.evaluation,
     markCompleted: async () => undefined,

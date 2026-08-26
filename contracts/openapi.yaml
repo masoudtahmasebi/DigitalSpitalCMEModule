@@ -3896,6 +3896,8 @@ components:
         - moduleCompletion
         - modules
         - resumeContentId
+        - punktemeldung
+        - punktemeldungActor
       properties:
         enrolmentId: { type: string, format: uuid }
         courseSlug: { type: string }
@@ -3969,6 +3971,52 @@ components:
           description: |
             Where "Fortbildung fortsetzen" jumps to — the first unfinished
             content the learner may currently reach. Null when nothing is left.
+        punktemeldung:
+          type: string
+          enum:
+            [
+              none,
+              pending,
+              reported,
+              withdrawn,
+              check_efn,
+              event_problem,
+              not_configured,
+              window_closed,
+              failed_unknown,
+            ]
+          description: |
+            What became of this learner's Punktemeldung (P119-02).
+
+            The failure this exists for is silence. A physician finishes,
+            downloads a Teilnahmebescheinigung saying four CME points, and
+            believes they have four — and if the Ärztekammer refused the
+            Meldung, nothing told them. They find out at their next
+            Fortbildungsnachweis with the correction window years closed.
+            ADR-0004 calls that the worst available failure *because it looks
+            like success*.
+
+            `check_efn` is the only value a physician can act on: EIV answered
+            422, which means their EFN was refused, and they are the only person
+            who can correct it. `event_problem`, `not_configured` and
+            `window_closed` are the operator's — telling a physician to check
+            their EFN when the VNR was blocked is an instruction that cannot
+            succeed.
+
+            `failed_unknown` is deliberate rather than a gap: rows written
+            before P119-01 discarded EIV's answer, and guessing would put
+            "check your EFN" in front of somebody whose EFN was never the
+            problem.
+
+            Carries no EFN, no VNR, and none of EIV's own rejection text — this
+            is read by a physician's browser.
+        punktemeldungActor:
+          type: string
+          enum: [nobody, participant, operator]
+          description: |
+            Who, if anybody, is being asked to do something. Travels with
+            `punktemeldung` so no surface re-derives it and develops a second
+            opinion about the same rule.
 
     ContentKind:
       type: string
@@ -5032,8 +5080,30 @@ components:
         lastError:
           type: [string, "null"]
           description: |
-            The last failure, as the worker recorded it. Already redacted of
-            credentials by the EIV client; never contains the EFN.
+            **Why the queue stopped**, in the worker's own words —
+            `attempts_exhausted`, `permanent_rejection`,
+            `reporting_window_missed`, `missing_vnr_password`. Already redacted
+            of credentials by the EIV client; never contains the EFN.
+
+            Note that `permanent_rejection` collapses three very different
+            answers. Read `failureKind` to tell them apart.
+        failureKind:
+          type: [string, "null"]
+          enum:
+            [transport, server, rate_limited, auth, business, validation, unknown, null]
+          description: |
+            **What EIV-FOBI said**, in the client's own vocabulary (P119-01).
+
+            This is the column that decides *who can fix it*: `validation` (422)
+            means the physician's EFN was refused and only they can correct it;
+            `business` (406) means the event was, and only an operator or the
+            Ärztekammer can. The two were reported identically until P119-01,
+            which — as the client's own header puts it — "sends an operator to
+            the wrong place".
+
+            Null on rows abandoned without ever reaching EIV, and on every row
+            written before P119-01, where the answer was discarded one line
+            before it was stored.
         dueNow:
           type: boolean
           description: The next sweep would claim this row.

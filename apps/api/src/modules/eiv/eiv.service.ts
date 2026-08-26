@@ -139,7 +139,11 @@ export class EivService {
     // burned through the retry budget: it is an admin data problem, and the
     // window is better spent once someone fixes it.
     if (row.vnrPassword === null || row.vnrPassword === "") {
-      await this.abandon(claim, row, "missing_vnr_password");
+      // `auth` and not undefined: nothing was sent, but the reason it could not
+      // be sent is a credential — which is the operator's to fix, and that is
+      // the question `failure_kind` answers. Migration 0048 backfills the same
+      // value onto historic rows for the same reason.
+      await this.abandon(claim, row, "missing_vnr_password", row.attemptCount, "auth");
       return "abandoned";
     }
 
@@ -282,7 +286,13 @@ export class EivService {
     });
 
     if (next.action === "abandon") {
-      await this.abandon(claim, row, next.reason ?? "attempts_exhausted", attemptCount);
+      await this.abandon(
+        claim,
+        row,
+        next.reason ?? "attempts_exhausted",
+        attemptCount,
+        failure,
+      );
       return "abandoned";
     }
 
@@ -316,6 +326,19 @@ export class EivService {
     row: DueSubmission,
     reason: string,
     attemptCount = row.attemptCount,
+    /**
+     * What EIV said, where there was an EIV answer (P119-01).
+     *
+     * `reason` is the queue's word for why it stopped and collapses `auth`,
+     * `business` and `validation` into `permanent_rejection` — fine for
+     * deciding not to retry, useless for deciding *who can fix it*. A 422 means
+     * the physician's EFN was refused; a 406 means the event was. Only one of
+     * those is something a physician can act on, and telling them the wrong one
+     * is §9.2 aimed at the person least able to do anything about it.
+     *
+     * Absent for the reasons reached without sending anything.
+     */
+    failureKind?: EivAttemptFailure,
   ): Promise<void> {
     const windowClosed =
       reason === "reporting_window_missed" || reason === "correction_window_closed";
@@ -325,13 +348,19 @@ export class EivService {
       attemptCount,
       reason,
       windowClosed,
+      ...(failureKind === undefined ? {} : { failureKind }),
     });
 
     await this.audit.recordForCustomer(row.customerId, {
       actor: SYSTEM_ACTOR,
       action: "eiv.abandoned",
       subject: row.enrolmentId,
-      detail: { reason, attemptCount, windowClosed },
+      detail: {
+        reason,
+        attemptCount,
+        windowClosed,
+        ...(failureKind ? { failureKind } : {}),
+      },
     });
   }
 }

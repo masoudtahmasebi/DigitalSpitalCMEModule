@@ -193,6 +193,29 @@ export const enrolmentStateSchema = z.object({
   }),
   modules: z.array(moduleStateSchema),
   resumeContentId: z.uuid().nullable(),
+  /*
+   * What became of the Punktemeldung, and who is being asked to act (P119-02).
+   *
+   * Two fields rather than one so no surface has to re-derive the second from
+   * the first — the widget shows a physician only what a physician can do
+   * something about, and the rule that decides that lives in `@ds/domain`, once
+   * (§4 invariant 6).
+   *
+   * Neither carries the EFN, EIV's rejection text, or the VNR. This is read by
+   * a physician's browser (§9.5).
+   */
+  punktemeldung: z.enum([
+    "none",
+    "pending",
+    "reported",
+    "withdrawn",
+    "check_efn",
+    "event_problem",
+    "not_configured",
+    "window_closed",
+    "failed_unknown",
+  ]),
+  punktemeldungActor: z.enum(["nobody", "participant", "operator"]),
 });
 
 /**

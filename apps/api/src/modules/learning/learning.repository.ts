@@ -23,6 +23,7 @@ import {
   contents,
   courses,
   efnProfiles,
+  eivSubmissions,
   enrolments,
   evaluationResponses,
   modules,
@@ -172,6 +173,20 @@ export interface LearningRepositoryPort {
     lastPositionSec: number;
   }): Promise<void>;
   hasEfn(userId: string): Promise<boolean>;
+  /**
+   * The learner's own Punktemeldung, or undefined (P119-02).
+   *
+   * Scoped by enrolment and nothing else. The enrolment is already the
+   * learner's own — `findEnrolment` reached it by `userId` — so this cannot
+   * become a way to ask about somebody else's, which is the shape ADR-0004
+   * spends its length preventing.
+   *
+   * Two columns and no more: EIV's own rejection text can carry the EFN and the
+   * responding server, and this reaches a physician's browser (§9.5).
+   */
+  findSubmissionState(
+    enrolmentId: string,
+  ): Promise<{ status: string; failureKind: string | null } | undefined>;
   hasEvaluationResponse(enrolmentId: string): Promise<boolean>;
   markCompleted(
     enrolmentId: string,
@@ -409,6 +424,23 @@ export class LearningRepository implements LearningRepositoryPort {
       .limit(1);
 
     return row !== undefined;
+  }
+
+  async findSubmissionState(
+    enrolmentId: string,
+  ): Promise<{ status: string; failureKind: string | null } | undefined> {
+    const [row] = await this.db
+      .select({
+        status: eivSubmissions.status,
+        failureKind: eivSubmissions.failureKind,
+      })
+      .from(eivSubmissions)
+      .where(eq(eivSubmissions.enrolmentId, enrolmentId))
+      .limit(1);
+
+    return row === undefined
+      ? undefined
+      : { status: row.status, failureKind: row.failureKind };
   }
 
   async hasEvaluationResponse(enrolmentId: string): Promise<boolean> {

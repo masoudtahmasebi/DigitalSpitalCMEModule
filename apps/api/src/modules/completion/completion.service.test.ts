@@ -175,6 +175,7 @@ function build(
     findCourseTree: async () => tree,
     findProgress: async () => options.progress ?? [],
     upsertProgress: async () => undefined,
+    findSubmissionState: async () => undefined,
     hasEfn: async () => efn !== undefined,
     hasEvaluationResponse: async () => options.evaluationSubmitted ?? false,
     markCompleted: async (id, at, attested) => {

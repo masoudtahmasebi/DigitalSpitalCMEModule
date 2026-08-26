@@ -785,6 +785,20 @@ export const en: DeepPartial<typeof german> = {
 
   /** The Punktemeldung queue (P110-01). */
   eivQueue: {
+    failureKind: {
+      validation:
+        "The Ärztekammer rejected the participant's EFN. Only they can correct it — they were told so on their completion screen. The Meldung is re-filed automatically once they do.",
+      business:
+        "The Ärztekammer rejected the event — usually an unknown or blocked VNR, or a date outside the accredited period. Check the course's VNR.",
+      auth: "The credentials were rejected or are missing. Set the VNR password in the course's settings.",
+      transport: "The Ärztekammer was unreachable. This will be retried automatically.",
+      server:
+        "The Ärztekammer returned a server error. This will be retried automatically.",
+      rate_limited:
+        "The Ärztekammer reported too many requests. This will be retried automatically.",
+      unknown:
+        "The Ärztekammer's answer was not conclusive. Check the technical error below.",
+    },
     // German on purpose: Punktemeldung, VNR and EFN appear verbatim on the
     // Anerkennungsbescheid and in the EIV-FOBI interface, and an operator
     // reconciling a screen against the paperwork needs the same token in both.

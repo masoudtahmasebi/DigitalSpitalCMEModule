@@ -329,6 +329,14 @@ export {
 } from "./totp.js";
 export type { TotpRejection, TotpVerdict } from "./totp.js";
 
+export { punktemeldungOutcome } from "./punktemeldung.js";
+export type {
+  PunktemeldungActor,
+  PunktemeldungInput,
+  PunktemeldungKind,
+  PunktemeldungOutcome,
+} from "./punktemeldung.js";
+
 export {
   certificateAction,
   efnRefresh,

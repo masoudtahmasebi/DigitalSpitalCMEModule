@@ -862,7 +862,66 @@ export const de = {
 
     submit: "Daten übermitteln",
     submitting: "Wird übermittelt …",
-    done: "Ihre Fortbildung ist abgeschlossen. Die Punkte werden an die Ärztekammer gemeldet.",
+    done: "Ihre Fortbildung ist abgeschlossen.",
+
+    /**
+     * What became of the Punktemeldung (P119-02).
+     *
+     * ## Why `done` above got shorter
+     *
+     * It used to end "Die Punkte werden an die Ärztekammer gemeldet." — future
+     * tense, unconditional, and shown for ever. It was the platform's promise
+     * that the reporting had worked, made before the reporting had happened and
+     * never withdrawn when it failed. A physician read that sentence, kept a
+     * certificate saying four points, and had none.
+     *
+     * The tense is now the state's to choose, and every branch below is written
+     * so it is true of the row it describes.
+     *
+     * ## Only one of these asks the physician for anything
+     *
+     * `checkEfn` — EIV answered 422, which means the EFN was refused, and the
+     * physician is the only person who can correct it. The others are the
+     * operator's, and a physician told "die VNR ist gesperrt" learns only that
+     * something is wrong with a system they do not control. They are told the
+     * truth — not yet reported, being dealt with — which is all they can use
+     * (§9.10).
+     *
+     * **Client-facing copy about somebody's CME points. MEDICE should approve
+     * the wording before launch** (P119 §Open).
+     */
+    punktemeldung: {
+      heading: "Punktemeldung",
+      pending: {
+        body: "Ihre Punkte werden an die Ärztekammer gemeldet. Das geschieht automatisch und kann einige Minuten dauern.",
+      },
+      reported: {
+        body: "Ihre Punkte wurden an die Ärztekammer gemeldet.",
+      },
+      withdrawn: {
+        body: "Diese Punktemeldung wurde zurückgenommen. Bitte wenden Sie sich an den Veranstalter, wenn Sie dazu Fragen haben.",
+      },
+      checkEfn: {
+        body: "Die Ärztekammer hat die angegebene EFN nicht akzeptiert. Ihre Punkte sind dadurch noch nicht gutgeschrieben. Bitte prüfen Sie Ihre EFN und korrigieren Sie sie hier — die Meldung wird anschließend erneut eingereicht.",
+        label: "Ihre EFN",
+        hint: "Die EFN besteht aus genau 15 Ziffern. Sie finden sie auf Ihrem Arztausweis oder in Ihrem Kammerkonto.",
+        save: "EFN korrigieren",
+        saved: "Ihre EFN wurde gespeichert. Die Punktemeldung wird erneut eingereicht.",
+        invalid: "Die EFN muss aus genau 15 Ziffern bestehen.",
+      },
+      /*
+       * One message for `event_problem`, `not_configured` and
+       * `failed_unknown`. They differ in what the *operator* must do and not at
+       * all in what the physician can — three sentences here would be three
+       * ways of saying "not your doing, and not your fix".
+       */
+      handled: {
+        body: "Ihre Punkte konnten noch nicht an die Ärztekammer gemeldet werden. Das liegt nicht an Ihren Angaben. Der Veranstalter wurde informiert und kümmert sich darum.",
+      },
+      windowClosed: {
+        body: "Die Frist für die elektronische Meldung dieser Teilnahme ist abgelaufen. Eine nachträgliche Anerkennung ist nur noch direkt über Ihre Ärztekammer möglich — bitte wenden Sie sich mit Ihrer Teilnahmebescheinigung an sie.",
+      },
+    },
     outstanding: "Es fehlt noch:",
     /**
      * Why the button below it is inactive, and what to do instead (P82-01).

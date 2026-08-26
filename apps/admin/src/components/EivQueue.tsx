@@ -208,6 +208,24 @@ export function EivQueue(props: { client: ApiClient }) {
               </td>
               <td className="px-3 py-2">
                 <Badge tone={TONE[row.status]}>{de.eivQueue.status[row.status]}</Badge>
+                {/*
+                  What EIV actually said, as a sentence naming who can fix it
+                  (P119-03).
+
+                  `lastError` below is the worker's reasoning and stays folded
+                  away, because it is a technical string. This is the other
+                  question — *who acts* — and it is the one an operator opened
+                  this screen to answer. Until P119-01 the two were the same
+                  column and `permanent_rejection` was the answer to both, which
+                  is no answer to either.
+                */}
+                {row.failureKind === null ? null : (
+                  <p className="mt-1 max-w-md text-xs text-gray-600">
+                    {de.eivQueue.failureKind[
+                      row.failureKind as keyof typeof de.eivQueue.failureKind
+                    ] ?? row.failureKind}
+                  </p>
+                )}
                 {row.lastError === null ? null : (
                   /*
                     The worker's own last error, folded away. It is already

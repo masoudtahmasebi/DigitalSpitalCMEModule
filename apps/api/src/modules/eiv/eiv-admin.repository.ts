@@ -86,6 +86,8 @@ export interface SubmissionRow {
   readonly firstSubmittedAt: Date | null;
   readonly externalReference: string | null;
   readonly lastError: string | null;
+  /** What EIV said, as distinct from why we stopped — see migration 0048. */
+  readonly failureKind: string | null;
   readonly dueNow: boolean;
 }
 
@@ -215,6 +217,7 @@ export class EivAdminRepository implements EivAdminRepositoryPort {
         firstSubmittedAt: eivSubmissions.firstSubmittedAt,
         externalReference: eivSubmissions.externalReference,
         lastError: eivSubmissions.lastError,
+        failureKind: eivSubmissions.failureKind,
         dueNow: sql<boolean>`(${due})`,
       })
       .from(eivSubmissions)

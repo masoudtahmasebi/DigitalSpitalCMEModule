@@ -676,6 +676,69 @@ describe("the road to a CME point", () => {
     expect(days).toBeLessThan(9);
   });
 
+  /**
+   * What the physician is told about their own Punktemeldung (P119-02).
+   *
+   * The defect this covers is silence, so the assertions are about a value
+   * *arriving* — before this, no endpoint returned a learner's submission state
+   * to them at all, and a refused Meldung looked exactly like a successful one
+   * from every screen they could reach.
+   *
+   * Driven over HTTP against a real row rather than a service double, because
+   * the property is the wiring: the rule was already written and tested in
+   * `@ds/domain` and reached nobody (§9.7).
+   */
+  it("tells the learner what became of their Punktemeldung", async () => {
+    // Runs after the completion test above, so a submission exists.
+    const queued = await call("GET", `/courses/${courseSlug}/enrolment`);
+    expect(queued.body.punktemeldung).toBe("pending");
+    expect(queued.body.punktemeldungActor).toBe("nobody");
+
+    /*
+     * A refused EFN — EIV's 422. This is the one state a physician can act on,
+     * and the only one where the widget offers the field back.
+     */
+    await seedPool.query(
+      `UPDATE eiv_submissions
+          SET status = 'failed_permanent', last_error = 'permanent_rejection',
+              failure_kind = 'validation'
+        WHERE enrolment_id = $1`,
+      [enrolmentId],
+    );
+
+    const refused = await call("GET", `/courses/${courseSlug}/enrolment`);
+    expect(refused.body.punktemeldung).toBe("check_efn");
+    expect(refused.body.punktemeldungActor).toBe("participant");
+
+    /*
+     * And the direction that does harm. Same status, same `last_error` — the
+     * two were indistinguishable until migration 0048 kept the kind — and the
+     * physician must not be asked to touch their EFN over a blocked VNR.
+     */
+    await seedPool.query(
+      "UPDATE eiv_submissions SET failure_kind = 'business' WHERE enrolment_id = $1",
+      [enrolmentId],
+    );
+
+    const notTheirs = await call("GET", `/courses/${courseSlug}/enrolment`);
+    expect(notTheirs.body.punktemeldung).toBe("event_problem");
+    expect(notTheirs.body.punktemeldungActor).toBe("operator");
+
+    // Neither answer carries the EFN, the VNR, or EIV's own words.
+    const serialised = JSON.stringify(refused.body) + JSON.stringify(notTheirs.body);
+    expect(serialised).not.toContain(EFN);
+    expect(serialised).not.toContain(VNR);
+    expect(serialised).not.toContain("permanent_rejection");
+
+    // Put it back for anything that runs after this.
+    await seedPool.query(
+      `UPDATE eiv_submissions
+          SET status = 'queued', last_error = NULL, failure_kind = NULL
+        WHERE enrolment_id = $1`,
+      [enrolmentId],
+    );
+  });
+
   it("issues the certificate at completion, before anybody asks for it", async () => {
     /*
      * P59-01, and it has to be asserted **here** rather than in "the

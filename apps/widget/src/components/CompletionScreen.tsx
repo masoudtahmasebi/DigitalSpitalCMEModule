@@ -51,6 +51,7 @@ import { useEffect, useState } from "react";
 import type { Branding } from "@ds/domain";
 import type { ApiClient, EnrolmentState } from "@ds/sdk";
 import { de } from "../locale/de.js";
+import { PunktemeldungNotice } from "./PunktemeldungNotice.js";
 import { describeError } from "../hooks.js";
 import { Button, ErrorNotice } from "./primitives.js";
 
@@ -219,13 +220,28 @@ export function CompletionScreen(props: {
   }
 
   if (state.completedAt !== null) {
+    /*
+     * P119-02. This used to be one sentence, and the sentence ended "Die Punkte
+     * werden an die Ärztekammer gemeldet." — a promise about something that had
+     * not happened yet, shown for ever, and never withdrawn when it failed.
+     *
+     * The claim about the *course* is still unconditional and still true. The
+     * claim about the *Meldung* is now whatever the Meldung actually did.
+     */
     return (
-      <p
-        className="rounded-md bg-green-50 p-4 text-sm text-status-completed"
-        role="status"
-      >
-        {de.completion.done}
-      </p>
+      <div className="space-y-3">
+        <p
+          className="rounded-md bg-green-50 p-4 text-sm text-status-completed"
+          role="status"
+        >
+          {de.completion.done}
+        </p>
+        <PunktemeldungNotice
+          client={client}
+          state={state}
+          onCorrected={props.onCompleted}
+        />
+      </div>
     );
   }
 
