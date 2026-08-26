@@ -227,21 +227,47 @@ the weak part — it pins the host key rather than trusting on first use, and
 nothing from the runner is copied to the server. Only the _path_ broke, so only
 the path is replaced.
 
-On the host:
+**Do these in this order.** Advertising a tag re-registers the node, and a tag
+the policy does not know is refused — which leaves the machine logged out and
+showing as **Expired** in the admin console, with no message saying why. That is
+what happens if you install and tag before writing the policy, and it is the
+mistake this paragraph exists to stop.
+
+#### 1. Declare the tags, before any machine claims one
+
+Admin console → **Access controls → Policies → JSON editor**. Not the "Add rule"
+form: that form writes `acls` entries and cannot declare a tag's owner, which is
+the part `--advertise-tags` checks.
+
+```jsonc
+{
+  "tagOwners": {
+    "tag:server": ["autogroup:admin"],
+    "tag:ci": ["autogroup:admin"],
+  },
+}
+```
+
+Save. `tagOwners` says who is allowed to _apply_ a tag; without an entry, nobody
+is, including you.
+
+#### 2. Install on the host and claim the tag
 
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up --ssh=false --hostname=ds-education
+sudo tailscale up --ssh=false --hostname=ds-cme --advertise-tags=tag:server
 ```
 
-**Then tag the host**, before anything else:
+It prints a login URL. **Open it** — a tag change is a new registration, not an
+edit, so the node is unauthenticated until you do. Afterwards the machine's owner
+column reads `tag:server` instead of a person's name.
 
-```bash
-sudo tailscale up --ssh=false --hostname=ds-education --advertise-tags=tag:server
-```
+If the machine is already installed and now shows **Expired**, this same command
+is the fix: declare the tags first, run it again, follow the URL.
 
-This is not cosmetic and it is the step most likely to be skipped, because
-everything appears to work without it. Two things depend on it:
+#### Why tag it at all
+
+Two things depend on it, and both fail silently:
 
 - **The ACL rule needs something to match.** A rule granting `tag:ci` access to
   `tag:server` does not apply to a machine that carries no tag.
@@ -253,16 +279,19 @@ everything appears to work without it. Two things depend on it:
   the same decision made in a place nobody reads again.)
 
   This is §9.9a's shape: the file is right, the deploy was green, and the thing
-  quietly stopped answering. It is worth the extra command now.
+  quietly stopped answering.
 
-In the tailnet's ACLs, give CI a tag that may reach this host **and nothing
-else** — a deploy runner has no business anywhere but this machine. Roughly:
+#### 3. Let CI reach it, and nothing else
+
+A new tailnet's default policy is allow-all, so the deploy will work the moment
+the runner joins. Narrow it — a deploy runner has no business anywhere but this
+one machine, on one port:
 
 ```jsonc
 {
   "tagOwners": {
-    "tag:ci": ["autogroup:admin"],
     "tag:server": ["autogroup:admin"],
+    "tag:ci": ["autogroup:admin"],
   },
   "acls": [{ "action": "accept", "src": ["tag:ci"], "dst": ["tag:server:22"] }],
 }
@@ -270,15 +299,35 @@ else** — a deploy runner has no business anywhere but this machine. Roughly:
 
 Port 22 only. The runner needs to run one command over SSH and nothing else.
 
-In the repository, add two secrets from a Tailscale OAuth client:
+#### 4. Give the runner its own identity
+
+Admin console → **Settings → OAuth clients → Generate**. It needs the
+`auth_keys` **write** scope and the tag **`tag:ci`** — the tag on the client is
+what the runner is allowed to register itself as, and the workflow passes the
+same string.
+
+The two halves become repository secrets:
 
 | Secret               |                                                   |
 | -------------------- | ------------------------------------------------- |
 | `TS_OAUTH_CLIENT_ID` | its presence is what switches the private path on |
 | `TS_OAUTH_SECRET`    |                                                   |
 
-Then repoint `DEPLOY_HOST` at the tailnet name (`ds-education`, or the full
-MagicDNS name) and close 22 in the Hetzner firewall.
+An OAuth client rather than a fixed auth key on purpose: the runner mints a
+short-lived key per job and the node is ephemeral, so a leaked workflow log
+grants nothing that outlives the run.
+
+#### 5. Point the deploy at the tailnet name
+
+Repoint `DEPLOY_HOST` at the MagicDNS name — `ds-cme.tail5262f6.ts.net`, from
+the Machines list — and close 22 in the Hetzner firewall.
+
+The MagicDNS name rather than `100.74.161.46`: the tailnet address is stable in
+practice but is not a promise, and the name is the thing the ACL and the admin
+console both talk about.
+
+`DEPLOY_KNOWN_HOSTS` does **not** change. It pins the host's SSH key, which is
+the same key however the packets arrived.
 
 The workflow checks reachability over the tailnet **before** the first `ssh`,
 because every way this can be half-configured — untagged host, missing ACL rule,
