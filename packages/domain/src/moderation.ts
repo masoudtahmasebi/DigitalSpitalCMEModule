@@ -84,6 +84,93 @@ export function nameCorrection(input: {
   return { ok: true };
 }
 
+/**
+ * The `eiv_status` enum collapsed onto the four distinctions that matter.
+ *
+ * The SQL twin is `STAGE_SQL` in `moderation.repository.ts`, which answers the
+ * same question inside a query where a function cannot reach. Two
+ * implementations of one rule is exactly what §4 invariant 6 warns about, so
+ * they are named on each other and `submissionStage.test.ts` enumerates every
+ * member of the enum — a value added to the enum and not to both is a test
+ * failure rather than a wrong answer in production.
+ */
+export function submissionStage(status: string | null | undefined): SubmissionStage {
+  if (status === null || status === undefined) return "none";
+  if (status === "submitted") return "submitted";
+  if (status === "withdrawn") return "withdrawn";
+  if (status === "failed_permanent" || status === "window_closed") return "abandoned";
+  return "pending";
+}
+
+export type EfnRefreshVerdict =
+  /** The submission already carries the EFN the profile holds. Nothing to do. */
+  | { readonly kind: "unchanged" }
+  /** Safe to adopt: nothing was ever reported under the old one. */
+  | { readonly kind: "refresh"; readonly efn: string }
+  /**
+   * The old EFN reached the Ärztekammer. Re-filing under a new one does not
+   * move the points; it credits a second person (S30).
+   */
+  | { readonly kind: "refused"; readonly reason: "already_submitted" };
+
+/**
+ * Whether a queued Punktemeldung should adopt the EFN the physician now holds
+ * (P118).
+ *
+ * ## The defect this exists for
+ *
+ * `efn_profiles` and `eiv_submissions.efn` are two copies of one value. The
+ * certificate reads the profile **live** — deliberately, and its own comment
+ * says why: *"a correction to it means the earlier value was wrong …
+ * snapshotting would keep the typo on the paper while the Punktemeldung went to
+ * the corrected number."* The requeue path did the opposite, so the flow that
+ * looks like a repair produced a certificate with the new EFN and a Meldung
+ * with the old one, and reported success for both.
+ *
+ * ## Why this is not simply "always take the newest"
+ *
+ * Because an EFN is not a field describing the subject — it **is** the subject.
+ * Correcting a name changes how one physician is described; correcting an EFN
+ * changes *which physician* was credited. Once a Meldung has been accepted, the
+ * points sit on somebody's record and nothing here can take them back, so a
+ * silent re-file under a different number credits a second person and leaves the
+ * first crediting in place.
+ *
+ * That is the same argument `nameCorrection` makes, on the same stages, and it
+ * lands on the same answer: everything up to and including `abandoned` is
+ * correctable because nothing was reported; `submitted` and `withdrawn` are not.
+ *
+ * Whether the right sequence there is withdraw-then-refile, or a correction
+ * inside the 7-day window, or a written notice to the Kammer, is **S30** and is
+ * not ours to decide (§7). Until it is answered this refuses and the operator is
+ * told what to do instead — which is the correct behaviour for an unanswered
+ * rule, where filing a guess is not.
+ *
+ * ## The null profile is not an error
+ *
+ * `onProfile` is null after a GDPR erasure, which deletes `efn_profiles` while
+ * leaving a submission that is still owed. The submission keeps the EFN it was
+ * created with; there is nothing newer to adopt, and treating absence as a
+ * change would file a blank.
+ */
+export function efnRefresh(input: {
+  /** What the queued submission will send today. */
+  readonly onSubmission: string;
+  /** What the physician's profile holds now, or null if there is no profile. */
+  readonly onProfile: string | null | undefined;
+  readonly stage: SubmissionStage;
+}): EfnRefreshVerdict {
+  const proposed = (input.onProfile ?? "").trim();
+  if (proposed === "") return { kind: "unchanged" };
+  if (proposed === input.onSubmission.trim()) return { kind: "unchanged" };
+
+  if (input.stage === "submitted" || input.stage === "withdrawn") {
+    return { kind: "refused", reason: "already_submitted" };
+  }
+
+  return { kind: "refresh", efn: proposed };
+}
+
 export type ErasureVerdict =
   | { readonly ok: true }
   /**

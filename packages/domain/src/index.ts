@@ -331,14 +331,17 @@ export type { TotpRejection, TotpVerdict } from "./totp.js";
 
 export {
   certificateAction,
+  efnRefresh,
   maskEfn,
   nameCorrection,
   subjectErasure,
+  submissionStage,
 } from "./moderation.js";
 export type {
   CertificateAction,
   CertificateActionVerdict,
   CertificateStatus,
+  EfnRefreshVerdict,
   ErasureVerdict,
   NameCorrectionVerdict,
   SubmissionStage,

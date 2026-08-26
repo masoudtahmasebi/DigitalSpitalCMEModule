@@ -27,7 +27,7 @@
  * there is exactly one.
  */
 
-import { eivDeadlines } from "@ds/domain";
+import { efnRefresh, eivDeadlines, submissionStage } from "@ds/domain";
 import {
   EivError,
   EIV_PASSWORD_KEY,
@@ -443,7 +443,50 @@ export class EivAdminService {
       );
     }
 
-    await this.repository.requeue(row.submissionId, now);
+    /*
+     * The EFN the row will actually send (P118).
+     *
+     * `efn_profiles` and `eiv_submissions.efn` are two copies of one value, and
+     * before this the requeue took neither decision — it simply kept the older
+     * one. So a physician correcting a typo got a re-issued certificate with the
+     * new EFN and a Punktemeldung with the old, and both reported success. The
+     * certificate repository's own comment names that as the thing that must not
+     * happen; it was happening with the halves swapped.
+     */
+    const efn = efnRefresh({
+      onSubmission: row.efn,
+      onProfile: row.profileEfn,
+      stage: submissionStage(row.status),
+    });
+
+    if (efn.kind === "refused") {
+      /*
+       * S30, and a refusal rather than a guess (§7). Correcting a *name*
+       * changes how a physician is described; correcting an EFN changes which
+       * physician was credited, and nothing here can take the points back from
+       * the first one. Whether the answer is withdraw-then-refile or a
+       * correction inside the 7-day window is the Kammer's to give.
+       *
+       * The message names neither EFN. An operator is not entitled to the
+       * physician's identifier (ADR-0004) and an error string reaches a log
+       * (§9.5) — it names the field and the next step, which is what they can
+       * act on.
+       */
+      throw new AppError(
+        "conflict",
+        `refused: efn changed on an accepted submission enrolment=${row.enrolmentId}`,
+        "Die EFN wurde geändert, nachdem diese Teilnahme bereits gemeldet wurde. " +
+          "Eine erneute Meldung unter der neuen EFN würde die Punkte einer zweiten " +
+          "Person gutschreiben. Bitte stornieren Sie zuerst die bestehende " +
+          "Punktemeldung oder wenden Sie sich an die Ärztekammer.",
+      );
+    }
+
+    await this.repository.requeue(
+      row.submissionId,
+      now,
+      ...(efn.kind === "refresh" ? ([efn.efn] as const) : ([] as const)),
+    );
 
     await this.audit.recordForCustomer(actor.customerId, {
       actor: { identity: "staff", id: actor.staffUserId },
@@ -452,7 +495,11 @@ export class EivAdminService {
       // No EFN, no VNR password. The status it came from is the useful fact:
       // requeuing a `failed_permanent` row is a different act from nudging a
       // retryable one.
-      detail: { from: row.status },
+      //
+      // `efnRefreshed` is a boolean for the same reason (§9.5): that the
+      // identifier moved is the auditable fact, and what it moved to is the
+      // physician's, not the log's.
+      detail: { from: row.status, efnRefreshed: efn.kind === "refresh" },
     });
   }
 

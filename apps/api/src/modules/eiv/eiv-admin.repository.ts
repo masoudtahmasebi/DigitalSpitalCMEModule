@@ -17,7 +17,7 @@
 import { and, count, desc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/tenant-db.js";
 import type { SecretCipher } from "../../shared/secret-cipher.js";
-import { courses, eivSubmissions, enrolments } from "../../db/schema.js";
+import { courses, efnProfiles, eivSubmissions, enrolments } from "../../db/schema.js";
 
 /** A course's EIV credentials and the settings that shape its Meldung. */
 export interface CourseAccreditation {
@@ -42,7 +42,18 @@ export interface SubmissionForAction {
   readonly enrolmentId: string;
   readonly customerId: string;
   readonly vnr: string;
+  /** The EFN the queued row will send today, frozen at completion. */
   readonly efn: string;
+  /**
+   * The EFN the physician's profile holds **now** (P118).
+   *
+   * Two copies of one value, and before P118 only the certificate followed the
+   * newer one — so an EFN correction printed on the paper and did not reach the
+   * Meldung. `efnRefresh` decides which wins; this is the input it needs, and
+   * it is null after a GDPR erasure, which deletes the profile and leaves the
+   * submission owed.
+   */
+  readonly profileEfn: string | null;
   readonly status: string;
   readonly eventEndAt: Date;
   readonly firstSubmittedAt: Date | null;
@@ -101,7 +112,7 @@ export interface EivAdminRepositoryPort {
   recordedForCourse(slug: string): Promise<readonly RecordedSubmission[]>;
   loadForAction(enrolmentId: string): Promise<SubmissionForAction | undefined>;
   listSubmissions(query: SubmissionQuery): Promise<SubmissionPage>;
-  requeue(submissionId: string, now: Date): Promise<void>;
+  requeue(submissionId: string, now: Date, efn?: string): Promise<void>;
   markWithdrawn(submissionId: string, now: Date): Promise<void>;
 }
 
@@ -239,6 +250,7 @@ export class EivAdminRepository implements EivAdminRepositoryPort {
         customerId: eivSubmissions.customerId,
         vnr: eivSubmissions.vnr,
         efn: eivSubmissions.efn,
+        profileEfn: efnProfiles.efn,
         status: eivSubmissions.status,
         eventEndAt: eivSubmissions.eventEndAt,
         firstSubmittedAt: eivSubmissions.firstSubmittedAt,
@@ -249,6 +261,10 @@ export class EivAdminRepository implements EivAdminRepositoryPort {
       .from(eivSubmissions)
       .innerJoin(enrolments, eq(enrolments.id, eivSubmissions.enrolmentId))
       .innerJoin(courses, eq(courses.id, enrolments.courseId))
+      // LEFT: an erased subject has no profile row, and the submission it left
+      // behind is still owed. A join that dropped the row would turn "no newer
+      // EFN" into "no submission" — §9.6's shape, one table over.
+      .leftJoin(efnProfiles, eq(efnProfiles.userId, enrolments.userId))
       .where(eq(eivSubmissions.enrolmentId, enrolmentId))
       .limit(1);
 
@@ -267,13 +283,22 @@ export class EivAdminRepository implements EivAdminRepositoryPort {
    * reason: leaving it would make `planEivAttempt` abandon the row again on the
    * first pass, since a `business` or `validation` failure is permanent.
    */
-  async requeue(submissionId: string, now: Date): Promise<void> {
+  async requeue(submissionId: string, now: Date, efn?: string): Promise<void> {
     await this.db
       .update(eivSubmissions)
       .set({
         status: "queued",
         attemptCount: 0,
         lastError: null,
+        /*
+         * The EFN moves only when the caller says so (P118).
+         *
+         * `efnRefresh` in `@ds/domain` decides that, not this method: adopting
+         * the newest value unconditionally would silently re-file an accepted
+         * Meldung under a different physician, which is S30 and is not a
+         * decision a repository should be making on its own.
+         */
+        ...(efn === undefined ? {} : { efn }),
         // Also clears the worker's lease: the lease *is* `next_attempt_at`
         // pushed forward (migration 0005), so setting it to now both schedules
         // the row and releases it.
