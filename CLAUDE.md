@@ -19,9 +19,13 @@ points reported to the EIV-FOBI accreditation interface plus a PDF certificate.
 First client: **MEDICE**, therapeutic area **ADHS**, delivered inside their
 existing WordPress site.
 
-Budget is fixed at **140 h** and the launch date is fixed at **06.09.2026**.
-Scope discipline is therefore a correctness property, not a preference — see
-§3.
+The launch date is **06.09.2026**. The **140 h budget was withdrawn by the
+client on 26.08.2026** — _"revoke the fixed 140h and let's create a scalable
+product based on best practices without budget restrictions."_
+
+That changes what §3 is for, and it does not delete it. Hours are no longer the
+constraint; the date and the deferred list still are, and correctness still is.
+Read §3 before assuming anything is now in scope.
 
 ---
 
@@ -47,24 +51,50 @@ self-merge.
 
 ---
 
-## 3. Scope is contractual
+## 3. Scope is still contractual — for a different reason
 
-The in-scope list in `docs/roadmap.md` §4 is exhaustive. The deferred list is
-equally binding — **do not build deferred items opportunistically**, even when
-they look cheap. Specifically not, in this budget:
+Until 26.08.2026 this section existed because 140 hours could not stretch. That
+budget is withdrawn. What remains is the part that was never really about hours:
+
+**Every feature is a thing that has to keep working**, on a platform whose wrong
+answers are compliance incidents rather than bugs. A feature nobody asked for
+still needs tenant isolation, a migration, tests that can go red, copy in two
+locales, a screen that says what it does, and somebody to fix it at 22:00 in
+four years. That cost does not fall when the budget rises.
+
+So the deferred list stays binding, and the rule is unchanged in practice:
 
 Storyblok integration, Vue wrapper, analytics dashboards or charts, exports
 beyond CSV, SCORM/xAPI, gamification, self-service signup or billing, Salesforce
 sync, rich WYSIWYG authoring, media transcoding, second-customer onboarding.
 
-If a ticket appears to require a deferred item, stop and flag it rather than
-widening scope.
+**If a ticket appears to require a deferred item, stop and flag it.** The answer
+is now more often "yes, and here is what it costs to own" rather than "no, not
+in this budget" — but it is still a decision the client makes, in a ticket, and
+not one absorbed quietly while doing something else.
 
-The declared trade lever if the date comes under pressure is the **admin console
-(P9, 18 h)** — DigitalSpital seeds content manually instead. Nothing else is
-negotiable; in particular the security baseline, tenant isolation, server-side
-compliance logic and the responsive/a11y floor are costed in and are not
-reducible.
+### What the withdrawn budget does change
+
+- **Depth is no longer traded away.** Where a ticket previously said "the
+  smallest change that satisfies the acceptance criteria", the standard is now
+  the one the rest of this file already describes: fix the class, not the
+  instance (§9.11); a check that can go red (§9.1); a rule with a caller
+  (§9.3); a screen that says what it does (§9.4).
+- **The admin console is no longer a trade lever.** It was the declared thing to
+  cut if the date came under pressure. It is built, and it stays built.
+- **`docs/roadmap.md` §8's hour table is now history, not a plan.** It records
+  what the first six weeks were estimated at. Do not re-estimate against it.
+
+### What has _not_ changed
+
+- **06.09.2026.** An unlimited budget does not buy calendar time, and work that
+  cannot land safely before the date still has to be sequenced behind work that
+  can. A fixed date with unbounded hours is a different trade-off from a fixed
+  budget, not the absence of one.
+- **The floor.** The security baseline, tenant isolation, server-side compliance
+  logic and the responsive/a11y floor were never reducible and are not now.
+- **Human review** on anything touching auth, assessment, eiv or certificates
+  (§2). More hours means more changes reaching those four areas, not fewer.
 
 ---
 
