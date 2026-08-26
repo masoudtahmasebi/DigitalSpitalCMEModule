@@ -157,6 +157,22 @@ export const german = {
       bounced: "Zustellung fehlgeschlagen",
       revoked: "widerrufen",
     },
+    /*
+     * Why the delivery was given up on (P118-02).
+     *
+     * "Zustellung fehlgeschlagen" is the fact; these are the sentences that
+     * say what to do about it. Each names the next step, because two of the
+     * three are not fixable by pressing Erneut senden and the button that
+     * looks like the answer is disabled for exactly those two.
+     */
+    abandoned: {
+      no_recipient:
+        "Für diese Person ist keine E-Mail-Adresse hinterlegt. Die Bescheinigung steht zum Download bereit und kann versendet werden, sobald eine Adresse vorliegt.",
+      permanent_rejection:
+        "Der empfangende Server hat die Adresse dauerhaft abgelehnt. Bitte lassen Sie die Adresse korrigieren; ein erneuter Versand an dieselbe Adresse schlägt wieder fehl.",
+      attempts_exhausted:
+        "Der Versand ist mehrfach vorübergehend fehlgeschlagen und wurde aufgegeben. Prüfen Sie die SMTP-Einstellungen der Plattform und versenden Sie danach erneut.",
+    },
     loadFailed: "Die Bescheinigungen konnten nicht geladen werden.",
     actionFailed: "Die Aktion konnte nicht ausgeführt werden.",
   },

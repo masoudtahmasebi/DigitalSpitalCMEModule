@@ -3675,6 +3675,23 @@ export interface components {
             issuedAt: string | null;
             /** Format: date-time */
             deliveredAt: string | null;
+            /**
+             * @description Why delivery was given up on, or null (P118-02).
+             *
+             *     `bounced` alone says only that the email did not arrive, and the
+             *     three causes want three different actions — a participant with no
+             *     address on file, an address the receiving server refused, and a
+             *     platform whose SMTP has never been configured. The column has
+             *     existed since P8-03 and was returned by nothing, so the console
+             *     offered **Erneut senden** for all three, where for the first and the
+             *     third it can only fail again.
+             *
+             *     Deliberately an enum and not a message. The far end's rejection text
+             *     can carry the address and the server; a fixed vocabulary cannot
+             *     (§9.5).
+             * @enum {string|null}
+             */
+            deliveryAbandonedReason: "no_recipient" | "permanent_rejection" | "attempts_exhausted" | null;
         };
         /**
          * @description What an operator may reach. `customerId` is null only for `super_admin`

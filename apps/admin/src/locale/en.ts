@@ -167,6 +167,14 @@ export const en: DeepPartial<typeof german> = {
       bounced: "delivery failed",
       revoked: "revoked",
     },
+    abandoned: {
+      no_recipient:
+        "No email address is on file for this person. The certificate is available for download and can be sent once an address is supplied.",
+      permanent_rejection:
+        "The receiving server rejected the address permanently. Have the address corrected; sending again to the same one will fail again.",
+      attempts_exhausted:
+        "Delivery failed temporarily several times and was given up on. Check the platform's SMTP settings, then send again.",
+    },
     loadFailed: "The certificates could not be loaded.",
     actionFailed: "The action could not be carried out.",
   },

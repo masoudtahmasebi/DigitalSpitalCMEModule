@@ -8,7 +8,8 @@
  *   corrected name. It reports nothing to the Ärztekammer — the certificate and
  *   the Punktemeldung share no code path.
  * - **Erneut senden** sends the *same* document again. For a bounced address,
- *   not for a wrong name.
+ *   not for a wrong name — and not at all when the reason it bounced is one
+ *   resending cannot change (P118-02).
  * - **Widerrufen** withdraws the document and keeps the record. The enrolment,
  *   the progress and any Punktemeldung stay exactly where they were.
  *
@@ -33,6 +34,28 @@ import {
 import { EmptyState } from "./page.js";
 
 type Status = CertificateRecord["status"];
+
+type AbandonedReason = NonNullable<CertificateRecord["deliveryAbandonedReason"]>;
+
+/**
+ * Whether sending the same document again could possibly land (P118-02).
+ *
+ * `bounced` on its own says the email did not arrive, and the three reasons
+ * behind it want three different things from the operator:
+ *
+ * | reason | what to do |
+ * | --- | --- |
+ * | `no_recipient` | there is no address on file — the participant supplies one |
+ * | `permanent_rejection` | the address exists and was refused — correct it |
+ * | `attempts_exhausted` | transient failures ran out of retries — resending is exactly right |
+ *
+ * Only the last is a resend. Offering the button for the other two is §9.2 — a
+ * control that can only produce the same error, which looks like a decision to
+ * whoever clicks it.
+ */
+function resendable(reason: string | null | undefined): boolean {
+  return reason !== "no_recipient" && reason !== "permanent_rejection";
+}
 
 const TONE: Record<Status, "ok" | "warn" | "muted"> = {
   pending: "muted",
@@ -120,6 +143,8 @@ export function Certificates(props: { client: ApiClient; courseSlug?: string }) 
           {rows.map((row) => {
             const revoked = row.status === "revoked";
             const issued = row.status !== "pending";
+            const reason = row.deliveryAbandonedReason;
+            const canResend = resendable(reason);
             return (
               <tr key={row.id} className="border-t border-gray-100">
                 <td className="px-3 py-2 text-sm">{row.participantName}</td>
@@ -127,6 +152,17 @@ export function Certificates(props: { client: ApiClient; courseSlug?: string }) 
                   <Badge tone={TONE[row.status]}>
                     {de.certificates.state[row.status]}
                   </Badge>
+                  {/*
+                   * The reason, under the status rather than in a tooltip.
+                   * "Zustellung fehlgeschlagen" is the fact; this is the
+                   * sentence saying what the operator does about it (§9.4),
+                   * and until P118-02 the API returned it to nobody.
+                   */}
+                  {reason === null ? null : (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {de.certificates.abandoned[reason as AbandonedReason] ?? reason}
+                    </p>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-sm">{shortDate(row.issuedAt)}</td>
                 <td className="px-3 py-2 text-sm">{shortDate(row.deliveredAt)}</td>
@@ -143,7 +179,11 @@ export function Certificates(props: { client: ApiClient; courseSlug?: string }) 
                     </Button>
                     <Button
                       variant="secondary"
-                      disabled={revoked || !issued}
+                      // Disabled without a tooltip on purpose: the reason is
+                      // already a sentence under the status, where somebody
+                      // asking "why can I not send this?" is looking. A tooltip
+                      // is the same text somewhere they have to discover (§9.4).
+                      disabled={revoked || !issued || !canResend}
                       onClick={() =>
                         void act(() => client.adminResendCertificate(row.id))
                       }
