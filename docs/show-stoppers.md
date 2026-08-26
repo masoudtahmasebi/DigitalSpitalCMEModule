@@ -1797,3 +1797,48 @@ database:
 `keycloak-binding.test.ts` covers all thirteen branches, so the seed step was
 never the thing testing this — it had simply become an accidental second
 assertion, and a step that is not about Keycloak should not be one.
+
+---
+
+## S30 · May a Punktemeldung be re-filed under a corrected EFN? — **raised 26.08 (P118)**
+
+**Owner: DigitalSpital → EIV-FOBI / ÄKWL.** Blocks the second half of P118.
+
+### The situation
+
+A physician supplies an EFN, completes the course, the Punktemeldung is filed —
+and then the EFN turns out to be wrong. A typo in fifteen digits is not exotic;
+it is the failure ADR-0004 calls the worst available, because the points are
+credited to somebody and everything looks successful.
+
+The platform can correct the EFN (the physician does it themselves) and can
+re-file (`POST /learners/{id}/eiv`). The question is what re-filing **means**
+once the first one was accepted.
+
+### The question
+
+> Wenn eine Teilnahme mit einer falschen EFN gemeldet wurde und die richtige EFN
+> erst danach bekannt wird — ist die korrigierte Meldung innerhalb des
+> 7-Tage-Korrekturfensters als Korrektur derselben Teilnahme zu senden, oder muss
+> die erste Meldung zunächst storniert (`withdraw`) und die Teilnahme anschließend
+> unter der richtigen EFN neu gemeldet werden?
+>
+> Und: Was geschieht mit den Punkten, die der zuerst gemeldeten EFN bereits
+> gutgeschrieben wurden — werden diese durch die Korrektur automatisch entzogen,
+> oder ist dafür ein gesonderter Vorgang erforderlich?
+
+### Why we cannot answer it ourselves
+
+Because the EFN is not a field on the record — it **is** the record's subject. A
+name correction changes how one person is described; an EFN correction changes
+_which person_ was credited. Nothing in the platform can take points back from
+the first EFN, and guessing that a correction does so implicitly is exactly the
+invented rule §7 refuses.
+
+### What the platform does in the meantime
+
+`requeue` refuses when the EFN would change on a submission that was accepted,
+and says so. An operator gets a refusal naming the next step rather than a
+second filing nobody asked for. The never-accepted case — `queued`, `held`,
+`failed_*`, `window_closed` — is unambiguous and is fixed in P118: nothing was
+reported, so nothing can disagree, and the requeue picks up the corrected EFN.
