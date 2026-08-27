@@ -41,7 +41,7 @@ import { isPlaceholderVnr } from "./eiv.js";
  * without this list being looked at. The two that are *not* here are worth
  * naming:
  *
- * - `fortbildungsnummer` — nothing reads it (docs/show-stoppers.md S24). It
+ * - `fortbildungsnummer` — nothing reads it (docs/show-stoppers.md S31). It
  *   renders one line on the Zertifizierung tab and is absent from the
  *   certificate and the Meldung alike. Requiring it would be inventing a rule.
  * - the media sources — they live on `contents`, not on the course, so this

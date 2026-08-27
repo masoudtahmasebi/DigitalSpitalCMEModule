@@ -78,6 +78,7 @@ wants action today.
 | S28     | **Learner tokens carry no name or email — the certificate cannot be filled**              | M3 · 30.08       | **24.08** | MEDICE / DS   |
 | S27     | **Test-system credentials from EIV support, so the client can be proven**                 | M3 · 30.08       | **14.08** | MEDICE        |
 | S29     | **The Veranstalter interface we integrate against has an announced shutdown**             | **launch**       | **now**   | EIV / BÄK     |
+| S31     | **Is `fortbildungsnummer` the VNR, or a second number?** — Q4 of the ÄKWL letter          | M3 · 30.08       | 14.08     | MEDICE / ÄKWL |
 | ~~S24~~ | ~~Export the EIV Veranstalter Swagger~~                                                   | **CLOSED 09.08** | —         | —             |
 | ~~S3~~  | ~~WordPress repository access~~                                                           | **CLOSED 28.07** | —         | —             |
 | ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                                      | **CLOSED 28.07** | —         | —             |
@@ -1564,9 +1565,20 @@ producing the sheet they sign. One question to `zertifizierung@aekwl.de`.
 
 ---
 
-## S24 · What is `fortbildungsnummer`? — **raised 12.08 (P62-02)**
+## S31 · What is `fortbildungsnummer`? — **raised 12.08 (P62-02), renumbered 27.08**
 
 **Owner: MEDICE / ÄKWL.**
+
+> **This was S24 until 27.08.2026, and S24 was already taken.** The Swagger
+> export closed under that number on 09.08, so the index above carried one row
+> reading **S24 · CLOSED** and this question had no row at all. Anyone checking
+> "is S24 still open?" — including whoever is about to send the ÄKWL letter that
+> asks it as Question 4 — got the answer _closed_, about a different question.
+>
+> Two live questions sharing one identifier is §9.2 in a tracker: an answer that
+> looks like a decision and was never about the thing you asked. Renumbered
+> rather than merged, because they are unrelated, and the outgoing letter cites
+> no S-numbers so nothing external moves.
 
 `courses.fortbildungsnummer` has existed since `0001_init`, is editable in the
 admin console, and renders exactly one line on the learner's Zertifizierung tab.
