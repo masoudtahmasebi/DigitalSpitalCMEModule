@@ -69,7 +69,7 @@ wants action today.
 | ~~S5~~  | ~~Certificate-after-EIV vs the launch fallback~~ — **decided 24.08: issue on completion** | **CLOSED 24.08** | —         | —             |
 | ~~S7~~  | ~~80 % or 100 %~~ — **already per course; a field, not a constant. 20.08**                | **CLOSED 20.08** | —         | —             |
 | S8      | ADHS SMTP configuration — **PM is setting it in the console**                             | M3 · 30.08       | 21.08     | PM            |
-| S14     | Accreditation expires 12.10.2026; change must be notified — **PM accepted**               | post-launch      | 24.08     | PM            |
+| ~~S14~~ | ~~Expiry 12.10.2026 and change notification~~ — **MEDICE owns both, 27.08**               | **CLOSED 27.08** | —         | MEDICE        |
 | ~~S9~~  | ~~Hetzner account ownership and DNS~~ — **DigitalSpital's own, confirmed 20.08**          | **CLOSED 20.08** | —         | —             |
 | S10     | VNR password shared over chat — **rotation requested from MEDICE in a call 20.08**        | —                | now       | MEDICE        |
 | S23     | **VNR format, and whether any VNR-less completion already exists**                        | —                | 14.08     | MEDICE / ÄKWL |
@@ -780,6 +780,38 @@ refuses. Questions 5 and 6 stay in the letter.
 The extension makes Question 6 more urgent, not less: the accreditation expires
 12.10.2026, five weeks after launch, and a longer course is a course that
 outlives its own recognition unless somebody files.
+
+### 27.08.2026 — MEDICE owns both obligations. **Closed on our side.**
+
+> _"the medice takes care of the Questions 5 and 6 … we don't need to bother
+> ourselves with it."_
+
+Correct, and it was always so: both duties in the Bescheid fall on the
+**Veranstalter**, and the Veranstalter is MEDICE. The Anzeige of the platform
+change and the Antrag auf Verlängerung run through them. **Questions 5 and 6 come
+out of the ÄKWL letter** — leaving one letter about one subject, the EIV dataset.
+
+Two channels asking the same Kammer about the same Maßnahme is how you get two
+answers, so removing them is tidier than leaving them in "since it costs
+nothing".
+
+**What is still ours, and is not paperwork.** The platform enforces the window
+correctly — `courseAvailability` returns `ended` past `validTo`, and both the
+catalogue and the learning service refuse — so on **13.10.2026 the ADHS course
+simply stops being offered**. Nothing warns anybody first. There is no
+expiry-approaching signal anywhere in the console, in the API or in the domain:
+grep for one and the result is empty.
+
+So the failure mode is a correct refusal with no audience told in advance (§9.4),
+five weeks after launch, discovered by a physician finding the Fortbildung gone.
+That is the same shape as §9.10 — the refusal is right and the answer belongs
+somewhere else, in front of the operator who can act on it.
+
+**Not built, because it is new scope and the client has just narrowed it.**
+Raised here as a costed question instead: a pure `accreditationExpiry(window,
+now)` in `@ds/domain` and a banner on the course screen once expiry is inside
+~90 days is a couple of hours including tests. Today the MEDICE course is 46 days
+out, so it would be warning already. The decision is the client's.
 
 ---
 
