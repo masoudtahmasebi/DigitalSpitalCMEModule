@@ -12,6 +12,23 @@ _Anerkennungsbescheid_, _Ärztekammer_, _EFN_, _VNR_, _Mediathek_,
 _Evaluationsbogen_. You will be comparing against those exact words, so
 translating them here would only make the comparison harder.
 
+## What changed on 27.08.2026
+
+Four tickets gained a section headed **"New since the last pack"**. If you have
+an older copy, these are the only differences:
+
+| Ticket                                      | What is new                                                                                                                                                                |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **07** Teilnahmebescheinigung               | The participant is now told what became of their Punktemeldung, and can correct a rejected EFN themselves. **The German wording is the deliverable** — please copy it out. |
+| **12** Course settings, certificate and VNR | Publishing now refuses the placeholder VNR `0000000000000000000`.                                                                                                          |
+| **13** Participants and certificates        | An undeliverable certificate now says _why_, and **Erneut senden** is disabled where it could only fail again.                                                             |
+| **14** Punktemeldungen and EIV              | A failed row now says who can fix it. Adds the EFN-correction path, which contains a **deliberate refusal** worth understanding before you meet it.                        |
+
+Ticket 14's last step is the one to read carefully. If re-filing a Punktemeldung
+under a changed EFN ever silently succeeds after the first one was accepted,
+stop and tell us — that is the single failure in this pack that would put CME
+points on the wrong physician's record.
+
 ## Order
 
 The learner tickets (01–08) form one continuous Fortbildung and build on each

@@ -37,6 +37,27 @@ personal data than they need.
 Steps 9 and 10. An export with broken umlauts gets sent back by finance and is
 then a process problem, not a display problem.
 
+## New since the last pack — why a certificate was undeliverable
+
+**unzustellbar** used to be the whole story, and **Erneut senden** was offered
+on every such row — for two of the three causes it could only fail again.
+
+11. Find a certificate with status **unzustellbar** (or ask us to arrange one).
+12. Read the sentence under the status.
+13. Look at whether **Erneut senden** is available.
+
+### Expected
+
+- Step 12: a sentence naming the next step — no address on file, an address the
+  server refused, or repeated temporary failures pointing you at the platform's
+  SMTP settings.
+- Step 13: the button is **greyed out** for the first two, and **available** for
+  the third. Resending to an address that does not exist, or to one that was
+  permanently refused, cannot succeed and should not be offered.
+
+A row that failed before this was built may show no sentence. That is correct
+rather than a gap — the reason was not kept back then.
+
 ## Please report with
 
 A screenshot of the participant list **with names blacked out** — it is enough
