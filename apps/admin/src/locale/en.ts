@@ -785,6 +785,19 @@ export const en: DeepPartial<typeof german> = {
 
   /** The Punktemeldung queue (P110-01). */
   eivQueue: {
+    reporting: {
+      liveTitle: "Submissions are being sent",
+      live: "Completed participations are reported to the Ärztekammer. A test completion on an accredited course produces a real Punktemeldung.",
+      offTitle: "Submissions are not being sent",
+      off: "Punktemeldungen are recorded and queued, but nothing is sent to an Ärztekammer.",
+      endpoint: {
+        mock: "Target: mock endpoint.",
+        test: "Target: EIV test system.",
+        live: "Target: EIV production system.",
+        unknown:
+          "Target: unrecognised — the worker sends nothing to an unknown endpoint.",
+      },
+    },
     failureKind: {
       validation:
         "The Ärztekammer rejected the participant's EFN. Only they can correct it — they were told so on their completion screen. The Meldung is re-filed automatically once they do.",

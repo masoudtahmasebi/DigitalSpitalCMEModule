@@ -2,7 +2,9 @@
 
 **Assignee:** Amruth — this document and every ticket in this folder.
 **Tenant under test:** `medice`
-**Build:** record the commit from `GET /health` on the API before you start.
+**Build:** the version and commit are in the console footer. Record them before
+you start — a report is about a build, and "it does not work" and "it is not on
+the server you are looking at" are indistinguishable from a browser.
 
 17 files. Each is a standalone ticket of numbered cases with steps, expected
 results and a pass/fail line. T01–T08 are the learner path and run in order —
@@ -13,31 +15,35 @@ T09–T16 are the admin console and are independent.
 
 ## P0 · Before the first case
 
-**`EIV_WORKER_ENABLED=no` must be set on the host.**
+Open **Verwaltung → Teilnahme → Punktemeldungen**. A banner at the top of that
+screen states whether this installation sends anything to an Ärztekammer.
 
-```bash
-grep '^EIV_WORKER_ENABLED=' ~/ds-education/config.env
-```
+It must read **"Meldungen werden nicht übermittelt"**.
 
-It must print `EIV_WORKER_ENABLED=no`. If it does not, stop and get it set.
+If it reads **"Meldungen werden übermittelt"**, stop and tell DigitalSpital.
+Do not start the pack.
+
+### Why this gate exists
 
 Testing on `medice` means testing against **ADHS Akademie adult**, which carries
 the real VNR `2760552025919300018` from the ÄKWL Anerkennungsbescheid. Every
-completion queues a Punktemeldung against that live accreditation. With the
-worker off, nothing leaves the platform and the queue is still exercised — which
-is what T14 tests. With it on, a test EFN is filed against a real accredited
-event at a real Ärztekammer.
+completion queues a Punktemeldung against that live accreditation.
 
-Two further consequences of using the real course, neither of which is
-negotiable by a tester:
+With submissions off, the queue is still fully exercised — that is what T14
+tests, and nothing leaves the platform. With them on, a test EFN is filed
+against a real accredited event at a real Ärztekammer, and a filed Punktemeldung
+cannot be unfiled: it can only be withdrawn, which leaves its own record.
+
+The banner is the whole check. It is on that screen and no server access is
+needed to read it.
+
+### Two more consequences of using the real course
 
 - **Use test EFNs.** Never a real physician's number.
 - **Do not restructure ADHS Akademie adult.** The Bescheid requires changes of
   any kind be reported to the ÄKWL promptly and in writing — editing questions,
   reordering modules or changing points is such a change. T09–T12 therefore
   create their own course. Read a ticket's preconditions before starting it.
-
----
 
 ## How to record a result
 

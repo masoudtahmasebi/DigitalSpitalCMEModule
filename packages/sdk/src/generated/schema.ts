@@ -3377,11 +3377,47 @@ export interface components {
              */
             locked?: boolean | null;
         };
+        /**
+         * @description Whether this installation will actually send anything to an
+         *     Ärztekammer (P121-01).
+         *
+         *     The two inputs have been in the API's configuration since the worker
+         *     existed and reached a screen only inside an EIV-Abgleich result — a
+         *     check somebody has to know to run, on a course that already has a VNR.
+         *     So the one question the Punktemeldungen screen exists to answer,
+         *     *will these be filed?*, was the one thing it could not say.
+         *
+         *     It matters most to whoever is testing. A completion on an accredited
+         *     course queues a Punktemeldung against a real VNR at a real Kammer, and
+         *     the only thing standing between a test EFN and a statutory filing is
+         *     this posture. Somebody without shell access on the host previously had
+         *     no way to establish it at all.
+         */
+        EivReportingPosture: {
+            /** @description The worker's own `EIV_WORKER_ENABLED` flag. */
+            submissionsEnabled: boolean;
+            /**
+             * @description Which endpoint the installation points at. `unknown` is not a
+             *     synonym for safe — an unparseable base URL lands here, and treating
+             *     it as a mock would let a typo through the guard.
+             * @enum {string}
+             */
+            tier: "mock" | "test" | "live" | "unknown";
+            /**
+             * @description **The answer**, rather than its inputs: true only when the worker is
+             *     enabled *and* the endpoint is one a real Ärztekammer answers.
+             *
+             *     Derived server-side so no screen has to combine the two and reach a
+             *     different conclusion from the worker (§4 invariant 6).
+             */
+            willFile: boolean;
+        };
         EivSubmissionPage: {
             items: components["schemas"]["EivSubmissionRow"][];
             total: number;
             page: number;
             perPage: number;
+            reporting: components["schemas"]["EivReportingPosture"];
             /**
              * @description How many rows the next sweep would claim — `queued` or
              *     `failed_retryable` with the retry time passed. Counted across the

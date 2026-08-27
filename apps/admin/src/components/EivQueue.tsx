@@ -184,6 +184,36 @@ export function EivQueue(props: { client: ApiClient }) {
         ))}
       </div>
 
+      {/*
+        Whether anything will actually be filed (P121-01).
+
+        This screen's entire meaning turns on it, and until now it could not
+        say: both inputs sat in the API's configuration and surfaced only inside
+        an EIV-Abgleich result — a check somebody has to know to run, on a
+        course that already has a VNR. Anybody without a shell on the host had
+        no way to establish it at all, which is precisely the person testing.
+
+        Rendered whichever way it reads. A banner that appears only when
+        reporting is off would leave "no banner" meaning both "reporting is
+        live" and "this build is too old to say", and those are the two states
+        it most matters to tell apart (§9.1).
+      */}
+      {data?.reporting === undefined ? null : (
+        <Notice
+          tone={data.reporting.willFile ? "warning" : "info"}
+          title={
+            data.reporting.willFile
+              ? de.eivQueue.reporting.liveTitle
+              : de.eivQueue.reporting.offTitle
+          }
+        >
+          {data.reporting.willFile
+            ? de.eivQueue.reporting.live
+            : de.eivQueue.reporting.off}{" "}
+          {de.eivQueue.reporting.endpoint[data.reporting.tier]}
+        </Notice>
+      )}
+
       {data.items.length === 0 ? (
         <EmptyState title={de.eivQueue.empty} description={de.eivQueue.emptyHint} />
       ) : (

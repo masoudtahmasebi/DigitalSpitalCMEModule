@@ -1091,6 +1091,31 @@ export const german = {
   /** The Punktemeldung queue (P110-01). */
   eivQueue: {
     /*
+     * Whether anything will actually be filed (P121-01).
+     *
+     * `willFile` is the API's own answer, not two flags this screen combines —
+     * a console that ANDed them itself would be a second opinion about what the
+     * worker does, and disagreeing here means somebody believes nothing is
+     * being reported while it is.
+     *
+     * Both readings are shown. A banner that appeared only when reporting was
+     * off would leave its absence meaning both "reporting is live" and "this
+     * build is too old to say" — the two states it most matters to tell apart.
+     */
+    reporting: {
+      liveTitle: "Meldungen werden übermittelt",
+      live: "Abgeschlossene Teilnahmen werden an die Ärztekammer gemeldet. Eine Testteilnahme auf einer akkreditierten Fortbildung führt zu einer echten Punktemeldung.",
+      offTitle: "Meldungen werden nicht übermittelt",
+      off: "Punktemeldungen werden erfasst und in die Warteschlange gestellt, aber nichts wird an eine Ärztekammer gesendet.",
+      endpoint: {
+        mock: "Ziel: Mock-Endpunkt.",
+        test: "Ziel: EIV-Testsystem.",
+        live: "Ziel: EIV-Produktivsystem.",
+        unknown:
+          "Ziel: nicht erkannt — der Worker sendet an einen unbekannten Endpunkt nichts.",
+      },
+    },
+    /*
      * What EIV said, as a sentence naming who can act (P119-03).
      *
      * The API's vocabulary is `validation`, `business`, `auth`. An operator

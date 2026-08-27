@@ -52,6 +52,9 @@ function mount(over: Partial<EivSubmissionPage> = {}) {
     page: 1,
     perPage: 25,
     dueNow: 0,
+    // P121-01. Default to the safe reading: a fixture that files by default
+    // would make every unrelated case exercise the warning banner.
+    reporting: { submissionsEnabled: false, tier: "mock", willFile: false },
     ...over,
   };
   const adminListEivSubmissions = vi.fn().mockResolvedValue(page);
@@ -247,5 +250,62 @@ describe("what EIV actually said", () => {
     await waitFor(() => expect(screen.getByText(de.eivQueue.lastError)).toBeTruthy());
     expect(screen.queryByText(de.eivQueue.failureKind.validation)).toBeNull();
     expect(screen.queryByText(de.eivQueue.failureKind.business)).toBeNull();
+  });
+});
+
+/**
+ * Whether this installation will file anything (P121-01).
+ *
+ * The screen could not say. Both inputs sat in the API's configuration and
+ * reached a screen only inside an EIV-Abgleich result — a check somebody has to
+ * know to run, on a course that already has a VNR. Anybody without a shell on
+ * the host had no way to establish it, which is exactly the person doing the
+ * testing: a completion on an accredited course queues a Punktemeldung against
+ * a real VNR, and this posture is the only thing between a test EFN and a
+ * statutory filing.
+ */
+describe("the reporting posture", () => {
+  it("says so when nothing will be sent", async () => {
+    mount({ reporting: { submissionsEnabled: false, tier: "mock", willFile: false } });
+
+    await waitFor(() =>
+      expect(screen.getByText(de.eivQueue.reporting.offTitle)).toBeTruthy(),
+    );
+    expect(
+      screen.getByText(new RegExp(de.eivQueue.reporting.off.slice(0, 40))),
+    ).toBeTruthy();
+  });
+
+  it("warns when completions will reach a real Ärztekammer", async () => {
+    mount({ reporting: { submissionsEnabled: true, tier: "live", willFile: true } });
+
+    await waitFor(() =>
+      expect(screen.getByText(de.eivQueue.reporting.liveTitle)).toBeTruthy(),
+    );
+  });
+
+  /*
+   * The half that is easy to leave out. `willFile` is the API's answer, and a
+   * screen that re-derived it from the other two would be a second opinion
+   * about what the worker does — so the enabled-but-pointed-at-a-mock case must
+   * read as *off*, because that is what the worker will do.
+   */
+  it("follows willFile rather than the enabled flag", async () => {
+    mount({ reporting: { submissionsEnabled: true, tier: "mock", willFile: false } });
+
+    await waitFor(() =>
+      expect(screen.getByText(de.eivQueue.reporting.offTitle)).toBeTruthy(),
+    );
+    expect(screen.queryByText(de.eivQueue.reporting.liveTitle)).toBeNull();
+  });
+
+  it("names which endpoint the installation points at", async () => {
+    mount({ reporting: { submissionsEnabled: true, tier: "test", willFile: true } });
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(new RegExp(de.eivQueue.reporting.endpoint.test)),
+      ).toBeTruthy(),
+    );
   });
 });

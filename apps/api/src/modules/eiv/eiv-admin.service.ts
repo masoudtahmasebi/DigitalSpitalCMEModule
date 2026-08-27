@@ -139,6 +139,18 @@ function describe(kind: string, detail: string): { kind: string; detail: string 
 /** Statuses meaning "we believe the Ärztekammer has this". */
 const ACCEPTED_STATUSES = new Set(["submitted"]);
 
+/**
+ * Whether this installation will send anything to an Ärztekammer (P121-01).
+ *
+ * `willFile` is the answer; the other two are its inputs, kept because an
+ * operator debugging a silent queue wants to know *which* half is off.
+ */
+export interface EivReportingPosture {
+  readonly submissionsEnabled: boolean;
+  readonly tier: EivEndpointTier;
+  readonly willFile: boolean;
+}
+
 export class EivAdminService {
   constructor(
     private readonly repository: EivAdminRepositoryPort,
@@ -329,8 +341,37 @@ export class EivAdminService {
     readonly page: number;
     readonly perPage: number;
     readonly now: Date;
-  }): Promise<SubmissionPage> {
-    return this.repository.listSubmissions(query);
+  }): Promise<SubmissionPage & { readonly reporting: EivReportingPosture }> {
+    /*
+     * The posture rides with the queue (P121-01).
+     *
+     * Both inputs have been in the API's configuration since the worker
+     * existed, and reached a screen only inside an EIV-Abgleich result — a
+     * check somebody has to know to run, on a course that already has a VNR.
+     * So the one question this screen exists to answer, *will these actually be
+     * filed?*, was the one thing it could not say.
+     *
+     * `willFile` is computed here rather than left to the client to assemble
+     * from the other two. A screen that ANDs them itself is a second opinion
+     * about what the worker does, and the two would eventually disagree —
+     * §4 invariant 6, in the place where disagreeing means somebody believes
+     * nothing is being reported while it is.
+     */
+    const page = await this.repository.listSubmissions(query);
+    return { ...page, reporting: this.reportingPosture() };
+  }
+
+  /** Whether this installation will send anything to an Ärztekammer. */
+  private reportingPosture(): EivReportingPosture {
+    const tier = eivEndpointTier(this.options.baseUrl);
+    return {
+      submissionsEnabled: this.options.submissionsEnabled,
+      tier,
+      // `unknown` files nothing, and is deliberately not treated as safe
+      // elsewhere: an unparseable base URL lands there, and the worker refuses
+      // it rather than guessing. Both halves must hold for anything to leave.
+      willFile: this.options.submissionsEnabled && (tier === "live" || tier === "test"),
+    };
   }
 
   /** `describeEvent`, or a refusal naming the capability rather than a crash. */

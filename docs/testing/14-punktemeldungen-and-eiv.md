@@ -4,10 +4,29 @@
 
 ## Preconditions
 
-- P0 confirmed — **`EIV_WORKER_ENABLED=no`**
+- P0 confirmed — the Punktemeldungen banner reads _Meldungen werden nicht übermittelt_
 - At least one queued and one failed Punktemeldung
 
 ## Cases
+
+### T14.0 · The screen says whether it will file anything
+
+**Steps**
+
+1. Open Teilnahme → Punktemeldungen.
+2. Read the banner at the top.
+
+**Expected**
+
+- It states one of two things unambiguously: submissions are being sent, or they are not.
+- It names which endpoint the installation points at.
+- The banner is present either way — its absence is not a third state meaning "fine".
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
 
 ### T14.1 · The queue is ordered by deadline
 
