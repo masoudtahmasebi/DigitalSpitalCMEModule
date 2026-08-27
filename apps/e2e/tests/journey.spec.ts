@@ -785,6 +785,76 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
           mediaTrail(),
       ).toBeGreaterThan(16);
 
+      /*
+       * A forward seek is refused, in a real browser (P120-01).
+       *
+       * ## Why this is here and not only in VideoPlayer.test.tsx
+       *
+       * Four component tests already cover the clamp, and they pass. They drive
+       * a jsdom element whose `currentTime` is a plain property: setting it
+       * fires nothing the browser would fire, and the element never buffers,
+       * never re-ranges, and has no native controls to fight with. Every one of
+       * those differences is a way the clamp could hold in the suite and not in
+       * Chromium — which is exactly the shape of the client's report, and §9.13:
+       * a test can cover a function exhaustively and prove nothing about the
+       * product.
+       *
+       * So this asks the question the physician asked. The playhead is around
+       * seventeen seconds into an eighteen-second fixture, so a seek to the end
+       * is a *small* forward jump — deliberately, because a large one is the
+       * easy case. The ceiling is what has been watched plus five seconds of
+       * tolerance, so the assertion is that the playhead did not end up
+       * meaningfully past where it already was.
+       */
+      const beforeSeek = await video.evaluate(
+        (element: HTMLVideoElement) => element.currentTime,
+      );
+      await video.evaluate((element: HTMLVideoElement) => {
+        // What dragging a scrub bar to the end does, at the level the element
+        // sees it. The widget draws its own controls and clamps them, and this
+        // goes underneath that — the element's own `seeking` event is the last
+        // line of defence and the one a determined person reaches.
+        element.currentTime = element.duration;
+      });
+      await learner.waitForTimeout(500);
+
+      const afterSeek = await video.evaluate(
+        (element: HTMLVideoElement) => element.currentTime,
+      );
+      expect(
+        afterSeek,
+        `a forward seek to the end was allowed: ${beforeSeek.toFixed(1)}s → ` +
+          `${afterSeek.toFixed(1)}s. The gate would still be honest — the ` +
+          "watched percentage is the union of intervals and a jump credits " +
+          "nothing — but a physician can skip to the end, which is the thing " +
+          "the client reported and what the accreditation's watch condition is " +
+          "for.",
+      ).toBeLessThan(beforeSeek + 8);
+
+      /*
+       * Backwards is untouched, and this is the control (§9.2 inverted).
+       *
+       * A player that refused *every* seek would pass the assertion above and
+       * be a worse product than one that allowed all of them: re-watching a
+       * passage you did not follow is the ordinary use of a scrub bar, and the
+       * accreditation asks that the material be seen, not that it be endured
+       * in one pass.
+       */
+      await video.evaluate((element: HTMLVideoElement) => {
+        element.currentTime = 2;
+      });
+      await learner.waitForTimeout(500);
+      expect(
+        await video.evaluate((element: HTMLVideoElement) => element.currentTime),
+        "a backwards seek was refused — re-watching is allowed and always was",
+      ).toBeLessThan(6);
+
+      // Back to where the rest of this act expects the playhead to be.
+      await video.evaluate((element: HTMLVideoElement) => {
+        element.currentTime = element.duration - 1;
+      });
+      await learner.waitForTimeout(500);
+
       await learner.getByRole("button", { name: "Pause", exact: true }).first().click();
       await expect
         .poll(() => video.evaluate((element: HTMLVideoElement) => element.paused))

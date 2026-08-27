@@ -219,6 +219,67 @@ describe("forward seeking", () => {
     return { ...rendered, video, writes, at: () => current };
   }
 
+  /**
+   * Resuming where the learner left off (P120-02).
+   *
+   * ## Why this was missing
+   *
+   * `startAtSec: 875` has been in this file's default fixture since the prop
+   * existed, and **nothing asserted the element ever opens there** — every case
+   * that cares about seeking overrides it to 0, which is the honest thing for
+   * those cases and left the resume itself covered by nobody.
+   *
+   * The rule is exhaustively tested (`resume.test.ts`: 875 → 840) and the API
+   * returns it (`learning-flow`: `resumeAtSec` is 540 after a position of 600).
+   * Between those two and the screen sat one `handleLoadedMetadata`, untested —
+   * §9.7 exactly: name the caller, or the call site is what is untested.
+   *
+   * The client asked for this behaviour by describing it: *"I am watching a
+   * video which is 18 minutes, at 12:34 i pause or close the window, and after
+   * a day i resume … my video starts from 12:01."*
+   */
+  it("opens where the learner left off, once the element knows its duration", () => {
+    const { video, at } = trackedPlayer({ startAtSec: 840, seekCeilingSec: 845 });
+
+    // Before metadata there is no duration, and every browser silently
+    // discards a `currentTime` written this early. Asserting the *order* is
+    // the point: a resume applied on mount is a resume that does not happen.
+    expect(at()).toBe(0);
+
+    Object.defineProperty(video, "duration", { configurable: true, value: 1080 });
+    fireEvent.loadedMetadata(video);
+
+    expect(at()).toBe(840);
+  });
+
+  it("does not seek past the end of a video shorter than the stored position", () => {
+    // A re-encoded or replaced file is shorter than the one the position was
+    // recorded against. Seeking beyond `duration` leaves the element in a state
+    // that presents as a player that will not start.
+    const { video, at } = trackedPlayer({ startAtSec: 840, seekCeilingSec: 845 });
+
+    Object.defineProperty(video, "duration", { configurable: true, value: 300 });
+    fireEvent.loadedMetadata(video);
+
+    expect(at()).toBe(300);
+  });
+
+  it("leaves a learner who is already somewhere alone", () => {
+    /*
+     * The control. `handleLoadedMetadata` can fire more than once — a source
+     * change, a re-range, a codec switch — and a resume that re-applied itself
+     * would drag somebody backwards mid-lesson, which is the report P71-01 was.
+     */
+    const { video, at } = trackedPlayer({ startAtSec: 840, seekCeilingSec: 845 });
+
+    Object.defineProperty(video, "duration", { configurable: true, value: 1080 });
+    fireEvent.loadedMetadata(video);
+    video.currentTime = 900;
+    fireEvent.loadedMetadata(video);
+
+    expect(at()).toBe(900);
+  });
+
   it("stops a drag to the end at what has actually been watched", () => {
     // Five minutes watched of a 25-minute module: dragging to the end lands at
     // 5:05, not at 25:45. The clamp is what makes the accreditation's "must be
