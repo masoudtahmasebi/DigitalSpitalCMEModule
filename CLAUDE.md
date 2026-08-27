@@ -543,11 +543,19 @@ Two rules keep it honest, and both are the §9.1 trap in a new place:
 
 ## 10. Interim ticket IDs
 
-Jira project **DEP** is not yet populated. Until it is, tasks use the internal
-IDs assigned in `docs/backlog/` (`P0-01`, `P0-02`, …) and commits use those IDs
-in place of the Jira key.
+Jira project **DEP** exists and is reachable, and since 27.08.2026 it holds the
+**test pack** — DEP-5 (the hub) and DEP-6 … DEP-21, mapped to `docs/testing/`
+in that directory's README. Amruth runs those and reports on them there.
 
-When DEP is populated, `docs/backlog/README.md` §"Remapping to Jira" describes
-the one-time migration: each task's `jira:` field is filled in, and from that
-point branches and commits use the `DEP-123` form. Historic commits are not
-rewritten.
+**This is not the migration §10 was waiting for, and commits do not change.**
+The development backlog is still `docs/backlog/`, still `P0-01`, `P118-02`, and
+commits still carry those IDs. A DEP key today names a _test ticket_, so a
+commit reading `DEP-13: …` would point at "Lernerfolgskontrolle — the exam a
+physician sits" rather than at any work order. Two numbering schemes sharing one
+prefix is exactly the kind of thing that reads as correct for a year.
+
+The one-time migration in `docs/backlog/README.md` §"Remapping to Jira" — each
+task's `jira:` field filled in, branches and commits moving to the `DEP-123`
+form — has **not** been done. When it is, it is its own ticket, it has to
+account for the keys the test pack already occupies, and historic commits are
+not rewritten.

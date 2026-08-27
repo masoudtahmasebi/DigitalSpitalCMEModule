@@ -10,6 +10,51 @@ results and a pass/fail line.
 
 ---
 
+## These are in Jira, and Jira is where they are worked
+
+Project **DEP** was populated on 27.08.2026 and the pack now lives there. Amruth
+runs the tickets and reports on them; this directory is the source they were
+written from, and the two must not be allowed to drift apart silently.
+
+**Jira renumbers.** Setup runs first, so it became **T01** there, and the
+Fortbildungsbereich and course-detail tickets are one ticket rather than two.
+The mapping is the only place that fact is recorded:
+
+| This file                                           | Jira                                                      | Jira's number                       |
+| --------------------------------------------------- | --------------------------------------------------------- | ----------------------------------- |
+| `00-README.md`                                      | [DEP-5](https://digitalspital.atlassian.net/browse/DEP-5) | — the hub, and the reporting format |
+| `16-prepare-the-data.md`                            | DEP-6                                                     | T01                                 |
+| `01-the-widget-appears.md`                          | DEP-7                                                     | T02                                 |
+| `02-sign-in-from-medice.md`                         | DEP-8                                                     | T03                                 |
+| `03-isolation-from-the-host-page.md`                | DEP-9                                                     | T04                                 |
+| `04-console-csp-and-cors.md`                        | DEP-10                                                    | T05                                 |
+| `05-fortbildungsbereich.md` + `06-course-detail.md` | DEP-11                                                    | T06                                 |
+| `07-video-gating-and-resume.md`                     | DEP-12                                                    | T07                                 |
+| `08-lernerfolgskontrolle.md`                        | DEP-13                                                    | T08                                 |
+| `09-mediathek.md`                                   | DEP-14                                                    | T09                                 |
+| `10-evaluation-and-efn.md`                          | DEP-15                                                    | T10                                 |
+| `11-certificate-and-punktemeldung.md`               | DEP-16                                                    | T11                                 |
+| `12-layout-fidelity.md`                             | DEP-17                                                    | T12                                 |
+| `13-responsive-on-the-medice-page.md`               | DEP-18                                                    | T13                                 |
+| `14-states-and-resilience.md`                       | DEP-19                                                    | T14                                 |
+| `15-cross-browser-and-ios.md`                       | DEP-20                                                    | T15                                 |
+| `17-verify-what-the-journey-produced.md`            | DEP-21                                                    | T16                                 |
+
+The Jira descriptions carry two things these files do not, both of which exist
+because a report that cannot be acted on costs a round trip:
+
+- **the reporting format** — build and commit, exact URL, the `(Referenz: …)`
+  id, expected vs actual — in DEP-5, which every ticket links back to;
+- **an "Expected refusals" section per ticket**, naming the guards that look
+  like defects. A refused forward seek, a locked exam, a DocCheck visitor left
+  signed out: each is the product working, and each has been reported as a bug
+  before.
+
+If a case changes here, change it in Jira too. If it changes in Jira first,
+bring it back — this directory is what survives the project.
+
+---
+
 ## What this pack is weighted towards, and why
 
 | Group               | Tickets |                                                                                                                                                                                                                                                       |
