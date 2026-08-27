@@ -1,66 +1,86 @@
 # CME module — test pack
 
-**Assignee:** Amruth — this document and every ticket in this folder.
-**Tenant under test:** `medice`
-**Build:** the version and commit are in the console footer. Record them before
-you start — a report is about a build, and "it does not work" and "it is not on
-the server you are looking at" are indistinguishable from a browser.
+**Assignee:** Amruth
+**The thing under test:** the DigitalSpital learner widget **inside MEDICE's
+WordPress site**. That is what a physician sees, and it is where a defect costs
+something.
 
-23 files. Each is a standalone ticket of numbered cases with steps, expected
+17 tickets, 97 cases. Each is standalone, with numbered cases, steps, expected
 results and a pass/fail line.
-
-| Group             | Tickets | What it tests                                                                                                             |
-| ----------------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **Learner path**  | T01–T08 | The Fortbildung end to end. Run **in order** — in sequence they are one continuous course rather than eight setups.       |
-| **Admin console** | T09–T16 | Authoring, moderation, reporting, access control. Independent of each other.                                              |
-| **Frontend**      | T17–T22 | The product **as a frontend**: layout fidelity, breakpoints, component states, browser console, the embed, cross-browser. |
-
-The third group exists because the first two do not cover it. T01–T16 are system
-and compliance tests that happen to be driven through a browser — they ask
-whether the _rules_ hold, and a screen that renders badly while answering
-correctly passes every one of them. T17–T22 ask whether the frontend is right.
-
-**T20 runs alongside T01–T08**, not after them: keep devtools open on the Console
-and Network tabs while walking the learner path and record as you go. Several
-classes of defect are visible only there and appear in no server log.
 
 ---
 
-## P0 · Before the first case
+## What this pack is weighted towards, and why
 
-Open **Verwaltung → Teilnahme → Punktemeldungen**. A banner at the top of that
-screen states whether this installation sends anything to an Ärztekammer.
+| Group               | Tickets |                                                                                                                                                                                                                                                       |
+| ------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The embed**       | T01–T04 | Whether the widget is on the page, whether the physician is signed in, whether the host page and the widget leave each other alone, and what the browser console says. **Most first failures live here**, and most of them are invisible server-side. |
+| **The journey**     | T05–T11 | What a physician actually does: find the Fortbildung, watch it, sit the exam, complete it, get the Teilnahmebescheinigung, learn what became of their points.                                                                                         |
+| **How it holds up** | T12–T15 | Layout fidelity against the MEDICE renders, responsive behaviour on their page, loading/empty/error states, cross-browser and iOS.                                                                                                                    |
+| **Data entry**      | T16–T17 | Setting the data up, and checking what the journey produced landed correctly.                                                                                                                                                                         |
 
-It must read **"Meldungen werden nicht übermittelt"**.
+**T16 runs first** — it is setup, not a test area. The admin console fills data
+in; it is not the product. It gets two tickets because that is what it is worth,
+and T16.0 is a hard gate that stops the whole pack.
 
-If it reads **"Meldungen werden übermittelt"**, stop and tell DigitalSpital.
-Do not start the pack.
+**T04 runs alongside T05–T11**, not after. Keep devtools open on Console and
+Network through the whole journey and record as you go. CSP and CORS refusals
+happen between the browser and the far end and appear in **no server log** — that
+console is the only place they exist.
 
-### Why this gate exists
+---
 
-Testing on `medice` means testing against **ADHS Akademie adult**, which carries
-the real VNR `2760552025919300018` from the ÄKWL Anerkennungsbescheid. Every
-completion queues a Punktemeldung against that live accreditation.
+## Order
 
-With submissions off, the queue is still fully exercised — that is what T14
-tests, and nothing leaves the platform. With them on, a test EFN is filed
-against a real accredited event at a real Ärztekammer, and a filed Punktemeldung
-cannot be unfiled: it can only be withdrawn, which leaves its own record.
+```
+T16 (setup, incl. the T16.0 gate)
+  → T01 → T02 → T03            the widget is there, you are signed in, it is isolated
+    → T05 → T06 → T07 → T08 → T09 → T10 → T11     the journey, in order
+      (T04 recorded throughout)
+        → T12 → T13 → T14 → T15                   how it holds up
+          → T17                                    what the journey produced
+```
 
-The banner is the whole check. It is on that screen and no server access is
-needed to read it.
+T05–T11 build on each other and are one continuous Fortbildung run in sequence.
 
-### Two more consequences of using the real course
+---
+
+## T16.0 is a gate
+
+Open **Verwaltung → Teilnahme → Punktemeldungen** and read the banner.
+
+It must say **"Meldungen werden nicht übermittelt"**.
+
+If it says otherwise, **stop and tell DigitalSpital.** Testing runs against
+**ADHS Akademie adult**, which carries the real VNR `2760552025919300018` from
+the ÄKWL Anerkennungsbescheid. A completion with submissions on files a test EFN
+against a live accreditation at a real Ärztekammer, and a filed Punktemeldung
+cannot be unfiled — only withdrawn, which leaves its own record.
+
+Two more consequences of testing on the real course:
 
 - **Use test EFNs.** Never a real physician's number.
 - **Do not restructure ADHS Akademie adult.** The Bescheid requires changes of
-  any kind be reported to the ÄKWL promptly and in writing — editing questions,
-  reordering modules or changing points is such a change. T09–T12 therefore
-  create their own course. Read a ticket's preconditions before starting it.
+  any kind be reported to the ÄKWL promptly and in writing. T16 creates its own
+  course for anything structural.
+
+---
+
+## Two things about this site that are not defects
+
+**There is no WordPress login for physicians.** MEDICE's theme performs its own
+Keycloak sign-in and keeps the token in the session; `is_user_logged_in()` is
+false for every physician. Do not look for a WordPress user, and do not report
+its absence.
+
+**A DocCheck sign-in leaves the widget signed out.** DocCheck involves no
+Keycloak, so such a visitor holds no access token. The signed-out state is
+correct (T02.4). Whether it is _clear enough_ to somebody who has just logged in
+elsewhere is a fair question and worth your judgement — that part is a finding.
+
+---
 
 ## How to record a result
-
-Each case ends with:
 
 ```
 **Result** ☐ pass ☐ fail ☐ blocked
@@ -68,67 +88,56 @@ Each case ends with:
 **Observed**
 ```
 
-Fill in **Observed** on anything that is not a clean pass — what you did, what
-happened, what you expected. A screenshot alone is rarely enough for a case
-about ordering or state.
+Fill in **Observed** for anything that is not a clean pass: what you did, what
+happened, what you expected. For ordering and state cases a screenshot alone is
+rarely enough.
 
-`blocked` means the case could not be run (missing precondition, an earlier case
-failed). It is not a failure and should not be filed as one.
+`blocked` means the case could not be run — a missing precondition, an earlier
+case failed. It is not a failure and should not be filed as one.
 
----
-
-## Cases marked blocking
-
-Seven cases say **blocking** in their note. Stop and report those immediately
-rather than continuing the ticket:
-
-| Case  | What it would mean                                            |
-| ----- | ------------------------------------------------------------- |
-| T12.2 | A stored VNR password is retrievable                          |
-| T13.1 | A full EFN is rendered anywhere                               |
-| T14.5 | Support can set another person's EFN                          |
-| T14.7 | A Punktemeldung re-files under a changed EFN after acceptance |
-| T16.2 | An invitation link works twice                                |
-| T10.6 | An already-recorded exam result changed                       |
-| T20.4 | A full EFN or a VNR password appears in any network response  |
-
-T14.7 is the sharpest: it would credit CME points to a second physician, and
-nothing in the platform can take them back off the first.
+**Record the build first.** The version and commit are in the console footer.
+"It does not work" and "it is not on the server you are looking at" are
+indistinguishable from a browser.
 
 ---
 
-## Expected refusals
+## Blocking cases
 
-Several cases assert that the product **refuses** something. Those are not
-defects and should be recorded as passes:
+Stop and report immediately rather than finishing the ticket:
 
-- **T03.3** — forward seeking stops at what has been watched, plus about five
-  seconds of tolerance. Small nudges working is by design; dragging to the end
-  must be refused.
-- **T12.3** — a malformed VNR is accepted. The check-digit rule is unconfirmed
-  by the Ärztekammer, and a guessed rule would refuse a legitimate number from
-  another Kammer. Record what happens; do not file it.
-- **T14.5** — there is no way to set another person's EFN, and there should not
-  be.
-- **T14.7** — requeue refuses after acceptance if the EFN changed.
-- **T07.1** — the certificate's **Anschrift** line is empty by agreement. Confirm
-  it renders cleanly; do not file it.
-- **T21.4** — `document.querySelector('ds-lms').shadowRoot` returns `null`. The
-  root is closed deliberately, so a node coming back is the finding, not the
-  null.
-- **T17.x** — `docs/design/README.md` records existing verdicts. A row it marks
-  **deliberate** is a documented deviation, not a defect. A row it marks
-  **matches** that no longer does is a regression and _is_ a finding.
+| Case  | What it would mean                                       |
+| ----- | -------------------------------------------------------- |
+| T02.3 | The token endpoint hands a token to the wrong session    |
+| T04.4 | A full EFN or VNR password appears in a network response |
+| T16.4 | A stored VNR password is retrievable                     |
+| T17.2 | A full EFN is rendered anywhere                          |
+
+---
+
+## Expected refusals — do not file these
+
+- **T01.1** — if `<ds-lms` is missing from view-source, the theme is not
+  rendering the shortcode. Real, but it stops the pack rather than being one
+  finding among many.
+- **T02.4** — DocCheck leaves the widget signed out. Correct.
+- **T03.3** — `document.querySelector('ds-lms').shadowRoot` returns `null`. The
+  root is closed deliberately; a node coming back is the finding.
+- **T07.3** — forward seeking is refused, with about 5 seconds of tolerance.
+  Small nudges working is by design.
+- **T11.1** — the certificate's **Anschrift** line is empty by agreement.
+  Confirm it renders cleanly; do not file it.
+- **T12.x** — `docs/design/README.md` records existing verdicts. A row it marks
+  **deliberate** is a documented deviation. A row it marks **matches** that no
+  longer does is a regression, and that _is_ a finding.
 
 ---
 
 ## German terms
 
-The product is German. These stay in German everywhere, including in an English
-console, because they appear verbatim on the Ärztekammer's own documents:
+The product is German. These stay German everywhere, because they appear
+verbatim on the Ärztekammer's own documents:
 
 _Lernerfolgskontrolle_ · _Teilnahmebescheinigung_ · _Punktemeldung_ ·
 _Anerkennungsbescheid_ · _Ärztekammer_ · _EFN_ · _VNR_ · _Mediathek_ ·
-_Evaluationsbogen_ · _Zusammenfassung_ · _Referenten_ · _Zertifizierung_
-
-Any **other** German string on an English console screen is a finding (T15.5).
+_Evaluationsbogen_ · _Zusammenfassung_ · _Referenten_ · _Zertifizierung_ ·
+_Fortbildung_ · _Fortbildungsbereich_
