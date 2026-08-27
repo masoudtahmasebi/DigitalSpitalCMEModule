@@ -849,9 +849,29 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         "a backwards seek was refused — re-watching is allowed and always was",
       ).toBeLessThan(6);
 
-      // Back to where the rest of this act expects the playhead to be.
+      /*
+       * Back towards the end, but **with runway left** (P124-01).
+       *
+       * This was `element.duration - 1`, and it failed the first run of this
+       * journey against production on 27.08.2026. The player draws one button
+       * with three names — `Pause` while playing, `Erneut abspielen` once the
+       * video has ended, `Abspielen` otherwise (`VideoPlayer.tsx`). Against the
+       * eight-second fixture one second of runway always survives the 500 ms
+       * below; against a real MEDICE video over a real network it does not, the
+       * video ends, the button reads `Erneut abspielen`, and the click below
+       * waits the full thirty seconds for a `Pause` that can never appear.
+       *
+       * The product was right and the assumption was the test's. Five seconds
+       * is chosen so the control is genuinely exercised rather than skipped —
+       * making the click conditional would leave a broken pause button green,
+       * which is the §9.1 trap this suite exists to avoid.
+       *
+       * Nothing after this needs the playhead at the very end: the percentage
+       * below is the server's union of watched intervals, which a seek does not
+       * move, and Act 12 asserts `Abspielen` after a reload.
+       */
       await video.evaluate((element: HTMLVideoElement) => {
-        element.currentTime = element.duration - 1;
+        element.currentTime = Math.max(0, element.duration - 5);
       });
       await learner.waitForTimeout(500);
 
