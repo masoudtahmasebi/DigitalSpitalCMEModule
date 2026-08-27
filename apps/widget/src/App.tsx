@@ -33,7 +33,7 @@ import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
 import type { TokenProvider } from "./token.js";
 import { indexTitles, nextAvailableContent } from "./player.js";
-import { decode, encode, type WidgetRoute } from "./route.js";
+import { decode, encode, type CourseTab, type WidgetRoute } from "./route.js";
 import { CourseList } from "./components/CourseList.js";
 import { CertificationTab } from "./components/CertificationTab.js";
 import { ProgressCard, StickyMetaBar } from "./components/CourseHeader.js";
@@ -56,8 +56,13 @@ import {
 } from "./components/primitives.js";
 
 /** The four tabs of the course detail (layout §4.2). */
-const TABS = ["overview", "speakers", "certification", "library"] as const;
-type Tab = (typeof TABS)[number];
+const TABS = [
+  "overview",
+  "speakers",
+  "certification",
+  "library",
+] as const satisfies readonly CourseTab[];
+type Tab = CourseTab;
 
 type Screen =
   | { kind: "outline" }
@@ -121,10 +126,18 @@ function screenFromRoute(course: CourseDetail, route: WidgetRoute): Screen | und
   }
 }
 
-function routeForScreen(screen: Screen): WidgetRoute {
+/**
+ * The address for a screen — and, on the outline, for which tab of it (P123-01).
+ *
+ * `tab` is a parameter rather than being read from the screen because a `Screen`
+ * deliberately does not carry it: the tab row exists only on the outline, and
+ * threading it through the player and the exam would put a field on four screens
+ * that three of them must ignore.
+ */
+function routeForScreen(screen: Screen, tab: CourseTab): WidgetRoute {
   switch (screen.kind) {
     case "outline":
-      return { kind: "outline" };
+      return { kind: "outline", tab };
     case "lesson":
     case "quiz":
       return { kind: "content", contentId: screen.contentId };
@@ -445,6 +458,7 @@ function Loaded(props: {
     const target = screenFromRoute(course.data, route);
     if (target === undefined) return;
     resumed.current = true;
+    if (route.kind === "outline") setTab(route.tab);
     setScreen(target);
   }, [course.data]);
 
@@ -462,7 +476,9 @@ function Loaded(props: {
       const route = decode(window.location.hash);
       if (route === undefined) return;
       const target = screenFromRoute(detail, route);
-      if (target !== undefined) setScreen(target);
+      if (target === undefined) return;
+      if (route.kind === "outline") setTab(route.tab);
+      setScreen(target);
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
@@ -482,10 +498,10 @@ function Loaded(props: {
    */
   useEffect(() => {
     if (!addressApplied.current) return;
-    const fragment = `#${encode(routeForScreen(screen))}`;
+    const fragment = `#${encode(routeForScreen(screen, tab))}`;
     if (window.location.hash === fragment) return;
     window.history.replaceState(null, "", fragment);
-  }, [screen]);
+  }, [screen, tab]);
 
   const resumed = useRef(false);
   useEffect(() => {

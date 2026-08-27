@@ -173,6 +173,19 @@ function inPlayer(): boolean {
   return screen.queryAllByRole("button", { name: /Fortbildung pausieren/u }).length > 0;
 }
 
+/**
+ * The name of the tab currently selected on the course overview.
+ *
+ * Read from `aria-selected` rather than from what the panel renders, because
+ * three of the four tabs fetch something of their own and this file's `fetch`
+ * stub answers every URL with the course. Asserting on panel content would make
+ * these cases fail for a reason that has nothing to do with the address.
+ */
+function selectedTab(): string | undefined {
+  const selected = screen.queryAllByRole("tab", { selected: true })[0];
+  return selected?.textContent ?? undefined;
+}
+
 function renderApp() {
   return render(
     <App
@@ -189,11 +202,20 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      const body = url.includes("/contents/")
-        ? lesson()
-        : url.includes("/enrolment")
-          ? enrolmentState()
-          : course();
+      /*
+       * `/materials` before `/contents/`: the Mediathek tab fetches the whole
+       * library in one call, and without a shape of its own `MediathekPanel`
+       * receives a `CourseDetail` and throws. An empty library is the right
+       * fixture here — these cases are about the address, and the panel having
+       * rows or not is DEP-14's business.
+       */
+      const body = url.includes("/materials")
+        ? { groups: [] }
+        : url.includes("/contents/")
+          ? lesson()
+          : url.includes("/enrolment")
+            ? enrolmentState()
+            : course();
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -319,5 +341,57 @@ describe("the learner's address", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
     expect(window.location.hash).toBe("#kontakt");
+  });
+
+  /*
+   * The tab row (P123-01).
+   *
+   * P82-04 gave the player, the evaluation and the Punktemeldung an address and
+   * left the four tabs of the course overview as React state — so the Mediathek
+   * was a place a physician could be standing in and could not reload into,
+   * link to, or press Back out of. That is §9.8's three symptoms, and each of
+   * them on its own reads as the browser being awkward.
+   *
+   * These are the wiring, not the grammar. `route.test.ts` would be just as
+   * green with every line below deleted.
+   */
+  it("opens the tab named in the fragment", async () => {
+    window.history.replaceState(null, "", "#ds/mediathek");
+    renderApp();
+
+    await waitFor(() => {
+      expect(selectedTab()).toBe("Mediathek");
+    });
+  });
+
+  it("writes the fragment when the learner changes tab", async () => {
+    renderApp();
+    await waitFor(() => {
+      expect(inOutline()).toBe(true);
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Mediathek" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#ds/mediathek");
+    });
+  });
+
+  it("follows Back from one tab to another", async () => {
+    window.history.replaceState(null, "", "#ds/zertifizierung");
+    renderApp();
+
+    await waitFor(() => {
+      expect(selectedTab()).toBe("Zertifizierung");
+    });
+
+    act(() => {
+      window.history.replaceState(null, "", "#ds");
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+
+    await waitFor(() => {
+      expect(selectedTab()).toBe("Übersicht");
+    });
   });
 });

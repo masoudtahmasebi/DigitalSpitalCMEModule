@@ -435,6 +435,30 @@ export function CompletionScreen(props: {
             </span>
           </label>
         ) : null}
+
+        {/*
+          Why the button below is dead, said where somebody looks (P123-03).
+
+          `ready` requires the box, so an untouched checkbox is a disabled
+          "Fortbildung abschließen" and, until now, no explanation anywhere on
+          the screen — CLAUDE.md §9.4. The sentence had been written for exactly
+          this (`consentRequired`) and was rendered by nothing, which is §9.3 in
+          a locale file and is why `check:copy` now exists.
+
+          Only once the rest of the form is filled in. Shown from the start it
+          would be the first thing a physician reads about a box they have not
+          reached yet, and it would sit there through every other field they
+          still have to complete — an instruction that is true too early reads
+          as an error.
+        */}
+        {consentAvailable &&
+        !consented &&
+        givenName.trim() !== "" &&
+        familyName.trim() !== "" ? (
+          <p className="text-sm text-status-inProgress" role="status">
+            {de.completion.consentRequired}
+          </p>
+        ) : null}
       </div>
 
       {blockers.length > 0 ? (

@@ -55,10 +55,25 @@ import { stripTrailingSlashes } from "@ds/domain";
  * `#ds/inhalt/<id>` would then be wrong the moment a content changed kind.
  */
 export type WidgetRoute =
-  | { readonly kind: "outline" }
+  | { readonly kind: "outline"; readonly tab: CourseTab }
   | { readonly kind: "content"; readonly contentId: string }
   | { readonly kind: "evaluation" }
   | { readonly kind: "reporting" };
+
+/**
+ * The four tabs of the course detail page (P123-01).
+ *
+ * Declared here rather than in `App.tsx` because the address is what makes a
+ * tab a place rather than a rendering choice, and a type owned by the component
+ * would have to be imported *backwards* by the router.
+ *
+ * The tab belongs to the `outline` route rather than being a route of its own:
+ * a tab is which face of the course overview you are looking at, not a
+ * different screen. Encoding it separately would allow `#ds/mediathek` to be
+ * decoded while the learner is inside a video, which is not a state the product
+ * has.
+ */
+export type CourseTab = "overview" | "speakers" | "certification" | "library";
 
 /** Everything this router answers to. Anything else belongs to the host page. */
 const PREFIX = "ds";
@@ -66,6 +81,24 @@ const PREFIX = "ds";
 const CONTENT_SEGMENT = "inhalt";
 const EVALUATION_SEGMENT = "evaluation";
 const REPORTING_SEGMENT = "punktemeldung";
+
+/**
+ * The segment naming each tab, in the learner's own German (§5).
+ *
+ * `overview` is deliberately absent: it encodes as the bare prefix, so `#ds`
+ * stays exactly what it has always meant — the course overview — and every link
+ * anybody has already sent keeps working. Adding `ds/uebersicht` as a synonym
+ * would give one screen two addresses, which is how the two drift.
+ */
+const TAB_SEGMENTS = {
+  speakers: "referenten",
+  certification: "zertifizierung",
+  library: "mediathek",
+} as const satisfies Record<Exclude<CourseTab, "overview">, string>;
+
+const TAB_FOR_SEGMENT: ReadonlyMap<string, CourseTab> = new Map(
+  Object.entries(TAB_SEGMENTS).map(([tab, segment]) => [segment, tab as CourseTab]),
+);
 
 /**
  * The shape of an identifier this will put in a URL, and accept back out.
@@ -86,7 +119,7 @@ const CONTENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 export function encode(route: WidgetRoute): string {
   switch (route.kind) {
     case "outline":
-      return PREFIX;
+      return route.tab === "overview" ? PREFIX : `${PREFIX}/${TAB_SEGMENTS[route.tab]}`;
     case "content":
       return `${PREFIX}/${CONTENT_SEGMENT}/${route.contentId}`;
     case "evaluation":
@@ -124,7 +157,12 @@ export function decode(hash: string): WidgetRoute | undefined {
   const segments = trimmed.split("/");
   if (segments[0] !== PREFIX) return undefined;
 
-  if (segments.length === 1) return { kind: "outline" };
+  if (segments.length === 1) return { kind: "outline", tab: "overview" };
+
+  if (segments.length === 2) {
+    const tab = TAB_FOR_SEGMENT.get(segments[1] ?? "");
+    if (tab !== undefined) return { kind: "outline", tab };
+  }
 
   if (segments[1] === EVALUATION_SEGMENT && segments.length === 2) {
     return { kind: "evaluation" };
@@ -146,7 +184,7 @@ export function decode(hash: string): WidgetRoute | undefined {
    * leaving the fragment alone would show them whatever screen happened to be
    * mounted and no explanation.
    */
-  return { kind: "outline" };
+  return { kind: "outline", tab: "overview" };
 }
 
 function decodeSegment(raw: string): string | undefined {
