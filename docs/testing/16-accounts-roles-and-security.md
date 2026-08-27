@@ -1,51 +1,124 @@
-# 16 · Accounts, roles and two-factor
+# T16 · Accounts, roles and access control
 
-**Assignee: Philipp Burka**
-**Area:** Admin console · **Duration:** approx. 35 minutes
+**Assignee:** Amruth · **Area:** Admin console · **Tenant:** `medice` · **Est.** 40 min
 
-## Goal
+## Preconditions
 
-Check that each role sees exactly the screens it is allowed to use — and that
-nobody is offered a button the system then refuses.
+- An admin account on `medice`
+- A second browser for the invited account
 
-## Prerequisites
+## Cases
 
-- An account with administrator rights
-- An authenticator app for the second factor
-- **Two browsers**, or a private window, to work as a second role in parallel
+### T16.1 · The invitation says what it is handing you
 
-## Steps
+**Steps**
 
-1. Open **Einstellungen → Konten**.
-2. Invite a new account. Read the invitation text: is it clear **what** you are
-   being given — a link, a password, a code?
-3. Accept the invitation in the second browser and set the account up.
-4. Use **the same invitation a second time**. What happens?
-5. Set up two-factor and sign out and in once.
-6. Check whether the console offers to reset **your own** second factor.
-7. Give the new account a **restricted role**.
-8. Sign in as that account and **click every menu entry** that is offered.
-9. Note whether any offered menu entry leads to "keine Berechtigung".
-10. Deactivate an account while it is signed in in another browser. What happens
-    there on the next click?
-11. Open **Einstellungen → Sicherheit** and look at what is there.
+1. Einstellungen → Konten. Invite an account.
+2. Read the invitation text.
 
-## Expected
+**Expected**
 
-- Step 4: a used invitation does **not** work a second time.
-- Step 6: your own second factor **cannot** be reset by yourself — and if the
-  button is absent, it says **why** and who can do it.
-- **Step 9 is the core of this ticket: there must not be a single one.** A menu
-  entry that leads to "keine Berechtigung" is a finding — please report it with
-  the role and the entry.
-- Step 10: access ends there and then, not at the next sign-in.
+- It is unambiguous whether the recipient is being given a link, a password or a code.
 
-## Pay particular attention to
+> This text has previously been mistaken for a password. Report it verbatim.
 
-Step 2. The invitation text has previously been mistaken for a password. Please
-report verbatim what it says, and whether it was unambiguous.
+**Result** ☐ pass ☐ fail ☐ blocked
 
-## Please report with
+**Observed**
 
-A table: **role × menu entry clicked × worked (yes/no)**. That is the most
-valuable report from this ticket.
+---
+
+### T16.2 · An invitation is single-use
+
+**Steps**
+
+1. Accept the invitation in the second browser and complete setup.
+2. Use the same invitation link again.
+
+**Expected**
+
+- The second use is refused.
+
+> **Blocking if it works twice.** A replayable invitation is a permanent key to a console account.
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
+
+### T16.3 · Two-factor
+
+**Steps**
+
+1. Set up 2FA on the new account. Sign out and in.
+2. Look for a control to reset **your own** second factor.
+
+**Expected**
+
+- 2FA is enforced on sign-in.
+- Self-reset is not offered — and where it would be, the screen says why and who can do it.
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
+
+### T16.4 · Every offered menu entry works for the role
+
+**Steps**
+
+1. Give the new account a restricted role.
+2. Sign in as it.
+3. Click **every** menu entry offered.
+4. Record role × entry × worked.
+
+**Expected**
+
+- **Not one entry leads to 'keine Berechtigung'.**
+
+> This is the core of the ticket. An offered control the API refuses is a finding — report the role and the entry.
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
+
+### T16.5 · Deactivation takes effect immediately
+
+**Steps**
+
+1. With the second browser signed in, deactivate that account from the first.
+2. Click anything in the second browser.
+
+**Expected**
+
+- Access ends at that click, not at the next sign-in.
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
+
+### T16.6 · Security screen
+
+**Steps**
+
+1. Open Einstellungen → Sicherheit.
+
+**Expected**
+
+- It renders and its entries are understandable.
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
+
+## Attach to the report
+
+- The role × menu entry × worked table from T16.4 — the most useful artefact in this pack.

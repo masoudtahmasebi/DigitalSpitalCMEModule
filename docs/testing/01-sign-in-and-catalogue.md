@@ -1,47 +1,92 @@
-# 01 · Sign-in and course catalogue
+# T01 · Sign-in and catalogue
 
-**Assignee: Philipp Burka**
-**Area:** Participant portal · **Duration:** approx. 20 minutes
+**Assignee:** Amruth · **Area:** Learner portal · **Tenant:** `medice` · **Est.** 20 min
 
-## Goal
+## Preconditions
 
-Check that a physician can sign in and finds the catalogue in a state where she
-knows what to click without being told.
+- P0 confirmed (see 00-README)
+- A participant account on the `medice` tenant
+- Portal URL including the tenant path: `…/medice`
 
-## Prerequisites
+## Cases
 
-- Credentials for the `ds` tenant (test tenant)
-- The portal address including the tenant path, i.e. `…/ds`
+### T01.1 · Tenant path is required
 
-## Steps
+**Steps**
 
-1. Open the portal address **without** a tenant path. What happens?
-2. Open it with an **invented** tenant path, e.g. `…/doesnotexist`. What does
-   the screen say?
-3. Open `…/ds` and sign in.
-4. Sign in with the **wrong password**. What does the message say?
-5. Signed in: look at the catalogue. Click through the filters.
-6. Search for a term that matches nothing.
-7. Reload the page. Am I still signed in?
-8. Sign out, then press the browser's back button.
+1. Open the portal URL with **no** tenant path.
+2. Open it with an invented path, e.g. `…/doesnotexist`.
 
-## Expected
+**Expected**
 
-- Step 2 names **no** existing tenants. The list of our customers is not
-  something any visitor should be able to ask for — that the answer is
-  therefore unhelpful is deliberate.
-- Step 4 does not reveal whether the address exists.
-- Step 6 says nothing was found and offers a way back.
-- Step 8 shows no signed-in content.
+- Both refuse.
+- Neither response names any existing tenant. The customer list is not something an anonymous visitor can enumerate — the answer being unhelpful is the intended behaviour, not a gap.
 
-## Pay particular attention to
+**Result** ☐ pass ☐ fail ☐ blocked
 
-- Are the headings above the catalogue sections understandable?
-- Can you tell from a card **how many CME points** it carries and **how long**
-  the course is?
-- Is there any English text on a German screen?
+**Observed**
 
-## Please report with
+---
 
-A full-width screenshot of the catalogue, and an answer to: _would a physician
-seeing this page for the first time know where to click?_
+### T01.2 · Sign-in does not disclose whether an account exists
+
+**Steps**
+
+1. Sign in with a valid address and a wrong password.
+2. Sign in with an address that does not exist.
+
+**Expected**
+
+- The two messages are **identical**.
+- Neither confirms whether the address is registered.
+
+> A difference between these two responses is a finding. It turns the sign-in form into a way to test whether a named physician is enrolled with MEDICE.
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
+
+### T01.3 · Catalogue renders and filters
+
+**Steps**
+
+1. Sign in at `…/medice`.
+2. Click through every filter chip.
+3. Search a term matching nothing.
+
+**Expected**
+
+- ADHS Akademie adult is listed.
+- Each card shows CME points and duration.
+- The empty search states that nothing matched and offers a way back.
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
+
+### T01.4 · Session survives reload and ends on sign-out
+
+**Steps**
+
+1. Reload the page while signed in.
+2. Sign out, then press the browser Back button.
+
+**Expected**
+
+- Still signed in after reload.
+- Back shows no signed-in content and no participant data.
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
+
+## Attach to the report
+
+- Full-width screenshot of the catalogue.
+- Any English string found on a German screen, with the screen name.

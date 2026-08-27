@@ -1,107 +1,108 @@
-# CME module test pack — overview
+# CME module — test pack
 
-**Assignee: Philipp Burka** — applies to this document and to every ticket in
-this folder.
+**Assignee:** Amruth — this document and every ticket in this folder.
+**Tenant under test:** `medice`
+**Build:** record the commit from `GET /health` on the API before you start.
 
-Each file here is a standalone test ticket, cut so that one takes 20–40 minutes
-and works without knowledge of the others.
-
-**The product is in German.** German terms are kept as they appear on screen —
-_Lernerfolgskontrolle_, _Teilnahmebescheinigung_, _Punktemeldung_,
-_Anerkennungsbescheid_, _Ärztekammer_, _EFN_, _VNR_, _Mediathek_,
-_Evaluationsbogen_. You will be comparing against those exact words, so
-translating them here would only make the comparison harder.
-
-## What changed on 27.08.2026
-
-Four tickets gained a section headed **"New since the last pack"**. If you have
-an older copy, these are the only differences:
-
-| Ticket                                      | What is new                                                                                                                                                                |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **07** Teilnahmebescheinigung               | The participant is now told what became of their Punktemeldung, and can correct a rejected EFN themselves. **The German wording is the deliverable** — please copy it out. |
-| **12** Course settings, certificate and VNR | Publishing now refuses the placeholder VNR `0000000000000000000`.                                                                                                          |
-| **13** Participants and certificates        | An undeliverable certificate now says _why_, and **Erneut senden** is disabled where it could only fail again.                                                             |
-| **14** Punktemeldungen and EIV              | A failed row now says who can fix it. Adds the EFN-correction path, which contains a **deliberate refusal** worth understanding before you meet it.                        |
-
-Ticket 14's last step is the one to read carefully. If re-filing a Punktemeldung
-under a changed EFN ever silently succeeds after the first one was accepted,
-stop and tell us — that is the single failure in this pack that would put CME
-points on the wrong physician's record.
-
-## Order
-
-The learner tickets (01–08) form one continuous Fortbildung and build on each
-other — done in order it is a single sitting rather than eight. The admin
-console tickets (09–16) are independent.
+17 files. Each is a standalone ticket of numbered cases with steps, expected
+results and a pass/fail line. T01–T08 are the learner path and run in order —
+done in sequence they are one continuous Fortbildung rather than eight setups.
+T09–T16 are the admin console and are independent.
 
 ---
 
-## Before the first test — please read once
+## P0 · Before the first case
 
-### 1. Do not test on the accredited MEDICE course
+**`EIV_WORKER_ENABLED=no` must be set on the host.**
 
-The course **"ADHS Akademie adult"** carries the real VNR
-`2760552025919300018` from the ÄKWL Anerkennungsbescheid. For it:
+```bash
+grep '^EIV_WORKER_ENABLED=' ~/ds-education/config.env
+```
 
-- **70 % correctly answered questions is a condition of the accreditation**, not
-  a setting.
-- The Bescheid requires that **changes of any kind be reported to the ÄKWL
-  promptly and in writing**. Editing questions, reordering modules or adjusting
-  points is such a change.
+It must print `EIV_WORKER_ENABLED=no`. If it does not, stop and get it set.
 
-**Please test either on the `ds` tenant or on a newly created course left in
-draft.** A draft is invisible to participants and can be changed freely.
+Testing on `medice` means testing against **ADHS Akademie adult**, which carries
+the real VNR `2760552025919300018` from the ÄKWL Anerkennungsbescheid. Every
+completion queues a Punktemeldung against that live accreditation. With the
+worker off, nothing leaves the platform and the queue is still exercised — which
+is what T14 tests. With it on, a test EFN is filed against a real accredited
+event at a real Ärztekammer.
 
-### 2. Reporting points to the Ärztekammer is currently blocked
+Two further consequences of using the real course, neither of which is
+negotiable by a tester:
 
-The interface holds a **one-day** accredited period (13.10.2025) for a
-twelve-month on-demand Fortbildung. `push_teilnahme` refuses any participation
-date outside that period with HTTP 406 — **so every Punktemeldung is currently
-rejected.**
-
-This is known, has been raised with the ÄKWL, and is **not a defect to report**.
-Everything before it — the course, the exam, the evaluation, the EFN, the
-certificate — works independently of it.
-
-### 3. The Teilnahmebescheinigung is issued on completion, not after reporting
-
-A deliberate decision: the certificate is issued as soon as the course is
-complete. It does **not** wait for the Punktemeldung.
-
-### 4. Always say what you were looking at
-
-With every observation, please include:
-
-- **Browser and device** (e.g. "Chrome 141, MacBook")
-- **The address from the address bar** — every screen has its own
-- **Time** of the observation
-- **Screenshot** where possible
-
-The last point matters most: whether something is missing or merely not yet
-deployed to the server you are looking at cannot be told apart in a browser.
-With an address and a time it can.
+- **Use test EFNs.** Never a real physician's number.
+- **Do not restructure ADHS Akademie adult.** The Bescheid requires changes of
+  any kind be reported to the ÄKWL promptly and in writing — editing questions,
+  reordering modules or changing points is such a change. T09–T12 therefore
+  create their own course. Read a ticket's preconditions before starting it.
 
 ---
 
-## Reporting, please in this form
+## How to record a result
 
-Per observation:
+Each case ends with:
 
-| Field          |                                    |
-| -------------- | ---------------------------------- |
-| **Ticket**     | e.g. 03                            |
-| **Step**       | e.g. 4                             |
-| **Expected**   | what the ticket says should happen |
-| **Observed**   | what actually happened             |
-| **Severity**   | blocking / annoying / cosmetic     |
-| **Screenshot** |                                    |
+```
+**Result** ☐ pass ☐ fail ☐ blocked
 
-Please report "annoying" and "cosmetic" as readily as "blocking". Twelve
-cosmetic observations on one screen are not, together, a cosmetic problem.
+**Observed**
+```
 
-## If something is plainly missing
+Fill in **Observed** on anything that is not a clean pass — what you did, what
+happened, what you expected. A screenshot alone is rarely enough for a case
+about ordering or state.
 
-Please report it anyway — but say whether it is **absent entirely** or whether
-you simply could not find the button for it. Those are two different findings
-and both are useful.
+`blocked` means the case could not be run (missing precondition, an earlier case
+failed). It is not a failure and should not be filed as one.
+
+---
+
+## Cases marked blocking
+
+Five cases say **blocking** in their note. Stop and report those immediately
+rather than continuing the ticket:
+
+| Case  | What it would mean                                            |
+| ----- | ------------------------------------------------------------- |
+| T12.2 | A stored VNR password is retrievable                          |
+| T13.1 | A full EFN is rendered anywhere                               |
+| T14.5 | Support can set another person's EFN                          |
+| T14.7 | A Punktemeldung re-files under a changed EFN after acceptance |
+| T16.2 | An invitation link works twice                                |
+| T10.6 | An already-recorded exam result changed                       |
+
+T14.7 is the sharpest: it would credit CME points to a second physician, and
+nothing in the platform can take them back off the first.
+
+---
+
+## Expected refusals
+
+Several cases assert that the product **refuses** something. Those are not
+defects and should be recorded as passes:
+
+- **T03.3** — forward seeking stops at what has been watched, plus about five
+  seconds of tolerance. Small nudges working is by design; dragging to the end
+  must be refused.
+- **T12.3** — a malformed VNR is accepted. The check-digit rule is unconfirmed
+  by the Ärztekammer, and a guessed rule would refuse a legitimate number from
+  another Kammer. Record what happens; do not file it.
+- **T14.5** — there is no way to set another person's EFN, and there should not
+  be.
+- **T14.7** — requeue refuses after acceptance if the EFN changed.
+- **T07.1** — the certificate's **Anschrift** line is empty by agreement. Confirm
+  it renders cleanly; do not file it.
+
+---
+
+## German terms
+
+The product is German. These stay in German everywhere, including in an English
+console, because they appear verbatim on the Ärztekammer's own documents:
+
+_Lernerfolgskontrolle_ · _Teilnahmebescheinigung_ · _Punktemeldung_ ·
+_Anerkennungsbescheid_ · _Ärztekammer_ · _EFN_ · _VNR_ · _Mediathek_ ·
+_Evaluationsbogen_ · _Zusammenfassung_ · _Referenten_ · _Zertifizierung_
+
+Any **other** German string on an English console screen is a finding (T15.5).

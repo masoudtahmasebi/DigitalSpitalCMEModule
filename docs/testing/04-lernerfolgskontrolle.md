@@ -1,51 +1,116 @@
-# 04 · Lernerfolgskontrolle (the exam)
+# T04 · Lernerfolgskontrolle
 
-**Assignee: Philipp Burka**
-**Area:** Participant portal · **Duration:** approx. 30 minutes
+**Assignee:** Amruth · **Area:** Learner widget · **Tenant:** `medice` · **Est.** 30 min
 
-## Goal
+## Preconditions
 
-Check that the exam behaves fairly: that it is clear which exam you are sitting,
-what is needed to pass, and how you continue afterwards.
+- T03 passed for at least one module's videos
 
-## Prerequisites
+## Cases
 
-- A test course with a Lernerfolgskontrolle **per module**
-- The first module's videos fully watched (ticket 03)
+### T04.1 · A locked exam names its blocker
 
-## Steps
+**Steps**
 
-1. Open a module whose videos are **not** finished and click its
-   Lernerfolgskontrolle. What happens?
-2. Open a module with finished videos and start the exam.
-3. Click **Weiter** **without** answering. What does the screen say?
-4. Fill the exam in **deliberately wrong** and submit.
-5. Read the result: does it say how many were correct and how many were needed?
-6. Retake and pass.
-7. Look at the passed screen: **which buttons are there?** Can I go forward to
-   the next topic from here, or only back to the overview?
-8. Check the sidebar: is the passed exam marked as done?
-9. Open the passed exam **again**. What is offered?
+1. Open a module whose videos are unfinished.
+2. Click its Lernerfolgskontrolle.
 
-## Expected
+**Expected**
 
-- Step 1: the exam is locked and the screen names **which video** is still
-  outstanding — not merely "locked".
-- Steps 2 and 5: the exam carries **its own name**, so it is clear which
-  module's exam this is.
-- Step 3: a clear prompt, not a silent non-effect.
-- Step 7: **it must be possible to go forward from here.** A screen that only
-  leads back is a finding — please report it.
-- Step 9: a passed attempt stays passed; a new attempt does not withdraw it.
+- It is locked.
+- The screen names **which video** is outstanding — not merely that it is locked.
 
-## Important context
+**Result** ☐ pass ☐ fail ☐ blocked
 
-- Correct answers are **not shown** after submission — that is a requirement of
-  the certification, not a defect.
-- The MEDICE course's pass mark is **70 %** and is a condition of the
-  Anerkennungsbescheid. On a test course it may differ.
+**Observed**
 
-## Please report with
+---
 
-A screenshot of the passed screen **in full**, so that every button on it is
-visible.
+### T04.2 · The exam identifies itself
+
+**Steps**
+
+1. Open an unlocked exam.
+2. Read the heading, the start button and the result screen.
+
+**Expected**
+
+- Each carries the exam's own title, so which module's exam it is, is unambiguous.
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
+
+### T04.3 · Submitting nothing is refused clearly
+
+**Steps**
+
+1. Click Weiter without answering.
+
+**Expected**
+
+- A visible prompt appears. Nothing silently does nothing.
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
+
+### T04.4 · A failed attempt reports the arithmetic
+
+**Steps**
+
+1. Answer deliberately wrong and submit.
+
+**Expected**
+
+- The result states how many were correct and how many were required.
+- Correct answers are **not** revealed — that is a certification requirement.
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
+
+### T04.5 · A passed exam offers a way forward
+
+**Steps**
+
+1. Retake and pass.
+2. Read every control on the passed screen.
+
+**Expected**
+
+- There is a way to continue to the next content — not only a way back to the overview.
+
+> A passed screen that only leads backwards is a finding.
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
+
+### T04.6 · A pass is not withdrawn by reopening
+
+**Steps**
+
+1. Open the passed exam again.
+
+**Expected**
+
+- The pass still stands. A new attempt does not revoke the earlier result.
+
+**Result** ☐ pass ☐ fail ☐ blocked
+
+**Observed**
+
+---
+
+## Attach to the report
+
+- Full screenshot of the passed screen, with every button visible.
