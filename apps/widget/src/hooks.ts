@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   isNotFound,
   isUnauthenticated,
+  problemCorrelationId,
   problemDetail,
   type ApiClient,
   type ApiError,
@@ -117,7 +118,25 @@ export function describeError(
   if (isNotFound(error)) return copy.noCourse;
   // `detail` is the German message the API wrote for a learner to read; it is
   // deliberately free of identifiers and stack traces (CLAUDE.md §5).
-  return problemDetail(error) ?? copy.generic;
+  const sentence = problemDetail(error) ?? copy.generic;
+
+  /*
+   * The correlation id, where there is one (P122-01).
+   *
+   * The API has returned one on every error response since observability
+   * landed and no client read it, so the string that finds the failing request
+   * in the log reached the payload and stopped there.
+   *
+   * Deliberately **not** appended to the two cases above. A physician told
+   * their session expired, or that the Fortbildung does not exist, is being
+   * told something they can act on; a reference number there is noise attached
+   * to an ordinary outcome. It goes on the case that means *something went
+   * wrong*, which is the only one anybody reports.
+   *
+   * Safe to show. A random UUID identifying a log line, never a person (§9.5).
+   */
+  const id = problemCorrelationId(error);
+  return id === undefined ? sentence : `${sentence} ${de.error.reference(id)}`;
 }
 
 // Re-exported so a screen imports its failure vocabulary from one place.

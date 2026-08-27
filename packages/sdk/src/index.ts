@@ -137,6 +137,19 @@ export interface ProblemDetails {
   readonly status: number;
   readonly detail?: string;
   readonly instance?: string;
+  /**
+   * The id under which the API logged this exact failure (P122-01).
+   *
+   * `problem-details.filter.ts` has put it on every error response since
+   * observability landed, and no client read it — so the one string that finds
+   * the failing request in the server log reached the payload and stopped
+   * there. Somebody reporting "it did not work" could not hand over the thing
+   * that would locate it, because nothing showed it to them.
+   *
+   * Safe to display. It is a random UUID minted per request and identifies a
+   * log line, never a person (§9.5).
+   */
+  readonly correlationId?: string;
 }
 
 export class ApiError extends Error {
@@ -1044,6 +1057,20 @@ export function problemDetail(error: unknown): string | undefined {
   if (!(error instanceof ApiError)) return undefined;
   const detail = error.problem.detail;
   return detail === undefined || detail.trim() === "" ? undefined : detail;
+}
+
+/**
+ * The id to quote when reporting a failure (P122-01).
+ *
+ * Rendered beside an error message so a report can name the exact request. It
+ * is what turns "the certificate did not download on Tuesday" into one line in
+ * a log — the difference between a bug that is reproduced and one that is
+ * argued about.
+ */
+export function problemCorrelationId(error: unknown): string | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  const id = error.problem.correlationId;
+  return id === undefined || id.trim() === "" ? undefined : id;
 }
 
 function hasStatus(error: unknown, status: number): boolean {

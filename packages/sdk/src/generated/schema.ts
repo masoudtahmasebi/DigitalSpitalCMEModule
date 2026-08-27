@@ -2311,6 +2311,21 @@ export interface components {
             status: number;
             detail?: string;
             instance?: string;
+            /**
+             * Format: uuid
+             * @description The id under which the API logged this exact failure (P122-01).
+             *
+             *     `problem-details.filter.ts` has put this on every error response
+             *     since observability landed, and it was documented in no contract and
+             *     read by no client — so the one string that finds the failing request
+             *     in the server log reached the payload and stopped there. Somebody
+             *     reporting a failure could not hand over the thing that would locate
+             *     it, because nothing ever showed it to them.
+             *
+             *     **Safe to display.** A random UUID minted per request. It identifies
+             *     a log line, never a person.
+             */
+            correlationId?: string;
         };
         HealthStatus: {
             /**

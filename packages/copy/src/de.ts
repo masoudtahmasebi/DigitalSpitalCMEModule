@@ -181,6 +181,18 @@ export const de = {
     unauthenticated:
       "Ihre Sitzung ist abgelaufen. Bitte laden Sie die Seite neu und melden Sie sich erneut an.",
     generic: "Bitte versuchen Sie es später erneut.",
+    /**
+     * The reference to quote when reporting a failure (P122-01).
+     *
+     * Shown only on the "something went wrong" case, never on an expired
+     * session or a Fortbildung that does not exist — those are outcomes a
+     * physician can act on, and a reference number there is noise attached to
+     * something ordinary.
+     *
+     * It is a random id identifying one line in our log. It says nothing about
+     * the person and is safe on screen.
+     */
+    reference: (id: string) => `Referenz: ${id}`,
     noCourse: "Diese Fortbildung wurde nicht gefunden.",
     misconfigured:
       "Diese Fortbildung ist nicht korrekt eingebunden. Bitte wenden Sie sich an den Betreiber der Seite.",

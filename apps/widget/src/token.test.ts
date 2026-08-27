@@ -268,3 +268,62 @@ describe("describeError, for a token that never arrived", () => {
     expect(describeError(expired, de.error)).toBe(de.error.unauthenticated);
   });
 });
+
+/**
+ * The reference a report can quote (P122-01).
+ *
+ * The API has minted a correlation id per failure and returned it on every
+ * error response since observability landed. No client read it, so the one
+ * string that finds the failing request in the server log reached the payload
+ * and stopped there — and somebody reporting "it did not work" could not hand
+ * over the thing that would locate it.
+ */
+describe("the correlation id in an error message", () => {
+  const copy = {
+    unauthenticated: "abgelaufen",
+    generic: "später erneut",
+    noCourse: "nicht gefunden",
+  };
+
+  function apiError(status: number, detail: string, correlationId?: string) {
+    return new ApiError(
+      {
+        type: "about:blank",
+        title: "x",
+        status,
+        detail,
+        ...(correlationId === undefined ? {} : { correlationId }),
+      },
+      new Response(null, { status }),
+    );
+  }
+
+  it("appends it to a failure somebody would report", () => {
+    const message = describeError(
+      apiError(500, "Serverfehler.", "7f2a689e-da4e-4d97-92aa-000000000001"),
+      copy,
+    );
+
+    expect(message).toContain("Serverfehler.");
+    expect(message).toContain("7f2a689e-da4e-4d97-92aa-000000000001");
+  });
+
+  it("says only the sentence when the API sent no id", () => {
+    expect(describeError(apiError(500, "Serverfehler."), copy)).toBe("Serverfehler.");
+  });
+
+  /*
+   * The two cases it must stay off. A physician told their session expired, or
+   * that a Fortbildung does not exist, has been told something they can act on
+   * — a reference number there is noise attached to an ordinary outcome, and it
+   * would train everyone to ignore the one place it matters.
+   */
+  it("stays off an expired session and a missing Fortbildung", () => {
+    expect(
+      describeError(apiError(401, "egal", "aaaaaaaa-0000-4000-8000-00000000000a"), copy),
+    ).toBe(copy.unauthenticated);
+    expect(
+      describeError(apiError(404, "egal", "aaaaaaaa-0000-4000-8000-00000000000a"), copy),
+    ).toBe(copy.noCourse);
+  });
+});
