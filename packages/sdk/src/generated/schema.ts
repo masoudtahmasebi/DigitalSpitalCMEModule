@@ -2459,12 +2459,6 @@ export interface components {
             prerequisites: string | null;
             vnr: string | null;
             accreditationBody: string | null;
-            /**
-             * @description Printed on the Zertifizierung tab as "Fortbildungsnummer: …"
-             *     (layout page 04). Distinct from the VNR, which is the EIV
-             *     credential and never leaves the server.
-             */
-            fortbildungsnummer: string | null;
             organizer: string | null;
             eventLocation: string | null;
             /** Format: date-time */
@@ -3278,7 +3272,6 @@ export interface components {
             /** @description The "Vorkenntnisse" paragraph under Zielgruppe (layout page 02). */
             prerequisites: string | null;
             heroImageUrl: string | null;
-            fortbildungsnummer: string | null;
             /** Format: date-time */
             validFrom: string | null;
             /** Format: date-time */
@@ -3582,7 +3575,6 @@ export interface components {
             heroImageUrl?: string | null;
             cmePoints?: number | null;
             cmeCategory?: string | null;
-            fortbildungsnummer?: string | null;
             eivPunkteBasis?: boolean;
             eivPunkteLernerfolg?: boolean;
             /**
@@ -3602,10 +3594,12 @@ export interface components {
              *     (CLAUDE.md §7). The EIV harness is where a bad number is caught,
              *     against the real interface.
              *
-             *     Distinct from `fortbildungsnummer`, which is what the learner sees
-             *     printed on the Zertifizierung tab. Changing this after completions
-             *     exist does not retro-fix them — submissions snapshot the VNR they
-             *     were queued with.
+             *     This is also what the learner sees, printed on the Zertifizierung
+             *     tab under the label "Fortbildungsnummer" — MEDICE confirmed on
+             *     27.08.2026 that the two are one number (show-stoppers S31). There is
+             *     no second field to keep in step with it. Changing this after
+             *     completions exist does not retro-fix them — submissions snapshot the
+             *     VNR they were queued with.
              */
             vnr?: string | null;
             /** Format: date-time */

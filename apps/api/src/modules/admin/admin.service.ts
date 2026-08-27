@@ -200,7 +200,6 @@ export class AdminService {
     assign(patch, "heroImageUrl", update.heroImageUrl);
     assign(patch, "cmePoints", update.cmePoints);
     assign(patch, "cmeCategory", update.cmeCategory);
-    assign(patch, "fortbildungsnummer", update.fortbildungsnummer);
 
     // Dates arrive as ISO strings and are stored as `timestamptz`. Parsed here
     // rather than in the repository, which has no business knowing the wire
@@ -795,7 +794,6 @@ function presentationOf(row: {
   targetAudience: string | null;
   prerequisites: string | null;
   heroImageUrl: string | null;
-  fortbildungsnummer: string | null;
   validFrom: Date | null;
   validTo: Date | null;
 }) {
@@ -808,7 +806,6 @@ function presentationOf(row: {
     targetAudience: row.targetAudience,
     prerequisites: row.prerequisites,
     heroImageUrl: row.heroImageUrl,
-    fortbildungsnummer: row.fortbildungsnummer,
     // ISO 8601 on the wire; `timestamptz` in the column. The console renders a
     // date input from it, which needs a string it can slice.
     validFrom: row.validFrom?.toISOString() ?? null,

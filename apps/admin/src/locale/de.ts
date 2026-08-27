@@ -1376,7 +1376,6 @@ export const german = {
     cmePoints: "CME-Punkte",
     cmePointsHint: "Laut Anerkennungsbescheid.",
     cmeCategory: "Kategorie",
-    fortbildungsnummer: "Fortbildungsnummer",
     validFrom: "Anerkennung gültig ab",
     validTo: "Anerkennung gültig bis",
     validityHint: "Aus dem Anerkennungsbescheid der Ärztekammer.",

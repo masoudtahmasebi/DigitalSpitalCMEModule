@@ -187,6 +187,19 @@ export const courses = pgTable("courses", {
    */
   eivPunkteBasis: boolean("eiv_punkte_basis").notNull().default(true),
   eivPunkteLernerfolg: boolean("eiv_punkte_lernerfolg").notNull().default(true),
+  /*
+   * Retained, unread, until a migration drops the column (S31, P125-01).
+   *
+   * MEDICE confirmed on 27.08.2026 that the Fortbildungsnummer *is* the VNR, so
+   * nothing writes this any more and the Zertifizierung tab renders `vnr`. The
+   * column outlives the code deliberately: a deploy runs migrations before it
+   * swaps containers, so dropping it in the same change would give the still-
+   * running old API a window of selecting a column that no longer exists —
+   * §9.9's "a schema older than the code" with the arrow reversed.
+   *
+   * The drop is its own migration, and it asserts first that no row holds a
+   * value differing from its `vnr` before discarding anything.
+   */
   fortbildungsnummer: text("fortbildungsnummer"),
   accreditationBody: text("accreditation_body"),
   cmePoints: integer("cme_points"),

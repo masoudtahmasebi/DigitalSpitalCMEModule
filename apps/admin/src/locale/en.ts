@@ -992,7 +992,6 @@ export const en: DeepPartial<typeof german> = {
     cmePoints: "CME points",
     cmePointsHint: "As stated in the Anerkennungsbescheid.",
     cmeCategory: "Category",
-    fortbildungsnummer: "Course number",
     validFrom: "Accreditation valid from",
     validTo: "Accreditation valid until",
     validityHint: "From the Ärztekammer's Anerkennungsbescheid.",

@@ -3698,7 +3698,6 @@ components:
             - prerequisites
             - vnr
             - accreditationBody
-            - fortbildungsnummer
             - organizer
             - eventLocation
             - validFrom
@@ -3723,12 +3722,6 @@ components:
                 remember to type the label into `targetAudience`.
             vnr: { type: [string, "null"] }
             accreditationBody: { type: [string, "null"] }
-            fortbildungsnummer:
-              type: [string, "null"]
-              description: |
-                Printed on the Zertifizierung tab as "Fortbildungsnummer: …"
-                (layout page 04). Distinct from the VNR, which is the EIV
-                credential and never leaves the server.
             organizer: { type: [string, "null"] }
             eventLocation: { type: [string, "null"] }
             validFrom: { type: [string, "null"], format: date-time }
@@ -4831,7 +4824,6 @@ components:
           targetAudience,
           prerequisites,
           heroImageUrl,
-          fortbildungsnummer,
           validFrom,
           validTo,
           vnr,
@@ -4894,7 +4886,6 @@ components:
           type: [string, "null"]
           description: The "Vorkenntnisse" paragraph under Zielgruppe (layout page 02).
         heroImageUrl: { type: [string, "null"] }
-        fortbildungsnummer: { type: [string, "null"] }
         validFrom: { type: [string, "null"], format: date-time }
         validTo: { type: [string, "null"], format: date-time }
         vnr: { type: [string, "null"] }
@@ -5291,7 +5282,6 @@ components:
         heroImageUrl: { type: [string, "null"], format: uri, maxLength: 2000 }
         cmePoints: { type: [integer, "null"], minimum: 1, maximum: 100 }
         cmeCategory: { type: [string, "null"], maxLength: 50 }
-        fortbildungsnummer: { type: [string, "null"], maxLength: 100 }
         eivPunkteBasis: { type: boolean }
         eivPunkteLernerfolg: { type: boolean }
         vnr:
@@ -5314,10 +5304,12 @@ components:
             (CLAUDE.md §7). The EIV harness is where a bad number is caught,
             against the real interface.
 
-            Distinct from `fortbildungsnummer`, which is what the learner sees
-            printed on the Zertifizierung tab. Changing this after completions
-            exist does not retro-fix them — submissions snapshot the VNR they
-            were queued with.
+            This is also what the learner sees, printed on the Zertifizierung
+            tab under the label "Fortbildungsnummer" — MEDICE confirmed on
+            27.08.2026 that the two are one number (show-stoppers S31). There is
+            no second field to keep in step with it. Changing this after
+            completions exist does not retro-fix them — submissions snapshot the
+            VNR they were queued with.
         validFrom: { type: [string, "null"], format: date-time }
         validTo: { type: [string, "null"], format: date-time }
         requiredWatchPercent: { type: integer, minimum: 0, maximum: 100 }

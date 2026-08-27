@@ -41,9 +41,10 @@ import { isPlaceholderVnr } from "./eiv.js";
  * without this list being looked at. The two that are *not* here are worth
  * naming:
  *
- * - `fortbildungsnummer` — nothing reads it (docs/show-stoppers.md S31). It
- *   renders one line on the Zertifizierung tab and is absent from the
- *   certificate and the Meldung alike. Requiring it would be inventing a rule.
+ * - `fortbildungsnummer` — gone as a field (S31, closed 27.08.2026). MEDICE
+ *   confirmed it is the VNR under another name, so the Zertifizierung tab's
+ *   line is fed by `vnr` and there is no second value to require. `vnr` is
+ *   already a blocker below, which is now the only place it needs to be.
  * - the media sources — they live on `contents`, not on the course, so this
  *   function cannot see them. That is P62-03's check.
  */

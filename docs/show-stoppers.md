@@ -78,7 +78,7 @@ wants action today.
 | S28     | **Learner tokens carry no name or email — the certificate cannot be filled**              | M3 · 30.08       | **24.08** | MEDICE / DS   |
 | S27     | **Test-system credentials from EIV support, so the client can be proven**                 | M3 · 30.08       | **14.08** | MEDICE        |
 | S29     | **The Veranstalter interface we integrate against has an announced shutdown**             | **launch**       | **now**   | EIV / BÄK     |
-| S31     | **Is `fortbildungsnummer` the VNR, or a second number?** — Q4 of the ÄKWL letter          | M3 · 30.08       | 14.08     | MEDICE / ÄKWL |
+| ~~S31~~ | ~~Is `fortbildungsnummer` the VNR?~~ — **it is; implemented 27.08 (P125-01)**             | **CLOSED 27.08** | —         | —             |
 | ~~S24~~ | ~~Export the EIV Veranstalter Swagger~~                                                   | **CLOSED 09.08** | —         | —             |
 | ~~S3~~  | ~~WordPress repository access~~                                                           | **CLOSED 28.07** | —         | —             |
 | ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                                      | **CLOSED 28.07** | —         | —             |
@@ -754,6 +754,32 @@ Fortbildungsmaßnahme bei Änderungen nicht automatisch bestehen bleibt."_
 Moving this course onto a new platform is plausibly such a change. A proactive
 note to the ÄKWL costs nothing; discovering after launch that the accreditation
 lapsed would be expensive.
+
+### 27.08.2026 — the client's answer, and what it does and does not settle
+
+> _"the course will be making longer, and we will not change the format, and if
+> put it on an online format, we are not going to change the format, and the
+> content is going to stay the same."_
+
+Two different things, and only one of them is ours to conclude.
+
+**Settled, because it is the client's own fact:** the Fortbildung stays
+on-demand online, the content is unchanged, and the extension will be applied
+for. That is exactly the premise the drafted letter already states — points,
+category and Lernerfolgskontrolle unchanged — so the letter is accurate and
+needs no edit on this point.
+
+**Not settled, and not ours to settle:** whether the platform change is
+_anzeigepflichtig_. The Bescheid says changes "jeglicher Art" must be notified
+and names _Umwandlung in ein Online-Format_ as an example; whether a delivery
+platform swap with identical content counts is the ÄKWL's determination, not
+ours. "We are not changing anything" is the content of the notification, not a
+reason to skip it — deciding otherwise from here is the invented rule §7
+refuses. Questions 5 and 6 stay in the letter.
+
+The extension makes Question 6 more urgent, not less: the accreditation expires
+12.10.2026, five weeks after launch, and a longer course is a course that
+outlives its own recognition unless somebody files.
 
 ---
 
@@ -1565,7 +1591,21 @@ producing the sheet they sign. One question to `zertifizierung@aekwl.de`.
 
 ---
 
-## S31 · What is `fortbildungsnummer`? — **raised 12.08 (P62-02), renumbered 27.08**
+## S31 · What is `fortbildungsnummer`? — **CLOSED 27.08.2026: it is the VNR**
+
+> **Answered by the client, 27.08.2026:** _"Fortbildungsnummer is the same as
+> vnr."_
+>
+> That is option 1 below, and it was implemented the same day (P125-01): the
+> Zertifizierung tab's line is fed by `vnr`, the console's field is gone, and
+> the property is out of the contract, the SDK and both DTOs. The database
+> column survives one release unread — a deploy migrates before it swaps
+> containers, so dropping it in the same change would leave the old API
+> selecting a column that no longer exists. Its drop is P125-02 and asserts
+> first that no row holds a value differing from its `vnr`.
+>
+> **Question 4 can come out of the ÄKWL letter.** It asked the Kammer what this
+> file already needed only MEDICE to answer.
 
 **Owner: MEDICE / ÄKWL.**
 

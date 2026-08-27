@@ -718,7 +718,6 @@ describe("removing a course", () => {
     targetAudience: null,
     prerequisites: null,
     heroImageUrl: null,
-    fortbildungsnummer: null,
     validFrom: null,
     validTo: null,
     vnr: null,

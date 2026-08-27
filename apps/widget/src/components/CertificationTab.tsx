@@ -85,9 +85,22 @@ export function CertificationTab(props: {
                 </p>
               )}
 
-              {course.fortbildungsnummer === null ? null : (
+              {/*
+                The Fortbildungsnummer *is* the VNR (S31, answered by MEDICE on
+                27.08.2026).
+
+                The layout draws a line labelled "Fortbildungsnummer" and the
+                platform carried a separate `fortbildungsnummer` column to fill
+                it — editable in the console, NULL on every real course, and
+                read by nothing else. Two writable fields for one number is an
+                operator entering one thing here and another in `vnr`, after
+                which the screen shows one number and the Punktemeldung reports
+                the other. The label is the layout's and stays (§5); the value
+                is now the one that is actually reported.
+              */}
+              {course.vnr === null ? null : (
                 <p className="text-sm text-gray-800">
-                  {de.certification.fortbildungsnummer(course.fortbildungsnummer)}
+                  {de.certification.fortbildungsnummer(course.vnr)}
                 </p>
               )}
             </Section>
