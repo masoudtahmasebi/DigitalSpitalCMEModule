@@ -6,10 +6,23 @@
 you start — a report is about a build, and "it does not work" and "it is not on
 the server you are looking at" are indistinguishable from a browser.
 
-17 files. Each is a standalone ticket of numbered cases with steps, expected
-results and a pass/fail line. T01–T08 are the learner path and run in order —
-done in sequence they are one continuous Fortbildung rather than eight setups.
-T09–T16 are the admin console and are independent.
+23 files. Each is a standalone ticket of numbered cases with steps, expected
+results and a pass/fail line.
+
+| Group             | Tickets | What it tests                                                                                                             |
+| ----------------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Learner path**  | T01–T08 | The Fortbildung end to end. Run **in order** — in sequence they are one continuous course rather than eight setups.       |
+| **Admin console** | T09–T16 | Authoring, moderation, reporting, access control. Independent of each other.                                              |
+| **Frontend**      | T17–T22 | The product **as a frontend**: layout fidelity, breakpoints, component states, browser console, the embed, cross-browser. |
+
+The third group exists because the first two do not cover it. T01–T16 are system
+and compliance tests that happen to be driven through a browser — they ask
+whether the _rules_ hold, and a screen that renders badly while answering
+correctly passes every one of them. T17–T22 ask whether the frontend is right.
+
+**T20 runs alongside T01–T08**, not after them: keep devtools open on the Console
+and Network tabs while walking the learner path and record as you go. Several
+classes of defect are visible only there and appear in no server log.
 
 ---
 
@@ -66,7 +79,7 @@ failed). It is not a failure and should not be filed as one.
 
 ## Cases marked blocking
 
-Five cases say **blocking** in their note. Stop and report those immediately
+Seven cases say **blocking** in their note. Stop and report those immediately
 rather than continuing the ticket:
 
 | Case  | What it would mean                                            |
@@ -77,6 +90,7 @@ rather than continuing the ticket:
 | T14.7 | A Punktemeldung re-files under a changed EFN after acceptance |
 | T16.2 | An invitation link works twice                                |
 | T10.6 | An already-recorded exam result changed                       |
+| T20.4 | A full EFN or a VNR password appears in any network response  |
 
 T14.7 is the sharpest: it would credit CME points to a second physician, and
 nothing in the platform can take them back off the first.
@@ -99,6 +113,12 @@ defects and should be recorded as passes:
 - **T14.7** — requeue refuses after acceptance if the EFN changed.
 - **T07.1** — the certificate's **Anschrift** line is empty by agreement. Confirm
   it renders cleanly; do not file it.
+- **T21.4** — `document.querySelector('ds-lms').shadowRoot` returns `null`. The
+  root is closed deliberately, so a node coming back is the finding, not the
+  null.
+- **T17.x** — `docs/design/README.md` records existing verdicts. A row it marks
+  **deliberate** is a documented deviation, not a defect. A row it marks
+  **matches** that no longer does is a regression and _is_ a finding.
 
 ---
 
