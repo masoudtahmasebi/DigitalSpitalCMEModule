@@ -24,11 +24,11 @@
     "@ds/domain": "workspace:*",
     "@ds/postgres": "workspace:*",
     "@ds/secrets": "workspace:*",
-    "@node-rs/argon2": "^2.0.2",
-    "pg": "^8.22.0"
+    "@node-rs/argon2": "^2.1.0",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
-    "@types/pg": "^8.11.10",
+    "@types/pg": "^8.23.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }
