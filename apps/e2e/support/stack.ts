@@ -22,12 +22,20 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { createReadStream } from "node:fs";
+import { appendFileSync, createReadStream, mkdirSync, writeFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
+import { connect } from "node:net";
 import { createServer, type Server } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { cspFromCaddyfile } from "./csp.js";
 import { startObjectStore, type ObjectStore } from "./object-store.js";
+
+/**
+ * One reading of `REDIS_URL`, used both to configure the API and to check that
+ * something is there — two readings could disagree and the check would then be
+ * testing an instance the API never uses (§9.1).
+ */
+const REDIS_URL = process.env["REDIS_URL"] ?? "redis://127.0.0.1:6379";
 
 export const PORTS = { api: 3100, portal: 4180, admin: 4181 } as const;
 
@@ -254,7 +262,7 @@ export async function startStack(options: {
       // Real Redis, because the rate limiter is real: "too many sign-in
       // attempts" is a behaviour a physician can hit, so it is one the browser
       // suite has to be able to reach.
-      REDIS_URL: process.env["REDIS_URL"] ?? "redis://127.0.0.1:6379",
+      REDIS_URL: REDIS_URL,
       SECRETS_KMS_KEY: options.kmsKey,
       /*
        * `ALLOWED_ORIGINS`, and the name matters (P35-01).
@@ -295,9 +303,33 @@ export async function startStack(options: {
     },
   });
 
+  /*
+   * The API's own output, kept **and written down** (P132-02).
+   *
+   * It used to live in this array alone, printed only if the process exited
+   * non-zero. So an API that booted fine and then answered one request with a
+   * 500 left nothing behind at all: the browser showed a screen that had not
+   * changed, the trace held
+   * `{"type":".../internal","correlationId":"33a595d0-…"}`, and the log that
+   * the correlation id is *for* had been discarded when the rig shut down.
+   *
+   * That is §9.4 aimed at whoever is debugging: a failure has to say what it
+   * was, at the place somebody looks. The file is per-run and overwritten, and
+   * `test-results/` is already where Playwright puts traces and screenshots.
+   */
   const apiLog: string[] = [];
-  api.stdout?.on("data", (chunk: Buffer) => apiLog.push(chunk.toString()));
-  api.stderr?.on("data", (chunk: Buffer) => apiLog.push(chunk.toString()));
+  const apiLogPath = join(options.repo, "apps/e2e/test-results/api.log");
+  mkdirSync(join(options.repo, "apps/e2e/test-results"), { recursive: true });
+  writeFileSync(apiLogPath, "");
+  const record = (chunk: Buffer) => {
+    const text = chunk.toString();
+    apiLog.push(text);
+    // Synchronous on purpose: the interesting case is a crash, and a queued
+    // async write is exactly what does not survive one.
+    appendFileSync(apiLogPath, text);
+  };
+  api.stdout?.on("data", record);
+  api.stderr?.on("data", record);
   api.on("exit", (code) => {
     if (code !== 0 && code !== null) {
       console.error(`API exited with ${code}:\n${apiLog.join("")}`);
@@ -333,6 +365,22 @@ export async function startStack(options: {
   admin.listen(PORTS.admin);
 
   try {
+    /*
+     * Redis, before anything asks the API for a page (P132-02).
+     *
+     * The rate limiter and the cache are backed by it, so without it the API
+     * boots, `/health` answers, sign-in works — and the first rate-limited
+     * route answers 500. On 31.08 that was `POST /admin/participants` at Act 2,
+     * which reads as "creating a participant is broken" and is nothing of the
+     * kind.
+     *
+     * Postgres already fails loudly because the migrator cannot connect. This
+     * gives Redis the same courtesy: fail here, naming the thing to start,
+     * rather than fifteen seconds into a journey with a correlation id and no
+     * log (§9.4, §9.10).
+     */
+    await requireRedis(REDIS_URL);
+
     await waitFor(`${API_BASE}/health`, "the API");
     await waitFor(`${PORTAL_BASE}/config.js`, "the portal");
     await waitFor(`${ADMIN_BASE}/config.js`, "the admin console");
@@ -355,4 +403,41 @@ export async function startStack(options: {
       ]);
     },
   };
+}
+
+/**
+ * A TCP connect to Redis, and nothing more.
+ *
+ * Deliberately not a `PING`: the point is to distinguish "nothing is listening"
+ * from every other failure, and anything richer would need a client library
+ * this package has no other reason to carry. If something is listening and is
+ * not Redis, the API's own error is the better message.
+ */
+async function requireRedis(url: string): Promise<void> {
+  const parsed = new URL(url);
+  const port = Number(parsed.port === "" ? 6379 : parsed.port);
+  const host = parsed.hostname;
+
+  await new Promise<void>((resolve, reject) => {
+    const socket = connect({ host, port });
+    const fail = (reason: string) => {
+      socket.destroy();
+      reject(
+        new Error(
+          `no Redis on ${host}:${port} (${reason}). The API needs it for the ` +
+            "rate limiter and the cache: without it every rate-limited route " +
+            "answers 500, which surfaces in the browser as a screen that did " +
+            "not change. Start one with `redis-server --daemonize yes` or " +
+            "point REDIS_URL at a running instance.",
+        ),
+      );
+    };
+    socket.setTimeout(5_000);
+    socket.once("connect", () => {
+      socket.end();
+      resolve();
+    });
+    socket.once("timeout", () => fail("timed out"));
+    socket.once("error", (error: Error) => fail(error.message));
+  });
 }

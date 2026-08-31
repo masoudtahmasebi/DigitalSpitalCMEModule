@@ -483,6 +483,52 @@ export const en: DeepPartial<typeof german> = {
     },
     create: "Create course",
     noProjects: "Before a course can be created there has to be at least one project.",
+
+    stepsLabel: "Steps",
+    steps: {
+      basics: "Basics",
+      presentation: "Presentation",
+      review: "Review & create",
+    },
+    stepHints: {
+      basics:
+        "Which project the course belongs to, what it is called, and the slug it is reachable under. The slug cannot be changed later.",
+      presentation:
+        "What participants see in the catalogue before they open the course — format and description is all there is there.",
+      review:
+        "What is about to be created, and what is still missing before participants can see the course.",
+    },
+    stepOf: (at: number, total: number): string => `Step ${at} of ${total}`,
+    back: "Back",
+    next: "Next",
+    missing: (fields: readonly string[]): string =>
+      `Still missing: ${fields.join(", ")}.`,
+    notSaved: "Nothing is saved until you press “Create course”.",
+    descriptionHint:
+      "Shown in the catalogue under the title. Two or three sentences is enough — the full description on the detail page is edited later.",
+
+    preview: "Preview",
+    previewHint:
+      "An approximation. The portal draws the card with the customer’s own branding.",
+    previewNoTitle: "No title yet",
+    previewNoDescription: "Without a description the catalogue shows only the title.",
+    draftBadge: "Draft",
+
+    nextTitle: "Afterwards, in this order:",
+    nextSteps: [
+      {
+        title: "Content",
+        body: "Create modules, chapters, videos and the Lernerfolgskontrolle.",
+      },
+      {
+        title: "Certification",
+        body: "VNR, points, category, organiser and scientific lead. Without these no Teilnahmebescheinigung can be issued.",
+      },
+      {
+        title: "Publish",
+        body: "Until then the course is a draft: it does not appear in the catalogue and cannot be opened.",
+      },
+    ] as const,
   },
 
   uploads: {

@@ -58,7 +58,19 @@ export { WORDPRESS_ORIGIN } from "./stack.js";
 
 /** `packages/seed/src/ds-demo.ts` — the *keycloak* project, not the portal's. */
 export const WP_PROJECT_SLUG = "ds-demo";
-const REALM = "ds-demo";
+/**
+ * The realm the stub serves and the demo project is bound to.
+ *
+ * Exported because `world.ts` hands it to the seed: the binding used to be a
+ * default inside the seed and is now stated or absent (P101-03), so the rig has
+ * to say where its own stub listens. One constant, read by both, because two
+ * readings would eventually name different realms and the failure would be a
+ * 401 that says nothing about which half is wrong (P132-02).
+ */
+export const DEMO_REALM = "ds-demo";
+/** `DEFAULT_AUDIENCE` in `apps/api/src/dev-keycloak.ts`, which mints the tokens. */
+export const DEV_KEYCLOAK_AUDIENCE = "ds-education-api";
+const REALM = DEMO_REALM;
 
 /** The nonce the page sends and the endpoint requires. Shape, not security. */
 const NONCE = "test-nonce";

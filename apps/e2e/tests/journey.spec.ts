@@ -324,6 +324,18 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         .inputValue();
       expect(courseSlug).toMatch(/^e2e-fortbildung-[a-z0-9]+$/u);
 
+      /*
+       * Through the wizard's steps (P132-03).
+       *
+       * Creating a course is three steps now — Grunddaten, Darstellung, Prüfen
+       * & anlegen — and only the last one writes. Walking them is not padding:
+       * the risk a wizard adds over a flat form is precisely that a field
+       * entered on step 1 is dropped by the time step 3 submits, and this is
+       * the only test that would notice, because the title read back below is
+       * the one typed two steps earlier.
+       */
+      await operator.getByRole("button", { name: "Weiter" }).click();
+      await operator.getByRole("button", { name: "Weiter" }).click();
       await operator.getByRole("button", { name: "Fortbildung anlegen" }).click();
 
       // The editor opens on the structure tab, which is where the author's next
@@ -850,34 +862,85 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       ).toBeLessThan(6);
 
       /*
-       * Back towards the end, but **with runway left** (P124-01).
+       * Pause, from a state where pausing is possible (P124-01, P132-01).
        *
-       * This was `element.duration - 1`, and it failed the first run of this
-       * journey against production on 27.08.2026. The player draws one button
-       * with three names — `Pause` while playing, `Erneut abspielen` once the
-       * video has ended, `Abspielen` otherwise (`VideoPlayer.tsx`). Against the
-       * eight-second fixture one second of runway always survives the 500 ms
-       * below; against a real MEDICE video over a real network it does not, the
-       * video ends, the button reads `Erneut abspielen`, and the click below
-       * waits the full thirty seconds for a `Pause` that can never appear.
+       * The player draws one button with three names — `Pause` while playing,
+       * `Erneut abspielen` once the video has ended, `Abspielen` otherwise
+       * (`VideoPlayer.tsx`, and `publish()` derives `playing` as
+       * `!video.paused && !video.ended`). So a click on `Pause` is only
+       * meaningful if the element is actually playing when it happens, and by
+       * this point in the act it usually is not:
        *
-       * The product was right and the assumption was the test's. Five seconds
-       * is chosen so the control is genuinely exercised rather than skipped —
-       * making the click conditional would leave a broken pause button green,
-       * which is the §9.1 trap this suite exists to avoid.
+       *   * the watch loop above exits at sixteen seconds of an eighteen-second
+       *     fixture, and the three seeks and two 500 ms waits that follow are
+       *     easily the remaining two seconds;
+       *   * the forward-seek probe deliberately sets `currentTime = duration`,
+       *     which is the fastest way there is to end a video;
+       *   * and a seek on an **ended** element does not resume playback — the
+       *     spec keeps it paused — so the later seeks put the playhead back in
+       *     the middle of a video that is standing still.
        *
-       * Nothing after this needs the playhead at the very end: the percentage
-       * below is the server's union of watched intervals, which a seek does not
-       * move, and Act 12 asserts `Abspielen` after a reload.
+       * The button then reads `Abspielen`, `Pause` never appears, and the click
+       * waits the full thirty seconds. That is what failed on production on
+       * 27.08 and again on 31.08.
+       *
+       * ## The first fix was wrong, and this records it
+       *
+       * P124-01 read the failure as "the video ends during the 500 ms wait" and
+       * moved the seek from `duration - 1` to `duration - 5`. That theory was
+       * tested against production by shipping it: the run of 31.08 failed on
+       * the same line with the fix demonstrably in it (the line number moved
+       * with the comment). More runway does not help when the element is not
+       * advancing in the first place.
+       *
+       * ## Why this is not a conditional click
+       *
+       * Skipping the click when `Pause` is absent would leave a broken pause
+       * button green for ever, which is the §9.1 trap this suite exists to
+       * avoid. So the precondition is **established**, not assumed away: if the
+       * element is not playing, press the player's own play control and wait
+       * for the element to say it is playing, then pause it and assert that it
+       * stopped. Both halves are the product's — a `video.play()` from the test
+       * would prove the element works and nothing about the widget.
        */
       await video.evaluate((element: HTMLVideoElement) => {
         element.currentTime = Math.max(0, element.duration - 5);
       });
       await learner.waitForTimeout(500);
 
+      if (await video.evaluate((element: HTMLVideoElement) => element.paused)) {
+        /*
+         * Whichever name the one button is wearing. `Erneut abspielen` when the
+         * element ended and nothing has moved the playhead since, `Abspielen`
+         * once a seek has cleared `ended` — the distinction is the widget's and
+         * this does not care which, only that a person looking at the screen
+         * has a control that starts it.
+         */
+        const resume = learner
+          .getByRole("button", { name: /^(Abspielen|Erneut abspielen)$/u })
+          .first();
+        await expect(
+          resume,
+          "the video was not playing and the player offered no control to " +
+            "start it — a physician arriving here has a still picture and " +
+            "nothing to press",
+        ).toBeVisible();
+        await resume.click();
+        await expect
+          .poll(() => video.evaluate((element: HTMLVideoElement) => element.paused), {
+            message:
+              "the player's own play control did not start the video. This " +
+              "is the control the whole course depends on, and it is the " +
+              "same button Act 12 presses after a reload.",
+          })
+          .toBe(false);
+      }
+
       await learner.getByRole("button", { name: "Pause", exact: true }).first().click();
       await expect
-        .poll(() => video.evaluate((element: HTMLVideoElement) => element.paused))
+        .poll(() => video.evaluate((element: HTMLVideoElement) => element.paused), {
+          message: "Pause was pressed and the video kept playing",
+        })
         .toBe(true);
 
       /*

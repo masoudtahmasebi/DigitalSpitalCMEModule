@@ -13,6 +13,7 @@
 
 import { spawnSync } from "node:child_process";
 import { Pool } from "pg";
+import { DEMO_REALM, DEV_KEYCLOAK_AUDIENCE, KEYCLOAK_PORT } from "./wordpress.js";
 
 export const DB_NAME = "ds_education_e2e";
 
@@ -145,11 +146,34 @@ export function prepareDatabase(repo: string, superuser: string): Prepared {
     DATABASE_URL: databaseUrl,
     MIGRATION_DATABASE_URL: migrationUrl,
   });
+  /*
+   * The demo tenant's Keycloak binding, supplied by the rig (P132-02).
+   *
+   * `wordpress.ts` says *"the stub binds this, and the seeds' `keycloak_issuer`
+   * names it"*, and that stopped being true at P101-03: the seed now writes the
+   * issuer **stated or absent, never invented**, so with `DS_DEMO_KEYCLOAK_*`
+   * unset it writes nothing — correctly, because inventing a federated issuer
+   * on a real installation is worse than leaving it empty.
+   *
+   * The consequence here was that `ds-demo` had no binding, `resolve` returned
+   * undefined, and the API answered every widget request `401 unknown or
+   * unbound project`. The two WordPress cases then read each other's error
+   * message and failed on something that had nothing to do with WordPress.
+   *
+   * The rig is the only thing that knows where its own stub listens, so it is
+   * the thing that must say so — an environment variable a developer is
+   * expected to export is a setting that is not applied (§9.9).
+   */
+  const devKeycloak = `http://127.0.0.1:${KEYCLOAK_PORT}/realms/${DEMO_REALM}`;
+
   run("pnpm", ["db:seed:ds"], repo, {
     DATABASE_URL: databaseUrl,
     MIGRATION_DATABASE_URL: migrationUrl,
     SEED_PARTICIPANT_PASSWORD: PARTICIPANT_PASSWORD,
     SEED_STAFF_PASSWORD: STAFF_PASSWORD,
+    DS_DEMO_KEYCLOAK_ISSUER: devKeycloak,
+    DS_DEMO_KEYCLOAK_AUDIENCE: DEV_KEYCLOAK_AUDIENCE,
+    DS_DEMO_KEYCLOAK_REALM: DEMO_REALM,
   });
 
   // The tenant the journey suite writes into. Seeded by the same command the

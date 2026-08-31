@@ -621,6 +621,54 @@ export const german = {
     create: "Fortbildung anlegen",
     noProjects:
       "Bevor eine Fortbildung angelegt werden kann, muss es mindestens ein Projekt geben.",
+
+    /* The wizard (P132-03). */
+    stepsLabel: "Schritte",
+    steps: {
+      basics: "Grunddaten",
+      presentation: "Darstellung",
+      review: "Prüfen & anlegen",
+    },
+    stepHints: {
+      basics:
+        "Zu welchem Projekt die Fortbildung gehört, wie sie heißt und unter welchem Kürzel sie erreichbar ist. Das Kürzel lässt sich später nicht mehr ändern.",
+      presentation:
+        "Was Teilnehmende im Katalog sehen, bevor sie die Fortbildung öffnen — mehr als Format und Beschreibung ist das dort nicht.",
+      review:
+        "Was jetzt angelegt wird, und was danach noch fehlt, bevor Teilnehmende die Fortbildung sehen können.",
+    },
+    stepOf: (at: number, total: number): string => `Schritt ${at} von ${total}`,
+    back: "Zurück",
+    next: "Weiter",
+    /* Names the fields, never their values (CLAUDE.md §9.5). */
+    missing: (fields: readonly string[]): string =>
+      `Es fehlt noch: ${fields.join(", ")}.`,
+    notSaved: "Nichts ist gespeichert, bis Sie „Fortbildung anlegen“ drücken.",
+    descriptionHint:
+      "Erscheint im Katalog unter dem Titel. Zwei bis drei Sätze reichen — die ausführliche Beschreibung der Detailseite wird später bearbeitet.",
+
+    preview: "Vorschau",
+    previewHint:
+      "Eine Annäherung. Das Portal zeichnet die Karte mit dem Erscheinungsbild des Kunden.",
+    previewNoTitle: "Noch ohne Titel",
+    previewNoDescription: "Ohne Beschreibung erscheint im Katalog nur der Titel.",
+    draftBadge: "Entwurf",
+
+    nextTitle: "Danach, in dieser Reihenfolge:",
+    nextSteps: [
+      {
+        title: "Inhalte",
+        body: "Module, Kapitel, Videos und die Lernerfolgskontrolle anlegen.",
+      },
+      {
+        title: "Zertifizierung",
+        body: "VNR, Punkte, Kategorie, Veranstaltender und wissenschaftliche Leitung. Ohne diese Angaben kann keine Teilnahmebescheinigung ausgestellt werden.",
+      },
+      {
+        title: "Veröffentlichen",
+        body: "Bis dahin ist die Fortbildung ein Entwurf: sie erscheint nicht im Katalog und kann nicht geöffnet werden.",
+      },
+    ] as const,
   },
 
   /**

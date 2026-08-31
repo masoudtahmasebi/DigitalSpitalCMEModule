@@ -132,6 +132,10 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
       await menu(operator).getByRole("button", { name: "Fortbildungen" }).click();
       await operator.getByRole("button", { name: "Neue Fortbildung" }).first().click();
       await operator.getByRole("textbox", { name: "Titel" }).fill(COURSE);
+      // Grunddaten → Darstellung → Prüfen & anlegen (P132-03). Only the last
+      // step writes.
+      await operator.getByRole("button", { name: "Weiter" }).click();
+      await operator.getByRole("button", { name: "Weiter" }).click();
       await operator.getByRole("button", { name: "Fortbildung anlegen" }).click();
       await expect(operator.getByRole("heading", { name: COURSE })).toBeVisible({
         timeout: 20_000,
