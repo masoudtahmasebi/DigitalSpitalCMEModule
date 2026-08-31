@@ -624,6 +624,10 @@ export const en: DeepPartial<typeof german> = {
     intro:
       "The order of the questions is the order in the exam. Marking is on exact agreement: with “one correct answer” exactly the right option must be chosen, with “several correct answers” exactly the set of right ones.",
     empty: "No questions yet.",
+    railAdd: "Append a question",
+    railHeading: (count: number): string =>
+      count === 1 ? "1 question" : `${String(count)} questions`,
+    railProblem: "This question is incomplete",
     addQuestion: "Add question",
     backToStructure: "Back to the contents",
     unsavedChanges: "Unsaved changes will be lost.",

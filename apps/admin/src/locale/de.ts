@@ -857,6 +857,10 @@ export const german = {
     intro:
       "Die Reihenfolge der Fragen ist die Reihenfolge in der Prüfung. Bewertet wird auf exakte Übereinstimmung: bei „eine richtige Antwort“ muss genau die richtige Option gewählt sein, bei „mehrere richtige Antworten“ genau die Menge der richtigen.",
     empty: "Noch keine Fragen.",
+    railAdd: "Frage am Ende anfügen",
+    railHeading: (count: number): string =>
+      count === 1 ? "1 Frage" : `${String(count)} Fragen`,
+    railProblem: "Diese Frage ist unvollständig",
     addQuestion: "Frage hinzufügen",
     /*
      * The way out, at the bottom where the work ends (P74-06).

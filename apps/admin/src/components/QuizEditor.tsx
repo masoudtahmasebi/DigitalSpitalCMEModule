@@ -41,7 +41,6 @@ import {
   IconButton,
   LoadFailure,
   Notice,
-  Row,
   RowList,
   SaveProblem,
   Select,
@@ -159,33 +158,65 @@ export function QuizEditor(props: {
         </Notice>
       ) : null}
 
-      {questions.length === 0 ? (
-        <p className="text-sm text-gray-600">{de.quiz.empty}</p>
-      ) : (
-        <RowList ordered>
-          {questions.map((question, index) => (
-            <li key={question.key}>
-              <QuestionBlock
-                question={question}
-                index={index}
-                total={questions.length}
-                problems={showProblems ? (problems[index] ?? []) : []}
-                onChange={(next) => update(index, () => next)}
-                onMove={(to) => setDraft(swap(questions, index, to))}
-                onDelete={() => setDraft(questions.filter((_, i) => i !== index))}
-              />
-            </li>
-          ))}
-        </RowList>
-      )}
+      {/*
+        Two panes: the exam on the left, one question under the cursor on the
+        right (P128-01).
+        
+        The screen was a single column of eleven identical cards, and the
+        client's objection was about exactly that — finding question 7 meant
+        scrolling and reading first fields. The rail is the fix and it is also
+        where the *state* of the exam lives: which questions have a problem is
+        visible without scrolling to them, which is what an author needs when
+        the save is refused.
+      */}
+      <div className="grid gap-5 lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start">
+        <QuestionRail
+          questions={questions}
+          problems={showProblems ? problems : questions.map(() => [])}
+          onAdd={() => setDraft([...questions, newQuestion()])}
+        />
 
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="secondary"
-          onClick={() => setDraft([...questions, newQuestion()])}
-        >
-          {de.quiz.addQuestion}
-        </Button>
+        <div className="min-w-0 space-y-4">
+          {questions.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-600">
+              {de.quiz.empty}
+            </p>
+          ) : (
+            <RowList>
+              {questions.map((question, index) => (
+                <li key={question.key}>
+                  <QuestionBlock
+                    question={question}
+                    index={index}
+                    total={questions.length}
+                    problems={showProblems ? (problems[index] ?? []) : []}
+                    onChange={(next) => update(index, () => next)}
+                    onMove={(to) => setDraft(swap(questions, index, to))}
+                    onDelete={() => setDraft(questions.filter((_, i) => i !== index))}
+                  />
+                </li>
+              ))}
+            </RowList>
+          )}
+
+          <Button
+            variant="secondary"
+            onClick={() => setDraft([...questions, newQuestion()])}
+          >
+            {de.quiz.addQuestion}
+          </Button>
+        </div>
+      </div>
+
+      {/*
+        The action bar sticks to the bottom of the viewport.
+
+        An author writing question eleven is a long way from a Save button at
+        the end of the document, and the unsaved-changes note beside it is only
+        useful where it can be seen. Both references put the commit controls in
+        a bar that does not scroll away.
+      */}
+      <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center gap-2 border-t border-gray-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
         <Button
           disabled={saver.state === "saving"}
           onClick={() => {
@@ -221,12 +252,101 @@ export function QuizEditor(props: {
           {de.quiz.backToStructure}
         </Button>
         {draft === undefined ? null : (
-          <p className="self-center text-xs text-amber-700" role="status">
+          <p className="self-center text-xs font-medium text-amber-700" role="status">
             {de.quiz.unsavedChanges}
           </p>
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * The exam, as a list you can see all of at once (P128-01).
+ *
+ * Every reference the client sent puts this rail beside the editor, and the
+ * reason is not decoration: an author is editing one question and reasoning
+ * about eleven. The number, the first words of the prompt and the kind are what
+ * tell them apart — a card headed "3." says nothing, which P100-02 already
+ * found once for the card titles.
+ *
+ * The problem dot is the part that earns its place. When a save is refused
+ * because question 7 has no correct option, the rail says *seven* without the
+ * author scrolling to find out; before, the only signal was a sentence at the
+ * top and red text far below the fold.
+ *
+ * A button rather than an anchor: this scrolls within a screen, it does not
+ * navigate, and an `href` would put a second address on a screen that already
+ * has one (§9.8 is about places you can *be*, and a question is not one).
+ */
+function QuestionRail(props: {
+  questions: readonly DraftQuestion[];
+  problems: ReadonlyArray<readonly string[]>;
+  onAdd: () => void;
+}) {
+  return (
+    <aside className="lg:sticky lg:top-4">
+      <div className="flex items-center justify-between px-1 pb-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          {de.quiz.railHeading(props.questions.length)}
+        </h2>
+        {/*
+          Its own name, not "Frage hinzufügen".
+
+          The button at the foot of the canvas already carries that label, and
+          two controls with one accessible name is a screen reader announcing
+          the same thing twice and a `getByRole` that resolves to two elements —
+          which is exactly how the journey drives this screen. The same mistake
+          the customer-prompt made with a second combobox an hour ago; caught
+          here by asking rather than by a red suite.
+        */}
+        <IconButton label={de.quiz.railAdd} glyph="+" onClick={props.onAdd} />
+      </div>
+
+      <ol className="space-y-1.5">
+        {props.questions.map((question, index) => {
+          const prompt = question.prompt.trim();
+          const broken = (props.problems[index] ?? []).length > 0;
+          return (
+            <li key={question.key}>
+              <button
+                type="button"
+                onClick={() => {
+                  document
+                    .getElementById(`question-${question.key}-card`)
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                className={`flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition ${
+                  broken
+                    ? "border-red-300 bg-red-50"
+                    : "border-gray-200 bg-white hover:border-brand-500"
+                }`}
+              >
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-gray-100 text-[11px] font-semibold text-gray-700">
+                  {index + 1}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-medium text-gray-900">
+                    {prompt === "" ? de.quiz.unnamed : prompt}
+                  </span>
+                  <span className="block truncate text-[11px] text-gray-500">
+                    {question.kind === "single"
+                      ? de.quiz.kinds.single
+                      : de.quiz.kinds.multi}
+                  </span>
+                </span>
+                {broken ? (
+                  <span
+                    aria-label={de.quiz.railProblem}
+                    className="mt-1 h-2 w-2 shrink-0 rounded-full bg-red-500"
+                  />
+                ) : null}
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </aside>
   );
 }
 
@@ -262,12 +382,30 @@ function QuestionBlock(props: {
   const prompt = question.prompt.trim();
 
   return (
-    <Row
-      eyebrow={`${index + 1}.`}
-      title={prompt === "" ? de.quiz.unnamed : prompt}
-      meta={question.answerCount > 0 ? de.quiz.answered(question.answerCount) : undefined}
-      actions={
-        <>
+    <div
+      id={`question-${question.key}-card`}
+      className="scroll-mt-4 rounded-xl border border-gray-200 bg-white shadow-sm"
+    >
+      {/*
+        The card header carries the identity and the controls, as both
+        references draw it: what this question is, and what can be done to it.
+        The kind sits in the body with its label, because it is an editable
+        field rather than a badge — a pill that turns out to be a dropdown is
+        the kind of thing that reads as decoration until somebody needs it.
+      */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-4 py-3">
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand-50 text-xs font-semibold text-brand-700">
+          {index + 1}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900">
+          {prompt === "" ? de.quiz.unnamed : prompt}
+        </span>
+        {question.answerCount > 0 ? (
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">
+            {de.quiz.answered(question.answerCount)}
+          </span>
+        ) : null}
+        <span className="flex items-center gap-1">
           <IconButton
             label={de.common.moveUp}
             glyph="↑"
@@ -302,10 +440,10 @@ function QuestionBlock(props: {
             ariaLabel={question.answerCount > 0 ? de.quiz.retireOnRemove : undefined}
             onConfirm={props.onDelete}
           />
-        </>
-      }
-    >
-      <div className="space-y-3">
+        </span>
+      </div>
+
+      <div className="space-y-3 px-4 py-4">
         <Field label={de.quiz.prompt} htmlFor={id("prompt")}>
           <TextArea
             id={id("prompt")}
@@ -328,7 +466,26 @@ function QuestionBlock(props: {
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium text-gray-900">{de.quiz.option}</legend>
           {question.options.map((option, optionIndex) => (
-            <div key={option.key} className="flex items-center gap-2">
+            /*
+              The correct answer is the thing this row is about, so it reads as
+              a marked row rather than a checkbox with a label beside it — which
+              is how both references draw it, and it is also the honest emphasis:
+              this is the only screen in the console that says which answer is
+              right.
+
+              It stays a **checkbox**, not the radio the references use. A
+              `multi` question has more than one correct answer, so a radio would
+              be a control that cannot express what the model allows (§9.2) — and
+              the journey checks the first checkbox to mark an answer correct.
+            */
+            <div
+              key={option.key}
+              className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${
+                option.isCorrect
+                  ? "border-emerald-300 bg-emerald-50"
+                  : "border-transparent"
+              }`}
+            >
               <input
                 id={id(`correct-${option.key}`)}
                 type="checkbox"
@@ -336,11 +493,11 @@ function QuestionBlock(props: {
                 onChange={(event) =>
                   setOption(optionIndex, { isCorrect: event.target.checked })
                 }
-                className="h-4 w-4"
+                className="h-4 w-4 shrink-0 accent-emerald-600"
               />
               <label
                 htmlFor={id(`correct-${option.key}`)}
-                className="w-16 shrink-0 text-xs text-gray-600"
+                className="w-16 shrink-0 text-xs font-medium text-gray-600"
               >
                 {de.quiz.isCorrect}
               </label>
@@ -380,7 +537,7 @@ function QuestionBlock(props: {
           </p>
         ))}
       </div>
-    </Row>
+    </div>
   );
 }
 
