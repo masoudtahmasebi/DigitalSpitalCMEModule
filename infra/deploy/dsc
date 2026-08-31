@@ -160,6 +160,31 @@ if [[ "${1:-}" == "as-migrator" ]]; then
   ds_as_migrator "$@"
 fi
 
+# ---------------------------------------------------------------------------
+# ./dsc eiv — does the register answer, and what does it hold? (P130-01)
+# ---------------------------------------------------------------------------
+#
+# Read-only. It authenticates, reads the accredited period and the point values,
+# and lists what has already been reported. It cannot file a Punktemeldung —
+# `push_teilnahme` is absent from the entrypoint on purpose, because a filed
+# report cannot be unfiled, only withdrawn, and that leaves its own record.
+#
+# The two facts it exists to print are the ones that decide whether this
+# installation can report at all: the accredited period a `teilnahmedatum` has
+# to fall inside, and the two Punktekennzeichen a completion may claim.
+#
+# Against the EIV test system, which is what it is for:
+#
+#   EIV_ALLOW_LIVE=yes EIV_BASE_URL=https://backend-test.eiv-fobi.de \
+#     EIV_VNR=<test vnr> ./dsc eiv
+#
+# Credentials come from config.env or the environment, never from a file in the
+# repository.
+if [[ "${1:-}" == "eiv" ]]; then
+  shift
+  ds_as_migrator dist/eiv-check.js "$@"
+fi
+
 if [[ "${1:-}" == "seed" ]]; then
   shift
   case "${1:-}" in

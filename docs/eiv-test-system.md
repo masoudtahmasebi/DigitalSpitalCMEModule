@@ -86,3 +86,87 @@ against a real VNR files a statutory Punktemeldung against a real physician's
 EFN, and a filed report cannot be unfiled — only withdrawn, which leaves its own
 record. `EIV_ALLOW_LIVE` exists to make that a decision rather than an accident,
 and `EIV_WORKER_ENABLED=no` is currently set on production for the same reason.
+
+---
+
+## How an admin runs it
+
+### On the host, read-only — `./dsc eiv`
+
+```bash
+EIV_ALLOW_LIVE=yes \
+EIV_BASE_URL=https://backend-test.eiv-fobi.de \
+EIV_VNR=2760012024200354002 \
+EIV_VNR_PASSWORD=<the password, from config.env> \
+  ./dsc eiv
+```
+
+It authenticates, prints the accredited period and the two Punktekennzeichen,
+and lists what has already been reported. **It cannot file a Punktemeldung** —
+`push_teilnahme` is absent from the entrypoint on purpose, because a filed report
+cannot be unfiled, only withdrawn, and that leaves its own record.
+
+Exit codes: `0` the register answered, `1` it refused or could not be reached,
+`2` it was not asked because the configuration would not allow it.
+
+`EIV_ALLOW_LIVE=yes` is required for any non-local host, the test system
+included. That is deliberate: even a read authenticates against the configured
+VNR, and on a production installation that VNR is a real accredited event.
+
+### The two lines to read
+
+```
+Zeitraum:  <beginn> → <ende>
+Punkte:    basis=<n> lernerfolg=<n>
+```
+
+The first is **S11**: a `teilnahmedatum` outside that window is refused 406, and
+the live VNR's window is a single day, which is why every completion this
+platform reports would currently be rejected. The second is **S25**: which flags
+a completion may claim.
+
+### To file a test participation, use the product
+
+Complete a course as a physician would. That is the path actually under test —
+the widget, the gate, the evaluation, the EFN, the worker — and it is the only
+one that proves the whole chain. Point the installation at the test system, set
+a test VNR on the course, and turn the worker on:
+
+```
+EIV_BASE_URL=https://backend-test.eiv-fobi.de
+EIV_ALLOW_LIVE=yes
+EIV_WORKER_ENABLED=yes
+```
+
+Then read the banner on **Verwaltung → Teilnahme → Punktemeldungen**, which says
+in words whether this installation will file anything (P121-01). Use a test EFN
+from the list above.
+
+> **The dangerous combination is the live endpoint with the live VNR and the
+> worker on.** Each alone is harmless. Together they file a statutory report
+> against a real physician. `EIV_WORKER_ENABLED=no` is currently set on
+> production precisely so that combination cannot happen by accident.
+
+## What has been verified, and what has not
+
+**Verified 31.08.2026, against the local mock, using these exact test values:**
+
+|                                        |                                             |
+| -------------------------------------- | ------------------------------------------- |
+| `authenticate` with test VNR `…354002` | 200, JWT redacted in all output             |
+| `veranstaltung`                        | period, Kategorie and both Punkte read back |
+| `push_teilnahme` with test EFN `…0329` | 200, EFN masked to `***********0329`        |
+| 406 → `business`                       | _"VNR unbekannt oder gesperrt"_             |
+| 422 → `validation`                     | _"Ungültige EFN-Prüfziffer"_                |
+| 429 → rate limited, 401 → auth         | both classified                             |
+| duplicate                              | 200 with `messages: ["aktualisiert"]`       |
+| the password                           | appears in no output, at any verbosity      |
+
+So the client handles the real test identifiers correctly, and the failure-kind
+mapping the Punktemeldung panel depends on is exercised end to end.
+
+**Not verified: anything against the real EIV test server.** The development
+sandbox's egress is an allowlist and `eiv-fobi.de` is not on it — every host
+above answers `403` at the proxy, not at EIV. So the four questions only a real
+response can settle are still open, and `./dsc eiv` from the host is what settles
+them. That is the point of it existing.
