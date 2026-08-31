@@ -326,7 +326,15 @@ export const en: DeepPartial<typeof german> = {
     label: "Customer",
     choose: "Choose a customer …",
     none: "Please choose a customer above to see this section.",
+
     noneYet: "No customer exists yet. Create the first one under “Customers”.",
+    promptTitle: "Choose a customer",
+    promptBody:
+      "This area belongs to a customer. Choose which customer you want to work with.",
+    promptEmptyBody:
+      "No customer exists yet. Create one first — every area becomes available afterwards.",
+    promptCreate: "Create a customer",
+    promptNoRights: "Your account may not create customers. Please ask an administrator.",
   },
 
   build: {

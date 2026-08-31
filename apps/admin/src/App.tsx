@@ -608,6 +608,84 @@ const NAV: readonly NavGroup[] = [
  * in production — the defaults are exactly what was there — and make the shell's
  * behaviour assertable, which is where every one of those bugs lived.
  */
+
+/**
+ * The panel a tenant screen shows when no customer is chosen (P127-01).
+ *
+ * The previous version was one amber sentence — *"Bitte wählen Sie oben einen
+ * Kunden aus"* — which is true and leaves the operator to find the control it
+ * refers to. §9.4: where an action is impossible, say why **at the point
+ * somebody looks for it**, and give them the next step rather than directions
+ * to it.
+ *
+ * So the two ways forward are the two controls. Which of them appears depends on
+ * the account: an operator without the `customer` capability cannot create one,
+ * and offering it would be a button that can only refuse (§9.2).
+ */
+function ChooseCustomerPrompt(props: {
+  customers: readonly { readonly id: string; readonly name: string }[];
+  canCreate: boolean;
+  onChoose: (id: string) => void;
+  onCreate: () => void;
+}) {
+  const { customers, canCreate } = props;
+
+  return (
+    <div className="mx-auto max-w-lg rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <h2 className="text-lg font-semibold text-gray-900">
+        {de.customerPicker.promptTitle}
+      </h2>
+      <p className="mt-2 text-sm text-gray-600">
+        {customers.length === 0
+          ? de.customerPicker.promptEmptyBody
+          : de.customerPicker.promptBody}
+      </p>
+
+      {/*
+        One button per customer, not a second dropdown.
+
+        The shell already carries a customer picker in its header, and a
+        `<select>` here would be the same control twice on one screen — two
+        places to do one thing, which is how they end up disagreeing about which
+        is authoritative. It also broke fifteen tests that reasonably assumed
+        there is one combobox in the console. Buttons make the choice one click
+        rather than open-then-pick, on the screen whose whole purpose is that
+        choice.
+      */}
+      {customers.length === 0 ? null : (
+        <ul className="mt-5 space-y-2">
+          {customers.map((customer) => (
+            <li key={customer.id}>
+              <button
+                type="button"
+                onClick={() => props.onChoose(customer.id)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-900 hover:border-brand-500 hover:bg-brand-50"
+              >
+                {customer.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {canCreate ? (
+        <div className="mt-5">
+          <Button variant="primary" onClick={props.onCreate}>
+            {de.customerPicker.promptCreate}
+          </Button>
+        </div>
+      ) : customers.length === 0 ? (
+        /*
+         * Nothing exists and this operator cannot create one. Saying so is the
+         * honest end of the road — the alternative is a screen that looks
+         * broken to somebody who has done nothing wrong (§9.10).
+         */
+        <p className="mt-5 text-sm text-gray-600">{de.customerPicker.promptNoRights}</p>
+      ) : null}
+    </div>
+  );
+}
+
 export function Console(props: {
   config: ReturnType<typeof readConfig> & object;
   profile: StaffProfile;
@@ -747,13 +825,31 @@ export function Console(props: {
    * — which is what makes a fresh installation recoverable: the operator can
    * create the first customer from a console that has none.
    */
-  const TENANT_VIEWS: ReadonlySet<View["kind"]> = new Set([
-    "courses",
-    "course",
-    "organisation",
-    "branding",
-    "learners",
-    "certificates",
+  /*
+   * Which screens sit **above** any customer (P127-01).
+   *
+   * This was the other way round — a hand-written list of the six tenant
+   * screens — and it had drifted to cover six of ten. `media`, `copy`,
+   * `participants` and `punktemeldungen` were all missing, so each of them
+   * skipped the guard below, called a tenant-scoped route with no customer
+   * header, and rendered the API's developer-facing refusal above a "Loading …"
+   * that never resolved. Reported from the Mediathek, true of four screens.
+   *
+   * That is CLAUDE.md §9.1's second form: a check that silently covers less
+   * than it claims, the same shape as `role-matrix.mjs` parsing five of nine
+   * screens (P41-02). Listing the exceptions instead of the rule is what fixes
+   * the class — there are three platform screens and they are the ones with a
+   * reason to be here, so a screen added tomorrow is tenant-scoped by default
+   * and fails into "choose a customer" rather than into a red box.
+   *
+   * The three are exactly the screens rendered with `platformClient`: the
+   * customer registry spans customers, and operator accounts and sign-in rules
+   * sit above any one of them.
+   */
+  const PLATFORM_VIEWS: ReadonlySet<View["kind"]> = new Set([
+    "customers",
+    "staff",
+    "security",
   ]);
 
   /*
@@ -1117,16 +1213,23 @@ export function Console(props: {
     );
   }
 
-  // A tenant screen with no customer chosen has nothing to act within. Saying
-  // so beats an empty list, which reads as a customer with no content, and
-  // beats a wall of 422s from an API that is answering correctly.
-  if (customerId === undefined && TENANT_VIEWS.has(view.kind)) {
+  /*
+   * A tenant screen with no customer chosen has nothing to act within.
+   *
+   * It now *asks*, rather than stating the problem and leaving the operator to
+   * work out the remedy (§9.4). The two ways forward are the two controls:
+   * choose one of the customers that exist, or create the first. Which of those
+   * is even possible depends on the account, so the panel renders what this
+   * operator can actually do rather than naming a screen they may not reach.
+   */
+  if (customerId === undefined && !PLATFORM_VIEWS.has(view.kind)) {
     return frame(
-      <>
-        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          {customers.length === 0 ? de.customerPicker.noneYet : de.customerPicker.none}
-        </p>
-      </>,
+      <ChooseCustomerPrompt
+        customers={customers}
+        canCreate={props.profile.capabilities.includes("customer")}
+        onChoose={setCustomerId}
+        onCreate={() => setView({ kind: "customers" })}
+      />,
     );
   }
 

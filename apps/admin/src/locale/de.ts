@@ -421,6 +421,16 @@ export const german = {
        that looks like a customer with no content. */
     none: "Bitte wählen Sie oben einen Kunden aus, um diesen Bereich zu sehen.",
     noneYet: "Es ist noch kein Kunde angelegt. Legen Sie unter „Kunden“ den ersten an.",
+    /* The blocking prompt (P127-01). `none` and `noneYet` above state the
+       problem; these ask the question and name the next step. */
+    promptTitle: "Bitte wählen Sie einen Kunden",
+    promptBody:
+      "Dieser Bereich gehört zu einem Kunden. Wählen Sie aus, mit welchem Kunden Sie arbeiten möchten.",
+    promptEmptyBody:
+      "Es ist noch kein Kunde angelegt. Legen Sie zuerst einen Kunden an — danach stehen alle Bereiche zur Verfügung.",
+    promptCreate: "Kunden anlegen",
+    promptNoRights:
+      "Ihr Konto darf keine Kunden anlegen. Bitte wenden Sie sich an eine Administratorin oder einen Administrator.",
   },
 
   /**

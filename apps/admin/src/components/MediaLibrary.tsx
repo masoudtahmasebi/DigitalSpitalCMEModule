@@ -84,8 +84,6 @@ export function MediaLibrary(props: { client: ApiClient }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-[color:var(--ds-ink-muted)]">{de.media.screenIntro}</p>
-
       <div className="flex flex-wrap items-end gap-3">
         <div
           role="group"

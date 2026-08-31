@@ -175,17 +175,49 @@ describe("a super admin with no customer chosen (P22-03)", () => {
     );
   });
 
-  it("says a customer must be chosen when some exist", async () => {
+  it("offers the customers that exist, as the way out", async () => {
     const platform = fakeClient({
       adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
     });
     renderConsole({ platform });
 
-    // Different advice, because "pick one above" is unhelpful when there is
-    // nothing to pick and "create one" is wrong when there is.
+    /*
+     * The prompt asks rather than instructs (P127-01). It used to read "Bitte
+     * wählen Sie oben einen Kunden aus", which is true and leaves the operator
+     * to find the control it refers to — §9.4, where an action is needed, put it
+     * where somebody looks for it.
+     *
+     * Asserted on the customer's own name in a button: the copy can be reworded
+     * without this failing, and a prompt that offers no way forward cannot pass.
+     */
     await waitFor(() =>
-      expect(screen.getByText(/wählen Sie oben einen Kunden/)).toBeTruthy(),
+      expect(screen.getByRole("button", { name: MEDICE.name })).toBeTruthy(),
     );
+  });
+
+  it("blocks a tenant screen that is not on any hand-written list", async () => {
+    /*
+     * The defect, reported from the Mediathek: `TENANT_VIEWS` was a hand-written
+     * list of six that had drifted to cover six of ten, so `media`, `copy`,
+     * `participants` and `punktemeldungen` skipped the guard, called a
+     * tenant-scoped route with no customer header, and rendered the API's
+     * developer-facing refusal over a "Loading …" that never resolved.
+     *
+     * The list is inverted now — three platform screens named, everything else
+     * tenant-scoped by default — so this asserts the property that inversion
+     * buys: a screen nobody remembered to list still asks for a customer.
+     */
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    // `afterEach` above puts the fragment back, so this cannot leak.
+    window.history.replaceState(null, "", "#/mediathek");
+    renderConsole({ platform });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: MEDICE.name })).toBeTruthy(),
+    );
+    expect(screen.queryByText(/tenant-scoped/)).toBeNull();
   });
 
   it("keeps the navigation and the picker visible while a request fails", async () => {
