@@ -115,6 +115,8 @@ export type ContentWrite = components["schemas"]["ContentWrite"];
 export type UploadPurpose = components["schemas"]["UploadPurpose"];
 export type UploadRequest = components["schemas"]["UploadRequest"];
 export type UploadTicket = components["schemas"]["UploadTicket"];
+export type MultipartTicket = components["schemas"]["MultipartTicket"];
+export type MultipartSigned = components["schemas"]["MultipartSigned"];
 export type UploadConfirmed = components["schemas"]["UploadConfirmed"];
 export type UploadView = components["schemas"]["UploadView"];
 export type MediaAsset = components["schemas"]["MediaAsset"];
@@ -877,6 +879,32 @@ export function createClient(options: ClientOptions) {
         json(fileName === undefined ? { key } : { key, fileName }),
       ),
 
+    /*
+     * Multipart, for files past the threshold (P129-05).
+     *
+     * Three calls where the single upload has two, and the extra one repeats:
+     * `adminSignUploadParts` is asked for a bounded batch as the upload
+     * proceeds, and again on resume for whatever is still missing. The
+     * orchestration lives in `uploadInParts` below — these are only the wire.
+     */
+    adminBeginMultipartUpload: (
+      slug: string,
+      input: UploadRequest,
+    ): Promise<MultipartTicket> =>
+      request(`${adminCourse(slug)}/uploads/multipart`, json(input)),
+
+    adminSignUploadParts: (
+      slug: string,
+      input: { key: string; uploadId: string; partNumbers: readonly number[] },
+    ): Promise<MultipartSigned> =>
+      request(`${adminCourse(slug)}/uploads/multipart/sign`, json(input)),
+
+    adminCompleteMultipartUpload: (
+      slug: string,
+      input: { key: string; uploadId: string },
+    ): Promise<UploadConfirmed> =>
+      request(`${adminCourse(slug)}/uploads/multipart/complete`, json(input)),
+
     /**
      * The customer's media library (P81-02).
      *
@@ -1173,5 +1201,197 @@ export function uploadToTicket(
     options.signal?.addEventListener("abort", () => request.abort(), { once: true });
 
     request.send(file);
+  });
+}
+
+/**
+ * Send a large file in parts (P129-05).
+ *
+ * ## What this is for
+ *
+ * `uploadToTicket` above is one signed PUT, and its own header says why it does
+ * not retry: a failed upload starts from zero, so re-sending automatically
+ * would push hundreds of megabytes down a connection that has just shown it
+ * cannot carry them. That reasoning is exactly what stops applying once the
+ * file is cut into parts — a failed **part** is 32 MiB, and retrying it is
+ * cheap enough to be the obvious thing to do.
+ *
+ * So this retries, in a way the single-PUT path deliberately did not.
+ *
+ * ## The three properties that matter
+ *
+ * **Bounded concurrency.** Three parts at once. More is not faster on a domestic
+ * or clinic connection — it is the same bandwidth divided further, with more
+ * ways to fail — and each in-flight part holds a signed URL.
+ *
+ * **Signatures are asked for as they are needed**, never all at once. A 5 GiB
+ * file is 160 parts; minting 160 capabilities because the upload started would
+ * leave 157 of them live if the author closed the tab at part 3.
+ *
+ * **The slicing is the server's plan, not this function's opinion.** `partBytes`
+ * comes back from `begin` and the server signs against the same number. A
+ * client that chose its own would assemble an object of the right size and the
+ * wrong bytes — which verifies as the right *size* and plays as garbage.
+ *
+ * ## What it does not do
+ *
+ * It does not resume across a page load. The bucket knows what it holds and
+ * `complete` reads that, so the *server* side of resume is real; what is
+ * missing is the browser remembering the `uploadId` after a reload. That is a
+ * separate piece of work and is called out rather than half-built — see
+ * `docs/backlog/P129.md`.
+ */
+export async function uploadInParts(
+  api: {
+    adminBeginMultipartUpload: (
+      slug: string,
+      input: UploadRequest,
+    ) => Promise<MultipartTicket>;
+    adminSignUploadParts: (
+      slug: string,
+      input: { key: string; uploadId: string; partNumbers: readonly number[] },
+    ) => Promise<MultipartSigned>;
+    adminCompleteMultipartUpload: (
+      slug: string,
+      input: { key: string; uploadId: string },
+    ) => Promise<UploadConfirmed>;
+  },
+  slug: string,
+  file: Blob,
+  input: UploadRequest,
+  options: {
+    readonly onProgress?: (percent: number) => void;
+    readonly signal?: AbortSignal;
+    /** Injected by the tests; the browser path uses `putPart` below. */
+    readonly put?: (url: string, body: Blob, signal?: AbortSignal) => Promise<void>;
+    readonly concurrency?: number;
+    readonly attemptsPerPart?: number;
+    /** Injected so a test does not wait out a real backoff. */
+    readonly delay?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<UploadConfirmed> {
+  const put = options.put ?? putPart;
+  const concurrency = options.concurrency ?? 3;
+  const attempts = options.attemptsPerPart ?? 4;
+  const delay = options.delay ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+
+  const ticket = await api.adminBeginMultipartUpload(slug, input);
+
+  /*
+   * Progress is **bytes confirmed**, not parts finished.
+   *
+   * Counting parts on a 96-part upload moves the bar once a minute in visible
+   * steps; counting bytes as each part completes is the same information at a
+   * resolution a person reads as movement. Within-part progress is deliberately
+   * not plumbed through: three parts in flight reporting independently makes a
+   * bar that goes backwards.
+   */
+  let sent = 0;
+  const total = file.size;
+  const report = () => {
+    if (options.onProgress === undefined || total === 0) return;
+    options.onProgress(Math.min(100, Math.floor((sent / total) * 100)));
+  };
+
+  const partNumbers = Array.from({ length: ticket.partCount }, (_, i) => i + 1);
+  const queue = [...partNumbers];
+  const signed = new Map<number, string>();
+
+  /** Sign the next batch, bounded by what the contract accepts. */
+  const ensureSigned = async (wanted: readonly number[]): Promise<void> => {
+    const missing = wanted.filter((part) => !signed.has(part));
+    if (missing.length === 0) return;
+    const batch = await api.adminSignUploadParts(slug, {
+      key: ticket.key,
+      uploadId: ticket.uploadId,
+      partNumbers: missing.slice(0, 32),
+    });
+    for (const part of batch.parts) signed.set(part.partNumber, part.url);
+  };
+
+  const sliceOf = (partNumber: number): Blob => {
+    const start = (partNumber - 1) * ticket.partBytes;
+    return file.slice(start, Math.min(start + ticket.partBytes, total));
+  };
+
+  // Read through a function so TypeScript does not narrow the first check and
+  // then treat the ones inside the retry loop as unreachable.
+  const aborted = (): boolean => options.signal?.aborted ?? false;
+
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      if (aborted()) throw new Error("upload cancelled");
+      const partNumber = queue.shift();
+      if (partNumber === undefined) return;
+
+      await ensureSigned([partNumber]);
+      let url = signed.get(partNumber);
+      if (url === undefined) throw new Error("the server did not sign this part");
+
+      const body = sliceOf(partNumber);
+
+      for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        try {
+          await put(url, body, options.signal);
+          sent += body.size;
+          report();
+          break;
+        } catch (error) {
+          // A cancelled upload is not a failed one, and must not be retried.
+          if (aborted()) throw error;
+          if (attempt === attempts) throw error;
+          /*
+           * Exponential, and the signature is discarded before the retry.
+           *
+           * A part that failed near its URL's expiry would fail again for the
+           * same reason however many times it is tried; dropping it from the
+           * cache means the next attempt asks for a fresh one.
+           */
+          signed.delete(partNumber);
+          await delay(2 ** (attempt - 1) * 500);
+          await ensureSigned([partNumber]);
+          const fresh = signed.get(partNumber);
+          if (fresh === undefined) throw error;
+          url = fresh;
+        }
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, ticket.partCount) }, () => worker()),
+  );
+
+  return api.adminCompleteMultipartUpload(slug, {
+    key: ticket.key,
+    uploadId: ticket.uploadId,
+  });
+}
+
+/**
+ * One part, over XHR.
+ *
+ * XHR rather than `fetch` for the same reason `uploadToTicket` uses it, and no
+ * headers at all: the part's signature does not bind a content type, so setting
+ * one would be a header the bucket did not sign for. No credentials either —
+ * this is a third-party host and the signature is the whole authorisation.
+ */
+function putPart(url: string, body: Blob, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted === true) {
+      reject(new Error("upload cancelled"));
+      return;
+    }
+    const request = new XMLHttpRequest();
+    request.open("PUT", url, true);
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) resolve();
+      else reject(new Error(`object storage refused a part (${request.status})`));
+    };
+    request.onerror = () => reject(new Error("the connection to object storage failed"));
+    request.ontimeout = () => reject(new Error("the part timed out"));
+    request.onabort = () => reject(new Error("upload cancelled"));
+    signal?.addEventListener("abort", () => request.abort(), { once: true });
+    request.send(body);
   });
 }

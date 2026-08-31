@@ -227,6 +227,24 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
     }),
   adminCompleteUpload: (c) =>
     c.adminCompleteUpload("adhs", "cust/courses/id/video-x.mp4"),
+  adminBeginMultipartUpload: (c) =>
+    c.adminBeginMultipartUpload("adhs", {
+      purpose: "video",
+      mimeType: "video/mp4",
+      // Past the multipart threshold, so this exercises the route it names.
+      sizeBytes: 3 * 1024 * 1024 * 1024,
+    }),
+  adminSignUploadParts: (c) =>
+    c.adminSignUploadParts("adhs", {
+      key: "cust/courses/id/video-x.mp4",
+      uploadId: "up-1",
+      partNumbers: [1, 2],
+    }),
+  adminCompleteMultipartUpload: (c) =>
+    c.adminCompleteMultipartUpload("adhs", {
+      key: "cust/courses/id/video-x.mp4",
+      uploadId: "up-1",
+    }),
   adminViewUpload: (c) => c.adminViewUpload("adhs", "s3://cust/courses/id/video-x.mp4"),
   adminViewMedia: (c) => c.adminViewMedia("11111111-1111-4111-8111-111111111111"),
   adminListMedia: (c) => c.adminListMedia({ kind: "video", limit: 20 }),

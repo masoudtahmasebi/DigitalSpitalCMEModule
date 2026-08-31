@@ -141,6 +141,44 @@ ds_as_migrator() {
     echo "      to close the gap." >&2
   fi
 
+  # ---------------------------------------------------------------------
+  # Does the image actually contain this entrypoint? (P130-02)
+  # ---------------------------------------------------------------------
+  #
+  # The note above is not enough on its own, and this is how we found out:
+  #
+  #     note: this clone is at 26f46de, but the API image on this host is
+  #           541a805 — using that one, because it is what is running.
+  #     Error: Cannot find module '/app/dist/eiv-check.js'
+  #
+  # Both lines are true and only the first is useful. `dsc eiv` was added in a
+  # commit the image predates, so the entrypoint genuinely is not there — but
+  # what an operator reads is a Node stack trace, which looks like a bug in the
+  # tool rather than §9.9's oldest lesson: the repository's state is not the
+  # installation's state.
+  #
+  # One `test -f` before the real run. It costs about a second and turns an
+  # eight-line stack into the sentence that says what to do — §9.4, where an
+  # action is impossible, say why at the point somebody looks for it.
+  local entrypoint="${1:-}"
+  if [[ "$entrypoint" == dist/* ]]; then
+    if ! DS_COMMIT="$tag" docker compose -f "${SCRIPT_DIR}/docker-compose.prod.yml" \
+      run --rm --no-deps --entrypoint test api -f "/app/${entrypoint}" >/dev/null 2>&1; then
+      echo "The API image on this host (${tag}) has no ${entrypoint}." >&2
+      echo >&2
+      if [[ "$tag" != "${DS_COMMIT}" ]]; then
+        echo "This clone is at ${DS_COMMIT}, which does have it. The image is older" >&2
+        echo "than the checkout, so the command exists here and not there:" >&2
+      else
+        echo "The checkout and the image are the same commit, so this entrypoint" >&2
+        echo "does not exist at ${DS_COMMIT} either — check the name:" >&2
+      fi
+      echo >&2
+      echo "    ./deploy.sh" >&2
+      exit 4
+    fi
+  fi
+
   # No `--no-build`: an older `docker compose run` does not have that flag and
   # rejects the whole command with `unknown flag: --no-build` (P49-02). It was
   # redundant here anyway — `ds_resolve_image_tag` has already established that
