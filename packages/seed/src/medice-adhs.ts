@@ -157,7 +157,20 @@ interface ModuleSeed {
     readonly title: string;
     readonly videoTitle: string;
     readonly durationSec: number;
+    /** The chapter's Beschreibungstext, from MEDICE's content sheet. */
+    readonly body: string;
   }>;
+  /**
+   * The module's Lernerfolgskontrolle, as its own chapter.
+   *
+   * MEDICE's sheet lists it as **Kapitel 3.3**, a sibling of the two video
+   * chapters rather than a second content inside 3.2. That is the structure
+   * seeded here, and it is also what the gate wants: `contentGates` opens a
+   * module's exam once that module's *videos* are finished, so an exam sharing
+   * a chapter with the video it examines is the P87-02 shape that read as
+   * unlocked from enrolment.
+   */
+  readonly examChapterTitle?: string;
 }
 
 /**
@@ -206,81 +219,315 @@ interface ExpertSeed {
 const EXPERTS: readonly ExpertSeed[] = [
   {
     roleLabel: "Wissenschaftliche Leitung",
-    name: "Prof. Dr. med. Muster-Leitung",
-    institution: "Universitätsklinikum Heidelberg",
+    name: "Dr. med. Andrea Boreatti",
+    institution: "Fachärztin für Psychiatrie und Psychotherapie, Lohr am Main",
     biography:
-      "Platzhalter. Die wissenschaftliche Leitung dieser Fortbildung wird von MEDICE benannt und ist vor Veröffentlichung zu ersetzen.",
+      "Wissenschaftliche Leitung der Fortbildung. Die Kurzvita wird von MEDICE " +
+      "bereitgestellt und ist vor Veröffentlichung zu ergänzen.",
   },
   {
-    roleLabel: "Referent/Referentin",
-    name: "Dr. med. Muster-Referenz",
-    institution: "Charité – Universitätsmedizin Berlin",
+    roleLabel: "Referent",
+    name: "Dr. med. Frank Matthias Rudolph",
+    institution:
+      "Facharzt für Psychosomatische Medizin und Psychotherapie, " +
+      "Rehabilitationswesen und Diabetologie, Boppard",
     biography:
-      "Platzhalter. Referentinnen und Referenten werden von MEDICE benannt und sind vor Veröffentlichung zu ersetzen.",
+      "Referent der Fortbildung. Die Kurzvita wird von MEDICE bereitgestellt " +
+      "und ist vor Veröffentlichung zu ergänzen.",
   },
 ];
 
-const MODULES: readonly ModuleSeed[] = [
+/**
+ * The course as MEDICE specified it (`MEDICE_Fortbildung_content.xlsx`, 31.08).
+ *
+ * Three modules, two chapters each, one video per chapter, and the
+ * Lernerfolgskontrolle as **Kapitel 3.3** — a chapter of its own at the end of
+ * Modul 3, which is both what the sheet lists and what the module gate wants.
+ *
+ * ## Two departures from the sheet, both deliberate
+ *
+ * **The course title is not changed.** The sheet heads the Fortbildung
+ * *"Basisseminar 2026 – ADHS Akademie adult"*; the Anerkennungsbescheid and the
+ * `courses.title` below say *"ADHS Akademie adult"*, and that string is printed
+ * on the Teilnahmebescheinigung. A title that differs from the one the ÄKWL
+ * accredited is a certificate that does not match its Bescheid, so the sheet's
+ * longer heading is treated as a working label rather than as the course name.
+ * Raised for MEDICE to confirm.
+ *
+ * **`Diagonstik` is spelled `Diagnostik`.** The sheet's module-2 heading carries
+ * a typo its own chapter titles do not. §5 makes the layout's copy
+ * authoritative, and a misspelling is not copy.
+ *
+ * ## The durations are still placeholders, and still a promise (P75-01)
+ *
+ * The sheet names six videos and ships none — its own Kommentar column is MEDICE
+ * asking whether they or MiM will produce them. So these numbers describe no
+ * file, exactly as the previous set did, and the P75-01 report is what that
+ * costs:
+ *
+ * > _"in the course i have a video which is 45 seconds and the system says you
+ * > have to watch a video for 25 minutes, which there is not, and i can not go
+ * > further in the course"_
+ *
+ * They are kept short and uniform rather than plausible-looking, so nobody reads
+ * them as a specification. The console reads a duration from the file it is
+ * given and writes what it read, so **attaching real media replaces these**.
+ * Until it does, the watch gate on this course is a gate over nothing.
+ */
+export const MODULES: readonly ModuleSeed[] = [
   {
     title: "Modul 1 – Grundlagen",
-    subtitle: "ADHS-Definition · Epidemiologie · Neurobiologie · Mythen vs. Fakten",
+    subtitle: "Störungsbild · Symptomatik · Neurobiologie",
     chapters: [
       {
-        title: "Kapitel 1 – Definition und Epidemiologie",
-        videoTitle: "Grundlagen",
-        durationSec: 1524,
+        title: "Kapitel 1.1 – Grundlagen I",
+        videoTitle: "Grundlagen Teil 1",
+        durationSec: 600,
+        body:
+          "ADHS ist weit mehr als Unaufmerksamkeit und Hyperaktivität. Erhalten " +
+          "Sie einen fundierten Überblick über das Störungsbild im " +
+          "Erwachsenenalter, lernen Sie typische Symptome kennen und erfahren " +
+          "Sie, wie sich die Erkrankung in unterschiedlichen Lebensbereichen " +
+          "manifestieren kann. Die ideale Grundlage für ein besseres Verständnis " +
+          "Ihrer Patient:innen",
+      },
+      {
+        title: "Kapitel 1.2 – Grundlagen II",
+        videoTitle: "Grundlagen Teil 2",
+        durationSec: 600,
+        body:
+          "Welche biologischen und genetischen Faktoren liegen einer ADHS " +
+          "zugrunde? Dieses Kapitel beleuchtet die aktuellen Erkenntnisse zur " +
+          "Entstehung und neurobiologischen Grundlage der Erkrankung und schafft " +
+          "ein tieferes Verständnis für die Zusammenhänge zwischen Symptomatik " +
+          "und Pathophysiologie.",
       },
     ],
   },
   {
     title: "Modul 2 – Diagnostik",
-    subtitle: "ICD-11 & DSM-5 Kriterien · Anamnese · Screening-Tools",
+    subtitle: "Diagnostische Schritte · Differentialdiagnosen",
     chapters: [
       {
-        title: "Kapitel 1 – Kriterien und Anamnese",
-        videoTitle: "Diagnostik",
-        durationSec: 2140,
+        title: "Kapitel 2.1 – Diagnostik I",
+        videoTitle: "Diagnostik Teil 1",
+        durationSec: 600,
+        body:
+          "Die Diagnose einer ADHS im Erwachsenenalter erfordert eine " +
+          "strukturierte und differenzierte Herangehensweise. Lernen Sie die " +
+          "wesentlichen diagnostischen Schritte kennen und erfahren Sie, welche " +
+          "Anhaltspunkte in Anamnese, Exploration und klinischem Gespräch " +
+          "besonders relevant sind.",
+      },
+      {
+        title: "Kapitel 2.2 – Diagnostik II",
+        videoTitle: "Diagnostik Teil 2",
+        durationSec: 600,
+        body:
+          "Viele Symptome der ADHS können auch bei anderen psychischen oder " +
+          "somatischen Erkrankungen auftreten. Dieses Kapitel unterstützt Sie " +
+          "dabei, wichtige Differentialdiagnosen sicher einzuordnen und typische " +
+          "diagnostische Fallstricke im Praxisalltag zu vermeiden.",
       },
     ],
   },
   {
-    title: "Modul 3 – Pharmakotherapie",
-    subtitle:
-      "Stimulanzien & Nicht-Stimulanzien · Dosierung · Nebenwirkungen · Monitoring",
+    title: "Modul 3 – Therapie",
+    subtitle: "Leitlinien · Pharmakotherapie",
+    examChapterTitle: "Kapitel 3.3 – Lernerfolgskontrolle",
     chapters: [
       {
-        title: "Kapitel 1 – Stimulanzien & Nicht-Stimulanzien",
-        videoTitle: "Pharmakotherapie",
-        durationSec: 1545,
+        title: "Kapitel 3.1 – Therapie I",
+        videoTitle: "Therapie Teil 1",
+        durationSec: 600,
+        body:
+          "Welche Therapieempfehlungen geben die aktuellen Leitlinien für " +
+          "Erwachsene mit ADHS? Erhalten Sie einen praxisnahen Überblick über " +
+          "evidenzbasierte Behandlungsstrategien und erfahren Sie, wie eine " +
+          "moderne und leitliniengerechte Versorgung gestaltet werden kann",
       },
-    ],
-  },
-  {
-    title: "Modul 4 – Psychotherapie & Coaching",
-    subtitle: "Psychoedukation · Verhaltenstherapie · Lifestyle-Interventionen",
-    chapters: [
       {
-        title: "Kapitel 1 – Verhaltenstherapie",
-        videoTitle: "Psychotherapie",
-        durationSec: 1992,
-      },
-    ],
-  },
-  {
-    title: "Modul 5 – Komorbiditäten",
-    subtitle: "Depression, Angst, Sucht · Spezielle Patientengruppen · Langzeitbetreuung",
-    chapters: [
-      {
-        title: "Kapitel 1 – Komorbide Störungen",
-        videoTitle: "Komorbiditäten",
-        durationSec: 1065,
+        title: "Kapitel 3.2 – Therapie II",
+        videoTitle: "Therapie Teil 2",
+        durationSec: 600,
+        body:
+          "Die medikamentöse Behandlung spielt für viele erwachsene " +
+          "Patient:innen eine wichtige Rolle. Lernen Sie die verfügbaren " +
+          "Therapieoptionen kennen und erhalten Sie wertvolle Einblicke in " +
+          "Wirkmechanismen, Auswahlkriterien und den praktischen Einsatz der " +
+          "Pharmakotherapie im klinischen Alltag.",
       },
     ],
   },
 ];
 
-/** 11 single-choice questions, per MEDICE. Placeholder text. */
-const QUESTION_COUNT = 11;
+/**
+ * The Lernerfolgskontrolle, verbatim from MEDICE (`Lernerfolgskontrolle.docx`).
+ *
+ * ## Where the answer key comes from, and why that is worth stating
+ *
+ * The document marks the correct option of each question in **bold** and says
+ * nothing else about which is which. Eleven questions, eleven bold options, one
+ * per question — so the reading is unambiguous, and it is still an inference
+ * from formatting rather than a stated key.
+ *
+ * That matters because this decides whether a physician passes a CME exam, which
+ * §7 puts in the class of thing not to guess at. The key is therefore written
+ * out here in full rather than derived at runtime, so it can be read back and
+ * confirmed against the source by a person, and `answerKey.test.ts` asserts the
+ * shape it has to have: exactly one correct option per question, eleven
+ * questions, five options each.
+ *
+ * ## The threshold arithmetic
+ *
+ * 70 % of 11 is 7.7, so **8 of 11** passes and 7 fails — `scoreQuiz` floors the
+ * percentage (8/11 → 72 %, 7/11 → 63 %) and compares against the threshold.
+ * `assessment.test.ts` has asserted exactly this since the MEDICE configuration
+ * was first written down; it agrees with the client's own statement of it.
+ */
+export interface QuestionSeed {
+  readonly prompt: string;
+  readonly options: readonly string[];
+  /** Zero-based index into `options`. Bold in the source document. */
+  readonly correct: number;
+}
+
+export const QUESTIONS: readonly QuestionSeed[] = [
+  {
+    prompt:
+      "Welche Aussage beschreibt ein wichtiges Kriterium nach DSM-5 für die " +
+      "ADHS-Diagnose bei Erwachsenen?",
+    options: [
+      "Symptome müssen mindestens ein Jahr bestehen",
+      "Symptome müssen sich in mehreren Lebensbereichen zeigen",
+      "Symptome müssen ausschließlich arbeitsbedingt sein",
+      "Symptome dürfen erst ab 21 Jahren beginnen",
+      "Symptome bessern sich durch Alkoholverzicht",
+    ],
+    correct: 1,
+  },
+  {
+    prompt:
+      "Welches diagnostische Verfahren ist bei der ADHS-Überprüfung bei " +
+      "Erwachsenen nicht üblich?",
+    options: [
+      "Strukturierte Selbstbeurteilungsfragebögen",
+      "Fremdanamnese von Partnern oder Angehörigen",
+      "Spezifische neuropsychologische Tests",
+      "Standardisierte Blutuntersuchung",
+      "Exploration der Kindheitssymptomatik",
+    ],
+    correct: 3,
+  },
+  {
+    prompt:
+      "Welche Therapieform wird neben der medikamentösen Therapie bei " +
+      "Erwachsenen mit ADHS häufig empfohlen?",
+    options: [
+      "Musiktherapie",
+      "Kognitive Verhaltenstherapie",
+      "Psychoanalyse",
+      "Hypnose",
+      "Aromatherapie",
+    ],
+    correct: 1,
+  },
+  {
+    prompt:
+      "Was gehört laut Leitlinie zu einem multimodalen Behandlungskonzept bei " +
+      "ADHS im Erwachsenenalter?",
+    options: [
+      "Nur medikamentöse Therapie",
+      "Kombination aus Psychoedukation, Verhaltenstherapie und ggf. Medikation",
+      "Diätetische Maßnahmen als Monotherapie",
+      "Psychoanalytische Langzeittherapie",
+      "Alleinige Gruppentherapie",
+    ],
+    correct: 1,
+  },
+  {
+    prompt: "Was ist ein primäres Ziel der ADHS-Therapie bei Erwachsenen?",
+    options: [
+      "Komplette Heilung der Erkrankung",
+      "Verbesserung der Lebensqualität und Alltagsfunktionen",
+      "Vermeidung aller Medikamente",
+      "Isolierung der Betroffenen",
+      "Maximierung der beruflichen Leistung",
+    ],
+    correct: 1,
+  },
+  {
+    prompt:
+      "Welcher Wirkstoff ist neben Methylphenidat als Second-Line-Therapie für " +
+      "Erwachsene mit ADHS zugelassen?",
+    options: ["Atomoxetin", "Haloperidol", "Lisdexamfetamin", "Lorazepam", "Imipramin"],
+    correct: 0,
+  },
+  {
+    prompt:
+      "Welche Aussage trifft zu Atomoxetin bei der Behandlung der ADHS im " +
+      "Erwachsenenalter?",
+    options: [
+      "Atomoxetin ist ein Stimulans mit sofortiger Wirkung",
+      "Atomoxetin ist ein selektiver Noradrenalin-Wiederaufnahmehemmer und " +
+        "benötigt mehrere Wochen zur vollen Wirksamkeit",
+      "Atomoxetin wird nur einmal im Monat eingenommen",
+      "Atomoxetin verursacht keine Nebenwirkungen",
+      "Atomoxetin ist ausschließlich für Kinder zugelassen",
+    ],
+    correct: 1,
+  },
+  {
+    prompt:
+      "Welche häufige Nebenwirkung tritt bei medikamentöser ADHS-Therapie mit " +
+      "Stimulanzien wie Methylphenidat auch bei Erwachsenen auf?",
+    options: [
+      "Appetitminderung",
+      "Gewichtszunahme",
+      "Kopfschmerzen",
+      "Schlaflosigkeit",
+      "Blutbildveränderungen",
+    ],
+    correct: 0,
+  },
+  {
+    prompt:
+      "Was sollte vor Beginn einer medikamentösen Therapie bei Erwachsenen mit " +
+      "ADHS überprüft werden?",
+    options: [
+      "Vorliegen weiterer psychischer Komorbiditäten",
+      "Hormonstatus",
+      "Leberfunktionstest als Pflichtuntersuchung",
+      "Blutdruckmessung nur einmal jährlich",
+      "Haaranalyse",
+    ],
+    correct: 0,
+  },
+  {
+    prompt: "Wie äußert sich Hyperaktivität bei Erwachsenen mit ADHS häufig?",
+    options: [
+      "Exzessives Bedürfnis nach Bewegung",
+      "Innere Unruhe und Getriebenheit",
+      "Häufige Aggressionen",
+      "Zwanghaftes Ordnungsempfinden",
+      "Motorische Lähmungserscheinungen",
+    ],
+    correct: 1,
+  },
+  {
+    prompt: "Was ist für die Diagnose ADHS bei Erwachsenen unabdingbar?",
+    options: [
+      "Symptomfreiheit im Jugendalter",
+      "Auftreten der Symptome vor dem 12. Lebensjahr",
+      "Vorliegen von Tics",
+      "Psychotische Episoden",
+      "Auftreten von Symptomen erst nach dem 25. Lebensjahr",
+    ],
+    correct: 1,
+  },
+];
+
+const QUESTION_COUNT = QUESTIONS.length;
 
 /**
  * How this seed behaves when the tenant already exists.
@@ -581,7 +828,18 @@ export async function seedMediceAdhs(
         COURSE_SLUG,
         // Exactly as accredited. Not "ADHS bei Erwachsenen".
         "ADHS Akademie adult",
-        "Fortbildung zu ADHS im Erwachsenenalter mit CME-Zertifizierung.",
+        // The Detailseite text from MEDICE's content sheet (31.08). The sheet's
+        // separate Startseite paragraph is the *catalogue* intro, which belongs
+        // to the project rather than the course and is set in the console.
+        "ADHS im Erwachsenenalter: Wissen, das in der Praxis ankommt\n\n" +
+          "Wie gelingt eine sichere Diagnostik? Welche Differentialdiagnosen " +
+          "gilt es zu berücksichtigen? Und welche Therapieoptionen stehen heute " +
+          "zur Verfügung? In der Fortbildung on Demand – ADHS Akademie adult " +
+          "erhalten Sie kompaktes, praxisnahes Expertenwissen rund um die adulte " +
+          "ADHS. Lernen Sie die wichtigsten Grundlagen, diagnostischen Verfahren " +
+          "und aktuellen Therapieansätze kennen und profitieren Sie von " +
+          "wertvollen Erfahrungen aus dem klinischen Alltag. Flexibel, jederzeit " +
+          "abrufbar und direkt für Ihre tägliche Arbeit nutzbar.",
         VNR,
         "Ärztekammer Westfalen-Lippe",
         "Medice Arzneimittel Pütter GmbH & Co. KG, Iserlohn",
@@ -671,9 +929,9 @@ export async function seedMediceAdhs(
         for (const [chapterOrdinal, chapter] of module.chapters.entries()) {
           const chapterId = await upsert(
             pool,
-            `INSERT INTO chapters (customer_id, module_id, ordinal, title)
-             VALUES ($1,$2,$3,$4) RETURNING id`,
-            [customerId, moduleId, chapterOrdinal, chapter.title],
+            `INSERT INTO chapters (customer_id, module_id, ordinal, title, body)
+             VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+            [customerId, moduleId, chapterOrdinal, chapter.title, chapter.body],
           );
 
           // Two renditions and a poster, so the seeded course exercises the
@@ -681,7 +939,11 @@ export async function seedMediceAdhs(
           // HLS is listed first: the browser takes the first `type` it can play,
           // so Safari gets the adaptive stream and everything else falls through
           // to the MP4 (`orderSources` in @ds/domain).
-          const mediaBase = `https://media.example.org/${COURSE_SLUG}/${moduleOrdinal + 1}`;
+          // Per **chapter**, not per module: there are two videos in each module
+          // now, and a shared base would have given both the same file.
+          const mediaBase =
+            `https://media.example.org/${COURSE_SLUG}/` +
+            `${moduleOrdinal + 1}-${chapterOrdinal + 1}`;
           await pool.query(
             `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title,
                                    media_sources, poster_url, duration_sec)
@@ -722,43 +984,54 @@ export async function seedMediceAdhs(
               `https://media.example.org/${COURSE_SLUG}/${moduleOrdinal + 1}.pdf`,
             ],
           );
+        }
 
-          // One Lernerfolgskontrolle, at the end of the last module.
-          if (moduleOrdinal === MODULES.length - 1) {
-            quizContentId = await upsert(
-              pool,
-              `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title)
-               VALUES ($1,$2,9,'quiz',$3) RETURNING id`,
-              [customerId, chapterId, "Lernerfolgskontrolle"],
-            );
-          }
+        /*
+         * The Lernerfolgskontrolle as a chapter of its own (MEDICE's Kapitel
+         * 3.3), after the module's video chapters rather than inside one.
+         *
+         * Its ordinal continues the module's chapter numbering, so the outline
+         * draws it last. `contentGates` opens it once *this module's* videos are
+         * finished — which is why it must not share a chapter with the video it
+         * examines: that was P87-02, where a quiz inherited its chapter's gate
+         * and read as unlocked from enrolment.
+         */
+        if (module.examChapterTitle !== undefined) {
+          const examChapterId = await upsert(
+            pool,
+            `INSERT INTO chapters (customer_id, module_id, ordinal, title)
+             VALUES ($1,$2,$3,$4) RETURNING id`,
+            [customerId, moduleId, module.chapters.length, module.examChapterTitle],
+          );
+
+          quizContentId = await upsert(
+            pool,
+            `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title)
+             VALUES ($1,$2,0,'quiz',$3) RETURNING id`,
+            [customerId, examChapterId, "Lernerfolgskontrolle"],
+          );
         }
       }
 
       if (quizContentId !== undefined) {
-        for (let i = 0; i < QUESTION_COUNT; i += 1) {
+        for (const [ordinal, question] of QUESTIONS.entries()) {
           const questionId = await upsert(
             pool,
             `INSERT INTO quiz_questions (customer_id, content_id, ordinal, kind, prompt)
              VALUES ($1,$2,$3,'single',$4) RETURNING id`,
-            [
-              customerId,
-              quizContentId,
-              i,
-              `Frage ${i + 1} – Platzhalter (Text von MEDICE)`,
-            ],
+            [customerId, quizContentId, ordinal, question.prompt],
           );
 
-          for (let option = 0; option < 4; option += 1) {
+          for (const [optionOrdinal, label] of question.options.entries()) {
             await pool.query(
               `INSERT INTO quiz_options (customer_id, question_id, ordinal, label, is_correct)
                VALUES ($1,$2,$3,$4,$5)`,
               [
                 customerId,
                 questionId,
-                option,
-                `Antwortoption ${String.fromCharCode(65 + option)}`,
-                option === 0,
+                optionOrdinal,
+                label,
+                optionOrdinal === question.correct,
               ],
             );
           }
