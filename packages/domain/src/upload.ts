@@ -77,15 +77,20 @@ const MiB = 1024 * 1024;
 /**
  * The ceiling per purpose.
  *
- * `video` is 2 GiB because that is where a **single** PUT stops being sensible,
- * not because of a storage limit. There is no resumable multipart path yet:
- * an upload that fails at 90 % starts again from zero, which is tolerable for
- * the 300–800 MB a 25-minute lecture actually weighs and is not tolerable much
- * beyond it. The number is here, in one place, so the day multipart is built the
- * limit moves with it.
+ * `video` was 2 GiB because that is where a **single** PUT stops being
+ * sensible: an upload that fails at 90 % started again from zero, which is
+ * tolerable for the 300–800 MB a 25-minute lecture weighs and is not tolerable
+ * much beyond it. That comment ended *"the day multipart is built the limit
+ * moves with it"*, and P129-01 is that day — 5 GiB, at the client's request,
+ * because they have 3 GB lectures.
+ *
+ * The number moved **because the failure mode changed**, not because somebody
+ * needed a bigger one. Raising it without multipart would have been the worst
+ * of both: the same all-or-nothing upload, now failing after forty minutes
+ * instead of fifteen.
  */
 export const UPLOAD_MAX_BYTES: Readonly<Record<UploadPurpose, number>> = {
-  video: 2048 * MiB,
+  video: 5120 * MiB,
   captions: 2 * MiB,
   poster: 10 * MiB,
   material: 200 * MiB,
@@ -194,4 +199,76 @@ export function uploadObjectName(
 ): string {
   if (!TOKEN.test(token)) throw new InvalidUploadTokenError();
   return `${purpose}-${token}.${extension}`;
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * Multipart (P129-01)
+ * ---------------------------------------------------------------------------
+ */
+
+/**
+ * How big one part is.
+ *
+ * Bounded on both sides by things that are not preferences:
+ *
+ * - **S3 requires every part except the last to be at least 5 MiB**, and allows
+ *   at most **10,000 parts**. At 5 MiB the ceiling would be 48 GiB, so the
+ *   minimum is not the binding constraint here; the part *count* is what a
+ *   small part size would cost.
+ * - A failed part is re-uploaded whole, so the part size is also the unit of
+ *   wasted work. 32 MiB is about eight seconds on a 32 Mbit/s clinic
+ *   connection — small enough that losing one is unremarkable.
+ *
+ * 32 MiB puts a 5 GiB file at 160 parts, comfortably inside the limit, and a
+ * 3 GB lecture at 96.
+ */
+export const MULTIPART_PART_BYTES = 32 * MiB;
+
+/** S3's own ceiling. Not ours to raise, and worth failing on explicitly. */
+export const MULTIPART_MAX_PARTS = 10_000;
+
+/**
+ * Where a single PUT stops being worth it.
+ *
+ * Below this a file is one request and one signature — cheaper than three API
+ * calls and a part loop, and the failure it risks costs seconds. The threshold
+ * is the part size itself: a file that would be one part has nothing to gain.
+ */
+export const MULTIPART_THRESHOLD_BYTES = MULTIPART_PART_BYTES;
+
+export interface MultipartPlan {
+  readonly partCount: number;
+  readonly partBytes: number;
+}
+
+/**
+ * How a file of this size is split, or why it is not.
+ *
+ * Pure, exhaustively testable, and the single place the arithmetic lives — the
+ * server signs `partCount` URLs and the browser slices on the same boundaries,
+ * so a disagreement between them is a corrupt object that verifies as the right
+ * *size*. One function, called by both.
+ */
+export function planMultipart(sizeBytes: number): MultipartPlan | undefined {
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) return undefined;
+  if (sizeBytes < MULTIPART_THRESHOLD_BYTES) return undefined;
+
+  const partCount = Math.ceil(sizeBytes / MULTIPART_PART_BYTES);
+  if (partCount > MULTIPART_MAX_PARTS) return undefined;
+
+  return { partCount, partBytes: MULTIPART_PART_BYTES };
+}
+
+/** The byte range of one part, zero-based and end-exclusive, as `Blob.slice` wants. */
+export function partRange(
+  plan: MultipartPlan,
+  sizeBytes: number,
+  partNumber: number,
+): { readonly start: number; readonly end: number } | undefined {
+  if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > plan.partCount) {
+    return undefined;
+  }
+  const start = (partNumber - 1) * plan.partBytes;
+  return { start, end: Math.min(start + plan.partBytes, sizeBytes) };
 }

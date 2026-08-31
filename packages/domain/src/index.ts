@@ -170,6 +170,11 @@ export {
   InvalidUploadTokenError,
   planUpload,
   UPLOAD_MAX_BYTES,
+  planMultipart,
+  partRange,
+  MULTIPART_PART_BYTES,
+  MULTIPART_MAX_PARTS,
+  MULTIPART_THRESHOLD_BYTES,
   UPLOAD_TYPES,
   uploadObjectName,
 } from "./upload.js";
