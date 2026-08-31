@@ -76,7 +76,7 @@ wants action today.
 | S25     | **Which point flags may a completion claim for this VNR?**                                | M3 · 30.08       | **14.08** | MEDICE / ÄKWL |
 | ~~S26~~ | ~~Production EIV API base URL~~ — **`https://backend.eiv-fobi.de`, 20.08**                | **CLOSED 20.08** | —         | —             |
 | S28     | **Learner tokens carry no name or email — the certificate cannot be filled**              | M3 · 30.08       | **24.08** | MEDICE / DS   |
-| S27     | **Test-system credentials from EIV support, so the client can be proven**                 | M3 · 30.08       | **14.08** | MEDICE        |
+| ~~S27~~ | ~~Test-system credentials from EIV support~~ — **arrived 31.08; password not in repo**    | **CLOSED 31.08** | —         | —             |
 | S29     | **The Veranstalter interface we integrate against has an announced shutdown**             | **launch**       | **now**   | EIV / BÄK     |
 | ~~S31~~ | ~~Is `fortbildungsnummer` the VNR?~~ — **it is; implemented 27.08 (P125-01)**             | **CLOSED 27.08** | —         | —             |
 | ~~S24~~ | ~~Export the EIV Veranstalter Swagger~~                                                   | **CLOSED 09.08** | —         | —             |
@@ -1316,9 +1316,44 @@ confirmed with EIV support, not inferred.
 
 ---
 
-## S27 · Test-system credentials, so the client can be proven before it is trusted
+## S27 · Test-system credentials — **CLOSED 31.08.2026, they arrived**
 
-- **Owner:** MEDICE · **Blocks:** the last unverified half of P7 · **Raised:** 09.08
+> **What arrived**, from EIV support via the client:
+>
+> |                        |                                                                     |
+> | ---------------------- | ------------------------------------------------------------------- |
+> | Swagger                | `https://veranstalter-swagger-ui.eiv-fobi.de/`                      |
+> | Test Punktemeldung app | `https://punktemeldung-test.eiv-fobi.de/`                           |
+> | Test VNRs              | `2760012024200354002`, `2760012024200355009`, `2760012024200356007` |
+> | Test EFNs              | 44 of them, `802760020090329` … `802760020090758`                   |
+> | Password               | **not recorded here — see below**                                   |
+>
+> Code examples per language were promised "in Kürze" and are not published yet.
+>
+> **The password is deliberately absent from this repository.** CLAUDE.md §4
+> invariant 7 makes VNR passwords write-only: encrypted at rest under the
+> application KMS key, never plaintext, never logged, never returned by any API.
+> A test password committed to a file is the same habit as a live one, and this
+> project has already had the live VNR password shared over chat twice (S10).
+>
+> It goes in one of two places and nowhere else:
+>
+> - the console — **Verwaltung → Angebot → Fortbildung → VNR-Passwort**, which
+>   is a write-only field, or
+> - `EIV_VNR_PASSWORD` in the host's `config.env`, for the harness.
+>
+> **What this unblocks.** The client has never spoken to a real EIV server, and
+> the remaining unknowns are the ones only a real response answers: whether Basic
+> on a GET behaves as documented behind their gateway, what the 4xx bodies
+> actually look like ("historisch gewachsen", by their own admission), and
+> whether `teilnahmedatum` is validated as we expect.
+>
+> It also gives **S11 a way forward that does not need the ÄKWL.** The test VNRs
+> have accredited periods of their own, so the platform's behaviour against a
+> one-day window versus a real one can be established on the test system while
+> the correction request is still in the post.
+
+- **Owner:** MEDICE · **Blocks:** the last unverified half of P7 · **Raised:** 09.08 · **Closed:** 31.08
 
 The specification is explicit: _"Bitte nutzen Sie für die Entwicklung
 ausschließlich das Test-System. Zugangsdaten und Test-Veranstaltungen erhalten
