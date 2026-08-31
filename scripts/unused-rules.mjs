@@ -26,43 +26,90 @@
  * is more than was happening before.
  *
  * Types are skipped: an unused type is dead weight, not an unenforced rule.
+ *
+ * ## Two defects in this script itself (P134-02)
+ *
+ * Both were found by reading its output rather than by running it, because a
+ * check cannot report that it is lying.
+ *
+ * **It reported 88 symbols and 56 of them were types.** The filter matched only
+ * inline `type Foo,` re-exports; `index.ts` states most of its types inside
+ * `export type { … }` blocks, whose members carry no `type` keyword of their
+ * own. Two thirds noise is not a check anybody reads, and §9.3's answer —
+ * "somebody has to look" — stops being true the moment looking costs that much.
+ *
+ * **It reported symbols that are demonstrably called.** The old scan shelled out
+ * to `grep -arn … | grep -v … | grep -v …`, and only the *first* stage carried
+ * `-a`. `packages/domain/src/copy.test.ts` legitimately contains a NUL byte — it
+ * is the fixture proving `invalidCopyKeys` rejects a control character in a copy
+ * override — so a matching line put a NUL on the pipe, the second `grep`
+ * declared **stdin** binary, printed "binary file matches" instead of the lines,
+ * and the count came back 0. `invalidCopyKeys` and `COPY_MAX_LENGTH` were
+ * reported dead while the API calls both.
+ *
+ * That is P76-01 exactly, one pipe stage further along: the fix was applied
+ * where the problem was seen and not to the stages downstream of it, which is
+ * §9.11 half-done. And it fails in the dangerous direction — a live compliance
+ * rule reported as dead is a rule somebody deletes.
+ *
+ * So the scan is in JavaScript now. No stage can decide a stream is binary,
+ * because there are no stages.
  */
 
 // Every symbol packages/domain exports, and whether anything outside its own
 // tests ever calls it. P39-01 — a token that never expired — was exactly this:
 // inviteStatus and resetStatus, exported, unit-tested, called from nowhere.
-import { readFileSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 const index = readFileSync("packages/domain/src/index.ts", "utf8");
-const names = [...index.matchAll(/^\s{2}([A-Za-z][A-Za-z0-9_]*),?$/gm)].map((m) => m[1]);
-const typeNames = new Set(
-  [...index.matchAll(/^\s{2}type ([A-Za-z][A-Za-z0-9_]*),?$/gm)].map((m) => m[1]),
+
+/**
+ * Every name `index.ts` re-exports, and which of them are types.
+ *
+ * Types come from two shapes and the second is the one that was missed:
+ * `export type { A, B }` blocks, where the members carry no keyword of their
+ * own, and inline `type A` inside a value export list.
+ */
+const names = [...index.matchAll(/^\s{2}(?:type )?([A-Za-z][A-Za-z0-9_]*),?$/gm)].map(
+  (match) => match[1],
 );
+
+const typeNames = new Set(
+  [...index.matchAll(/^\s{2}type ([A-Za-z][A-Za-z0-9_]*),?$/gm)].map((match) => match[1]),
+);
+for (const block of index.matchAll(/export type \{([\s\S]*?)\}/gu)) {
+  for (const [, name] of block[1].matchAll(/([A-Za-z][A-Za-z0-9_]*)/gu)) {
+    typeNames.add(name);
+  }
+}
+
+/** Every source file that could call a rule — the domain and its tests aside. */
+function callers(dir, out = []) {
+  for (const entry of readdirSync(dir)) {
+    if (entry === "node_modules" || entry === "dist") continue;
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) callers(path, out);
+    else if (/\.tsx?$/u.test(path) && !path.includes(".test.")) out.push(path);
+  }
+  return out;
+}
+
+const sources = [...callers("apps"), ...callers("packages")].filter(
+  (path) => !path.startsWith("packages/domain/"),
+);
+
+/*
+ * Read as text, deliberately. A NUL byte in a source file is legitimate — one
+ * is a test fixture for exactly the validation it appears in — and the only
+ * thing it must not do is make a file invisible to this scan.
+ */
+const corpus = sources.map((path) => readFileSync(path, "utf8")).join("\n");
 
 const out = [];
 for (const name of new Set(names)) {
   if (typeNames.has(name)) continue;
-  /*
-   * `-a`, and it is not cosmetic (P76-01).
-   *
-   * Without it, one NUL byte anywhere in a file makes grep call the whole file
-   * binary: it prints "binary file matches" to stderr and **no lines at all**
-   * to stdout, so every caller inside that file counts as zero. That was the
-   * real state of this scan — `apps/widget/src/branding.ts` used a literal NUL
-   * as a cache-key separator, and its three calls to `parseBranding` were
-   * invisible here. A rule whose only callers lived in such a file would have
-   * been reported as dead, and somebody would have deleted it.
-   *
-   * The byte itself is gone now, which is the better fix. This is the one that
-   * stops the next one: a scan that skips a file it cannot parse is a scan
-   * that silently covers less than it claims (CLAUDE.md §9.1).
-   */
-  const hits = execSync(
-    `grep -arn "\\b${name}\\b" apps packages --include=*.ts --include=*.tsx ` +
-      `| grep -v "packages/domain/" | grep -v "\\.test\\." | wc -l`,
-    { encoding: "utf8" },
-  ).trim();
-  if (hits === "0") out.push(name);
+  if (!new RegExp(`\\b${name}\\b`, "u").test(corpus)) out.push(name);
 }
+
 console.log(out.length === 0 ? "none" : out.join("\n"));

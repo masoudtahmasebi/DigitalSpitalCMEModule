@@ -8,8 +8,22 @@
  * disagree by one byte the bucket assembles an object that is the **right size**
  * and the wrong bytes — a video that verifies, stores, and plays as garbage.
  *
- * That is why `planMultipart` and `partRange` are one function each rather than
- * arithmetic inlined at both call sites, and why the boundaries are pinned here.
+ * ## Where that agreement actually comes from (P134-02)
+ *
+ * This header used to say it came from `partRange`, "one function rather than
+ * arithmetic inlined at both call sites". That was not true and could not be:
+ * `@ds/sdk` has **no runtime dependencies at all** — deliberately, because it is
+ * embedded in the widget and the console — so the browser cannot import a
+ * slicer from here, and it never did. `partRange` was written for a caller that
+ * could not exist, `scripts/unused-rules.mjs` said so for two phases, and the
+ * comment claiming otherwise is what stopped anybody looking. It is deleted.
+ *
+ * The agreement is real and comes from somewhere else: `planMultipart` decides
+ * `partBytes` **once**, the server puts that number in the ticket, and the
+ * browser slices on `ticket.partBytes` rather than on a constant of its own. So
+ * there is one number, not two that must match. What pins it is this file for
+ * the plan and `packages/sdk/src/upload-parts.test.ts` for the tiling, which
+ * asserts the exact ranges `Blob.slice` is asked for.
  */
 
 import { describe, expect, it } from "vitest";
@@ -19,7 +33,6 @@ import {
   MULTIPART_THRESHOLD_BYTES,
   UPLOAD_MAX_BYTES,
   planMultipart,
-  partRange,
   uploadLimitLabel,
 } from "./upload.js";
 
@@ -73,42 +86,6 @@ describe("planMultipart", () => {
     expect(planMultipart(-1)).toBeUndefined();
     expect(planMultipart(1.5)).toBeUndefined();
     expect(planMultipart(Number.NaN)).toBeUndefined();
-  });
-});
-
-describe("partRange", () => {
-  const size = MULTIPART_PART_BYTES * 2 + 12_345;
-  const plan = planMultipart(size)!;
-
-  it("tiles the file exactly: no gap, no overlap, nothing left over", () => {
-    /*
-     * The one property that matters. Asserted as a walk rather than as three
-     * hand-written ranges, because the failure this guards against is an
-     * off-by-one at a boundary and hand-written cases tend to test the middle.
-     */
-    let cursor = 0;
-    for (let part = 1; part <= plan.partCount; part += 1) {
-      const range = partRange(plan, size, part);
-      expect(range, `part ${part}`).toBeDefined();
-      expect(range!.start, `part ${part} starts where the last ended`).toBe(cursor);
-      expect(range!.end).toBeGreaterThan(range!.start);
-      cursor = range!.end;
-    }
-    expect(cursor, "the last part ends at the end of the file").toBe(size);
-  });
-
-  it("gives the last part only what remains", () => {
-    expect(partRange(plan, size, plan.partCount)).toEqual({
-      start: MULTIPART_PART_BYTES * 2,
-      end: size,
-    });
-  });
-
-  it("refuses a part number outside the plan", () => {
-    // Zero-based is the natural mistake: S3 part numbers start at 1.
-    expect(partRange(plan, size, 0)).toBeUndefined();
-    expect(partRange(plan, size, plan.partCount + 1)).toBeUndefined();
-    expect(partRange(plan, size, 1.5)).toBeUndefined();
   });
 });
 

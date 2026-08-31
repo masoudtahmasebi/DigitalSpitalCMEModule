@@ -172,7 +172,6 @@ export {
   UPLOAD_MAX_BYTES,
   uploadLimitLabel,
   planMultipart,
-  partRange,
   MULTIPART_PART_BYTES,
   MULTIPART_MAX_PARTS,
   MULTIPART_THRESHOLD_BYTES,

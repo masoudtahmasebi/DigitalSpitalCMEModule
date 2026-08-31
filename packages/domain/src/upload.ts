@@ -287,16 +287,3 @@ export function planMultipart(sizeBytes: number): MultipartPlan | undefined {
 
   return { partCount, partBytes: MULTIPART_PART_BYTES };
 }
-
-/** The byte range of one part, zero-based and end-exclusive, as `Blob.slice` wants. */
-export function partRange(
-  plan: MultipartPlan,
-  sizeBytes: number,
-  partNumber: number,
-): { readonly start: number; readonly end: number } | undefined {
-  if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > plan.partCount) {
-    return undefined;
-  }
-  const start = (partNumber - 1) * plan.partBytes;
-  return { start, end: Math.min(start + plan.partBytes, sizeBytes) };
-}

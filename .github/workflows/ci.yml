@@ -524,6 +524,15 @@ jobs:
       - name: Screens every role can actually open
         run: node scripts/role-matrix.mjs
 
+      # A read of a tenant-scoped table outside runInTenant. Under FORCE ROW
+      # LEVEL SECURITY it matches zero rows — correctly, the system fails closed
+      # — and a repository that maps rows[0] to nulls turns that into "not
+      # configured". P40-03 shipped exactly that: a correctly configured project
+      # sent no mail while the endpoint answered 202, with nothing in any log.
+      # Nothing fails, so only reading finds it, so a script reads it.
+      - name: Tenant-scoped reads are inside runInTenant
+        run: node scripts/tenant-reads.mjs
+
       - name: Scan for committed secrets
         uses: gitleaks/gitleaks-action@v2
         env:
