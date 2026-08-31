@@ -180,6 +180,7 @@ export {
 } from "./upload.js";
 export type {
   AcceptedUploadType,
+  MultipartPlan,
   UploadPlan,
   UploadPurpose,
   UploadRejection,

@@ -43,7 +43,7 @@
  */
 
 import { courseAssetKey, planUpload, uploadObjectName } from "@ds/domain";
-import type { UploadPlan, UploadPurpose } from "@ds/domain";
+import type { MultipartPlan, UploadPlan, UploadPurpose } from "@ds/domain";
 import { randomBytes } from "node:crypto";
 import type { Presigner } from "./s3-presigner.js";
 
@@ -76,6 +76,23 @@ export type UploadRefusal =
   | { readonly kind: "mismatch"; readonly reason: string }
   /** The bucket could not be reached, or answered something unusable. */
   | { readonly kind: "unreachable"; readonly reason: string };
+
+export interface StoredPart {
+  readonly partNumber: number;
+  /** As the bucket reports it, quotes included. Never seen by a browser. */
+  readonly etag: string;
+  readonly sizeBytes: number;
+}
+
+export interface MultipartTicket {
+  readonly key: string;
+  readonly reference: string;
+  readonly uploadId: string;
+  readonly partCount: number;
+  readonly partBytes: number;
+  readonly contentType: string;
+  readonly expiresAt: Date;
+}
 
 export interface VerifiedUpload {
   readonly key: string;
@@ -233,6 +250,250 @@ export class ObjectStorage {
     };
   }
 
+  /*
+   * =====================================================================
+   * Multipart (P129-02)
+   * =====================================================================
+   *
+   * `mint` above hands the browser one signed PUT. Past a few hundred
+   * megabytes that stops being a sensible unit: it either finishes or it was
+   * worth nothing, and a clinic connection dropping at 90 % of a 3 GB lecture
+   * costs the whole upload.
+   *
+   * Below, the browser still uploads the bytes and the API still never sees
+   * them — but the unit of failure is a 32 MiB part, and what landed is a
+   * question for the bucket rather than a claim by the client.
+   */
+
+  /**
+   * Begin an upload, and hand back the parts to send.
+   *
+   * The key is minted exactly as `mint` does — from the caller's own customer
+   * and a course RLS has already agreed they can see, with nothing from the
+   * request contributing to it. A multipart upload is a *longer-lived*
+   * capability than a single PUT, so it matters more that its name was never
+   * the client's to choose.
+   */
+  async beginMultipart(
+    plan: Extract<UploadPlan, { ok: true }>,
+    scope: { readonly customerId: string; readonly courseId: string },
+    split: MultipartPlan,
+    now: Date,
+  ): Promise<
+    { ok: true; upload: MultipartTicket } | { ok: false; refusal: UploadRefusal }
+  > {
+    const key = courseAssetKey({
+      customerId: scope.customerId,
+      courseId: scope.courseId,
+      filename: uploadObjectName(
+        plan.purpose,
+        randomBytes(16).toString("hex"),
+        plan.extension,
+      ),
+    });
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(
+        this.presigner.presignCreateMultipart(key, 60, now, plan.mimeType),
+        { method: "POST", headers: { "Content-Type": plan.mimeType } },
+      );
+    } catch (error) {
+      return { ok: false, refusal: { kind: "unreachable", reason: describe(error) } };
+    }
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        refusal: { kind: "unreachable", reason: `bucket answered ${response.status}` },
+      };
+    }
+
+    const uploadId = firstTag(await response.text(), "UploadId");
+    if (uploadId === undefined) {
+      return {
+        ok: false,
+        refusal: { kind: "unreachable", reason: "bucket returned no UploadId" },
+      };
+    }
+
+    return {
+      ok: true,
+      upload: {
+        key,
+        reference: `s3://${key}`,
+        uploadId,
+        partCount: split.partCount,
+        partBytes: split.partBytes,
+        contentType: plan.mimeType,
+        expiresAt: new Date(now.getTime() + this.uploadTtlSec * 1000),
+      },
+    };
+  }
+
+  /**
+   * Signed URLs for a run of parts.
+   *
+   * Signed in batches rather than all at once: 160 URLs for a 5 GiB file is a
+   * large response, and every one of them is a capability with a lifetime. A
+   * client that stalls after part 3 should not leave 157 live signatures behind
+   * it — so the uploader asks for more as it goes, and a resumed upload signs
+   * only what is actually missing.
+   */
+  signParts(
+    key: string,
+    uploadId: string,
+    partNumbers: readonly number[],
+    now: Date,
+  ): ReadonlyArray<{ readonly partNumber: number; readonly url: string }> {
+    return partNumbers.map((partNumber) => ({
+      partNumber,
+      url: this.presigner.presignUploadPart(
+        key,
+        this.uploadTtlSec,
+        now,
+        uploadId,
+        partNumber,
+      ),
+    }));
+  }
+
+  /**
+   * What the bucket actually holds for this upload.
+   *
+   * The reason the browser never handles an ETag. Reading them from the part
+   * responses would need `ExposeHeaders: ETag` in the bucket's CORS policy —
+   * a setting no installation of this platform has ever had, which is exactly
+   * the P70-01 story about CORS itself — and it would make the client's report
+   * the input to assembly. This asks the store instead, which is the same
+   * reasoning `verifyUpload` uses to refuse "the PUT returned 200" as evidence.
+   *
+   * It is also what lets an upload resume after the tab died: nothing about
+   * which parts arrived was ever kept there.
+   */
+  async listParts(
+    key: string,
+    uploadId: string,
+    now: Date,
+  ): Promise<
+    { ok: true; parts: readonly StoredPart[] } | { ok: false; refusal: UploadRefusal }
+  > {
+    let response: Response;
+    try {
+      response = await this.fetchImpl(
+        this.presigner.presignListParts(key, 60, now, uploadId),
+        { method: "GET" },
+      );
+    } catch (error) {
+      return { ok: false, refusal: { kind: "unreachable", reason: describe(error) } };
+    }
+
+    if (response.status === 404) return { ok: false, refusal: { kind: "missing" } };
+    if (!response.ok) {
+      return {
+        ok: false,
+        refusal: { kind: "unreachable", reason: `bucket answered ${response.status}` },
+      };
+    }
+
+    return { ok: true, parts: parseParts(await response.text()) };
+  }
+
+  /**
+   * Assemble the parts the bucket says it has.
+   *
+   * ## The 200-that-is-an-error
+   *
+   * `CompleteMultipartUpload` can take minutes, so S3 answers **200** and holds
+   * the connection open, then writes either a success document or an `<Error>`
+   * into the body. A caller that checks only the status code treats a failed
+   * assembly as a finished upload — and the next thing that happens is a course
+   * pointing at an object that does not exist.
+   *
+   * So the body is read and inspected either way. This is the one place in the
+   * platform where an HTTP 200 is not the answer.
+   */
+  async completeMultipart(
+    key: string,
+    uploadId: string,
+    parts: readonly StoredPart[],
+    now: Date,
+  ): Promise<{ ok: true } | { ok: false; refusal: UploadRefusal }> {
+    if (parts.length === 0) {
+      return { ok: false, refusal: { kind: "unreachable", reason: "no parts stored" } };
+    }
+
+    const body =
+      "<CompleteMultipartUpload>" +
+      [...parts]
+        .sort((a, b) => a.partNumber - b.partNumber)
+        .map(
+          (part) =>
+            `<Part><PartNumber>${String(part.partNumber)}</PartNumber>` +
+            `<ETag>${escapeXml(part.etag)}</ETag></Part>`,
+        )
+        .join("") +
+      "</CompleteMultipartUpload>";
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(
+        this.presigner.presignCompleteMultipart(key, 300, now, uploadId),
+        { method: "POST", body },
+      );
+    } catch (error) {
+      return { ok: false, refusal: { kind: "unreachable", reason: describe(error) } };
+    }
+
+    const text = await response.text();
+    if (!response.ok) {
+      return {
+        ok: false,
+        refusal: { kind: "unreachable", reason: `bucket answered ${response.status}` },
+      };
+    }
+    if (text.includes("<Error>")) {
+      return {
+        ok: false,
+        refusal: {
+          kind: "unreachable",
+          reason: `assembly failed: ${firstTag(text, "Code") ?? "unknown"}`,
+        },
+      };
+    }
+
+    return { ok: true };
+  }
+
+  /**
+   * Give the storage back.
+   *
+   * An abandoned multipart upload keeps every part it received, is billed for
+   * them, and appears in **no object listing** — so it is invisible until
+   * somebody reads an invoice. This is the polite path; the lifecycle rule the
+   * deploy applies is the backstop for uploads nobody aborts.
+   *
+   * Failure is reported, never thrown: abandoning an upload is already the
+   * unhappy path and a 500 on top of it helps nobody.
+   */
+  async abortMultipart(
+    key: string,
+    uploadId: string,
+    now: Date,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    try {
+      const response = await this.fetchImpl(
+        this.presigner.presignAbortMultipart(key, 60, now, uploadId),
+        { method: "DELETE" },
+      );
+      return response.ok || response.status === 404
+        ? { ok: true }
+        : { ok: false, reason: `bucket answered ${response.status}` };
+    } catch (error) {
+      return { ok: false, reason: describe(error) };
+    }
+  }
+
   /**
    * Remove an object we will not accept, and report the mismatch either way.
    *
@@ -274,4 +535,59 @@ export function isUploadPurpose(value: string): value is UploadPurpose {
     value === "poster" ||
     value === "material"
   );
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * The smallest amount of XML that will do
+ * ---------------------------------------------------------------------------
+ *
+ * S3's multipart responses are a handful of flat elements, and this module
+ * already hand-rolls SigV4 rather than take several hundred packages for one
+ * operation (`s3-presigner.ts` says why). A parser is the same trade: what is
+ * read here is `UploadId`, `PartNumber`, `ETag`, `Size` and `Code`, all of them
+ * text-only elements in documents the bucket generated.
+ *
+ * Deliberately **not** general. It does not resolve entities beyond the five
+ * predefined ones, does not handle namespaces, and would be the wrong tool for
+ * a document anybody else wrote. Nothing user-supplied reaches it: the input is
+ * always a response to a request we signed.
+ */
+
+function firstTag(xml: string, tag: string): string | undefined {
+  const match = new RegExp(`<${tag}>([^<]*)</${tag}>`, "u").exec(xml);
+  return match?.[1] === undefined ? undefined : unescapeXml(match[1]);
+}
+
+function parseParts(xml: string): readonly StoredPart[] {
+  const parts: StoredPart[] = [];
+  for (const block of xml.matchAll(/<Part>([\s\S]*?)<\/Part>/gu)) {
+    const body = block[1] ?? "";
+    const partNumber = Number(firstTag(body, "PartNumber"));
+    const etag = firstTag(body, "ETag");
+    const sizeBytes = Number(firstTag(body, "Size") ?? "0");
+    if (!Number.isSafeInteger(partNumber) || partNumber < 1 || etag === undefined) {
+      continue;
+    }
+    parts.push({ partNumber, etag, sizeBytes });
+  }
+  return parts;
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;")
+    .replace(/"/gu, "&quot;")
+    .replace(/'/gu, "&apos;");
+}
+
+function unescapeXml(value: string): string {
+  return value
+    .replace(/&lt;/gu, "<")
+    .replace(/&gt;/gu, ">")
+    .replace(/&quot;/gu, '"')
+    .replace(/&apos;/gu, "'")
+    .replace(/&amp;/gu, "&");
 }

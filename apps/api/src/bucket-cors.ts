@@ -29,6 +29,10 @@ import {
   corsConfigurationXml,
   probePreflight,
 } from "./shared/bucket-cors.js";
+import {
+  ABORT_INCOMPLETE_AFTER_DAYS,
+  applyBucketLifecycle,
+} from "./shared/bucket-lifecycle.js";
 import { S3Presigner } from "./shared/s3-presigner.js";
 
 /* eslint-disable no-console -- this is a CLI; its output is the point */
@@ -81,6 +85,36 @@ async function main(): Promise<void> {
     secretAccessKey: env("S3_SECRET_ACCESS_KEY"),
     forcePathStyle: env("S3_FORCE_PATH_STYLE") !== "no",
   });
+
+  /*
+   * The lifecycle rule, in the same pass (P129-03).
+   *
+   * Here rather than in a second deploy step because it is the same question —
+   * *is this bucket configured for what we do to it?* — and a second `compose
+   * run` is another minute of deploy for one PUT.
+   *
+   * It is applied **before** the CORS probe so its output cannot be mistaken
+   * for part of the upload verdict below, and its failure is a warning: a
+   * bucket with no lifecycle rule uploads perfectly and wastes money slowly,
+   * which is a different thing from a bucket nobody can upload to at all.
+   */
+  const lifecycle = await applyBucketLifecycle(
+    presigner,
+    ABORT_INCOMPLETE_AFTER_DAYS,
+    new Date(),
+  );
+  if (lifecycle.ok) {
+    console.log(
+      `Applied the lifecycle rule to ${bucket}: incomplete multipart uploads ` +
+        `are aborted after ${String(ABORT_INCOMPLETE_AFTER_DAYS)} day(s).`,
+    );
+  } else {
+    console.warn(
+      `Could not write the lifecycle rule (${lifecycle.reason}). Uploads will ` +
+        `still work; abandoned multipart parts will accumulate and be billed ` +
+        `until somebody removes them.`,
+    );
+  }
 
   const applied = await applyBucketCors(presigner, rule, new Date());
   switch (applied.kind) {

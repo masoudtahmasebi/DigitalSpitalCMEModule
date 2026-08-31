@@ -116,6 +116,46 @@ export interface Presigner extends ReadPresigner {
    * explained to whoever reads a bucket listing later.
    */
   presignDelete(key: string, expiresInSec: number, now: Date): string;
+
+  /*
+   * Multipart (P129-02). The four the server calls and the one it hands out.
+   *
+   * On the interface rather than only on the class because `ObjectStorage`
+   * depends on the port — a fake presigner in a test must be forced to answer
+   * these too, or the multipart paths would be exercised against a double that
+   * quietly lacks them.
+   */
+  presignCreateMultipart(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    contentType: string,
+  ): string;
+  presignUploadPart(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    uploadId: string,
+    partNumber: number,
+  ): string;
+  presignListParts(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    uploadId: string,
+  ): string;
+  presignCompleteMultipart(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    uploadId: string,
+  ): string;
+  presignAbortMultipart(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    uploadId: string,
+  ): string;
 }
 
 /**
@@ -400,6 +440,36 @@ export class S3Presigner implements Presigner {
         ? {}
         : { "content-md5": contentMd5, "content-type": "application/xml" },
       { cors: "" },
+    );
+  }
+
+  /**
+   * `?lifecycle` on the bucket itself (P129-03).
+   *
+   * Same shape as `presignBucketCors` and for the same reason: a bucket-level
+   * document, signed with its own MD5 so the store can refuse a truncated body.
+   *
+   * What it configures is invisible until it costs money. An abandoned
+   * multipart upload keeps every part it received and appears in **no object
+   * listing** — a browser closed at 80 % of a 3 GB lecture leaves 2.4 GB that
+   * nothing will ever show you. `AbortIncompleteMultipartUpload` is the only
+   * thing that reclaims it.
+   */
+  presignBucketLifecycle(
+    method: "GET" | "PUT",
+    expiresInSec: number,
+    now: Date,
+    contentMd5?: string,
+  ): string {
+    return this.presign(
+      method,
+      "",
+      expiresInSec,
+      now,
+      contentMd5 === undefined
+        ? {}
+        : { "content-md5": contentMd5, "content-type": "application/xml" },
+      { lifecycle: "" },
     );
   }
 
