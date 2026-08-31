@@ -1825,6 +1825,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/courses/{slug}/uploads/multipart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Begin a large upload, in parts
+         * @description For files past the multipart threshold. A single signed `PUT` is one
+         *     network event: it either finishes or it was worth nothing, which stops
+         *     being acceptable somewhere around a gigabyte.
+         *
+         *     The response says how the client must split the file. Those sizes are
+         *     not advisory — the server signs part URLs against the same plan, and a
+         *     client that slices differently assembles an object of the right size and
+         *     the wrong bytes.
+         */
+        post: operations["adminBeginMultipartUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/courses/{slug}/uploads/multipart/sign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signed URLs for a bounded batch of parts
+         * @description Called repeatedly as the upload proceeds, and again on resume for
+         *     whatever is still missing.
+         *
+         *     **Bounded on purpose.** Every URL returned is a live capability, so a
+         *     5 GiB upload's 160 parts are not all minted because a client asked once:
+         *     an uploader that stalls at part 3 would otherwise leave 157 signatures
+         *     valid for the rest of their lifetime.
+         *
+         *     Part numbers outside the plan recorded for this key are refused. The plan
+         *     is derived from the size the server approved, never from this request.
+         */
+        post: operations["adminSignUploadParts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/courses/{slug}/uploads/multipart/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assemble the parts and confirm the object
+         * @description The parts come from the **bucket's own listing**, not from this request:
+         *     the client never handles an ETag, which is both one less thing to
+         *     configure in the bucket's CORS policy and what lets an upload resume
+         *     after the browser died.
+         *
+         *     Once assembled, the object goes through the same verification a single
+         *     upload does — measured against the size and type recorded when the
+         *     upload began. A mismatch is discarded.
+         */
+        post: operations["adminCompleteMultipartUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/courses/{slug}/uploads/complete": {
         parameters: {
             query?: never;
@@ -4341,6 +4424,43 @@ export interface components {
              *     media source list.
              */
             usedByCount: number;
+        };
+        MultipartTicket: {
+            /** @description Pass this back when signing and completing. */
+            key: string;
+            /** @description The store's identifier for this upload. Opaque and store-specific. */
+            uploadId: string;
+            partCount: number;
+            /**
+             * @description Every part except the last is exactly this many bytes. The last is
+             *     whatever remains. Slicing differently produces an object of the
+             *     right size and the wrong bytes.
+             */
+            partBytes: number;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        MultipartSignRequest: {
+            key: string;
+            uploadId: string;
+            /**
+             * @description One-based, as S3 numbers parts. At most 32 per call — each URL is a
+             *     capability, and they are minted as the upload needs them.
+             */
+            partNumbers: number[];
+        };
+        MultipartSigned: {
+            parts: {
+                partNumber: number;
+                /** Format: uri */
+                url: string;
+            }[];
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        MultipartCompletion: {
+            key: string;
+            uploadId: string;
         };
         UploadCompletion: {
             /** @description The `key` from the ticket. */
@@ -8894,6 +9014,246 @@ export interface operations {
              *     expensive at the other end of the bucket bill.
              */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    adminBeginMultipartUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadRequest"];
+            };
+        };
+        responses: {
+            /** @description The upload has begun. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MultipartTicket"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many uploads started too quickly. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The media store could not start the upload. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    adminSignUploadParts: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MultipartSignRequest"];
+            };
+        };
+        responses: {
+            /** @description Signed part URLs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MultipartSigned"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /**
+             * @description No upload was issued for this key in this tenant. A key belonging to
+             *     another customer gets this same answer.
+             */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many signing requests too quickly. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    adminCompleteMultipartUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MultipartCompletion"];
+            };
+        };
+        responses: {
+            /** @description The object is assembled and is what was approved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadConfirmed"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /** @description No upload was issued for this key in this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many confirmations too quickly. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The media store could not assemble the upload. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -2655,6 +2655,141 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
 
+  /admin/courses/{slug}/uploads/multipart:
+    post:
+      tags: [admin]
+      operationId: adminBeginMultipartUpload
+      summary: Begin a large upload, in parts
+      description: |
+        For files past the multipart threshold. A single signed `PUT` is one
+        network event: it either finishes or it was worth nothing, which stops
+        being acceptable somewhere around a gigabyte.
+
+        The response says how the client must split the file. Those sizes are
+        not advisory — the server signs part URLs against the same plan, and a
+        client that slices differently assembles an object of the right size and
+        the wrong bytes.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadRequest" }
+      responses:
+        "201":
+          description: The upload has begun.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MultipartTicket" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429":
+          description: Too many uploads started too quickly.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "503":
+          description: The media store could not start the upload.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /admin/courses/{slug}/uploads/multipart/sign:
+    post:
+      tags: [admin]
+      operationId: adminSignUploadParts
+      summary: Signed URLs for a bounded batch of parts
+      description: |
+        Called repeatedly as the upload proceeds, and again on resume for
+        whatever is still missing.
+
+        **Bounded on purpose.** Every URL returned is a live capability, so a
+        5 GiB upload's 160 parts are not all minted because a client asked once:
+        an uploader that stalls at part 3 would otherwise leave 157 signatures
+        valid for the rest of their lifetime.
+
+        Part numbers outside the plan recorded for this key are refused. The plan
+        is derived from the size the server approved, never from this request.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MultipartSignRequest" }
+      responses:
+        "200":
+          description: Signed part URLs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MultipartSigned" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: |
+            No upload was issued for this key in this tenant. A key belonging to
+            another customer gets this same answer.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429":
+          description: Too many signing requests too quickly.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /admin/courses/{slug}/uploads/multipart/complete:
+    post:
+      tags: [admin]
+      operationId: adminCompleteMultipartUpload
+      summary: Assemble the parts and confirm the object
+      description: |
+        The parts come from the **bucket's own listing**, not from this request:
+        the client never handles an ETag, which is both one less thing to
+        configure in the bucket's CORS policy and what lets an upload resume
+        after the browser died.
+
+        Once assembled, the object goes through the same verification a single
+        upload does — measured against the size and type recorded when the
+        upload began. A mismatch is discarded.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MultipartCompletion" }
+      responses:
+        "200":
+          description: The object is assembled and is what was approved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadConfirmed" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: No upload was issued for this key in this tenant.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429":
+          description: Too many confirmations too quickly.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "503":
+          description: The media store could not assemble the upload.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
   /admin/courses/{slug}/uploads/complete:
     post:
       tags: [admin]
@@ -6272,6 +6407,61 @@ components:
             afterwards. Counts every field that can hold a reference — a
             content's own file, its poster, its captions, and each entry in its
             media source list.
+
+    MultipartTicket:
+      type: object
+      required: [key, uploadId, partCount, partBytes, expiresAt]
+      properties:
+        key: { type: string, description: Pass this back when signing and completing. }
+        uploadId:
+          type: string
+          description: |
+            The store's identifier for this upload. Opaque and store-specific.
+        partCount: { type: integer, minimum: 1 }
+        partBytes:
+          type: integer
+          minimum: 1
+          description: |
+            Every part except the last is exactly this many bytes. The last is
+            whatever remains. Slicing differently produces an object of the
+            right size and the wrong bytes.
+        expiresAt: { type: string, format: date-time }
+
+    MultipartSignRequest:
+      type: object
+      required: [key, uploadId, partNumbers]
+      properties:
+        key: { type: string, minLength: 1, maxLength: 1024 }
+        uploadId: { type: string, minLength: 1, maxLength: 1024 }
+        partNumbers:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: { type: integer, minimum: 1, maximum: 10000 }
+          description: |
+            One-based, as S3 numbers parts. At most 32 per call — each URL is a
+            capability, and they are minted as the upload needs them.
+
+    MultipartSigned:
+      type: object
+      required: [parts, expiresAt]
+      properties:
+        parts:
+          type: array
+          items:
+            type: object
+            required: [partNumber, url]
+            properties:
+              partNumber: { type: integer }
+              url: { type: string, format: uri }
+        expiresAt: { type: string, format: date-time }
+
+    MultipartCompletion:
+      type: object
+      required: [key, uploadId]
+      properties:
+        key: { type: string, minLength: 1, maxLength: 1024 }
+        uploadId: { type: string, minLength: 1, maxLength: 1024 }
 
     UploadCompletion:
       type: object

@@ -345,17 +345,26 @@ export class ObjectStorage {
     uploadId: string,
     partNumbers: readonly number[],
     now: Date,
-  ): ReadonlyArray<{ readonly partNumber: number; readonly url: string }> {
-    return partNumbers.map((partNumber) => ({
-      partNumber,
-      url: this.presigner.presignUploadPart(
-        key,
-        this.uploadTtlSec,
-        now,
-        uploadId,
+  ): {
+    readonly parts: ReadonlyArray<{ readonly partNumber: number; readonly url: string }>;
+    readonly expiresAt: Date;
+  } {
+    return {
+      parts: partNumbers.map((partNumber) => ({
         partNumber,
-      ),
-    }));
+        url: this.presigner.presignUploadPart(
+          key,
+          this.uploadTtlSec,
+          now,
+          uploadId,
+          partNumber,
+        ),
+      })),
+      // The expiry travels with the URLs rather than being recomputed by the
+      // caller: the TTL is this class's, and a second copy of it in the service
+      // is a number that drifts from the one actually signed.
+      expiresAt: new Date(now.getTime() + this.uploadTtlSec * 1000),
+    };
   }
 
   /**

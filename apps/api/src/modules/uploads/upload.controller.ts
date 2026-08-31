@@ -54,6 +54,9 @@ import { objectStorageFor } from "../../shared/object-storage.factory.js";
 import {
   mediaDescribeSchema,
   mediaListSchema,
+  multipartBeginSchema,
+  multipartCompleteSchema,
+  multipartSignSchema,
   uploadBeginSchema,
   uploadCompleteSchema,
   uploadViewSchema,
@@ -184,6 +187,68 @@ export class UploadController {
     return this.service(db, principal).complete(
       slug,
       parse(uploadCompleteSchema, body, "upload"),
+      actorOf(principal),
+      new Date(),
+    );
+  }
+
+  /*
+   * Multipart (P129-04). Three routes, all rate-limited as uploads.
+   *
+   * `signParts` is called repeatedly for one upload — every 32 parts — so it
+   * carries the same limiter as the others rather than being treated as a cheap
+   * read. It mints signatures, and a route that mints capabilities in a loop is
+   * the one that most wants a ceiling on how fast it can be asked.
+   */
+  @Post("courses/:slug/uploads/multipart")
+  @RateLimit("mediaUpload")
+  @Roles(...AUTHOR_ROLES)
+  async beginMultipart(
+    @Param("slug") slug: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    return this.service(db, principal).beginMultipart(
+      slug,
+      parse(multipartBeginSchema, body, "upload"),
+      actorOf(principal),
+      new Date(),
+    );
+  }
+
+  // 200: the upload already exists; this hands back URLs for part of it.
+  @Post("courses/:slug/uploads/multipart/sign")
+  @HttpCode(200)
+  @RateLimit("mediaUpload")
+  @Roles(...AUTHOR_ROLES)
+  async signParts(
+    @Param("slug") slug: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    return this.service(db, principal).signParts(
+      slug,
+      parse(multipartSignSchema, body, "upload"),
+      actorOf(principal),
+      new Date(),
+    );
+  }
+
+  @Post("courses/:slug/uploads/multipart/complete")
+  @HttpCode(200)
+  @RateLimit("mediaUpload")
+  @Roles(...AUTHOR_ROLES)
+  async completeMultipart(
+    @Param("slug") slug: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    return this.service(db, principal).completeMultipart(
+      slug,
+      parse(multipartCompleteSchema, body, "upload"),
       actorOf(principal),
       new Date(),
     );
