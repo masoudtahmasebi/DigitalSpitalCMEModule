@@ -48,6 +48,11 @@ type DeepPartial<T> = {
       : never;
 };
 
+import { uploadLimitLabel } from "@ds/domain";
+
+/** The ceiling the API enforces, not a second opinion about it (P133-01). */
+const VIDEO_LIMIT = uploadLimitLabel("video");
+
 export const en: DeepPartial<typeof german> = {
   appTitle: "DS Education — Administration",
   appShort: "DS Education",
@@ -543,8 +548,7 @@ export const en: DeepPartial<typeof german> = {
       "The connection to file storage was lost. The file was not transferred completely — please upload it again.",
     noCourseYet: "Please save the course first.",
     videoUpload: "Upload video",
-    videoUploadHint:
-      "MP4 or WebM, up to 2 GB. The file is transferred straight to file storage and is afterwards retrievable only by participants of this course.",
+    videoUploadHint: `MP4 or WebM, up to ${VIDEO_LIMIT}. The file is transferred straight to file storage and is afterwards retrievable only by participants of this course.`,
 
     previewLoading: "Loading preview …",
     previewFailed:
@@ -742,8 +746,7 @@ export const en: DeepPartial<typeof german> = {
     },
     dropHere: "Drag a file here, or choose one",
     uploadHints: {
-      video:
-        "MP4 or WebM, up to 2 GB. The file goes straight to storage and is then reachable only by participants of this course.",
+      video: `MP4 or WebM, up to ${VIDEO_LIMIT}. The file goes straight to storage and is then reachable only by participants of this course.`,
       poster: "JPEG, PNG or WebP. Shown as the course's preview image.",
       captions:
         "WebVTT (.vtt) or SRT (.srt). SRT files are converted to WebVTT on upload — storage always holds WebVTT.",

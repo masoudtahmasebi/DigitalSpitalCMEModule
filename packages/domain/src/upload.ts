@@ -96,6 +96,34 @@ export const UPLOAD_MAX_BYTES: Readonly<Record<UploadPurpose, number>> = {
   material: 200 * MiB,
 };
 
+/**
+ * The ceiling as a person reads it — "5 GB", "200 MB" (P133-01).
+ *
+ * ## Why this is in the domain and not in a locale file
+ *
+ * It was in the locale files, four times, as the literal text "2 GB". P129-01
+ * raised `UPLOAD_MAX_BYTES.video` to 5 GiB and every one of those sentences went
+ * on saying 2 GB — so the console told an author their 3 GB lecture would be
+ * refused by a server that would have accepted it, and the client found it by
+ * reading the screen.
+ *
+ * That is CLAUDE.md §9.3 in its plainest form: the rule moved and the sentence
+ * stating the rule did not, because nothing connected them. The connection is
+ * this function. A hint is now derived from the same constant the API enforces,
+ * so the two cannot disagree again without somebody deliberately unpicking it.
+ *
+ * Binary units, decimal label — 5120 MiB reads as "5 GB", the way every file
+ * manager has always shown it. The alternative is telling a physician's editor
+ * "5.37 GB", which is more accurate and less true.
+ */
+export function uploadLimitLabel(purpose: UploadPurpose): string {
+  const bytes = UPLOAD_MAX_BYTES[purpose];
+  const mib = bytes / MiB;
+  // No fractions on purpose: every ceiling here is a whole number of MiB or GiB,
+  // and a hint reading "0.5 GB" would be a worse answer than "512 MB".
+  return mib >= 1024 ? `${mib / 1024} GB` : `${mib} MB`;
+}
+
 export type UploadRejection =
   /** Not one of the four purposes. A client that invented a fifth. */
   | "unknown_purpose"

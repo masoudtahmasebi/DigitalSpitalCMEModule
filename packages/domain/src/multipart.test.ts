@@ -20,6 +20,7 @@ import {
   UPLOAD_MAX_BYTES,
   planMultipart,
   partRange,
+  uploadLimitLabel,
 } from "./upload.js";
 
 const MiB = 1024 * 1024;
@@ -108,5 +109,33 @@ describe("partRange", () => {
     expect(partRange(plan, size, 0)).toBeUndefined();
     expect(partRange(plan, size, plan.partCount + 1)).toBeUndefined();
     expect(partRange(plan, size, 1.5)).toBeUndefined();
+  });
+});
+
+describe("uploadLimitLabel", () => {
+  /*
+   * P133-01. The client read "MP4 or WebM, up to 2 GB" on a console whose
+   * server accepts 5 GB, because the sentence was a literal in four locale
+   * entries and the ceiling had moved underneath it (§9.3).
+   *
+   * These cases pin the *shape* of the answer. What stops the drift happening
+   * again is that the locale files call this rather than restating the number,
+   * which `apps/admin/src/locale/language.test.ts` asserts.
+   */
+  it("says the video ceiling the way a person writes it", () => {
+    expect(uploadLimitLabel("video")).toBe("5 GB");
+  });
+
+  it("keeps the smaller ceilings in megabytes rather than fractions of a gigabyte", () => {
+    expect(uploadLimitLabel("material")).toBe("200 MB");
+    expect(uploadLimitLabel("poster")).toBe("10 MB");
+    expect(uploadLimitLabel("captions")).toBe("2 MB");
+  });
+
+  it("tracks the constant rather than a copy of it", () => {
+    // The property that matters: if `UPLOAD_MAX_BYTES` moves, this moves. A
+    // hard-coded "5 GB" here would pass the first case and fail this one.
+    const mib = UPLOAD_MAX_BYTES.video / (1024 * 1024);
+    expect(uploadLimitLabel("video")).toBe(`${mib / 1024} GB`);
   });
 });

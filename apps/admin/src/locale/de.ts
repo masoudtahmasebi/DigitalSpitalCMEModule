@@ -16,6 +16,21 @@
  */
 const LABEL_REQUIRED = "Verpflichtend";
 
+/**
+ * The upload ceiling, from the constant the API enforces (P133-01).
+ *
+ * It used to be the literal "2 GB", written out in two hints here and two in
+ * `en.ts`. P129-01 raised the ceiling to 5 GB and all four went on saying 2 —
+ * so the console told an author their 3 GB lecture would be refused by a server
+ * that would have taken it, and the client found it by reading the screen.
+ *
+ * Interpolated rather than made a function of the table, deliberately: `overlay`
+ * translates strings and leaves functions in German, so a hint that became a
+ * function would silently stop being English. This stays a string, derived once.
+ */
+const VIDEO_LIMIT = uploadLimitLabel("video");
+
+import { uploadLimitLabel } from "@ds/domain";
 import { currentLanguage, overlay } from "./language.js";
 import { en } from "./en.js";
 
@@ -691,8 +706,7 @@ export const german = {
       "Die Verbindung zum Dateispeicher ist abgebrochen. Die Datei wurde nicht vollständig übertragen — bitte laden Sie sie erneut hoch.",
     noCourseYet: "Bitte speichern Sie die Fortbildung zuerst.",
     videoUpload: "Video hochladen",
-    videoUploadHint:
-      "MP4 oder WebM, bis 2 GB. Die Datei wird direkt in den Dateispeicher übertragen und ist anschließend nur für Teilnehmende dieser Fortbildung abrufbar.",
+    videoUploadHint: `MP4 oder WebM, bis ${VIDEO_LIMIT}. Die Datei wird direkt in den Dateispeicher übertragen und ist anschließend nur für Teilnehmende dieser Fortbildung abrufbar.`,
 
     // Seeing the file rather than its name (P74-03).
     previewLoading: "Vorschau wird geladen …",
@@ -1007,14 +1021,13 @@ export const german = {
      * What this field accepts, per purpose (P90-01).
      *
      * One dialog serves four fields, and the first version showed the video
-     * hint in all of them — so an author uploading a PDF was told "MP4 oder
-     * WebM, bis 2 GB". A hint that describes a different field is worse than
+     * hint in all of them — so an author uploading a PDF was told it could be
+     * several gigabytes of MP4. A hint that describes a different field is worse than
      * none: it is a confident wrong answer at the moment somebody is deciding
      * whether their file will be accepted.
      */
     uploadHints: {
-      video:
-        "MP4 oder WebM, bis 2 GB. Die Datei wird direkt in den Dateispeicher übertragen und ist anschließend nur für Teilnehmende dieser Fortbildung abrufbar.",
+      video: `MP4 oder WebM, bis ${VIDEO_LIMIT}. Die Datei wird direkt in den Dateispeicher übertragen und ist anschließend nur für Teilnehmende dieser Fortbildung abrufbar.`,
       poster: "JPEG, PNG oder WebP. Wird als Vorschaubild der Fortbildung angezeigt.",
       captions:
         "WebVTT (.vtt) oder SRT (.srt). SRT-Dateien werden beim Hochladen automatisch in WebVTT umgewandelt — im Dateispeicher liegt immer WebVTT.",

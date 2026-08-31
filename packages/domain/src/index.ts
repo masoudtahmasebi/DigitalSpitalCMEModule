@@ -170,6 +170,7 @@ export {
   InvalidUploadTokenError,
   planUpload,
   UPLOAD_MAX_BYTES,
+  uploadLimitLabel,
   planMultipart,
   partRange,
   MULTIPART_PART_BYTES,

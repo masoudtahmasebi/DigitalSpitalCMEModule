@@ -9,6 +9,7 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
+import { uploadLimitLabel } from "@ds/domain";
 import { currentLanguage, overlay } from "./language.js";
 import { german } from "./de.js";
 import { en } from "./en.js";
@@ -149,5 +150,59 @@ describe("the English table that ships", () => {
     expect(typeof merged.media.usedBy).toBe("function");
     expect(merged.media.usedBy(1)).toContain("1 Inhalt ");
     expect(typeof merged.courses.completedOf).toBe("function");
+  });
+});
+
+describe("the stated upload ceiling", () => {
+  /*
+   * P133-01, and the whole point of the ticket: **what the screen says the
+   * limit is must be what the server enforces.**
+   *
+   * The console said "MP4 or WebM, up to 2 GB" while the API accepted 5 GB,
+   * because the number was a literal in four places and `UPLOAD_MAX_BYTES.video`
+   * had moved underneath all of them (§9.3). The client found it by reading the
+   * screen, which is the instrument this test replaces.
+   *
+   * Asserted against `uploadLimitLabel` rather than against "5 GB": a test that
+   * pinned the string would need editing on the next change, and a test you have
+   * to edit to keep green is one somebody eventually edits without thinking.
+   */
+  const limit = uploadLimitLabel("video");
+
+  it("states the API's own ceiling, in German", () => {
+    expect(german.uploads.videoUploadHint).toContain(limit);
+    expect(german.media.uploadHints.video).toContain(limit);
+  });
+
+  it("states it in English too", () => {
+    const merged = overlay(german, en);
+
+    expect(merged.uploads.videoUploadHint).toContain(limit);
+    expect(merged.media.uploadHints.video).toContain(limit);
+    // Still English, not silently fallen back to German — the reason these are
+    // interpolated strings rather than functions of the table.
+    expect(merged.uploads.videoUploadHint).toContain("MP4 or WebM");
+  });
+
+  it("states no other size, which is how the 2 GB survived", () => {
+    /*
+     * The assertions above pass on a hint reading "up to 5 GB (formerly 2 GB)".
+     * This one is what makes them evidence: exactly one size claim per hint, and
+     * it is the derived one.
+     */
+    const merged = overlay(german, en);
+    const hints = [
+      german.uploads.videoUploadHint,
+      german.media.uploadHints.video,
+      merged.uploads.videoUploadHint,
+      merged.media.uploadHints.video,
+    ];
+
+    for (const hint of hints) {
+      // Simple and linear on purpose: a nested quantifier here is flagged as
+      // catastrophic-backtracking bait, and the shape being matched is just
+      // "digits, optional decimal, a unit".
+      expect(hint.match(/\d+[.,]?\d* ?[KMG]B/gu)).toEqual([limit]);
+    }
   });
 });
