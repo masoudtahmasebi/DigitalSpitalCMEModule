@@ -719,6 +719,27 @@ export const en: DeepPartial<typeof german> = {
       "The title names the file for you in this list. The alternative text describes the image for people who cannot see it — screen readers read it out, and it is required for accessibility (WCAG 1.1.1). Left empty, it counts as not set.",
     use: "Use this file",
     forget: "Remove from library",
+    upload: {
+      title: "Add files",
+      course: "Course",
+      chooseCourse: "Choose a course …",
+      courseHint:
+        "Files are stored under a course. They are then available in the Mediathek for every course of this customer.",
+      drop: "Drag files here",
+      choose: "Choose files",
+      busy: "Uploading …",
+      needCourse: "Choose a course first.",
+      done: "Done",
+      failed: "Failed",
+      someFailed:
+        "Not every file could be uploaded. The successful ones are in the list below.",
+      refused: {
+        unsupported_type:
+          "This file type is not accepted. Allowed: MP4, WebM, MP3, M4A, JPG, PNG, WebP, PDF and VTT.",
+        too_large: "This file is too large.",
+        empty: "This file is empty.",
+      },
+    },
     forgetHint:
       "Removing only deletes the entry from this list — the file itself stays in storage. While a course still uses the file, removing it is refused.",
 

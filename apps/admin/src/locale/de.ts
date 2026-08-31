@@ -989,6 +989,27 @@ export const german = {
       "Der Titel benennt die Datei für Sie in dieser Liste. Der Alternativtext beschreibt das Bild für Menschen, die es nicht sehen können — er wird von Screenreadern vorgelesen und ist für die Barrierefreiheit (WCAG 1.1.1) erforderlich. Bleibt er leer, gilt er als nicht gesetzt.",
     use: "Diese Datei verwenden",
     forget: "Aus Mediathek entfernen",
+    upload: {
+      title: "Dateien hinzufügen",
+      course: "Fortbildung",
+      chooseCourse: "Fortbildung auswählen …",
+      courseHint:
+        "Dateien werden unter einer Fortbildung gespeichert. In der Mediathek stehen sie danach für alle Fortbildungen dieses Kunden zur Verfügung.",
+      drop: "Dateien hierher ziehen",
+      choose: "Dateien auswählen",
+      busy: "Wird hochgeladen …",
+      needCourse: "Bitte wählen Sie zuerst eine Fortbildung aus.",
+      done: "Fertig",
+      failed: "Fehlgeschlagen",
+      someFailed:
+        "Nicht alle Dateien konnten hochgeladen werden. Die erfolgreichen sind in der Liste unten.",
+      refused: {
+        unsupported_type:
+          "Dieses Dateiformat wird nicht akzeptiert. Erlaubt sind MP4, WebM, MP3, M4A, JPG, PNG, WebP, PDF und VTT.",
+        too_large: "Diese Datei ist zu groß.",
+        empty: "Diese Datei ist leer.",
+      },
+    },
     forgetHint:
       "Entfernen löscht nur den Eintrag aus dieser Liste — die Datei selbst bleibt im Dateispeicher erhalten. Solange eine Fortbildung die Datei noch verwendet, wird das Entfernen abgelehnt.",
 

@@ -37,6 +37,10 @@ function asset(overrides: Partial<MediaAsset> = {}): MediaAsset {
 function client(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     adminListMedia: vi.fn(async () => [asset()]),
+    // The upload panel's one required field (P131-01). Empty by default: these
+    // cases are about managing files that already exist, and a course list is
+    // not what any of them is testing.
+    adminListCourses: vi.fn(async () => []),
     adminDescribeMedia: vi.fn(async (_id: string, input: unknown) =>
       asset(input as Partial<MediaAsset>),
     ),
@@ -186,5 +190,27 @@ describe("MediaLibrary", () => {
     expect(
       await screen.findByText(/Zu dieser Auswahl gibt es keine Datei/u),
     ).toBeTruthy();
+  });
+});
+
+describe("the upload panel's course list", () => {
+  it("survives a client that cannot list courses at all", async () => {
+    /*
+     * Not hypothetical: this is how the panel first shipped. The effect called
+     * `adminListCourses` and a client without it threw **synchronously**, which
+     * `.catch()` does not see — so the whole Mediathek unmounted and an operator
+     * who came to rename a file lost the screen.
+     *
+     * The library is the thing that must survive. The upload panel losing its
+     * dropdown is a degraded control; the library losing its list is a broken
+     * page.
+     */
+    const broken = client();
+    // @ts-expect-error deliberately removing a method the component calls
+    delete broken.adminListCourses;
+
+    render(<MediaLibrary client={broken} />);
+
+    expect(await screen.findByText("Intro Modul 1.mp4")).toBeTruthy();
   });
 });
