@@ -80,9 +80,16 @@ export function Page(props: {
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-gray-900">{props.title}</h2>
+          {/* `tracking-tight` and a step up in size (P133-02): the screen's
+              name was the same weight as the section headings inside it, so a
+              page read as a list of equals with no top. */}
+          <h2 className="text-xl font-semibold tracking-tight text-gray-900">
+            {props.title}
+          </h2>
           {props.description === undefined ? null : (
-            <p className="mt-1 max-w-3xl text-sm text-gray-600">{props.description}</p>
+            <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-gray-600">
+              {props.description}
+            </p>
           )}
         </div>
         {props.actions === undefined ? null : (
@@ -158,12 +165,14 @@ export function EmptyState(props: {
   action?: ReactNode;
 }) {
   return (
-    <div className="rounded-md border border-dashed border-gray-300 bg-white px-6 py-10 text-center">
-      <p className="text-sm font-semibold text-gray-900">{props.title}</p>
+    <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
+      <p className="text-base font-semibold text-gray-900">{props.title}</p>
       {props.description === undefined ? null : (
-        <p className="mx-auto mt-1 max-w-md text-sm text-gray-600">{props.description}</p>
+        <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-gray-600">
+          {props.description}
+        </p>
       )}
-      {props.action === undefined ? null : <div className="mt-4">{props.action}</div>}
+      {props.action === undefined ? null : <div className="mt-5">{props.action}</div>}
     </div>
   );
 }

@@ -245,14 +245,14 @@ function Shell(props: {
     <div className="min-h-screen bg-[color:var(--ds-surface)] md:flex">
       {signedIn ? (
         <aside
-          className={`shrink-0 bg-[color:var(--ds-ink)] md:block md:min-h-screen md:w-60 ${
+          className={`shrink-0 bg-[color:var(--ds-ink)] md:block md:min-h-screen md:w-64 ${
             menuOpen ? "block" : "hidden"
           }`}
         >
           <div className="flex items-center gap-2.5 px-4 py-4">
             <span
               aria-hidden
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-brand-500 text-xs font-bold text-white"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-500 text-xs font-bold text-white shadow-sm"
             >
               DS
             </span>
@@ -265,14 +265,14 @@ function Shell(props: {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white px-5 py-2.5">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white px-6 py-3">
           {signedIn ? (
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 aria-expanded={menuOpen}
                 onClick={() => props.onToggleMenu?.()}
-                className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm font-medium text-gray-700 md:hidden"
+                className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-700 shadow-sm md:hidden"
               >
                 {menuOpen ? de.nav.closeMenu : de.nav.menu}
               </button>
@@ -314,7 +314,7 @@ function Shell(props: {
           ) : null}
         </header>
 
-        <main className="min-w-0 flex-1 p-5">
+        <main className="min-w-0 flex-1 p-5 sm:p-6">
           {/*
             No width cap on the content once signed in (P104-02).
 
@@ -659,7 +659,7 @@ function ChooseCustomerPrompt(props: {
               <button
                 type="button"
                 onClick={() => props.onChoose(customer.id)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-900 hover:border-brand-500 hover:bg-brand-50"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-left text-sm font-medium text-gray-900 shadow-sm transition-colors hover:border-brand-500 hover:bg-brand-50"
               >
                 {customer.name}
               </button>
@@ -988,7 +988,7 @@ export function Console(props: {
         <select
           value={customerId ?? ""}
           onChange={(event) => setCustomerId(event.target.value || undefined)}
-          className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-900 shadow-sm"
+          className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-900 shadow-sm transition-colors hover:border-gray-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/25"
         >
           <option value="">{de.customerPicker.choose}</option>
           {customers.map((customer) => (
@@ -1037,7 +1037,7 @@ export function Console(props: {
           <div key={group.heading} className="mb-4">
             <p
               id={headingId}
-              className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/40"
+              className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35"
             >
               {group.heading}
             </p>
@@ -1053,10 +1053,10 @@ export function Console(props: {
                         setView({ kind: section.kind } as View);
                         setMenuOpen(false);
                       }}
-                      className={`mb-0.5 block w-full rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+                      className={`mb-0.5 block w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ds-ink)] ${
                         active
-                          ? "bg-brand-500 text-white"
-                          : "text-white/70 hover:bg-white/10 hover:text-white"
+                          ? "bg-brand-500 text-white shadow-[0_1px_12px_-2px_rgba(228,0,61,0.65)]"
+                          : "text-white/65 hover:bg-white/10 hover:text-white"
                       }`}
                     >
                       {section.label}
@@ -1340,11 +1340,14 @@ export function Console(props: {
             ]}
           >
             {courses.map((course) => (
-              <tr key={course.slug} className="border-b border-gray-100">
-                <td className="px-3 py-2">
+              <tr
+                key={course.slug}
+                className="border-b border-gray-100 transition-colors last:border-0 hover:bg-gray-50/70"
+              >
+                <td className="px-4 py-3">
                   <button
                     type="button"
-                    className="font-medium text-brand-700 underline"
+                    className="rounded font-medium text-brand-700 underline decoration-brand-700/30 underline-offset-2 transition-colors hover:text-brand-800 hover:decoration-brand-700"
                     onClick={() =>
                       setView({ kind: "course", slug: course.slug, tab: "structure" })
                     }
@@ -1352,23 +1355,23 @@ export function Console(props: {
                     {course.title}
                   </button>
                 </td>
-                <td className="px-3 py-2 text-gray-600">{course.vnr ?? "—"}</td>
-                <td className="px-3 py-2">
+                <td className="px-4 py-3 text-gray-600">{course.vnr ?? "—"}</td>
+                <td className="px-4 py-3">
                   {course.cmePoints === null
                     ? "—"
                     : `${course.cmePoints} (${course.cmeCategory ?? "?"})`}
                 </td>
-                <td className="px-3 py-2 text-gray-700">
+                <td className="px-4 py-3 text-gray-700">
                   {de.courses.completedOf(course.completedCount, course.enrolmentCount)}
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-4 py-3">
                   <Badge tone={course.certificateReady ? "ok" : "warn"}>
                     {course.certificateReady
                       ? de.courses.certificateReady
                       : de.courses.certificateNotReady}
                   </Badge>
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-4 py-3">
                   <ConfirmButton
                     label={de.courses.delete}
                     ariaLabel={de.courses.deleteAria(course.title)}
@@ -1545,7 +1548,7 @@ function CourseScreen(props: {
             type="button"
             aria-current={tab === value ? "page" : undefined}
             onClick={() => props.onTab(value)}
-            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm font-medium transition-colors ${
               tab === value
                 ? "border-brand-600 text-brand-700"
                 : "border-transparent text-gray-600"

@@ -8,6 +8,26 @@
 
 import { useState, type ReactNode } from "react";
 
+/**
+ * The two class strings every control in this file shares (P133-02).
+ *
+ * They are constants rather than repeated literals because the console's look
+ * is the thing the client keeps asking for, and a focus ring or a corner radius
+ * that is written out nine times is one that ends up with nine values. Anything
+ * added here is inherited by every screen at once, which is the whole reason
+ * these primitives exist.
+ *
+ * The focus ring is brand-coloured and offset, and it is not optional: keyboard
+ * users are the a11y floor CLAUDE.md §3 declares non-reducible, and a redesign
+ * that made focus invisible would be a regression dressed as an improvement.
+ */
+const CONTROL_FOCUS =
+  "outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white";
+
+/** Text inputs, textareas and selects, so the three cannot drift apart. */
+const FIELD_SKIN =
+  "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm transition-colors placeholder:text-gray-400 hover:border-gray-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/25 disabled:bg-gray-50 disabled:text-gray-500";
+
 export function Button(props: {
   onClick?: () => void;
   type?: "button" | "submit";
@@ -38,10 +58,10 @@ export function Button(props: {
   const variant = props.variant ?? "primary";
   const skin =
     variant === "primary"
-      ? "bg-brand-600 text-white hover:bg-brand-700"
+      ? "bg-brand-600 text-white shadow-sm hover:bg-brand-700 active:bg-brand-800"
       : variant === "danger"
-        ? "bg-red-700 text-white hover:bg-red-800"
-        : "border border-gray-300 text-gray-800 hover:bg-gray-50";
+        ? "bg-red-700 text-white shadow-sm hover:bg-red-800"
+        : "border border-gray-300 bg-white text-gray-800 shadow-sm hover:border-gray-400 hover:bg-gray-50";
 
   return (
     <button
@@ -50,7 +70,7 @@ export function Button(props: {
       onClick={props.onClick}
       {...(props.id === undefined ? {} : { id: props.id })}
       {...(props.ariaLabel === undefined ? {} : { "aria-label": props.ariaLabel })}
-      className={`inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold disabled:opacity-50 ${skin}`}
+      className={`${CONTROL_FOCUS} inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none ${skin}`}
     >
       {props.children}
     </button>
@@ -142,7 +162,7 @@ export function TextInput(props: {
               }
             }
       }
-      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+      className={FIELD_SKIN}
     />
   );
 }
@@ -164,7 +184,7 @@ export function TextArea(props: {
       rows={props.rows ?? 4}
       maxLength={props.maxLength}
       onChange={(event) => props.onChange(event.target.value)}
-      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+      className={FIELD_SKIN}
     />
   );
 }
@@ -183,7 +203,7 @@ export function Select<T extends string>(props: {
       aria-label={props["aria-label"]}
       value={props.value}
       onChange={(event) => props.onChange(event.target.value as T)}
-      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+      className={FIELD_SKIN}
     >
       {props.options.map(([value, label]) => (
         <option key={value} value={value}>
@@ -296,7 +316,7 @@ export function Notice(props: {
 
   return (
     <div
-      className={`rounded-md border p-3 text-sm ${skin}`}
+      className={`rounded-xl border p-3.5 text-sm ${skin}`}
       {...(props.tone === "info" ? {} : { role: "alert" })}
     >
       {props.title === undefined ? null : <p className="font-semibold">{props.title}</p>}
@@ -308,13 +328,15 @@ export function Notice(props: {
 export function Badge(props: { tone: "ok" | "warn" | "muted"; children: ReactNode }) {
   const skin =
     props.tone === "ok"
-      ? "bg-green-50 text-green-800"
+      ? "bg-green-50 text-green-800 ring-green-600/20"
       : props.tone === "warn"
-        ? "bg-amber-50 text-amber-900"
-        : "bg-gray-100 text-gray-600";
+        ? "bg-amber-50 text-amber-900 ring-amber-600/20"
+        : "bg-gray-100 text-gray-600 ring-gray-500/20";
 
   return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${skin}`}>
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${skin}`}
+    >
       {props.children}
     </span>
   );
@@ -568,10 +590,10 @@ export function Panel(props: {
 }) {
   const skin = props.flush
     ? "border-l-2 border-gray-200 pl-3"
-    : `rounded-md border p-3 ${
+    : `rounded-xl border p-4 ${
         props.tone === "nested"
           ? "border-gray-200 bg-gray-50"
-          : "border-gray-300 bg-white"
+          : "border-gray-200 bg-white shadow-sm"
       }`;
 
   return (
@@ -599,15 +621,25 @@ export function Panel(props: {
  */
 export function Table(props: { headers: readonly string[]; children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-md border border-gray-200 bg-white">
-      <table className="min-w-full border-collapse text-sm">
+    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+      {/*
+        Cell padding belongs to the table, not to fifty call sites (P133-02).
+
+        It was written out as `px-3 py-2` on every `<td>` in eight screens, so
+        changing the header's padding here left the body misaligned everywhere
+        and there was no single place to fix it. The arbitrary variant is more
+        specific than a utility on the cell itself, so a row cannot quietly
+        disagree with its own header — which is the same reasoning as the
+        surface being applied here rather than per screen.
+      */}
+      <table className="min-w-full border-collapse text-sm [&_td]:px-4 [&_td]:py-3">
         <thead>
-          <tr className="border-b border-gray-200 bg-gray-50 text-left">
+          <tr className="border-b border-gray-200 bg-gray-50/80 text-left">
             {props.headers.map((header) => (
               <th
                 key={header}
                 scope="col"
-                className="px-3 py-2.5 font-semibold text-gray-700"
+                className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500"
               >
                 {header}
               </th>

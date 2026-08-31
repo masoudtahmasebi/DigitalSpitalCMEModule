@@ -147,8 +147,8 @@ export function Certificates(props: { client: ApiClient; courseSlug?: string }) 
             const canResend = resendable(reason);
             return (
               <tr key={row.id} className="border-t border-gray-100">
-                <td className="px-3 py-2 text-sm">{row.participantName}</td>
-                <td className="px-3 py-2 text-sm">
+                <td className="text-sm">{row.participantName}</td>
+                <td className="text-sm">
                   <Badge tone={TONE[row.status]}>
                     {de.certificates.state[row.status]}
                   </Badge>
@@ -164,9 +164,9 @@ export function Certificates(props: { client: ApiClient; courseSlug?: string }) 
                     </p>
                   )}
                 </td>
-                <td className="px-3 py-2 text-sm">{shortDate(row.issuedAt)}</td>
-                <td className="px-3 py-2 text-sm">{shortDate(row.deliveredAt)}</td>
-                <td className="px-3 py-2">
+                <td className="text-sm">{shortDate(row.issuedAt)}</td>
+                <td className="text-sm">{shortDate(row.deliveredAt)}</td>
+                <td>
                   <div className="flex flex-wrap justify-end gap-2">
                     <Button
                       variant="secondary"

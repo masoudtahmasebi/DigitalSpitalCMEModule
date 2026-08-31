@@ -124,7 +124,7 @@ function Departments(props: {
         >
           {props.departments.map((department) => (
             <tr key={department.slug} className="border-b border-gray-100 align-top">
-              <td className="px-3 py-2">
+              <td>
                 {editing === department.slug ? (
                   <RenameDepartment
                     client={props.client}
@@ -139,11 +139,9 @@ function Departments(props: {
                   <span className="font-medium text-gray-900">{department.name}</span>
                 )}
               </td>
-              <td className="px-3 py-2 font-mono text-xs text-gray-600">
-                {department.slug}
-              </td>
-              <td className="px-3 py-2 text-gray-700">{department.projectCount}</td>
-              <td className="px-3 py-2 text-right">
+              <td className="font-mono text-xs text-gray-600">{department.slug}</td>
+              <td className="text-gray-700">{department.projectCount}</td>
+              <td className="text-right">
                 {editing === department.slug ? null : (
                   <Button
                     variant="secondary"

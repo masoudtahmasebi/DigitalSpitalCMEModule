@@ -186,7 +186,7 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
         >
           {rows.map((row) => (
             <tr key={row.enrolmentId} className="border-t border-gray-100 align-top">
-              <td className="px-3 py-2 text-sm">
+              <td className="text-sm">
                 {editing === row.enrolmentId ? (
                   <div className="space-y-2">
                     <Field label={de.learners.name} htmlFor={`name-${row.enrolmentId}`}>
@@ -213,21 +213,19 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
                   (row.attestedName ?? "—")
                 )}
               </td>
-              <td className="px-3 py-2 font-mono text-xs text-gray-600">
-                {row.maskedEfn ?? "—"}
-              </td>
-              <td className="px-3 py-2 text-sm">{row.courseTitle}</td>
-              <td className="px-3 py-2 text-sm tabular-nums">{row.watchedPercent} %</td>
-              <td className="px-3 py-2 text-sm tabular-nums">
+              <td className="font-mono text-xs text-gray-600">{row.maskedEfn ?? "—"}</td>
+              <td className="text-sm">{row.courseTitle}</td>
+              <td className="text-sm tabular-nums">{row.watchedPercent} %</td>
+              <td className="text-sm tabular-nums">
                 {row.quizBestPercent === null ? "—" : `${row.quizBestPercent} %`}
               </td>
-              <td className="px-3 py-2 text-sm">
+              <td className="text-sm">
                 <Badge tone={row.submissionStage === "submitted" ? "ok" : "muted"}>
                   {de.learners.stage[row.submissionStage]}
                 </Badge>
               </td>
-              <td className="px-3 py-2 text-sm">{row.certificateStatus ?? "—"}</td>
-              <td className="px-3 py-2 text-right">
+              <td className="text-sm">{row.certificateStatus ?? "—"}</td>
+              <td className="text-right">
                 {erasing === row.enrolmentId ? (
                   <div className="space-y-2">
                     <Field

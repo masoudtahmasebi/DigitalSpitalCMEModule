@@ -229,14 +229,14 @@ export function EivQueue(props: { client: ApiClient }) {
         >
           {data.items.map((row) => (
             <tr key={row.enrolmentId}>
-              <td className="px-3 py-2 font-mono text-xs">{row.efnMasked}</td>
-              <td className="px-3 py-2">
+              <td className="font-mono text-xs">{row.efnMasked}</td>
+              <td>
                 <div>{row.courseTitle ?? row.courseSlug}</div>
                 <div className="text-xs text-gray-500">
                   {de.eivQueue.vnr}&nbsp;{row.vnr}
                 </div>
               </td>
-              <td className="px-3 py-2">
+              <td>
                 <Badge tone={TONE[row.status]}>{de.eivQueue.status[row.status]}</Badge>
                 {/*
                   What EIV actually said, as a sentence naming who can fix it
@@ -273,7 +273,7 @@ export function EivQueue(props: { client: ApiClient }) {
                   </details>
                 )}
               </td>
-              <td className="px-3 py-2 text-sm tabular-nums">
+              <td className="text-sm tabular-nums">
                 {formatBerlin(row.reportDueAt)}
                 {row.dueNow ? (
                   <div className="text-xs font-medium text-brand-700">
@@ -281,8 +281,8 @@ export function EivQueue(props: { client: ApiClient }) {
                   </div>
                 ) : null}
               </td>
-              <td className="px-3 py-2 tabular-nums">{row.attemptCount}</td>
-              <td className="px-3 py-2">
+              <td className="tabular-nums">{row.attemptCount}</td>
+              <td>
                 <div className="flex justify-end gap-2">
                   {/*
                     Requeue is offered only where the worker has actually given
