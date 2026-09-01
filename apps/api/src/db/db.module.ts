@@ -30,6 +30,67 @@ import { RateLimiter, RedisRateLimitStore } from "../shared/rate-limit.js";
           // Bounded so a leak (a missing client.release()) degrades instead of
           // exhausting Postgres connections outright.
           max: 10,
+
+          /*
+           * Deadlines, because a request that cannot be served must **fail**
+           * rather than hang (P141-01).
+           *
+           * `max: 10` bounded the pool and its comment said that made a leak
+           * "degrade". It did not. `pg`'s default `connectionTimeoutMillis` is
+           * **0 — wait for ever** — so once those ten were busy or blocked,
+           * the next caller waited with no error, no log line and no end.
+           *
+           * What blocked them is P142 and is fixed there: a handler holding the
+           * request transaction asks the same pool for a **second** connection
+           * to write the audit row, so ten concurrent requests deadlock. This
+           * is the backstop, not the fix — but it is the difference between a
+           * 22-hour silent outage and a 500 with a reason.
+           *
+           * That is what the client saw twice. The browser showed `(pending)`
+           * with 0 bytes on every `/admin/*` call while the `OPTIONS` preflight
+           * for the same path answered 204 in 30 ms — preflight short-circuits
+           * in CORS middleware and never reaches the database. It is also why
+           * the container sat `unhealthy` for 22 hours: `/health` runs
+           * `SELECT 1`, which hung, so the probe timed out while Caddy, the
+           * static bundles and the object storage carried on.
+           *
+           * A hang is worse than an error in three separate ways, and all three
+           * happened: nothing is logged, so there is no evidence afterwards;
+           * the connection is held, so the next request inherits the problem;
+           * and the browser spends one of its six sockets per origin on it, so
+           * a handful of stuck calls take down every screen rather than one.
+           *
+           * The three limits answer three different questions, and none
+           * substitutes for another:
+           */
+
+          /** How long to wait for a free connection before giving up. */
+          connectionTimeoutMillis: 5_000,
+
+          /**
+           * How long **the server** lets one statement run. Enforced by
+           * Postgres, so it applies to a query blocked on a lock — which a
+           * client-side timer cannot cancel, only stop waiting for.
+           *
+           * Thirty seconds rather than the five a query should take: this is a
+           * backstop against a wedge, not a performance budget. A number tight
+           * enough to be interesting is a number that eventually fails a CSV
+           * export at month end, and a limit somebody raises in an incident is
+           * a limit that is not there.
+           */
+          statement_timeout: 30_000,
+
+          /**
+           * And how long a transaction may sit open doing nothing.
+           *
+           * Two minutes, deliberately loose, because the RLS transaction wraps
+           * the **whole request** (`TenantTransactionInterceptor`) — so it is
+           * legitimately idle-in-transaction for as long as a handler is
+           * talking to object storage, and assembling a 2 GB multipart upload
+           * is not fast. Tighter than this kills a real upload; absent, an
+           * abandoned `BEGIN` holds its locks until the process dies.
+           */
+          idle_in_transaction_session_timeout: 120_000,
           /*
            * Without this the API dies whenever Postgres closes an idle
            * connection (P76-04).
