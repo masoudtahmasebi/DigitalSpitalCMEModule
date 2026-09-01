@@ -106,6 +106,35 @@ export function migrationDatabaseUrl(): string {
 }
 
 /**
+ * The narrow reader's connection string (P149-01).
+ *
+ * `ds_schema_reader` may `SELECT` on `schema_migrations` and nothing else
+ * (migration 0049). It exists so a process running as the application can ask
+ * "is this database migrated?" without either widening `ds_app` — which owns
+ * nothing, ADR-0002 — or being handed the migrator's credentials, which would
+ * give a request-serving container the ability to rewrite the schema.
+ *
+ * Unset is a hard error rather than a skip. A schema check that quietly does
+ * nothing when its credential is missing is worse than no check: it reports
+ * success on exactly the misconfigured installation it was added for (§9.1).
+ * `bootstrap-admin` is allowed to fail closed; nothing downstream of it is
+ * time-critical. `subject-erasure` takes the opposite decision, on purpose, and
+ * says why at its own call site.
+ */
+export function schemaReaderDatabaseUrl(): string {
+  const connectionString = process.env["SCHEMA_READER_DATABASE_URL"];
+  if (connectionString === undefined || connectionString === "") {
+    throw new Error(
+      "SCHEMA_READER_DATABASE_URL is required (the ds_schema_reader role). " +
+        "It is set on the `api` service in infra/deploy/docker-compose.prod.yml " +
+        "and infra/docker-compose.apps.yml; an installation deployed before " +
+        "P149 needs one `./deploy.sh` to pick it up.",
+    );
+  }
+  return connectionString;
+}
+
+/**
  * Throw unless the database has applied every migration this image carries.
  *
  * Called before the first write of any entrypoint that is not the migrator

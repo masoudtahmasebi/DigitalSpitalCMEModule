@@ -58,6 +58,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createPool } from "@ds/postgres";
 import { hashPassword } from "./modules/staff/credentials.js";
+import { assertSchemaCurrent, schemaReaderDatabaseUrl } from "./schema-freshness.js";
 
 /* eslint-disable no-console -- this is a CLI; its output is the point. */
 
@@ -136,37 +137,42 @@ async function main(): Promise<void> {
   }
 
   /*
-   * ## Why this does NOT call `assertSchemaCurrent`, though every seed does
+   * The schema must be the one this code was written against (P149-01).
    *
-   * P147 added that call here on the reasoning that a fresh host is exactly
-   * where a migration may not have run. The reasoning is sound and the change
-   * was wrong, and the e2e rig found it within one run of the rig existing:
+   * ## The history, because this line has been wrong twice
    *
-   *     Bootstrap failed: MIGRATION_DATABASE_URL is required (the ds_migrator
-   *     role). Run this through `./dsc as-migrator` …
-   *
-   * `assertSchemaCurrent` reads `schema_migrations`, on which `ds_app` holds no
-   * `GRANT` — deliberately (ADR-0002: the application role owns nothing and is
-   * not the migrator). So the check needs migrator credentials, and this
-   * command's documented invocation is
+   * P147 added it reading `MIGRATION_DATABASE_URL`. That broke first boot on
+   * every fresh host: the documented invocation is
    *
    *     docker compose run --rm --entrypoint node api dist/bootstrap-admin.js
    *
-   * which runs in the **api** service, where `MIGRATION_DATABASE_URL` is not
-   * set and must not be. The fix therefore turned the platform's first-boot
-   * step into a hard failure on every fresh host — the §9.2 shape, in the one
-   * command an operator runs before anything else works.
+   * which runs in the `api` service, where the migrator's URL is not set and
+   * must not be — a request-serving container that can rewrite the schema is a
+   * worse problem than the one being solved. P148 reverted it.
    *
-   * The exposure it was guarding is also much smaller here than for a seed: the
-   * seeds are run by hand, months later, against whatever schema the host has;
-   * this runs seconds after `deploy.sh` has migrated. That asymmetry is why the
-   * seeds keep the check and this does not.
+   * Reading it as `ds_app` was the other obvious fix and is also wrong:
+   * `ds_app` holds no grant on `schema_migrations` (ADR-0002, the application
+   * role owns nothing), and widening it for a diagnostic is a permanent cost
+   * for a one-command benefit.
    *
-   * Giving `ds_app` a `GRANT` on `schema_migrations` would make the check
-   * possible and is not obviously right — it widens the application role for a
-   * diagnostic. Recorded in P148 as a decision for a human rather than taken
-   * here.
+   * So: `ds_schema_reader`, a login role whose entire authority is
+   * `SELECT ON schema_migrations` (migration 0049). Its URL is on the `api`
+   * service in both compose files, and `check:runtime-config` fails if it goes
+   * missing — which is the check P148-01 did not have.
+   *
+   * ## Why this may refuse to run
+   *
+   * It fails closed, deliberately. Without it the failure is P43-02's shape —
+   * an error naming an innocent statement, "column display_name does not
+   * exist", to somebody whose actual problem is an un-migrated database on
+   * their first five minutes with the platform. Nothing downstream of
+   * bootstrap is time-critical, so stopping is the right answer here.
+   *
+   * `subject-erasure` makes the opposite choice for the opposite reason
+   * (P149-02): a statutory erasure has a one-month deadline and must never be
+   * blocked by a diagnostic.
    */
+  await assertSchemaCurrent(schemaReaderDatabaseUrl());
 
   // `createPool`, not `new Pool` — see @ds/postgres (P76-04).
   const pool = createPool({ connectionString });

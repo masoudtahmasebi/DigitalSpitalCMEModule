@@ -342,7 +342,15 @@ describe("2 · the first operator", () => {
         "--name",
         "Technik",
       ],
-      { env: { ...process.env, DATABASE_URL: pointAt(SUPERUSER_URL, DB) }, cwd: REPO },
+      {
+        env: {
+          ...process.env,
+          DATABASE_URL: pointAt(SUPERUSER_URL, DB),
+          // The schema-freshness reader (P149-01); see support/staff.ts.
+          SCHEMA_READER_DATABASE_URL: pointAt(SUPERUSER_URL, DB),
+        },
+        cwd: REPO,
+      },
     );
 
     // `    Passwort  <value>` — the CLI's own format, asserted here so that a
@@ -363,7 +371,15 @@ describe("2 · the first operator", () => {
           "--name",
           "Zwei",
         ],
-        { env: { ...process.env, DATABASE_URL: pointAt(SUPERUSER_URL, DB) }, cwd: REPO },
+        {
+          env: {
+            ...process.env,
+            DATABASE_URL: pointAt(SUPERUSER_URL, DB),
+            // The schema-freshness reader (P149-01); see support/staff.ts.
+            SCHEMA_READER_DATABASE_URL: pointAt(SUPERUSER_URL, DB),
+          },
+          cwd: REPO,
+        },
       ),
     ).rejects.toThrow();
 

@@ -35,7 +35,10 @@
  */
 
 import pg from "pg";
+import type { Pool } from "pg";
 import { createPool } from "@ds/postgres";
+import { assertSchemaCurrent } from "./schema-freshness.js";
+import { withDeadline } from "./shared/deadline-fetch.js";
 
 interface Args {
   subject?: string;
@@ -159,6 +162,121 @@ async function resolveUserId(pool: pg.Pool, args: Args): Promise<string> {
   return rows[0]!.user_id;
 }
 
+/**
+ * Ask whether the schema is current, and never let the answer stop an erasure
+ * (P149-02).
+ *
+ * ## The decision, as given
+ *
+ * P148-03 flagged that this tool does not assert schema freshness while every
+ * seed does, and `schema-freshness.ts`'s own header names "the erasure tool".
+ * A human decided it should — and that it must **never** refuse:
+ *
+ * > If the schema check fails … log a clear, high-visibility warning and
+ * > PROCEED WITH THE ERASURE ANYWAY. The erasure must never be delayed or
+ * > refused because of this check, given the statutory one-month deadline.
+ *
+ * `bootstrap-admin` runs the same check and fails **closed** (P149-01). The
+ * difference is not the code, it is the deadline: nothing downstream of a
+ * bootstrap is time-critical, and a data subject's Article 17 right is.
+ *
+ * ## Why this returns instead of throwing
+ *
+ * A `try`/`catch` around the call site would work and would be one `return`
+ * away from a future edit that lets an exception escape. A function that
+ * *cannot* fail makes the guarantee structural: every path here ends in a
+ * value, and `main` has nothing to catch.
+ */
+async function schemaCheckOutcome(): Promise<{ ok: boolean; reason?: string }> {
+  const url = process.env["SCHEMA_READER_DATABASE_URL"];
+  if (url === undefined || url === "") {
+    return {
+      ok: false,
+      reason:
+        "SCHEMA_READER_DATABASE_URL is not set, so schema freshness could not be checked",
+    };
+  }
+
+  try {
+    await assertSchemaCurrent(url);
+    return { ok: true };
+  } catch (error) {
+    // The message only. A connection string carries a password, and this text
+    // reaches a log, a webhook and an audit row.
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : "unknown error",
+    };
+  }
+}
+
+/**
+ * Say that the erasure went ahead on a schema nobody could verify.
+ *
+ * Three places, because each fails differently: the terminal the operator is
+ * standing at, the webhook that reaches somebody who is not, and an
+ * append-only row that outlives both. §9.10a — a warning with one audience is
+ * a warning nobody receives.
+ *
+ * Every one of them is best-effort. This function throws nothing: it runs
+ * *because* something already went wrong, and turning that into a second
+ * failure would take the erasure with it.
+ */
+async function reportUnverifiedSchema(
+  pool: Pool,
+  userId: string,
+  reason: string,
+  now: Date,
+): Promise<void> {
+  const at = now.toISOString();
+  const text =
+    `GDPR erasure proceeded on an UNVERIFIED SCHEMA at ${at}. ` +
+    `subject=${userId}. The schema check said: ${reason}. ` +
+    `The erasure was not delayed — this is by design (P149-02) — but the ` +
+    `database may be older than the code that erased against it, so confirm ` +
+    `the erasure covered every column the current schema has.`;
+
+  // eslint-disable-next-line no-console -- this is a CLI; its output is the point
+  console.error(`\n!! ${text}\n`);
+
+  const webhook = process.env["ALERT_WEBHOOK_URL"];
+  if (webhook !== undefined && webhook !== "") {
+    try {
+      await withDeadline()(webhook, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        // The same envelope `EivAlertService` posts, so one receiver can read
+        // both without knowing which subsystem spoke.
+        body: JSON.stringify({
+          source: "ds-education",
+          kind: "gdpr_erasure_unverified_schema",
+          level: "warning",
+          text,
+          userId,
+          at,
+        }),
+      });
+    } catch {
+      // eslint-disable-next-line no-console -- see above
+      console.error("!! the alert webhook could not be reached either.");
+    }
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO audit_log (customer_id, actor_id, actor_identity, action, subject, detail)
+       VALUES (NULL, NULL, 'system', 'gdpr.erasure_schema_check_failed', $1, $2::jsonb)`,
+      [userId, JSON.stringify({ reason, at })],
+    );
+  } catch (error) {
+    // eslint-disable-next-line no-console -- see above
+    console.error(
+      "!! and the audit row could not be written:",
+      error instanceof Error ? error.message : "unknown error",
+    );
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
 
@@ -195,6 +313,19 @@ async function main(): Promise<void> {
       // eslint-disable-next-line no-console -- see above
       console.log("Dry run. Re-run with --confirm to erase. This cannot be undone.");
       return;
+    }
+
+    /*
+     * The schema check, which may warn and may never refuse (P149-02).
+     *
+     * Placed after `--confirm` so a dry run does not alarm anybody, and before
+     * `erase_subject` so the audit row exists even if the erasure itself then
+     * fails — an operator reading the log afterwards needs to know the schema
+     * was unverified whichever way the next statement went.
+     */
+    const schema = await schemaCheckOutcome();
+    if (!schema.ok) {
+      await reportUnverifiedSchema(pool, userId, schema.reason ?? "unknown", new Date());
     }
 
     const { rows } = await pool.query("SELECT * FROM erase_subject($1, $2)", [

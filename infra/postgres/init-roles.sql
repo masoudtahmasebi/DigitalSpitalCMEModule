@@ -70,6 +70,37 @@ BEGIN
     CREATE ROLE ds_app LOGIN PASSWORD 'ds_app_dev' NOBYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE;
   END IF;
 
+  /*
+   * `ds_schema_reader` — one table, SELECT only, nothing else (P149-01).
+   *
+   * It exists so an entrypoint running as the application can ask "is this
+   * database migrated?" without either widening `ds_app` or being handed the
+   * migrator's credentials.
+   *
+   * P148-01 is why. `bootstrap-admin` was given `assertSchemaCurrent`, which
+   * reads `schema_migrations`; `ds_app` has no grant on it (ADR-0002 — the
+   * application role owns nothing), and the documented invocation runs in the
+   * `api` service where `MIGRATION_DATABASE_URL` is not set and must not be.
+   * The platform's first-boot command became a hard failure on every fresh
+   * host.
+   *
+   * The two obvious fixes were both refused by a human: granting `ds_app` the
+   * read widens the application role for a diagnostic, and handing the api
+   * container the migrator's URL gives a request-serving process the ability to
+   * rewrite the schema. This is the third option — a role that can do exactly
+   * one harmless thing.
+   *
+   * `LOGIN`, because it is connected as. `NOBYPASSRLS NOSUPERUSER NOCREATEDB
+   * NOCREATEROLE`, like `ds_app`, and it is granted nothing anywhere else: the
+   * single `GRANT SELECT ON schema_migrations` lives in migration 0049. If that
+   * grant were ever dropped the check fails closed, which is the behaviour
+   * `bootstrap-admin` wants.
+   */
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'ds_schema_reader') THEN
+    CREATE ROLE ds_schema_reader LOGIN PASSWORD 'ds_schema_reader_dev'
+      NOBYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE;
+  END IF;
+
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'ds_binding_resolver') THEN
     CREATE ROLE ds_binding_resolver NOLOGIN BYPASSRLS;
   END IF;
@@ -113,6 +144,7 @@ $$;
 
 \getenv ds_migrator_password DS_MIGRATOR_PASSWORD
 \getenv ds_app_password DS_APP_PASSWORD
+\getenv ds_schema_reader_password DS_SCHEMA_READER_PASSWORD
 
 \if :{?ds_migrator_password}
 ALTER ROLE ds_migrator PASSWORD :'ds_migrator_password';
@@ -120,6 +152,15 @@ ALTER ROLE ds_migrator PASSWORD :'ds_migrator_password';
 
 \if :{?ds_app_password}
 ALTER ROLE ds_app PASSWORD :'ds_app_password';
+\endif
+
+-- The third login role (P149-01). Without this line the role would come up on
+-- production holding `ds_schema_reader_dev`, which is published in this file,
+-- and `DS_SCHEMA_READER_PASSWORD` from the deployment secrets would go unused —
+-- exactly the failure the paragraph above describes, repeated for a new role
+-- because somebody added the CREATE and not the ALTER.
+\if :{?ds_schema_reader_password}
+ALTER ROLE ds_schema_reader PASSWORD :'ds_schema_reader_password';
 \endif
 
 GRANT ds_binding_resolver TO ds_migrator;

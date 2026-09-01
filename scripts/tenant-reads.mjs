@@ -91,6 +91,18 @@ const ALLOWED = [
       "so the customers table itself is never read outside a tenant context.",
   },
   {
+    file: "apps/api/src/subject-erasure.ts",
+    reason:
+      "The one write here is the P149-02 audit row saying an erasure proceeded " +
+      "on an unverified schema. It runs as ds_migrator, outside any tenant " +
+      "context by design — an erasure spans customers, which is why the whole " +
+      "tool refuses to run as ds_app — and it inserts customer_id NULL, the " +
+      "same shape AuditService.recordSystem uses for events with no tenant. " +
+      "0014_policies_tolerate_empty_context.sql is what makes that row legal. " +
+      "Wrapping it in runInTenant would require inventing a customer for a " +
+      "cross-customer fact.",
+  },
+  {
     file: "apps/api/src/modules/projects/project-binding.repository.ts",
     reason:
       "resolve() runs before a tenant context can exist — it is what decides " +

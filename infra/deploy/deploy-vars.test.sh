@@ -270,6 +270,36 @@ if ! grep -q '^[[:space:]]*@metrics path /metrics /metrics/\*' Caddyfile ||
   printf '     respond @metrics 404\n\n' >&2
 fi
 
+# --- the api service carries the schema reader's URL (P149-01) -------------
+#
+# P148-01 in one assertion. `bootstrap-admin` asserts schema freshness through
+# `SCHEMA_READER_DATABASE_URL`, and that variable reaches it from the `api`
+# service's own environment — not from a `compose run -e`, because the operator
+# runs the documented line by hand and it carries no `-e`.
+#
+# The previous attempt read `MIGRATION_DATABASE_URL`, which is set on no compose
+# service at all, and the platform's first-boot command failed on every fresh
+# host. Nothing caught it because nothing compared "what the code reads" with
+# "what the service provides". This is that comparison, for the one variable
+# whose absence has already cost a release.
+for compose in docker-compose.prod.yml ../docker-compose.apps.yml; do
+  if ! grep -q "SCHEMA_READER_DATABASE_URL" "$compose"; then
+    failed=$((failed + 1))
+    printf 'xx %s does not give the api service SCHEMA_READER_DATABASE_URL\n' "$compose" >&2
+    printf '   `bootstrap-admin` reads it before its first write and fails\n' >&2
+    printf '   closed without it — which is P148-01, exactly.\n\n' >&2
+  fi
+done
+
+# And the role's password must reach the postgres container, or `init-roles.sql`
+# leaves the role holding the development literal published in that file.
+if ! grep -q "DS_SCHEMA_READER_PASSWORD:" docker-compose.prod.yml; then
+  failed=$((failed + 1))
+  printf 'xx docker-compose.prod.yml does not pass DS_SCHEMA_READER_PASSWORD to postgres\n' >&2
+  printf '   `init-roles.sql` reads it with \\getenv; without it the role keeps\n' >&2
+  printf '   the dev password that is committed to this repository.\n\n' >&2
+fi
+
 if [[ "$failed" == "0" ]]; then
   printf '\n%s shell + %s compose references checked, all guaranteed\n' \
     "${#referenced[@]}" "${#compose_bare[@]}"

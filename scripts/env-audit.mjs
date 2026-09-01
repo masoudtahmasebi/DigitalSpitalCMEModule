@@ -87,6 +87,14 @@ const READ_WITHOUT_DOCUMENTATION = new Set([
   "DS_APP_PASSWORD_URL",
   "DS_MIGRATOR_PASSWORD",
   "DS_MIGRATOR_PASSWORD_URL",
+  // The schema reader (P149-01). Same class as the two above: generated into
+  // secrets.env by `secrets.sh`, never set by a human. `SCHEMA_READER_DATABASE_URL`
+  // is assembled from it inside the compose file, exactly as DATABASE_URL is
+  // from DS_APP_PASSWORD_URL — documenting either would invite somebody to set
+  // it by hand and get a role and a URL that disagree.
+  "DS_SCHEMA_READER_PASSWORD",
+  "DS_SCHEMA_READER_PASSWORD_URL",
+  "SCHEMA_READER_DATABASE_URL",
   "POSTGRES_SUPERUSER_PASSWORD_URL",
   "BACKUP_ENCRYPTION_KEY",
   "BACKUP_DATABASE_URL",
