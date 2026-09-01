@@ -33,6 +33,7 @@
  */
 
 import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { pendingMigrations } from "@ds/migrator";
 
@@ -40,8 +41,49 @@ import { pendingMigrations } from "@ds/migrator";
  * Copied next to the compiled output by the Dockerfile — the same directory
  * `db-migrate.ts` applies from, so "pending" here means exactly "pending for
  * the migrator in this image".
+ *
+ * ## And the repository checkout, when this runs from source (P147-02)
+ *
+ * `join(dirname(here), "migrations")` is right in the image and wrong
+ * everywhere else: run through `tsx` from `apps/api/src/`, it looks for
+ * `apps/api/src/migrations`, which has never existed. Nothing noticed because
+ * every existing caller is a `dist/` entrypoint — until `bootstrap-admin`
+ * started asserting, and the journey suite runs *that* from source.
+ *
+ * The failure was `ENOENT: scandir '.../apps/api/src/migrations'`, which is
+ * §9.9's shape one more time: an error naming the wrong thing. It reads as a
+ * missing directory; it is a path that means two different things in two
+ * environments.
+ *
+ * So: the image's directory when it exists, and the checkout's `db/migrations`
+ * otherwise. Resolved once, at module load, so a caller cannot get a different
+ * answer than the check it is about to run.
  */
-const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "migrations");
+const MIGRATIONS_DIR = resolveMigrationsDir();
+
+function resolveMigrationsDir(): string {
+  const beside = join(dirname(fileURLToPath(import.meta.url)), "migrations");
+  if (existsSync(beside)) return beside;
+
+  // `apps/api/src` → repository root → `db/migrations`. Checked rather than
+  // assumed: returning a path that does not exist would move the same ENOENT
+  // three lines later and explain nothing.
+  const fromCheckout = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "..",
+    "db",
+    "migrations",
+  );
+  if (existsSync(fromCheckout)) return fromCheckout;
+
+  throw new Error(
+    `schema-freshness: no migrations directory at ${beside} or ${fromCheckout}. ` +
+      `In the image they sit beside the compiled output; in a checkout they are ` +
+      `db/migrations. Neither is present, so the schema check cannot run.`,
+  );
+}
 
 /**
  * Read `MIGRATION_DATABASE_URL`, or say which variable is missing.

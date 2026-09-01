@@ -58,6 +58,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createPool } from "@ds/postgres";
 import { hashPassword } from "./modules/staff/credentials.js";
+import { assertSchemaCurrent, migrationDatabaseUrl } from "./schema-freshness.js";
 
 /* eslint-disable no-console -- this is a CLI; its output is the point. */
 
@@ -134,6 +135,27 @@ async function main(): Promise<void> {
   if (connectionString === undefined || connectionString === "") {
     throw new Error("DATABASE_URL is required");
   }
+
+  /*
+   * The schema must be the one this code was written against (QA §9.4, §9.9).
+   *
+   * Every seed asserts this and this did not, which is the more dangerous
+   * omission of the two: `bootstrap-admin` is what a person runs on a **fresh
+   * host**, before anything else works, and a fresh host is exactly where a
+   * migration may not have run yet.
+   *
+   * Without it the failure is P43-02's shape — an error naming an innocent
+   * statement. `./dsc seed ds` answered "new row for relation projects violates
+   * check constraint projects_identity_provider_check", which was true, was
+   * about the seed, and was not the problem: the constraint had been replaced
+   * by a migration the deploy never ran. A schema older than the code writing
+   * to it fails somewhere deep and blames the writer.
+   *
+   * Here that would read as "column display_name does not exist" to somebody
+   * whose actual problem is an un-migrated database, on their first five
+   * minutes with the platform.
+   */
+  await assertSchemaCurrent(migrationDatabaseUrl());
 
   // `createPool`, not `new Pool` — see @ds/postgres (P76-04).
   const pool = createPool({ connectionString });

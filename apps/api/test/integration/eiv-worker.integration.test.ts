@@ -492,3 +492,66 @@ describe("the deadline alarm finds what it needs to find", () => {
     expect(raised[0]?.hoursRemaining).toBeGreaterThan(48);
   });
 });
+
+describe("a failed attempt is audited too (QA §7.9, CLAUDE.md §4 invariant 8)", () => {
+  /*
+   * The invariant is "**every** EIV submission attempt is written to an
+   * append-only audit log, **including failures**". Only the success half was
+   * asserted — `eiv.submitted`, above — and a suite that proves the happy path
+   * writes a row proves nothing about the path that matters most.
+   *
+   * A failure is the case an auditor actually asks about: a Punktemeldung that
+   * did not land, on a physician's record, against a statutory deadline. If
+   * that attempt leaves no trace, the log answers "we never tried", which is
+   * both false and unfalsifiable.
+   *
+   * The failure is produced by pointing the worker at a **closed local port**
+   * rather than by asking the mock to misbehave: the mock's `x-mock-behaviour`
+   * switch is a request header the harness sets and the worker does not, so
+   * using it here would test the harness. A refused connection is what an
+   * unreachable EIV-FOBI looks like from this process, and `127.0.0.1` stays
+   * inside the `allowLive` guard.
+   */
+  it("records eiv.attempt_failed, carrying neither the EFN nor the VNR password", async () => {
+    await freshUser();
+    const { submissionId } = await queueSubmission();
+
+    // Port 1 is reserved and nothing listens on it: connect() is refused
+    // immediately, so this costs no wall-clock time.
+    const unreachable = new EivService(
+      new EivRepository(appPool, new PlaintextSecretCipher("test")),
+      new EivAccreditationReporter(),
+      new AuditService(appPool),
+      {
+        baseUrl: "http://127.0.0.1:1",
+        batchSize: 25,
+        allowLive: false,
+        leaseSeconds: 120,
+      },
+    );
+
+    await unreachable.sweep(new Date());
+
+    const row = await readSubmission(submissionId);
+    expect(row.status).not.toBe("submitted");
+    expect(row.attempt_count).toBeGreaterThanOrEqual(1);
+
+    const { rows } = await seedPool.query<{ action: string; detail: unknown }>(
+      `SELECT action, detail FROM audit_log
+        WHERE customer_id = $1 AND action = 'eiv.attempt_failed'
+        ORDER BY created_at DESC LIMIT 1`,
+      [customerId],
+    );
+
+    expect(rows, "a failed attempt left no audit row").toHaveLength(1);
+
+    const detail = JSON.stringify(rows[0]!.detail);
+    // ADR-0004: the EFN never reaches a log, an audit detail, or an error
+    // message. Neither does the VNR password (§4 invariant 7).
+    expect(detail).not.toContain(EFN);
+    expect(detail).not.toContain(VNR_PASSWORD);
+    // And it says enough to act on: which attempt, and why it failed.
+    expect(detail).toMatch(/attemptCount/u);
+    expect(detail).toMatch(/failure/u);
+  });
+});
