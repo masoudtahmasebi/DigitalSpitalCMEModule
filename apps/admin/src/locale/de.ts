@@ -341,6 +341,9 @@ export const german = {
      */
     platformMailTestFailed: (reason: string): string =>
       `Der Versand ist fehlgeschlagen. Meldung des Servers: ${reason}`,
+    /* A 4xx: the server answered and said no. Never "check your connection". */
+    platformMailTestRefused:
+      "Die Anfrage wurde abgelehnt. Bitte laden Sie die Seite neu und melden Sie sich gegebenenfalls erneut an — nur Super-Administratoren dürfen den Plattform-Absender ändern und testen.",
     platformMailTestUnreachable:
       "Die Anfrage konnte nicht gestellt werden. Bitte prüfen Sie Ihre Verbindung und ob Sie noch angemeldet sind.",
 

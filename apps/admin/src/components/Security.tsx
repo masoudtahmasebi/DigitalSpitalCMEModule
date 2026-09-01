@@ -371,7 +371,7 @@ function PlatformSenderPanel(props: { apiBase: string }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<
     | {
-        status: "sent" | "not_configured" | "failed" | "unreachable";
+        status: "sent" | "not_configured" | "failed" | "unreachable" | "refused";
         reason?: string;
         sentTo?: string;
       }
@@ -559,7 +559,9 @@ function PlatformSenderPanel(props: { apiBase: string }) {
                 ? de.security.platformMailTestNotConfigured
                 : testResult.status === "failed"
                   ? de.security.platformMailTestFailed(testResult.reason ?? "")
-                  : de.security.platformMailTestUnreachable}
+                  : testResult.status === "refused"
+                    ? de.security.platformMailTestRefused
+                    : de.security.platformMailTestUnreachable}
           </Notice>
         )}
       </form>

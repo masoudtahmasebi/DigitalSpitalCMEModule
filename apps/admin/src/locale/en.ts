@@ -287,6 +287,8 @@ export const en: DeepPartial<typeof german> = {
     platformMailTestSending: "Sending test email …",
     platformMailTestNotConfigured:
       "No delivery is configured. Server and sender address are required.",
+    platformMailTestRefused:
+      "The request was refused. Reload the page and sign in again if needed — only super administrators may change and test the platform sender.",
     platformMailTestUnreachable:
       "The request could not be made. Please check your connection and whether you are still signed in.",
 
