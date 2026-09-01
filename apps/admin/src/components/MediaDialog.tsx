@@ -80,6 +80,13 @@ export function MediaDialog(props: {
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("library");
+  // Owned here, not by the tab, so a tab switch cannot unmount it (P150-02).
+  const upload = useUploadController(
+    props.client,
+    props.purpose,
+    props.courseSlug,
+    props.onPick,
+  );
 
   return (
     <Modal label={de.media.dialogTitle} onClose={props.onClose}>
@@ -115,6 +122,25 @@ export function MediaDialog(props: {
         ))}
       </div>
 
+      {/*
+       * Visible from every tab, not only the one that started it (P150-02).
+       *
+       * The tab panel below still renders its own progress when `upload` is on
+       * the upload tab; this is what a person sees while they are looking at
+       * the Mediathek — which is precisely where the reported confusion
+       * happened.
+       */}
+      {upload.state.kind === "busy" && tab !== "upload" ? (
+        <div className="mt-3">
+          <UploadProgress
+            percent={upload.state.percent}
+            label={de.uploads.progress}
+            cancelLabel={de.uploads.cancel}
+            onCancel={upload.cancel}
+          />
+        </div>
+      ) : null}
+
       <div className="mt-3">
         {tab === "library" ? (
           <LibraryTab
@@ -127,10 +153,9 @@ export function MediaDialog(props: {
           />
         ) : tab === "upload" ? (
           <UploadTab
-            client={props.client}
             purpose={props.purpose}
             courseSlug={props.courseSlug}
-            onUploaded={props.onPick}
+            upload={upload}
           />
         ) : (
           <UrlTab onSubmit={(url) => props.onPick(url, mimeTypeForUrl(url) ?? "")} />
@@ -239,20 +264,42 @@ function LibraryTab(props: {
  * visible one is the drop target's own label — one control instead of two that
  * have to agree.
  */
-function UploadTab(props: {
-  client: ApiClient;
-  purpose: UploadPurpose;
-  courseSlug: string | undefined;
-  onUploaded: (reference: string, mimeType: string) => void;
-}) {
+/** The in-flight upload, owned by the dialog so no tab can unmount it. */
+interface UploadController {
+  readonly state: Upload;
+  readonly start: (file: File) => void;
+  readonly cancel: () => void;
+}
+
+/**
+ * One upload per dialog, outliving every tab (P150-02).
+ *
+ * Two properties, and the second is the one that costs money:
+ *
+ * 1. **The progress survives a tab switch.** The request always did — nothing
+ *    aborts it on unmount — so the only thing that disappeared was the
+ *    person's ability to see it.
+ * 2. **A second upload cannot start while the first is running.** `start`
+ *    refuses when busy. Even if the indicator were somehow lost again, a
+ *    duplicate multi-gigabyte PUT cannot be launched from this dialog: wasted
+ *    bandwidth, wasted storage, and two objects to reconcile afterwards.
+ */
+export function useUploadController(
+  client: ApiClient,
+  purpose: UploadPurpose,
+  courseSlug: string | undefined,
+  onUploaded: (reference: string, mimeType: string) => void,
+): UploadController {
   const [state, setState] = useState<Upload>({ kind: "idle" });
-  const [over, setOver] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | undefined>(undefined);
+  const busy = state.kind === "busy";
 
   const start = useCallback(
     (file: File): void => {
-      if (props.courseSlug === undefined) return;
+      if (courseSlug === undefined) return;
+      // The guard the report is really about. Without it, a person who cannot
+      // see the first upload starts a second one.
+      if (busy) return;
 
       const controller = new AbortController();
       abort.current = controller;
@@ -261,26 +308,48 @@ function UploadTab(props: {
       void (async () => {
         try {
           const result = await runUpload(
-            props.client,
-            props.courseSlug ?? "",
-            props.purpose,
+            client,
+            courseSlug,
+            purpose,
             file,
             (percent) => setState({ kind: "busy", percent }),
             controller.signal,
           );
           setState({ kind: "idle" });
-          props.onUploaded(result.reference, result.mimeType);
+          onUploaded(result.reference, result.mimeType);
         } catch (error) {
           setState({ kind: "failed", message: describeUploadFailure(error) });
         } finally {
           abort.current = undefined;
-          // So picking the same file again after a failure still fires `change`.
-          if (input.current !== null) input.current.value = "";
         }
       })();
     },
-    [props],
+    [busy, client, courseSlug, onUploaded, purpose],
   );
+
+  const cancel = useCallback(() => abort.current?.abort(), []);
+
+  return { state, start, cancel };
+}
+
+function UploadTab(props: {
+  purpose: UploadPurpose;
+  courseSlug: string | undefined;
+  /**
+   * The upload lives one level up, and that is the whole of P150-02.
+   *
+   * It used to be `useState` here — so switching to the Mediathek tab
+   * unmounted this component and took the `busy` state with it, while the PUT
+   * itself carried on (nothing aborts it). The person was left looking at an
+   * idle file picker over a live multi-gigabyte upload, and the reporter named
+   * the consequence exactly: *"he may try to do a new upload, as he is not
+   * seeing the progress"*.
+   */
+  upload: UploadController;
+}) {
+  const [over, setOver] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const { state, start } = props.upload;
 
   if (state.kind === "busy") {
     return (
@@ -288,7 +357,7 @@ function UploadTab(props: {
         percent={state.percent}
         label={de.uploads.progress}
         cancelLabel={de.uploads.cancel}
-        onCancel={() => abort.current?.abort()}
+        onCancel={props.upload.cancel}
       />
     );
   }

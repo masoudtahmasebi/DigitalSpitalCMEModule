@@ -23,11 +23,13 @@
  * person who does find out is the one who cannot work around it.
  */
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, type ApiClient, type MediaAsset } from "@ds/sdk";
 import { MediaDialog } from "./MediaDialog.js";
+import { de } from "../locale/de.js";
+import type * as UploadsModule from "../uploads.js";
 
 afterEach(cleanup);
 
@@ -281,5 +283,133 @@ describe("what a modal owes the person using it", () => {
     unmount();
     expect(document.activeElement).toBe(opener);
     opener.remove();
+  });
+});
+
+describe("an upload that is still in flight when the tab changes (P150-02)", () => {
+  /*
+   * Reported with a network panel: a multi-gigabyte PUT still `(pending)` while
+   * the dialog showed no progress at all, because switching to *Mediathek* and
+   * back unmounted `UploadTab` and took its `busy` state with it. The request
+   * itself keeps running — nothing aborts it — so the person sees an idle file
+   * picker over a live upload.
+   *
+   * The consequence the reporter named is the one that matters: *"he may try to
+   * do a new upload, as he is not seeing the progress"*. A duplicate
+   * multi-gigabyte upload is worse than a missing bar — wasted bandwidth,
+   * wasted storage, and two objects to reconcile.
+   */
+  function pickFile() {
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+    if (input === null) throw new Error("no file input on the upload tab");
+    const file = new File([new Uint8Array(8)], "modul-1.mp4", { type: "video/mp4" });
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    fireEvent.change(input);
+    return file;
+  }
+
+  const toTab = (name: RegExp) => fireEvent.click(screen.getByRole("tab", { name }));
+
+  it("keeps showing the upload after a tab switch, and refuses a second one", async () => {
+    // A promise that never settles: the upload is in flight for the whole test.
+    let started = 0;
+    const runUpload = vi.fn(() => {
+      started += 1;
+      return new Promise<never>(() => undefined);
+    });
+    vi.doMock("../uploads.js", async () => ({
+      ...(await vi.importActual<typeof UploadsModule>("../uploads.js")),
+      runUpload,
+    }));
+    vi.resetModules();
+    const { MediaDialog: Dialog } = await import("./MediaDialog.js");
+
+    render(
+      <Dialog
+        client={client()}
+        kind="video"
+        purpose="video"
+        courseSlug="adhs"
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    toTab(/hochladen|upload/iu);
+    pickFile();
+    await waitFor(() => {
+      expect(screen.getByLabelText(de.uploads.progress)).toBeDefined();
+    });
+    expect(started).toBe(1);
+
+    // Away and back — the case that was reported.
+    toTab(/mediathek|library/iu);
+    toTab(/hochladen|upload/iu);
+
+    // (a) The upload is still tracked. Before this fix the tab remounted idle
+    //     and showed a file picker over a live request.
+    expect(
+      screen.queryByLabelText(de.uploads.progress),
+      "the in-flight upload lost its progress indicator on a tab switch",
+    ).not.toBeNull();
+
+    // (b) …and there is nothing to start a second one *with*: while the upload
+    //     is in flight the tab shows progress, not a picker or a drop zone.
+    expect(
+      document.querySelector('input[type="file"]'),
+      "a file picker is offered over a live upload",
+    ).toBeNull();
+    expect(started).toBe(1);
+
+    vi.doUnmock("../uploads.js");
+  });
+
+  /*
+   * The guard, tested where it can actually fail.
+   *
+   * The assertion above was first written as "pick a second file and assert
+   * nothing started" — and sabotage caught it being **vacuous**: once the state
+   * is lifted there is no file input to pick with, so the second pick never
+   * happened, and removing `if (busy) return;` left the test green. §9.1, in an
+   * assertion of mine, found by breaking the thing it guards.
+   *
+   * So the guard is exercised directly. No path through today's UI can reach
+   * it — which is exactly the kind of code that rots silently unless something
+   * holds it.
+   */
+  it("refuses a second upload while one is in flight", async () => {
+    let started = 0;
+    const runUpload = vi.fn(() => {
+      started += 1;
+      return new Promise<never>(() => undefined);
+    });
+    vi.doMock("../uploads.js", async () => ({
+      ...(await vi.importActual<typeof UploadsModule>("../uploads.js")),
+      runUpload,
+    }));
+    vi.resetModules();
+    const { useUploadController } = await import("./MediaDialog.js");
+
+    const file = new File([new Uint8Array(8)], "modul-1.mp4", { type: "video/mp4" });
+    let controller: ReturnType<typeof useUploadController> | undefined;
+
+    function Probe() {
+      controller = useUploadController(client(), "video", "adhs", vi.fn());
+      return null;
+    }
+    render(<Probe />);
+
+    act(() => controller?.start(file));
+    await waitFor(() => {
+      expect(started).toBe(1);
+    });
+
+    // The second one, while the first is still in flight.
+    act(() => controller?.start(file));
+    expect(started, "a second upload started while the first was still in flight").toBe(
+      1,
+    );
+
+    vi.doUnmock("../uploads.js");
   });
 });
