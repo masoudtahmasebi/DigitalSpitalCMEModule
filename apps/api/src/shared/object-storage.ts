@@ -43,7 +43,7 @@
  */
 
 import { courseAssetKey, planUpload, uploadObjectName } from "@ds/domain";
-import { withDeadline, TRANSFER_DEADLINE_MS } from "./deadline-fetch.js";
+import { withDeadline, CONTROL_DEADLINE_MS } from "./deadline-fetch.js";
 import type { MultipartPlan, UploadPlan, UploadPurpose } from "@ds/domain";
 import { randomBytes } from "node:crypto";
 import type { Presigner } from "./s3-presigner.js";
@@ -461,15 +461,25 @@ export class ObjectStorage {
           method: "POST",
           body,
           /*
-           * The long deadline, explicitly (P144-01).
+           * The **control** budget, corrected (P145-01).
            *
-           * This is the one call where the bucket is doing real work while we
-           * wait — it assembles the parts server-side, and a 2 GB video is not
-           * instant. Fifteen seconds would fail exactly the uploads the
-           * multipart path exists for, and only those, which is the worst
-           * possible place for a wrong constant.
+           * P144 gave this ninety seconds on the reasoning that "a 2 GB video
+           * is not instant". That reasoning was wrong about how this works: the
+           * browser PUTs every part straight to a presigned URL, so the API
+           * never carries a byte of the video. CompleteMultipartUpload sends a
+           * few hundred bytes of XML naming the parts, and the store records a
+           * manifest — it does not concatenate anything.
+           *
+           * So ninety seconds was not a safety margin, it was a designed-in
+           * stall: nothing legitimate takes that long, and the only thing the
+           * extra seventy-five bought was a longer outage when the bucket was
+           * unreachable. Fifteen, like every other control call.
+           *
+           * The transfer budget is still right where the API *does* carry the
+           * bytes — `backup/store.ts` streams the dump itself — and that path
+           * holds no database connection.
            */
-          signal: AbortSignal.timeout(TRANSFER_DEADLINE_MS),
+          signal: AbortSignal.timeout(CONTROL_DEADLINE_MS),
         },
       );
     } catch (error) {

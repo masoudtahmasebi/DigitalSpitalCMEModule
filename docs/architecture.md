@@ -207,6 +207,20 @@ second connection from inside a request **throws** rather than waits
 (`db/pool-reentry.ts`). A larger pool would only move the threshold; a separate
 one removes it.
 
+### And a route that calls a third party holds no transaction at all
+
+The ambient transaction is also wrong for a handler that talks to somebody
+else's server — an upload route asking the object store to verify or assemble an
+object. Holding a connection across that call means a slow bucket occupies a
+database connection, and ten of them make the whole platform slow rather than
+just uploads.
+
+Those routes carry `@NoAmbientTransaction()` and take a `TenantRunner`
+(`db/tenant-runner.ts`): they open a short transaction per database segment and
+hold nothing while the network call is in flight. It is opt-in per route,
+because it trades the request's atomicity for that — a trade only some routes
+can make.
+
 ---
 
 ## 5. Contract-first

@@ -125,13 +125,13 @@ describe("listParts", () => {
 });
 
 describe("completeMultipart", () => {
-  it("asks for the transfer budget, not the control one (P144-01)", async () => {
+  it("carries a deadline of its own, and it is the control budget (P145-01)", async () => {
     /*
-     * The one call where the bucket does real work while we wait: it assembles
-     * the parts server-side, and a 2 GB video is not instant. `withDeadline`'s
-     * default is 15 s, which would fail exactly the uploads the multipart path
-     * exists for and nothing else — the worst possible place for a constant to
-     * be wrong, because it reproduces only on large files.
+     * P144 gave this ninety seconds, on the belief that the API was waiting for
+     * a 2 GB video to be assembled. It is not: the browser PUTs every part
+     * straight to a presigned URL and this call sends a few hundred bytes of
+     * XML naming them. Ninety seconds bought nothing except a longer outage
+     * when the bucket was unreachable.
      *
      * The static check cannot see this. `check-deadlines` is satisfied by the
      * wrapped default, so deleting this signal leaves it green (watched); the

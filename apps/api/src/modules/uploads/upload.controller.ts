@@ -52,6 +52,11 @@ import { APP_CONFIG, PG_POOL, PG_SIDE_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { objectStorageFor } from "../../shared/object-storage.factory.js";
 import {
+  NoAmbientTransaction,
+  TenantRun,
+  type TenantRunner,
+} from "../../db/tenant-runner.js";
+import {
   mediaDescribeSchema,
   mediaListSchema,
   multipartBeginSchema,
@@ -61,7 +66,11 @@ import {
   uploadCompleteSchema,
   uploadViewSchema,
 } from "./upload.dto.js";
-import { StorageAuditRecorder, UploadRepository } from "./upload.repository.js";
+import {
+  RunnerUploadRepository,
+  StorageAuditRecorder,
+  UploadRepository,
+} from "./upload.repository.js";
 import { UploadService } from "./upload.service.js";
 import type { ZodType } from "zod";
 
@@ -126,15 +135,20 @@ export class UploadController {
    * No body — the entry's id is the whole question, and it is a uuid this
    * tenant can see or cannot.
    */
+  @NoAmbientTransaction()
   @Post("media/:id/view")
   @RateLimit("mediaUpload")
   @Roles(...AUTHOR_ROLES)
   async viewMedia(
     @Param("id") id: string,
     @CurrentPrincipal() principal: Principal,
-    @TenantDb() db: Db,
+    @TenantRun() run: TenantRunner,
   ) {
-    return this.service(db, principal).viewAsset(id, actorOf(principal), new Date());
+    return this.runnerService(run, principal).viewAsset(
+      id,
+      actorOf(principal),
+      new Date(),
+    );
   }
 
   /**
@@ -173,6 +187,7 @@ export class UploadController {
     );
   }
 
+  @NoAmbientTransaction()
   @Post("courses/:slug/uploads/complete")
   // 200, not Nest's default 201 for a POST: nothing is created here. The object
   // already exists — this confirms it and hands back a reference. The contract
@@ -184,9 +199,9 @@ export class UploadController {
     @Param("slug") slug: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
-    @TenantDb() db: Db,
+    @TenantRun() run: TenantRunner,
   ) {
-    return this.service(db, principal).complete(
+    return this.runnerService(run, principal).complete(
       slug,
       parse(uploadCompleteSchema, body, "upload"),
       actorOf(principal),
@@ -202,6 +217,7 @@ export class UploadController {
    * read. It mints signatures, and a route that mints capabilities in a loop is
    * the one that most wants a ceiling on how fast it can be asked.
    */
+  @NoAmbientTransaction()
   @Post("courses/:slug/uploads/multipart")
   @RateLimit("mediaUpload")
   @Roles(...AUTHOR_ROLES)
@@ -209,9 +225,9 @@ export class UploadController {
     @Param("slug") slug: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
-    @TenantDb() db: Db,
+    @TenantRun() run: TenantRunner,
   ) {
-    return this.service(db, principal).beginMultipart(
+    return this.runnerService(run, principal).beginMultipart(
       slug,
       parse(multipartBeginSchema, body, "upload"),
       actorOf(principal),
@@ -238,6 +254,7 @@ export class UploadController {
     );
   }
 
+  @NoAmbientTransaction()
   @Post("courses/:slug/uploads/multipart/complete")
   @HttpCode(200)
   @RateLimit("mediaUpload")
@@ -246,9 +263,9 @@ export class UploadController {
     @Param("slug") slug: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
-    @TenantDb() db: Db,
+    @TenantRun() run: TenantRunner,
   ) {
-    return this.service(db, principal).completeMultipart(
+    return this.runnerService(run, principal).completeMultipart(
       slug,
       parse(multipartCompleteSchema, body, "upload"),
       actorOf(principal),
@@ -268,6 +285,7 @@ export class UploadController {
    * 200 rather than 201: nothing is created. The object already exists and this
    * hands back a way to look at it.
    */
+  @NoAmbientTransaction()
   @Post("courses/:slug/uploads/view")
   @HttpCode(200)
   @RateLimit("mediaUpload")
@@ -276,9 +294,9 @@ export class UploadController {
     @Param("slug") slug: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
-    @TenantDb() db: Db,
+    @TenantRun() run: TenantRunner,
   ) {
-    return this.service(db, principal).view(
+    return this.runnerService(run, principal).view(
       slug,
       parse(uploadViewSchema, body, "upload"),
       actorOf(principal),
@@ -296,6 +314,28 @@ export class UploadController {
   private service(db: Db, principal: Principal): UploadService {
     return new UploadService(
       new UploadRepository(db),
+      new StorageAuditRecorder(this.sidePool, {
+        customerId: principal.customerId,
+        role: principal.role,
+        ...(principal.userId === undefined ? {} : { userId: principal.userId }),
+      }),
+      objectStorageFor(this.config),
+    );
+  }
+
+  /**
+   * The same service, for a route that holds no open transaction (P145-01).
+   *
+   * The five routes below call the object store in the middle of their work.
+   * Under the ambient transaction that call occupies a pooled connection for as
+   * long as the bucket takes — so a slow or unreachable bucket degrades the
+   * whole API rather than uploads alone. `RunnerUploadRepository` opens a short
+   * transaction per query instead, leaving nothing held while the bucket is
+   * thinking. See `db/tenant-runner.ts` for what that gives up.
+   */
+  private runnerService(run: TenantRunner, principal: Principal): UploadService {
+    return new UploadService(
+      new RunnerUploadRepository(run),
       new StorageAuditRecorder(this.sidePool, {
         customerId: principal.customerId,
         role: principal.role,
