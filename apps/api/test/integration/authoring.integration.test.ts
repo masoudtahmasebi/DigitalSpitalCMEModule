@@ -18,6 +18,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { expectNoAnswerKey } from "../support/answer-leak.js";
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
@@ -825,6 +826,7 @@ describe("an authored course is a course the learner API can serve", () => {
     expect(quiz.body.questions).toHaveLength(2);
     // P4-01: the learner-facing shape has nowhere to put a correctness marker.
     expect(JSON.stringify(quiz.body)).not.toContain("isCorrect");
+    expectNoAnswerKey(quiz.body, "the learner's quiz");
     expect(JSON.stringify(quiz.body)).not.toContain("correct");
   });
 });

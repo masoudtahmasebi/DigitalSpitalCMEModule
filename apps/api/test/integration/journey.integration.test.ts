@@ -39,6 +39,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { expectNoAnswerKey } from "../support/answer-leak.js";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -859,6 +860,7 @@ describe("5 · the participant earns the point", () => {
     const quiz = await asLearner(quizPath);
     expect(quiz.status).toBe(200);
     expect(JSON.stringify(quiz.body)).not.toContain("isCorrect");
+    expectNoAnswerKey(quiz.body, "the learner's quiz");
 
     const questions = quiz.body.questions as Array<{
       id: string;

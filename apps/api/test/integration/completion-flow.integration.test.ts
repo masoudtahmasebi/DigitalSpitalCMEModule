@@ -17,6 +17,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { expectNoAnswerKey } from "../support/answer-leak.js";
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
@@ -414,6 +415,7 @@ describe("the road to a CME point", () => {
 
     const serialised = JSON.stringify(body);
     expect(serialised).not.toContain("isCorrect");
+    expectNoAnswerKey(JSON.parse(serialised), "the learner's quiz");
     expect(serialised).not.toContain("is_correct");
     // The strongest check: no correct option id appears in the payload at all.
     for (const optionId of correctOptionByQuestion.values()) {
@@ -1070,14 +1072,54 @@ describe("the admin console sees the same truth the learner does", () => {
   });
 
   it("never returns the stamp bytes or the VNR password", async () => {
+    /*
+     * A password is set here on purpose, so the assertion below can be about
+     * the **value** rather than the key (QA §4.4, P147-01).
+     *
+     * The previous version asserted `not.toContain("vnrPassword")`, which is
+     * the §9.1 shape: it passes against a response carrying the secret under
+     * any other key — `password`, `credentials.pass`, an echo inside a
+     * validation message. The image beside it was already checked by value
+     * ("not the raw PNG, under any key"); the password was not, in the same
+     * test, which is how one half of a rule stays right while the other drifts.
+     */
+    const secret = `vnr-secret-${RUN}-do-not-echo`;
+    const saved = await callAs(ADMIN_SUB, "PATCH", `/admin/courses/${courseSlug}`, {
+      vnrPassword: secret,
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    // Write-only: not even the response to the write that set it.
+    expect(JSON.stringify(saved.body)).not.toContain(secret);
+
     const { body } = await callAs(ADMIN_SUB, "GET", `/admin/courses/${courseSlug}`);
 
     expect(body.hasStampImage).toBe(true);
     expect(body.hasSignatureImage).toBe(true);
+    expect(body.hasVnrPassword).toBe(true);
     expect(JSON.stringify(body)).not.toContain('stampImage":"');
     expect(JSON.stringify(body)).not.toContain("vnrPassword");
+    // And not the secret itself, under any key.
+    expect(JSON.stringify(body)).not.toContain(secret);
     // And not the raw PNG, under any key.
     expect(JSON.stringify(body)).not.toContain(PLACEHOLDER_IMAGE.toString("base64"));
+
+    /*
+     * What this test deliberately does **not** assert: that the stored bytes
+     * are ciphertext.
+     *
+     * It was written that way first, and failed — `vnr_password_enc` held the
+     * plaintext. That is correct here and is not a defect: with no
+     * `SECRETS_KMS_KEY`, `createSecretCipher` returns `PlaintextSecretCipher`,
+     * which **throws at construction under `NODE_ENV=production`**
+     * (`packages/secrets`, asserted there by "throws at construction under
+     * NODE_ENV=production"). This suite runs as `test`, so the fallback is the
+     * intended path and the column is legitimately readable.
+     *
+     * Recorded rather than deleted, because a future reader will write the same
+     * assertion, watch it fail, and reasonably conclude the platform stores VNR
+     * passwords in the clear. It does not; the invariant is enforced one layer
+     * down, at construction, and is tested where it lives.
+     */
   });
 });
 

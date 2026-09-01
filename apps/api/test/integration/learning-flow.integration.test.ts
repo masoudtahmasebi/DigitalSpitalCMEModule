@@ -13,6 +13,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { expectNoAnswerKey } from "../support/answer-leak.js";
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
@@ -663,6 +664,8 @@ describe("the learner journey", () => {
     const serialised = JSON.stringify(body);
 
     expect(serialised).not.toContain("isCorrect");
+    // …and no other shape of answer key either (QA §3.1).
+    expectNoAnswerKey(JSON.parse(serialised), "the learner's quiz");
     expect(serialised).not.toContain("is_correct");
     expect(serialised).not.toMatch(/\d{15}/);
   });
