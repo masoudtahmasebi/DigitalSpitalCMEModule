@@ -422,6 +422,71 @@ describe("the learner journey", () => {
     expect(status).toBe(403);
   });
 
+  it("credits a drag to the end as the seconds it claims, not as the position", async () => {
+    /*
+     * INVARIANT A, in the shape a scrub bar produces (QA audit §2.2, P137-01).
+     *
+     * The union test below reaches the same conclusion from two intervals. This
+     * one is the *first* update against an untouched video and it is a single
+     * fragment at the very end — which is what a client sends when somebody
+     * drags the bar to 09:55 and lets it run. A max-position implementation
+     * calls that 99 %; the union says five seconds of six hundred, which floors
+     * to zero.
+     *
+     * Worth its own case because the two are not the same code path in a naive
+     * implementation: "furthest point reached" and "sum of intervals" agree on
+     * a learner who watches from the start and diverge completely here.
+     *
+     * The server accepts the segment — five seconds of playback is plausible —
+     * and that is the point. Nothing needs to refuse the *report*; what must
+     * not happen is the report being worth more than the seconds in it.
+     */
+    await backdateProgress(VIDEO_1_SEC * 2);
+
+    const { status, body } = await call(
+      "POST",
+      `/courses/${courseSlug}/contents/${video1Id}/progress`,
+      {
+        segments: [{ startSec: VIDEO_1_SEC - 5, endSec: VIDEO_1_SEC }],
+        lastPositionSec: VIDEO_1_SEC,
+      },
+    );
+
+    expect(status).toBe(200);
+    expect(body.watchedPercent).toBe(0);
+    expect(body.status).not.toBe("completed");
+  });
+
+  it("ignores a watchedPercent the client sends for itself", async () => {
+    /*
+     * INVARIANT C (QA audit §2.5, P137-01). The client sends intervals; the
+     * server decides the percentage.
+     *
+     * Structurally this cannot happen — `progressReportSchema` has no such
+     * field and zod strips what it does not name — and that is exactly why it
+     * is asserted rather than assumed. The property is one `.passthrough()` or
+     * one convenience field away from being untrue, and nothing else in the
+     * suite would notice: every other case sends a well-formed body.
+     */
+    await backdateProgress(VIDEO_1_SEC * 2);
+
+    const { status, body } = await call(
+      "POST",
+      `/courses/${courseSlug}/contents/${video1Id}/progress`,
+      {
+        segments: [{ startSec: 0, endSec: 5 }],
+        watchedPercent: 100,
+        status: "completed",
+      },
+    );
+
+    expect(status).toBe(200);
+    // Five seconds plus the five already stored at the tail: still nothing
+    // like a hundred, and emphatically not the number the client asked for.
+    expect(body.watchedPercent).toBeLessThan(5);
+    expect(body.status).toBe("in_progress");
+  });
+
   it("counts the union of watched intervals, not the furthest position", async () => {
     // A learner who has been in this course a while (P55-01): the wall-clock
     // budget is measured from their last activity, and these cases report more
