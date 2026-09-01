@@ -58,9 +58,18 @@ function tenantTables() {
       for (const [, name] of block[1].matchAll(/'([a-z_]+)'/gu)) tables.add(name);
     }
 
-    // And every table given RLS afterwards, one ALTER at a time.
+    /*
+     * And every table given RLS afterwards, one ALTER at a time.
+     *
+     * `(?:ONLY\s+)?` is defensive, not a fix: `grep -c "ALTER TABLE ONLY"` over
+     * `db/migrations` returns **0** today, and the nine names this extracts are
+     * all real tables. But `ALTER TABLE ONLY x ENABLE ROW LEVEL SECURITY` is
+     * legal Postgres, and without this the regex would capture `only` as the
+     * table name *and* silently drop the real one — shrinking the checked set
+     * while still reporting a number, which is §9.1's second form.
+     */
     for (const [, name] of sql.matchAll(
-      /ALTER TABLE\s+([a-z_]+)\s+ENABLE ROW LEVEL SECURITY/giu,
+      /ALTER TABLE\s+(?:ONLY\s+)?([a-z_]+)\s+ENABLE ROW LEVEL SECURITY/giu,
     )) {
       tables.add(name);
     }
@@ -85,6 +94,9 @@ function tenantTables() {
 const ALLOWED = [
   {
     file: "apps/api/src/modules/customers/customer.repository.ts",
+    table: "customers",
+    statement: "list_customer_registry",
+    documents: true,
     reason:
       "list_customer_registry() is SECURITY DEFINER: the registry is the one " +
       "cross-tenant read a super_admin is entitled to, and it exists precisely " +
@@ -92,6 +104,8 @@ const ALLOWED = [
   },
   {
     file: "apps/api/src/subject-erasure.ts",
+    table: "audit_log",
+    statement: "INSERT INTO audit_log",
     reason:
       "The one write here is the P149-02 audit row saying an erasure proceeded " +
       "on an unverified schema. It runs as ds_migrator, outside any tenant " +
@@ -104,6 +118,9 @@ const ALLOWED = [
   },
   {
     file: "apps/api/src/modules/projects/project-binding.repository.ts",
+    table: "projects",
+    statement: "resolve_project_binding",
+    documents: true,
     reason:
       "resolve() runs before a tenant context can exist — it is what decides " +
       "which tenant the request belongs to. It goes through the SECURITY " +
@@ -111,6 +128,29 @@ const ALLOWED = [
       "that migration exists.",
   },
 ];
+
+/**
+ * Does this entry justify *this* statement?
+ *
+ * File **and** table **and** a fragment of the statement itself — because an
+ * entry that matched on the file alone silenced every bare-pool read of every
+ * tenant table in it, for ever (P150-01). Each reason above is written about
+ * one specific statement; the exemption now reaches exactly that far.
+ *
+ * A fragment rather than a line number, which is a deviation from the letter of
+ * the request and, I think, its intent: a line number in this list drifts every
+ * time somebody edits anything above the statement, and a check that fails for
+ * that reason trains people to bump the number without re-reading the reason —
+ * which is the review this list exists to force. The fragment moves with the
+ * code and stops matching when the statement genuinely changes.
+ */
+function justifies(entry, finding, argument) {
+  return (
+    finding.file === entry.file &&
+    finding.table === entry.table &&
+    argument.includes(entry.statement)
+  );
+}
 
 /** Every `.ts` under a directory, tests excluded. */
 function sources(dir) {
@@ -146,6 +186,8 @@ function callArguments(source, open) {
 
 const tables = tenantTables();
 const findings = [];
+/** Entries that silenced a real finding, so a stale one can be reported. */
+const used = new Set();
 
 for (const path of sources(join(REPO, "apps/api/src"))) {
   const source = readFileSync(path, "utf8");
@@ -159,10 +201,49 @@ for (const path of sources(join(REPO, "apps/api/src"))) {
     for (const table of tables) {
       const named = new RegExp(`\\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\\s+${table}\\b`, "iu");
       if (!named.test(argument)) continue;
-      if (ALLOWED.some((entry) => relative === entry.file)) continue;
-      findings.push({ file: relative, line, table });
+      const finding = { file: relative, line, table };
+      const entry = ALLOWED.find((candidate) => justifies(candidate, finding, argument));
+      if (entry !== undefined) {
+        used.add(entry);
+        continue;
+      }
+      findings.push(finding);
     }
   }
+}
+
+/*
+ * An exemption that silences nothing is a claim about code that has moved
+ * (§11 rule 9: a comment is a claim, not a fact).
+ *
+ * Two of the three entries here document calls the scanner does **not** flag —
+ * `list_customer_registry()` and `resolve_project_binding()` name a SECURITY
+ * DEFINER function rather than a table, so no `FROM customers` or
+ * `FROM projects` ever appears in the argument. Their reasons are worth
+ * keeping; calling them exemptions was not, because an inert entry reads as
+ * active protection. They carry `documents: true`, and the two checks below
+ * hold that honest in both directions.
+ */
+const stale = ALLOWED.filter((entry) => entry.documents !== true && !used.has(entry));
+const inert = ALLOWED.filter((entry) => entry.documents === true && used.has(entry));
+
+if (stale.length > 0 || inert.length > 0) {
+  for (const entry of stale) {
+    console.error(
+      `tenant-reads: the exemption for ${entry.file} (${entry.table}, ` +
+        `"${entry.statement}") silenced nothing.\n` +
+        "  Either the statement moved and the exemption is now stale, or the\n" +
+        "  scanner never flagged it — in which case mark it `documents: true`.\n",
+    );
+  }
+  for (const entry of inert) {
+    console.error(
+      `tenant-reads: ${entry.file} (${entry.table}) is marked \`documents: true\`\n` +
+        "  but the scanner did flag it. It is a real exemption: drop the flag so\n" +
+        "  the entry is reviewed as one.\n",
+    );
+  }
+  process.exit(1);
 }
 
 if (findings.length > 0) {
