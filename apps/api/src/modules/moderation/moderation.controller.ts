@@ -47,7 +47,7 @@ import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
-import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
+import { APP_CONFIG, PG_POOL, PG_SIDE_POOL } from "../../db/tokens.js";
 import type { Pool } from "pg";
 import { AuditService } from "../../audit/audit.service.js";
 import type { AppConfig } from "../../config/config.js";
@@ -109,6 +109,15 @@ export class ModerationController {
 
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
+    /**
+     * Both second-connection users on this screen take the side pool
+     * (P142-01): the audit log because its row must outlive the rollback of
+     * what it audits, and `SubjectErasureRepository` because a subject spans
+     * tenants and cannot run inside the request's. Taken from `PG_POOL` these
+     * are checkout number two while the request holds number one, and enough
+     * concurrent erasures would deadlock it.
+     */
+    @Inject(PG_SIDE_POOL) private readonly sidePool: Pool,
     @Inject(APP_CONFIG) config: AppConfig,
   ) {
     this.objectErasure = objectErasureFor(pool, config, new JsonLogger("info"));
@@ -202,8 +211,8 @@ export class ModerationController {
   private service(db: Db): ModerationService {
     return new ModerationService(
       new ModerationRepository(db),
-      new SubjectErasureRepository(this.pool),
-      new AuditService(this.pool),
+      new SubjectErasureRepository(this.sidePool),
+      new AuditService(this.sidePool),
       this.objectErasure,
     );
   }

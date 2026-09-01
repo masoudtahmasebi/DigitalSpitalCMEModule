@@ -46,7 +46,7 @@ import type { Principal } from "../../auth/principal.js";
 import { AppError } from "../../shared/problem-details.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
-import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
+import { APP_CONFIG, PG_POOL, PG_SIDE_POOL } from "../../db/tokens.js";
 import { AuditService } from "../../audit/audit.service.js";
 import { createSecretCipher } from "../../shared/secret-cipher.js";
 import type { AppConfig } from "../../config/config.js";
@@ -87,6 +87,9 @@ const eivCheckSchema = z.object({
 export class EivAdminController {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
+    // The audit log's own connection, from the pool the request path does not
+    // hold — see PG_SIDE_POOL (P142-01).
+    @Inject(PG_SIDE_POOL) private readonly sidePool: Pool,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -268,7 +271,7 @@ export class EivAdminController {
       // The same registered reporter the worker uses (ADR-0010). Two
       // instances would be two places a second Ärztekammer had to be wired in.
       pluginRegistry().require("accreditationReporter"),
-      new AuditService(this.pool),
+      new AuditService(this.sidePool),
       {
         baseUrl: this.config.EIV_BASE_URL,
         // The worker's own flag, so the screen reports the installation the

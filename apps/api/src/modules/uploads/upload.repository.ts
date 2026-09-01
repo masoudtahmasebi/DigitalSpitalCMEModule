@@ -385,11 +385,21 @@ export class UploadRepository implements UploadRepositoryPort {
 /**
  * Records storage events on their own connection, in their own transaction.
  *
- * Takes the pool rather than the request's `Db`, which is the whole point — see
+ * Takes a pool rather than the request's `Db`, which is the whole point — see
  * `StorageAuditPort`. It opens a second connection while the request still
- * holds one, so the pool must have room for two per in-flight upload; uploads
- * are rare and the pool is sized in tens, but a pool of one would deadlock and
- * that is worth knowing before somebody tunes it down.
+ * holds one.
+ *
+ * ## The bound this comment used to state, and got wrong (P142-01)
+ *
+ * It said "a pool of one would deadlock", which sounds like a warning about
+ * tuning and is not one. The real bound is a pool of **N** with **N concurrent
+ * requests**: each holds its first connection and waits for a second that only
+ * another of the N can release. With `max: 10` that is ten people — or one
+ * person opening the Mediathek, which asks for a signed URL per tile. It
+ * happened, twice, and the API stopped answering until somebody restarted it.
+ *
+ * So the pool passed here must be `PG_SIDE_POOL`, which the request path never
+ * holds. `guardReentry` refuses it if a caller ever passes the request's.
  *
  * `runInTenant` rather than a raw INSERT, so the row is written under the same
  * RLS policy as everything else and a customer id that does not match the

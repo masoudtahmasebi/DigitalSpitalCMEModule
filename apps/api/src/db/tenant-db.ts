@@ -17,6 +17,7 @@
 import type { AppRole } from "@ds/domain";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { schema } from "./schema.js";
+import { assertPoolNotHeld, holdingPool } from "./pool-reentry.js";
 
 export type Db = NodePgDatabase<typeof schema>;
 
@@ -78,6 +79,17 @@ export async function runInTenant<T>(
     throw new TenantResolutionError();
   }
 
+  /*
+   * Refuse a second checkout from a pool this request already holds (P142-01).
+   *
+   * The interceptor wraps the whole request in one of these, so a repository
+   * that opens its own `runInTenant` on the same pool is asking for connection
+   * two of two — and N of those at once deadlock a pool of N, permanently.
+   * Checked before `connect()`, so the refusal is instant rather than a
+   * five-second wait for a connection that must not be given.
+   */
+  assertPoolNotHeld(pool, "runInTenant");
+
   const client = await pool.connect();
 
   try {
@@ -95,7 +107,9 @@ export async function runInTenant<T>(
     }
 
     const db = drizzle(client as never, { schema });
-    const result = await work(db);
+    // Marked held for everything `work` awaits, including the whole route
+    // handler when the caller is the interceptor.
+    const result = await holdingPool(pool, () => work(db));
 
     await client.query("COMMIT");
     return result;

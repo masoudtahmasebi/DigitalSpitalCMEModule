@@ -40,7 +40,7 @@ import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
-import { PG_POOL } from "../../db/tokens.js";
+import { PG_SIDE_POOL } from "../../db/tokens.js";
 import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { AppError } from "../../shared/problem-details.js";
 import { ParticipantRepository } from "./participant.repository.js";
@@ -85,7 +85,21 @@ const mergeSchema = z.object({
 
 @Controller("admin/participants")
 export class ParticipantController {
-  constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
+  /**
+   * The **side** pool, not the request's (P142-01).
+   *
+   * `ParticipantRepository`'s second connection is deliberate and stays: the
+   * three identity tables are not tenant-scoped, and the merge goes through
+   * `SECURITY DEFINER` functions that must not run under this request's tenant
+   * context. What was wrong was taking it from the pool the request already
+   * holds — `POST /admin/participants` alone took two of ten connections, so
+   * ten administrators creating participants at once deadlocked the API with
+   * no error and no log line.
+   *
+   * Same semantics, different pool: a connection with no tenant context, from
+   * somewhere the request path cannot starve.
+   */
+  constructor(@Inject(PG_SIDE_POOL) private readonly pool: Pool) {}
 
   @Get()
   @Roles(...PARTICIPANT_ROLES)

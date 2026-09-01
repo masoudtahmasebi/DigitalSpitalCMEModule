@@ -26,7 +26,7 @@ import {
   type OnModuleInit,
 } from "@nestjs/common";
 import type { Pool } from "pg";
-import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
+import { APP_CONFIG, PG_POOL, PG_SIDE_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { AuditService } from "../../audit/audit.service.js";
 import { createSecretCipher } from "../../shared/secret-cipher.js";
@@ -46,11 +46,12 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     @Inject(PG_POOL) pool: Pool,
+    @Inject(PG_SIDE_POOL) sidePool: Pool,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {
     this.alerts = new EivAlertService(
       new EivAlertRepository(pool),
-      new AuditService(pool),
+      new AuditService(sidePool),
       this.logger,
       config.ALERT_WEBHOOK_URL === ""
         ? undefined
@@ -63,7 +64,7 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
         createSecretCipher(config.NODE_ENV, config.SECRETS_KMS_KEY),
       ),
       pluginRegistry().require("accreditationReporter"),
-      new AuditService(pool),
+      new AuditService(sidePool),
       {
         baseUrl: config.EIV_BASE_URL,
         batchSize: config.EIV_SWEEP_BATCH_SIZE,

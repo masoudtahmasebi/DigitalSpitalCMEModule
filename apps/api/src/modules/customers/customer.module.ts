@@ -15,7 +15,7 @@
 
 import { Module } from "@nestjs/common";
 import type { Pool } from "pg";
-import { PG_POOL } from "../../db/tokens.js";
+import { PG_SIDE_POOL } from "../../db/tokens.js";
 import { AuditService } from "../../audit/audit.service.js";
 import { CustomerController } from "./customer.controller.js";
 import { CustomerRepository } from "./customer.repository.js";
@@ -26,13 +26,19 @@ import { CustomerService } from "./customer.service.js";
   providers: [
     {
       provide: CustomerRepository,
+      /*
+       * The side pool (P142-01). This repository enters a **different** tenant
+       * than the request's — the customer being administered — so it cannot
+       * reuse the request's transaction, and taking a second connection from
+       * the request's own pool is what deadlocked the API.
+       */
       useFactory: (pool: Pool) => new CustomerRepository(pool),
-      inject: [PG_POOL],
+      inject: [PG_SIDE_POOL],
     },
     {
       provide: AuditService,
       useFactory: (pool: Pool) => new AuditService(pool),
-      inject: [PG_POOL],
+      inject: [PG_SIDE_POOL],
     },
     {
       provide: CustomerService,

@@ -48,7 +48,7 @@ import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { AppError } from "../../shared/problem-details.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
-import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
+import { APP_CONFIG, PG_POOL, PG_SIDE_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { objectStorageFor } from "../../shared/object-storage.factory.js";
 import {
@@ -72,6 +72,8 @@ export class UploadController {
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(PG_POOL) private readonly pool: Pool,
+    // The storage audit log's own connection — see PG_SIDE_POOL (P142-01).
+    @Inject(PG_SIDE_POOL) private readonly sidePool: Pool,
   ) {}
 
   /**
@@ -294,7 +296,7 @@ export class UploadController {
   private service(db: Db, principal: Principal): UploadService {
     return new UploadService(
       new UploadRepository(db),
-      new StorageAuditRecorder(this.pool, {
+      new StorageAuditRecorder(this.sidePool, {
         customerId: principal.customerId,
         role: principal.role,
         ...(principal.userId === undefined ? {} : { userId: principal.userId }),
