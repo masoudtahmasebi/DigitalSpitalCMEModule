@@ -484,7 +484,14 @@ const NAV: readonly NavGroup[] = [
         description: de.organisation.intro,
         capability: "project",
       },
-      { kind: "courses", label: de.nav.courses, title: de.courses.title },
+      {
+        kind: "courses",
+        label: de.nav.courses,
+        title: de.courses.title,
+        // The screen an operator opens first, and the only one that had no
+        // description at all (P136-01).
+        description: de.courses.intro,
+      },
       /*
        * The Mediathek (P88-01), under ANGEBOT beside the courses whose files it
        * holds — it is content, not a setting.

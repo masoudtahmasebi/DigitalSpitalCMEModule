@@ -110,7 +110,7 @@ export const en: DeepPartial<typeof german> = {
   learners: {
     title: "Participants",
     intro:
-      "Progress for every participant. The EFN is shown only in shortened form, for data protection.",
+      "Progress through the courses — one row per enrolment, not per person: somebody taking two courses appears twice. The accounts themselves are under “Zugänge”. The EFN is shown only in shortened form, for data protection.",
     empty: "No participation has been recorded for this course yet.",
     emptyHint:
       "A participation is created as soon as somebody enrols on a course. Until then there is nothing to show here.",
@@ -151,7 +151,7 @@ export const en: DeepPartial<typeof german> = {
   certificates: {
     title: "Certificates",
     intro:
-      "Regenerating renders the document again and reports nothing to the Ärztekammer. Resending sends the same document. Revoking withdraws the document; the participation remains.",
+      "The Teilnahmebescheinigungen that have been issued — the document for the participant. Reporting the points to the Ärztekammer is a different thing and is under “Punktemeldungen”. Regenerating renders the document again and reports nothing to the Ärztekammer. Resending sends the same document. Revoking withdraws the document; the participation remains.",
     empty: "No certificates have been created yet.",
     emptyHint:
       "A certificate is created automatically as soon as somebody completes a course. It cannot be created by hand here.",
@@ -829,7 +829,7 @@ export const en: DeepPartial<typeof german> = {
   branding: {
     title: "Typeface",
     intro:
-      "The uploaded typeface is used in the learner interface. Without one, the default typeface is shown.",
+      "This customer's typeface. It is used in the learner interface; without one the default typeface is shown. Colours, logo and the privacy-policy link belong to a project and are set on the project under “Organisation”.",
     privacy:
       "The file is stored on our own servers and delivered from there. No third-party fonts are loaded, so none of your users' IP addresses are passed to third parties.",
     elsewhere:
@@ -900,7 +900,7 @@ export const en: DeepPartial<typeof german> = {
     nav: "Punktemeldungen",
     title: "Punktemeldungen",
     screenIntro:
-      "Every Punktemeldung on this installation and its state. Sorted by deadline — the report whose statutory eight-day limit is nearest is at the top, not the newest one.",
+      "The statutory report of CME points to the Ärztekammer, one per completed enrolment. Sorted by deadline — the report whose statutory eight-day limit is nearest is at the top, not the newest one.",
 
     loadFailed: "The Punktemeldungen could not be loaded.",
     actionFailed: "The action failed.",
@@ -1027,6 +1027,8 @@ export const en: DeepPartial<typeof german> = {
 
   courses: {
     title: "Courses",
+    intro:
+      "Every course for this customer. A new one takes three steps: add the content, fill in the certification, publish. Until it is published it is a draft and participants cannot see it.",
     empty: "No courses are stored for this tenant.",
     emptyHint:
       "A course consists of modules, chapters and contents. You can create it now and extend it at any time.",
@@ -1158,7 +1160,7 @@ export const en: DeepPartial<typeof german> = {
   participantAccounts: {
     title: "Accounts",
     intro:
-      "This customer's participants. Accounts are created here, passwords reset and accounts locked.",
+      "The people at this customer who can sign in — one row per person. Accounts are created here, passwords reset and accounts locked. How far somebody has got in a course is under “Teilnehmende”.",
     search: "Search",
     empty: "No participants yet.",
     emptyHint:

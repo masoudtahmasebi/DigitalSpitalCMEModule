@@ -106,7 +106,7 @@ export const german = {
   learners: {
     title: "Teilnehmende",
     intro:
-      "Fortschritt aller Teilnehmenden. Die EFN wird aus Datenschutzgründen nur verkürzt angezeigt.",
+      "Der Fortschritt in den Fortbildungen — eine Zeile je Teilnahme, nicht je Person: wer zwei Fortbildungen belegt, steht zweimal hier. Die Zugänge selbst verwalten Sie unter „Zugänge“. Die EFN wird aus Datenschutzgründen nur verkürzt angezeigt.",
     empty: "Zu dieser Fortbildung liegen noch keine Teilnahmen vor.",
     emptyHint:
       "Eine Teilnahme entsteht, sobald sich eine Person an einer Fortbildung anmeldet. Bis dahin ist hier nichts zu sehen.",
@@ -150,8 +150,18 @@ export const german = {
 
   certificates: {
     title: "Bescheinigungen",
+    /*
+     * What the screen *is*, before what its three buttons do (P136-01).
+     *
+     * The old text opened on the difference between "Neu erstellen" and
+     * "Erneut senden" — useful, and an answer to a question somebody only has
+     * once they know what they are looking at. The second sentence is the other
+     * pair that reads alike: a Bescheinigung is the physician's document, a
+     * Punktemeldung is the report to the Ärztekammer, and they are separate
+     * screens because they can succeed and fail independently.
+     */
     intro:
-      "Neu erstellen rendert das Dokument neu und meldet nichts an die Ärztekammer. Erneut senden verschickt dasselbe Dokument. Widerrufen zieht das Dokument zurück, die Teilnahme bleibt bestehen.",
+      "Die ausgestellten Teilnahmebescheinigungen — das Dokument für die teilnehmende Person. Die Meldung der Punkte an die Ärztekammer ist etwas anderes und steht unter „Punktemeldungen“. Neu erstellen rendert das Dokument neu und meldet nichts an die Ärztekammer. Erneut senden verschickt dasselbe Dokument. Widerrufen zieht das Dokument zurück, die Teilnahme bleibt bestehen.",
     empty: "Es wurden noch keine Bescheinigungen erstellt.",
     emptyHint:
       "Eine Bescheinigung entsteht automatisch, sobald eine Person eine Fortbildung abgeschlossen hat. Sie lässt sich hier nicht von Hand anlegen.",
@@ -1130,8 +1140,18 @@ export const german = {
 
   branding: {
     title: "Schriftart",
+    /*
+     * Names what this screen is **not** (P136-01).
+     *
+     * The menu says "Erscheinungsbild" and the screen holds one font field.
+     * Colours, logo and the privacy-policy link are a *project's* branding and
+     * live under Organisation, because they differ per surface and the typeface
+     * does not. An operator who clicks "Erscheinungsbild" looking for the brand
+     * colour finds a font upload and no statement that they are in the wrong
+     * place — which is §9.4 with the reader standing right in front of it.
+     */
     intro:
-      "Die hochgeladene Schriftart wird in der Lernoberfläche verwendet. Ohne eigene Schriftart wird die Standardschrift angezeigt.",
+      "Die Schriftart dieses Kunden. Sie wird in der Lernoberfläche verwendet; ohne eigene Schriftart wird die Standardschrift angezeigt. Farben, Logo und Datenschutz-Link gehören zum jeweiligen Projekt und werden unter „Organisation“ am Projekt eingestellt.",
     privacy:
       "Die Datei wird auf unseren eigenen Servern gespeichert und von dort ausgeliefert. Es werden keine Schriften von Drittanbietern geladen, sodass keine IP-Adressen Ihrer Nutzerinnen und Nutzer an Dritte übermittelt werden.",
     /**
@@ -1238,7 +1258,7 @@ export const german = {
     nav: "Punktemeldungen",
     title: "Punktemeldungen",
     screenIntro:
-      "Jede Punktemeldung dieser Installation und ihr Stand. Die Liste ist nach Frist sortiert — oben steht die Meldung, deren gesetzliche Acht-Tage-Frist am nächsten ist, nicht die neueste.",
+      "Die gesetzlich vorgeschriebene Meldung der CME-Punkte an die Ärztekammer, je abgeschlossener Teilnahme eine. Die Liste ist nach Frist sortiert — oben steht die Meldung, deren gesetzliche Acht-Tage-Frist am nächsten ist, nicht die neueste.",
 
     loadFailed: "Die Punktemeldungen konnten nicht geladen werden.",
     actionFailed: "Die Aktion ist fehlgeschlagen.",
@@ -1408,6 +1428,19 @@ export const german = {
 
   courses: {
     title: "Fortbildungen",
+    /*
+     * The one screen that had no intro at all, and the one an operator opens
+     * first (P136-01). A reviewer put it plainly: the learner side explains
+     * itself from the screens, and the administration does not — "if I look at
+     * the viewer who is going to use it, few things still need to be improved".
+     *
+     * It names the three stages rather than the table's columns, because what
+     * a newcomer cannot work out is not what a row means: it is that a course
+     * is invisible until somebody publishes it, which is the state every
+     * course they create will be in.
+     */
+    intro:
+      "Alle Fortbildungen dieses Kunden. Eine neue Fortbildung entsteht in drei Schritten: Inhalte anlegen, Zertifizierung ausfüllen, veröffentlichen. Bis zur Veröffentlichung ist sie ein Entwurf und für Teilnehmende nicht sichtbar.",
     empty: "Für diesen Mandanten sind keine Fortbildungen hinterlegt.",
     emptyHint:
       "Eine Fortbildung besteht aus Modulen, Kapiteln und Inhalten. Sie können sie anlegen und später jederzeit erweitern.",
@@ -1574,8 +1607,17 @@ export const german = {
   /** Participant accounts (P21-04) — people, not enrolments. */
   participantAccounts: {
     title: "Zugänge",
+    /*
+     * Says which of the two people-screens this is (P136-01).
+     *
+     * "Zugänge" and "Teilnehmende" are one letter apart in meaning to anybody
+     * who has not built this: one is a person who can sign in, the other is
+     * that person's progress through one Fortbildung. Each now says what it is
+     * *and* names the other, because the question is never "what is this
+     * table" — it is "which of the two am I looking at".
+     */
     intro:
-      "Teilnehmende dieses Kunden. Hier werden Zugänge angelegt, Passwörter zurückgesetzt und Konten gesperrt.",
+      "Die Personen dieses Kunden, die sich anmelden können — eine Zeile je Person. Hier legen Sie Zugänge an, setzen Passwörter zurück und sperren Konten. Wie weit jemand in einer Fortbildung ist, steht unter „Teilnehmende“.",
     search: "Suche",
     /* Split in two for the empty state (P30-02): the first line says what is
        missing, the second what to do about it. */
