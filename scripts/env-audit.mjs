@@ -163,8 +163,15 @@ const SOURCES = [
   { path: "infra/deploy/Caddyfile", pattern: /\{\$([A-Z][A-Z0-9_]+)/g },
 ];
 
-/** Shell names that are the interpreter's, not ours. */
+/**
+ * Shell names that are the interpreter's, not ours.
+ *
+ * `SUDO_USER` belongs here for the same reason as `PWD`: it is set by `sudo`,
+ * read to find out who invoked the script, and would be nonsense in a config
+ * template — a value nobody sets and everybody has.
+ */
 const SHELL_BUILTINS = new Set([
+  "SUDO_USER",
   "LINENO",
   "BASH_SOURCE",
   "FUNCNAME",
