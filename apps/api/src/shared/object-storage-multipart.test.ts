@@ -125,6 +125,31 @@ describe("listParts", () => {
 });
 
 describe("completeMultipart", () => {
+  it("asks for the transfer budget, not the control one (P144-01)", async () => {
+    /*
+     * The one call where the bucket does real work while we wait: it assembles
+     * the parts server-side, and a 2 GB video is not instant. `withDeadline`'s
+     * default is 15 s, which would fail exactly the uploads the multipart path
+     * exists for and nothing else — the worst possible place for a constant to
+     * be wrong, because it reproduces only on large files.
+     *
+     * The static check cannot see this. `check-deadlines` is satisfied by the
+     * wrapped default, so deleting this signal leaves it green (watched); the
+     * property is which budget, and that needs a test. §9.1.
+     */
+    const fetchImpl = vi.fn().mockResolvedValue(ok("<CompleteMultipartUploadResult/>"));
+    await storage(fetchImpl as unknown as typeof fetch).completeMultipart(
+      "k",
+      "u",
+      [{ partNumber: 1, etag: '"aaa"', sizeBytes: 1 }],
+      new Date(),
+    );
+
+    const init = fetchImpl.mock.calls[0]?.[1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(init.signal?.aborted).toBe(false);
+  });
+
   it("sends the parts in order, whatever order they were listed in", async () => {
     // S3 refuses an out-of-order part list, and `listParts` is not required to
     // return them sorted.

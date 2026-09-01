@@ -80,7 +80,44 @@ if [[ "$ready_body" != 200\ * ]]; then
   problems+=("API readiness: ${ready_body}")
 fi
 
-# --- 3. Report ---------------------------------------------------------------
+# --- 3. Nobody is queued for a database connection --------------------------
+#
+# The leading indicator, and the one number that would have named the outage of
+# 01.09.2026 in its first minute instead of its twenty-second hour (P144-01).
+#
+# `ds_pg_pool_waiting` counts callers queued for a pooled connection. Zero is
+# normal; a brief spike under load is normal. **Sustained above zero is an
+# outage forming** — it is what P141-01 (no checkout deadline), P142-01 (a
+# second checkout inside a request) and P143-01 (an unbounded call holding one)
+# all look like from the outside, several minutes before anybody notices a
+# screen is dead.
+#
+# Read from inside, because `/metrics` is refused at the edge on purpose. Its
+# whole value is that it needs **no connection to answer**: on the day this was
+# written the API could not run `SELECT 1` and could still have reported this.
+waiting="$(compose exec -T api node -e "
+  fetch('http://127.0.0.1:3000/metrics')
+    .then(async r => {
+      const body = await r.text();
+      let worst = 0;
+      for (const line of body.split('\n')) {
+        if (!line.startsWith('ds_pg_pool_waiting{')) continue;
+        const value = Number(line.slice(line.lastIndexOf(' ') + 1));
+        if (Number.isFinite(value) && value > worst) worst = value;
+      }
+      console.log(String(worst));
+    })
+    .catch(() => { console.log('unknown'); });
+" 2>/dev/null | tr -d '\r' || echo unknown)"
+
+# `unknown` is not a problem in itself: an API that cannot serve `/metrics` has
+# already been reported by check 2, and reporting it twice trains people to
+# ignore the alert.
+if [[ "$waiting" =~ ^[0-9]+$ ]] && [[ "$waiting" -gt 0 ]]; then
+  problems+=("${waiting} caller(s) queued for a database connection — the pool is saturating")
+fi
+
+# --- 4. Report ---------------------------------------------------------------
 if [[ ${#problems[@]} -gt 0 ]]; then
   summary="DS Education on $(hostname): ${#problems[@]} problem(s)"
   detail="$(printf '%s\n' "${problems[@]}")"

@@ -43,6 +43,7 @@
  */
 
 import { courseAssetKey, planUpload, uploadObjectName } from "@ds/domain";
+import { withDeadline, TRANSFER_DEADLINE_MS } from "./deadline-fetch.js";
 import type { MultipartPlan, UploadPlan, UploadPurpose } from "@ds/domain";
 import { randomBytes } from "node:crypto";
 import type { Presigner } from "./s3-presigner.js";
@@ -105,8 +106,16 @@ export class ObjectStorage {
   constructor(
     private readonly presigner: Presigner,
     private readonly uploadTtlSec: number,
-    /** Injected so tests are not at the mercy of a real network. */
-    private readonly fetchImpl: typeof fetch = fetch,
+    /**
+     * Injected so tests are not at the mercy of a real network.
+     *
+     * The default carries a deadline (P144-01). Every method below is called
+     * from inside a request handler, which means inside the RLS transaction,
+     * which means holding a pooled connection — so a bucket that does not
+     * answer is a bucket that takes database connections with it. A bare
+     * `fetch` here is how ten uploads become an outage.
+     */
+    private readonly fetchImpl: typeof fetch = withDeadline(),
   ) {}
 
   /**
@@ -448,7 +457,20 @@ export class ObjectStorage {
     try {
       response = await this.fetchImpl(
         this.presigner.presignCompleteMultipart(key, 300, now, uploadId),
-        { method: "POST", body },
+        {
+          method: "POST",
+          body,
+          /*
+           * The long deadline, explicitly (P144-01).
+           *
+           * This is the one call where the bucket is doing real work while we
+           * wait — it assembles the parts server-side, and a 2 GB video is not
+           * instant. Fifteen seconds would fail exactly the uploads the
+           * multipart path exists for, and only those, which is the worst
+           * possible place for a wrong constant.
+           */
+          signal: AbortSignal.timeout(TRANSFER_DEADLINE_MS),
+        },
       );
     } catch (error) {
       return { ok: false, refusal: { kind: "unreachable", reason: describe(error) } };

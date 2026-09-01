@@ -159,6 +159,16 @@ export function createOidcClient(config: OidcConfig): OidcClient {
     }
 
     const response = await fetch(`${config.issuer}/protocol/openid-connect/token`, {
+      /*
+       * A deadline, because this is on the sign-in path (P144-01).
+       *
+       * `fetch` waits for ever by default, so an identity provider that is
+       * unreachable rather than down does not fail a sign-in — it hangs it, and
+       * the physician sees a spinner with no end. `jwks.provider` had the same
+       * gap and was fixed in P141; this is its twin, and it survived because
+       * that fix went to the file the incident named instead of to the class.
+       */
+      signal: AbortSignal.timeout(15_000),
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({

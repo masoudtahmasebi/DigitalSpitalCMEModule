@@ -54,11 +54,36 @@ interface Histogram {
   count: number;
 }
 
+/** A value read at scrape time rather than accumulated. */
+export interface GaugeSource {
+  readonly name: string;
+  readonly help: string;
+  readonly labels?: Readonly<Record<string, string>>;
+  read(): number;
+}
+
 export class Metrics {
   private readonly requests = new Map<string, number>();
   private readonly durations = new Map<string, Histogram>();
   private readonly counters = new Map<string, number>();
+  private readonly gauges: GaugeSource[] = [];
   private overflowed = false;
+
+  /**
+   * Register something to be read whenever `/metrics` is scraped (P144-01).
+   *
+   * A pull rather than a push, because the interesting values here — how many
+   * pool connections exist, how many callers are queued for one — are already
+   * held correctly by somebody else, and a copy kept in step by an interval is
+   * a copy that is wrong exactly while nobody is looking.
+   *
+   * A callback rather than a `pg.Pool` parameter so this file keeps knowing
+   * nothing about the database. Observability that imports the data layer is
+   * how a metrics change ends up needing a migration review.
+   */
+  registerGauge(source: GaugeSource): void {
+    this.gauges.push(source);
+  }
 
   /**
    * Record one served request.
@@ -186,6 +211,26 @@ export class Metrics {
      * One series, constant labels, and the `_info` gauge-at-1 convention that
      * `node_exporter` and `prom-client` both use, so it joins in a dashboard.
      */
+    /*
+     * Whatever registered itself — today, the two connection pools (P144-01).
+     *
+     * `ds_pg_pool_waiting` is the number that would have named the outage of
+     * 01.09.2026 in its first minute. It was available all along as a
+     * synchronous property on the pool, needing no connection to read, on a
+     * process that was otherwise unable to answer anything. Nobody exported it,
+     * so the only evidence anyone had was a browser showing `(pending)`.
+     */
+    for (const gauge of this.gauges) {
+      lines.push(`# HELP ${gauge.name} ${gauge.help}`);
+      lines.push(`# TYPE ${gauge.name} gauge`);
+      const label = gauge.labels
+        ? `{${Object.entries(gauge.labels)
+            .map(([k, v]) => `${k}="${escapeLabel(v)}"`)
+            .join(",")}}`
+        : "";
+      lines.push(`${gauge.name}${label} ${String(gauge.read())}`);
+    }
+
     lines.push("# HELP ds_build_info The commit this process was built from.");
     lines.push("# TYPE ds_build_info gauge");
     lines.push(

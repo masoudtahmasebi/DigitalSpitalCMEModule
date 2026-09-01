@@ -31,6 +31,7 @@
  */
 
 import { isStorageReference } from "@ds/domain";
+import { withDeadline } from "../../shared/deadline-fetch.js";
 
 /** One byte. The question is whether the server understands the header. */
 const PROBE_RANGE = "bytes=0-0";
@@ -63,7 +64,10 @@ export interface MediaCheckResult {
 }
 
 export class MediaCheckService {
-  constructor(private readonly fetchImpl: typeof fetch = fetch) {}
+  // Already passes its own `AbortSignal.timeout` per call; the default is
+  // wrapped anyway so that no constructor in this application names a bare
+  // `fetch` and `check:deadlines` has one rule rather than an exception.
+  constructor(private readonly fetchImpl: typeof fetch = withDeadline()) {}
 
   /**
    * Probe every distinct URL, in order, and say what each one did.

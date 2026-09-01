@@ -32,9 +32,18 @@
  * perfectly and slowly wastes money. Those deserve different exit codes, and
  * conflating them would make an S3-compatible store that does not implement
  * lifecycle at all into a failed deployment of a working platform.
+ *
+ * ## Deadlines (P144-01)
+ *
+ * These run during a deploy, against a bucket the host may not be able to
+ * reach — P70-02 is the record of exactly that lasting months. A bare `fetch`
+ * here does not fail the deploy, it stops it, with the last line printed being
+ * whatever came before. The default carries a deadline so the deploy says
+ * "the bucket did not answer" instead of appearing to still be working.
  */
 
 import { createHash } from "node:crypto";
+import { withDeadline } from "./deadline-fetch.js";
 
 export interface BucketLifecyclePresigner {
   presignBucketLifecycle(
@@ -89,7 +98,7 @@ export async function applyBucketLifecycle(
   presigner: BucketLifecyclePresigner,
   days: number,
   now: Date,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = withDeadline(),
 ): Promise<LifecycleOutcome> {
   const body = lifecycleConfigurationXml(days);
   const md5 = contentMd5(body);

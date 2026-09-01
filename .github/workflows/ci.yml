@@ -533,6 +533,14 @@ jobs:
       - name: Tenant-scoped reads are inside runInTenant
         run: node scripts/tenant-reads.mjs
 
+      # An outbound call with no deadline. `fetch` waits for ever by default,
+      # and a request handler waits holding a pooled database connection — so
+      # a bucket that does not answer takes the API down rather than failing a
+      # request. That is P142's outage arriving by a second road (P143-01), and
+      # it is the absence of a line of code, which no diff review shows.
+      - name: Outbound calls have deadlines
+        run: node scripts/check-deadlines.mjs
+
       - name: Scan for committed secrets
         uses: gitleaks/gitleaks-action@v2
         env:

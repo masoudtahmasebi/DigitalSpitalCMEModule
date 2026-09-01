@@ -22,6 +22,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { withDeadline, TRANSFER_DEADLINE_MS } from "../shared/deadline-fetch.js";
 import { openAsBlob } from "node:fs";
 import type { S3Presigner } from "../shared/s3-presigner.js";
 
@@ -37,7 +38,19 @@ export class ObjectStoreError extends Error {
 }
 
 export class BackupStore {
-  constructor(private readonly presigner: S3Presigner) {}
+  constructor(
+    private readonly presigner: S3Presigner,
+    /*
+     * A deadline by default (P144-01).
+     *
+     * These hold no database connection, so they cannot take the API down —
+     * the failure is quieter and, for a backup, not much better: a job that
+     * hangs finishes never, reports nothing, and pings no heartbeat. P140's
+     * watchdog notices the *absence* of a successful run; this is what makes
+     * an unreachable bucket produce one.
+     */
+    private readonly fetchImpl: typeof fetch = withDeadline(),
+  ) {}
 
   /**
    * Every key under a prefix, following continuation tokens to the end.
@@ -52,7 +65,7 @@ export class BackupStore {
     let token: string | undefined;
 
     do {
-      const response = await fetch(
+      const response = await this.fetchImpl(
         this.presigner.presignList(prefix, token, OPERATION_TTL_SEC, now),
       );
       if (!response.ok) throw new ObjectStoreError("list", response.status);
@@ -86,9 +99,11 @@ export class BackupStore {
    */
   async putFile(key: string, path: string, now: Date): Promise<void> {
     const body = await openAsBlob(path, { type: "application/octet-stream" });
-    const response = await fetch(
+    const response = await this.fetchImpl(
       this.presigner.presignPutStream(key, OPERATION_TTL_SEC, now),
-      { method: "PUT", body },
+      // The dump itself goes up this call, so it gets the transfer budget
+      // rather than the control one.
+      { method: "PUT", body, signal: AbortSignal.timeout(TRANSFER_DEADLINE_MS) },
     );
 
     if (!response.ok) throw new ObjectStoreError("put", response.status);
@@ -96,7 +111,7 @@ export class BackupStore {
 
   /** The object's size, or undefined when it is not there. */
   async size(key: string, now: Date): Promise<number | undefined> {
-    const response = await fetch(
+    const response = await this.fetchImpl(
       this.presigner.presignHead(key, OPERATION_TTL_SEC, now),
       { method: "HEAD" },
     );
@@ -109,7 +124,7 @@ export class BackupStore {
   }
 
   async remove(key: string, now: Date): Promise<void> {
-    const response = await fetch(
+    const response = await this.fetchImpl(
       this.presigner.presignDelete(key, OPERATION_TTL_SEC, now),
       { method: "DELETE" },
     );
@@ -137,7 +152,10 @@ export class BackupStore {
     // The headers come back with the URL rather than being written again here:
     // `x-amz-copy-source` is a *signed* header, so a second spelling of it
     // would be a 403 that reads like a credential problem.
-    const response = await fetch(copy.url, { method: "PUT", headers: copy.headers });
+    const response = await this.fetchImpl(copy.url, {
+      method: "PUT",
+      headers: copy.headers,
+    });
 
     if (!response.ok) throw new ObjectStoreError("copy", response.status);
 

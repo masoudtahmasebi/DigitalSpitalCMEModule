@@ -10,7 +10,14 @@
  * (ADR-0002) — migrations run separately, out of band of the running API.
  */
 
-import { Global, Inject, Logger, Module, type OnModuleDestroy } from "@nestjs/common";
+import {
+  Global,
+  Inject,
+  Logger,
+  Module,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from "@nestjs/common";
 import type { Pool } from "pg";
 import { createPool } from "@ds/postgres";
 import Redis from "ioredis";
@@ -18,6 +25,8 @@ import { loadConfig, type AppConfig } from "../config/config.js";
 import { APP_CONFIG, PG_POOL, PG_SIDE_POOL, REDIS_CLIENT } from "./tokens.js";
 import { RateLimiter, RedisRateLimitStore } from "../shared/rate-limit.js";
 import { guardReentry } from "./pool-reentry.js";
+import { Metrics } from "../observability/metrics.js";
+import { ObservabilityModule } from "../observability/observability.module.js";
 
 /**
  * One set of pool settings, shared by both pools (P142-01).
@@ -129,6 +138,13 @@ function pgPool(config: AppConfig, options: { max: number; name: string }) {
 
 @Global()
 @Module({
+  /*
+   * For `Metrics`, so the pools can export what they are doing (P144-01).
+   *
+   * Not circular: `ObservabilityModule` takes `APP_CONFIG` from this module
+   * without importing it, because this one is `@Global()`.
+   */
+  imports: [ObservabilityModule],
   providers: [
     { provide: APP_CONFIG, useFactory: (): AppConfig => loadConfig() },
     {
@@ -174,12 +190,52 @@ function pgPool(config: AppConfig, options: { max: number; name: string }) {
   ],
   exports: [APP_CONFIG, PG_POOL, PG_SIDE_POOL, REDIS_CLIENT, RateLimiter],
 })
-export class DbModule implements OnModuleDestroy {
+export class DbModule implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
     @Inject(PG_SIDE_POOL) private readonly sidePool: Pool,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly metrics: Metrics,
   ) {}
+
+  /**
+   * Export what each pool is doing, so the next exhaustion is a number
+   * somebody can see rather than a browser full of `(pending)` (P144-01).
+   *
+   * All three are synchronous properties of the pool. That matters more than
+   * it sounds: on 01.09.2026 the API could not answer `SELECT 1`, and it could
+   * still have answered these — the one process unable to reach its database
+   * was the process holding the explanation.
+   *
+   * `waiting` is the alarm. Above zero for any sustained period means callers
+   * are queued for a connection, which is the leading indicator of every
+   * failure in P141-01, P142-01 and P143-01. The watchdog thresholds on it.
+   */
+  onModuleInit(): void {
+    for (const [name, pool] of [
+      ["request", this.pool],
+      ["side", this.sidePool],
+    ] as const) {
+      this.metrics.registerGauge({
+        name: "ds_pg_pool_total",
+        help: "Connections the pool currently holds, busy or idle.",
+        labels: { pool: name },
+        read: () => pool.totalCount,
+      });
+      this.metrics.registerGauge({
+        name: "ds_pg_pool_idle",
+        help: "Connections available for immediate checkout.",
+        labels: { pool: name },
+        read: () => pool.idleCount,
+      });
+      this.metrics.registerGauge({
+        name: "ds_pg_pool_waiting",
+        help: "Callers queued for a connection. Sustained above zero is an outage forming.",
+        labels: { pool: name },
+        read: () => pool.waitingCount,
+      });
+    }
+  }
 
   /** Closes cleanly on shutdown so a redeploy does not orphan connections. */
   async onModuleDestroy(): Promise<void> {

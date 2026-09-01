@@ -29,6 +29,9 @@
 #   ./deploy.sh --no-build      restart without rebuilding (config change only)
 #   ./deploy.sh --no-migrate    skip migrations
 #   ./deploy.sh --rollback SHA  run images already built from an older commit
+#   ./deploy.sh --install-timers install the systemd units only, then exit.
+#                               The one step that needs root; everything else
+#                               runs as the deploy user.
 #
 # ## The order, and why it is that order
 #
@@ -58,6 +61,7 @@ RUN_MIGRATIONS=1
 RUN_BUILD=1
 ROLLBACK_TAG=""
 DRY_RUN=0
+INSTALL_TIMERS_ONLY=0
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; exit 1; }
@@ -76,10 +80,201 @@ while [[ $# -gt 0 ]]; do
     # alternative is finding out halfway through.
     --check)      DRY_RUN=1; shift ;;
     --rollback)   ROLLBACK_TAG="${2:-}"; [[ -n "$ROLLBACK_TAG" ]] || die "--rollback needs a commit"; shift 2 ;;
-    -h|--help)    sed -n '2,30p' "$0"; exit 0 ;;
-    *)            die "unknown option: $1" ;;
+    # Install the systemd units and nothing else.
+    #
+    # It exists because `ds_install_timers` needs root and the deploy user
+    # deliberately does not have it without a password. Without this flag the
+    # deploy's own warning told the operator to run a command that did not
+    # exist — CLAUDE.md §9.2, in a shell script: a control offered by a message
+    # is still a control, and one the program refuses is worse than none.
+    --install-timers) INSTALL_TIMERS_ONLY=1; shift ;;
+    -h|--help)    sed -n '2,33p' "$0"; exit 0 ;;
+    # Naming the options is the difference between "I mistyped" and "this
+    # feature does not exist", and the operator cannot tell those apart (§9.4).
+    *)            die "unknown option: $1
+Valid options: --check --no-build --no-migrate --rollback SHA --install-timers --help" ;;
   esac
 done
+
+# ---------------------------------------------------------------------------
+# The scheduled jobs, installed rather than described (P140-01)
+# ---------------------------------------------------------------------------
+#
+# `backup.timer` in this directory carried four systemd units and an instruction
+# to *"copy the four sections below into /etc/systemd/system/"*. On 01.09.2026
+# the client confirmed what CLAUDE.md §9.9 predicts about that shape:
+#
+#   > "They were never installed."
+#
+# So the platform had run for weeks with **no backup of any kind** — a
+# meticulous runbook, an encrypted dump, a retention policy, a freshness check,
+# and nothing on a schedule to produce a file for any of it to act on. That is
+# the CORS rule of P70-01 exactly: documentation instructing a human to apply a
+# setting is a setting that is not applied.
+#
+# It was worse than not-done. The units hard-coded `User=ds` and
+# `/home/ds/ds-education/repo/…`, and the installation they were written for
+# runs as `deploy` out of `~/Repositories/DigitalSpitalCMEModule`. A diligent
+# operator following the runbook to the letter would have installed three units
+# that fail on every fire — so the manual step was not merely skipped, it could
+# not have succeeded.
+#
+# Now the deploy writes them, from the paths it is actually running from, and
+# enables them. `--check` skips this: it changes host state.
+ds_install_timers() {
+  local unit_dir="/etc/systemd/system"
+
+  # The **binary** is not the question; a usable init is (P144-01).
+  #
+  # `command -v systemctl` succeeds inside a container that has the package and
+  # no systemd, and the next line then fails with "Failed to connect to bus:
+  # Host is down" and takes an otherwise successful deploy down with it. Ask
+  # whether it can actually talk to the manager instead.
+  if ! systemctl list-units --type=service >/dev/null 2>&1; then
+    log "No usable systemd on this host — skipping timer installation."
+    log "  Backups and the watchdog will NOT run. Schedule these by hand:"
+    log "    ${SCRIPT_DIR}/dsc run --rm backup database"
+    log "    ${SCRIPT_DIR}/watchdog.sh"
+    # A refusal that is correct is still a refusal: under `--install-timers`
+    # this was the whole job, so say so with a status rather than exiting 0 and
+    # letting the operator believe timers exist (§9.1).
+    [[ "${INSTALL_TIMERS_ONLY:-0}" == "1" ]] && die "--install-timers cannot do anything on a host without systemd"
+    return 0
+  fi
+
+  # `sudo -n`: non-interactive. A deploy that stops to ask for a password is a
+  # deploy that hangs in CI, and the SSH session it runs in has no terminal.
+  local sudo=""
+  if [[ "$(id -u)" != "0" ]]; then
+    if sudo -n true 2>/dev/null; then
+      sudo="sudo -n"
+    else
+      printf '\033[1;33m!!\033[0m %s\n' \
+        "Cannot write ${unit_dir} without a password, so the backup and watchdog timers were NOT installed." >&2
+      printf '\033[1;33m!!\033[0m %s\n' \
+        "Run once, as a user who can: sudo ${SCRIPT_DIR}/deploy.sh --install-timers" >&2
+      return 0
+    fi
+  fi
+
+  local user="${SUDO_USER:-$(id -un)}"
+  log "Installing systemd units as user=${user} dir=${SCRIPT_DIR}"
+
+  # Written from the real paths, every time. A unit that drifted from the
+  # checkout is the same class of defect as a Caddyfile the container never
+  # re-read (§9.9a) — so this rewrites rather than skipping when present.
+  ds_write_unit() {
+    local name="$1"
+    $sudo tee "${unit_dir}/${name}" >/dev/null
+  }
+
+  ds_write_unit ds-backup.service <<UNIT
+[Unit]
+Description=DS Education — database and object backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=${user}
+WorkingDirectory=${SCRIPT_DIR}
+ExecStart=${SCRIPT_DIR}/dsc run --rm backup database
+ExecStart=${SCRIPT_DIR}/dsc run --rm backup objects
+TimeoutStartSec=7200
+OnFailure=ds-watchdog.service
+UNIT
+
+  ds_write_unit ds-backup.timer <<'UNIT'
+[Unit]
+Description=DS Education — nightly backup
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+  ds_write_unit ds-backup-verify.service <<UNIT
+[Unit]
+Description=DS Education — is there a recent, restorable backup?
+After=docker.service
+
+[Service]
+Type=oneshot
+User=${user}
+WorkingDirectory=${SCRIPT_DIR}
+ExecStart=${SCRIPT_DIR}/dsc run --rm backup verify
+OnFailure=ds-watchdog.service
+UNIT
+
+  ds_write_unit ds-backup-verify.timer <<'UNIT'
+[Unit]
+Description=DS Education — backup freshness check
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+OnCalendar=*-*-* 16:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+  ds_write_unit ds-watchdog.service <<UNIT
+[Unit]
+Description=DS Education — is anything broken, and does anybody know?
+After=docker.service
+
+[Service]
+Type=oneshot
+User=${user}
+WorkingDirectory=${SCRIPT_DIR}
+EnvironmentFile=-${CONFIG_FILE}
+ExecStart=${SCRIPT_DIR}/watchdog.sh
+UNIT
+
+  ds_write_unit ds-watchdog.timer <<'UNIT'
+[Unit]
+Description=DS Education — service watchdog
+
+[Timer]
+# Every two minutes. The incident it exists for lasted twenty-two hours; the
+# cost of asking is two `docker` calls, and the heartbeat it sends when healthy
+# is what tells an external service the host is still alive.
+OnBootSec=2min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+  $sudo systemctl daemon-reload
+  $sudo systemctl enable --now ds-backup.timer ds-backup-verify.timer ds-watchdog.timer
+
+  # Assert the effect, not the exit code (§9.9a). `enable --now` returning 0
+  # says the command ran; the question is whether three timers are now armed,
+  # and P140 exists because for weeks the answer to that was no.
+  local armed
+  armed="$(systemctl list-timers 'ds-*' --no-pager --all 2>/dev/null | grep -c 'ds-.*\.timer' || true)"
+  if [[ "${armed:-0}" -lt 3 ]]; then
+    die "expected 3 ds-* timers to be armed, systemd lists ${armed:-0}"
+  fi
+
+  log "Timers installed and enabled:"
+  systemctl list-timers 'ds-*' --no-pager 2>/dev/null | sed 's/^/    /' || true
+
+  if [[ -z "${ALERT_WEBHOOK_URL:-}" ]]; then
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "ALERT_WEBHOOK_URL is empty: the watchdog will find problems and report them to a log file nobody reads." >&2
+  fi
+  if [[ -z "${HEARTBEAT_URL:-}" ]]; then
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "HEARTBEAT_URL is empty: nothing outside this host will notice if the host itself stops." >&2
+  fi
+}
 
 # ---------------------------------------------------------------------------
 # 1. Preflight
@@ -142,6 +337,18 @@ set -a
 # shellcheck disable=SC1090 # runtime path, deliberately not resolvable at lint time
 source "$CONFIG_FILE"
 set +a
+
+# `--install-timers` does this one thing and stops (P144-01).
+#
+# It is the only step that needs root, and the deploy user deliberately cannot
+# get root without a password — so the deploy warns and carries on rather than
+# hanging on a prompt. That warning used to name a flag that did not exist,
+# which is §9.2 in a shell script: the operator ran exactly what they were told
+# and got `unknown option`.
+if [[ "$INSTALL_TIMERS_ONLY" == "1" ]]; then
+  ds_install_timers
+  exit 0
+fi
 
 # Everything the stack cannot start without and cannot derive. Named here, in
 # one list, so the drift check below can speak about exactly these.
@@ -1107,165 +1314,8 @@ if [[ "$RUN_MIGRATIONS" == "1" ]]; then
   fi
 fi
 
-# ---------------------------------------------------------------------------
-# The scheduled jobs, installed rather than described (P140-01)
-# ---------------------------------------------------------------------------
-#
-# `backup.timer` in this directory carried four systemd units and an instruction
-# to *"copy the four sections below into /etc/systemd/system/"*. On 01.09.2026
-# the client confirmed what CLAUDE.md §9.9 predicts about that shape:
-#
-#   > "They were never installed."
-#
-# So the platform had run for weeks with **no backup of any kind** — a
-# meticulous runbook, an encrypted dump, a retention policy, a freshness check,
-# and nothing on a schedule to produce a file for any of it to act on. That is
-# the CORS rule of P70-01 exactly: documentation instructing a human to apply a
-# setting is a setting that is not applied.
-#
-# It was worse than not-done. The units hard-coded `User=ds` and
-# `/home/ds/ds-education/repo/…`, and the installation they were written for
-# runs as `deploy` out of `~/Repositories/DigitalSpitalCMEModule`. A diligent
-# operator following the runbook to the letter would have installed three units
-# that fail on every fire — so the manual step was not merely skipped, it could
-# not have succeeded.
-#
-# Now the deploy writes them, from the paths it is actually running from, and
-# enables them. `--check` skips this: it changes host state.
-ds_install_timers() {
-  local unit_dir="/etc/systemd/system"
-
-  if ! command -v systemctl >/dev/null 2>&1; then
-    log "No systemd on this host — skipping timer installation."
-    log "  Backups and the watchdog will NOT run. Schedule these by hand:"
-    log "    ${SCRIPT_DIR}/dsc run --rm backup database"
-    log "    ${SCRIPT_DIR}/watchdog.sh"
-    return 0
-  fi
-
-  # `sudo -n`: non-interactive. A deploy that stops to ask for a password is a
-  # deploy that hangs in CI, and the SSH session it runs in has no terminal.
-  local sudo=""
-  if [[ "$(id -u)" != "0" ]]; then
-    if sudo -n true 2>/dev/null; then
-      sudo="sudo -n"
-    else
-      printf '\033[1;33m!!\033[0m %s\n' \
-        "Cannot write ${unit_dir} without a password, so the backup and watchdog timers were NOT installed." >&2
-      printf '\033[1;33m!!\033[0m %s\n' \
-        "Run once, as a user who can: sudo ${SCRIPT_DIR}/deploy.sh --install-timers" >&2
-      return 0
-    fi
-  fi
-
-  local user="${SUDO_USER:-$(id -un)}"
-  log "Installing systemd units as user=${user} dir=${SCRIPT_DIR}"
-
-  # Written from the real paths, every time. A unit that drifted from the
-  # checkout is the same class of defect as a Caddyfile the container never
-  # re-read (§9.9a) — so this rewrites rather than skipping when present.
-  ds_write_unit() {
-    local name="$1"
-    $sudo tee "${unit_dir}/${name}" >/dev/null
-  }
-
-  ds_write_unit ds-backup.service <<UNIT
-[Unit]
-Description=DS Education — database and object backup
-After=docker.service
-Requires=docker.service
-
-[Service]
-Type=oneshot
-User=${user}
-WorkingDirectory=${SCRIPT_DIR}
-ExecStart=${SCRIPT_DIR}/dsc run --rm backup database
-ExecStart=${SCRIPT_DIR}/dsc run --rm backup objects
-TimeoutStartSec=7200
-OnFailure=ds-watchdog.service
-UNIT
-
-  ds_write_unit ds-backup.timer <<'UNIT'
-[Unit]
-Description=DS Education — nightly backup
-
-[Timer]
-OnCalendar=*-*-* 02:15:00
-RandomizedDelaySec=300
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-UNIT
-
-  ds_write_unit ds-backup-verify.service <<UNIT
-[Unit]
-Description=DS Education — is there a recent, restorable backup?
-After=docker.service
-
-[Service]
-Type=oneshot
-User=${user}
-WorkingDirectory=${SCRIPT_DIR}
-ExecStart=${SCRIPT_DIR}/dsc run --rm backup verify
-OnFailure=ds-watchdog.service
-UNIT
-
-  ds_write_unit ds-backup-verify.timer <<'UNIT'
-[Unit]
-Description=DS Education — backup freshness check
-
-[Timer]
-OnCalendar=*-*-* 08:00:00
-OnCalendar=*-*-* 16:00:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-UNIT
-
-  ds_write_unit ds-watchdog.service <<UNIT
-[Unit]
-Description=DS Education — is anything broken, and does anybody know?
-After=docker.service
-
-[Service]
-Type=oneshot
-User=${user}
-WorkingDirectory=${SCRIPT_DIR}
-EnvironmentFile=-${CONFIG_FILE}
-ExecStart=${SCRIPT_DIR}/watchdog.sh
-UNIT
-
-  ds_write_unit ds-watchdog.timer <<'UNIT'
-[Unit]
-Description=DS Education — service watchdog
-
-[Timer]
-# Every two minutes. The incident it exists for lasted twenty-two hours; the
-# cost of asking is two `docker` calls, and the heartbeat it sends when healthy
-# is what tells an external service the host is still alive.
-OnBootSec=2min
-OnUnitActiveSec=2min
-
-[Install]
-WantedBy=timers.target
-UNIT
-
-  $sudo systemctl daemon-reload
-  $sudo systemctl enable --now ds-backup.timer ds-backup-verify.timer ds-watchdog.timer
-
-  log "Timers installed and enabled:"
-  systemctl list-timers 'ds-*' --no-pager 2>/dev/null | sed 's/^/    /' || true
-
-  if [[ -z "${ALERT_WEBHOOK_URL:-}" ]]; then
-    printf '\033[1;33m!!\033[0m %s\n' \
-      "ALERT_WEBHOOK_URL is empty: the watchdog will find problems and report them to a log file nobody reads." >&2
-  fi
-  if [[ -z "${HEARTBEAT_URL:-}" ]]; then
-    printf '\033[1;33m!!\033[0m %s\n' \
-      "HEARTBEAT_URL is empty: nothing outside this host will notice if the host itself stops." >&2
-  fi
-}
-
-ds_install_timers
+# A deploy that swapped the containers and passed every check has succeeded,
+# even if it could not write to /etc — so this reports rather than aborts.
+# `--install-timers` above is the opposite: there, failing is the answer.
+ds_install_timers || printf '\033[1;33m!!\033[0m %s\n' \
+  "The timers were not installed. Run: sudo ${SCRIPT_DIR}/deploy.sh --install-timers" >&2

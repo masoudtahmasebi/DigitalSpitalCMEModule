@@ -57,9 +57,18 @@
  * the console's own origin. It is not a way for anybody else's page to read the
  * bucket: without a signature the object answers 403 whatever CORS says, and
  * the origin list is still exactly the console.
+ *
+ * ## Deadlines (P144-01)
+ *
+ * These run during a deploy, against a bucket the host may not be able to
+ * reach — P70-02 is the record of exactly that lasting months. A bare `fetch`
+ * here does not fail the deploy, it stops it, with the last line printed being
+ * whatever came before. The default carries a deadline so the deploy says
+ * "the bucket did not answer" instead of appearing to still be working.
  */
 
 import { joinUrl } from "@ds/domain";
+import { withDeadline } from "./deadline-fetch.js";
 import { createHash } from "node:crypto";
 
 /**
@@ -185,7 +194,7 @@ export async function applyBucketCors(
   presigner: BucketCorsPresigner,
   rule: BucketCorsRule,
   now: Date,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = withDeadline(),
 ): Promise<ApplyResult> {
   const body = corsConfigurationXml(rule);
   const md5 = contentMd5(body);
@@ -230,7 +239,7 @@ export async function probePreflight(
   bucket: string,
   origin: string,
   method: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = withDeadline(),
 ): Promise<PreflightVerdict> {
   const url = joinUrl(endpoint, `${bucket}/ds-cors-preflight-probe`);
 
