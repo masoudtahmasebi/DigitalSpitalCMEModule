@@ -107,7 +107,27 @@ services:
       # against — rather than being a second place to write the same host.
     depends_on:
       api:
-        condition: service_healthy
+        # `service_started`, not `service_healthy` (P138-01).
+        #
+        # Caddy terminates TLS and serves the console, the portal and the widget
+        # — three static bundles that need the API for nothing. Blocking the edge
+        # on the API's health means an API problem takes the **whole site** down
+        # rather than the parts that depend on it, and `depends_on` is evaluated
+        # when a container is created, so the failure is stored up: Caddy kept
+        # running through an unhealthy API for 22 hours and would have refused to
+        # start on the next reboot, with `*** System restart required ***`
+        # already on the host.
+        #
+        # `health.service.ts` makes exactly this argument about liveness — "a
+        # database outage that made liveness fail would restart every API
+        # container in a loop, turning a recoverable dependency failure into a
+        # self-inflicted outage". An edge that will not start is the same trade
+        # one layer out.
+        #
+        # With this, an API that is down costs 502s on `api.…` and nothing else:
+        # the sign-in page still loads and says so, which is a better answer than
+        # a connection refused on every hostname.
+        condition: service_started
     networks: [edge, internal]
 
   api:
@@ -212,15 +232,38 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        # `service_healthy`, matching postgres. Redis holds the JWKS cache, the
+        # rate-limit counters and the queues; starting the API against one that
+        # is running and not answering produces 500s on every rate-limited route
+        # while `/health` used to go on saying nothing was wrong.
+        condition: service_healthy
     healthcheck:
-      # `/health` is public precisely so a probe can reach it without a token.
+      # `/health/ready`, not `/health` (P138-01).
+      #
+      # Both are public precisely so a probe can reach them without a token, and
+      # for a long time this probed `/health` — which returns **200 even when it
+      # reports `degraded`**. `health.service.ts` says why that is wrong, about a
+      # different reader, in a comment written two phases before this line was:
+      # *"a 200 saying 'degraded' in the body is a 200 to every load balancer
+      # ever written"*. A container healthcheck is exactly such a reader. It
+      # parsed no body, so a dead database or a dead Redis left the container
+      # **healthy**, and the only thing that could ever turn it red was the fetch
+      # itself failing.
+      #
+      # That is CLAUDE.md §9.1 in the deployment: a gate that cannot go red for
+      # the conditions it exists to detect. `/health/ready` answers 503, which is
+      # the status code this probe already knows how to read.
+      #
+      # It also **prints why**. Docker keeps the last few probe outputs in
+      # `State.Health.Log`, and an exit code alone sends whoever is reading
+      # `docker inspect` at 22:00 back to guessing — the body names which
+      # dependency is down (§9.4).
       test:
         [
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:3000/health/ready').then(async r=>{const b=await r.text();if(!r.ok){console.log('not ready:',r.status,b);process.exit(1)}process.exit(0)}).catch(e=>{console.log('unreachable:',e.message);process.exit(1)})",
         ]
       interval: 10s
       timeout: 5s
@@ -434,6 +477,17 @@ services:
         "--maxmemory-policy",
         "allkeys-lru",
       ]
+    # Redis had **no healthcheck at all** (P138-01), so `docker ps` showed it as
+    # "Up 3 weeks" whether or not it was answering. That is the gap that let a
+    # wedged Redis hide: `depends_on` waited only for the process to start, the
+    # API's own probe could not go red for it, and the first symptom anybody saw
+    # was a 500 on a rate-limited route.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     networks: [internal]
 
 networks:
