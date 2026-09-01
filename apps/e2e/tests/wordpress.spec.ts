@@ -198,23 +198,60 @@ test.describe("die WordPress-Einbindung", () => {
        */
       await expect
         .poll(() => widgetText(page), { timeout: 20_000 })
-        .toContain("Sitzung ist abgelaufen");
+        .toContain("keine Anmeldedaten");
 
       const text = await widgetText(page);
 
       /*
-       * "Ihre Sitzung ist abgelaufen. Bitte laden Sie die Seite neu und melden
-       * Sie sich erneut an." — the API's 401 rendered as something a physician
-       * can act on, rather than an empty frame or the misconfiguration notice.
+       * ## This assertion used to demand the sentence P101-03 removed
        *
-       * Which of the two it is matters: `misconfigured` sends them to the site
-       * operator, and this is not the operator's problem. It is a WordPress
-       * session that has ended, and the fix is to log in again.
+       * It read `toContain("Sitzung ist abgelaufen")`, and it was written on
+       * 2026-08-18 (`bdc3b75`). One day later `cf6c8c1` fixed a **client-
+       * reported** bug: the widget said "Ihre Sitzung ist abgelaufen" whenever
+       * the token endpoint answered anything but 200, so a 404 from an
+       * uninstalled plugin and a genuinely expired token produced identical
+       * screens — and the screen named the one thing that was working. Signing
+       * in again cannot fix a 404, so the advice sent the one person who could
+       * not help into a loop and told nobody who could.
+       *
+       * So this test has been asserting the defect ever since, and nothing
+       * noticed for thirteen days: the post-deploy smoke runs only
+       * `journey.spec.ts` and `zwei-module.spec.ts`
+       * (`playwright.smoke.config.ts` `testMatch`), and nothing runs the full
+       * browser suite in CI or on deploy. It fails the moment a human types
+       * `pnpm test:e2e`, which is what happened.
+       *
+       * What the widget actually renders, and what this now pins:
+       *
+       *   "Diese Seite konnte keine Anmeldedaten für das Lernmodul abrufen.
+       *    Das liegt nicht an Ihrem Konto — … Technische Angabe:
+       *    Token-Endpunkt — endpoint_404."
+       *
+       * Three properties, and each is the point of P101-03:
        */
+
+      // 1. It says the page could not get credentials — not that the physician's
+      //    session ended, which is the claim that was false.
       expect(
         text,
         `a visitor with no WordPress session sees: ${text.slice(0, 300)}`,
-      ).toContain("Sitzung ist abgelaufen");
+      ).toContain("keine Anmeldedaten");
+
+      // 2. It absolves the physician explicitly. This is the sentence that stops
+      //    them retrying a sign-in that cannot help.
+      expect(text, "the physician is told it is not their account").toContain(
+        "nicht an Ihrem Konto",
+      );
+
+      // 3. It carries the technical cause for whoever maintains the site — the
+      //    person who *can* fix it, which the old message never reached (§9.10).
+      expect(text, "the site's maintainer is given the cause").toContain("endpoint_404");
+
+      // And it must not claim the session expired: that is the regression.
+      expect(
+        text,
+        "the removed P101-03 defect is back: a 404 reported as an expired session",
+      ).not.toContain("Sitzung ist abgelaufen");
       expect(
         text,
         "a signed-out visitor is told the embed is broken, which is the wrong advice",

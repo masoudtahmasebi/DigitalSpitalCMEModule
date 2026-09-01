@@ -58,7 +58,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createPool } from "@ds/postgres";
 import { hashPassword } from "./modules/staff/credentials.js";
-import { assertSchemaCurrent, migrationDatabaseUrl } from "./schema-freshness.js";
 
 /* eslint-disable no-console -- this is a CLI; its output is the point. */
 
@@ -137,25 +136,37 @@ async function main(): Promise<void> {
   }
 
   /*
-   * The schema must be the one this code was written against (QA §9.4, §9.9).
+   * ## Why this does NOT call `assertSchemaCurrent`, though every seed does
    *
-   * Every seed asserts this and this did not, which is the more dangerous
-   * omission of the two: `bootstrap-admin` is what a person runs on a **fresh
-   * host**, before anything else works, and a fresh host is exactly where a
-   * migration may not have run yet.
+   * P147 added that call here on the reasoning that a fresh host is exactly
+   * where a migration may not have run. The reasoning is sound and the change
+   * was wrong, and the e2e rig found it within one run of the rig existing:
    *
-   * Without it the failure is P43-02's shape — an error naming an innocent
-   * statement. `./dsc seed ds` answered "new row for relation projects violates
-   * check constraint projects_identity_provider_check", which was true, was
-   * about the seed, and was not the problem: the constraint had been replaced
-   * by a migration the deploy never ran. A schema older than the code writing
-   * to it fails somewhere deep and blames the writer.
+   *     Bootstrap failed: MIGRATION_DATABASE_URL is required (the ds_migrator
+   *     role). Run this through `./dsc as-migrator` …
    *
-   * Here that would read as "column display_name does not exist" to somebody
-   * whose actual problem is an un-migrated database, on their first five
-   * minutes with the platform.
+   * `assertSchemaCurrent` reads `schema_migrations`, on which `ds_app` holds no
+   * `GRANT` — deliberately (ADR-0002: the application role owns nothing and is
+   * not the migrator). So the check needs migrator credentials, and this
+   * command's documented invocation is
+   *
+   *     docker compose run --rm --entrypoint node api dist/bootstrap-admin.js
+   *
+   * which runs in the **api** service, where `MIGRATION_DATABASE_URL` is not
+   * set and must not be. The fix therefore turned the platform's first-boot
+   * step into a hard failure on every fresh host — the §9.2 shape, in the one
+   * command an operator runs before anything else works.
+   *
+   * The exposure it was guarding is also much smaller here than for a seed: the
+   * seeds are run by hand, months later, against whatever schema the host has;
+   * this runs seconds after `deploy.sh` has migrated. That asymmetry is why the
+   * seeds keep the check and this does not.
+   *
+   * Giving `ds_app` a `GRANT` on `schema_migrations` would make the check
+   * possible and is not obviously right — it widens the application role for a
+   * diagnostic. Recorded in P148 as a decision for a human rather than taken
+   * here.
    */
-  await assertSchemaCurrent(migrationDatabaseUrl());
 
   // `createPool`, not `new Pool` — see @ds/postgres (P76-04).
   const pool = createPool({ connectionString });
