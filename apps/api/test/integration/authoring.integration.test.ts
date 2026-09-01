@@ -1263,3 +1263,74 @@ describe("an answered question leaves the exam and keeps its record", () => {
     expect(body.questions).toHaveLength(2);
   });
 });
+
+describe("media-check against a host that does not answer (P146-02)", () => {
+  /*
+   * `GET /admin/courses/:slug/media-check` probes every distinct media URL in a
+   * course to ask whether a browser could seek it. The probes are
+   * **sequential**, each with an 8-second deadline, and until this ticket the
+   * whole loop ran inside the request's RLS transaction.
+   *
+   * So one operator opening the media report on a course whose CDN is wedged
+   * held a pooled connection for `8 s × N distinct URLs` — the largest single
+   * exposure of the shape P145 fixed for uploads, and one P145 did not touch
+   * because I looked at the module in front of me instead of running the search
+   * CLAUDE.md §11 rule 11 requires.
+   *
+   * §11 rule 10: this is fired concurrently, because a sequential version of
+   * this test passes on the broken code — one probe holding one connection out
+   * of ten is invisible.
+   */
+  let silent: Server;
+  let silentUrl: string;
+
+  beforeAll(async () => {
+    silent = createServer(() => {
+      // Accepts the connection, answers nothing. A host that returns 500 would
+      // release the connection immediately and prove nothing (§9.13).
+    });
+    await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
+    const address = silent.address();
+    if (address === null || typeof address === "string") throw new Error("no port");
+    silentUrl = `http://127.0.0.1:${String(address.port)}/wedged.mp4`;
+  });
+
+  afterAll(async () => {
+    // The in-flight probes are deliberately never answered, and `close()` waits
+    // for open connections — so without this the file hangs in teardown.
+    silent.closeAllConnections();
+    await new Promise<void>((resolve) => silent.close(() => resolve()));
+  });
+
+  it("keeps serving every other route while the probes are outstanding", async () => {
+    const created = await asAdmin("POST", `/admin/chapters/${chapterIds[0]}/contents`, {
+      kind: "video",
+      title: "Video auf einem toten Host",
+      sources: [{ url: silentUrl, mimeType: "video/mp4" }],
+      durationSec: 600,
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+
+    // More than the pool's `max` of ten, so that on the old code every
+    // connection is held and an eleventh caller has nothing to wait for.
+    const probing = Array.from({ length: 12 }, () =>
+      asAdmin("GET", `/admin/courses/${courseSlug}/media-check`).catch(
+        (error: unknown) => ({ status: 0, body: { error: String(error) } }),
+      ),
+    );
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      const started = Date.now();
+      const answer = await asAdmin("GET", "/admin/courses");
+      const elapsed = Date.now() - started;
+
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      // Well under the 5 s checkout timeout: the point is that it never queued.
+      expect(elapsed).toBeLessThan(2_000);
+    } finally {
+      await Promise.all(probing);
+    }
+  }, 40_000);
+});

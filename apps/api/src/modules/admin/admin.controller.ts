@@ -60,7 +60,12 @@ import { APP_CONFIG } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { createSecretCipher } from "../../shared/secret-cipher.js";
 import { AdminService } from "./admin.service.js";
-import { allSeekable } from "./media-check.service.js";
+import {
+  NoAmbientTransaction,
+  TenantRun,
+  type TenantRunner,
+} from "../../db/tenant-runner.js";
+import { allSeekable, MediaCheckService } from "./media-check.service.js";
 import { participantsToCsv } from "./participant-csv.js";
 import {
   adminCourseUpdateSchema,
@@ -87,6 +92,16 @@ const COURSE_ROLES = [
 
 @Controller("admin")
 export class AdminController {
+  /**
+   * The probe, held by the controller rather than by `AdminService` (P146-02).
+   *
+   * It moved here when the media report stopped running inside the request's
+   * transaction: the service now answers "which URLs", and the probing — the
+   * part that can take `8 s × N` — happens outside any transaction, which means
+   * outside anything the service holds.
+   */
+  private readonly mediaCheck = new MediaCheckService();
+
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
   @Get("courses")
@@ -155,10 +170,27 @@ export class AdminController {
    * list would make an operator read fifteen rows to learn one thing —
    * `allSeekable` exists to say it, and until P63-04 nothing called it.
    */
+  /*
+   * No ambient transaction (P146-02).
+   *
+   * The probes are sequential and each carries an 8-second deadline, so on a
+   * course pointing at a wedged CDN this route used to hold one of ten pooled
+   * connections for `8 s × N distinct URLs` — the largest single instance of
+   * the shape P145 fixed for uploads, and one P145 missed because it looked at
+   * the module in front of it rather than running the search §11 rule 11
+   * requires.
+   *
+   * Now: one short transaction for the URL list, then the probing with nothing
+   * held. `authoring.integration.test.ts` fires twelve of these at a host that
+   * never answers and asserts an unrelated route still answers — it returns 500
+   * after 8.1 s without this decorator.
+   */
+  @NoAmbientTransaction()
   @Get("courses/:slug/media-check")
   @Roles("department_admin", "customer_admin", "super_admin")
-  async checkMedia(@Param("slug") slug: string, @TenantDb() db: Db) {
-    const sources = await this.service(db).checkCourseMedia(slug);
+  async checkMedia(@Param("slug") slug: string, @TenantRun() run: TenantRunner) {
+    const urls = await run((db) => this.service(db).courseMediaUrls(slug));
+    const sources = await this.mediaCheck.check(urls);
     return { seekable: allSeekable(sources), sources };
   }
 

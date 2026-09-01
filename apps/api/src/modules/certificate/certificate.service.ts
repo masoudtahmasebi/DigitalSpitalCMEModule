@@ -25,6 +25,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import type { TenantRunner } from "../../db/tenant-runner.js";
 import {
   buildCertificateData,
   missingCertificateFields,
@@ -35,6 +36,7 @@ import type { Db } from "../../db/tenant-db.js";
 import type { LearnerContext } from "../learning/learning.service.js";
 import {
   CertificateRepository,
+  RunnerCertificateRepository,
   type CertificateRepositoryPort,
   type CertificateSourceRow,
 } from "./certificate.repository.js";
@@ -65,6 +67,24 @@ export class CertificateService {
   static fromDb(db: Db, archive?: CertificateArchivePort): CertificateService {
     return new CertificateService(
       new CertificateRepository(db),
+      renderCertificatePdf,
+      archive,
+    );
+  }
+
+  /**
+   * The same service on a route that holds no ambient transaction (P146-02).
+   *
+   * For `download`, whose archive step PUTs the PDF to the object store. See
+   * `RunnerCertificateRepository` for why splitting is safe on that path and
+   * deliberately not applied to completion.
+   */
+  static fromRunner(
+    run: TenantRunner,
+    archive?: CertificateArchivePort,
+  ): CertificateService {
+    return new CertificateService(
+      new RunnerCertificateRepository(run),
       renderCertificatePdf,
       archive,
     );

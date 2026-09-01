@@ -9,6 +9,7 @@
  */
 
 import { and, eq, isNull } from "drizzle-orm";
+import type { TenantRunner } from "../../db/tenant-runner.js";
 import type { Db } from "../../db/tenant-db.js";
 import {
   certificates,
@@ -271,5 +272,76 @@ export class CertificateRepository implements CertificateRepositoryPort {
       .where(
         and(eq(certificates.id, input.certificateId), isNull(certificates.pdfObjectKey)),
       );
+  }
+}
+
+/**
+ * The same repository, one short transaction per call (P146-02).
+ *
+ * `CertificateService.download` reads the source, renders, issues the row,
+ * **PUTs the PDF to the object store**, and records where it went. Under the
+ * ambient transaction the bucket round trip happens with a pooled connection
+ * held; ten physicians downloading while the bucket is slow is ten connections
+ * gone, and the rest of the platform with them.
+ *
+ * ## Why splitting is safe here, verified rather than assumed
+ *
+ * `CertificateArchive.store` catches every failure and returns `undefined` —
+ * it does not throw (`certificate.archive.ts:121,133`). So an archive failure
+ * has **never** rolled back the issued certificate: the transaction committed
+ * with `pdf_object_key` still null, and `archiveOnce`'s own
+ * `if (row.pdfObjectKey !== null) return` retries it on the next download.
+ * "Issued but not yet archived" is an existing, handled state, not a new one
+ * this introduces.
+ *
+ * That is the test `tenant-runner.ts` sets for opting out, and it is the reason
+ * `POST courses/:slug/completion` does **not** get this treatment: there the
+ * atomicity is load-bearing, because the same transaction marks the enrolment
+ * complete, issues the certificate and queues the Punktemeldung, and a partial
+ * commit is a compliance incident rather than a retry.
+ */
+export class RunnerCertificateRepository implements CertificateRepositoryPort {
+  constructor(private readonly run: TenantRunner) {}
+
+  findSource(
+    courseSlug: string,
+    userId: string,
+  ): Promise<CertificateSourceRow | undefined> {
+    return this.run((db) => new CertificateRepository(db).findSource(courseSlug, userId));
+  }
+
+  findSourceByEnrolment(enrolmentId: string): Promise<CertificateSourceRow | undefined> {
+    return this.run((db) =>
+      new CertificateRepository(db).findSourceByEnrolment(enrolmentId),
+    );
+  }
+
+  findCertificate(enrolmentId: string): Promise<CertificateRow | undefined> {
+    return this.run((db) => new CertificateRepository(db).findCertificate(enrolmentId));
+  }
+
+  findEnrolmentIdByCertificate(certificateId: string): Promise<string | undefined> {
+    return this.run((db) =>
+      new CertificateRepository(db).findEnrolmentIdByCertificate(certificateId),
+    );
+  }
+
+  issue(input: {
+    customerId: string;
+    enrolmentId: string;
+    participantName: string;
+    downloadToken: string;
+    issuedAt: Date;
+  }): Promise<CertificateRow> {
+    return this.run((db) => new CertificateRepository(db).issue(input));
+  }
+
+  recordArchive(input: {
+    certificateId: string;
+    objectKey: string;
+    sha256: string;
+    at: Date;
+  }): Promise<void> {
+    return this.run((db) => new CertificateRepository(db).recordArchive(input));
   }
 }

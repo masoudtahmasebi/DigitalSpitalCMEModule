@@ -15,6 +15,7 @@
  * to survive in a form that quotes no erased value.
  */
 
+import { Logger } from "@nestjs/common";
 import {
   certificateAction,
   nameCorrection,
@@ -160,7 +161,29 @@ export class ModerationService {
      * erasure and on boot — an obligation that survives, rather than an
      * exception that would tell the operator their completed erasure failed.
      */
-    await this.objectErasure?.drain().catch(() => undefined);
+    await this.objectErasure?.drain().catch((error: unknown) => {
+      /*
+       * Swallowed, and now **said** (P146-03).
+       *
+       * The swallow is right: the erasure has happened and is recorded, the
+       * outstanding rows survive in `object_erasures`, and the sweep in
+       * `delivery.scheduler.ts` retries them. Failing the request here would
+       * tell an operator their completed erasure failed.
+       *
+       * The silence was not right. From P142 until P146-03 this caught a
+       * `PoolReentryError` on **every** erasure — the service had been built on
+       * the request pool, so `guardReentry` refused its query — and the inline
+       * drain did nothing at all, invisibly, for four days. A `catch` with an
+       * empty body is a decision to never find out (§9.1).
+       *
+       * The name only. An object key names a customer, a course and a
+       * certificate, and this is the one log an erasure must not enrich.
+       */
+      new Logger("ObjectErasure").warn(
+        `object erasure drain failed after a subject erasure: ` +
+          `${error instanceof Error ? error.name : "unknown"}`,
+      );
+    });
 
     return result;
   }
