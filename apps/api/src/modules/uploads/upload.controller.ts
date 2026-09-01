@@ -135,20 +135,15 @@ export class UploadController {
    * No body — the entry's id is the whole question, and it is a uuid this
    * tenant can see or cannot.
    */
-  @NoAmbientTransaction()
   @Post("media/:id/view")
   @RateLimit("mediaUpload")
   @Roles(...AUTHOR_ROLES)
   async viewMedia(
     @Param("id") id: string,
     @CurrentPrincipal() principal: Principal,
-    @TenantRun() run: TenantRunner,
+    @TenantDb() db: Db,
   ) {
-    return this.runnerService(run, principal).viewAsset(
-      id,
-      actorOf(principal),
-      new Date(),
-    );
+    return this.service(db, principal).viewAsset(id, actorOf(principal), new Date());
   }
 
   /**
@@ -285,7 +280,6 @@ export class UploadController {
    * 200 rather than 201: nothing is created. The object already exists and this
    * hands back a way to look at it.
    */
-  @NoAmbientTransaction()
   @Post("courses/:slug/uploads/view")
   @HttpCode(200)
   @RateLimit("mediaUpload")
@@ -294,9 +288,9 @@ export class UploadController {
     @Param("slug") slug: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
-    @TenantRun() run: TenantRunner,
+    @TenantDb() db: Db,
   ) {
-    return this.runnerService(run, principal).view(
+    return this.service(db, principal).view(
       slug,
       parse(uploadViewSchema, body, "upload"),
       actorOf(principal),

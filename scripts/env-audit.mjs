@@ -168,10 +168,13 @@ const SOURCES = [
  *
  * `SUDO_USER` belongs here for the same reason as `PWD`: it is set by `sudo`,
  * read to find out who invoked the script, and would be nonsense in a config
- * template — a value nobody sets and everybody has.
+ * template — a value nobody sets and everybody has. `TMPDIR` is the same: the
+ * OS provides it, and a deployment that had to *configure* where scratch files
+ * go would be a deployment nobody could run.
  */
 const SHELL_BUILTINS = new Set([
   "SUDO_USER",
+  "TMPDIR",
   "LINENO",
   "BASH_SOURCE",
   "FUNCNAME",

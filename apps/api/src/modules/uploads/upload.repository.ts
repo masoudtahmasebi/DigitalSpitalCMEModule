@@ -127,12 +127,20 @@ export interface UploadRepositoryPort {
  * Writes an audit row that survives the request failing.
  *
  * Separated from `UploadRepositoryPort` because it must **not** run in the
- * request's transaction, and a single interface would hide that. Every route
- * here runs inside `TenantTransactionInterceptor`'s transaction, which rolls
- * back when the handler throws — and a refusal *is* the handler throwing. An
- * audit row written on that connection would be rolled back with it, so the log
- * would faithfully record every upload that worked and nothing else, which is
- * the opposite of what it is for (CLAUDE.md §4 invariant 8).
+ * caller's transaction, and a single interface would hide that. A refusal *is*
+ * the handler throwing, so an audit row written on the transaction that is
+ * rolling back goes with it — and the log would faithfully record every upload
+ * that worked and nothing else, which is the opposite of what it is for
+ * (CLAUDE.md §4 invariant 8).
+ *
+ * This paragraph used to say "every route here runs inside
+ * `TenantTransactionInterceptor`'s transaction". P145 made that false for three
+ * of them without updating it, and the §11 verifier pass caught it one commit
+ * later — which is §11 rule 9 demonstrating itself: a comment is a claim, and
+ * this one went stale the moment the code moved. It does not matter to the
+ * behaviour, because the side pool is right either way; it matters because the
+ * next person reasoning from it would be reasoning from a false premise, which
+ * is exactly how the "pool of one would deadlock" comment cost two outages.
  *
  * It also matches the facts. These events describe something that happened in a
  * bucket, and a bucket does not participate in a Postgres transaction: the

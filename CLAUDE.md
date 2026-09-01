@@ -559,3 +559,109 @@ task's `jira:` field filled in, branches and commits moving to the `DEP-123`
 form — has **not** been done. When it is, it is its own ticket, it has to
 account for the keys the test pack already occupies, and historic commits are
 not rewritten.
+
+---
+
+## 11. Verification-first — a claim carries the command that proves it
+
+§9 is about defects the client found by clicking. This section is about a
+different failure with the same root: **a well-written sentence that is false.**
+
+Three shipped on this project in one week, each fluent, each wrong:
+
+| The sentence                                               | What was actually true                                                                                     |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `check-deadlines` "found no unbounded calls"               | It was matching prose in doc comments and could not see an injected `typeof fetch = fetch` at all          |
+| "the bucket is assembling a 2 GB video, so ninety seconds" | The browser PUTs every part to a presigned URL; `CompleteMultipartUpload` sends a few hundred bytes of XML |
+| "Run once: `sudo deploy.sh --install-timers`"              | The script's `case` had no such option and answered `unknown option`                                       |
+
+None was caught by `pnpm verify`, and none could have been: **prose is not
+executed.** The fluency was the problem — an unsure sentence gets checked, a
+confident one gets believed.
+
+### The rules
+
+1. **No causal claim without a command.** Never write "X is N _because_ Y"
+   unless a command in the same turn showed Y. If unchecked, write "X is N — I
+   have not verified why" and then check. A confident wrong explanation is worse
+   than an honest "I don't know yet".
+
+2. **No claim about an external system without reading our own code path
+   first.** Before writing how data moves — "the API streams the upload", "the
+   handler holds a transaction", "this runs inside the request" — read the path
+   end to end and quote the lines. Do not reason from what is typical for S3,
+   Postgres or Keycloak. Confirm which of _our_ paths touches it, and how.
+
+3. **State how you know, not just what you concluded.** Every non-trivial claim
+   carries `Verified:` with the command, or `Assumed:` with what was not traced.
+   An unlabelled claim in a PR body is treated as unverified.
+
+4. **Trace every number you write.** Any timeout, percentage, size or count in
+   prose is either copied from a value just read, or computed from values just
+   read with the arithmetic shown. Never a number that sounds right.
+
+5. **One change, one verification.** State the expected observation, run the
+   check, show the output, then move on. If output and expectation disagree,
+   say so — do not adjust the explanation to fit what happened.
+
+6. **Write the failing case first.** Show it red, fix, show it green. A fix with
+   no observed failure beforehand is a guess that compiled.
+
+7. **"Is that really how it works?" is a correct challenge, not a
+   conversational one.** Re-verify from scratch against the code. Do not
+   produce a revised but equally unverified explanation. Say what you now know
+   that you did not check the first time — and if part of the original claim
+   _was_ true, say which part and prove it, rather than agreeing to all of it.
+
+8. **If it cannot be verified in the time available, say so and stop.** "I have
+   not confirmed this; here is what I would run" is an acceptable answer.
+
+9. **A comment is a claim, not a fact.** Re-derive an existing comment,
+   docstring or your own earlier explanation against the _current_ code before
+   relying on it. `StorageAuditRecorder`'s header reasoned "a pool of one would
+   deadlock", the real bound was a pool of N under N concurrent requests, and
+   that sentence is why nobody looked again as call sites were added (§9.10a).
+
+10. **Test under the condition that actually occurs.** For a shared bounded
+    resource — a pool, a lock, a queue, a rate limit, a file handle — a
+    sequential test proves nothing. 573 integration tests sent one request at a
+    time and missed a deadlock needing N concurrent requests against a pool of
+    N. Fire `Promise.all` of N+1 callers, show it red on the old code and green
+    on the new. If it cannot be made to fail concurrently, say that explicitly
+    rather than substituting a sequential test.
+
+11. **Fix the class in the same turn, unprompted.** After fixing any defect with
+    a _shape_ — a resource, a missing bound, a condition — search the whole
+    repository for that shape **before** calling it done, and state the search
+    and its full result list. The thirteen-site pool sweep happened only because
+    the client asked "what other places can be affected?" That question must
+    never again depend on somebody thinking to ask it. This is §9.11, made
+    automatic rather than invoked.
+
+12. **A numbered task is not abandoned silently.** When a QA run, an audit or a
+    multi-step ticket is interrupted by something more urgent — and incidents do
+    take priority — the **last line of that turn** names the step it stopped at
+    and says it resumes there, or asks. Dropping a stated plan without saying so
+    is a defect in its own right.
+
+Before the final message of any turn, reread it and delete or label every
+sentence stating a cause, a number or a behaviour not verified by a command
+shown in that same turn.
+
+### The adversarial pass
+
+The three sentences above shipped because **the context that wrote the
+explanation also reviewed it.** Self-review caught the sabotage-able parts —
+`check-deadlines`' blind spot was found by breaking it on purpose — and could
+not catch the ninety seconds, because that claim was never executed by anything.
+
+So anything non-trivial, and everything touching auth, assessment, eiv,
+certificates or uploads, gets a second pass in a **fresh session** that sees the
+diff and the claims but not the reasoning that produced them. The prompt is
+`docs/verifier-prompt.md`; `scripts/verify-loop.sh` runs it. Its output is a
+list of PROVEN / CONTRADICTED / UNVERIFIABLE, and UNVERIFIABLE is resolved by
+fetching the evidence, never by assuming.
+
+It does not replace `pnpm verify` or the §2 human review gate. It sits above
+them, and catches what tests structurally cannot: a false narrative attached to
+a correct fix.
