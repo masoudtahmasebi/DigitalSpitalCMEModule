@@ -707,6 +707,46 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         timeout: 30_000,
       });
 
+      /*
+       * The progress card's footer is one row (DEP-24).
+       *
+       * The client reported the autosave note sitting *under* the percentage
+       * instead of beside it. Nothing in the markup said so — the row read as
+       * "these two, left and right" and was — because `flex-wrap` had dropped
+       * the note onto a second line, which is what `flex-wrap` is for. Whether
+       * it fits is decided by the width of a German sentence in whatever font
+       * the customer's `--ds-font-family` names, and no component test in jsdom
+       * can measure either: every `getBoundingClientRect` there is zero.
+       *
+       * So the assertion is the property, not the pixels — **the two share a
+       * row, with the note to the right of the label** — which stays true when
+       * the sentence, the font or the card's width changes, and is false in
+       * exactly the state that was reported. Verified red against the shipped
+       * layout at this viewport before the fix.
+       */
+      const progressLabel = learner.getByText(/% der Fortbildung absolviert$/u).first();
+      const autosaveNote = learner
+        .getByText("Ihr Fortschritt wird automatisch gespeichert", { exact: true })
+        .first();
+      await expect(progressLabel).toBeVisible();
+      await expect(autosaveNote).toBeVisible();
+
+      const labelBox = await progressLabel.boundingBox();
+      const noteBox = await autosaveNote.boundingBox();
+      if (labelBox === null || noteBox === null) {
+        throw new Error("the progress card's footer is not laid out at all");
+      }
+
+      expect(
+        Math.min(labelBox.y + labelBox.height, noteBox.y + noteBox.height) -
+          Math.max(labelBox.y, noteBox.y),
+        "the autosave note is on its own line under the percentage, not beside it",
+      ).toBeGreaterThan(0);
+      expect(
+        noteBox.x,
+        "the autosave note is not to the right of the percentage",
+      ).toBeGreaterThanOrEqual(labelBox.x + labelBox.width);
+
       // ===================================================================
       // Act 11 · She watches, pauses, and the progress is really saved
       // ===================================================================
