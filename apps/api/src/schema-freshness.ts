@@ -56,10 +56,49 @@ import { pendingMigrations } from "@ds/migrator";
  * environments.
  *
  * So: the image's directory when it exists, and the checkout's `db/migrations`
- * otherwise. Resolved once, at module load, so a caller cannot get a different
+ * otherwise. Resolved once and remembered, so a caller cannot get a different
  * answer than the check it is about to run.
+ *
+ * ## Why it is resolved on first use and not at module load (P151-01)
+ *
+ * It used to be `const MIGRATIONS_DIR = resolveMigrationsDir()`, evaluated when
+ * this module was imported. That put the one throwing statement in the file
+ * *outside every caller's reach*: an import-time throw is not catchable by the
+ * code that imports you.
+ *
+ * For `subject-erasure` that silently defeated the guarantee P149-02 exists for.
+ * Its `schemaCheckOutcome()` wraps `assertSchemaCurrent` in a `try`/`catch` so a
+ * failed check can never refuse a statutory erasure — but with neither directory
+ * present the process died at `ModuleJob.run`, before `main()` was ever called,
+ * with a stack trace instead of the CLI's own message. An erasure with a
+ * one-month Article 17 deadline was blocked by a diagnostic, which is the exact
+ * thing a human decided must never happen. Observed, not reasoned:
+ *
+ *     $ mv db/migrations db/_probe && npx tsx apps/api/src/subject-erasure.ts …
+ *     Error: schema-freshness: no migrations directory at …
+ *         at resolveMigrationsDir (…/schema-freshness.ts:81:9)
+ *         at <anonymous> (…/schema-freshness.ts:62:24)   <- module evaluation
+ *         at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+ *
+ * against the control, which reaches the CLI's own handler:
+ *
+ *     Erasure failed: unknown argument: --user
+ *
+ * Resolving on first use moves that throw inside `assertSchemaCurrent`, where
+ * each caller's own policy already applies: `bootstrap-admin` fails closed and
+ * says so in its own words, `subject-erasure` warns loudly and erases anyway.
+ *
+ * The Dockerfile does copy `db/migrations` to `dist/migrations` (line 216), so
+ * no shipped image reaches the old path today. That is what made it latent
+ * rather than live — and a guarantee that holds only while an unrelated `COPY`
+ * survives is not the guarantee that was asked for.
  */
-const MIGRATIONS_DIR = resolveMigrationsDir();
+let migrationsDirCache: string | undefined;
+
+function migrationsDir(): string {
+  migrationsDirCache ??= resolveMigrationsDir();
+  return migrationsDirCache;
+}
 
 function resolveMigrationsDir(): string {
   const beside = join(dirname(fileURLToPath(import.meta.url)), "migrations");
@@ -110,8 +149,10 @@ export function migrationDatabaseUrl(): string {
  *
  * `ds_schema_reader` may `SELECT` on `schema_migrations` and nothing else
  * (migration 0049). It exists so a process running as the application can ask
- * "is this database migrated?" without either widening `ds_app` — which owns
- * nothing, ADR-0002 — or being handed the migrator's credentials, which would
+ * "is this database migrated?" without resting on `ds_app`'s privileges — which
+ * on this table are `arwd`, from the blanket default grant in `init-roles.sql`,
+ * not the "no grant at all" P148 and P149 claimed (corrected in 0049's header,
+ * P151-02) — and without being handed the migrator's credentials, which would
  * give a request-serving container the ability to rewrite the schema.
  *
  * Unset is a hard error rather than a skip. A schema check that quietly does
@@ -145,7 +186,7 @@ export function schemaReaderDatabaseUrl(): string {
 export async function assertSchemaCurrent(connectionString: string): Promise<void> {
   const pending = await pendingMigrations({
     connectionString,
-    migrationsDir: MIGRATIONS_DIR,
+    migrationsDir: migrationsDir(),
   });
   if (pending.length === 0) return;
 

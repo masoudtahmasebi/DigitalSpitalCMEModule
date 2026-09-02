@@ -29,6 +29,7 @@
 
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { cpSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -42,6 +43,17 @@ const MIGRATION_URL = requireEnv("MIGRATION_DATABASE_URL");
 
 /** Refuses every connection: nothing listens on port 1. */
 const UNREACHABLE = "postgres://nobody:nobody@127.0.0.1:1/nothing";
+
+/**
+ * A copy of the compiled entrypoints two directories deeper than the real one,
+ * so that **neither** path `schema-freshness.ts` looks in exists (P151-01).
+ *
+ * From `apps/api/build/probe/` its two candidates resolve to
+ * `apps/api/build/probe/migrations` and `apps/api/db/migrations`, and there is
+ * no such directory either side. `build/` is already gitignored at any depth,
+ * which is why the copy lives there rather than beside `dist`.
+ */
+const PROBE_DIR = join(REPO, "apps/api/build/probe");
 
 let admin: Pool;
 let userId: string;
@@ -72,6 +84,29 @@ function runCli(schemaReaderUrl: string) {
       userId,
       "--reason",
       "P149-02 integration test",
+      "--confirm",
+    ],
+    {
+      cwd: REPO,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        MIGRATION_DATABASE_URL: MIGRATION_URL,
+        SCHEMA_READER_DATABASE_URL: schemaReaderUrl,
+      },
+    },
+  );
+}
+
+function runCliFrom(entrypoint: string, subjectId: string, schemaReaderUrl: string) {
+  return spawnSync(
+    "node",
+    [
+      entrypoint,
+      "--user-id",
+      subjectId,
+      "--reason",
+      "P151-01 integration test",
       "--confirm",
     ],
     {
@@ -119,5 +154,88 @@ describe("subject-erasure with a schema check that cannot run", () => {
       audit.rows.length,
       "no audit row records that the erasure proceeded on an unverified schema",
     ).toBeGreaterThan(0);
+  }, 60_000);
+});
+
+/**
+ * The same guarantee, broken a second way — and the way that used to escape it
+ * (P151-01).
+ *
+ * `schemaCheckOutcome()` wraps `assertSchemaCurrent` in a `try`/`catch`, which
+ * is what makes a failed check unable to refuse an erasure. That reasoning has
+ * one hole in it: a module-evaluation throw happens *before* any caller exists,
+ * so no `try`/`catch` in this repository can see it. `MIGRATIONS_DIR` was such a
+ * throw — `const MIGRATIONS_DIR = resolveMigrationsDir()` at the top of
+ * `schema-freshness.ts` — and with neither candidate directory present the CLI
+ * died at `ModuleJob.run` with a stack trace, before `main()` ran at all.
+ *
+ * The test above cannot see it: it breaks the check through the *credential*,
+ * which fails inside `assertSchemaCurrent` where the `catch` is. This one breaks
+ * it through the **layout**, which is the case the `catch` never reached.
+ *
+ * It runs the compiled entrypoint from a directory where both candidate paths
+ * miss. On the old code it fails with a non-zero exit and no erasure; on the
+ * new one the resolution throw lands inside `schemaCheckOutcome`, so the subject
+ * is erased and the warning says why the schema could not be verified.
+ */
+describe("subject-erasure when the migrations directory cannot be resolved", () => {
+  let probeUserId: string;
+  let probeEmail: string;
+
+  beforeAll(async () => {
+    // Copied rather than symlinked: the resolver reads `import.meta.url`, and a
+    // symlinked module still reports its real path.
+    cpSync(join(REPO, "apps/api/dist"), PROBE_DIR, { recursive: true });
+    // A local build makes no `dist/migrations`; the Dockerfile does (line 216).
+    // Removing it unconditionally keeps the test honest wherever it runs.
+    rmSync(join(PROBE_DIR, "migrations"), { recursive: true, force: true });
+
+    // Its own subject: the case above erases the shared one, and an erasure of
+    // an already-erased subject would exercise a different path entirely.
+    probeEmail = `erasure-layout-${randomUUID().slice(0, 8)}@example.org`;
+    const { rows } = await admin.query<{ id: string }>(
+      `INSERT INTO users (email, first_name, last_name)
+       VALUES ($1, 'Layout', 'Probe') RETURNING id`,
+      [probeEmail],
+    );
+    probeUserId = rows[0]!.id;
+  });
+
+  afterAll(async () => {
+    rmSync(PROBE_DIR, { recursive: true, force: true });
+    await admin.query(`DELETE FROM users WHERE id = $1`, [probeUserId]);
+  });
+
+  it("erases anyway, and the process reaches its own error handling at all", async () => {
+    // A *reachable* reader URL on purpose: the only thing wrong here is the
+    // layout, so nothing but the resolution can be what fails.
+    const result = runCliFrom(
+      join(PROBE_DIR, "subject-erasure.js"),
+      probeUserId,
+      MIGRATION_URL,
+    );
+
+    const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+
+    // The tell of the old failure, named so a regression is recognisable: the
+    // process died during module evaluation, so nothing it printed came from
+    // the CLI.
+    expect(
+      output,
+      "the process threw at module load, before main() — the erasure never ran",
+    ).not.toMatch(/at ModuleJob\.run/u);
+
+    expect(result.status, `the CLI exited non-zero:\n${output}`).toBe(0);
+
+    const { rows } = await admin.query<{ email: string | null }>(
+      `SELECT email FROM users WHERE id = $1`,
+      [probeUserId],
+    );
+    expect(rows[0]?.email, "the subject was not erased").not.toBe(probeEmail);
+
+    expect(output, "the warning does not say the schema was unverified").toMatch(
+      /schema/iu,
+    );
+    expect(output, "the warning does not name the subject").toContain(probeUserId);
   }, 60_000);
 });
