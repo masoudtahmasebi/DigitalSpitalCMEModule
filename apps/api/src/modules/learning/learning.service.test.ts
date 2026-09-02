@@ -1172,9 +1172,19 @@ describe("getLesson — the media the player is handed", () => {
 
     const lesson = await service.getLesson(course.slug, VIDEO_ID, learner, NOW);
     expect(lesson.watchedPercent).toBe(50);
-    expect(lesson.watchedSegments).toEqual([
-      { startSec: 0, endSec: 100 },
-      { startSec: 50, endSec: 200 },
-    ]);
+    /*
+     * One interval, not the two overlapping rows that were stored (P157-01).
+     *
+     * The test's own name says these are "the merged segments the percentage
+     * was computed from", and until now they were not merged at all: the read
+     * path handed back `watched_segments` verbatim while the percentage came
+     * from the merged union. The coverage bar and the number beside it could
+     * therefore disagree, which is the thing §4 invariant 6 is about.
+     *
+     * `creditedWatchedSegments` merges on the way out, so they agree. Nothing
+     * is credited here that was not watched: the furthest point is 200 s, and
+     * 0–200 was already covered by the two overlapping rows.
+     */
+    expect(lesson.watchedSegments).toEqual([{ startSec: 0, endSec: 200 }]);
   });
 });

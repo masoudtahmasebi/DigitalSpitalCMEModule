@@ -18,6 +18,7 @@ import {
   courseWatchCoverage,
   evaluateSequence,
   isCourseComplete,
+  creditedWatchedSegments,
   mergeWatchedSegments,
   isCourseOffered,
   resumePosition,
@@ -250,7 +251,29 @@ export class LearningService {
     });
 
     const merged = mergeWatchedSegments([...previousSegments, ...validation.accepted]);
-    const percent = watchedPercent(merged, content.durationSec);
+
+    /*
+     * What the learner is credited for, which is not quite what was reported
+     * (S30, P157-01).
+     *
+     * `merged` stays the evidence — every interval the client actually sent,
+     * validated against the wall clock. `credited` adds the whole minutes the
+     * furthest point reached implies, on the client's decision:
+     *
+     *   "if someone reaches the minute 2, then we are sure they watched the
+     *    minute 1, if someone reaches minute 33, they have watched until
+     *    minute 32 at least"
+     *
+     * Sound only because P154-01 closed the way past the watched edge: the
+     * forward seek ceiling is half a second, so the playhead advances past
+     * unwatched content only by playing it. See `creditedWatchedSegments`.
+     *
+     * Stored raw, returned credited — so the rule can be withdrawn without
+     * having destroyed the record it was applied to, and so the player's bar,
+     * its percentage and its gap list all come from one union (§4 inv. 6).
+     */
+    const credited = creditedWatchedSegments(merged);
+    const percent = watchedPercent(credited, content.durationSec);
 
     /*
      * A video counts as done at the coverage **the course asks for** (P82-05).
@@ -310,9 +333,10 @@ export class LearningService {
         segment: entry.segment,
         reason: entry.reason,
       })),
-      // The union that was just stored, so the player's bar redraws from what
-      // the gate credited rather than from what the client believed it sent.
-      watchedSegments: [...merged],
+      // The union the gate credited, rather than what the client believed it
+      // sent — which since P157-01 is `merged` plus the completed minutes below
+      // the furthest point reached.
+      watchedSegments: [...credited],
       // And how far it may now seek, computed from that same union. Sent rather
       // than left to the client so the ceiling advances as the learner watches
       // without the player owning the rule.
@@ -417,8 +441,12 @@ export class LearningService {
       seekCeilingSec: seekCeiling([...readSegments(progress?.watchedSegments)]),
       watchedPercent: progress?.watchedPercent ?? 0,
       // The intervals the percentage above was computed from, so the player's
-      // coverage bar and its number come from one source.
-      watchedSegments: [...readSegments(progress?.watchedSegments)],
+      // coverage bar and its number come from one source — credited the same
+      // way the write path credits them (P157-01), or the bar and the number
+      // would disagree on exactly the minutes this rule is about.
+      watchedSegments: [
+        ...creditedWatchedSegments(readSegments(progress?.watchedSegments)),
+      ],
     };
   }
 
