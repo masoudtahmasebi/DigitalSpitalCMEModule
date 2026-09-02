@@ -810,7 +810,24 @@ function Loaded(props: {
   }
 
   return (
-    <div className="space-y-6 p-4">
+    /*
+      Capped at the width its own drawing has (DEP-24).
+
+      `detailseite-uebersicht.png` is 1:1 for 1920 like the rest of them, and
+      its panel measures x 262…1329 — **1068 px**. This screen never declared a
+      width, so it took whatever the host column was; that was 1104 and near
+      enough, until the portal's column grew to 1430 for the player and this
+      screen would have stretched 362 px past its artwork with nothing to say
+      so.
+
+      `max-w-6xl` is 1152 — the Tailwind step nearest that drawing, and, not by
+      accident, exactly the width this screen already had: it is what the
+      portal's own container used to impose before the player needed a wider
+      one. So this is not a new width for the detail page, it is the width it
+      has always been, written down where it belongs now that the container no
+      longer says it.
+    */
+    <div className="mx-auto w-full max-w-6xl space-y-6 p-4">
       <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
 
       <StickyMetaBar

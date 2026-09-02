@@ -153,10 +153,13 @@ export function CourseShell(props: {
           - **The host's column.** This is WordPress's, not ours: `max-w-full`
             and the `basis` above are what keep a 36rem card from overflowing a
             column that never agreed to it.
-          - **The viewport.** `lg` is 1024, where 36rem would leave the title
-            344 px. `lg:w-[34rem]` is the widest card that still fits the
-            footer on one line (512 px of content against 505 needed) while
-            leaving the title 376; `xl:w-[36rem]` is the drawing, from 1280 up.
+          - **The viewport.** `xl:w-[36rem]` is the drawing — `max-w-xl`'s own
+            value — from 1280 up. At `lg` (1024) it would leave the title
+            312 px, so the card steps down to `lg:w-[32rem]`, which is
+            `max-w-lg`. That is 478 px of content against the 505 the footer
+            wants, so between 1024 and 1280 the two halves keep their row and
+            wrap inside it; §9.4's question — *what does the person do next* —
+            is answered either way, and a title squeezed to four lines is not.
 
           Below `lg` the card is full width under the title, which is what
           `player-ansicht-abgeschlossen.png` draws for the phone.
@@ -170,7 +173,7 @@ export function CourseShell(props: {
           <h1 className="min-w-0 grow basis-full text-2xl font-bold text-brand-contrast sm:text-3xl lg:basis-[18rem]">
             {props.course.title}
           </h1>
-          <div className="w-full max-w-full lg:w-[34rem] xl:w-[36rem]">
+          <div className="w-full max-w-full lg:w-[32rem] xl:w-[36rem]">
             <PlayerProgressCard
               state={props.state}
               moduleIndex={here?.moduleIndex}
@@ -193,7 +196,27 @@ export function CourseShell(props: {
         scroll position rather than at most of them.
       */}
       <div className="-mt-14 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm max-sm:pb-24 sm:p-6">
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        {/*
+          The sidebar is `20rem`, the drawing's is 304 px (DEP-24).
+
+          Scanned off `player-zusammenfassung-v1.png`, which is 1:1 for 1920:
+          the module rows run x 1322…1625, so 304 px — exactly between
+          Tailwind's `w-72` (288) and `w-80` (320), and rounded up to the step
+          rather than left on a number from a ruler. It used to be `18rem`.
+
+          The video is not a width anybody sets; it is what is left of this row:
+
+              video = panel − border − 2 × sm:p-6 − gap-6 − sidebar
+
+          so it is right only when the column is. At the portal's
+          `max-w-screen-2xl` that is 1062 px against the drawing's 1022 — the
+          same 73 % of the panel, four per cent larger, which is what taking
+          every term from Tailwind's scale costs. `apps/portal/src/App.tsx`
+          carries the arithmetic. Inside a customer's WordPress column it is
+          whatever that theme allows, and the grid degrades to one column below
+          `lg` regardless.
+        */}
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="min-w-0 space-y-4">
             <PlayerStatusContext.Provider value={setStatus}>
               {props.children}
