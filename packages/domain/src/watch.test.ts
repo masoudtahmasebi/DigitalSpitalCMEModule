@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { WatchedSegment } from "./watch.js";
-import { PLAYBACK_RATES } from "./playback.js";
+import { PLAYBACK_RATES, SEEK_JUMP_SEC, SEEK_STEP_SEC } from "./playback.js";
 import {
   creditedDurationSec,
   MAX_PLAYBACK_RATE,
   isSeekAllowed,
+  SEEK_CEILING_TOLERANCE_SEC,
   maxWatchedPosition,
   mergeWatchedSegments,
   validateSegments,
@@ -389,6 +390,46 @@ describe("isSeekAllowed", () => {
 
   it("refuses a negative target", () => {
     expect(isSeekAllowed(watched, -1)).toBe(false);
+  });
+});
+
+describe("the forward seek ceiling (P154-01)", () => {
+  /*
+   * From the network capture in DEP-25, on a real session:
+   *
+   *   watchedSegments: [ {0 -> 15.147841}, {20.147841 -> 50.27983}, … ]
+   *   seekCeilingSec: 130.09301   (= 125.09301 + 5)
+   *
+   * The gap is 5.000000 s to six decimal places, and `SEEK_STEP_SEC` is 5.
+   * The right-arrow key steps exactly to the ceiling, playback carries the
+   * ceiling forward, and the learner walks the video in five-second hops —
+   * each leaving five seconds nobody watched. The screen says "Vorspulen ist
+   * nicht möglich" the whole time.
+   *
+   * `seekCeiling`'s own comment says the tolerance is there "so that nudging
+   * the scrub bar forward by a frame at the live edge is not refused". A frame
+   * is 0.04 s. The number was 5.
+   */
+  it("refuses the arrow-key step past the watched edge", () => {
+    const watched = [{ startSec: 0, endSec: 15.147841 }];
+
+    expect(
+      isSeekAllowed(watched, 15.147841 + SEEK_STEP_SEC),
+      "one press of the forward key walked past five unwatched seconds",
+    ).toBe(false);
+  });
+
+  it("still allows the frame-sized nudge the tolerance exists for", () => {
+    expect(isSeekAllowed([{ startSec: 0, endSec: 15.147841 }], 15.187841)).toBe(true);
+  });
+
+  it("keeps the tolerance below every forward control the player offers", () => {
+    // The guard, not the instance: a tolerance at or above the smallest
+    // forward jump is a way to walk through unwatched content, whatever the
+    // numbers happen to be. Same shape as the speed-menu guard in P153.
+    expect(SEEK_CEILING_TOLERANCE_SEC).toBeLessThan(
+      Math.min(SEEK_STEP_SEC, SEEK_JUMP_SEC),
+    );
   });
 });
 

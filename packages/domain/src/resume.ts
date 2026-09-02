@@ -34,7 +34,11 @@
  * clamp is a courtesy; the validation is the gate.
  */
 
-import { maxWatchedPosition, type WatchedSegment } from "./watch.js";
+import {
+  maxWatchedPosition,
+  SEEK_CEILING_TOLERANCE_SEC,
+  type WatchedSegment,
+} from "./watch.js";
 
 /**
  * The granularity a resume rewinds to.
@@ -93,12 +97,18 @@ export function resumePosition(input: ResumeInput): number {
  * the same tolerance `isSeekAllowed` applies, and it is here so the two cannot
  * drift apart.
  *
+ * That tolerance was five seconds, which is what the right-arrow key moves, so
+ * the key stepped exactly onto the ceiling and a learner could walk the video
+ * in five-second hops. It is now `SEEK_CEILING_TOLERANCE_SEC`, defined in
+ * `watch.ts` beside the rule that applies it — see there for the whole of it
+ * (P154-01).
+ *
  * A learner who has watched nothing may still not seek: the ceiling is zero
  * and the video plays from the start, which is the point.
  */
 export function seekCeiling(
   segments: readonly WatchedSegment[],
-  toleranceSec = 5,
+  toleranceSec = SEEK_CEILING_TOLERANCE_SEC,
 ): number {
   return maxWatchedPosition(segments) + toleranceSec;
 }

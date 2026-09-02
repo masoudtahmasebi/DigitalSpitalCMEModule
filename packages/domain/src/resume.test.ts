@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { SEEK_CEILING_TOLERANCE_SEC } from "./watch.js";
 import {
   clampSeekToLimit,
   playerSeekLimit,
@@ -27,7 +28,10 @@ import type { WatchedSegment } from "./watch.js";
 function seekAcrossTheBoundary(
   targetSec: number,
   segments: readonly WatchedSegment[],
-  toleranceSec = 5,
+  // The production default, not a literal: a helper carrying its own copy of
+  // the tolerance is how this file kept passing while the real ceiling moved
+  // (P154-01).
+  toleranceSec = SEEK_CEILING_TOLERANCE_SEC,
 ): number {
   const serverAnswer = seekCeiling(segments, toleranceSec);
   return clampSeekToLimit(targetSec, serverAnswer);
@@ -80,8 +84,12 @@ describe("seeking forward", () => {
   it("cannot pass the furthest point actually watched", () => {
     // Dragging to the end of a 25-minute video after watching five minutes
     // lands at five minutes, not at the end.
-    expect(seekAcrossTheBoundary(1545, watched)).toBe(305);
-    expect(seekCeiling(watched)).toBe(305);
+    //
+    // 300.5 rather than 305 since P154-01: the tolerance above the watched
+    // edge is half a second — a nudge and one `timeupdate` of jitter — and no
+    // longer the five seconds that let the forward key step past it.
+    expect(seekAcrossTheBoundary(1545, watched)).toBe(300.5);
+    expect(seekCeiling(watched)).toBe(300.5);
   });
 
   it("allows seeking backwards without restriction", () => {
@@ -92,7 +100,9 @@ describe("seeking forward", () => {
   });
 
   it("pins a learner who has watched nothing to the start", () => {
-    expect(seekAcrossTheBoundary(600, [])).toBe(5);
+    // Half a second rather than five since P154-01, which is nearer the start
+    // than the old ceiling was — the test's own name asks for exactly that.
+    expect(seekAcrossTheBoundary(600, [])).toBe(0.5);
     expect(seekAcrossTheBoundary(0, [])).toBe(0);
   });
 
