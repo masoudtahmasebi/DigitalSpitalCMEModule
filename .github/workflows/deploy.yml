@@ -168,6 +168,46 @@ jobs:
       # derived from one can.
       TS_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
     steps:
+      # ---------------------------------------------------------------------
+      # What may reach production (P155-01)
+      # ---------------------------------------------------------------------
+      #
+      # The job's `if:` accepts any `workflow_dispatch`, on any ref, with no CI
+      # at all — and on 2026-09-02 run 33615653131 used it to put a feature
+      # branch (`claude/…-3vgrqh` at `010fea6a`) on the production host, and
+      # reported success. Nobody misused anything: the dropdown offered it.
+      #
+      # A manual deploy still has to exist — it is how a rollback runs — so the
+      # rule is the narrowest one that keeps it: manual runs from the default
+      # branch only. The decision is in `infra/deploy/release-guards.sh` so
+      # that `release-guards.test.sh` can drive it, which a line of YAML cannot
+      # be made to do.
+      - name: Fetch the deploy guards
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: infra/deploy
+          sparse-checkout-cone-mode: false
+
+      - name: This ref may be deployed
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -Eeuo pipefail
+          # shellcheck source=../../infra/deploy/release-guards.sh
+          source infra/deploy/release-guards.sh
+
+          if ds_release_dispatch_allowed "$EVENT_NAME" "$REF" "${DEFAULT_BRANCH:-main}"; then
+            echo "event=$EVENT_NAME ref=$REF — allowed"
+            exit 0
+          fi
+
+          echo "::error::Refusing to deploy ${REF} to production. A manual run" \
+               "may only deploy the default branch (${DEFAULT_BRANCH:-main})." \
+               "Merge the change first; CI on the default branch deploys it."
+          exit 1
+
       - name: Required secrets are set
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -297,8 +337,14 @@ jobs:
           tailscale status || true
           exit 1
 
-      # No checkout: nothing from this runner reaches the server. The host has
-      # the repository and fetches the commit itself.
+      # Nothing from this runner reaches the server: the host has the
+      # repository and fetches the commit itself.
+      #
+      # There *is* a checkout now, of `infra/deploy` only, and it is read by
+      # this job and never copied anywhere (P155-01). The property this comment
+      # is about is unchanged — what runs on the host comes from the host's own
+      # fetch of `$SHA` — but the sentence used to say "no checkout" and would
+      # now be read as a promise the file no longer keeps.
       - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
@@ -481,6 +527,27 @@ jobs:
                  "first deploy that introduces P47-01 and a problem after that —" \
                  "check that DS_VERSION reached the container."
           fi
+
+          # And now compare the two, which is the part that was missing (P155-02).
+          #
+          # The comment above has said since P47-01 that the served commit is
+          # the only evidence, "a deploy that swapped nothing would still let
+          # this job report the commit it was triggered for" — and then nothing
+          # compared it. So a deploy that swapped nothing was green, and the
+          # workflow could not answer the one question a "merged but not
+          # visible" report asks: which commit is this host serving?
+          # shellcheck source=../../infra/deploy/release-guards.sh
+          source infra/deploy/release-guards.sh
+
+          if ! ds_release_commit_matches "$SHA" "$commit"; then
+            echo "::error::${{ steps.derive.outputs.api_domain }} is serving" \
+                 "commit '${commit:-none}', not the ${SHA} this run deployed." \
+                 "The containers did not swap, or an older deploy overtook this" \
+                 "one. Nothing has been rolled back — check the host before" \
+                 "re-running."
+            exit 1
+          fi
+          echo "Serving ${commit}, which is ${SHA} — verified from outside the host."
 
       - name: Report failure
         if: failure()
