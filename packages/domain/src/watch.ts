@@ -40,16 +40,68 @@ export interface SegmentValidationOptions {
   /**
    * Wall-clock seconds that actually elapsed on the server between this report
    * and the previous one. A client cannot watch 600 s of video in 30 s of real
-   * time, so a claim that it did is rejected.
+   * time — at the fastest rate the player offers it could have watched 60 s —
+   * so a claim beyond that is rejected.
    *
    * Omit only when no previous report exists to measure against.
    */
   readonly elapsedWallClockSec?: number;
-  /** Slack for playback-rate variation and clock jitter. Default 2 s. */
+  /**
+   * Slack for clock jitter and the reporting boundary. Default 2 s.
+   *
+   * **Not** where playback rate is accounted for — that is `MAX_PLAYBACK_RATE`,
+   * a multiplier on the elapsed time, because the overclaim from a fast rate
+   * grows with the reporting interval and a constant cannot follow it
+   * (P153-01).
+   */
   readonly wallClockToleranceSec?: number;
 }
 
 const DEFAULT_WALL_CLOCK_TOLERANCE_SEC = 2;
+
+/**
+ * The fastest the player can be set to play, and therefore the fastest a
+ * learner can legitimately watch (P153-01).
+ *
+ * ## The defect this closes
+ *
+ * The budget used to be `elapsed + tolerance`, with the tolerance described as
+ * "slack for playback-rate variation" — two seconds of it, flat. The widget
+ * flushes every 15 s (`LessonScreen.tsx`), so one heartbeat at the rates the
+ * player offers claims:
+ *
+ * | rate  | claimed | budget (15 + 2) | outcome      |
+ * | ----- | ------- | --------------- | ------------ |
+ * | 1×    | 15 s    | 17 s            | accepted     |
+ * | 1.25× | 18.75 s | 17 s            | **rejected** |
+ * | 1.5×  | 22.5 s  | 17 s            | **rejected** |
+ * | 2×    | 30 s    | 17 s            | **rejected** |
+ *
+ * Every rate above 1× the product itself offers was thrown away **whole** —
+ * `validateSegments` rejects a segment, not the excess — so a physician who
+ * sped up watched the video and was credited nothing for it. It arrives as
+ * "watched to the end, 29 % angesehen", with the gap list naming passages they
+ * are certain they saw.
+ *
+ * ## Why the bound is a multiplier and not a bigger constant
+ *
+ * A flat tolerance cannot express this: the overclaim grows with the flush
+ * interval, so any constant that fits a 15-second heartbeat at 2× is a
+ * constant a slow reporter can hide a skip behind. The honest bound is the
+ * product's own cap — a learner may watch at up to 2×, so up to two media
+ * seconds per real second may be credited, and not one more.
+ *
+ * The anti-skip property this budget exists for is unchanged in kind: a client
+ * posting `[0, duration]` in one call still cannot be credited, because a
+ * whole video is far more than twice the elapsed time. It is weakened by
+ * exactly the factor the speed menu already hands every learner.
+ *
+ * `PLAYBACK_RATES` in `playback.ts` is checked against this, so the menu and
+ * the budget cannot drift into disagreeing about what a learner is allowed to
+ * do (§9.11 — one rule, not two opinions). It lives here rather than there
+ * because `playback.ts` imports this module and not the other way round.
+ */
+export const MAX_PLAYBACK_RATE = 2;
 
 /**
  * Merge overlapping and adjacent intervals into a minimal disjoint set.
@@ -370,7 +422,7 @@ export function validateSegments(
   const budget =
     options.elapsedWallClockSec === undefined
       ? undefined
-      : options.elapsedWallClockSec + tolerance;
+      : options.elapsedWallClockSec * MAX_PLAYBACK_RATE + tolerance;
 
   let claimed = 0;
 

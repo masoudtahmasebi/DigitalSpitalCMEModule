@@ -295,9 +295,9 @@ function VideoLesson(props: {
           positionRef.current = state.positionSec;
           props.onPlayback(state);
         }}
-        onTick={(positionSec, playing) => {
+        onTick={(positionSec, playing, rate) => {
           positionRef.current = positionSec;
-          trackerRef.current.observe(positionSec, playing);
+          trackerRef.current.observe(positionSec, playing, rate);
         }}
         onStop={(reason) => {
           trackerRef.current.closeOpen();

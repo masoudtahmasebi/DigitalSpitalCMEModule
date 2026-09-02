@@ -36,13 +36,48 @@
  * server independently checks the wall-clock budget.
  */
 
+import { MAX_PLAYBACK_RATE } from "@ds/domain";
+
 export interface Segment {
   readonly startSec: number;
   readonly endSec: number;
 }
 
-/** Beyond this, a position change is a seek rather than playback. */
+/** Beyond this, a position change is a seek rather than playback — at 1×. */
 const SEEK_TOLERANCE_SEC = 2;
+
+/**
+ * The tolerance above is **media** seconds, and playback rate turns it into a
+ * different amount of real time (P153-02).
+ *
+ * `observe` is driven by `timeupdate`, which browsers fire roughly four times a
+ * second and throttle freely — a background tab, a GC pause, a slow frame. When
+ * two samples land more than the tolerance of *media* apart, the tracker reads a
+ * seek, banks the open interval and starts fresh at the new position, so the
+ * span between is never recorded. Watched, and thrown away:
+ *
+ *     observe(100) observe(101) observe(104) observe(105)
+ *       -> [100,101] [104,105]        101-104 is gone
+ *
+ * At 1× that needs a two-second stall. At 2× the media advances twice as fast,
+ * so **one** second of stall is enough — the faster a physician watches, the
+ * more of it they lose. Scaling by the rate keeps the bound meaning what it was
+ * written to mean, half a wall-clock second of missed samples, at every rate the
+ * player offers.
+ *
+ * It does not widen what counts as playback: a real forward seek is a jump of
+ * many seconds and stays a seek at every rate. And the server bounds the total
+ * independently (`faster_than_wallclock`), which is why a client-side tolerance
+ * can be forgiving about lag without being a way to skip.
+ *
+ * Clamped at `MAX_PLAYBACK_RATE` so a tampered `playbackRate` cannot widen it:
+ * the same cap the server credits against, from the same constant.
+ */
+function seekToleranceFor(rate: number): number {
+  const usable =
+    Number.isFinite(rate) && rate > 0 ? Math.min(rate, MAX_PLAYBACK_RATE) : 1;
+  return SEEK_TOLERANCE_SEC * usable;
+}
 
 /** Shorter than this and the interval is noise — a stray event, not viewing. */
 const MIN_SEGMENT_SEC = 0.25;
@@ -89,7 +124,7 @@ export class WatchTracker {
    * decides what counts — a paused element still fires `timeupdate` while
    * seeking, and that is not watching.
    */
-  observe(positionSec: number, playing: boolean): void {
+  observe(positionSec: number, playing: boolean, rate = 1): void {
     if (!Number.isFinite(positionSec) || positionSec < 0) return;
 
     if (!playing) {
@@ -97,15 +132,17 @@ export class WatchTracker {
       return;
     }
 
+    const tolerance = seekToleranceFor(rate);
+
     const open = this.#open;
     if (open === undefined) {
-      const start = this.#startFor(positionSec);
+      const start = this.#startFor(positionSec, tolerance);
       this.#open = { start, end: positionSec, continued: start !== positionSec };
       return;
     }
 
     const delta = positionSec - open.end;
-    if (delta >= 0 && delta <= SEEK_TOLERANCE_SEC) {
+    if (delta >= 0 && delta <= tolerance) {
       open.end = positionSec;
       return;
     }
@@ -125,12 +162,12 @@ export class WatchTracker {
    * The recorded end of the previous interval when playback simply carried on
    * across a close; otherwise the position itself.
    */
-  #startFor(positionSec: number): number {
+  #startFor(positionSec: number, toleranceSec: number): number {
     const resume = this.#resumeFrom;
     if (resume === undefined) return positionSec;
     const gap = positionSec - resume;
     // Forward only, and within one playback step. A backward gap is a rewind.
-    return gap >= 0 && gap <= SEEK_TOLERANCE_SEC ? resume : positionSec;
+    return gap >= 0 && gap <= toleranceSec ? resume : positionSec;
   }
 
   /** Playback stopped — pause, ended, seeking, or the component unmounting. */

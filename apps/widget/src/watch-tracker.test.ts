@@ -284,3 +284,54 @@ describe("continuity across a close", () => {
     expect(tracker.drain()).toEqual([{ startSec: 5, endSec: 10 }]);
   });
 });
+
+describe("a stalled sample at the rates the player offers (P153-02)", () => {
+  /*
+   * `timeupdate` is throttled by every browser — a background tab, a GC pause,
+   * a slow frame. When two samples land more than the continuity bound apart,
+   * the tracker reads a seek and the media between them is never recorded.
+   *
+   * The bound is in media seconds, so playback rate decides how much real time
+   * it is worth: two seconds at 1×, one second at 2×. A physician watching
+   * faster loses more, which is the opposite of what the speed control
+   * promises.
+   */
+  it("keeps a span across a 3-second advance at 2×, where the stall was 1.5 s", () => {
+    const tracker = new WatchTracker();
+    tracker.observe(100, true, 2);
+    tracker.observe(101, true, 2);
+    tracker.observe(104, true, 2); // one throttled tick: 3 media s, 1.5 real s
+    tracker.observe(105, true, 2);
+    tracker.closeOpen();
+
+    expect(
+      tracker.drain(),
+      "the span across a throttled sample was discarded — the learner watched it",
+    ).toEqual([{ startSec: 100, endSec: 105 }]);
+  });
+
+  it("still reads a real forward seek as a seek, at every rate", () => {
+    const tracker = new WatchTracker();
+    tracker.observe(100, true, 2);
+    tracker.observe(101, true, 2);
+    tracker.observe(400, true, 2); // dragging the scrub bar
+    tracker.observe(401, true, 2);
+    tracker.closeOpen();
+
+    expect(tracker.drain()).toEqual([
+      { startSec: 100, endSec: 101 },
+      { startSec: 400, endSec: 401 },
+    ]);
+  });
+
+  it("does not let a tampered rate widen the bound past the server's cap", () => {
+    const tracker = new WatchTracker();
+    tracker.observe(100, true, 1000);
+    tracker.observe(110, true, 1000); // 10 media s is a seek at any real rate
+    tracker.closeOpen();
+
+    // Both intervals are zero-length and dropped as noise, which is the point:
+    // the jump was read as a seek even though the client claimed 1000×.
+    expect(tracker.drain()).toEqual([]);
+  });
+});
