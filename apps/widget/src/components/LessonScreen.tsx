@@ -149,12 +149,32 @@ function VideoLesson(props: {
     [covered, lesson.durationSec],
   );
 
+  /** True while a progress request is outstanding — see `flush`. */
+  const inFlightRef = useRef(false);
+
   const flush = useCallback(async () => {
     const tracker = trackerRef.current;
     if (!tracker.hasPending) return;
 
+    /*
+     * One request at a time for this content (P154-02).
+     *
+     * The timer fires every fifteen seconds and does not wait for the previous
+     * request. On a slow connection two flushes overlap, and because `drain`
+     * empties the buffer the second carries only what arrived in between —
+     * so the two answers race, and the later one can be computed from a
+     * smaller union than the earlier. Serialising them also makes the retry
+     * below meaningful: intervals put back must not be drained again by a
+     * request already in flight.
+     */
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+
     const segments = coalesce(tracker.drain());
-    if (segments.length === 0) return;
+    if (segments.length === 0) {
+      inFlightRef.current = false;
+      return;
+    }
 
     try {
       const result = await client.recordProgress(courseSlug, lesson.id, {
@@ -187,7 +207,26 @@ function VideoLesson(props: {
        * a physician's evening, credited as nothing, with a reassurance on
        * screen the whole time.
        */
-      if (isSessionExpired(error)) onAuthLost();
+      if (isSessionExpired(error)) {
+        onAuthLost();
+        return;
+      }
+
+      /*
+       * Give the intervals back (P154-02). Everything above this line explains
+       * why a transient failure is silent; none of it explains why the seconds
+       * should be thrown away. `drain()` had already emptied the buffer, so
+       * without this the next flush carries only what was watched *after* the
+       * failure and the rest is lost for good — which is what a physician
+       * watching through a connectivity blip actually experienced.
+       *
+       * Not restored on a 401: that session cannot post anything again, the
+       * screen is about to say so, and holding the intervals in a tracker that
+       * is about to be unmounted only pretends they are safe.
+       */
+      trackerRef.current.restore(segments);
+    } finally {
+      inFlightRef.current = false;
     }
   }, [client, courseSlug, lesson.id, onProgress, onAuthLost]);
 

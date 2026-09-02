@@ -104,6 +104,42 @@ const DEFAULT_WALL_CLOCK_TOLERANCE_SEC = 2;
 export const MAX_PLAYBACK_RATE = 2;
 
 /**
+ * How far past the watched edge the player may seek (P154-01).
+ *
+ * ## What it was, and what its own comment said it was for
+ *
+ * Five seconds, with `seekCeiling` explaining it as "a small tolerance so that
+ * nudging the scrub bar forward by a frame at the live edge is not refused".
+ * A frame is about 0.04 s. Five seconds is a hundred and twenty-five of them —
+ * and it is exactly `SEEK_STEP_SEC`, the distance the right-arrow key moves.
+ *
+ * So one press of the forward key landed exactly on the ceiling. Playback then
+ * carried the ceiling forward, and the next press did it again: a learner could
+ * walk an entire video in five-second hops, leaving a five-second hole each
+ * time, while the player said "Vorspulen ist nicht möglich". It arrived as a
+ * real capture (DEP-25) whose union has two gaps of exactly 5.000000 s and a
+ * `seekCeilingSec` of `maxWatched + 5`.
+ *
+ * ## Why 0.5
+ *
+ * The stated purpose — a nudge at the live edge — needs a frame. What actually
+ * has to be forgiven is one `timeupdate` sample of jitter, which browsers fire
+ * about every 0.25 s, so half a second covers a sample and a nudge with room
+ * to spare. It is the same magnitude as `BOUNDARY_TOLERANCE_SEC`, which exists
+ * for the same kind of reason one function down.
+ *
+ * The property that matters is not the number but the ratio: the tolerance must
+ * stay **below the smallest forward control the player offers**, or that control
+ * is a way to skip. `watch.test.ts` asserts exactly that against
+ * `SEEK_STEP_SEC` and `SEEK_JUMP_SEC`, so raising this back to 5 fails a test
+ * rather than quietly reopening the hole.
+ *
+ * This does not restrict rewinding, which is unbounded and always has been:
+ * coverage is a union, so re-watching cannot inflate it.
+ */
+export const SEEK_CEILING_TOLERANCE_SEC = 0.5;
+
+/**
  * Merge overlapping and adjacent intervals into a minimal disjoint set.
  *
  * Adjacent intervals touching at a point (`[0,10]` and `[10,20]`) are merged —
@@ -397,7 +433,7 @@ export function maxWatchedPosition(segments: readonly WatchedSegment[]): number 
 export function isSeekAllowed(
   segments: readonly WatchedSegment[],
   targetSec: number,
-  toleranceSec = 5,
+  toleranceSec = SEEK_CEILING_TOLERANCE_SEC,
 ): boolean {
   if (!Number.isFinite(targetSec) || targetSec < 0) return false;
   return targetSec <= maxWatchedPosition(segments) + toleranceSec;

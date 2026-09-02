@@ -211,6 +211,36 @@ export class WatchTracker {
     return drained;
   }
 
+  /**
+   * Put drained intervals back, because the request carrying them failed
+   * (P154-02).
+   *
+   * ## What this repairs
+   *
+   * `drain()` empties `#pending` unconditionally. The caller then posts them,
+   * and if that post failed — offline, timeout, 429, a 5xx — the intervals were
+   * **gone**: nothing held them and nothing re-sent them. The next flush
+   * carried only what had been watched since. `LessonScreen`'s catch said "the
+   * next flush retries", and it did not; the seconds a physician watched during
+   * a connectivity blip were discarded, permanently, under a screen reading
+   * "Ihr Fortschritt wird automatisch gespeichert".
+   *
+   * Restored at the **front**, so the union is offered in the order it was
+   * watched, and merged by `coalesce` on the way out like everything else. The
+   * server merges again and validates against the wall clock, so returning an
+   * interval here cannot credit anything that was not played — it only stops
+   * the client throwing away its own evidence.
+   *
+   * Nothing here is time-bounded on purpose: the pending list only grows while
+   * the network is failing, and the tracker lives no longer than the screen.
+   * A durable queue across reloads is a different decision, with storage and
+   * identity consequences, and is not this.
+   */
+  restore(segments: readonly Segment[]): void {
+    if (segments.length === 0) return;
+    this.#pending = [...segments, ...this.#pending];
+  }
+
   /** True when there is something worth sending. */
   get hasPending(): boolean {
     if (this.#pending.length > 0) return true;

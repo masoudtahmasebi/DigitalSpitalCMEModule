@@ -521,7 +521,12 @@ describe("the learner journey", () => {
     // derived from the segments, never from `lastPositionSec`: a ceiling taken
     // from the reported position would let a client raise its own limit by
     // claiming to have arrived somewhere it never played.
-    expect(body.seekCeilingSec).toBe(605);
+    // 600.5, not 605: the tolerance above the watched edge is half a second
+    // since P154-01, because five seconds was exactly the forward key's step
+    // and let it walk through unwatched content. The property this test is
+    // about — the ceiling follows the union, not the reported position — is
+    // unchanged.
+    expect(body.seekCeilingSec).toBe(600.5);
   });
 
   it("resumes at the last whole minute of what is left to watch", async () => {

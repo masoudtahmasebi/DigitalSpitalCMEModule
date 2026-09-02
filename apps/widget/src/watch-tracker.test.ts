@@ -335,3 +335,53 @@ describe("a stalled sample at the rates the player offers (P153-02)", () => {
     expect(tracker.drain()).toEqual([]);
   });
 });
+
+describe("intervals survive a failed request (P154-02)", () => {
+  /*
+   * `drain()` empties the buffer unconditionally, so before `restore` a failed
+   * POST discarded exactly the seconds a physician watched during the outage —
+   * silently, under "Ihr Fortschritt wird automatisch gespeichert".
+   */
+  it("hands drained intervals back when the request that carried them failed", () => {
+    const tracker = new WatchTracker();
+    // Continuous samples: a jump wider than the continuity bound is a seek.
+    for (const at of [0, 2, 4, 6, 8, 10]) tracker.observe(at, true);
+    tracker.closeOpen();
+
+    const carried = tracker.drain();
+    expect(carried).toEqual([{ startSec: 0, endSec: 10 }]);
+    expect(tracker.hasPending, "drain left something behind").toBe(false);
+
+    tracker.restore(carried); // the POST threw
+
+    expect(tracker.hasPending).toBe(true);
+    expect(
+      tracker.drain(),
+      "the intervals the failed request carried were not offered again",
+    ).toEqual([{ startSec: 0, endSec: 10 }]);
+  });
+
+  it("keeps restored intervals ahead of what was watched since", () => {
+    const tracker = new WatchTracker();
+    for (const at of [0, 2, 4, 6, 8, 10]) tracker.observe(at, true);
+    tracker.closeOpen();
+    const carried = tracker.drain();
+
+    // watching continued while the request was failing
+    for (const at of [10, 12, 14, 16, 18, 20]) tracker.observe(at, true);
+    tracker.closeOpen();
+
+    tracker.restore(carried);
+
+    expect(tracker.drain()).toEqual([
+      { startSec: 0, endSec: 10 },
+      { startSec: 10, endSec: 20 },
+    ]);
+  });
+
+  it("is a no-op for an empty restore", () => {
+    const tracker = new WatchTracker();
+    tracker.restore([]);
+    expect(tracker.hasPending).toBe(false);
+  });
+});
