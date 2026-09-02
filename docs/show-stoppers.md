@@ -1961,3 +1961,46 @@ and says so. An operator gets a refusal naming the next step rather than a
 second filing nobody asked for. The never-accepted case — `queued`, `held`,
 `failed_*`, `window_closed` — is unambiguous and is fixed in P118: nothing was
 reported, so nothing can disagree, and the requeue picks up the corrected EFN.
+
+## S30 — May the furthest playback position stand in for the watched union?
+
+**Owner: Masoud (client). Raised 02.09.2026, P156-03. Blocks nothing today; the
+platform continues to use the union.**
+
+Masoud has asked, twice, for completion to be decided by the furthest position
+reached rather than by the union of watched intervals:
+
+> i told you the latest should be the rule, not what was seen in the middle,
+> because the user can not skip it
+
+**Why it is newly arguable.** P154-01 clamped the forward seek ceiling to half a
+second above the watched edge (it was five, which is exactly the arrow key's
+step, so the key walked through unwatched content five seconds at a time). With
+that closed, the playhead cannot get ahead of what has been watched — so
+reaching 39:23 is evidence of having watched everything before it, and the small
+holes below that point are sampling artefacts rather than skipped content.
+
+**Why it cannot simply be done.** `CLAUDE.md` §4 invariant 5:
+
+> Watched percentage is the union of watched intervals, never the maximum
+> playback position. A max-position implementation makes any gate trivially
+> skippable by dragging the scrub bar.
+
+That is an accreditation property, not a preference. The union is what makes the
+CME point defensible if the Ärztekammer ever asks how it was earned.
+
+**What has to be decided, and by whom.**
+
+1. Does the accreditation permit crediting a passage the player was clamped past
+   but which produced no watched interval? That is a question for the ÄKWL or
+   the client's compliance owner, not for the platform.
+2. If yes, the safe form is **not** "max position wins". It is: fill gaps below
+   the furthest position **only when the seek ceiling was in force for the whole
+   session**, so the client cannot manufacture the position it claims. Anything
+   looser reopens exactly what invariant 5 exists to prevent.
+3. Whichever way it goes, it is a §2 human-review change and it needs its own
+   ticket, because it changes which physicians receive points.
+
+**Until it is decided** the union stands, and a learner with a real gap is asked
+to re-watch it. Historical gaps recorded before P154 are not back-filled by
+anything.

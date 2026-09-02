@@ -18,7 +18,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type {
   ApiClient,
   ChapterState,
@@ -244,16 +244,18 @@ function renderPlayer(
     onOpen?: (id: string) => void;
     onReporting?: () => void;
     onBack?: () => void;
+    client?: ApiClient;
   } = {},
 ) {
-  const client = { recordProgress: vi.fn() } as unknown as ApiClient;
+  const client =
+    overrides.client ?? ({ recordProgress: vi.fn() } as unknown as ApiClient);
   const courseNode = overrides.course ?? course();
   const enrolment = overrides.state ?? state();
   const current = overrides.lesson ?? lesson();
   const onOpen = overrides.onOpen ?? vi.fn();
   const onBack = overrides.onBack ?? vi.fn();
 
-  render(
+  return render(
     <CourseShell
       apiBase="https://api.invalid"
       projectSlug="ds"
@@ -683,5 +685,170 @@ describe("the list of missing spans", () => {
     });
 
     expect(screen.queryByText(/Diese Stellen fehlen noch/u)).toBeNull();
+  });
+});
+
+describe("how often the player talks to the server (P156-01)", () => {
+  /*
+   * Reported from a real session with the network panel open: a `progress` POST
+   * and an `enrolment` GET roughly **every second** on a playing video, against
+   * a flush interval of fifteen. The first answer given was that the panel was
+   * "consistent with fifteen seconds". It was not, and this is the test that
+   * should have been written instead of that sentence.
+   *
+   * The interval is not the cause. `LessonScreen` had
+   *
+   *     useEffect(() => {
+   *       const tracker = trackerRef.current;
+   *       return () => { tracker.closeOpen(); void flush(); };
+   *     }, [flush]);
+   *
+   * written, and commented, as "flush on unmount". A cleanup with a dependency
+   * array runs on **every change of that dependency** — and `flush` is a
+   * `useCallback` over `onAuthLost`, which `PlayerScreen` passes as a fresh
+   * arrow function on every render, while re-rendering on every `timeupdate`
+   * because it holds `PlaybackState` in `useState`.
+   *
+   * So every playback sample produced a new `flush`, and every new `flush` ran
+   * the previous one's cleanup: one POST per sample. The same chain cleared and
+   * recreated the fifteen-second interval four times a second, so the timer
+   * meant to do this never fired at all.
+   *
+   * ## Why the element has to be lied to
+   *
+   * jsdom implements no playback: `video.paused` is permanently `true`, so
+   * `VideoPlayer`'s `playing` is false, the tracker records nothing, and a test
+   * that only fires `timeupdate` counts **zero** requests and passes while
+   * proving nothing. That is how the first version of this test was vacuous.
+   */
+  function playFor(container: HTMLElement, samples: number): void {
+    const video = container.querySelector("video") as HTMLVideoElement;
+    Object.defineProperty(video, "paused", { value: false, configurable: true });
+    Object.defineProperty(video, "seeking", { value: false, configurable: true });
+    fireEvent.play(video);
+    for (let i = 1; i <= samples; i += 1) {
+      Object.defineProperty(video, "currentTime", {
+        value: i * 0.25,
+        configurable: true,
+      });
+      fireEvent.timeUpdate(video);
+    }
+  }
+
+  const reply = {
+    contentId: "c1",
+    status: "in_progress" as const,
+    watchedPercent: 4,
+    watchedSegments: [],
+    rejected: [],
+    accepted: 1,
+    seekCeilingSec: 10.5,
+  };
+
+  /*
+   * The symptom is browser-only: jsdom implements no playback clock, so
+   * `PlayerScreen` does not re-render as the video advances and the storm does
+   * not appear here at all (measured: 1 request for 40 samples, and that one is
+   * the unmount flush). Testing the **cause** instead is both deterministic and
+   * closer to the defect: a re-render that changes `flush`'s identity must not
+   * post anything. In a browser that re-render happens on every playback tick;
+   * here it is forced by handing the component a new `onProgress`.
+   */
+  function renderWith(client: ApiClient, onProgress: () => void) {
+    const courseNode = course();
+    const enrolment = state();
+    const current = lesson();
+    return render(
+      <CourseShell
+        apiBase="https://api.invalid"
+        projectSlug="ds"
+        course={courseNode}
+        state={enrolment}
+        currentContentId={current.id}
+        onOpen={vi.fn()}
+        onBack={vi.fn()}
+        onResume={undefined}
+        progress={false}
+      >
+        <PlayerScreen
+          client={client}
+          courseSlug="adhs"
+          course={courseNode}
+          state={enrolment}
+          lesson={current}
+          onProgress={onProgress}
+          onOpen={vi.fn()}
+          onBack={vi.fn()}
+          onReporting={vi.fn()}
+        />
+      </CourseShell>,
+    );
+  }
+
+  it("posts nothing when a re-render merely changes a callback's identity", async () => {
+    const recordProgress = vi.fn().mockResolvedValue(reply);
+    const client = { recordProgress } as unknown as ApiClient;
+    const { container, rerender } = renderWith(client, vi.fn());
+
+    playFor(container, 40);
+    const afterPlaying = recordProgress.mock.calls.length;
+
+    // The re-render a playing video causes four times a second in a browser.
+    for (let i = 0; i < 10; i += 1) {
+      const courseNode = course();
+      const enrolment = state();
+      const current = lesson();
+      rerender(
+        <CourseShell
+          apiBase="https://api.invalid"
+          projectSlug="ds"
+          course={courseNode}
+          state={enrolment}
+          currentContentId={current.id}
+          onOpen={vi.fn()}
+          onBack={vi.fn()}
+          onResume={undefined}
+          progress={false}
+        >
+          <PlayerScreen
+            client={client}
+            courseSlug="adhs"
+            course={courseNode}
+            state={enrolment}
+            lesson={current}
+            onProgress={vi.fn()}
+            onOpen={vi.fn()}
+            onBack={vi.fn()}
+            onReporting={vi.fn()}
+          />
+        </CourseShell>,
+      );
+    }
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(
+      recordProgress.mock.calls.length - afterPlaying,
+      `ten re-renders produced ${String(
+        recordProgress.mock.calls.length - afterPlaying,
+      )} requests — the unmount flush is firing on every dependency change`,
+    ).toBe(0);
+  });
+
+  it("still flushes when the screen really is going away", () => {
+    // The guard on the guard, twice over: it proves the harness drove the
+    // tracker at all, and it pins the behaviour the fix must not remove.
+    const recordProgress = vi.fn().mockResolvedValue(reply);
+    const { container } = renderWith({ recordProgress } as unknown as ApiClient, vi.fn());
+
+    playFor(container, 40);
+    cleanup();
+
+    expect(
+      recordProgress.mock.calls.length,
+      "nothing was posted on unmount — either the harness never drove the " +
+        "tracker, or the fix removed the one flush that is genuinely owed",
+    ).toBeGreaterThan(0);
   });
 });
