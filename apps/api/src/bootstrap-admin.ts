@@ -150,10 +150,14 @@ async function main(): Promise<void> {
    * must not be — a request-serving container that can rewrite the schema is a
    * worse problem than the one being solved. P148 reverted it.
    *
-   * Reading it as `ds_app` was the other obvious fix and is also wrong:
-   * `ds_app` holds no grant on `schema_migrations` (ADR-0002, the application
-   * role owns nothing), and widening it for a diagnostic is a permanent cost
-   * for a one-command benefit.
+   * Reading it as `ds_app` was the other obvious fix and is also wrong, though
+   * not for the reason P148 and P149 gave. They said `ds_app` holds no grant on
+   * `schema_migrations`; it holds `arwd` on it, from the blanket
+   * `ALTER DEFAULT PRIVILEGES … TO ds_app` in `init-roles.sql` — verified
+   * against a live database, and corrected in migration 0049's header
+   * (P151-02). The real objection is that resting this check on that grant
+   * rests it on an over-grant we would rather narrow, one that lets the
+   * application role rewrite the very ledger being read.
    *
    * So: `ds_schema_reader`, a login role whose entire authority is
    * `SELECT ON schema_migrations` (migration 0049). Its URL is on the `api`

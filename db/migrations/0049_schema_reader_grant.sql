@@ -3,8 +3,7 @@
 -- ## Why this role exists at all
 --
 -- P148-01: `bootstrap-admin` was given `assertSchemaCurrent`, which reads
--- `schema_migrations`. `ds_app` holds no grant on that table — deliberately,
--- ADR-0002, the application role owns nothing — and the documented invocation
+-- `schema_migrations`, and the documented invocation
 --
 --     docker compose run --rm --entrypoint node api dist/bootstrap-admin.js
 --
@@ -12,11 +11,37 @@
 -- not be. So the platform's first-boot command failed on every fresh host, and
 -- the change was reverted.
 --
--- Two fixes were available and a human refused both: granting `ds_app` the read
--- widens the application role for a diagnostic, and giving the api container the
+-- Two fixes were available and a human refused both: reading it as `ds_app`
+-- rests the check on the application role, and giving the api container the
 -- migrator's URL hands a request-serving process the ability to rewrite the
 -- schema. This is the third: a login role that can do exactly one harmless
 -- thing and is granted nothing else anywhere.
+--
+-- ## A correction to what P148/P149 said about `ds_app` (P151-02)
+--
+-- Those tickets, and the first version of this header, said `ds_app` "holds no
+-- grant on schema_migrations (ADR-0002, the application role owns nothing)".
+-- That is false, and it was never checked against a database. `init-roles.sql`
+-- runs
+--
+--     ALTER DEFAULT PRIVILEGES FOR ROLE ds_migrator IN SCHEMA public
+--       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ds_app;
+--
+-- which covers every table the migrator creates, and the ledger is one of them.
+-- Verified on a live database:
+--
+--     pg_class.relacl  ->  ds_app=arwd/ds_migrator
+--     as ds_app: INSERT INTO schema_migrations(filename) VALUES ('probe')
+--                -> INSERT 0 1     (rolled back)
+--
+-- So `ds_app` can read the ledger, and can also rewrite it. That does not make
+-- this role wrong — it makes it more necessary: a check on schema freshness
+-- should not rest on a blanket default privilege that we would rather narrow,
+-- and least of all on one that also grants writes to the thing being checked.
+--
+-- Narrowing `ds_app`'s privilege on this table is a separate decision with its
+-- own migration and its own review; it predates this branch and is not changed
+-- here. It is recorded in docs/backlog/P151.md so it is somebody's to take.
 --
 -- ## Why the grant is here and not in init-roles.sql
 --

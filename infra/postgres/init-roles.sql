@@ -78,14 +78,20 @@ BEGIN
    * migrator's credentials.
    *
    * P148-01 is why. `bootstrap-admin` was given `assertSchemaCurrent`, which
-   * reads `schema_migrations`; `ds_app` has no grant on it (ADR-0002 — the
-   * application role owns nothing), and the documented invocation runs in the
+   * reads `schema_migrations`, and the documented invocation runs in the
    * `api` service where `MIGRATION_DATABASE_URL` is not set and must not be.
    * The platform's first-boot command became a hard failure on every fresh
    * host.
    *
-   * The two obvious fixes were both refused by a human: granting `ds_app` the
-   * read widens the application role for a diagnostic, and handing the api
+   * Note what this file itself does further down, because P148 and P149 both
+   * got it wrong: `ALTER DEFAULT PRIVILEGES FOR ROLE ds_migrator … TO ds_app`
+   * gives `ds_app` SELECT/INSERT/UPDATE/DELETE on every table the migrator
+   * creates, `schema_migrations` included. `ds_app` can therefore read the
+   * ledger — and rewrite it. Narrowing that is a decision of its own
+   * (docs/backlog/P151.md); it is not what this role is here to work around.
+   *
+   * The two obvious fixes were both refused by a human: resting the check on
+   * `ds_app` rests it on the application role's privileges, and handing the api
    * container the migrator's URL gives a request-serving process the ability to
    * rewrite the schema. This is the third option — a role that can do exactly
    * one harmless thing.
