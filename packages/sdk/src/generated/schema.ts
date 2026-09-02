@@ -7090,6 +7090,26 @@ export interface operations {
                      *     otherwise.
                      */
                     vnrPassword?: string;
+                    /**
+                     * @description Which register to check against.
+                     *
+                     *     `configured` is the endpoint this installation is pointed
+                     *     at. `test` is EIV's own test register, whatever the
+                     *     installation is pointed at — which is what makes a
+                     *     diagnostic safe to run from a production installation.
+                     *
+                     *     **Two words, never a URL.** The server turns one of them
+                     *     into an address from a list it owns, so a body naming a
+                     *     host changes nothing. A control that picks the register is
+                     *     a control that can pick the live one, and a Punktemeldung
+                     *     cannot be unfiled.
+                     *
+                     *     Absent means `configured`, so every caller that existed
+                     *     before this field keeps checking the same endpoint.
+                     * @default configured
+                     * @enum {string}
+                     */
+                    environment?: "configured" | "test";
                 };
             };
         };
