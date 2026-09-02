@@ -9,7 +9,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { eivEndpointTier, requiresLiveConsent } from "./endpoint.js";
+import {
+  EIV_TEST_HOST,
+  eivEndpointTier,
+  eivEnvironmentUrl,
+  requiresLiveConsent,
+} from "./endpoint.js";
 
 describe("eivEndpointTier", () => {
   it.each([
@@ -63,5 +68,50 @@ describe("requiresLiveConsent", () => {
      */
     expect(requiresLiveConsent("https://proxy.internal")).toBe(true);
     expect(requiresLiveConsent("")).toBe(true);
+  });
+});
+
+describe("choosing which register a diagnostic talks to (P157-01)", () => {
+  /*
+   * The client asked for it in as many words:
+   *
+   *   "i want to be able to test either against the prod or test, i know this
+   *    already exists, i can not choose which backend, and enter a test vnr,
+   *    test efn"
+   *
+   * The danger in granting that is obvious and permanent: a control that picks
+   * the register is a control that can pick the **live** one, and a
+   * Punktemeldung cannot be unfiled. So the browser never names a URL. It names
+   * one of two words, and the server turns that into an address from a list
+   * this file owns.
+   *
+   * `configured` is whatever the installation is pointed at — which may itself
+   * be the test system, and on the MEDICE host today is not. `test` is EIV's
+   * own test system, the one they ask integrators to use.
+   */
+  it("resolves the installation's own endpoint", () => {
+    expect(eivEnvironmentUrl("configured", "http://127.0.0.1:4010")).toBe(
+      "http://127.0.0.1:4010",
+    );
+  });
+
+  it("resolves the test register from the allow-list, not from the caller", () => {
+    expect(eivEnvironmentUrl("test", "https://eiv-fobi.de")).toBe(
+      `https://${EIV_TEST_HOST}`,
+    );
+  });
+
+  it("puts the test register in the test tier, whatever the installation is", () => {
+    expect(eivEndpointTier(eivEnvironmentUrl("test", "https://eiv-fobi.de"))).toBe(
+      "test",
+    );
+  });
+
+  it("cannot be talked into an address the caller supplies", () => {
+    // The whole point: there is no branch that returns its second argument for
+    // anything but `configured`, so a body carrying a URL changes nothing.
+    expect(eivEnvironmentUrl("test", "https://attacker.example/eiv")).toBe(
+      `https://${EIV_TEST_HOST}`,
+    );
   });
 });

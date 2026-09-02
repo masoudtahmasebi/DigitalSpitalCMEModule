@@ -85,3 +85,42 @@ export function requiresLiveConsent(baseUrl: string): boolean {
   const tier = eivEndpointTier(baseUrl);
   return tier === "live" || tier === "unknown";
 }
+
+/**
+ * Which register a diagnostic run talks to (P157-01).
+ *
+ * ## The request, and the thing that makes it dangerous
+ *
+ * > i want to be able to test either against the prod or test, i know this
+ * > already exists, i can not choose which backend, and enter a test vnr, test
+ * > efn
+ *
+ * A control that picks the register is a control that can pick the **live**
+ * one, and a Punktemeldung cannot be unfiled — only withdrawn, which leaves its
+ * own entry on a physician's record. So the choice exists, and the browser is
+ * never the thing that makes it into an address.
+ *
+ * The wire carries one of two words. This function turns that into a URL from a
+ * list the module owns, so a request body naming `https://attacker.example` or
+ * the live register changes nothing: there is no branch that returns its second
+ * argument except for `configured`, which is the installation's own setting and
+ * was never the caller's to choose.
+ *
+ * `configured` may itself be the test system — an installation pointed at
+ * `backend-test.eiv-fobi.de` is the supported way to exercise the whole chain,
+ * and `docs/eiv-test-system.md` describes it. `test` is EIV's own test register
+ * regardless of what the installation is pointed at, which is what makes a
+ * diagnostic safe to run on a production installation.
+ *
+ * What this does **not** decide is whether a submission may go to the resolved
+ * address. That is `requiresLiveConsent` above, and for synthetic test data it
+ * is a refusal rather than a consent — see the diagnostic route.
+ */
+export type EivEnvironment = "configured" | "test";
+
+export function eivEnvironmentUrl(
+  environment: EivEnvironment,
+  configuredBaseUrl: string,
+): string {
+  return environment === "test" ? `https://${EIV_TEST_HOST}` : configuredBaseUrl;
+}

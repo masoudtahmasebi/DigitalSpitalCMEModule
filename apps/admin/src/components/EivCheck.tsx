@@ -58,16 +58,25 @@ export function EivCheckPanel(props: {
 }) {
   const { client, courseSlug } = props;
   const [password, setPassword] = useState("");
+  /*
+   * Which register to aim at (P157-01).
+   *
+   * A string on the wire, resolved to an address by the server from a list it
+   * owns — the browser never names a host. Defaulting to the installation's own
+   * register keeps this control from changing what the button did before it
+   * existed.
+   */
+  const [environment, setEnvironment] = useState<"configured" | "test">("configured");
   const [report, setReport] = useState<EivConnectionReport | undefined>();
   const saver = useSaver();
 
   const run = useCallback(() => {
     void saver.run(async () => {
       setReport(
-        await client.adminCheckEivConnection(
-          courseSlug,
-          password === "" ? {} : { vnrPassword: password },
-        ),
+        await client.adminCheckEivConnection(courseSlug, {
+          environment,
+          ...(password === "" ? {} : { vnrPassword: password }),
+        }),
       );
       /*
        * Cleared on success, not on failure.
@@ -79,7 +88,7 @@ export function EivCheckPanel(props: {
        */
       setPassword("");
     });
-  }, [client, courseSlug, password, saver]);
+  }, [client, courseSlug, environment, password, saver]);
 
   if (!props.hasVnr) {
     /*
@@ -103,6 +112,24 @@ export function EivCheckPanel(props: {
           and one who assumes the opposite is the person we must never have.
         */}
         <p className="text-sm text-gray-600">{de.eivCheck.readOnly}</p>
+
+        <Field
+          label={de.eivCheck.environment}
+          hint={de.eivCheck.environmentHint}
+          htmlFor="eiv-check-environment"
+        >
+          <select
+            id="eiv-check-environment"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            value={environment}
+            onChange={(event) =>
+              setEnvironment(event.target.value === "test" ? "test" : "configured")
+            }
+          >
+            <option value="configured">{de.eivCheck.environmentConfigured}</option>
+            <option value="test">{de.eivCheck.environmentTest}</option>
+          </select>
+        </Field>
 
         <Field
           label={de.eivCheck.password}

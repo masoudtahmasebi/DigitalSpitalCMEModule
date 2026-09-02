@@ -959,6 +959,12 @@ export const en: DeepPartial<typeof german> = {
     needsVnr:
       "No VNR is stored for this course yet. Enter the VNR and VNR password above and save, then the connection can be checked.",
 
+    environment: "Register",
+    environmentHint:
+      "The test system is the EIV's own practice environment. Points reported there reach no Ärztekammer and no physician — it is the environment the EIV asks integrators to develop against. This check only reads either way; the choice decides which system answers.",
+    environmentConfigured: "This installation's register",
+    environmentTest: "The EIV test system",
+
     password: "VNR password (optional)",
     passwordHint:
       "Leave empty to check the stored password. A password entered here is used only for this check and is not saved — so a new password can be tested without overwriting the working one.",

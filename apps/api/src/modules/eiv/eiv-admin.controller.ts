@@ -38,6 +38,7 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
+import { eivEnvironmentUrl, type EivEnvironment } from "@ds/eiv-client";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { Roles } from "../../auth/roles.decorator.js";
@@ -81,6 +82,19 @@ const Withdrawal = z.object({
  */
 const eivCheckSchema = z.object({
   vnrPassword: z.string().min(1).max(200).optional(),
+  /*
+   * Which register to check against (P157-01).
+   *
+   * Two words, never a URL. `eivEnvironmentUrl` turns one of them into an
+   * address from a list `@ds/eiv-client` owns, so a body naming a host — the
+   * live register, or somebody else's — changes nothing. A control that picks
+   * the register is a control that can pick the live one, and a Punktemeldung
+   * cannot be unfiled.
+   *
+   * Absent means `configured`: every caller that existed before this field
+   * keeps checking the installation's own endpoint.
+   */
+  environment: z.enum(["configured", "test"]).optional(),
 });
 
 @Controller("admin")
@@ -211,7 +225,7 @@ export class EivAdminController {
       );
     }
 
-    return this.service(db).checkConnection(
+    return this.service(db, parsed.data.environment ?? "configured").checkConnection(
       slug,
       parsed.data.vnrPassword,
       context(principal),
@@ -262,7 +276,7 @@ export class EivAdminController {
    * Built per request from the tenant `Db`, which only exists once the
    * interceptor has opened the RLS transaction — see CONTRIBUTING.md.
    */
-  private service(db: Db): EivAdminService {
+  private service(db: Db, environment: EivEnvironment = "configured"): EivAdminService {
     return new EivAdminService(
       new EivAdminRepository(
         db,
@@ -273,7 +287,9 @@ export class EivAdminController {
       pluginRegistry().require("accreditationReporter"),
       new AuditService(this.sidePool),
       {
-        baseUrl: this.config.EIV_BASE_URL,
+        // Resolved here, from the enum the caller may send — never from a URL
+        // the caller sends (P157-01).
+        baseUrl: eivEnvironmentUrl(environment, this.config.EIV_BASE_URL),
         // The worker's own flag, so the screen reports the installation the
         // operator actually has rather than the one the code could support.
         submissionsEnabled: this.config.EIV_WORKER_ENABLED,

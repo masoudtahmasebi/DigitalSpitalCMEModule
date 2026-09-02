@@ -1327,6 +1327,20 @@ export const german = {
     needsVnr:
       "Für diese Fortbildung ist noch keine VNR hinterlegt. Tragen Sie die VNR und das VNR-Passwort oben ein und speichern Sie, dann kann die Verbindung geprüft werden.",
 
+    /*
+     * Which register to check against (P157-01).
+     *
+     * The client asked to be able to aim the check himself. The wording says
+     * what each choice *is* rather than what it is called internally, because
+     * "configured" and "test" are our words: an operator needs to know whether
+     * a green result means the Ärztekammer or a rehearsal.
+     */
+    environment: "Register",
+    environmentHint:
+      "Das Testsystem ist die Übungsumgebung des EIV. Dort gemeldete Punkte erreichen keine Ärztekammer und keine Ärztin — es ist die Umgebung, die der EIV für die Entwicklung vorsieht. Diese Prüfung liest ohnehin nur; die Auswahl entscheidet, welches System antwortet.",
+    environmentConfigured: "Register dieser Installation",
+    environmentTest: "Testsystem des EIV",
+
     password: "VNR-Passwort (optional)",
     passwordHint:
       "Leer lassen, um das gespeicherte Passwort zu prüfen. Ein hier eingetragenes Passwort wird nur für diese Prüfung verwendet und nicht gespeichert — so lässt sich ein neues Passwort testen, ohne das funktionierende zu überschreiben.",

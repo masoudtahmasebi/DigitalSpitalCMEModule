@@ -258,7 +258,10 @@ it("sends a typed password in the body, and clears it once it has worked", async
   fireEvent.click(screen.getByRole("button", { name: de.eivCheck.action }));
 
   await waitFor(() =>
+    // `environment` joined the body in P157-01; the property under test is
+    // still that a typed password travels and a stored one does not.
     expect(adminCheckEivConnection).toHaveBeenCalledWith("adhs-akademie-adult", {
+      environment: "configured",
       vnrPassword: "geheim",
     }),
   );
@@ -275,7 +278,11 @@ it("uses the stored password when the field is empty", async () => {
   fireEvent.click(screen.getByRole("button", { name: de.eivCheck.action }));
 
   await waitFor(() =>
-    expect(adminCheckEivConnection).toHaveBeenCalledWith("adhs-akademie-adult", {}),
+    // No `vnrPassword` key at all — the stored one is used. `environment` is
+    // the register this check aims at, added in P157-01.
+    expect(adminCheckEivConnection).toHaveBeenCalledWith("adhs-akademie-adult", {
+      environment: "configured",
+    }),
   );
 });
 
@@ -300,4 +307,46 @@ it("says plainly that it reports nobody", () => {
   // it; one who wrongly assumes it does not is the person we must never have.
   mount(WORKING);
   expect(screen.getByText(de.eivCheck.readOnly)).toBeTruthy();
+});
+
+/*
+ * Choosing which register to check against (P157-01).
+ *
+ * The client asked for it directly: "i want to be able to test either against
+ * the prod or test … i can not choose which backend". What travels is a word,
+ * never an address: the server resolves it from a list `@ds/eiv-client` owns,
+ * so a control that picks the register cannot become one that names an
+ * arbitrary host — and a Punktemeldung cannot be unfiled.
+ */
+it("checks this installation's own register unless told otherwise", async () => {
+  const { adminCheckEivConnection } = mount(WORKING);
+
+  fireEvent.click(screen.getByRole("button", { name: de.eivCheck.action }));
+
+  await waitFor(() => {
+    expect(adminCheckEivConnection).toHaveBeenCalledWith(
+      "adhs-akademie-adult",
+      expect.objectContaining({ environment: "configured" }),
+    );
+  });
+});
+
+it("sends the chosen register, and never an address", async () => {
+  const { adminCheckEivConnection } = mount(WORKING);
+
+  fireEvent.change(screen.getByLabelText(de.eivCheck.environment), {
+    target: { value: "test" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: de.eivCheck.action }));
+
+  await waitFor(() => {
+    expect(adminCheckEivConnection).toHaveBeenCalled();
+  });
+
+  const [, body] = adminCheckEivConnection.mock.calls[0] as [string, object];
+  expect(body).toEqual(expect.objectContaining({ environment: "test" }));
+  expect(
+    JSON.stringify(body),
+    "the request carries a URL — the browser must never name the register",
+  ).not.toMatch(/https?:\/\//u);
 });
