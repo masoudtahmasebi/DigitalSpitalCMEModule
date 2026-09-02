@@ -638,6 +638,43 @@ describe("recordProgress", () => {
     expect(written[0]?.["watchedSegments"]).toEqual([{ startSec: 0, endSec: 600 }]);
   });
 
+  it("credits a heartbeat watched at the fastest rate the player offers", async () => {
+    /*
+     * §9.7 — the domain owns the rule and this names its caller (P153-01).
+     *
+     * The widget flushes every 15 s. At 2×, the rate the speed menu goes up to,
+     * that heartbeat carries 30 media seconds. Under the old flat budget
+     * (15 + 2) it was rejected whole, so a physician who sped up watched the
+     * video and was credited nothing for it. A test of `validateSegments`
+     * alone would not have caught the service passing the wrong budget.
+     */
+    const { repository } = fakeRepository({
+      progress: [
+        progressRow({
+          contentId: VIDEO_1,
+          status: "in_progress",
+          watchedPercent: 0,
+          watchedSegments: [],
+          updatedAt: new Date("2026-07-01T11:59:45Z"), // 15 s before `now`
+        }),
+      ],
+    });
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      { segments: [{ startSec: 0, endSec: 30 }] },
+      learner,
+      now,
+    );
+
+    expect(
+      result.rejected,
+      "30 media seconds over 15 s of wall clock is 2×, which the player offers",
+    ).toEqual([]);
+    expect(result.watchedPercent).toBeGreaterThan(0);
+  });
+
   it("rejects a segment claiming more playback than wall-clock time allows", async () => {
     // One hour of "playback" reported one minute after the last write is not
     // playback. Rejecting it is what stops a scripted client from completing a

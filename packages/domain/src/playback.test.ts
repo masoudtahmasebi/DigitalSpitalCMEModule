@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { MAX_PLAYBACK_RATE } from "./watch.js";
 import {
   bufferedBars,
   clampVolume,
@@ -253,5 +254,28 @@ describe("bufferedBars", () => {
 
   it("is empty before anything has buffered", () => {
     expect(bufferedBars([], 200)).toEqual([]);
+  });
+});
+
+describe("the speed menu and the wall-clock budget agree (P153-01)", () => {
+  /*
+   * The two used to disagree silently: the menu offered 2× and the server
+   * credited 1×, so the faster a physician watched the less they were given.
+   * Nothing failed — the seconds were simply dropped — which is why this is a
+   * test and not a comment. Adding a rate the budget will not credit now costs
+   * a red run rather than somebody's CME point.
+   */
+  it("offers no rate the server would refuse to credit", () => {
+    const tooFast = PLAYBACK_RATES.filter((rate) => rate > MAX_PLAYBACK_RATE);
+
+    expect(
+      tooFast,
+      `the speed menu offers ${tooFast.join(", ")}×, above the ${String(MAX_PLAYBACK_RATE)}× ` +
+        "the wall-clock budget credits — every second watched at those rates is discarded",
+    ).toEqual([]);
+  });
+
+  it("offers the fastest rate the budget allows, so the cap is not accidental", () => {
+    expect(Math.max(...PLAYBACK_RATES)).toBe(MAX_PLAYBACK_RATE);
   });
 });

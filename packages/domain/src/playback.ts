@@ -28,10 +28,23 @@ import { mergeWatchedSegments, uncoveredSpans, type WatchedSegment } from "./wat
 /**
  * The rates the speed menu offers.
  *
- * Capped at 2×. Not a UI preference: the API rejects a report claiming more
- * media seconds than wall-clock seconds allow (`faster_than_wallclock`), so a
- * rate the server would refuse to credit is a rate that silently costs the
- * learner watch time. The tolerance leaves room for 2× and not for 4×.
+ * Capped at `MAX_PLAYBACK_RATE` (`watch.ts`, asserted in `playback.test.ts` so
+ * the two cannot drift). Not a UI preference: the API credits at most
+ * that many media seconds per wall-clock second (`faster_than_wallclock`), so a
+ * rate above it is a rate that silently costs the learner watch time.
+ *
+ * ## This comment used to be false, and that is why nobody looked (P153-01)
+ *
+ * It said "the tolerance leaves room for 2× and not for 4×". The tolerance was
+ * two **seconds**, flat, against a 15-second flush — so it left room for 1×,
+ * and every faster rate on this list was rejected whole. The sentence read as
+ * settled, so the menu grew a 2× entry that the server had never credited.
+ * §11 rule 9: a comment is a claim, and this one was never run.
+ *
+ * The bound is now a multiplier, it lives in `watch.ts` beside the check that
+ * applies it, and `playback.test.ts` asserts this list does not exceed it — so
+ * adding a 3× entry fails a test rather than quietly costing somebody a CME
+ * point.
  */
 export const PLAYBACK_RATES: readonly number[] = [0.75, 1, 1.25, 1.5, 1.75, 2];
 

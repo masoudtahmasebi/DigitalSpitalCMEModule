@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { WatchedSegment } from "./watch.js";
+import { PLAYBACK_RATES } from "./playback.js";
 import {
   creditedDurationSec,
+  MAX_PLAYBACK_RATE,
   isSeekAllowed,
   maxWatchedPosition,
   mergeWatchedSegments,
@@ -450,15 +452,80 @@ describe("validateSegments", () => {
   });
 
   it("applies the wall-clock budget across the whole batch, not per segment", () => {
+    /*
+     * Numbers restated for the 2× bound (P153-01): the budget here is
+     * 25 × 2 = 50 s, so the two 30-second segments are individually plausible
+     * and together are not. The property under test is unchanged — one batch,
+     * one budget — and it is the property that stops a client splitting an
+     * impossible claim into possible-looking pieces.
+     */
     const result = validateSegments(
       [
-        { startSec: 0, endSec: 20 },
-        { startSec: 100, endSec: 120 },
+        { startSec: 0, endSec: 30 },
+        { startSec: 100, endSec: 130 },
       ],
       { durationSec: 1500, elapsedWallClockSec: 25, wallClockToleranceSec: 0 },
     );
 
     expect(result.accepted).toHaveLength(1);
+    expect(result.rejected[0]?.reason).toBe("faster_than_wallclock");
+  });
+
+  /*
+   * The speed control the player actually offers (P153-01).
+   *
+   * `PLAYBACK_RATES` goes up to 2×, and its own comment claimed "the tolerance
+   * leaves room for 2× and not for 4×". The tolerance is two **seconds**, flat,
+   * so a 15-second flush (the widget's cadence) at 1.25× claims 18.75 s against
+   * a budget of 17 and is thrown away whole — as is every rate above 1×.
+   *
+   * The invariant is stated in terms of the rates the product offers rather
+   * than the widget's flush interval, because it must hold whatever that
+   * cadence is: a learner may watch at any rate the player can be set to, and
+   * every second of it has to be credited.
+   */
+  it.each(PLAYBACK_RATES)(
+    "credits a heartbeat watched at %s×, which the player offers",
+    (rate) => {
+      const elapsed = 15; // apps/widget/src/components/LessonScreen.tsx FLUSH_INTERVAL_MS
+      const result = validateSegments([{ startSec: 0, endSec: elapsed * rate }], {
+        durationSec: 2490,
+        elapsedWallClockSec: elapsed,
+      });
+
+      expect(
+        result.rejected,
+        `${String(elapsed * rate)} s watched at ${String(rate)}× over ${String(elapsed)} s ` +
+          "of wall clock was refused, so the learner watched it and was not credited",
+      ).toEqual([]);
+      expect(result.accepted).toHaveLength(1);
+    },
+  );
+
+  it("still refuses a whole video claimed at more than the fastest rate on offer", () => {
+    // The anti-skip property the budget exists for, restated against the new
+    // bound: 2 × 30 s of wall clock is 60 s of credit, and 1500 is not that.
+    const result = validateSegments([{ startSec: 0, endSec: 1500 }], {
+      durationSec: 1500,
+      elapsedWallClockSec: 30,
+    });
+
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected[0]?.reason).toBe("faster_than_wallclock");
+  });
+
+  it("caps the budget at the fastest rate the player offers, not higher", () => {
+    // One second past 2× is refused: the bound is the product's own cap, so a
+    // client cannot claim a rate the player cannot be set to.
+    const result = validateSegments(
+      [{ startSec: 0, endSec: 15 * MAX_PLAYBACK_RATE + 3 }],
+      {
+        durationSec: 2490,
+        elapsedWallClockSec: 15,
+        wallClockToleranceSec: 2,
+      },
+    );
+
     expect(result.rejected[0]?.reason).toBe("faster_than_wallclock");
   });
 

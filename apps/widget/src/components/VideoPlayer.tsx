@@ -132,7 +132,12 @@ export interface VideoPlayerProps {
   readonly paused: boolean;
   readonly onPlayback: (state: PlaybackState) => void;
   /** Fired on `timeupdate` while playing, for the watch tracker. */
-  readonly onTick: (positionSec: number, playing: boolean) => void;
+  /**
+   * A playback sample. `rate` travels with it because the tracker's continuity
+   * bound is in media seconds and has to be read against the rate that produced
+   * them (P153-02) — without it, a learner at 2× loses every stalled sample.
+   */
+  readonly onTick: (positionSec: number, playing: boolean, rate: number) => void;
   /** Playback stopped for any reason — pause, seek, ended, unmount. */
   readonly onStop: (reason: "pause" | "seek" | "ended") => void;
 }
@@ -334,7 +339,7 @@ export function VideoPlayer(props: VideoPlayerProps) {
     if (video === null) return;
 
     const playing = !video.paused && !video.seeking;
-    onTick(video.currentTime, playing);
+    onTick(video.currentTime, playing, video.playbackRate);
 
     // Playback is the only thing that raises the limit. Not a seek: a limit a
     // seek could raise would be no limit at all.
@@ -566,12 +571,12 @@ export function VideoPlayer(props: VideoPlayerProps) {
            * closes the interval and opens a new one where it lands.
            */
           onPlay={() => {
-            withVideo((video) => onTick(video.currentTime, true));
+            withVideo((video) => onTick(video.currentTime, true, video.playbackRate));
           }}
           onPlaying={() => withVideo(() => {})}
           onWaiting={() => withVideo(() => {})}
           onPause={() => {
-            withVideo((video) => onTick(video.currentTime, true));
+            withVideo((video) => onTick(video.currentTime, true, video.playbackRate));
             onStop("pause");
             withVideo(() => {});
           }}
@@ -585,7 +590,7 @@ export function VideoPlayer(props: VideoPlayerProps) {
             // `pause` fires first and has already observed this position; the
             // repeat is idempotent — the tracker extends an interval to a
             // position it already holds without widening it.
-            withVideo((video) => onTick(video.currentTime, true));
+            withVideo((video) => onTick(video.currentTime, true, video.playbackRate));
             onStop("ended");
             withVideo(() => {});
           }}

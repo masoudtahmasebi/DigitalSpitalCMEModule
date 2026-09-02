@@ -49,6 +49,7 @@ export type {
  */
 export {
   isSeekAllowed,
+  MAX_PLAYBACK_RATE,
   maxWatchedPosition,
   mergeWatchedSegments,
   validateSegments,
