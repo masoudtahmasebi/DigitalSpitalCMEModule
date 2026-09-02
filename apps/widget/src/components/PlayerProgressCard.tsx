@@ -84,10 +84,12 @@ export function PlayerProgressCard(props: {
         and whether they fit is decided by a font this code does not choose.
         The widget renders in a customer's page with `--ds-font-family` set to
         whatever that customer licenses, so the same markup is one line for one
-        deployment and two for the next. Measured at the card's `lg` width:
-        544 px of content, 505 px needed in Inter, 483 in Arial metrics, 560 in
-        the DejaVu fallback a Linux browser without either would pick — the
-        last of which wraps.
+        deployment and two for the next. Measured at the card's `lg` width —
+        512 px of content — the pair needs 505 px in Inter, 483 in Arial
+        metrics and 560 in the DejaVu fallback a Linux browser without either
+        would pick. The last of those wraps, and the first two clear it by
+        7 px and 29 px: a card sized to the drawing is not a guarantee, it is
+        a margin.
 
         `lg:flex-nowrap` makes the row a row at every one of those, and lets
         the note wrap *inside its own column* on the widths where the sentence
@@ -126,7 +128,7 @@ export function PlayerProgressCard(props: {
         {props.status?.autosaveFailed === true ? (
           <p className="text-xs font-semibold text-red-700">{de.player.sessionEnded}</p>
         ) : (
-          <p className="flex min-w-0 items-center gap-1.5 text-xs text-gray-500 lg:text-right">
+          <p className="min-w-0 text-xs text-gray-500 lg:text-right">
             <SaveIcon />
             {de.player.autosave}
           </p>
@@ -144,12 +146,18 @@ export function PlayerProgressCard(props: {
  * reader announcing "Bild" here would add nothing. It earns its place visually
  * — the line is small grey text at the bottom of a card, and the glyph is what
  * makes a physician notice the reassurance at all.
+ *
+ * Inline rather than a flex sibling of the sentence (DEP-24). As a flex child
+ * it kept its own column, so once the sentence wrapped — which it does at the
+ * narrower card widths, right-aligned — the icon was left stranded in the
+ * middle of the card beside nothing. Inline it sits at the head of the first
+ * line and the rest of the sentence flows under it.
  */
 function SaveIcon() {
   return (
     <svg
       viewBox="0 0 16 16"
-      className="h-3.5 w-3.5 shrink-0"
+      className="mr-1.5 inline-block h-3.5 w-3.5 align-[-0.2em]"
       fill="currentColor"
       aria-hidden="true"
     >
