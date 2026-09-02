@@ -75,7 +75,42 @@ export function PlayerProgressCard(props: {
         />
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+      {/*
+        One row, and why that is a rule rather than a hope (DEP-24).
+
+        The layout puts the percentage and the autosave note on one line, left
+        and right. `flex-wrap` alone only *tends* to that: it keeps them
+        together while they fit and drops the note underneath when they do not,
+        and whether they fit is decided by a font this code does not choose.
+        The widget renders in a customer's page with `--ds-font-family` set to
+        whatever that customer licenses, so the same markup is one line for one
+        deployment and two for the next. Measured at the card's `lg` width:
+        544 px of content, 505 px needed in Inter, 483 in Arial metrics, 560 in
+        the DejaVu fallback a Linux browser without either would pick — the
+        last of which wraps.
+
+        `lg:flex-nowrap` makes the row a row at every one of those, and lets
+        the note wrap *inside its own column* on the widths where the sentence
+        will not fit beside the label. `min-w-0` is what permits that: a flex
+        item's `min-width` is `auto`, so without it the note refuses to shrink
+        below its longest line and overflows the card instead.
+
+        Below `lg` the wrap stays, because the phone drawing
+        (`player-ansicht-abgeschlossen.png`) stacks them too — at 288 px of
+        content there is no row to have.
+
+        The expiry line is the exception. It is three sentences, not four
+        words, and squeezing it into what is left beside the label is how a
+        message that says *your progress is no longer being saved* becomes four
+        lines of small red text in a corner. It keeps the full width the wrap
+        gives it.
+      */}
+      <div
+        className={
+          "mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1" +
+          (props.status?.autosaveFailed === true ? "" : " lg:flex-nowrap")
+        }
+      >
         <p className="text-sm font-semibold text-brand-700">
           {de.player.courseProgress(percent)}
         </p>
@@ -91,7 +126,7 @@ export function PlayerProgressCard(props: {
         {props.status?.autosaveFailed === true ? (
           <p className="text-xs font-semibold text-red-700">{de.player.sessionEnded}</p>
         ) : (
-          <p className="flex items-center gap-1.5 text-xs text-gray-500">
+          <p className="flex min-w-0 items-center gap-1.5 text-xs text-gray-500 lg:text-right">
             <SaveIcon />
             {de.player.autosave}
           </p>

@@ -120,12 +120,38 @@ export function CourseShell(props: {
           narrow host. `lg:` because below that the widget's column is the
           phone layout, where the card belongs above the video and the sticky
           progress teardrop is the resume affordance.
+
+          ## Why 36rem and not the drawing's 27rem (DEP-24)
+
+          `player-zusammenfassung-v1.png` draws this card 576 px wide in a
+          1920 px render of a 1440 px layout — 432 CSS px, which is what the
+          previous `26rem` (416 px) was matching. At that width the drawing's
+          footer fits on one line because its label is the bare
+          `0% absolviert`: 110 px in Inter, against 268 px for the autosave
+          note, in a 400 px content box.
+
+          The shipped label is S16's `0 % der Fortbildung absolviert`, which
+          names the quantity the number refers to and is 221 px in Inter. The
+          footer therefore needs 505 px where the drawing needed 394, and the
+          card the drawing specifies is 105 px too narrow to hold a line it was
+          never measured for. That is the whole of the client's report, and it
+          is a consequence of a copy deviation rather than of this row.
+
+          So the card takes the width the German sentence needs: 36rem is
+          576 px, a 544 px content box, which holds the pair in Inter (505 px)
+          and in Arial metrics (483 px) with room to spare. `max-w-full` because the
+          host's column is WordPress's, not ours, and a fixed 576 px inside a
+          narrower one would overflow the page rather than the card.
+
+          Measured with the real Inter faces at the shipped sizes; the numbers
+          are in `docs/backlog/P156.md`. The alternative — restoring the
+          drawing's shorter label — is S16's to decide and not this ticket's.
         */}
         <div className="mt-6 flex flex-wrap items-end justify-between gap-6">
           <h1 className="min-w-0 text-2xl font-bold text-brand-contrast sm:text-3xl">
             {props.course.title}
           </h1>
-          <div className="w-full lg:w-[26rem]">
+          <div className="w-full max-w-full lg:w-[36rem]">
             <PlayerProgressCard
               state={props.state}
               moduleIndex={here?.moduleIndex}
