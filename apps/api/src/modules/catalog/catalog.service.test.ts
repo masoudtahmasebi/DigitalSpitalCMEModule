@@ -20,7 +20,6 @@ const adhs: CourseRow = {
   // Layout page 02 labels this separately under Zielgruppe; page 04 prints the
   // Fortbildungsnummer on the Zertifizierung tab.
   prerequisites: "Grundkenntnisse in Psychiatrie sind von Vorteil.",
-  fortbildungsnummer: "2026-ADHS-12345",
   deliveryType: "on_demand",
   thema: ["ADHS"],
   altersgruppe: ["Erwachsene"],

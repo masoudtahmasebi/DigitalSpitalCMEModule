@@ -73,6 +73,54 @@ describe("a customer's origin", () => {
   });
 });
 
+describe("a customer's pattern (P94-04)", () => {
+  it("covers whatever sub-domain the customer deploys", async () => {
+    const registry = new EmbedOriginRegistry(sourceOf("https://*.medice.de"), OURS);
+    await registry.warm();
+
+    expect(registry.isAllowed("https://www.medice.de")).toBe(true);
+    expect(registry.isAllowed("https://pr-42.staging.medice.de")).toBe(true);
+    // The apex is not a sub-domain. Stated in the field's hint, because it is
+    // the part operators find surprising.
+    expect(registry.isAllowed("https://medice.de")).toBe(false);
+  });
+
+  it("covers whatever port the developer's tooling picked", async () => {
+    const registry = new EmbedOriginRegistry(sourceOf("http://localhost:*"), OURS);
+    await registry.warm();
+
+    expect(registry.isAllowed("http://localhost:5173")).toBe(true);
+    expect(registry.isAllowed("http://localhost:4173")).toBe(true);
+    expect(registry.isAllowed("https://localhost:5173")).toBe(false);
+    expect(registry.isAllowed("http://127.0.0.1:5173")).toBe(false);
+  });
+
+  it("still refuses the neighbour a suffix comparison would let in", async () => {
+    /*
+     * The reason the matcher is `@ds/domain`'s and not a `String.endsWith`
+     * here: `evil-medice.de` is a name anybody can register, one character from
+     * the customer's, and this API attaches a physician's credentials to
+     * whatever it lets through.
+     */
+    const registry = new EmbedOriginRegistry(sourceOf("https://*.medice.de"), OURS);
+    await registry.warm();
+
+    expect(registry.isAllowed("https://evil-medice.de")).toBe(false);
+    expect(registry.isAllowed("https://medice.de.evil.example")).toBe(false);
+  });
+
+  it("refuses a bare wildcard even if one is somehow in the column", async () => {
+    // The DTO refuses it and the CHECK refuses it, so this is the third layer:
+    // a row from a seed or an older grammar must not become "everybody".
+    const registry = new EmbedOriginRegistry(sourceOf("*", "https://*"), OURS);
+    await registry.warm();
+
+    expect(registry.isAllowed("https://anything.example")).toBe(false);
+    // And ours still work, so the refusal is not "nothing loaded".
+    expect(registry.isAllowed(OURS[0] ?? "")).toBe(true);
+  });
+});
+
 describe("the cache", () => {
   it("costs one query for a burst of preflights", async () => {
     const load = vi.fn(async () => ["https://www.medice.de"]);

@@ -35,6 +35,7 @@ import {
   type CourseRollup,
   type GateResult,
   type WatchedSegment,
+  punktemeldungOutcome,
 } from "@ds/domain";
 import { AppError } from "../../shared/problem-details.js";
 import { PassthroughMediaResolver, type MediaResolver } from "../../shared/media-url.js";
@@ -797,6 +798,25 @@ export class LearningService {
     }
     const courseCompletedAt = enrolment.courseCompletedAt ?? stampCourseCompletionAt;
 
+    /*
+     * What became of the physician's Punktemeldung (P119-02).
+     *
+     * Read here rather than left to a separate endpoint because the failure
+     * this fixes is one of *silence*: a physician who has to go and ask has
+     * already been told nothing, and the whole point is that they never knew to
+     * ask. It rides the state the widget already fetches on every mount.
+     *
+     * The rule decides what to say; this only supplies the two facts. In
+     * particular the API does not decide whether to *show* it — `actor` travels
+     * with the kind so the widget and the console can each answer that for
+     * their own audience without a second opinion about the rule (§4 inv. 6).
+     */
+    const submission = await this.repository.findSubmissionState(enrolment.id);
+    const punktemeldung = punktemeldungOutcome({
+      status: submission?.status ?? null,
+      failureKind: submission?.failureKind ?? null,
+    });
+
     return {
       enrolmentId: enrolment.id,
       courseSlug: slug,
@@ -825,6 +845,8 @@ export class LearningService {
         }),
       ),
       resumeContentId: firstReachableIncomplete(tree, rollup, gates),
+      punktemeldung: punktemeldung.kind,
+      punktemeldungActor: punktemeldung.actor,
     };
   }
 }

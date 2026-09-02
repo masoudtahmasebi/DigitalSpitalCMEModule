@@ -124,30 +124,28 @@ export function Participants(props: {
         >
           {rows.map((row) => (
             <tr key={row.enrolmentId} className="border-b border-gray-100">
-              <td className="px-3 py-2 text-gray-900">{row.participantName}</td>
-              <td className="px-3 py-2 text-gray-600">{row.email ?? "—"}</td>
-              <td className="px-3 py-2">{row.progressPercent} %</td>
-              <td className="px-3 py-2">{row.watchedPercent} %</td>
-              <td className="px-3 py-2">
+              <td className="text-gray-900">{row.participantName}</td>
+              <td className="text-gray-600">{row.email ?? "—"}</td>
+              <td>{row.progressPercent} %</td>
+              <td>{row.watchedPercent} %</td>
+              <td>
                 {row.quizPassed ? de.participants.passed : de.participants.notPassed}
               </td>
-              <td className="px-3 py-2">
+              <td>
                 {row.evaluationSubmitted ? de.participants.yes : de.participants.no}
               </td>
-              <td className="px-3 py-2">
+              <td>
                 {/* Presence only. The EFN itself is never returned by the API. */}
                 {row.efnPresent ? de.participants.yes : de.participants.no}
               </td>
-              <td className="px-3 py-2">{courseCompletion(row)}</td>
-              <td className="px-3 py-2">{formatDate(row.completedAt)}</td>
-              <td className="px-3 py-2">
+              <td>{courseCompletion(row)}</td>
+              <td>{formatDate(row.completedAt)}</td>
+              <td>
                 <Badge tone={eivTone(row.eivState)}>
                   {de.participants.eiv[row.eivState]}
                 </Badge>
               </td>
-              <td className="px-3 py-2">
-                {de.participants.certificate[row.certificateState]}
-              </td>
+              <td>{de.participants.certificate[row.certificateState]}</td>
             </tr>
           ))}
         </Table>

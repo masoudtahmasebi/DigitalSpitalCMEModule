@@ -26,7 +26,7 @@ import {
   type OnModuleInit,
 } from "@nestjs/common";
 import type { Pool } from "pg";
-import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
+import { APP_CONFIG, PG_POOL, PG_SIDE_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { AuditService } from "../../audit/audit.service.js";
 import { createSecretCipher } from "../../shared/secret-cipher.js";
@@ -46,11 +46,12 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     @Inject(PG_POOL) pool: Pool,
+    @Inject(PG_SIDE_POOL) sidePool: Pool,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {
     this.alerts = new EivAlertService(
       new EivAlertRepository(pool),
-      new AuditService(pool),
+      new AuditService(sidePool),
       this.logger,
       config.ALERT_WEBHOOK_URL === ""
         ? undefined
@@ -63,7 +64,7 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
         createSecretCipher(config.NODE_ENV, config.SECRETS_KMS_KEY),
       ),
       pluginRegistry().require("accreditationReporter"),
-      new AuditService(pool),
+      new AuditService(sidePool),
       {
         baseUrl: config.EIV_BASE_URL,
         batchSize: config.EIV_SWEEP_BATCH_SIZE,
@@ -91,6 +92,31 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
         `against ${this.config.EIV_BASE_URL}` +
         (this.config.EIV_ALLOW_LIVE ? " (LIVE submissions allowed)" : ""),
     );
+
+    /*
+     * Say, at boot, that deadline alerts have nowhere to go (QA §4.3, P147-01).
+     *
+     * `ALERT_WEBHOOK_URL` empty is a supported configuration and the alert does
+     * still reach the log at `error` — so this is not broken. It is the §9.10a
+     * shape instead: the consequence nobody wrote down. A statutory
+     * Punktemeldung has eight days, and "somebody was reading the container log
+     * at the right moment" is not a mechanism. On a host with no log shipping,
+     * an approaching deadline alerts precisely nobody.
+     *
+     * Warned once, at boot, where an operator is already looking — rather than
+     * on every sweep, which is how a warning becomes wallpaper. `deploy.sh`
+     * prints the same thing at install time (P140); this is the running
+     * system's own answer, because §9.9's corollary is that the repository's
+     * state is not the installation's.
+     */
+    if (this.config.ALERT_WEBHOOK_URL === "") {
+      this.logger.warn(
+        "ALERT_WEBHOOK_URL is not set: EIV deadline alerts will be written to " +
+          "this log and sent nowhere else. A submission approaching its " +
+          "statutory deadline will not reach a person unless something ships " +
+          "these logs.",
+      );
+    }
   }
 
   onModuleDestroy(): void {

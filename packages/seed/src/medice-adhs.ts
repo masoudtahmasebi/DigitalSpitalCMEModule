@@ -25,16 +25,20 @@
  * running this does not quietly manufacture an answer to a question the
  * Ärztekammer has not given (CLAUDE.md §7).
  *
- * **The VNR and the VNR password are placeholders.** Both are needed for the
- * course to be publishable at all, and neither authenticates anything: a
- * Punktemeldung carrying them is refused by EIV-FOBI, and cannot reach it
- * without `EIV_ALLOW_LIVE=yes` (ADR-0005). The real pair is set through the
- * console, and a re-run of this seed does not overwrite them.
+ * **The VNR is real; the VNR password is a placeholder.** Since P109-01 the
+ * seeded VNR is MEDICE's own from the Anerkennungsbescheid — it is not a
+ * secret, being printed and twice barcoded on every Teilnahmebescheinigung
+ * (S13) — while the password, which is the half that authenticates, is a
+ * placeholder until an operator sets the real one through the console's
+ * write-only field. A Punktemeldung carrying the placeholder password is
+ * refused by EIV-FOBI, and cannot reach it at all without `EIV_ALLOW_LIVE=yes`
+ * (ADR-0005). A re-run overwrites neither once they are set.
  *
  * Idempotent, keyed on the slugs: re-running updates rather than duplicating.
  */
 
 import { randomBytes } from "node:crypto";
+import { PLACEHOLDER_VNR as DOMAIN_PLACEHOLDER_VNR } from "@ds/domain";
 import { createSecretCipher } from "@ds/secrets";
 import type pg from "pg";
 import {
@@ -49,6 +53,7 @@ import {
   upsert,
   hasNoEvaluation,
 } from "./lib.js";
+import { bindingProblem, seedKeycloakBinding } from "./keycloak-binding.js";
 
 /**
  * A fixed id, not a generated one, and that is load-bearing.
@@ -88,23 +93,62 @@ const PORTAL_PROJECT_SLUG = CUSTOMER_SLUG;
 const PARTICIPANT_EMAIL = "demo@medice.example";
 
 /**
- * The Veranstaltungsnummer, from the environment.
+ * The Veranstaltungsnummer.
  *
- * It used to be the real one from the Bescheid, hardcoded. That was defensible
- * while a VNR was inert data — and it stopped being defensible with P28-03,
- * which made a completion queue a Punktemeldung against whatever VNR the course
- * carries. A seeded environment plus `EIV_ALLOW_LIVE=yes` is then a path to
- * submitting **test participations against MEDICE's real accreditation**, which
- * is not a mistake anyone gets to make twice: the Ärztekammer would be told that
- * physicians who do not exist attended.
+ * ## Why the real one is the default again (P109-01)
  *
- * The placeholder is obviously synthetic, so a submission attempt with it fails
- * loudly at the Ärztekammer rather than succeeding quietly somewhere real. The
- * real number lives in `config.env` next to the password it goes with —
- * `docs/requirements/medice-adhs.md` records what it is, which is where a fact
- * about the accreditation belongs.
+ * P28-03 replaced it with a synthetic placeholder, for a reason that was sound:
+ * a completion queues a Punktemeldung against whatever VNR the course carries,
+ * so a seeded environment plus `EIV_ALLOW_LIVE=yes` was a path to filing **test
+ * participations against MEDICE's real accreditation**. A placeholder fails
+ * loudly at the Ärztekammer instead of succeeding quietly somewhere real.
+ *
+ * It also meant every installation started inert and somebody had to know to
+ * fix it — which nobody did, on any installation, until the deploy printed the
+ * warning and the client read it. That is §9.9's corollary: a value a human is
+ * told to set by hand is a value that is not set.
+ *
+ * The client's instruction is explicit — *"vnr i want dynamic … the vnr i have
+ * already given you, you can set that for now"* — so the default is the real
+ * number from the Anerkennungsbescheid (ÄKWL, 18.06.2026), and the two guards
+ * that actually stop an accidental filing stay where they are:
+ *
+ * 1. **A Punktemeldung needs the VNR password too**, and that is still a
+ *    placeholder until an operator sets the real one through the console's
+ *    write-only field. A VNR alone authenticates nothing.
+ * 2. **A submission row needs an EFN** — `eiv_submissions.efn` is NOT NULL and
+ *    `CHECK (efn ~ '^[0-9]{15}$')`. The seeded demo participant has none, so no
+ *    completion of theirs can produce one. A real filing takes a real physician
+ *    deliberately entering their own EFN, which is the intended flow rather
+ *    than an accident of seeding.
+ *
+ * The VNR is not a secret in any case: it is printed on the
+ * Teilnahmebescheinigung and encoded on it twice, as Code 39 and as Datamatrix
+ * (S13). The **password** is the secret, and it is not in this file or any
+ * other.
+ *
+ * `SEED_MEDICE_VNR` still overrides, which is what makes it dynamic for a
+ * second customer or a rehearsal against a different accreditation.
  */
-const VNR = process.env["SEED_MEDICE_VNR"] ?? "0000000000000000000";
+const VNR = process.env["SEED_MEDICE_VNR"] ?? "2760552025919300018";
+
+/**
+ * What P28-03 used to seed.
+ *
+ * Kept, and named, because the ON CONFLICT below has to tell **its own
+ * placeholder** apart from a number an operator typed. Installations seeded
+ * before P109-01 are carrying this, and they are the ones that need correcting;
+ * a course whose VNR somebody set in the console is not.
+ */
+/*
+ * Re-exported from `@ds/domain` rather than declared here (P117-01).
+ *
+ * The domain has to know this string in order to refuse it — a course carrying
+ * it must not publish and must not produce a Teilnahmebescheinigung. Two copies
+ * of the literal would be two things to keep in step, and the day they drifted
+ * the seed would write a placeholder the gates no longer recognised.
+ */
+const PLACEHOLDER_VNR = DOMAIN_PLACEHOLDER_VNR;
 
 interface ModuleSeed {
   readonly title: string;
@@ -113,7 +157,20 @@ interface ModuleSeed {
     readonly title: string;
     readonly videoTitle: string;
     readonly durationSec: number;
+    /** The chapter's Beschreibungstext, from MEDICE's content sheet. */
+    readonly body: string;
   }>;
+  /**
+   * The module's Lernerfolgskontrolle, as its own chapter.
+   *
+   * MEDICE's sheet lists it as **Kapitel 3.3**, a sibling of the two video
+   * chapters rather than a second content inside 3.2. That is the structure
+   * seeded here, and it is also what the gate wants: `contentGates` opens a
+   * module's exam once that module's *videos* are finished, so an exam sharing
+   * a chapter with the video it examines is the P87-02 shape that read as
+   * unlocked from enrolment.
+   */
+  readonly examChapterTitle?: string;
 }
 
 /**
@@ -162,81 +219,315 @@ interface ExpertSeed {
 const EXPERTS: readonly ExpertSeed[] = [
   {
     roleLabel: "Wissenschaftliche Leitung",
-    name: "Prof. Dr. med. Muster-Leitung",
-    institution: "Universitätsklinikum Heidelberg",
+    name: "Dr. med. Andrea Boreatti",
+    institution: "Fachärztin für Psychiatrie und Psychotherapie, Lohr am Main",
     biography:
-      "Platzhalter. Die wissenschaftliche Leitung dieser Fortbildung wird von MEDICE benannt und ist vor Veröffentlichung zu ersetzen.",
+      "Wissenschaftliche Leitung der Fortbildung. Die Kurzvita wird von MEDICE " +
+      "bereitgestellt und ist vor Veröffentlichung zu ergänzen.",
   },
   {
-    roleLabel: "Referent/Referentin",
-    name: "Dr. med. Muster-Referenz",
-    institution: "Charité – Universitätsmedizin Berlin",
+    roleLabel: "Referent",
+    name: "Dr. med. Frank Matthias Rudolph",
+    institution:
+      "Facharzt für Psychosomatische Medizin und Psychotherapie, " +
+      "Rehabilitationswesen und Diabetologie, Boppard",
     biography:
-      "Platzhalter. Referentinnen und Referenten werden von MEDICE benannt und sind vor Veröffentlichung zu ersetzen.",
+      "Referent der Fortbildung. Die Kurzvita wird von MEDICE bereitgestellt " +
+      "und ist vor Veröffentlichung zu ergänzen.",
   },
 ];
 
-const MODULES: readonly ModuleSeed[] = [
+/**
+ * The course as MEDICE specified it (`MEDICE_Fortbildung_content.xlsx`, 31.08).
+ *
+ * Three modules, two chapters each, one video per chapter, and the
+ * Lernerfolgskontrolle as **Kapitel 3.3** — a chapter of its own at the end of
+ * Modul 3, which is both what the sheet lists and what the module gate wants.
+ *
+ * ## Two departures from the sheet, both deliberate
+ *
+ * **The course title is not changed.** The sheet heads the Fortbildung
+ * *"Basisseminar 2026 – ADHS Akademie adult"*; the Anerkennungsbescheid and the
+ * `courses.title` below say *"ADHS Akademie adult"*, and that string is printed
+ * on the Teilnahmebescheinigung. A title that differs from the one the ÄKWL
+ * accredited is a certificate that does not match its Bescheid, so the sheet's
+ * longer heading is treated as a working label rather than as the course name.
+ * Raised for MEDICE to confirm.
+ *
+ * **`Diagonstik` is spelled `Diagnostik`.** The sheet's module-2 heading carries
+ * a typo its own chapter titles do not. §5 makes the layout's copy
+ * authoritative, and a misspelling is not copy.
+ *
+ * ## The durations are still placeholders, and still a promise (P75-01)
+ *
+ * The sheet names six videos and ships none — its own Kommentar column is MEDICE
+ * asking whether they or MiM will produce them. So these numbers describe no
+ * file, exactly as the previous set did, and the P75-01 report is what that
+ * costs:
+ *
+ * > _"in the course i have a video which is 45 seconds and the system says you
+ * > have to watch a video for 25 minutes, which there is not, and i can not go
+ * > further in the course"_
+ *
+ * They are kept short and uniform rather than plausible-looking, so nobody reads
+ * them as a specification. The console reads a duration from the file it is
+ * given and writes what it read, so **attaching real media replaces these**.
+ * Until it does, the watch gate on this course is a gate over nothing.
+ */
+export const MODULES: readonly ModuleSeed[] = [
   {
     title: "Modul 1 – Grundlagen",
-    subtitle: "ADHS-Definition · Epidemiologie · Neurobiologie · Mythen vs. Fakten",
+    subtitle: "Störungsbild · Symptomatik · Neurobiologie",
     chapters: [
       {
-        title: "Kapitel 1 – Definition und Epidemiologie",
-        videoTitle: "Grundlagen",
-        durationSec: 1524,
+        title: "Kapitel 1.1 – Grundlagen I",
+        videoTitle: "Grundlagen Teil 1",
+        durationSec: 600,
+        body:
+          "ADHS ist weit mehr als Unaufmerksamkeit und Hyperaktivität. Erhalten " +
+          "Sie einen fundierten Überblick über das Störungsbild im " +
+          "Erwachsenenalter, lernen Sie typische Symptome kennen und erfahren " +
+          "Sie, wie sich die Erkrankung in unterschiedlichen Lebensbereichen " +
+          "manifestieren kann. Die ideale Grundlage für ein besseres Verständnis " +
+          "Ihrer Patient:innen",
+      },
+      {
+        title: "Kapitel 1.2 – Grundlagen II",
+        videoTitle: "Grundlagen Teil 2",
+        durationSec: 600,
+        body:
+          "Welche biologischen und genetischen Faktoren liegen einer ADHS " +
+          "zugrunde? Dieses Kapitel beleuchtet die aktuellen Erkenntnisse zur " +
+          "Entstehung und neurobiologischen Grundlage der Erkrankung und schafft " +
+          "ein tieferes Verständnis für die Zusammenhänge zwischen Symptomatik " +
+          "und Pathophysiologie.",
       },
     ],
   },
   {
     title: "Modul 2 – Diagnostik",
-    subtitle: "ICD-11 & DSM-5 Kriterien · Anamnese · Screening-Tools",
+    subtitle: "Diagnostische Schritte · Differentialdiagnosen",
     chapters: [
       {
-        title: "Kapitel 1 – Kriterien und Anamnese",
-        videoTitle: "Diagnostik",
-        durationSec: 2140,
+        title: "Kapitel 2.1 – Diagnostik I",
+        videoTitle: "Diagnostik Teil 1",
+        durationSec: 600,
+        body:
+          "Die Diagnose einer ADHS im Erwachsenenalter erfordert eine " +
+          "strukturierte und differenzierte Herangehensweise. Lernen Sie die " +
+          "wesentlichen diagnostischen Schritte kennen und erfahren Sie, welche " +
+          "Anhaltspunkte in Anamnese, Exploration und klinischem Gespräch " +
+          "besonders relevant sind.",
+      },
+      {
+        title: "Kapitel 2.2 – Diagnostik II",
+        videoTitle: "Diagnostik Teil 2",
+        durationSec: 600,
+        body:
+          "Viele Symptome der ADHS können auch bei anderen psychischen oder " +
+          "somatischen Erkrankungen auftreten. Dieses Kapitel unterstützt Sie " +
+          "dabei, wichtige Differentialdiagnosen sicher einzuordnen und typische " +
+          "diagnostische Fallstricke im Praxisalltag zu vermeiden.",
       },
     ],
   },
   {
-    title: "Modul 3 – Pharmakotherapie",
-    subtitle:
-      "Stimulanzien & Nicht-Stimulanzien · Dosierung · Nebenwirkungen · Monitoring",
+    title: "Modul 3 – Therapie",
+    subtitle: "Leitlinien · Pharmakotherapie",
+    examChapterTitle: "Kapitel 3.3 – Lernerfolgskontrolle",
     chapters: [
       {
-        title: "Kapitel 1 – Stimulanzien & Nicht-Stimulanzien",
-        videoTitle: "Pharmakotherapie",
-        durationSec: 1545,
+        title: "Kapitel 3.1 – Therapie I",
+        videoTitle: "Therapie Teil 1",
+        durationSec: 600,
+        body:
+          "Welche Therapieempfehlungen geben die aktuellen Leitlinien für " +
+          "Erwachsene mit ADHS? Erhalten Sie einen praxisnahen Überblick über " +
+          "evidenzbasierte Behandlungsstrategien und erfahren Sie, wie eine " +
+          "moderne und leitliniengerechte Versorgung gestaltet werden kann",
       },
-    ],
-  },
-  {
-    title: "Modul 4 – Psychotherapie & Coaching",
-    subtitle: "Psychoedukation · Verhaltenstherapie · Lifestyle-Interventionen",
-    chapters: [
       {
-        title: "Kapitel 1 – Verhaltenstherapie",
-        videoTitle: "Psychotherapie",
-        durationSec: 1992,
-      },
-    ],
-  },
-  {
-    title: "Modul 5 – Komorbiditäten",
-    subtitle: "Depression, Angst, Sucht · Spezielle Patientengruppen · Langzeitbetreuung",
-    chapters: [
-      {
-        title: "Kapitel 1 – Komorbide Störungen",
-        videoTitle: "Komorbiditäten",
-        durationSec: 1065,
+        title: "Kapitel 3.2 – Therapie II",
+        videoTitle: "Therapie Teil 2",
+        durationSec: 600,
+        body:
+          "Die medikamentöse Behandlung spielt für viele erwachsene " +
+          "Patient:innen eine wichtige Rolle. Lernen Sie die verfügbaren " +
+          "Therapieoptionen kennen und erhalten Sie wertvolle Einblicke in " +
+          "Wirkmechanismen, Auswahlkriterien und den praktischen Einsatz der " +
+          "Pharmakotherapie im klinischen Alltag.",
       },
     ],
   },
 ];
 
-/** 11 single-choice questions, per MEDICE. Placeholder text. */
-const QUESTION_COUNT = 11;
+/**
+ * The Lernerfolgskontrolle, verbatim from MEDICE (`Lernerfolgskontrolle.docx`).
+ *
+ * ## Where the answer key comes from, and why that is worth stating
+ *
+ * The document marks the correct option of each question in **bold** and says
+ * nothing else about which is which. Eleven questions, eleven bold options, one
+ * per question — so the reading is unambiguous, and it is still an inference
+ * from formatting rather than a stated key.
+ *
+ * That matters because this decides whether a physician passes a CME exam, which
+ * §7 puts in the class of thing not to guess at. The key is therefore written
+ * out here in full rather than derived at runtime, so it can be read back and
+ * confirmed against the source by a person, and `answerKey.test.ts` asserts the
+ * shape it has to have: exactly one correct option per question, eleven
+ * questions, five options each.
+ *
+ * ## The threshold arithmetic
+ *
+ * 70 % of 11 is 7.7, so **8 of 11** passes and 7 fails — `scoreQuiz` floors the
+ * percentage (8/11 → 72 %, 7/11 → 63 %) and compares against the threshold.
+ * `assessment.test.ts` has asserted exactly this since the MEDICE configuration
+ * was first written down; it agrees with the client's own statement of it.
+ */
+export interface QuestionSeed {
+  readonly prompt: string;
+  readonly options: readonly string[];
+  /** Zero-based index into `options`. Bold in the source document. */
+  readonly correct: number;
+}
+
+export const QUESTIONS: readonly QuestionSeed[] = [
+  {
+    prompt:
+      "Welche Aussage beschreibt ein wichtiges Kriterium nach DSM-5 für die " +
+      "ADHS-Diagnose bei Erwachsenen?",
+    options: [
+      "Symptome müssen mindestens ein Jahr bestehen",
+      "Symptome müssen sich in mehreren Lebensbereichen zeigen",
+      "Symptome müssen ausschließlich arbeitsbedingt sein",
+      "Symptome dürfen erst ab 21 Jahren beginnen",
+      "Symptome bessern sich durch Alkoholverzicht",
+    ],
+    correct: 1,
+  },
+  {
+    prompt:
+      "Welches diagnostische Verfahren ist bei der ADHS-Überprüfung bei " +
+      "Erwachsenen nicht üblich?",
+    options: [
+      "Strukturierte Selbstbeurteilungsfragebögen",
+      "Fremdanamnese von Partnern oder Angehörigen",
+      "Spezifische neuropsychologische Tests",
+      "Standardisierte Blutuntersuchung",
+      "Exploration der Kindheitssymptomatik",
+    ],
+    correct: 3,
+  },
+  {
+    prompt:
+      "Welche Therapieform wird neben der medikamentösen Therapie bei " +
+      "Erwachsenen mit ADHS häufig empfohlen?",
+    options: [
+      "Musiktherapie",
+      "Kognitive Verhaltenstherapie",
+      "Psychoanalyse",
+      "Hypnose",
+      "Aromatherapie",
+    ],
+    correct: 1,
+  },
+  {
+    prompt:
+      "Was gehört laut Leitlinie zu einem multimodalen Behandlungskonzept bei " +
+      "ADHS im Erwachsenenalter?",
+    options: [
+      "Nur medikamentöse Therapie",
+      "Kombination aus Psychoedukation, Verhaltenstherapie und ggf. Medikation",
+      "Diätetische Maßnahmen als Monotherapie",
+      "Psychoanalytische Langzeittherapie",
+      "Alleinige Gruppentherapie",
+    ],
+    correct: 1,
+  },
+  {
+    prompt: "Was ist ein primäres Ziel der ADHS-Therapie bei Erwachsenen?",
+    options: [
+      "Komplette Heilung der Erkrankung",
+      "Verbesserung der Lebensqualität und Alltagsfunktionen",
+      "Vermeidung aller Medikamente",
+      "Isolierung der Betroffenen",
+      "Maximierung der beruflichen Leistung",
+    ],
+    correct: 1,
+  },
+  {
+    prompt:
+      "Welcher Wirkstoff ist neben Methylphenidat als Second-Line-Therapie für " +
+      "Erwachsene mit ADHS zugelassen?",
+    options: ["Atomoxetin", "Haloperidol", "Lisdexamfetamin", "Lorazepam", "Imipramin"],
+    correct: 0,
+  },
+  {
+    prompt:
+      "Welche Aussage trifft zu Atomoxetin bei der Behandlung der ADHS im " +
+      "Erwachsenenalter?",
+    options: [
+      "Atomoxetin ist ein Stimulans mit sofortiger Wirkung",
+      "Atomoxetin ist ein selektiver Noradrenalin-Wiederaufnahmehemmer und " +
+        "benötigt mehrere Wochen zur vollen Wirksamkeit",
+      "Atomoxetin wird nur einmal im Monat eingenommen",
+      "Atomoxetin verursacht keine Nebenwirkungen",
+      "Atomoxetin ist ausschließlich für Kinder zugelassen",
+    ],
+    correct: 1,
+  },
+  {
+    prompt:
+      "Welche häufige Nebenwirkung tritt bei medikamentöser ADHS-Therapie mit " +
+      "Stimulanzien wie Methylphenidat auch bei Erwachsenen auf?",
+    options: [
+      "Appetitminderung",
+      "Gewichtszunahme",
+      "Kopfschmerzen",
+      "Schlaflosigkeit",
+      "Blutbildveränderungen",
+    ],
+    correct: 0,
+  },
+  {
+    prompt:
+      "Was sollte vor Beginn einer medikamentösen Therapie bei Erwachsenen mit " +
+      "ADHS überprüft werden?",
+    options: [
+      "Vorliegen weiterer psychischer Komorbiditäten",
+      "Hormonstatus",
+      "Leberfunktionstest als Pflichtuntersuchung",
+      "Blutdruckmessung nur einmal jährlich",
+      "Haaranalyse",
+    ],
+    correct: 0,
+  },
+  {
+    prompt: "Wie äußert sich Hyperaktivität bei Erwachsenen mit ADHS häufig?",
+    options: [
+      "Exzessives Bedürfnis nach Bewegung",
+      "Innere Unruhe und Getriebenheit",
+      "Häufige Aggressionen",
+      "Zwanghaftes Ordnungsempfinden",
+      "Motorische Lähmungserscheinungen",
+    ],
+    correct: 1,
+  },
+  {
+    prompt: "Was ist für die Diagnose ADHS bei Erwachsenen unabdingbar?",
+    options: [
+      "Symptomfreiheit im Jugendalter",
+      "Auftreten der Symptome vor dem 12. Lebensjahr",
+      "Vorliegen von Tics",
+      "Psychotische Episoden",
+      "Auftreten von Symptomen erst nach dem 25. Lebensjahr",
+    ],
+    correct: 1,
+  },
+];
+
+const QUESTION_COUNT = QUESTIONS.length;
 
 /**
  * How this seed behaves when the tenant already exists.
@@ -265,6 +556,20 @@ const QUESTION_COUNT = 11;
 export interface TenantSeedOptions {
   readonly onlyIfMissing?: boolean;
   readonly revealPassword?: boolean;
+  /**
+   * Create the demo participant? **Off by default since P111-01.**
+   *
+   * It used to be unconditional, so every installation — including MEDICE's
+   * production tenant — carried `demo@medice.example` with a password printed
+   * in a deploy log. The client's call on 24.08: *"delete the demo participant
+   * now … testing against a live tenant with a known password is the thing
+   * you'd be unable to explain afterwards."*
+   *
+   * The dev and demo seeds pass `true` explicitly, which is the whole point:
+   * an account that exists to be signed into should be created by something
+   * that says so, not inherited by a customer tenant that never asked.
+   */
+  readonly withDemoParticipant?: boolean;
 }
 
 export async function seedMediceAdhs(
@@ -273,6 +578,7 @@ export async function seedMediceAdhs(
 ): Promise<string> {
   const onlyIfMissing = options.onlyIfMissing ?? false;
   const revealPassword = options.revealPassword ?? true;
+  const withDemoParticipant = options.withDemoParticipant ?? false;
   try {
     await pool.query("BEGIN");
 
@@ -300,14 +606,35 @@ export async function seedMediceAdhs(
       [customerId, "adhs", "ADHS"],
     );
 
+    /*
+     * The Keycloak binding: stated or absent, never invented (P101-03).
+     *
+     * Both halves matter and only together. `seedKeycloakBinding` removes the
+     * `?? "http://127.0.0.1:8080/realms/ds-dev"` that bound MEDICE's project to
+     * a Keycloak on the API container's own loopback on every installation this
+     * platform has ever had — and the `COALESCE`s below stop a re-run reverting
+     * an operator who fixed it in the console, which is what turned one wrong
+     * value into a fault that came back after every deploy.
+     *
+     * Same shape as `vnr_password_enc` two statements down, and for the same
+     * reason: a seed converges structure, and a credential somebody typed is
+     * not structure.
+     */
+    const binding = seedKeycloakBinding({
+      issuer: process.env["KEYCLOAK_ISSUER"],
+      audience: process.env["KEYCLOAK_AUDIENCE"],
+      realm: process.env["KEYCLOAK_REALM"],
+    });
+
     const projectId = await upsert(
       pool,
       `INSERT INTO projects (customer_id, department_id, slug, name, keycloak_issuer, keycloak_audience, keycloak_realm)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT (department_id, slug) DO UPDATE
          SET name = EXCLUDED.name,
-             keycloak_issuer = EXCLUDED.keycloak_issuer,
-             keycloak_audience = EXCLUDED.keycloak_audience,
+             keycloak_issuer = COALESCE(projects.keycloak_issuer, EXCLUDED.keycloak_issuer),
+             keycloak_audience = COALESCE(projects.keycloak_audience, EXCLUDED.keycloak_audience),
+             keycloak_realm = COALESCE(projects.keycloak_realm, EXCLUDED.keycloak_realm),
              updated_at = now()
        RETURNING id`,
       [
@@ -315,11 +642,33 @@ export async function seedMediceAdhs(
         departmentId,
         PROJECT_SLUG,
         "ADHS Akademie",
-        process.env["KEYCLOAK_ISSUER"] ?? "http://127.0.0.1:8080/realms/ds-dev",
-        process.env["KEYCLOAK_AUDIENCE"] ?? "ds-education-api",
-        "ds-dev",
+        binding.issuer,
+        binding.audience,
+        binding.realm,
       ],
     );
+
+    /*
+     * And then read back what the row actually holds (§9.1).
+     *
+     * Not `binding` — that is what this process would have written, and the
+     * `COALESCE`s above mean it frequently is not what is stored. The question
+     * a deploy has to answer is "can this project authenticate a physician",
+     * and only the row can answer it.
+     *
+     * This throws. A federated project with no issuer, or with the loopback
+     * default a previous seed wrote, is a project on which every learner gets a
+     * 401 — so the installation is already broken and a green deploy is the
+     * lie. §9.9's strongest form: if a deploy cannot apply a setting, it checks
+     * it and fails.
+     */
+    const stored = await storedBinding(pool, projectId);
+    const problem = bindingProblem({
+      projectSlug: PROJECT_SLUG,
+      stored,
+      issuerRequested: binding.issuer !== null,
+    });
+    if (problem !== undefined) throw new Error(problem);
 
     // The second channel: the standalone portal at /medice, whose participants
     // hold a password here rather than a MEDICE Keycloak account. Same
@@ -331,14 +680,24 @@ export async function seedMediceAdhs(
       name: "ADHS Akademie (Portal)",
     });
 
-    const password = await participantPassword();
-    await seedParticipant(pool, {
-      customerId,
-      email: PARTICIPANT_EMAIL,
-      firstName: "Demo",
-      lastName: "Teilnehmende",
-      passwordHash: password.hash,
-    });
+    /*
+     * The demo participant, only when somebody asked for one (P111-01).
+     *
+     * A live tenant serving real physicians must not carry an account with a
+     * password that was printed in a build log. Deleting it after the fact is
+     * the remedy for installations that already have one; not creating it is
+     * the fix.
+     */
+    const password = withDemoParticipant ? await participantPassword() : undefined;
+    if (password !== undefined) {
+      await seedParticipant(pool, {
+        customerId,
+        email: PARTICIPANT_EMAIL,
+        firstName: "Demo",
+        lastName: "Teilnehmende",
+        passwordHash: password.hash,
+      });
+    }
 
     const courseId = await upsert(
       pool,
@@ -357,9 +716,9 @@ export async function seedMediceAdhs(
        * console's write-only field, and the DO UPDATE below will not overwrite
        * it on a re-run.
        *
-       * `status` is absent from the DO UPDATE on purpose: a re-run must not
-       * take a course an operator deliberately unpublished back onto the
-       * catalogue.
+       * `status` is in the DO UPDATE only as a repair guarded by the seed's own
+       * placeholder VNR (P117-01). A re-run must not otherwise take a course an
+       * operator deliberately unpublished back onto the catalogue.
        */
       `INSERT INTO courses (
          customer_id, project_id, slug, title, description, delivery_type, status,
@@ -380,25 +739,87 @@ export async function seedMediceAdhs(
          $16, 'image/png', $16, 'image/png',
          $17
        )
+       /*
+        * ON CONFLICT: **the seed creates, the console owns** (P108-01).
+        *
+        * The deploy runs this seed on every push, so anything named here is
+        * reset on every deploy — silently, on a green deploy, minutes after an
+        * operator saved it. The client asked for required_watch_percent to
+        * be configurable in the admin panel. It already was, and had been for
+        * phases: the field is on the Fortbildung's settings screen, it saves,
+        * and the next deploy put 100 back. A setting that does not survive is
+        * not a setting, and nothing anywhere said so.
+        *
+        * Two fields had already been rescued one at a time — status, because
+        * a re-run must not republish a course somebody unpublished (P117-01
+        * added the one exception, narrowly: a course still carrying the seed's
+        * own placeholder VNR, which migration 0047 demoted and only this seed
+        * can repair — see the line itself), and
+        * vnr_password_enc, because a re-run must not replace a real
+        * credential. Both are the same defect, found twice, fixed twice,
+        * without the class being named. It is named now (§9.11).
+        *
+        * The line: a field is updated here only when the **Anerkennungsbescheid
+        * is authoritative over it** and an install with stale text is wrong.
+        * That is the course's identity — its title, its points, its category.
+        * Everything an operator can edit in Verwaltung is theirs after the
+        * first insert.
+        *
+        * The one that would have been worst is stamp_image: the seed writes a
+        * 1x1 placeholder PNG, and the deploy's own output tells the operator to
+        * replace it with the real Stempel before anything ships. Had they, the
+        * next deploy would have put the 1x1 back — and a Teilnahmebescheinigung
+        * without a stamp is not a valid document (S11). Nothing would have
+        * failed; the PDF would simply have come out wrong.
+        */
        ON CONFLICT (project_id, slug) DO UPDATE SET
          title = EXCLUDED.title,
-         description = EXCLUDED.description,
          cme_points = EXCLUDED.cme_points,
          cme_category = EXCLUDED.cme_category,
-         pass_threshold_percent = EXCLUDED.pass_threshold_percent,
-         required_watch_percent = EXCLUDED.required_watch_percent,
-         learning_objectives = EXCLUDED.learning_objectives,
-         target_audience = EXCLUDED.target_audience,
-         scientific_lead_name = EXCLUDED.scientific_lead_name,
-         scientific_lead_title = EXCLUDED.scientific_lead_title,
-         certificate_issue_place = EXCLUDED.certificate_issue_place,
-         stamp_image = EXCLUDED.stamp_image,
-         stamp_image_mime = EXCLUDED.stamp_image_mime,
-         signature_image = EXCLUDED.signature_image,
-         signature_image_mime = EXCLUDED.signature_image_mime,
-         -- Only when there is not one already: an operator who set the real
-         -- credential through the console must not have it replaced by a re-run.
+         -- Only when there is nothing there: the seed supplies a starting value
+         -- and a placeholder asset, never a replacement for what an operator
+         -- put in through the console.
+         -- The seed replaces its **own** placeholder and nothing else
+         -- (P109-01). COALESCE cannot express this: vnr is NOT NULL, so there
+         -- is no empty state to fall back from and the sentinel has to be the
+         -- old placeholder itself. An installation seeded before P109-01 gets
+         -- the real number on the next deploy; a course whose VNR an operator
+         -- typed in the console keeps it, which is P108-01's rule holding.
+         vnr = CASE WHEN courses.vnr = $18 THEN EXCLUDED.vnr ELSE courses.vnr END,
+         /*
+          * The other half of that repair (P117-01).
+          *
+          * Migration 0047 demotes any published course carrying the
+          * placeholder, because a course awarding CME points against a VNR no
+          * Ärztekammer issued must not be on a catalogue. The migration cannot
+          * repair it — the real number is per-installation and lives here, in
+          * SEED_MEDICE_VNR or the Bescheid default -- so without this line the
+          * deploy that fixes the VNR leaves MEDICE's course a draft, off the
+          * catalogue, with nothing saying why.
+          *
+          * Conditioned on the **same sentinel** as the line above, so it is the
+          * repair completing itself and not a general re-publish: this branch
+          * can only be taken by a row still carrying our own placeholder, which
+          * on any installation is true exactly once. A course an operator
+          * unpublished has a VNR they typed, so courses.vnr <> $18 and the
+          * ELSE keeps their decision — P108-01's rule, still holding.
+          *
+          * courses.status on both sides of the CASE reads the pre-UPDATE row,
+          * so this and the vnr line above see the same sentinel.
+          */
+         status = CASE WHEN courses.vnr = $18 THEN 'published' ELSE courses.status END,
          vnr_password_enc = COALESCE(courses.vnr_password_enc, EXCLUDED.vnr_password_enc),
+         stamp_image = COALESCE(courses.stamp_image, EXCLUDED.stamp_image),
+         stamp_image_mime = COALESCE(courses.stamp_image_mime, EXCLUDED.stamp_image_mime),
+         signature_image = COALESCE(courses.signature_image, EXCLUDED.signature_image),
+         signature_image_mime =
+           COALESCE(courses.signature_image_mime, EXCLUDED.signature_image_mime),
+         scientific_lead_name =
+           COALESCE(courses.scientific_lead_name, EXCLUDED.scientific_lead_name),
+         scientific_lead_title =
+           COALESCE(courses.scientific_lead_title, EXCLUDED.scientific_lead_title),
+         certificate_issue_place =
+           COALESCE(courses.certificate_issue_place, EXCLUDED.certificate_issue_place),
          updated_at = now()
        RETURNING id`,
       [
@@ -407,7 +828,18 @@ export async function seedMediceAdhs(
         COURSE_SLUG,
         // Exactly as accredited. Not "ADHS bei Erwachsenen".
         "ADHS Akademie adult",
-        "Fortbildung zu ADHS im Erwachsenenalter mit CME-Zertifizierung.",
+        // The Detailseite text from MEDICE's content sheet (31.08). The sheet's
+        // separate Startseite paragraph is the *catalogue* intro, which belongs
+        // to the project rather than the course and is set in the console.
+        "ADHS im Erwachsenenalter: Wissen, das in der Praxis ankommt\n\n" +
+          "Wie gelingt eine sichere Diagnostik? Welche Differentialdiagnosen " +
+          "gilt es zu berücksichtigen? Und welche Therapieoptionen stehen heute " +
+          "zur Verfügung? In der Fortbildung on Demand – ADHS Akademie adult " +
+          "erhalten Sie kompaktes, praxisnahes Expertenwissen rund um die adulte " +
+          "ADHS. Lernen Sie die wichtigsten Grundlagen, diagnostischen Verfahren " +
+          "und aktuellen Therapieansätze kennen und profitieren Sie von " +
+          "wertvollen Erfahrungen aus dem klinischen Alltag. Flexibel, jederzeit " +
+          "abrufbar und direkt für Ihre tägliche Arbeit nutzbar.",
         VNR,
         "Ärztekammer Westfalen-Lippe",
         "Medice Arzneimittel Pütter GmbH & Co. KG, Iserlohn",
@@ -435,6 +867,8 @@ export async function seedMediceAdhs(
         // Placeholder, and overwritten by the console's write-only field the
         // moment a real one is set. See `seededVnrPassword`.
         seededVnrPassword(),
+        // $18 — the sentinel the ON CONFLICT compares against, never inserted.
+        PLACEHOLDER_VNR,
       ],
     );
 
@@ -495,9 +929,9 @@ export async function seedMediceAdhs(
         for (const [chapterOrdinal, chapter] of module.chapters.entries()) {
           const chapterId = await upsert(
             pool,
-            `INSERT INTO chapters (customer_id, module_id, ordinal, title)
-             VALUES ($1,$2,$3,$4) RETURNING id`,
-            [customerId, moduleId, chapterOrdinal, chapter.title],
+            `INSERT INTO chapters (customer_id, module_id, ordinal, title, body)
+             VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+            [customerId, moduleId, chapterOrdinal, chapter.title, chapter.body],
           );
 
           // Two renditions and a poster, so the seeded course exercises the
@@ -505,7 +939,11 @@ export async function seedMediceAdhs(
           // HLS is listed first: the browser takes the first `type` it can play,
           // so Safari gets the adaptive stream and everything else falls through
           // to the MP4 (`orderSources` in @ds/domain).
-          const mediaBase = `https://media.example.org/${COURSE_SLUG}/${moduleOrdinal + 1}`;
+          // Per **chapter**, not per module: there are two videos in each module
+          // now, and a shared base would have given both the same file.
+          const mediaBase =
+            `https://media.example.org/${COURSE_SLUG}/` +
+            `${moduleOrdinal + 1}-${chapterOrdinal + 1}`;
           await pool.query(
             `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title,
                                    media_sources, poster_url, duration_sec)
@@ -546,43 +984,54 @@ export async function seedMediceAdhs(
               `https://media.example.org/${COURSE_SLUG}/${moduleOrdinal + 1}.pdf`,
             ],
           );
+        }
 
-          // One Lernerfolgskontrolle, at the end of the last module.
-          if (moduleOrdinal === MODULES.length - 1) {
-            quizContentId = await upsert(
-              pool,
-              `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title)
-               VALUES ($1,$2,9,'quiz',$3) RETURNING id`,
-              [customerId, chapterId, "Lernerfolgskontrolle"],
-            );
-          }
+        /*
+         * The Lernerfolgskontrolle as a chapter of its own (MEDICE's Kapitel
+         * 3.3), after the module's video chapters rather than inside one.
+         *
+         * Its ordinal continues the module's chapter numbering, so the outline
+         * draws it last. `contentGates` opens it once *this module's* videos are
+         * finished — which is why it must not share a chapter with the video it
+         * examines: that was P87-02, where a quiz inherited its chapter's gate
+         * and read as unlocked from enrolment.
+         */
+        if (module.examChapterTitle !== undefined) {
+          const examChapterId = await upsert(
+            pool,
+            `INSERT INTO chapters (customer_id, module_id, ordinal, title)
+             VALUES ($1,$2,$3,$4) RETURNING id`,
+            [customerId, moduleId, module.chapters.length, module.examChapterTitle],
+          );
+
+          quizContentId = await upsert(
+            pool,
+            `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title)
+             VALUES ($1,$2,0,'quiz',$3) RETURNING id`,
+            [customerId, examChapterId, "Lernerfolgskontrolle"],
+          );
         }
       }
 
       if (quizContentId !== undefined) {
-        for (let i = 0; i < QUESTION_COUNT; i += 1) {
+        for (const [ordinal, question] of QUESTIONS.entries()) {
           const questionId = await upsert(
             pool,
             `INSERT INTO quiz_questions (customer_id, content_id, ordinal, kind, prompt)
              VALUES ($1,$2,$3,'single',$4) RETURNING id`,
-            [
-              customerId,
-              quizContentId,
-              i,
-              `Frage ${i + 1} – Platzhalter (Text von MEDICE)`,
-            ],
+            [customerId, quizContentId, ordinal, question.prompt],
           );
 
-          for (let option = 0; option < 4; option += 1) {
+          for (const [optionOrdinal, label] of question.options.entries()) {
             await pool.query(
               `INSERT INTO quiz_options (customer_id, question_id, ordinal, label, is_correct)
                VALUES ($1,$2,$3,$4,$5)`,
               [
                 customerId,
                 questionId,
-                option,
-                `Antwortoption ${String.fromCharCode(65 + option)}`,
-                option === 0,
+                optionOrdinal,
+                label,
+                optionOrdinal === question.correct,
               ],
             );
           }
@@ -640,32 +1089,53 @@ export async function seedMediceAdhs(
       `  course    ${COURSE_SLUG}`,
       `  modules   ${MODULES.length}, ${QUESTION_COUNT} quiz questions`,
       "",
-      `Portal sign-in at /${PORTAL_PROJECT_SLUG}:`,
-      `  E-Mail    ${PARTICIPANT_EMAIL}`,
-      password.supplied
-        ? "  Passwort  as supplied in SEED_PARTICIPANT_PASSWORD"
-        : revealPassword
-          ? `  Passwort  ${password.plaintext}`
-          : "  Passwort  generiert — im Konsolenbereich Zugänge neu setzen",
+      /*
+       * The demo account's block, only when one was created (P111-01). A
+       * standing "Portal sign-in" section naming an account that does not
+       * exist is worse than none: somebody would go looking for it.
+       */
+      ...(password === undefined
+        ? [
+            `No demo participant was created. Pass withDemoParticipant to make`,
+            `one — a tenant serving real physicians should not carry an account`,
+            `whose password was printed in a build log.`,
+            "",
+          ]
+        : [
+            `Portal sign-in at /${PORTAL_PROJECT_SLUG}:`,
+            `  E-Mail    ${PARTICIPANT_EMAIL}`,
+            password.supplied
+              ? "  Passwort  as supplied in SEED_PARTICIPANT_PASSWORD"
+              : revealPassword
+                ? `  Passwort  ${password.plaintext}`
+                : "  Passwort  generiert — im Konsolenbereich Zugänge neu setzen",
+            "",
+            password.supplied
+              ? ""
+              : "That password is printed once and stored only as an Argon2id hash.\n" +
+                "Re-run the seed to set a new one, or set SEED_PARTICIPANT_PASSWORD\n" +
+                "to choose it. It is a demo account: delete it before MEDICE's own\n" +
+                "physicians use this tenant in earnest.",
+            "",
+          ]),
+      "required_watch_percent is seeded at 100 and is then yours: set it per",
+      "course under Verwaltung -> Fortbildungen. A re-run of this seed will",
+      "not overwrite it, nor the Stempel, the Unterschrift, the",
+      "Wissenschaftliche Leitung or the VNR password (P108-01).",
       "",
-      password.supplied
-        ? ""
-        : "That password is printed once and stored only as an Argon2id hash.\n" +
-          "Re-run the seed to set a new one, or set SEED_PARTICIPANT_PASSWORD\n" +
-          "to choose it. It is a demo account: delete it before MEDICE's own\n" +
-          "physicians use this tenant in earnest.",
-      "",
-      "required_watch_percent is seeded at 100 — the stricter of the two",
-      "readings (layout says 80, MEDICE-292 says 100). See",
-      "docs/show-stoppers.md before treating it as settled.",
+      "100 follows MEDICE-292, which is the compliance record. The layout",
+      "says 80 and was overridden deliberately (S7, decided 24.08).",
       "",
       "ADHS Akademie adult is PUBLISHED and visible to participants now.",
       "",
-      "The seeded VNR and VNR password are placeholders and authenticate",
-      "nothing. Before any real Punktemeldung, set both under",
-      "Verwaltung -> Fortbildungen -> ADHS Akademie adult: the VNR from the",
-      "Anerkennungsbescheid, and the VNR-Passwort from EIV-FOBI. A re-run of",
-      "this seed will not overwrite a password you set there.",
+      `The VNR is ${VNR}, from the Anerkennungsbescheid (P109-01). Change it`,
+      "per course under Verwaltung -> Fortbildungen; a re-run will not",
+      "overwrite one you set there.",
+      "",
+      "The VNR PASSWORD is still a placeholder and authenticates nothing. Set",
+      "the real one from EIV-FOBI on the same screen — it is write-only and",
+      "encrypted at rest, and a re-run will not replace it. Until then every",
+      "Punktemeldung is abandoned missing_vnr_password.",
       "",
       "Stamp and signature are 1x1 placeholder PNGs so a certificate renders",
       "locally. Replace them with the real assets of the course's",
@@ -699,6 +1169,45 @@ export async function seedMediceAdhs(
  * needs to read this: the VNR password is used server-side only and is never
  * returned by any API.
  */
+
+/**
+ * What the `projects` row now holds, read inside the tenant context.
+ *
+ * `enterTenant` has already run — `projects` is under FORCE ROW LEVEL SECURITY
+ * and a read on the bare pool matches zero rows, which would arrive here as an
+ * all-null shape indistinguishable from "not configured" (§9.6). The seed is
+ * inside its transaction and its tenant, so this reads the row it just wrote.
+ */
+async function storedBinding(
+  pool: pg.Pool,
+  projectId: string,
+): Promise<{ issuer: string | null; audience: string | null; realm: string | null }> {
+  const result = await pool.query<{
+    keycloak_issuer: string | null;
+    keycloak_audience: string | null;
+    keycloak_realm: string | null;
+  }>(
+    `SELECT keycloak_issuer, keycloak_audience, keycloak_realm
+       FROM projects WHERE id = $1`,
+    [projectId],
+  );
+
+  const row = result.rows[0];
+  if (row === undefined) {
+    // Zero rows here is not "unconfigured" — it is the tenant context being
+    // wrong, and saying "no issuer" would send the reader to the console to
+    // fix a row they can see is already right.
+    throw new Error(
+      `projects row id=${projectId} is not visible; the seed's tenant context is wrong`,
+    );
+  }
+
+  return {
+    issuer: row.keycloak_issuer,
+    audience: row.keycloak_audience,
+    realm: row.keycloak_realm,
+  };
+}
 
 function seededVnrPassword(): Buffer {
   const cipher = createSecretCipher(

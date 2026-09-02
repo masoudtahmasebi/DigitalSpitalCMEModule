@@ -181,6 +181,46 @@ zero rows under `FORCE ROW LEVEL SECURITY`, reporting success having erased only
 the columns that are not tenant-scoped. That failure is why the roles are shaped
 this way and not by preference.
 
+### Two pools, because one transaction cannot answer every question
+
+`TenantTransactionInterceptor` opens the RLS transaction around the **whole**
+request, so every handler runs holding one pooled connection for its duration.
+Some work legitimately cannot use it:
+
+- the **audit log**, whose row has to survive the rollback of the operation it
+  records (`CLAUDE.md` §4 invariant 8) — an entry that disappears with the
+  failure it documents is not an audit log;
+- the **identity plane** (`users`, `user_identities`, `learner_credentials`),
+  which is not tenant-scoped and is read before a tenant is known;
+- **cross-tenant operations** — administering a customer, merging a physician
+  who exists at two of them, erasing a subject — which are not expressible
+  inside one tenant's context at all.
+
+Those take a second connection, and until P142 they took it from the same pool.
+With `max: 10`, ten concurrent requests each held one and each waited for a
+second that only another of the ten could release: a deadlock with no timeout,
+no error and no log line, which took the API down twice for hours.
+
+So there are two pools. `PG_POOL` serves requests. `PG_SIDE_POOL` serves the
+three cases above, and the request pool is wrapped so that asking it for a
+second connection from inside a request **throws** rather than waits
+(`db/pool-reentry.ts`). A larger pool would only move the threshold; a separate
+one removes it.
+
+### And a route that calls a third party holds no transaction at all
+
+The ambient transaction is also wrong for a handler that talks to somebody
+else's server — an upload route asking the object store to verify or assemble an
+object. Holding a connection across that call means a slow bucket occupies a
+database connection, and ten of them make the whole platform slow rather than
+just uploads.
+
+Those routes carry `@NoAmbientTransaction()` and take a `TenantRunner`
+(`db/tenant-runner.ts`): they open a short transaction per database segment and
+hold nothing while the network call is in flight. It is opt-in per route,
+because it trades the request's atomicity for that — a trade only some routes
+can make.
+
 ---
 
 ## 5. Contract-first

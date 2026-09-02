@@ -66,6 +66,21 @@ watched time against elapsed real time, `requiredWatchPercent` keeps its
 production value, and the journey watches the whole fixture on the clock. The
 fixture is short; nothing about the gate is.
 
+### The tail grace eats a sixth of it (P93-01)
+
+Since the client's rule that watching to within three seconds of the end
+completes a video, this fixture's watch gate opens at **fifteen** of its
+eighteen seconds. On a real twenty-five-minute module three seconds is 0.2 %;
+here it is 17 %.
+
+The fixture was **not** regenerated longer for it. A longer file costs every run
+wall-clock time and buys no coverage: the boundary is pinned to the second by
+`packages/domain/src/watch.test.ts` ("the tail grace") and by
+`apps/api/src/modules/learning/learning.service.test.ts` ("completes a video
+watched to within three seconds of its end", with its control one case down).
+The journey's job is that a physician who watches the video gets through, and it
+still plays all eighteen seconds on the clock.
+
 Two of those three are closed — the fixture is eighteen seconds and the journey
 watches a flush land. The third, the codec, is not, and is recorded above rather
 than hidden.

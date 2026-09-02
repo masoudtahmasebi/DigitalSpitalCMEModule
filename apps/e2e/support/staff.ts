@@ -129,7 +129,24 @@ export function bootstrapSuperAdmin(
     {
       cwd: repo,
       encoding: "utf8",
-      env: { ...process.env, DATABASE_URL: databaseUrl },
+      /*
+       * `SCHEMA_READER_DATABASE_URL` alongside it (P149-01).
+       *
+       * `bootstrap-admin` asserts schema freshness before its first write, as
+       * `ds_schema_reader`. The rig has no separate role, so it points the
+       * reader at the same connection the rig already uses — the check only
+       * ever runs a `SELECT` on `schema_migrations`, so a wider credential
+       * here changes nothing it can do.
+       *
+       * On a real host these are two different roles, and
+       * `deploy-vars.test.sh` asserts the api service carries the narrow one.
+       * P148-01 was exactly this variable being absent where the command runs.
+       */
+      env: {
+        ...process.env,
+        DATABASE_URL: databaseUrl,
+        SCHEMA_READER_DATABASE_URL: databaseUrl,
+      },
     },
   );
 

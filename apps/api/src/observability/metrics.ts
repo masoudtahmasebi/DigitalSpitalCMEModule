@@ -54,11 +54,36 @@ interface Histogram {
   count: number;
 }
 
+/** A value read at scrape time rather than accumulated. */
+export interface GaugeSource {
+  readonly name: string;
+  readonly help: string;
+  readonly labels?: Readonly<Record<string, string>>;
+  read(): number;
+}
+
 export class Metrics {
   private readonly requests = new Map<string, number>();
   private readonly durations = new Map<string, Histogram>();
   private readonly counters = new Map<string, number>();
+  private readonly gauges: GaugeSource[] = [];
   private overflowed = false;
+
+  /**
+   * Register something to be read whenever `/metrics` is scraped (P144-01).
+   *
+   * A pull rather than a push, because the interesting values here — how many
+   * pool connections exist, how many callers are queued for one — are already
+   * held correctly by somebody else, and a copy kept in step by an interval is
+   * a copy that is wrong exactly while nobody is looking.
+   *
+   * A callback rather than a `pg.Pool` parameter so this file keeps knowing
+   * nothing about the database. Observability that imports the data layer is
+   * how a metrics change ends up needing a migration review.
+   */
+  registerGauge(source: GaugeSource): void {
+    this.gauges.push(source);
+  }
 
   /**
    * Record one served request.
@@ -170,13 +195,42 @@ export class Metrics {
      * **Here and not on `/health`,** which is public — a load balancer cannot
      * present a bearer token. A version string on a public endpoint is a
      * fingerprint that tells anyone which vulnerabilities to try. `/metrics` is
-     * `@Public()` in the same sense but is not routed from the edge
-     * (`infra/deploy/Caddyfile`), so reaching it needs a place inside the
-     * Docker network — which an operator has and the internet does not.
+     * `@Public()` in the same sense, and is refused at the edge, so reaching it
+     * needs a place inside the Docker network — which an operator has and the
+     * internet does not.
+     *
+     * **That last clause was false from the day it was written until P113-02.**
+     * It said `/metrics` "is not routed from the edge (`infra/deploy/Caddyfile`)"
+     * — but the API site block's only handler was a bare `reverse_proxy`, which
+     * in Caddy matches every path. Nothing filtered `/metrics` out, so the
+     * fingerprint this paragraph exists to keep off a public endpoint was on
+     * one. Two files asserted the property and nothing checked it (§9.1); the
+     * Caddyfile now carries a `respond @metrics 404` and
+     * `infra/deploy/deploy-vars.test.sh` fails without it.
      *
      * One series, constant labels, and the `_info` gauge-at-1 convention that
      * `node_exporter` and `prom-client` both use, so it joins in a dashboard.
      */
+    /*
+     * Whatever registered itself — today, the two connection pools (P144-01).
+     *
+     * `ds_pg_pool_waiting` is the number that would have named the outage of
+     * 01.09.2026 in its first minute. It was available all along as a
+     * synchronous property on the pool, needing no connection to read, on a
+     * process that was otherwise unable to answer anything. Nobody exported it,
+     * so the only evidence anyone had was a browser showing `(pending)`.
+     */
+    for (const gauge of this.gauges) {
+      lines.push(`# HELP ${gauge.name} ${gauge.help}`);
+      lines.push(`# TYPE ${gauge.name} gauge`);
+      const label = gauge.labels
+        ? `{${Object.entries(gauge.labels)
+            .map(([k, v]) => `${k}="${escapeLabel(v)}"`)
+            .join(",")}}`
+        : "";
+      lines.push(`${gauge.name}${label} ${String(gauge.read())}`);
+    }
+
     lines.push("# HELP ds_build_info The commit this process was built from.");
     lines.push("# TYPE ds_build_info gauge");
     lines.push(

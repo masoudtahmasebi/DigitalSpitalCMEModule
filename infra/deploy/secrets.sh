@@ -82,8 +82,11 @@ ds_ensure_secrets() {
   # It is in the same **never regenerate** class: a new value does not rotate
   # anything, it makes every existing backup permanently unreadable.
   local name
+  # `DS_SCHEMA_READER_PASSWORD` joins the list (P149-01): a login role that may
+  # SELECT one table and nothing else. Generated like the rest rather than
+  # shared with ds_app, because a credential two roles hold is one role.
   for name in POSTGRES_SUPERUSER_PASSWORD DS_MIGRATOR_PASSWORD DS_APP_PASSWORD \
-              SECRETS_KMS_KEY BACKUP_ENCRYPTION_KEY; do
+              DS_SCHEMA_READER_PASSWORD SECRETS_KMS_KEY BACKUP_ENCRYPTION_KEY; do
     if grep -q "^${name}=." "$file"; then
       continue
     fi
@@ -168,8 +171,12 @@ ds_url_encode() {
 ds_export_url_passwords() {
   DS_APP_PASSWORD_URL="$(ds_url_encode "${DS_APP_PASSWORD:-}")"
   DS_MIGRATOR_PASSWORD_URL="$(ds_url_encode "${DS_MIGRATOR_PASSWORD:-}")"
+  DS_SCHEMA_READER_PASSWORD_URL="$(ds_url_encode "${DS_SCHEMA_READER_PASSWORD:-}")"
   POSTGRES_SUPERUSER_PASSWORD_URL="$(ds_url_encode "${POSTGRES_SUPERUSER_PASSWORD:-}")"
-  export DS_APP_PASSWORD_URL DS_MIGRATOR_PASSWORD_URL POSTGRES_SUPERUSER_PASSWORD_URL
+  # One line, deliberately: `deploy-vars.test.sh` reads the exported names off
+  # this statement, and a backslash continuation hid POSTGRES_SUPERUSER_PASSWORD_URL
+  # from it the first time this list grew (caught by that test, in this commit).
+  export DS_APP_PASSWORD_URL DS_MIGRATOR_PASSWORD_URL DS_SCHEMA_READER_PASSWORD_URL POSTGRES_SUPERUSER_PASSWORD_URL
 }
 
 # What the operator must still decide, checked after the file is loaded.

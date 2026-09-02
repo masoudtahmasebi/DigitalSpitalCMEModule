@@ -51,6 +51,7 @@ import { useEffect, useState } from "react";
 import type { Branding } from "@ds/domain";
 import type { ApiClient, EnrolmentState } from "@ds/sdk";
 import { de } from "../locale/de.js";
+import { PunktemeldungNotice } from "./PunktemeldungNotice.js";
 import { describeError } from "../hooks.js";
 import { Button, ErrorNotice } from "./primitives.js";
 
@@ -219,13 +220,28 @@ export function CompletionScreen(props: {
   }
 
   if (state.completedAt !== null) {
+    /*
+     * P119-02. This used to be one sentence, and the sentence ended "Die Punkte
+     * werden an die Ärztekammer gemeldet." — a promise about something that had
+     * not happened yet, shown for ever, and never withdrawn when it failed.
+     *
+     * The claim about the *course* is still unconditional and still true. The
+     * claim about the *Meldung* is now whatever the Meldung actually did.
+     */
     return (
-      <p
-        className="rounded-md bg-green-50 p-4 text-sm text-status-completed"
-        role="status"
-      >
-        {de.completion.done}
-      </p>
+      <div className="space-y-3">
+        <p
+          className="rounded-md bg-green-50 p-4 text-sm text-status-completed"
+          role="status"
+        >
+          {de.completion.done}
+        </p>
+        <PunktemeldungNotice
+          client={client}
+          state={state}
+          onCorrected={props.onCompleted}
+        />
+      </div>
     );
   }
 
@@ -356,6 +372,25 @@ export function CompletionScreen(props: {
           </div>
         )}
 
+        {/*
+          Where name and email come from (P105-01).
+
+          On this screen rather than as a banner over the widget, because this is
+          where those fields are *used*: the Teilnahmebescheinigung is about to
+          be issued in that name. The EFN above is the one thing here a physician
+          types themselves — everything else came from their MEDICE account, and
+          saying so is what makes that difference visible.
+
+          The client asked for it in those words: *"we should add a sign that
+          your progress is synced with your medice account."* A transfer nobody
+          is told about is one nobody can object to.
+        */}
+        <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+          <p className="text-sm font-semibold text-gray-900">{de.accountSync.title}</p>
+          <p className="mt-1 text-xs text-gray-600">{de.accountSync.message}</p>
+          <p className="mt-1 text-xs text-gray-600">{de.accountSync.change}</p>
+        </div>
+
         {correcting ? (
           <div className="flex gap-2">
             <Button
@@ -399,6 +434,30 @@ export function CompletionScreen(props: {
               {de.completion.consentAfter}
             </span>
           </label>
+        ) : null}
+
+        {/*
+          Why the button below is dead, said where somebody looks (P123-03).
+
+          `ready` requires the box, so an untouched checkbox is a disabled
+          "Fortbildung abschließen" and, until now, no explanation anywhere on
+          the screen — CLAUDE.md §9.4. The sentence had been written for exactly
+          this (`consentRequired`) and was rendered by nothing, which is §9.3 in
+          a locale file and is why `check:copy` now exists.
+
+          Only once the rest of the form is filled in. Shown from the start it
+          would be the first thing a physician reads about a box they have not
+          reached yet, and it would sit there through every other field they
+          still have to complete — an instruction that is true too early reads
+          as an error.
+        */}
+        {consentAvailable &&
+        !consented &&
+        givenName.trim() !== "" &&
+        familyName.trim() !== "" ? (
+          <p className="text-sm text-status-inProgress" role="status">
+            {de.completion.consentRequired}
+          </p>
         ) : null}
       </div>
 

@@ -232,18 +232,40 @@ function VideoLesson(props: {
       </div>
 
       {/*
-        Which seconds are still missing (P85-01).
+        Which seconds are still missing (P85-01), once there is something to be
+        missing from (P102-01).
         
         From `uncoveredSpans` over the union the **server** credited, so this
         and the percentage beside it are two readings of one number rather than
-        two opinions (§4 invariant 6). Shown only when there is a gap and the
-        video is not yet fully credited, so a finished section stays quiet.
+        two opinions (§4 invariant 6).
         
         At most three, because the point is somewhere to go rather than a
         report: a learner facing a list of nine fragments has been given a
         chore, not an answer.
+        
+        ## Why `covered.length === 0` is a condition and not an optimisation
+        
+        On a video nobody has opened yet the union is empty, so `uncoveredSpans`
+        correctly returns one gap covering the whole credited length — and the
+        screen greeted a physician who had done nothing wrong with
+        
+            Diese Stellen fehlen noch: 0:00–0:12.
+            Spulen Sie dorthin, um die Wiedergabe zu vervollständigen.
+        
+        directly above a player that says, one line below it, *"Vorspulen ist
+        nicht möglich"*. Two sentences on one screen, one telling the learner to
+        seek and the other saying seeking is refused — §9.2 in its plainest
+        form, an instruction the system will not carry out.
+        
+        The comment here already claimed this was "shown only when there is a
+        gap and the video is not yet fully credited". That guarded the *end* of
+        the video and nothing guarded the beginning, which is §9.3: a rule
+        written into a comment and never into the code.
+        
+        The affordance on an unwatched video is the play button, and it is
+        already the largest thing on the screen.
       */}
-      {gaps.length === 0 ? null : (
+      {covered.length === 0 || gaps.length === 0 ? null : (
         <p className="text-sm text-status-inProgress" role="status">
           {de.content.gaps(
             gaps

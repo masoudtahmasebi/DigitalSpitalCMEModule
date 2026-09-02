@@ -28,7 +28,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { Select, TextArea, TextInput } from "./ui.js";
+import { ConfirmButton, Select, TextArea, TextInput } from "./ui.js";
 
 afterEach(cleanup);
 
@@ -69,5 +69,77 @@ describe("a control with no visible label", () => {
     render(<TextInput id="t" value="" onChange={() => undefined} />);
 
     expect(screen.queryByRole("textbox", { name: /.+/u })).toBeNull();
+  });
+});
+
+describe("a refused delete is marked, not narrated (P100-01)", () => {
+  /*
+   * The screenshot that prompted this had the same 118-character sentence
+   * three times on one screen — once per level of module → chapter → content —
+   * rendered where the button would be, which is what pushed every row to full
+   * width and left the right of the screen empty.
+   */
+  it("shows the short label on the row", () => {
+    render(
+      <ConfirmButton
+        label="Löschen"
+        confirmLabel="Wirklich"
+        cancelLabel="Abbrechen"
+        disabledReason="Kann nicht gelöscht werden: es sind bereits Teilnahmen erfasst."
+        lockedLabel="Gesperrt"
+        onConfirm={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Gesperrt")).toBeTruthy();
+    // The sentence is not *drawn* — but it is still reachable, below.
+    expect(screen.queryByText(/bereits Teilnahmen erfasst/u)).toBeNull();
+  });
+
+  it("keeps the full reason as the accessible name, so nothing is lost", () => {
+    // §9.4: the reason still has to reach somebody who cannot hover. A marker
+    // whose only explanation is a `title` is a marker with no explanation on a
+    // phone or to a screen reader.
+    const reason = "Kann nicht gelöscht werden: es sind bereits Teilnahmen erfasst.";
+    render(
+      <ConfirmButton
+        label="Löschen"
+        confirmLabel="Wirklich"
+        cancelLabel="Abbrechen"
+        disabledReason={reason}
+        lockedLabel="Gesperrt"
+        onConfirm={() => {}}
+      />,
+    );
+
+    expect(screen.getByLabelText(reason)).toBeTruthy();
+  });
+
+  it("falls back to the full reason when no short label is given", () => {
+    // So a caller that has not been updated still says something true.
+    render(
+      <ConfirmButton
+        label="Löschen"
+        confirmLabel="Wirklich"
+        cancelLabel="Abbrechen"
+        disabledReason="Weil nicht."
+        onConfirm={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Weil nicht.")).toBeTruthy();
+  });
+
+  it("still offers the delete when nothing blocks it", () => {
+    render(
+      <ConfirmButton
+        label="Löschen"
+        confirmLabel="Wirklich"
+        cancelLabel="Abbrechen"
+        onConfirm={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Löschen")).toBeTruthy();
   });
 });

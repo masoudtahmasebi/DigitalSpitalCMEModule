@@ -23,36 +23,23 @@
 
 import { z } from "zod";
 
-const INVALID_ORIGIN = "must be scheme + host, with no path and no trailing slash";
+const INVALID_ORIGIN =
+  "must be scheme + host + optional port, optionally with * as the whole " +
+  "leftmost label or as the port — no path, no trailing slash, and never a " +
+  "bare wildcard";
 
-/**
- * Is this string exactly an origin?
+/*
+ * Removed in P94-04: `isOrigin`, which was `URL.origin === value`.
  *
- * `URL.origin` rather than a pattern, and that is the whole point: an origin is
- * *defined* as what the URL parser produces, so comparing a parse against its
- * input is the precise test rather than an approximation of one. It rejects a
- * path, a trailing slash, credentials, a query and a fragment without any of
- * them having to be enumerated — and `https://www.medice.de/` fails because
- * its `origin` is the same string without the slash.
- *
- * It replaced a regex that ESLint's `security/detect-unsafe-regex` refused
- * twice. The rule was being conservative about backtracking, but it was also
- * pointing at something true: hand-writing a grammar the platform already has
- * a parser for is how the two come to disagree.
+ * The grammar it enforced is now `isEmbedOriginPattern` in `@ds/domain`, which
+ * keeps that exact test for a plain origin — comparing a parse against its
+ * input is still the precise check rather than an approximation — and adds the
+ * wildcard forms the client asked for. It lives there because the CORS callback
+ * has to answer the same question at request time, and two implementations of
+ * "does this origin match" would be the same defect as two implementations of a
+ * percentage (§4 invariant 6).
  */
-function isOrigin(value: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    return false;
-  }
-  // Only the two schemes a browser sends. `file:` and `null` are real Origin
-  // header values and neither is something a customer embeds from.
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
-  return parsed.origin === value;
-}
-import type { Branding } from "@ds/domain";
+import { isEmbedOriginPattern, type Branding } from "@ds/domain";
 
 const title = z.string().trim().min(1).max(300);
 /**
@@ -182,14 +169,17 @@ export const projectUpdateSchema = z.object({
   keycloakAudience: z.string().trim().max(200).nullable().optional(),
   keycloakRealm: z.string().trim().max(200).nullable().optional(),
   /**
-   * Scheme + host + optional port, which is exactly what a browser sends in an
-   * `Origin` header. A path or a trailing slash silently never matches, so it
-   * is refused here rather than becoming a CORS failure with no explanation —
-   * and the database CHECK says the same thing, because a console is not the
-   * only way rows get written.
+   * Where this project's widget may be embedded — an origin, or a pattern
+   * covering a customer's several environments (P94-04).
+   *
+   * The grammar is `isEmbedOriginPattern`'s and its header states it. Refused
+   * here rather than left to become a CORS failure, which is invisible from the
+   * server: the browser blocks the request and nothing reaches a log (§9.13).
+   * The database CHECK says the same thing, because a console is not the only
+   * way rows get written.
    */
   embedOrigins: z
-    .array(z.string().trim().refine(isOrigin, INVALID_ORIGIN))
+    .array(z.string().trim().refine(isEmbedOriginPattern, INVALID_ORIGIN))
     .max(20)
     .optional(),
   smtpHost: z.string().trim().max(300).nullable().optional(),
@@ -455,7 +445,10 @@ export const authoringQuizSchema = z.object({
       id: uuid,
       prompt: z.string(),
       kind: z.enum(["single", "multi"]),
-      /** Answers recorded against this question. Non-zero blocks deletion. */
+      /**
+       * Answers recorded against this question. Non-zero means removing it
+       * retires it rather than deleting it (P114-01).
+       */
       answerCount: z.number().int().nonnegative(),
       options: z.array(
         z.object({
@@ -466,15 +459,25 @@ export const authoringQuizSchema = z.object({
       ),
     }),
   ),
+  /**
+   * Questions retired out of this exam (P114-01). Live questions only appear
+   * above; this is how many are no longer part of it but still on record.
+   */
+  retiredCount: z.number().int().nonnegative(),
 });
 
 /**
  * A quiz edit.
  *
  * `id` present means "this is the existing row, changed"; absent means "new".
- * Anything the server holds and this document does not name is a deletion — and
- * a deletion of something a learner has answered is refused, which is what
- * keeps an already-submitted attempt meaningful.
+ * Anything the server holds and this document does not name is a removal.
+ *
+ * A question nobody has answered is deleted. A question a physician **has**
+ * answered is **retired** (P114-01): dropped from the exam, row and answers
+ * kept, never served or scored again. That is what keeps an already-submitted
+ * attempt meaningful without freezing the exam for ever — the previous rule
+ * refused the edit outright, and one answer was enough to make a
+ * Lernerfolgskontrolle permanently uneditable.
  */
 export const quizWriteSchema = z.object({
   questions: z

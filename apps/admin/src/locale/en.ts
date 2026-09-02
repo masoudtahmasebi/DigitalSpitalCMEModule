@@ -48,6 +48,11 @@ type DeepPartial<T> = {
       : never;
 };
 
+import { uploadLimitLabel } from "@ds/domain";
+
+/** The ceiling the API enforces, not a second opinion about it (P133-01). */
+const VIDEO_LIMIT = uploadLimitLabel("video");
+
 export const en: DeepPartial<typeof german> = {
   appTitle: "DS Education — Administration",
   appShort: "DS Education",
@@ -105,7 +110,7 @@ export const en: DeepPartial<typeof german> = {
   learners: {
     title: "Participants",
     intro:
-      "Progress for every participant. The EFN is shown only in shortened form, for data protection.",
+      "Progress through the courses — one row per enrolment, not per person: somebody taking two courses appears twice. The accounts themselves are under “Zugänge”. The EFN is shown only in shortened form, for data protection.",
     empty: "No participation has been recorded for this course yet.",
     emptyHint:
       "A participation is created as soon as somebody enrols on a course. Until then there is nothing to show here.",
@@ -146,7 +151,7 @@ export const en: DeepPartial<typeof german> = {
   certificates: {
     title: "Certificates",
     intro:
-      "Regenerating renders the document again and reports nothing to the Ärztekammer. Resending sends the same document. Revoking withdraws the document; the participation remains.",
+      "The Teilnahmebescheinigungen that have been issued — the document for the participant. Reporting the points to the Ärztekammer is a different thing and is under “Punktemeldungen”. Regenerating renders the document again and reports nothing to the Ärztekammer. Resending sends the same document. Revoking withdraws the document; the participation remains.",
     empty: "No certificates have been created yet.",
     emptyHint:
       "A certificate is created automatically as soon as somebody completes a course. It cannot be created by hand here.",
@@ -166,6 +171,14 @@ export const en: DeepPartial<typeof german> = {
       delivered: "sent",
       bounced: "delivery failed",
       revoked: "revoked",
+    },
+    abandoned: {
+      no_recipient:
+        "No email address is on file for this person. The certificate is available for download and can be sent once an address is supplied.",
+      permanent_rejection:
+        "The receiving server rejected the address permanently. Have the address corrected; sending again to the same one will fail again.",
+      attempts_exhausted:
+        "Delivery failed temporarily several times and was given up on. Check the platform's SMTP settings, then send again.",
     },
     loadFailed: "The certificates could not be loaded.",
     actionFailed: "The action could not be carried out.",
@@ -274,6 +287,8 @@ export const en: DeepPartial<typeof german> = {
     platformMailTestSending: "Sending test email …",
     platformMailTestNotConfigured:
       "No delivery is configured. Server and sender address are required.",
+    platformMailTestRefused:
+      "The request was refused. Reload the page and sign in again if needed — only super administrators may change and test the platform sender.",
     platformMailTestUnreachable:
       "The request could not be made. Please check your connection and whether you are still signed in.",
 
@@ -318,7 +333,15 @@ export const en: DeepPartial<typeof german> = {
     label: "Customer",
     choose: "Choose a customer …",
     none: "Please choose a customer above to see this section.",
+
     noneYet: "No customer exists yet. Create the first one under “Customers”.",
+    promptTitle: "Choose a customer",
+    promptBody:
+      "This area belongs to a customer. Choose which customer you want to work with.",
+    promptEmptyBody:
+      "No customer exists yet. Create one first — every area becomes available afterwards.",
+    promptCreate: "Create a customer",
+    promptNoRights: "Your account may not create customers. Please ask an administrator.",
   },
 
   build: {
@@ -386,7 +409,14 @@ export const en: DeepPartial<typeof german> = {
 
     embedOrigins: "Allowed embedding domains",
     embedOriginsHint:
-      "The customer's websites on which the course may be embedded — one per line, e.g. https://www.example.com. Without a path and without a trailing slash.",
+      "The customer's websites on which the course may be embedded — one per line, without a path and without a trailing slash. " +
+      "One exact address: https://www.example.com · every sub-domain: https://*.example.com (the domain itself is not included — give it its own line) · " +
+      "any port, for local development: http://localhost:*. " +
+      "A bare star, or https://*, is not possible: the course would then answer any website at all on behalf of the signed-in person.",
+    embedOriginsRejected: (entries: readonly string[]): string =>
+      entries.length === 1
+        ? `This line is not a valid address: ${entries[0] ?? ""}`
+        : `These lines are not valid addresses: ${entries.join(", ")}`,
     identityProvider: "Sign-in method",
     identityProviderHint:
       "How this project's participants sign in. It can be changed later, but the change then affects every existing account.",
@@ -460,6 +490,52 @@ export const en: DeepPartial<typeof german> = {
     },
     create: "Create course",
     noProjects: "Before a course can be created there has to be at least one project.",
+
+    stepsLabel: "Steps",
+    steps: {
+      basics: "Basics",
+      presentation: "Presentation",
+      review: "Review & create",
+    },
+    stepHints: {
+      basics:
+        "Which project the course belongs to, what it is called, and the slug it is reachable under. The slug cannot be changed later.",
+      presentation:
+        "What participants see in the catalogue before they open the course — format and description is all there is there.",
+      review:
+        "What is about to be created, and what is still missing before participants can see the course.",
+    },
+    stepOf: (at: number, total: number): string => `Step ${at} of ${total}`,
+    back: "Back",
+    next: "Next",
+    missing: (fields: readonly string[]): string =>
+      `Still missing: ${fields.join(", ")}.`,
+    notSaved: "Nothing is saved until you press “Create course”.",
+    descriptionHint:
+      "Shown in the catalogue under the title. Two or three sentences is enough — the full description on the detail page is edited later.",
+
+    preview: "Preview",
+    previewHint:
+      "An approximation. The portal draws the card with the customer’s own branding.",
+    previewNoTitle: "No title yet",
+    previewNoDescription: "Without a description the catalogue shows only the title.",
+    draftBadge: "Draft",
+
+    nextTitle: "Afterwards, in this order:",
+    nextSteps: [
+      {
+        title: "Content",
+        body: "Create modules, chapters, videos and the Lernerfolgskontrolle.",
+      },
+      {
+        title: "Certification",
+        body: "VNR, points, category, organiser and scientific lead. Without these no Teilnahmebescheinigung can be issued.",
+      },
+      {
+        title: "Publish",
+        body: "Until then the course is a draft: it does not appear in the catalogue and cannot be opened.",
+      },
+    ] as const,
   },
 
   uploads: {
@@ -474,8 +550,7 @@ export const en: DeepPartial<typeof german> = {
       "The connection to file storage was lost. The file was not transferred completely — please upload it again.",
     noCourseYet: "Please save the course first.",
     videoUpload: "Upload video",
-    videoUploadHint:
-      "MP4 or WebM, up to 2 GB. The file is transferred straight to file storage and is afterwards retrievable only by participants of this course.",
+    videoUploadHint: `MP4 or WebM, up to ${VIDEO_LIMIT}. The file is transferred straight to file storage and is afterwards retrievable only by participants of this course.`,
 
     previewLoading: "Loading preview …",
     previewFailed:
@@ -563,11 +638,17 @@ export const en: DeepPartial<typeof german> = {
     captionsMissing:
       "No subtitles are stored for this video. For videos with speech that is an accessibility defect. Silent slide recordings need none.",
     body: "Text",
+    videoBody: "Summary",
+    videoBodyHint:
+      "Appears in the player below the video. With nothing here it reads “no summary is stored for this section”. Separate paragraphs with a blank line.",
     materialBody: "Description (appears on the media card)",
     fileUrl: "File URL",
 
     lockedByRecords:
       "Cannot be deleted: participations have already been recorded. This data is the evidence for points already awarded.",
+    locked: "In use",
+    lockedRule:
+      "Modules, chapters and contents with recorded participations can no longer be deleted — this data is the evidence for points already awarded.",
     noQuestions: "No questions — nobody can pass this Lernerfolgskontrolle.",
     editQuiz: "Edit questions",
 
@@ -581,6 +662,7 @@ export const en: DeepPartial<typeof german> = {
       "Appear under the “Referenten” tab of the learner interface. The list is replaced in full.",
     empty: "No speakers are stored.",
     add: "Add speaker",
+    unnamed: "New speaker",
     roleLabel: "Role",
     roleLabelHint: "For example “scientific lead” or “speaker”.",
     name: "Name",
@@ -594,6 +676,10 @@ export const en: DeepPartial<typeof german> = {
     intro:
       "The order of the questions is the order in the exam. Marking is on exact agreement: with “one correct answer” exactly the right option must be chosen, with “several correct answers” exactly the set of right ones.",
     empty: "No questions yet.",
+    railAdd: "Append a question",
+    railHeading: (count: number): string =>
+      count === 1 ? "1 question" : `${String(count)} questions`,
+    railProblem: "This question is incomplete",
     addQuestion: "Add question",
     backToStructure: "Back to the contents",
     unsavedChanges: "Unsaved changes will be lost.",
@@ -606,8 +692,15 @@ export const en: DeepPartial<typeof german> = {
     option: "Answer option",
     addOption: "Add answer option",
     isCorrect: "correct",
-    lockedByAnswers:
-      "Cannot be deleted: this question has already been answered. A submitted attempt has to keep meaning what it meant when it was marked.",
+    unnamed: "New question",
+    retireOnRemove:
+      "This question has already been answered. It will therefore not be deleted but removed from the exam: future participants will not see it, and attempts already submitted keep their result.",
+    confirmRetire: "Remove from exam",
+    retiredNotice: (count: number): string =>
+      count === 1
+        ? "1 question has been removed from this exam. It is kept on record because attempts already submitted rely on it as evidence."
+        : `${count} questions have been removed from this exam. They are kept on record because attempts already submitted rely on them as evidence.`,
+    retiredTitle: "Removed questions",
 
     noCorrect: "At least one answer option has to be marked correct.",
     tooManyCorrect: "With “one correct answer” exactly one option may be marked correct.",
@@ -642,8 +735,30 @@ export const en: DeepPartial<typeof german> = {
 
   media: {
     title: "Media library",
-    open: "Choose from library",
     close: "Close",
+
+    /* The one button, and the dialog behind it (P90-01). */
+    choose: "Select media",
+    dialogTitle: "Select media",
+    tabsLabel: "Where the file comes from",
+    tabs: {
+      library: "Media library",
+      upload: "Upload file",
+      url: "From address (URL)",
+    },
+    dropHere: "Drag a file here, or choose one",
+    uploadHints: {
+      video: `MP4 or WebM, up to ${VIDEO_LIMIT}. The file goes straight to storage and is then reachable only by participants of this course.`,
+      poster: "JPEG, PNG or WebP. Shown as the course's preview image.",
+      captions:
+        "WebVTT (.vtt) or SRT (.srt). SRT files are converted to WebVTT on upload — storage always holds WebVTT.",
+      material: "PDF document. Offered to participants in the course's Mediathek.",
+    },
+    urlLabel: "Address of the file",
+    urlHint:
+      "For files that are not held here: a video on your own server, or an adaptive stream (HLS, .m3u8). The address has to be publicly reachable.",
+    urlSubmit: "Use this address",
+
     intro:
       "Every file uploaded for this customer. Pick one instead of uploading the same file again.",
     empty:
@@ -655,12 +770,33 @@ export const en: DeepPartial<typeof german> = {
       "The title names the file for you in this list. The alternative text describes the image for people who cannot see it — screen readers read it out, and it is required for accessibility (WCAG 1.1.1). Left empty, it counts as not set.",
     use: "Use this file",
     forget: "Remove from library",
+    upload: {
+      title: "Add files",
+      course: "Course",
+      chooseCourse: "Choose a course …",
+      courseHint:
+        "Files are stored under a course. They are then available in the Mediathek for every course of this customer.",
+      drop: "Drag files here",
+      choose: "Choose files",
+      busy: "Uploading …",
+      needCourse: "Choose a course first.",
+      done: "Done",
+      failed: "Failed",
+      someFailed:
+        "Not every file could be uploaded. The successful ones are in the list below.",
+      refused: {
+        unsupported_type:
+          "This file type is not accepted. Allowed: MP4, WebM, MP3, M4A, JPG, PNG, WebP, PDF and VTT.",
+        too_large: "This file is too large.",
+        empty: "This file is empty.",
+      },
+    },
     forgetHint:
       "Removing only deletes the entry from this list — the file itself stays in storage. While a course still uses the file, removing it is refused.",
 
     nav: "Media library",
     screenIntro:
-      "Every file of this customer: videos, images, PDF documents and subtitles. Here you name files, add alternative text, and remove what is no longer needed. To use a file, open the course and choose it where you would upload one.",
+      "Every file of this customer: videos, images, PDF documents and subtitles. Here you name files, add alternative text, and remove what is no longer needed. To use a file, open the course and click “Select media” there.",
     filterLabel: "Filter by file type",
     kinds: {
       all: "All",
@@ -695,7 +831,7 @@ export const en: DeepPartial<typeof german> = {
   branding: {
     title: "Typeface",
     intro:
-      "The uploaded typeface is used in the learner interface. Without one, the default typeface is shown.",
+      "This customer's typeface. It is used in the learner interface; without one the default typeface is shown. Colours, logo and the privacy-policy link belong to a project and are set on the project under “Organisation”.",
     privacy:
       "The file is stored on our own servers and delivered from there. No third-party fonts are loaded, so none of your users' IP addresses are passed to third parties.",
     elsewhere:
@@ -731,8 +867,170 @@ export const en: DeepPartial<typeof german> = {
       "The administration console is not configured correctly. Please check the environment variables.",
   },
 
+  /** The Punktemeldung queue (P110-01). */
+  eivQueue: {
+    reporting: {
+      liveTitle: "Submissions are being sent",
+      live: "Completed participations are reported to the Ärztekammer. A test completion on an accredited course produces a real Punktemeldung.",
+      offTitle: "Submissions are not being sent",
+      off: "Punktemeldungen are recorded and queued, but nothing is sent to an Ärztekammer.",
+      endpoint: {
+        mock: "Target: mock endpoint.",
+        test: "Target: EIV test system.",
+        live: "Target: EIV production system.",
+        unknown:
+          "Target: unrecognised — the worker sends nothing to an unknown endpoint.",
+      },
+    },
+    failureKind: {
+      validation:
+        "The Ärztekammer rejected the participant's EFN. Only they can correct it — they were told so on their completion screen. The Meldung is re-filed automatically once they do.",
+      business:
+        "The Ärztekammer rejected the event — usually an unknown or blocked VNR, or a date outside the accredited period. Check the course's VNR.",
+      auth: "The credentials were rejected or are missing. Set the VNR password in the course's settings.",
+      transport: "The Ärztekammer was unreachable. This will be retried automatically.",
+      server:
+        "The Ärztekammer returned a server error. This will be retried automatically.",
+      rate_limited:
+        "The Ärztekammer reported too many requests. This will be retried automatically.",
+      unknown:
+        "The Ärztekammer's answer was not conclusive. Check the technical error below.",
+    },
+    // German on purpose: Punktemeldung, VNR and EFN appear verbatim on the
+    // Anerkennungsbescheid and in the EIV-FOBI interface, and an operator
+    // reconciling a screen against the paperwork needs the same token in both.
+    nav: "Punktemeldungen",
+    title: "Punktemeldungen",
+    screenIntro:
+      "The statutory report of CME points to the Ärztekammer, one per completed enrolment. Sorted by deadline — the report whose statutory eight-day limit is nearest is at the top, not the newest one.",
+
+    loadFailed: "The Punktemeldungen could not be loaded.",
+    actionFailed: "The action failed.",
+
+    filter: "Filter by status",
+    statusAll: "All",
+    status: {
+      queued: "Queued",
+      held: "Held back",
+      submitted: "Reported",
+      failed_retryable: "Retry scheduled",
+      failed_permanent: "Permanently failed",
+      window_closed: "Deadline passed",
+      withdrawn: "Withdrawn",
+    },
+
+    participant: "EFN",
+    course: "Course",
+    status_: "Status",
+    due: "Reporting deadline",
+    attempts: "Attempts",
+    vnr: "VNR",
+    lastError: "Last error",
+    dueNow: "Will be reported on the next sweep",
+
+    dueTitle: "Reports due",
+    dueBody: (count: number): string =>
+      count === 1
+        ? "One Punktemeldung will be sent to the Ärztekammer on the worker's next sweep."
+        : `${String(count)} Punktemeldungen will be sent to the Ärztekammer on the worker's next sweep.`,
+
+    empty: "No Punktemeldungen",
+    emptyHint:
+      "Once somebody completes a course and supplies their EFN, the report appears here.",
+
+    requeue: "Queue again",
+    withdraw: "Withdraw",
+    withdrawConfirm: "Really withdraw?",
+    withdrawCancel: "Cancel",
+    withdrawFor: (efn: string): string => `Withdraw the Punktemeldung for ${efn}`,
+    withdrawReason: "Withdrawn by an administrator",
+
+    previous: "Back",
+    next: "Next",
+    pageOf: (page: number, last: number): string =>
+      `Page ${String(page)} of ${String(last)}`,
+  },
+
+  eivCheck: {
+    title: "Check the EIV connection",
+    intro:
+      "Uses this course's VNR and password to check that reporting to the Ärztekammer works — before the first participation has to be reported.",
+    readOnly: "Nothing is reported and nothing is changed. Data is only read.",
+    needsVnr:
+      "No VNR is stored for this course yet. Enter the VNR and VNR password above and save, then the connection can be checked.",
+
+    password: "VNR password (optional)",
+    passwordHint:
+      "Leave empty to check the stored password. A password entered here is used only for this check and is not saved — so a new password can be tested without overwriting the working one.",
+    action: "Check connection",
+    running: "Checking …",
+
+    resultOk: "The EIV connection works. The Ärztekammer accepts this VNR and password.",
+    resultAuthFailed:
+      "The Ärztekammer rejected the VNR or the password. Please check both against the Anerkennungsbescheid.",
+    resultUnreachable:
+      "The credentials were accepted, but one of the queries failed. Details below — often the service is only temporarily unavailable.",
+
+    endpoint: "Address checked",
+
+    tierLabel: "System",
+    tier: {
+      mock: "The platform's own local test system — does not reach the Ärztekammer",
+      test: "EIV's test system — reports land in no real register",
+      live: "The Ärztekammer's live register — reports are binding",
+      unknown: "Unrecognised address — treated as a live register",
+    },
+
+    submissionsLabel: "Punktemeldung",
+    submissionsOn: "Armed — completed courses are reported",
+    submissionsOff: "Switched off — nothing is reported",
+
+    liveArmed:
+      "This installation reports points bindingly to the Ärztekammer. " +
+      "Every completed course files a real Punktemeldung against the " +
+      "participant's own EFN.",
+
+    reportedCount: "Participations already reported",
+    passwordSource: "Password",
+    passwordTyped: "entered here, not saved",
+
+    eventTitle: "What the Ärztekammer holds for this VNR",
+    eventName: "Event",
+    eventCategory: "Category",
+    eventPeriod: "Accreditation period",
+    eventPoints: "Points",
+    pointsValue: (attendance: number | null, assessment: number | null): string =>
+      `Attendance ${attendance ?? "—"} · Lernerfolg ${assessment ?? "—"}`,
+    lernerfolgMismatch:
+      "This course reports the Lernerfolg point, but the Ärztekammer holds none for this VNR. A submission claiming it would be refused.",
+    eventLocked:
+      "This event is closed for reporting at the Ärztekammer. No further participation can be reported.",
+
+    detailToggle: "Technical details",
+    steps: {
+      authenticate: "Sign in with VNR and password",
+      event: "Read event data",
+      reported: "Read points already reported",
+    },
+    stepOk: "succeeded",
+    stepFailed: "failed",
+
+    advice: {
+      auth: "Check the VNR and password — both are on the Anerkennungsbescheid.",
+      rate_limited: "Too many requests. Check again in a few minutes.",
+      server: "EIV reported an error. Check again later.",
+      network: "EIV was unreachable from this server. Check the network or the address.",
+      business:
+        "The Ärztekammer rejected the request on its merits. Please check the Anerkennungsbescheid.",
+      format: "EIV's response was shaped unexpectedly. Please involve support.",
+      unknown: "Unexpected error. The technical message is shown beside it.",
+    },
+  },
+
   courses: {
     title: "Courses",
+    intro:
+      "Every course for this customer. A new one takes three steps: add the content, fill in the certification, publish. Until it is published it is a draft and participants cannot see it.",
     empty: "No courses are stored for this tenant.",
     emptyHint:
       "A course consists of modules, chapters and contents. You can create it now and extend it at any time.",
@@ -743,6 +1041,14 @@ export const en: DeepPartial<typeof german> = {
     columnCertificate: "Certificate",
     certificateReady: "ready",
     certificateNotReady: "incomplete",
+    columnActions: "Actions",
+    delete: "Delete",
+    deleteConfirm: "Really delete?",
+    deleteAria: (title: string): string => `Delete course “${title}”`,
+    lockedByEnrolments:
+      "Cannot be deleted: participations have already been recorded. This data is the evidence for points already awarded.",
+    deleteRule:
+      "A course with no recorded participations can be deleted; one with participations cannot.",
   },
 
   course: {
@@ -772,7 +1078,6 @@ export const en: DeepPartial<typeof german> = {
     cmePoints: "CME points",
     cmePointsHint: "As stated in the Anerkennungsbescheid.",
     cmeCategory: "Category",
-    fortbildungsnummer: "Course number",
     validFrom: "Accreditation valid from",
     validTo: "Accreditation valid until",
     validityHint: "From the Ärztekammer's Anerkennungsbescheid.",
@@ -857,7 +1162,7 @@ export const en: DeepPartial<typeof german> = {
   participantAccounts: {
     title: "Accounts",
     intro:
-      "This customer's participants. Accounts are created here, passwords reset and accounts locked.",
+      "The people at this customer who can sign in — one row per person. Accounts are created here, passwords reset and accounts locked. How far somebody has got in a course is under “Teilnehmende”.",
     search: "Search",
     empty: "No participants yet.",
     emptyHint:

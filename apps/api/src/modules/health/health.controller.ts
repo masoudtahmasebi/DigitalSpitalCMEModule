@@ -80,9 +80,15 @@ export class HealthController {
  * status, and no tenant data, no identifier and nothing personal — see
  * `metrics.ts` for why route labels are bounded templates rather than paths.
  * On this deployment it is reachable only from inside the Docker network:
- * `infra/deploy/Caddyfile` does not route `/metrics` from the edge, so an
+ * `infra/deploy/Caddyfile` refuses `/metrics` at the edge with a 404, so an
  * external scraper needs an SSH tunnel. That is the right default for a single
  * host; a fleet would want an allow-list instead.
+ *
+ * Until P113-02 that sentence was wrong. The API site block ended in a bare
+ * `reverse_proxy`, a catch-all over every path, so this endpoint answered the
+ * internet — including `ds_build_info{commit="…"}`, which `metrics.ts` added
+ * on the strength of this very claim. The matcher exists now, and
+ * `deploy-vars.test.sh` goes red if it is removed.
  */
 @Controller("metrics")
 export class MetricsController {

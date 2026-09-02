@@ -45,6 +45,18 @@ type CorsCallback = (error: Error | null, allow?: boolean) => void;
  */
 export const TENANT_HEADERS = ["x-ds-project", "x-ds-customer"] as const;
 
+/**
+ * Headers the guard reads that do not name a tenant (P105-01).
+ *
+ * `x-ds-profile` carries the host page's name and email for a realm whose token
+ * has none. It belongs in the CORS allow-list for exactly the reason
+ * `TENANT_HEADERS` does — a header the guard reads and the preflight refuses
+ * never arrives, and the only evidence is a message in somebody else's browser
+ * — but it is not a tenant header, and putting it in that list would make the
+ * name a lie the next time somebody reads it.
+ */
+export const GUARD_HEADERS = ["x-ds-profile"] as const;
+
 export async function configureApp(
   app: INestApplication,
   config: AppConfig,
@@ -145,6 +157,7 @@ export async function configureApp(
       "content-type",
       "accept",
       ...TENANT_HEADERS,
+      ...GUARD_HEADERS,
       "x-ds-csrf",
     ],
   });

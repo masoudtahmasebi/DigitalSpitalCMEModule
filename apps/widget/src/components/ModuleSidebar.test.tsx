@@ -26,6 +26,7 @@ import type {
   ProgressSummary,
 } from "@ds/sdk";
 import { ModuleSidebar } from "./ModuleSidebar.js";
+import type { PlayerAction } from "../player-status.js";
 
 afterEach(cleanup);
 
@@ -149,22 +150,129 @@ function state(overrides: Partial<EnrolmentState> = {}): EnrolmentState {
 }
 
 /** The learner is in Video 3, exactly as the player's own fixtures have it. */
-function renderSidebar(overrides: { onOpen?: (id: string) => void } = {}) {
+function renderSidebar(
+  overrides: {
+    onOpen?: (id: string) => void;
+    actions?: readonly PlayerAction[];
+  } = {},
+) {
   render(
     <ModuleSidebar
       course={course()}
       state={state()}
       currentContentId="v3"
       onOpen={overrides.onOpen ?? vi.fn()}
+      actions={overrides.actions ?? []}
     />,
   );
 }
+
+describe("which chapter the learner is inside", () => {
+  /*
+   * P106-03. The client, from the running product: *"now i am doing kapitel 1
+   * module 4, and this is the view, it is not like i am doing that, maybe an
+   * indention would help?"*
+   *
+   * Three levels of small grey text at three paddings do not say which one
+   * contains you. Two things now do, and both are asserted here rather than
+   * eyeballed: the containing chapter's own row changes weight, and the list of
+   * its contents carries a coloured rule down its left edge.
+   *
+   * These are class assertions, which are usually a bad trade — so they are
+   * written as **comparisons between two sibling chapters in one render**. A
+   * marker applied to every chapter and a marker applied to none are the two
+   * ways this silently stops working, and both fail the comparison; a Tailwind
+   * shade change does not.
+   */
+  function twoChapters(): { course: CourseDetail; state: EnrolmentState } {
+    const detail = course();
+    const enrolment = state();
+    const module = detail.modules[2];
+    const moduleState = enrolment.modules[2];
+    if (module === undefined || moduleState === undefined) {
+      throw new Error("the fixture has no third module");
+    }
+
+    module.chapters.push({
+      id: "c3b",
+      ordinal: 1,
+      title: "Kapitel 3b",
+      contents: [
+        {
+          id: "v3b",
+          ordinal: 0,
+          kind: "video",
+          title: "Video 3b",
+          durationSec: 600,
+          mimeType: null,
+        } satisfies ContentSummary,
+      ],
+    });
+    moduleState.chapters.push({
+      id: "c3b",
+      gate: "available",
+      progress: progress(),
+      contents: [{ id: "v3b", gate: "available", progress: progress() }],
+    });
+
+    return { course: detail, state: enrolment };
+  }
+
+  /** The `<ul>` of contents drawn under a chapter's own row. */
+  function contentsOf(chapterTitle: string): HTMLElement {
+    const row = screen.getByText(chapterTitle).closest("li");
+    const list = row?.querySelector("ul");
+    if (list === null || list === undefined) {
+      throw new Error(`no contents drawn under ${chapterTitle}`);
+    }
+    return list as HTMLElement;
+  }
+
+  function renderTwo() {
+    const fixture = twoChapters();
+    render(
+      <ModuleSidebar
+        course={fixture.course}
+        state={fixture.state}
+        currentContentId="v3"
+        onOpen={vi.fn()}
+        actions={[]}
+      />,
+    );
+  }
+
+  it("draws the indent guide in the brand colour under the chapter you are in", () => {
+    renderTwo();
+    // "Kapitel 3" holds Video 3, which is where the learner is. "Kapitel 3b" is
+    // its sibling in the same open module and must not be marked.
+    expect(contentsOf("Kapitel 3").className).toContain("border-brand");
+    expect(contentsOf("Kapitel 3b").className).not.toContain("border-brand");
+  });
+
+  it("gives every chapter's contents a guide, marked or not", () => {
+    // The rule is what says "these belong to that". Only its colour carries
+    // the you-are-here; without the rule itself the contents float under a
+    // heading they are merely near.
+    renderTwo();
+    for (const title of ["Kapitel 3", "Kapitel 3b"]) {
+      expect(contentsOf(title).className).toContain("border-l-2");
+    }
+  });
+
+  it("weights the containing chapter's title differently from its sibling's", () => {
+    renderTwo();
+    const here = screen.getByText("Kapitel 3").parentElement;
+    const other = screen.getByText("Kapitel 3b").parentElement;
+    expect(here?.className).not.toBe(other?.className);
+    expect(here?.className).toContain("font-semibold");
+  });
+});
 
 describe("the Modul Übersicht sidebar", () => {
   it("opens on the module being watched", () => {
     renderSidebar();
     const toggle = screen.getByRole("button", {
-      name: "Modul „Modul 3“ ein- oder ausklappen",
+      name: /^Modul „Modul 3“ ein- oder ausklappen/,
     });
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
   });
@@ -175,7 +283,9 @@ describe("the Modul Übersicht sidebar", () => {
     renderSidebar();
     for (const n of [1, 2, 3, 4, 5]) {
       expect(
-        screen.getByRole("button", { name: `Modul „Modul ${n}“ ein- oder ausklappen` }),
+        screen.getByRole("button", {
+          name: new RegExp(`^Modul „Modul ${n}“ ein- oder ausklappen`, "u"),
+        }),
       ).toBeTruthy();
     }
   });
@@ -188,12 +298,76 @@ describe("the Modul Übersicht sidebar", () => {
     expect(current.getAttribute("aria-current")).toBe("true");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Modul „Modul 5“ ein- oder ausklappen" }),
+      screen.getByRole("button", { name: /^Modul „Modul 5“ ein- oder ausklappen/ }),
     );
     const locked = screen.getByRole("button", { name: /Video 5/ }) as HTMLButtonElement;
     expect(locked.disabled).toBe(true);
     fireEvent.click(locked);
     expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("draws no counter beside a module row, and keeps the count in its name", () => {
+    /*
+     * P93-03. `Player-Ansicht-*` draws a glyph, a title and a chevron on each
+     * module row and nothing else; the visible "2/3" was ours.
+     *
+     * Both halves matter. Removing it from the row is the layout; keeping it in
+     * the accessible name is because a screen reader announces one row at a
+     * time, so without it "Abgeschlossen, Modul 2" and a module that is half
+     * done sound the same (§9.4).
+     */
+    renderSidebar();
+
+    const toggle = screen.getByRole("button", {
+      name: /^Modul „Modul 3“ ein- oder ausklappen/,
+    });
+    expect(toggle.textContent).not.toMatch(/\d+\s*\/\s*\d+/u);
+    expect(toggle.getAttribute("aria-label")).toContain("von");
+  });
+
+  it("draws the primary action under the list when the screen has one", () => {
+    // The action belongs to the screen inside `CourseShell` — the pause is the
+    // media element's state and the exam is the server's gate — so this only
+    // renders what it is handed, and renders nothing when handed nothing.
+    const run = vi.fn();
+    renderSidebar({
+      actions: [
+        { label: "Fortbildung pausieren", variant: "secondary", disabled: false, run },
+      ],
+    });
+
+    const outline = screen.getByRole("navigation", { name: "Modul Übersicht" });
+    const button = screen.getByRole("button", { name: "Fortbildung pausieren" });
+    expect(outline.contains(button)).toBe(true);
+
+    fireEvent.click(button);
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("draws nothing there on a screen with no action, which is every exam page", () => {
+    renderSidebar();
+    expect(screen.queryByRole("button", { name: "Fortbildung pausieren" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Lernerfolgskontrolle beginnen" }),
+    ).toBeNull();
+  });
+
+  it("calls the module under way *bearbeitet* and the chapter in it *angesehen*", () => {
+    /*
+     * P94-02. The layout gives the module you are inside a pause glyph and the
+     * chapter you are on a play arrow, which is a real distinction rather than
+     * a decoration: the module is a container you are part-way through, the
+     * chapter is the thing in front of you. "Wird angesehen" on a module would
+     * be a claim about five chapters at once.
+     */
+    renderSidebar();
+
+    expect(
+      screen.getAllByRole("img", { name: "Wird bearbeitet" }).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByRole("img", { name: "Wird angesehen" }).length).toBeGreaterThan(
+      0,
+    );
   });
 
   it("names each state for a screen reader, since the glyph is the only cue", () => {

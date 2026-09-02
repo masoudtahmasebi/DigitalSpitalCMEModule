@@ -237,6 +237,10 @@ test.describe("Verwaltung", () => {
     const courseSlug = await slugFieldValue(page);
     expect(courseSlug).toMatch(/^e2e-fortbildung-[a-z0-9]+$/u);
 
+    // Grunddaten → Darstellung → Prüfen & anlegen (P132-03). Only the last step
+    // writes, and the title read back below was typed on the first.
+    await page.getByRole("button", { name: "Weiter" }).click();
+    await page.getByRole("button", { name: "Weiter" }).click();
     await page.getByRole("button", { name: "Fortbildung anlegen" }).click();
 
     // Creating a course opens its editor on the structure tab, which is where

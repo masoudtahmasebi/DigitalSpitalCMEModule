@@ -44,7 +44,7 @@ import type { Principal } from "../../auth/principal.js";
 import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { createSecretCipher } from "../../shared/secret-cipher.js";
 import { AppError } from "../../shared/problem-details.js";
-import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
+import { APP_CONFIG, PG_SIDE_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { LearnerSessionRepository } from "../../auth/learner-session.repository.js";
 import { ParticipantAuthService } from "./participant-auth.service.js";
@@ -115,7 +115,16 @@ function requireLearnerPlane(principal: Principal): void {
 @Controller("auth/participant")
 export class ParticipantAuthController {
   constructor(
-    @Inject(PG_POOL) private readonly pool: Pool,
+    /**
+     * The **side** pool (P142-01). This repository deliberately runs outside
+     * the request's tenant context — it resolves the project binding and the
+     * credential *before* a tenant is known, and enters the bound customer's
+     * own `runInTenant` for the RLS-scoped half. On the authenticated routes
+     * (`me`, `changePassword`) the request is already holding a `PG_POOL`
+     * connection, so taking the second one from there deadlocks under
+     * concurrency.
+     */
+    @Inject(PG_SIDE_POOL) private readonly pool: Pool,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 

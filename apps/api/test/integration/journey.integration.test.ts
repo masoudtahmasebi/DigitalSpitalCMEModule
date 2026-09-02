@@ -39,6 +39,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { expectNoAnswerKey } from "../support/answer-leak.js";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -341,7 +342,15 @@ describe("2 · the first operator", () => {
         "--name",
         "Technik",
       ],
-      { env: { ...process.env, DATABASE_URL: pointAt(SUPERUSER_URL, DB) }, cwd: REPO },
+      {
+        env: {
+          ...process.env,
+          DATABASE_URL: pointAt(SUPERUSER_URL, DB),
+          // The schema-freshness reader (P149-01); see support/staff.ts.
+          SCHEMA_READER_DATABASE_URL: pointAt(SUPERUSER_URL, DB),
+        },
+        cwd: REPO,
+      },
     );
 
     // `    Passwort  <value>` — the CLI's own format, asserted here so that a
@@ -362,7 +371,15 @@ describe("2 · the first operator", () => {
           "--name",
           "Zwei",
         ],
-        { env: { ...process.env, DATABASE_URL: pointAt(SUPERUSER_URL, DB) }, cwd: REPO },
+        {
+          env: {
+            ...process.env,
+            DATABASE_URL: pointAt(SUPERUSER_URL, DB),
+            // The schema-freshness reader (P149-01); see support/staff.ts.
+            SCHEMA_READER_DATABASE_URL: pointAt(SUPERUSER_URL, DB),
+          },
+          cwd: REPO,
+        },
       ),
     ).rejects.toThrow();
 
@@ -859,6 +876,7 @@ describe("5 · the participant earns the point", () => {
     const quiz = await asLearner(quizPath);
     expect(quiz.status).toBe(200);
     expect(JSON.stringify(quiz.body)).not.toContain("isCorrect");
+    expectNoAnswerKey(quiz.body, "the learner's quiz");
 
     const questions = quiz.body.questions as Array<{
       id: string;

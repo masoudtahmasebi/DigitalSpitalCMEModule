@@ -1,4 +1,15 @@
-# DS – Education Platform: Delivery Roadmap 140 h (WordPress-first, AI-first)
+# DS – Education Platform: Delivery Roadmap (WordPress-first, AI-first)
+
+> **The 140 h budget was withdrawn by the client on 26.08.2026.** Everything
+> below that reads as an hour budget is now a **record of what the first six
+> weeks were planned against**, not a constraint to work to. The launch date
+> (06.09.2026), the deferred list in §4 and the quality floor in §3 all stand —
+> see `CLAUDE.md` §3, which is the authority.
+>
+> Left unedited on purpose. Rewriting the estimates out of this file would
+> destroy the evidence of what was promised, to whom, and when — and the
+> variance between that plan and what was actually built is the most useful
+> thing here for planning the next phase.
 
 **Project:** DS – Education Platform (Jira: DEP) · **Parent:** MEDICE-292 ·
 **First client:** MEDICE ADHS (WordPress) · **Owner:** Masoud Tahmasebi ·

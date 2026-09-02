@@ -187,6 +187,19 @@ export const courses = pgTable("courses", {
    */
   eivPunkteBasis: boolean("eiv_punkte_basis").notNull().default(true),
   eivPunkteLernerfolg: boolean("eiv_punkte_lernerfolg").notNull().default(true),
+  /*
+   * Retained, unread, until a migration drops the column (S31, P125-01).
+   *
+   * MEDICE confirmed on 27.08.2026 that the Fortbildungsnummer *is* the VNR, so
+   * nothing writes this any more and the Zertifizierung tab renders `vnr`. The
+   * column outlives the code deliberately: a deploy runs migrations before it
+   * swaps containers, so dropping it in the same change would give the still-
+   * running old API a window of selecting a column that no longer exists —
+   * §9.9's "a schema older than the code" with the arrow reversed.
+   *
+   * The drop is its own migration, and it asserts first that no row holds a
+   * value differing from its `vnr` before discarding anything.
+   */
   fortbildungsnummer: text("fortbildungsnummer"),
   accreditationBody: text("accreditation_body"),
   cmePoints: integer("cme_points"),
@@ -416,6 +429,22 @@ export const quizQuestions = pgTable("quiz_questions", {
   kind: questionKind("kind").notNull().default("single"),
   prompt: text("prompt").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  /**
+   * When this question left the exam (P114-01). NULL means live.
+   *
+   * A question a physician has answered can never be deleted — `quiz_answers`
+   * references it under `ON DELETE RESTRICT`, because it is the evidence behind
+   * a CME point that may already have been reported. Retiring it removes it
+   * from the exam and keeps the row, which is what an author revising a
+   * Lernerfolgskontrolle actually wants and what the old refusal denied them.
+   *
+   * **Every read on the learner's path must filter on this.** A query that
+   * forgets serves a retired question, or scores against one — see
+   * `assessment.repository.ts`, where both halves are filtered and both are
+   * asserted separately, because the projection and the answer key are
+   * different queries and fixing only one is the likelier mistake.
+   */
+  retiredAt: timestamp("retired_at", { withTimezone: true }),
 });
 
 export const quizOptions = pgTable("quiz_options", {
@@ -486,6 +515,19 @@ export const eivSubmissions = pgTable("eiv_submissions", {
   correctionWindowEndsAt: timestamp("correction_window_ends_at", { withTimezone: true }),
   nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
   lastError: text("last_error"),
+  /*
+   * What EIV said, as distinct from why we stopped (P119-01).
+   *
+   * `last_error` is the queue's own reasoning — `attempts_exhausted`,
+   * `permanent_rejection`, `missing_vnr_password`. It collapses `auth`,
+   * `business` and `validation` into one word, which is fine for deciding
+   * whether to retry and useless for deciding **who can fix it**: a 422 means
+   * the physician's EFN was refused and a 406 means the event was, and only one
+   * of those is something a physician can act on.
+   *
+   * See migration 0048.
+   */
+  failureKind: text("failure_kind"),
   ...timestamps,
 });
 

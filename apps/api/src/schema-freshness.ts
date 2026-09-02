@@ -33,6 +33,7 @@
  */
 
 import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { pendingMigrations } from "@ds/migrator";
 
@@ -40,8 +41,88 @@ import { pendingMigrations } from "@ds/migrator";
  * Copied next to the compiled output by the Dockerfile — the same directory
  * `db-migrate.ts` applies from, so "pending" here means exactly "pending for
  * the migrator in this image".
+ *
+ * ## And the repository checkout, when this runs from source (P147-02)
+ *
+ * `join(dirname(here), "migrations")` is right in the image and wrong
+ * everywhere else: run through `tsx` from `apps/api/src/`, it looks for
+ * `apps/api/src/migrations`, which has never existed. Nothing noticed because
+ * every existing caller is a `dist/` entrypoint — until `bootstrap-admin`
+ * started asserting, and the journey suite runs *that* from source.
+ *
+ * The failure was `ENOENT: scandir '.../apps/api/src/migrations'`, which is
+ * §9.9's shape one more time: an error naming the wrong thing. It reads as a
+ * missing directory; it is a path that means two different things in two
+ * environments.
+ *
+ * So: the image's directory when it exists, and the checkout's `db/migrations`
+ * otherwise. Resolved once and remembered, so a caller cannot get a different
+ * answer than the check it is about to run.
+ *
+ * ## Why it is resolved on first use and not at module load (P151-01)
+ *
+ * It used to be `const MIGRATIONS_DIR = resolveMigrationsDir()`, evaluated when
+ * this module was imported. That put the one throwing statement in the file
+ * *outside every caller's reach*: an import-time throw is not catchable by the
+ * code that imports you.
+ *
+ * For `subject-erasure` that silently defeated the guarantee P149-02 exists for.
+ * Its `schemaCheckOutcome()` wraps `assertSchemaCurrent` in a `try`/`catch` so a
+ * failed check can never refuse a statutory erasure — but with neither directory
+ * present the process died at `ModuleJob.run`, before `main()` was ever called,
+ * with a stack trace instead of the CLI's own message. An erasure with a
+ * one-month Article 17 deadline was blocked by a diagnostic, which is the exact
+ * thing a human decided must never happen. Observed, not reasoned:
+ *
+ *     $ mv db/migrations db/_probe && npx tsx apps/api/src/subject-erasure.ts …
+ *     Error: schema-freshness: no migrations directory at …
+ *         at resolveMigrationsDir (…/schema-freshness.ts:81:9)
+ *         at <anonymous> (…/schema-freshness.ts:62:24)   <- module evaluation
+ *         at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+ *
+ * against the control, which reaches the CLI's own handler:
+ *
+ *     Erasure failed: unknown argument: --user
+ *
+ * Resolving on first use moves that throw inside `assertSchemaCurrent`, where
+ * each caller's own policy already applies: `bootstrap-admin` fails closed and
+ * says so in its own words, `subject-erasure` warns loudly and erases anyway.
+ *
+ * The Dockerfile does copy `db/migrations` to `dist/migrations` (line 216), so
+ * no shipped image reaches the old path today. That is what made it latent
+ * rather than live — and a guarantee that holds only while an unrelated `COPY`
+ * survives is not the guarantee that was asked for.
  */
-const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "migrations");
+let migrationsDirCache: string | undefined;
+
+function migrationsDir(): string {
+  migrationsDirCache ??= resolveMigrationsDir();
+  return migrationsDirCache;
+}
+
+function resolveMigrationsDir(): string {
+  const beside = join(dirname(fileURLToPath(import.meta.url)), "migrations");
+  if (existsSync(beside)) return beside;
+
+  // `apps/api/src` → repository root → `db/migrations`. Checked rather than
+  // assumed: returning a path that does not exist would move the same ENOENT
+  // three lines later and explain nothing.
+  const fromCheckout = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "..",
+    "db",
+    "migrations",
+  );
+  if (existsSync(fromCheckout)) return fromCheckout;
+
+  throw new Error(
+    `schema-freshness: no migrations directory at ${beside} or ${fromCheckout}. ` +
+      `In the image they sit beside the compiled output; in a checkout they are ` +
+      `db/migrations. Neither is present, so the schema check cannot run.`,
+  );
+}
 
 /**
  * Read `MIGRATION_DATABASE_URL`, or say which variable is missing.
@@ -64,6 +145,37 @@ export function migrationDatabaseUrl(): string {
 }
 
 /**
+ * The narrow reader's connection string (P149-01).
+ *
+ * `ds_schema_reader` may `SELECT` on `schema_migrations` and nothing else
+ * (migration 0049). It exists so a process running as the application can ask
+ * "is this database migrated?" without resting on `ds_app`'s privileges — which
+ * on this table are `arwd`, from the blanket default grant in `init-roles.sql`,
+ * not the "no grant at all" P148 and P149 claimed (corrected in 0049's header,
+ * P151-02) — and without being handed the migrator's credentials, which would
+ * give a request-serving container the ability to rewrite the schema.
+ *
+ * Unset is a hard error rather than a skip. A schema check that quietly does
+ * nothing when its credential is missing is worse than no check: it reports
+ * success on exactly the misconfigured installation it was added for (§9.1).
+ * `bootstrap-admin` is allowed to fail closed; nothing downstream of it is
+ * time-critical. `subject-erasure` takes the opposite decision, on purpose, and
+ * says why at its own call site.
+ */
+export function schemaReaderDatabaseUrl(): string {
+  const connectionString = process.env["SCHEMA_READER_DATABASE_URL"];
+  if (connectionString === undefined || connectionString === "") {
+    throw new Error(
+      "SCHEMA_READER_DATABASE_URL is required (the ds_schema_reader role). " +
+        "It is set on the `api` service in infra/deploy/docker-compose.prod.yml " +
+        "and infra/docker-compose.apps.yml; an installation deployed before " +
+        "P149 needs one `./deploy.sh` to pick it up.",
+    );
+  }
+  return connectionString;
+}
+
+/**
  * Throw unless the database has applied every migration this image carries.
  *
  * Called before the first write of any entrypoint that is not the migrator
@@ -74,7 +186,7 @@ export function migrationDatabaseUrl(): string {
 export async function assertSchemaCurrent(connectionString: string): Promise<void> {
   const pending = await pendingMigrations({
     connectionString,
-    migrationsDir: MIGRATIONS_DIR,
+    migrationsDir: migrationsDir(),
   });
   if (pending.length === 0) return;
 

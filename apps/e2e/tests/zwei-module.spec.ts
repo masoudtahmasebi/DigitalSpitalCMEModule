@@ -52,6 +52,7 @@ import {
   menu,
   readIssuedPassword,
   signInToConsole,
+  uploadThroughMediaDialog,
 } from "../support/console.js";
 import { openCourseFromCatalogue } from "../support/catalogue.js";
 import { openWidgetShadowRoots } from "../support/shadow.js";
@@ -131,6 +132,10 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
       await menu(operator).getByRole("button", { name: "Fortbildungen" }).click();
       await operator.getByRole("button", { name: "Neue Fortbildung" }).first().click();
       await operator.getByRole("textbox", { name: "Titel" }).fill(COURSE);
+      // Grunddaten → Darstellung → Prüfen & anlegen (P132-03). Only the last
+      // step writes.
+      await operator.getByRole("button", { name: "Weiter" }).click();
+      await operator.getByRole("button", { name: "Weiter" }).click();
       await operator.getByRole("button", { name: "Fortbildung anlegen" }).click();
       await expect(operator.getByRole("heading", { name: COURSE })).toBeVisible({
         timeout: 20_000,
@@ -284,10 +289,45 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
       // ===================================================================
       await watchToTheEnd(learner);
 
-      await expect(
-        learner.getByRole("button", { name: "Lernerfolgskontrolle beginnen" }),
-        "module 1's exam never opened, after its video played to the end",
-      ).toBeVisible({ timeout: 60_000 });
+      /*
+       * The gate, with the server's own answer attached to the failure (P132-04).
+       *
+       * This assertion failed once against production on 31.08 and passed on a
+       * re-run, and the message it printed — "module 1's exam never opened" —
+       * was everything anybody knew. It cannot distinguish the two causes that
+       * matter:
+       *
+       *   * the union of watched intervals fell short of the enrolment's
+       *     completion threshold, so the gate was **correctly** shut and the
+       *     watching is what was flaky; or
+       *   * the threshold was met and the screen did not re-read the gate,
+       *     which is a product defect and the one worth waking up for.
+       *
+       * The player renders the percentage the **server** credited, so it is the
+       * one number that separates them. Attached on failure rather than polled
+       * into the assertion, so the gate itself stays exactly as strict — a
+       * diagnostic must not become a way for this to pass (§9.1).
+       */
+      try {
+        await expect(
+          learner.getByRole("button", { name: "Lernerfolgskontrolle beginnen" }),
+        ).toBeVisible({ timeout: 60_000 });
+      } catch (cause) {
+        const credited = await learner
+          .getByText(/% angesehen/u)
+          .first()
+          .textContent()
+          .catch(() => null);
+        throw new Error(
+          "module 1's exam never opened, after its video played to the end.\n" +
+            `The player shows: ${credited ?? "no watched percentage on screen at all"}.\n` +
+            "A percentage below the enrolment's completion threshold means the " +
+            "watching was short and the gate was right; a percentage at or above " +
+            "it means the gate did not re-read, which is a defect in the product " +
+            "rather than in this test.",
+          { cause },
+        );
+      }
 
       /*
        * P87-02: **this module's** exam, not the course's first.
@@ -457,7 +497,8 @@ async function addModule(page: Page, title: string, chapter: string): Promise<vo
 async function addVideo(page: Page, title: string): Promise<void> {
   await page.getByRole("button", { name: "Inhalt hinzufügen" }).last().click();
   await page.locator("#content-new-title").fill(title);
-  await page.locator('input[type="file"]').first().setInputFiles(VIDEO);
+  // One button, three tabs since P90-01 — see `support/console.ts`.
+  await uploadThroughMediaDialog(page, VIDEO);
 
   await expect(
     page.getByText(/Hochgeladen · .*\.webm/u).first(),

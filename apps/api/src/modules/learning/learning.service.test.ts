@@ -213,6 +213,7 @@ function fakeRepository(
     upsertProgress: async (input) => {
       written.push({ ...input });
     },
+    findSubmissionState: async () => undefined,
     hasEfn: async () => state.efn,
     hasEvaluationResponse: async () => state.evaluation,
     markCompleted: async () => undefined,
@@ -510,6 +511,52 @@ describe("recordProgress", () => {
     expect(result.watchedPercent).toBe(80);
     expect(result.status).toBe("completed");
     expect(written[0]?.["status"]).toBe("completed");
+  });
+
+  it("completes a video watched to within three seconds of its end", async () => {
+    /*
+     * The client's rule (P93-01), asserted where it is actually applied.
+     *
+     * `creditedDurationSec` lives in `@ds/domain` and is exhaustively tested
+     * there, which proves nothing about whether this service divides by it —
+     * CLAUDE.md §9.7, name the caller. Delete the tail grace and this goes red;
+     * that is the whole point of it being here rather than only next door.
+     *
+     * 597 s of a 600 s video, on a course requiring 100 %, which is what
+     * MEDICE's accredited course requires. Reported as *"now i have watched
+     * the complete video, it still says only 92 % angesehen"*.
+     */
+    const { repository, written } = fakeRepository();
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      { segments: [{ startSec: 0, endSec: 597 }] },
+      learner,
+      now,
+    );
+
+    expect(result.watchedPercent).toBe(100);
+    expect(result.status).toBe("completed");
+    expect(written[0]?.["status"]).toBe("completed");
+  });
+
+  it("does not complete a video stopped four seconds from its end", async () => {
+    // The control for the case above. The grace is three seconds, not "near
+    // the end" — without this, the assertion there would pass on any tolerance
+    // at all, including one that credits a video nobody finished.
+    const { repository } = fakeRepository();
+
+    const result = await new LearningService(repository).recordProgress(
+      course.slug,
+      VIDEO_1,
+      { segments: [{ startSec: 0, endSec: 596 }] },
+      learner,
+      now,
+    );
+
+    expect(result.watchedPercent).toBe(99);
+    expect(result.status).toBe("in_progress");
   });
 
   it("still withholds completion one percent short of the requirement", async () => {

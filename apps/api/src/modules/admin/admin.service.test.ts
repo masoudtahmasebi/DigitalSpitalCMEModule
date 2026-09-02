@@ -57,7 +57,6 @@ const course: AdminCourseRow = {
   targetAudience: null,
   prerequisites: null,
   heroImageUrl: null,
-  fortbildungsnummer: null,
   validFrom: null,
   validTo: null,
   vnr: "9999999999999999999",

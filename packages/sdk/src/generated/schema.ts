@@ -930,6 +930,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/courses/{slug}/eiv/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Prove this course's VNR and password reach EIV
+         * @description Runs the EIV handshake and both read-only queries, and reports each step
+         *     separately. Creates nothing.
+         *
+         *     **It cannot file a Punktemeldung.** The handler reaches the two
+         *     read-only capabilities of the reporter and never `submit`. That matters
+         *     more than it sounds: a Punktemeldung cannot be taken back — a
+         *     withdrawal is a further entry on the record, not an erasure — so a
+         *     "test" button that could reach `push_teilnahme` would be a button that
+         *     credits CME points to a real physician's EFN the first time somebody
+         *     clicks it to see what happens.
+         *
+         *     The reason for the screen is the deadline. The worker talks to EIV after
+         *     a physician has completed a course, by which point the clock has
+         *     started: eight days to report, seven more to correct, then the window
+         *     closes permanently. A wrong password found there is found too late.
+         *     This answers the same question before anybody enrols.
+         *
+         *     `vnrPassword` is optional. Absent uses the stored credential; supplying
+         *     one proves a password **before** saving it, so testing a new credential
+         *     does not mean overwriting a working one. It is never echoed back, never
+         *     logged and never written to the audit detail — the audit records only
+         *     whether one was supplied.
+         *
+         *     `POST` rather than `GET` because of that field: a password in a query
+         *     string reaches the access log, the browser history and every proxy in
+         *     between.
+         */
+        post: operations["adminCheckEivConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/courses/{slug}/eiv/event": {
         parameters: {
             query?: never;
@@ -988,6 +1033,46 @@ export interface paths {
          *     an operator is already looking at and not enough to be a disclosure.
          */
         get: operations["adminReconcileEiv"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/eiv/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Punktemeldung queue
+         * @description Every Punktemeldung this customer has, and what state it is in.
+         *
+         *     This existed nowhere until P110-01, and its absence was a live defect
+         *     rather than a missing convenience. Two endpoints already act on a
+         *     submission by id — `adminRequeueEivSubmission` and
+         *     `adminWithdrawEivSubmission` — and nothing enumerated them, so an
+         *     operator could only act on a row whose identifier they had obtained
+         *     from the database by hand. A control you cannot reach is not a control.
+         *
+         *     It also answers the question the deploy started asking on the way past:
+         *     arming the worker flushes whatever is already queued, and until now the
+         *     only place that count appeared was a deploy log.
+         *
+         *     Read-only. It contacts EIV not at all — this is what *we* hold, which is
+         *     deliberately a different question from `adminReconcileEiv`, which asks
+         *     the authority.
+         *
+         *     **No EFN.** `efnMasked` carries the last four digits, the same shape
+         *     `EivReconciliationRow` uses and for the same reason (ADR-0004): enough
+         *     to recognise a row beside a person you are already looking at, not a
+         *     disclosure.
+         */
+        get: operations["adminListEivSubmissions"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1740,6 +1825,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/courses/{slug}/uploads/multipart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Begin a large upload, in parts
+         * @description For files past the multipart threshold. A single signed `PUT` is one
+         *     network event: it either finishes or it was worth nothing, which stops
+         *     being acceptable somewhere around a gigabyte.
+         *
+         *     The response says how the client must split the file. Those sizes are
+         *     not advisory — the server signs part URLs against the same plan, and a
+         *     client that slices differently assembles an object of the right size and
+         *     the wrong bytes.
+         */
+        post: operations["adminBeginMultipartUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/courses/{slug}/uploads/multipart/sign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signed URLs for a bounded batch of parts
+         * @description Called repeatedly as the upload proceeds, and again on resume for
+         *     whatever is still missing.
+         *
+         *     **Bounded on purpose.** Every URL returned is a live capability, so a
+         *     5 GiB upload's 160 parts are not all minted because a client asked once:
+         *     an uploader that stalls at part 3 would otherwise leave 157 signatures
+         *     valid for the rest of their lifetime.
+         *
+         *     Part numbers outside the plan recorded for this key are refused. The plan
+         *     is derived from the size the server approved, never from this request.
+         */
+        post: operations["adminSignUploadParts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/courses/{slug}/uploads/multipart/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assemble the parts and confirm the object
+         * @description The parts come from the **bucket's own listing**, not from this request:
+         *     the client never handles an ETag, which is both one less thing to
+         *     configure in the bucket's CORS policy and what lets an upload resume
+         *     after the browser died.
+         *
+         *     Once assembled, the object goes through the same verification a single
+         *     upload does — measured against the size and type recorded when the
+         *     upload began. A mismatch is discarded.
+         */
+        post: operations["adminCompleteMultipartUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/courses/{slug}/uploads/complete": {
         parameters: {
             query?: never;
@@ -2226,6 +2394,21 @@ export interface components {
             status: number;
             detail?: string;
             instance?: string;
+            /**
+             * Format: uuid
+             * @description The id under which the API logged this exact failure (P122-01).
+             *
+             *     `problem-details.filter.ts` has put this on every error response
+             *     since observability landed, and it was documented in no contract and
+             *     read by no client — so the one string that finds the failing request
+             *     in the server log reached the payload and stopped there. Somebody
+             *     reporting a failure could not hand over the thing that would locate
+             *     it, because nothing ever showed it to them.
+             *
+             *     **Safe to display.** A random UUID minted per request. It identifies
+             *     a log line, never a person.
+             */
+            correlationId?: string;
         };
         HealthStatus: {
             /**
@@ -2359,12 +2542,6 @@ export interface components {
             prerequisites: string | null;
             vnr: string | null;
             accreditationBody: string | null;
-            /**
-             * @description Printed on the Zertifizierung tab as "Fortbildungsnummer: …"
-             *     (layout page 04). Distinct from the VNR, which is the EIV
-             *     credential and never leaves the server.
-             */
-            fortbildungsnummer: string | null;
             organizer: string | null;
             eventLocation: string | null;
             /** Format: date-time */
@@ -2544,6 +2721,41 @@ export interface components {
              *     content the learner may currently reach. Null when nothing is left.
              */
             resumeContentId: string | null;
+            /**
+             * @description What became of this learner's Punktemeldung (P119-02).
+             *
+             *     The failure this exists for is silence. A physician finishes,
+             *     downloads a Teilnahmebescheinigung saying four CME points, and
+             *     believes they have four — and if the Ärztekammer refused the
+             *     Meldung, nothing told them. They find out at their next
+             *     Fortbildungsnachweis with the correction window years closed.
+             *     ADR-0004 calls that the worst available failure *because it looks
+             *     like success*.
+             *
+             *     `check_efn` is the only value a physician can act on: EIV answered
+             *     422, which means their EFN was refused, and they are the only person
+             *     who can correct it. `event_problem`, `not_configured` and
+             *     `window_closed` are the operator's — telling a physician to check
+             *     their EFN when the VNR was blocked is an instruction that cannot
+             *     succeed.
+             *
+             *     `failed_unknown` is deliberate rather than a gap: rows written
+             *     before P119-01 discarded EIV's answer, and guessing would put
+             *     "check your EFN" in front of somebody whose EFN was never the
+             *     problem.
+             *
+             *     Carries no EFN, no VNR, and none of EIV's own rejection text — this
+             *     is read by a physician's browser.
+             * @enum {string}
+             */
+            punktemeldung: "none" | "pending" | "reported" | "withdrawn" | "check_efn" | "event_problem" | "not_configured" | "window_closed" | "failed_unknown";
+            /**
+             * @description Who, if anybody, is being asked to do something. Travels with
+             *     `punktemeldung` so no surface re-derives it and develops a second
+             *     opinion about the same rule.
+             * @enum {string}
+             */
+            punktemeldungActor: "nobody" | "participant" | "operator";
         };
         /** @enum {string} */
         ContentKind: "video" | "text" | "quiz" | "details" | "material";
@@ -3143,7 +3355,6 @@ export interface components {
             /** @description The "Vorkenntnisse" paragraph under Zielgruppe (layout page 02). */
             prerequisites: string | null;
             heroImageUrl: string | null;
-            fortbildungsnummer: string | null;
             /** Format: date-time */
             validFrom: string | null;
             /** Format: date-time */
@@ -3162,6 +3373,74 @@ export interface components {
              */
             certificateReady: boolean;
             missingCertificateFields: string[];
+        };
+        /**
+         * @description One leg of the connection check.
+         *
+         *     `kind` is the client's own classification of the failure and is what
+         *     decides an operator's next move: `auth` means retype the password,
+         *     `rate_limited` and `server` mean wait, `network` means the host is
+         *     unreachable from here. A single "EIV did not answer" would send half of
+         *     those to the wrong place.
+         */
+        EivCheckStep: {
+            /** @enum {string} */
+            step: "authenticate" | "event" | "reported";
+            ok: boolean;
+            /** @description Present only on a failure. The client's failure class. */
+            kind?: string;
+            /**
+             * @description Present only on a failure. The authority's own words. Never
+             *     contains a credential — the password travels in a header and the
+             *     recorded request body is redacted.
+             */
+            detail?: string;
+        };
+        /**
+         * @description The result of `POST /admin/courses/{slug}/eiv/check`. Contains no
+         *     password field of any kind, not even a masked one — a masked secret in
+         *     a response is still a secret in a response.
+         */
+        EivConnectionReport: {
+            /**
+             * @description Which host was contacted. On the screen because "it works" and "it
+             *     works against the mock" are different sentences (§9.9).
+             */
+            endpoint: string;
+            /**
+             * @description Which register `endpoint` is. On the screen because the hostname
+             *     alone does not answer it: EIV name their sandbox
+             *     `backend-test.eiv-fobi.de` and the live register
+             *     `backend.eiv-fobi.de`, so the difference between a rehearsal and a
+             *     statutory filing is one word an operator has no reason to know
+             *     (§9.4). Derived by `eivEndpointTier`, the same function the deploy
+             *     guard and the worker use.
+             * @enum {string}
+             */
+            tier: "mock" | "test" | "live" | "unknown";
+            /**
+             * @description Whether the worker is armed (`EIV_WORKER_ENABLED`). The other half
+             *     of the only question this screen exists to answer: a live endpoint
+             *     with the worker off is a credential test, and a live endpoint with
+             *     the worker on files real Punktemeldungen against real EFNs. Until
+             *     this field it was visible nowhere in the product.
+             */
+            submissionsEnabled: boolean;
+            vnr: string;
+            /**
+             * @description False when the caller supplied one. A check that passes with a
+             *     supplied password and fails with the stored one is somebody who
+             *     proved a credential and did not save it.
+             */
+            usedStoredPassword: boolean;
+            steps: components["schemas"]["EivCheckStep"][];
+            /** @description Present when the event read succeeded. */
+            event?: components["schemas"]["EivEvent"];
+            /**
+             * @description How many participations EIV already holds for this VNR. Present
+             *     when that read succeeded. A count, never the EFNs (ADR-0004).
+             */
+            reportedCount?: number;
         };
         /**
          * @description What the Ärztekammer holds about an accredited event. Every field
@@ -3188,6 +3467,112 @@ export interface components {
              *     further point will ever be credited against it.
              */
             locked?: boolean | null;
+        };
+        /**
+         * @description Whether this installation will actually send anything to an
+         *     Ärztekammer (P121-01).
+         *
+         *     The two inputs have been in the API's configuration since the worker
+         *     existed and reached a screen only inside an EIV-Abgleich result — a
+         *     check somebody has to know to run, on a course that already has a VNR.
+         *     So the one question the Punktemeldungen screen exists to answer,
+         *     *will these be filed?*, was the one thing it could not say.
+         *
+         *     It matters most to whoever is testing. A completion on an accredited
+         *     course queues a Punktemeldung against a real VNR at a real Kammer, and
+         *     the only thing standing between a test EFN and a statutory filing is
+         *     this posture. Somebody without shell access on the host previously had
+         *     no way to establish it at all.
+         */
+        EivReportingPosture: {
+            /** @description The worker's own `EIV_WORKER_ENABLED` flag. */
+            submissionsEnabled: boolean;
+            /**
+             * @description Which endpoint the installation points at. `unknown` is not a
+             *     synonym for safe — an unparseable base URL lands here, and treating
+             *     it as a mock would let a typo through the guard.
+             * @enum {string}
+             */
+            tier: "mock" | "test" | "live" | "unknown";
+            /**
+             * @description **The answer**, rather than its inputs: true only when the worker is
+             *     enabled *and* the endpoint is one a real Ärztekammer answers.
+             *
+             *     Derived server-side so no screen has to combine the two and reach a
+             *     different conclusion from the worker (§4 invariant 6).
+             */
+            willFile: boolean;
+        };
+        EivSubmissionPage: {
+            items: components["schemas"]["EivSubmissionRow"][];
+            total: number;
+            page: number;
+            perPage: number;
+            reporting: components["schemas"]["EivReportingPosture"];
+            /**
+             * @description How many rows the next sweep would claim — `queued` or
+             *     `failed_retryable` with the retry time passed. Counted across the
+             *     whole queue, not the page, because it is the number an operator
+             *     arming the worker needs and it must not change when they page.
+             */
+            dueNow: number;
+        };
+        /**
+         * @description One Punktemeldung as this platform holds it. Keyed by `enrolmentId`
+         *     rather than by the submission's own id, because that is what the
+         *     requeue and withdraw routes take — a row an operator can read and then
+         *     act on without translating an identifier.
+         */
+        EivSubmissionRow: {
+            /** Format: uuid */
+            enrolmentId: string;
+            /** @description Last four digits only (ADR-0004). */
+            efnMasked: string;
+            courseSlug: string;
+            courseTitle?: string | null;
+            vnr?: string;
+            /** @enum {string} */
+            status: "queued" | "held" | "submitted" | "failed_retryable" | "failed_permanent" | "window_closed" | "withdrawn";
+            attemptCount: number;
+            /**
+             * @description The participant's own completion instant — what the 8-day clock runs
+             *     from and what is printed on their Teilnahmebescheinigung (S11).
+             */
+            eventEndAt: string;
+            /** @description The statutory deadline this submission is racing. */
+            reportDueAt: string;
+            nextAttemptAt?: string | null;
+            firstSubmittedAt?: string | null;
+            /** @description The authority's own reference, once it has accepted. */
+            externalReference?: string | null;
+            /**
+             * @description **Why the queue stopped**, in the worker's own words —
+             *     `attempts_exhausted`, `permanent_rejection`,
+             *     `reporting_window_missed`, `missing_vnr_password`. Already redacted
+             *     of credentials by the EIV client; never contains the EFN.
+             *
+             *     Note that `permanent_rejection` collapses three very different
+             *     answers. Read `failureKind` to tell them apart.
+             */
+            lastError?: string | null;
+            /**
+             * @description **What EIV-FOBI said**, in the client's own vocabulary (P119-01).
+             *
+             *     This is the column that decides *who can fix it*: `validation` (422)
+             *     means the physician's EFN was refused and only they can correct it;
+             *     `business` (406) means the event was, and only an operator or the
+             *     Ärztekammer can. The two were reported identically until P119-01,
+             *     which — as the client's own header puts it — "sends an operator to
+             *     the wrong place".
+             *
+             *     Null on rows abandoned without ever reaching EIV, and on every row
+             *     written before P119-01, where the answer was discarded one line
+             *     before it was stored.
+             * @enum {string|null}
+             */
+            failureKind?: "transport" | "server" | "rate_limited" | "auth" | "business" | "validation" | "unknown" | null;
+            /** @description The next sweep would claim this row. */
+            dueNow: boolean;
         };
         /** @description What this platform sent, against what the authority holds. */
         EivReconciliation: {
@@ -3273,7 +3658,6 @@ export interface components {
             heroImageUrl?: string | null;
             cmePoints?: number | null;
             cmeCategory?: string | null;
-            fortbildungsnummer?: string | null;
             eivPunkteBasis?: boolean;
             eivPunkteLernerfolg?: boolean;
             /**
@@ -3293,10 +3677,12 @@ export interface components {
              *     (CLAUDE.md §7). The EIV harness is where a bad number is caught,
              *     against the real interface.
              *
-             *     Distinct from `fortbildungsnummer`, which is what the learner sees
-             *     printed on the Zertifizierung tab. Changing this after completions
-             *     exist does not retro-fix them — submissions snapshot the VNR they
-             *     were queued with.
+             *     This is also what the learner sees, printed on the Zertifizierung
+             *     tab under the label "Fortbildungsnummer" — MEDICE confirmed on
+             *     27.08.2026 that the two are one number (show-stoppers S31). There is
+             *     no second field to keep in step with it. Changing this after
+             *     completions exist does not retro-fix them — submissions snapshot the
+             *     VNR they were queued with.
              */
             vnr?: string | null;
             /** Format: date-time */
@@ -3473,6 +3859,23 @@ export interface components {
             issuedAt: string | null;
             /** Format: date-time */
             deliveredAt: string | null;
+            /**
+             * @description Why delivery was given up on, or null (P118-02).
+             *
+             *     `bounced` alone says only that the email did not arrive, and the
+             *     three causes want three different actions — a participant with no
+             *     address on file, an address the receiving server refused, and a
+             *     platform whose SMTP has never been configured. The column has
+             *     existed since P8-03 and was returned by nothing, so the console
+             *     offered **Erneut senden** for all three, where for the first and the
+             *     third it can only fail again.
+             *
+             *     Deliberately an enum and not a message. The far end's rejection text
+             *     can carry the address and the server; a fixed vocabulary cannot
+             *     (§9.5).
+             * @enum {string|null}
+             */
+            deliveryAbandonedReason: "no_recipient" | "permanent_rejection" | "attempts_exhausted" | null;
         };
         /**
          * @description What an operator may reach. `customerId` is null only for `super_admin`
@@ -4022,6 +4425,43 @@ export interface components {
              */
             usedByCount: number;
         };
+        MultipartTicket: {
+            /** @description Pass this back when signing and completing. */
+            key: string;
+            /** @description The store's identifier for this upload. Opaque and store-specific. */
+            uploadId: string;
+            partCount: number;
+            /**
+             * @description Every part except the last is exactly this many bytes. The last is
+             *     whatever remains. Slicing differently produces an object of the
+             *     right size and the wrong bytes.
+             */
+            partBytes: number;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        MultipartSignRequest: {
+            key: string;
+            uploadId: string;
+            /**
+             * @description One-based, as S3 numbers parts. At most 32 per call — each URL is a
+             *     capability, and they are minted as the upload needs them.
+             */
+            partNumbers: number[];
+        };
+        MultipartSigned: {
+            parts: {
+                partNumber: number;
+                /** Format: uri */
+                url: string;
+            }[];
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        MultipartCompletion: {
+            key: string;
+            uploadId: string;
+        };
         UploadCompletion: {
             /** @description The `key` from the ticket. */
             key: string;
@@ -4120,6 +4560,12 @@ export interface components {
         AuthoringQuiz: {
             /** Format: uuid */
             contentId: string;
+            /**
+             * @description The **live** exam, in order. Retired questions are not listed: they
+             *     are no longer part of the Lernerfolgskontrolle, and offering an
+             *     author a row they cannot reorder, score or remove would be a
+             *     control that can only produce an error.
+             */
             questions: {
                 /** Format: uuid */
                 id: string;
@@ -4127,9 +4573,11 @@ export interface components {
                 /** @enum {string} */
                 kind: "single" | "multi";
                 /**
-                 * @description Answers recorded against this question. Non-zero refuses
-                 *     deletion: an already-submitted attempt has to keep meaning
-                 *     what it meant when it was scored.
+                 * @description Answers recorded against this question. Non-zero means
+                 *     removing it **retires** it rather than deleting it: the row
+                 *     and its answers stay, so an already-submitted attempt keeps
+                 *     meaning what it meant when it was scored, and the question
+                 *     leaves the exam.
                  */
                 answerCount: number;
                 options: {
@@ -4139,12 +4587,29 @@ export interface components {
                     isCorrect: boolean;
                 }[];
             }[];
+            /**
+             * @description How many questions have been retired out of this exam. They are not
+             *     in `questions` — they are no longer the Lernerfolgskontrolle — but
+             *     an exam that went from eleven questions to two reads as data loss
+             *     unless a screen can say that nine were retired on purpose.
+             */
+            retiredCount: number;
         };
         /**
          * @description Diffed, not wiped and rewritten. `id` present means "the existing row,
          *     changed"; absent means "new"; anything the server holds and this
-         *     document does not name is a deletion — refused, with the count, if a
-         *     learner has answered it.
+         *     document does not name is a removal.
+         *
+         *     A question nobody has answered is **deleted**. A question a physician
+         *     has answered is **retired**: it leaves the exam and its row and answers
+         *     are kept, so it is never served or scored again and every attempt
+         *     already submitted still means what it meant. Before this, such a removal
+         *     was refused outright — one recorded answer made an exam permanently
+         *     uneditable.
+         *
+         *     Removing an **option** from an answered question is still refused. A
+         *     retired question loses a whole unit of meaning cleanly; a deleted option
+         *     leaves a recorded answer pointing at a label nobody can reconstruct.
          *
          *     Two refusals no form should be trusted with: a question with **no**
          *     correct option cannot be passed by anybody, and a `single` question with
@@ -6578,6 +7043,84 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
         };
     };
+    adminCheckEivConnection: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description Test this password instead of the stored one. Write-only:
+                     *     no response of this API ever contains it, masked or
+                     *     otherwise.
+                     */
+                    vnrPassword?: string;
+                };
+            };
+        };
+        responses: {
+            /**
+             * @description The check ran. **A 200 does not mean the connection works** — it
+             *     means the report below is trustworthy. Read `steps`.
+             */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EivConnectionReport"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The course has no VNR at all, so there is nothing to check. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
     adminDescribeEivEvent: {
         parameters: {
             query?: never;
@@ -6688,6 +7231,37 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             502: components["responses"]["BadGateway"];
+        };
+    };
+    adminListEivSubmissions: {
+        parameters: {
+            query?: {
+                /**
+                 * @description One state, or every state when omitted. `queued` and
+                 *     `failed_retryable` together are what the next sweep will attempt.
+                 */
+                status?: "queued" | "held" | "submitted" | "failed_retryable" | "failed_permanent" | "window_closed" | "withdrawn";
+                page?: number;
+                perPage?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The queue. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EivSubmissionPage"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     adminRequeueEivSubmission: {
@@ -8440,6 +9014,246 @@ export interface operations {
              *     expensive at the other end of the bucket bill.
              */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    adminBeginMultipartUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadRequest"];
+            };
+        };
+        responses: {
+            /** @description The upload has begun. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MultipartTicket"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many uploads started too quickly. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The media store could not start the upload. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    adminSignUploadParts: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MultipartSignRequest"];
+            };
+        };
+        responses: {
+            /** @description Signed part URLs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MultipartSigned"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /**
+             * @description No upload was issued for this key in this tenant. A key belonging to
+             *     another customer gets this same answer.
+             */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many signing requests too quickly. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    adminCompleteMultipartUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MultipartCompletion"];
+            };
+        };
+        responses: {
+            /** @description The object is assembled and is what was approved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadConfirmed"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /** @description No upload was issued for this key in this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many confirmations too quickly. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The media store could not assemble the upload. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

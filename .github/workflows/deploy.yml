@@ -155,9 +155,18 @@ jobs:
       api_domain: ${{ steps.derive.outputs.api_domain }}
       portal_domain: ${{ steps.derive.outputs.portal_domain }}
       admin_domain: ${{ steps.derive.outputs.admin_domain }}
+      # Whether the host will file real Punktemeldungen (P113-01). The smoke
+      # job refuses to run when this is "yes", and refuses just as loudly when
+      # it is absent — see scripts/run-smoke.mjs.
+      eiv_reports_live: ${{ steps.derive.outputs.eiv_reports_live }}
     env:
       REPO_DIR: ${{ vars.DEPLOY_REPO_DIR || '~/Repositories/DigitalSpitalCMEModule' }}
       SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      # Presence decides whether this run reaches the host over a private
+      # network or straight over the internet — see "Join the tailnet" below.
+      # A secrets expression cannot be used in a step-level `if`; an env var
+      # derived from one can.
+      TS_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
     steps:
       - name: Required secrets are set
         env:
@@ -175,6 +184,119 @@ jobs:
           done
           [ "$missing" = "0" ] || exit 1
 
+      # ---------------------------------------------------------------------
+      # Reaching the host at all (P116-01)
+      # ---------------------------------------------------------------------
+      #
+      # On 25.08 a firewall was added to the server and this workflow stopped
+      # at its first SSH: `connect to host … port 22: Connection timed out`.
+      # Nothing was deployed — the job fails before the checkout step, which is
+      # the behaviour we want, but it is also a deploy pipeline that no longer
+      # deploys.
+      #
+      # ## Why not allow-list GitHub's runner addresses
+      #
+      # They are published (`api.github.com/meta`, key `actions`) and it is the
+      # obvious move, and it is a trap on three counts. The list is thousands of
+      # CIDR blocks; it changes, so the allow-list rots and the deploy breaks
+      # weeks later for no visible reason; and it is shared Azure space, so
+      # "allow GitHub" means "allow anyone who can rent a VM in those ranges".
+      # It is a large maintenance burden that buys close to no isolation.
+      # Hetzner Cloud Firewalls also cap rules per firewall well below the
+      # number of ranges, so it may not even fit.
+      #
+      # ## What this does instead
+      #
+      # The runner joins a private network and reaches the host over that. Port
+      # 22 stays closed to the internet; the host answers only on its tailnet
+      # address. Everything below this step is unchanged — same key, same
+      # pinned host key, same commands — because the SSH design was never the
+      # problem. Only the path to the host was.
+      #
+      # **Conditional on purpose.** With no `TS_OAUTH_CLIENT_ID` secret the step
+      # is skipped and the workflow behaves exactly as it did before, so this
+      # can be committed before the tailnet exists and there is no flag day. Set
+      # the secrets and point `DEPLOY_HOST` at the tailnet name, and the next
+      # run takes the private path.
+      #
+      # `tag:ci` should be an ACL tag that may reach the host and nothing else —
+      # a deploy runner has no business anywhere but this one machine.
+      - name: Join the tailnet
+        if: env.TS_CLIENT_ID != ''
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      # ## Why the reachability check is separate from the SSH step
+      #
+      # Every way the private path can be half-configured produces the *same*
+      # symptom at the first `ssh`: a twenty-second timeout and
+      # "Connection timed out", which is what an internet firewall looks like
+      # too. That sent an hour into the wrong file once already, so the causes
+      # are separated here while the tailnet is still the subject.
+      #
+      # The four, and all of them are silent:
+      #
+      #   * the host is not tagged, so the ACL granting `tag:ci` does not
+      #     match it;
+      #   * the ACL has no rule from `tag:ci` to the host at all;
+      #   * `DEPLOY_HOST` still points at the public address, so the packets
+      #     leave the tailnet and meet the firewall;
+      #   * **the host's node key expired.** A machine registered under a user
+      #     account expires on Tailscale's default schedule and drops off the
+      #     tailnet on a day nobody chose. Tag the host, or disable key expiry
+      #     on it — a server that logs itself out is §9.9a's shape: nothing
+      #     failed, the file is right, and the thing stopped answering.
+      #
+      # `tailscale status` names which one. It is not a gate — the deploy fails
+      # at the next step regardless — it is the difference between an error
+      # about the network and an error about SSH.
+      #
+      # ## Why not `tailscale ping`
+      #
+      # Because it asks a different question, and the first run of this step
+      # proved it by failing on a healthy tailnet. `tailscale ping` defaults to
+      # `--until-direct`, so it keeps going until it gets a **direct** pong and
+      # exits non-zero if it only ever gets a relayed one. A peer showing
+      # `active; relay "nue"` is perfectly reachable — DERP relaying is the
+      # designed fallback when inbound UDP 41641 is closed, which it is on a
+      # host behind a cloud firewall.
+      #
+      # So the check was red on a working system, which is §9.1's other
+      # direction and worse than useless: it blocks a correct deploy and it
+      # trains whoever sees it to ignore this step.
+      #
+      # What actually has to be true is that **TCP 22 opens over the tailnet**,
+      # so that is what is asserted — the same thing the next step needs, one
+      # layer down from SSH's own error message. `/dev/tcp` rather than `nc` to
+      # depend on nothing the runner image might drop.
+      - name: The host is reachable over the tailnet
+        if: env.TS_CLIENT_ID != ''
+        run: |
+          host='${{ secrets.DEPLOY_HOST }}'
+          if timeout 10 bash -c "exec 3<>/dev/tcp/${host}/22" 2>/dev/null; then
+            echo "tailnet: ${host}:22 accepts connections"
+            tailscale status || true
+            exit 0
+          fi
+
+          echo "::error::the runner joined the tailnet but cannot reach ${host}."
+          echo "Not an SSH problem — the packets are not arriving. One of:"
+          echo "  * the host is not tagged, so the tag:ci ACL rule does not match it"
+          echo "  * there is no ACL rule from tag:ci to this host"
+          echo "  * DEPLOY_HOST is still the public address, so this left the tailnet"
+          echo "  * the host's node key expired and it is no longer on the tailnet"
+          echo "  * sshd is not listening on the tailnet interface"
+          echo
+          echo "A peer listed below as 'active; relay \"...\"' IS reachable —"
+          echo "relaying is the fallback when inbound UDP 41641 is closed, not a fault."
+          echo
+          echo "What this runner can see:"
+          tailscale status || true
+          exit 1
+
       # No checkout: nothing from this runner reaches the server. The host has
       # the repository and fetches the commit itself.
       - name: Configure SSH
@@ -188,6 +310,38 @@ jobs:
           # running whatever whoever answers on port 22 would like it to run.
           printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+
+          # ## Why this is checked here and not left to ssh
+          #
+          # A `known_hosts` entry is keyed by the **name you connect to**, not
+          # by the key. The host's key does not change when the route to it
+          # does — but moving `DEPLOY_HOST` from the public address to the
+          # tailnet name means nothing in the file matches any more, and ssh
+          # says only:
+          #
+          #     Host key verification failed.
+          #
+          # Which is the same sentence it prints when a key has genuinely
+          # changed — the one case where the right response is to stop and
+          # investigate rather than to update the pin. Two very different
+          # situations, one message, no mention of the name that was looked up
+          # (§9.4). This says which it is while the fix is still cheap.
+          if ! ssh-keygen -F "${{ secrets.DEPLOY_HOST }}" -f ~/.ssh/known_hosts >/dev/null; then
+            echo "::error::DEPLOY_KNOWN_HOSTS has no entry for the host named in DEPLOY_HOST."
+            echo "Not a changed key — a missing one. known_hosts is looked up by name,"
+            echo "so a DEPLOY_HOST that moved (a public address to a tailnet name, say)"
+            echo "no longer matches the pin, however unchanged the server's key is."
+            echo
+            echo "On the host, print the lines for the new name:"
+            echo
+            echo "  for f in /etc/ssh/ssh_host_*_key.pub; do"
+            echo "    printf '%s %s\n' \"\$(hostname -f)\" \"\$(cut -d\" \" -f1,2 \"\$f\")\""
+            echo "  done"
+            echo
+            echo "and APPEND them to DEPLOY_KNOWN_HOSTS, keeping the existing lines so"
+            echo "the old address still verifies if you ever deploy over it again."
+            exit 1
+          fi
 
       # The host's own preflight, over SSH, before anything is checked out or
       # built. `--check` runs the whole thing — the generated credentials, the
@@ -228,8 +382,39 @@ jobs:
             echo "::error::the host reported no portal or admin domain"; exit 1; }
           echo "Portal domain: ${portal_domain}"
           echo "Admin domain: ${admin_domain}"
+
+          # And the one thing this workflow never asked the host: does it file
+          # Punktemeldungen for real? (P113-01)
+          #
+          # The post-deploy journey publishes an accredited Fortbildung and
+          # completes it, which queues a submission. The guard against that
+          # reaching the Ärztekammer used to read `EIV_ALLOW_LIVE` in the
+          # runner — a variable only ever set in the host's config.env. It was
+          # therefore always empty, always concluded "not live", and could not
+          # fire (CLAUDE.md §9.1).
+          #
+          # Asked the same way as the hostnames above, and for the same reason:
+          # the host's own `ds_eiv_worker_will_file_live`, over the host's own
+          # EIV_BASE_URL and EIV_WORKER_ENABLED, so the smoke cannot disagree
+          # with the server about what the server does.
+          eiv_reports_live=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd ${REPO_DIR}/infra/deploy && . ./eiv-endpoint.sh && \
+             set -a && . \$HOME/ds-education/config.env && set +a && \
+             if ds_eiv_worker_will_file_live \"\${EIV_BASE_URL:-}\" \"\${EIV_WORKER_ENABLED:-}\"; then
+               printf 'yes'
+             else
+               printf 'no'
+             fi")
+
+          case "${eiv_reports_live}" in
+            yes|no) ;;
+            *) echo "::error::the host gave no usable answer for EIV reporting posture"; exit 1 ;;
+          esac
+          echo "Files Punktemeldungen live: ${eiv_reports_live}"
           echo "portal_domain=${portal_domain}" >> "$GITHUB_OUTPUT"
           echo "admin_domain=${admin_domain}" >> "$GITHUB_OUTPUT"
+          echo "eiv_reports_live=${eiv_reports_live}" >> "$GITHUB_OUTPUT"
 
       # Detached at an exact commit, not a branch tip. A `git pull` would
       # deploy whatever `main` had become in the twenty minutes since CI went
@@ -362,6 +547,10 @@ jobs:
           # here and unset there means both use the seed's own default, which is
           # self-describing rather than realistic on purpose (P33-02).
           SEED_TEST_STAFF_PASSWORD: ${{ secrets.SEED_TEST_STAFF_PASSWORD || 'ds-test-operator-2026' }}
+          # From the host, not from this runner (P113-01). `run-smoke.mjs`
+          # refuses on "yes", and refuses on anything else — including unset,
+          # which is what the variable this replaced always was.
+          EIV_REPORTS_LIVE: ${{ needs.deploy.outputs.eiv_reports_live }}
         run: pnpm test:smoke
 
       - name: Keep the trace when it fails

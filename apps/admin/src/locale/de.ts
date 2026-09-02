@@ -16,6 +16,21 @@
  */
 const LABEL_REQUIRED = "Verpflichtend";
 
+/**
+ * The upload ceiling, from the constant the API enforces (P133-01).
+ *
+ * It used to be the literal "2 GB", written out in two hints here and two in
+ * `en.ts`. P129-01 raised the ceiling to 5 GB and all four went on saying 2 —
+ * so the console told an author their 3 GB lecture would be refused by a server
+ * that would have taken it, and the client found it by reading the screen.
+ *
+ * Interpolated rather than made a function of the table, deliberately: `overlay`
+ * translates strings and leaves functions in German, so a hint that became a
+ * function would silently stop being English. This stays a string, derived once.
+ */
+const VIDEO_LIMIT = uploadLimitLabel("video");
+
+import { uploadLimitLabel } from "@ds/domain";
 import { currentLanguage, overlay } from "./language.js";
 import { en } from "./en.js";
 
@@ -91,7 +106,7 @@ export const german = {
   learners: {
     title: "Teilnehmende",
     intro:
-      "Fortschritt aller Teilnehmenden. Die EFN wird aus Datenschutzgründen nur verkürzt angezeigt.",
+      "Der Fortschritt in den Fortbildungen — eine Zeile je Teilnahme, nicht je Person: wer zwei Fortbildungen belegt, steht zweimal hier. Die Zugänge selbst verwalten Sie unter „Zugänge“. Die EFN wird aus Datenschutzgründen nur verkürzt angezeigt.",
     empty: "Zu dieser Fortbildung liegen noch keine Teilnahmen vor.",
     emptyHint:
       "Eine Teilnahme entsteht, sobald sich eine Person an einer Fortbildung anmeldet. Bis dahin ist hier nichts zu sehen.",
@@ -135,8 +150,18 @@ export const german = {
 
   certificates: {
     title: "Bescheinigungen",
+    /*
+     * What the screen *is*, before what its three buttons do (P136-01).
+     *
+     * The old text opened on the difference between "Neu erstellen" and
+     * "Erneut senden" — useful, and an answer to a question somebody only has
+     * once they know what they are looking at. The second sentence is the other
+     * pair that reads alike: a Bescheinigung is the physician's document, a
+     * Punktemeldung is the report to the Ärztekammer, and they are separate
+     * screens because they can succeed and fail independently.
+     */
     intro:
-      "Neu erstellen rendert das Dokument neu und meldet nichts an die Ärztekammer. Erneut senden verschickt dasselbe Dokument. Widerrufen zieht das Dokument zurück, die Teilnahme bleibt bestehen.",
+      "Die ausgestellten Teilnahmebescheinigungen — das Dokument für die teilnehmende Person. Die Meldung der Punkte an die Ärztekammer ist etwas anderes und steht unter „Punktemeldungen“. Neu erstellen rendert das Dokument neu und meldet nichts an die Ärztekammer. Erneut senden verschickt dasselbe Dokument. Widerrufen zieht das Dokument zurück, die Teilnahme bleibt bestehen.",
     empty: "Es wurden noch keine Bescheinigungen erstellt.",
     emptyHint:
       "Eine Bescheinigung entsteht automatisch, sobald eine Person eine Fortbildung abgeschlossen hat. Sie lässt sich hier nicht von Hand anlegen.",
@@ -156,6 +181,22 @@ export const german = {
       delivered: "versendet",
       bounced: "Zustellung fehlgeschlagen",
       revoked: "widerrufen",
+    },
+    /*
+     * Why the delivery was given up on (P118-02).
+     *
+     * "Zustellung fehlgeschlagen" is the fact; these are the sentences that
+     * say what to do about it. Each names the next step, because two of the
+     * three are not fixable by pressing Erneut senden and the button that
+     * looks like the answer is disabled for exactly those two.
+     */
+    abandoned: {
+      no_recipient:
+        "Für diese Person ist keine E-Mail-Adresse hinterlegt. Die Bescheinigung steht zum Download bereit und kann versendet werden, sobald eine Adresse vorliegt.",
+      permanent_rejection:
+        "Der empfangende Server hat die Adresse dauerhaft abgelehnt. Bitte lassen Sie die Adresse korrigieren; ein erneuter Versand an dieselbe Adresse schlägt wieder fehl.",
+      attempts_exhausted:
+        "Der Versand ist mehrfach vorübergehend fehlgeschlagen und wurde aufgegeben. Prüfen Sie die SMTP-Einstellungen der Plattform und versenden Sie danach erneut.",
     },
     loadFailed: "Die Bescheinigungen konnten nicht geladen werden.",
     actionFailed: "Die Aktion konnte nicht ausgeführt werden.",
@@ -300,6 +341,9 @@ export const german = {
      */
     platformMailTestFailed: (reason: string): string =>
       `Der Versand ist fehlgeschlagen. Meldung des Servers: ${reason}`,
+    /* A 4xx: the server answered and said no. Never "check your connection". */
+    platformMailTestRefused:
+      "Die Anfrage wurde abgelehnt. Bitte laden Sie die Seite neu und melden Sie sich gegebenenfalls erneut an — nur Super-Administratoren dürfen den Plattform-Absender ändern und testen.",
     platformMailTestUnreachable:
       "Die Anfrage konnte nicht gestellt werden. Bitte prüfen Sie Ihre Verbindung und ob Sie noch angemeldet sind.",
 
@@ -405,6 +449,16 @@ export const german = {
        that looks like a customer with no content. */
     none: "Bitte wählen Sie oben einen Kunden aus, um diesen Bereich zu sehen.",
     noneYet: "Es ist noch kein Kunde angelegt. Legen Sie unter „Kunden“ den ersten an.",
+    /* The blocking prompt (P127-01). `none` and `noneYet` above state the
+       problem; these ask the question and name the next step. */
+    promptTitle: "Bitte wählen Sie einen Kunden",
+    promptBody:
+      "Dieser Bereich gehört zu einem Kunden. Wählen Sie aus, mit welchem Kunden Sie arbeiten möchten.",
+    promptEmptyBody:
+      "Es ist noch kein Kunde angelegt. Legen Sie zuerst einen Kunden an — danach stehen alle Bereiche zur Verfügung.",
+    promptCreate: "Kunden anlegen",
+    promptNoRights:
+      "Ihr Konto darf keine Kunden anlegen. Bitte wenden Sie sich an eine Administratorin oder einen Administrator.",
   },
 
   /**
@@ -506,7 +560,21 @@ export const german = {
 
     embedOrigins: "Erlaubte Einbettungs-Domains",
     embedOriginsHint:
-      "Die Websites des Kunden, auf denen die Fortbildung eingebettet werden darf — eine pro Zeile, z. B. https://www.beispiel.de. Ohne Pfad und ohne Schrägstrich am Ende.",
+      "Die Websites des Kunden, auf denen die Fortbildung eingebettet werden darf — eine pro Zeile, ohne Pfad und ohne Schrägstrich am Ende. " +
+      "Genau eine Adresse: https://www.beispiel.de · alle Subdomains: https://*.beispiel.de (die Domain selbst ist damit nicht gemeint, dafür eine eigene Zeile) · " +
+      "jeder Port, für die lokale Entwicklung: http://localhost:*. " +
+      "Ein Stern allein oder https://* ist nicht möglich: die Fortbildung würde damit jeder beliebigen Website im Namen der angemeldeten Person antworten.",
+    /**
+     * Which lines the save would be refused for (P94-04).
+     *
+     * Names the values, because the operator typed them seconds ago and an
+     * error that will not repeat the input cannot be acted on. §9.5's rule is
+     * about values that identify a person; a hostname is not one.
+     */
+    embedOriginsRejected: (entries: readonly string[]): string =>
+      entries.length === 1
+        ? `Diese Zeile ist keine gültige Adresse: ${entries[0] ?? ""}`
+        : `Diese Zeilen sind keine gültigen Adressen: ${entries.join(", ")}`,
     identityProvider: "Anmeldeverfahren",
     identityProviderHint:
       "Wie sich die Teilnehmenden dieses Projekts anmelden. Lässt sich später ändern, betrifft dann aber alle bestehenden Zugänge.",
@@ -581,6 +649,54 @@ export const german = {
     create: "Fortbildung anlegen",
     noProjects:
       "Bevor eine Fortbildung angelegt werden kann, muss es mindestens ein Projekt geben.",
+
+    /* The wizard (P132-03). */
+    stepsLabel: "Schritte",
+    steps: {
+      basics: "Grunddaten",
+      presentation: "Darstellung",
+      review: "Prüfen & anlegen",
+    },
+    stepHints: {
+      basics:
+        "Zu welchem Projekt die Fortbildung gehört, wie sie heißt und unter welchem Kürzel sie erreichbar ist. Das Kürzel lässt sich später nicht mehr ändern.",
+      presentation:
+        "Was Teilnehmende im Katalog sehen, bevor sie die Fortbildung öffnen — mehr als Format und Beschreibung ist das dort nicht.",
+      review:
+        "Was jetzt angelegt wird, und was danach noch fehlt, bevor Teilnehmende die Fortbildung sehen können.",
+    },
+    stepOf: (at: number, total: number): string => `Schritt ${at} von ${total}`,
+    back: "Zurück",
+    next: "Weiter",
+    /* Names the fields, never their values (CLAUDE.md §9.5). */
+    missing: (fields: readonly string[]): string =>
+      `Es fehlt noch: ${fields.join(", ")}.`,
+    notSaved: "Nichts ist gespeichert, bis Sie „Fortbildung anlegen“ drücken.",
+    descriptionHint:
+      "Erscheint im Katalog unter dem Titel. Zwei bis drei Sätze reichen — die ausführliche Beschreibung der Detailseite wird später bearbeitet.",
+
+    preview: "Vorschau",
+    previewHint:
+      "Eine Annäherung. Das Portal zeichnet die Karte mit dem Erscheinungsbild des Kunden.",
+    previewNoTitle: "Noch ohne Titel",
+    previewNoDescription: "Ohne Beschreibung erscheint im Katalog nur der Titel.",
+    draftBadge: "Entwurf",
+
+    nextTitle: "Danach, in dieser Reihenfolge:",
+    nextSteps: [
+      {
+        title: "Inhalte",
+        body: "Module, Kapitel, Videos und die Lernerfolgskontrolle anlegen.",
+      },
+      {
+        title: "Zertifizierung",
+        body: "VNR, Punkte, Kategorie, Veranstaltender und wissenschaftliche Leitung. Ohne diese Angaben kann keine Teilnahmebescheinigung ausgestellt werden.",
+      },
+      {
+        title: "Veröffentlichen",
+        body: "Bis dahin ist die Fortbildung ein Entwurf: sie erscheint nicht im Katalog und kann nicht geöffnet werden.",
+      },
+    ] as const,
   },
 
   /**
@@ -603,8 +719,7 @@ export const german = {
       "Die Verbindung zum Dateispeicher ist abgebrochen. Die Datei wurde nicht vollständig übertragen — bitte laden Sie sie erneut hoch.",
     noCourseYet: "Bitte speichern Sie die Fortbildung zuerst.",
     videoUpload: "Video hochladen",
-    videoUploadHint:
-      "MP4 oder WebM, bis 2 GB. Die Datei wird direkt in den Dateispeicher übertragen und ist anschließend nur für Teilnehmende dieser Fortbildung abrufbar.",
+    videoUploadHint: `MP4 oder WebM, bis ${VIDEO_LIMIT}. Die Datei wird direkt in den Dateispeicher übertragen und ist anschließend nur für Teilnehmende dieser Fortbildung abrufbar.`,
 
     // Seeing the file rather than its name (P74-03).
     previewLoading: "Vorschau wird geladen …",
@@ -755,6 +870,10 @@ export const german = {
     captionsMissing:
       "Für dieses Video sind keine Untertitel hinterlegt. Bei Videos mit Sprache ist das ein Barrierefreiheitsmangel. Reine Folienaufzeichnungen ohne Ton benötigen keine.",
     body: "Text",
+    /** The Zusammenfassung under the player (P115-02). */
+    videoBody: "Zusammenfassung",
+    videoBodyHint:
+      "Erscheint im Player unter dem Video. Ohne Eintrag steht dort „Für diesen Abschnitt ist keine Zusammenfassung hinterlegt.“ — Absätze durch eine Leerzeile trennen.",
     /** On a download: the paragraph the Mediathek card shows (page-05). */
     materialBody: "Beschreibung (erscheint auf der Materialkarte)",
     fileUrl: "Datei-URL",
@@ -764,6 +883,24 @@ export const german = {
       count === 1 ? "1 Teilnahme erfasst" : `${count} Teilnahmen erfasst`,
     lockedByRecords:
       "Kann nicht gelöscht werden: es sind bereits Teilnahmen erfasst. Diese Daten sind der Nachweis für bereits vergebene Punkte.",
+    /**
+     * The two words on the row; `lockedByRecords` stays as its title and
+     * accessible name (P100-01).
+     *
+     * The long sentence is the *rule* and is identical on every row — it is
+     * stated once, in `lockedRule` at the top of the screen. What a row needs
+     * is a marker that something is locked and, on hover or to a screen
+     * reader, why.
+     *
+     * "In Verwendung" rather than "Gesperrt" (P101-01). The client read the
+     * first wording as a state somebody had *imposed* — something to unlock —
+     * when the fact is that the row is referenced by data elsewhere. A marker
+     * naming the cause sends the reader to the right question; one naming only
+     * the effect sends them looking for the switch that turned it on.
+     */
+    locked: "In Verwendung",
+    lockedRule:
+      "Module, Kapitel und Inhalte mit erfassten Teilnahmen lassen sich nicht mehr löschen — diese Daten sind der Nachweis für bereits vergebene Punkte.",
     questionCount: (count: number): string =>
       count === 1 ? "1 Frage" : `${count} Fragen`,
     noQuestions: "Keine Fragen — diese Lernerfolgskontrolle kann niemand bestehen.",
@@ -780,6 +917,8 @@ export const german = {
       "Erscheinen im Reiter „Referenten“ der Lernoberfläche. Die Liste wird vollständig ersetzt.",
     empty: "Es sind keine Referenten hinterlegt.",
     add: "Referent hinzufügen",
+    /** The row's title before a name has been typed (P100-02). */
+    unnamed: "Neuer Referent",
     roleLabel: "Rolle",
     roleLabelHint: "Zum Beispiel „Wissenschaftliche Leitung“ oder „Referent“.",
     name: "Name",
@@ -793,6 +932,10 @@ export const german = {
     intro:
       "Die Reihenfolge der Fragen ist die Reihenfolge in der Prüfung. Bewertet wird auf exakte Übereinstimmung: bei „eine richtige Antwort“ muss genau die richtige Option gewählt sein, bei „mehrere richtige Antworten“ genau die Menge der richtigen.",
     empty: "Noch keine Fragen.",
+    railAdd: "Frage am Ende anfügen",
+    railHeading: (count: number): string =>
+      count === 1 ? "1 Frage" : `${String(count)} Fragen`,
+    railProblem: "Diese Frage ist unvollständig",
     addQuestion: "Frage hinzufügen",
     /*
      * The way out, at the bottom where the work ends (P74-06).
@@ -816,8 +959,26 @@ export const german = {
     isCorrect: "richtig",
     answered: (count: number): string =>
       count === 1 ? "1 Antwort erfasst" : `${count} Antworten erfasst`,
-    lockedByAnswers:
-      "Kann nicht gelöscht werden: diese Frage wurde bereits beantwortet. Ein abgegebener Versuch muss weiter das bedeuten, was er bei der Bewertung bedeutet hat.",
+    /** The row's title before a prompt has been typed (P100-02). */
+    unnamed: "Neue Frage",
+    /**
+     * Not a refusal any more (P114-01).
+     *
+     * This used to read "Kann nicht gelöscht werden" and it was the whole
+     * defect: one recorded answer froze the exam for ever. The row still cannot
+     * be deleted — it is the evidence behind a CME point — but the *question*
+     * can leave the exam, which is what the author was asking for. So the
+     * sentence now says what the button will do, in the order it happens.
+     */
+    retireOnRemove:
+      "Diese Frage wurde bereits beantwortet. Sie wird deshalb nicht gelöscht, sondern aus der Lernerfolgskontrolle entfernt: künftige Teilnehmende sehen sie nicht mehr, bereits abgegebene Versuche behalten ihr Ergebnis.",
+    confirmRetire: "Aus Prüfung entfernen",
+    /** What the exam holds that is no longer in it. */
+    retiredNotice: (count: number): string =>
+      count === 1
+        ? "1 Frage wurde aus dieser Lernerfolgskontrolle entfernt. Sie bleibt gespeichert, weil bereits abgegebene Versuche sie als Nachweis brauchen."
+        : `${count} Fragen wurden aus dieser Lernerfolgskontrolle entfernt. Sie bleiben gespeichert, weil bereits abgegebene Versuche sie als Nachweis brauchen.`,
+    retiredTitle: "Entfernte Fragen",
 
     noCorrect: "Mindestens eine Antwortoption muss als richtig markiert sein.",
     tooManyCorrect:
@@ -857,8 +1018,40 @@ export const german = {
   /** The Mediathek picker (P81-03). */
   media: {
     title: "Mediathek",
-    open: "Aus Mediathek wählen",
     close: "Schließen",
+
+    /* The one button, and the dialog behind it (P90-01). */
+    choose: "Medien auswählen",
+    dialogTitle: "Medien auswählen",
+    tabsLabel: "Woher die Datei kommt",
+    tabs: {
+      library: "Mediathek",
+      upload: "Datei hochladen",
+      url: "Von Adresse (URL)",
+    },
+    dropHere: "Datei hierher ziehen oder auswählen",
+    /*
+     * What this field accepts, per purpose (P90-01).
+     *
+     * One dialog serves four fields, and the first version showed the video
+     * hint in all of them — so an author uploading a PDF was told it could be
+     * several gigabytes of MP4. A hint that describes a different field is worse than
+     * none: it is a confident wrong answer at the moment somebody is deciding
+     * whether their file will be accepted.
+     */
+    uploadHints: {
+      video: `MP4 oder WebM, bis ${VIDEO_LIMIT}. Die Datei wird direkt in den Dateispeicher übertragen und ist anschließend nur für Teilnehmende dieser Fortbildung abrufbar.`,
+      poster: "JPEG, PNG oder WebP. Wird als Vorschaubild der Fortbildung angezeigt.",
+      captions:
+        "WebVTT (.vtt) oder SRT (.srt). SRT-Dateien werden beim Hochladen automatisch in WebVTT umgewandelt — im Dateispeicher liegt immer WebVTT.",
+      material:
+        "PDF-Dokument. Wird Teilnehmenden in der Mediathek der Fortbildung angeboten.",
+    },
+    urlLabel: "Adresse der Datei",
+    urlHint:
+      "Für Dateien, die nicht hier liegen: ein Video auf Ihrem eigenen Server oder ein adaptiver Stream (HLS, .m3u8). Die Adresse muss öffentlich abrufbar sein.",
+    urlSubmit: "Adresse übernehmen",
+
     intro:
       "Alle Dateien, die für diesen Kunden hochgeladen wurden. Wählen Sie eine aus, statt dieselbe Datei erneut hochzuladen.",
     empty:
@@ -870,13 +1063,34 @@ export const german = {
       "Der Titel benennt die Datei für Sie in dieser Liste. Der Alternativtext beschreibt das Bild für Menschen, die es nicht sehen können — er wird von Screenreadern vorgelesen und ist für die Barrierefreiheit (WCAG 1.1.1) erforderlich. Bleibt er leer, gilt er als nicht gesetzt.",
     use: "Diese Datei verwenden",
     forget: "Aus Mediathek entfernen",
+    upload: {
+      title: "Dateien hinzufügen",
+      course: "Fortbildung",
+      chooseCourse: "Fortbildung auswählen …",
+      courseHint:
+        "Dateien werden unter einer Fortbildung gespeichert. In der Mediathek stehen sie danach für alle Fortbildungen dieses Kunden zur Verfügung.",
+      drop: "Dateien hierher ziehen",
+      choose: "Dateien auswählen",
+      busy: "Wird hochgeladen …",
+      needCourse: "Bitte wählen Sie zuerst eine Fortbildung aus.",
+      done: "Fertig",
+      failed: "Fehlgeschlagen",
+      someFailed:
+        "Nicht alle Dateien konnten hochgeladen werden. Die erfolgreichen sind in der Liste unten.",
+      refused: {
+        unsupported_type:
+          "Dieses Dateiformat wird nicht akzeptiert. Erlaubt sind MP4, WebM, MP3, M4A, JPG, PNG, WebP, PDF und VTT.",
+        too_large: "Diese Datei ist zu groß.",
+        empty: "Diese Datei ist leer.",
+      },
+    },
     forgetHint:
       "Entfernen löscht nur den Eintrag aus dieser Liste — die Datei selbst bleibt im Dateispeicher erhalten. Solange eine Fortbildung die Datei noch verwendet, wird das Entfernen abgelehnt.",
 
     /* The Mediathek screen (P88-01). */
     nav: "Mediathek",
     screenIntro:
-      "Alle Dateien dieses Kunden: Videos, Bilder, PDF-Dokumente und Untertitel. Hier benennen Sie Dateien, hinterlegen Alternativtexte und entfernen, was nicht mehr gebraucht wird. Zum Verwenden einer Datei öffnen Sie die Fortbildung und wählen sie beim Hochladen aus.",
+      "Alle Dateien dieses Kunden: Videos, Bilder, PDF-Dokumente und Untertitel. Hier benennen Sie Dateien, hinterlegen Alternativtexte und entfernen, was nicht mehr gebraucht wird. Zum Verwenden einer Datei öffnen Sie die Fortbildung und klicken dort auf „Medien auswählen“.",
     filterLabel: "Nach Dateityp filtern",
     kinds: {
       all: "Alle",
@@ -929,8 +1143,18 @@ export const german = {
 
   branding: {
     title: "Schriftart",
+    /*
+     * Names what this screen is **not** (P136-01).
+     *
+     * The menu says "Erscheinungsbild" and the screen holds one font field.
+     * Colours, logo and the privacy-policy link are a *project's* branding and
+     * live under Organisation, because they differ per surface and the typeface
+     * does not. An operator who clicks "Erscheinungsbild" looking for the brand
+     * colour finds a font upload and no statement that they are in the wrong
+     * place — which is §9.4 with the reader standing right in front of it.
+     */
     intro:
-      "Die hochgeladene Schriftart wird in der Lernoberfläche verwendet. Ohne eigene Schriftart wird die Standardschrift angezeigt.",
+      "Die Schriftart dieses Kunden. Sie wird in der Lernoberfläche verwendet; ohne eigene Schriftart wird die Standardschrift angezeigt. Farben, Logo und Datenschutz-Link gehören zum jeweiligen Projekt und werden unter „Organisation“ am Projekt eingestellt.",
     privacy:
       "Die Datei wird auf unseren eigenen Servern gespeichert und von dort ausgeliefert. Es werden keine Schriften von Drittanbietern geladen, sodass keine IP-Adressen Ihrer Nutzerinnen und Nutzer an Dritte übermittelt werden.",
     /**
@@ -974,8 +1198,252 @@ export const german = {
       "Die Verwaltung ist nicht korrekt konfiguriert. Bitte prüfen Sie die Umgebungsvariablen.",
   },
 
+  /**
+   * The EIV connection check (P103-01).
+   *
+   * Two registers on purpose, and the order is the point. The headline is for
+   * whoever has to decide something — a PM reading "Die Verbindung zum EIV
+   * funktioniert" needs nothing else. The `advice` strings are for whoever has
+   * to fix it, and each one names an action rather than a diagnosis: a person
+   * told `rate_limited` learns nothing they can do.
+   */
+  /** The Punktemeldung queue (P110-01). */
+  eivQueue: {
+    /*
+     * Whether anything will actually be filed (P121-01).
+     *
+     * `willFile` is the API's own answer, not two flags this screen combines —
+     * a console that ANDed them itself would be a second opinion about what the
+     * worker does, and disagreeing here means somebody believes nothing is
+     * being reported while it is.
+     *
+     * Both readings are shown. A banner that appeared only when reporting was
+     * off would leave its absence meaning both "reporting is live" and "this
+     * build is too old to say" — the two states it most matters to tell apart.
+     */
+    reporting: {
+      liveTitle: "Meldungen werden übermittelt",
+      live: "Abgeschlossene Teilnahmen werden an die Ärztekammer gemeldet. Eine Testteilnahme auf einer akkreditierten Fortbildung führt zu einer echten Punktemeldung.",
+      offTitle: "Meldungen werden nicht übermittelt",
+      off: "Punktemeldungen werden erfasst und in die Warteschlange gestellt, aber nichts wird an eine Ärztekammer gesendet.",
+      endpoint: {
+        mock: "Ziel: Mock-Endpunkt.",
+        test: "Ziel: EIV-Testsystem.",
+        live: "Ziel: EIV-Produktivsystem.",
+        unknown:
+          "Ziel: nicht erkannt — der Worker sendet an einen unbekannten Endpunkt nichts.",
+      },
+    },
+    /*
+     * What EIV said, as a sentence naming who can act (P119-03).
+     *
+     * The API's vocabulary is `validation`, `business`, `auth`. An operator
+     * reading `validation` in a table has been told the truth in a language
+     * that is not theirs — and worse, for the one value where the answer is
+     * "this is not yours to fix, the physician has been asked", they would go
+     * looking for a way to fix it and find none (§9.2, §9.4).
+     */
+    failureKind: {
+      validation:
+        "Die Ärztekammer hat die EFN der teilnehmenden Person abgelehnt. Das kann nur sie selbst korrigieren — sie wurde in ihrem Kursabschluss darauf hingewiesen. Nach der Korrektur wird die Meldung automatisch erneut eingereicht.",
+      business:
+        "Die Ärztekammer hat die Veranstaltung abgelehnt — meist eine unbekannte oder gesperrte VNR, oder ein Datum außerhalb des Anerkennungszeitraums. Bitte prüfen Sie die VNR der Fortbildung.",
+      auth: "Die Zugangsdaten wurden abgelehnt oder fehlen. Bitte hinterlegen Sie das VNR-Passwort in den Einstellungen der Fortbildung.",
+      transport:
+        "Die Ärztekammer war nicht erreichbar. Wird automatisch erneut versucht.",
+      server:
+        "Die Ärztekammer hat einen Serverfehler gemeldet. Wird automatisch erneut versucht.",
+      rate_limited:
+        "Die Ärztekammer hat zu viele Anfragen gemeldet. Wird automatisch erneut versucht.",
+      unknown:
+        "Die Antwort der Ärztekammer war nicht eindeutig. Bitte prüfen Sie den technischen Fehler unten.",
+    },
+    nav: "Punktemeldungen",
+    title: "Punktemeldungen",
+    screenIntro:
+      "Die gesetzlich vorgeschriebene Meldung der CME-Punkte an die Ärztekammer, je abgeschlossener Teilnahme eine. Die Liste ist nach Frist sortiert — oben steht die Meldung, deren gesetzliche Acht-Tage-Frist am nächsten ist, nicht die neueste.",
+
+    loadFailed: "Die Punktemeldungen konnten nicht geladen werden.",
+    actionFailed: "Die Aktion ist fehlgeschlagen.",
+
+    filter: "Nach Status filtern",
+    statusAll: "Alle",
+    status: {
+      queued: "In der Warteschlange",
+      held: "Zurückgestellt",
+      submitted: "Gemeldet",
+      failed_retryable: "Erneuter Versuch geplant",
+      failed_permanent: "Endgültig fehlgeschlagen",
+      window_closed: "Frist abgelaufen",
+      withdrawn: "Widerrufen",
+    },
+
+    participant: "EFN",
+    course: "Fortbildung",
+    status_: "Status",
+    due: "Meldefrist",
+    attempts: "Versuche",
+    vnr: "VNR",
+    lastError: "Letzter Fehler",
+    dueNow: "Wird beim nächsten Durchlauf gemeldet",
+
+    dueTitle: "Fällige Meldungen",
+    dueBody: (count: number): string =>
+      count === 1
+        ? "Eine Punktemeldung wird beim nächsten Durchlauf des Workers an die Ärztekammer übermittelt."
+        : `${String(count)} Punktemeldungen werden beim nächsten Durchlauf des Workers an die Ärztekammer übermittelt.`,
+
+    empty: "Keine Punktemeldungen",
+    emptyHint:
+      "Sobald eine Person eine Fortbildung abschließt und ihre EFN angibt, erscheint die Meldung hier.",
+
+    requeue: "Erneut einreihen",
+    withdraw: "Widerrufen",
+    withdrawConfirm: "Wirklich widerrufen?",
+    withdrawCancel: "Abbrechen",
+    withdrawFor: (efn: string): string => `Punktemeldung für ${efn} widerrufen`,
+    withdrawReason: "Widerruf durch die Verwaltung",
+
+    previous: "Zurück",
+    next: "Weiter",
+    pageOf: (page: number, last: number): string =>
+      `Seite ${String(page)} von ${String(last)}`,
+  },
+
+  eivCheck: {
+    title: "Verbindung zum EIV prüfen",
+    intro:
+      "Prüft mit der VNR und dem Passwort dieser Fortbildung, ob die Meldung an die Ärztekammer funktioniert — bevor die erste Teilnahme gemeldet werden muss.",
+    /*
+     * Stated, not implied.
+     *
+     * An operator who is unsure whether a button reports somebody will not
+     * press it, and one who assumes it does not — wrongly — is the person this
+     * platform must never have. The endpoint behind this genuinely cannot
+     * reach `push_teilnahme`; saying so is reporting a fact, not reassuring.
+     */
+    readOnly:
+      "Dabei wird nichts gemeldet und nichts verändert. Es werden ausschließlich Daten gelesen.",
+    needsVnr:
+      "Für diese Fortbildung ist noch keine VNR hinterlegt. Tragen Sie die VNR und das VNR-Passwort oben ein und speichern Sie, dann kann die Verbindung geprüft werden.",
+
+    password: "VNR-Passwort (optional)",
+    passwordHint:
+      "Leer lassen, um das gespeicherte Passwort zu prüfen. Ein hier eingetragenes Passwort wird nur für diese Prüfung verwendet und nicht gespeichert — so lässt sich ein neues Passwort testen, ohne das funktionierende zu überschreiben.",
+    action: "Verbindung prüfen",
+    running: "Prüfung läuft …",
+
+    resultOk:
+      "Die Verbindung zum EIV funktioniert. VNR und Passwort werden von der Ärztekammer akzeptiert.",
+    resultAuthFailed:
+      "Die Ärztekammer hat die VNR oder das Passwort abgelehnt. Bitte prüfen Sie beide Angaben aus dem Anerkennungsbescheid.",
+    resultUnreachable:
+      "Die Zugangsdaten wurden akzeptiert, aber eine der Abfragen ist fehlgeschlagen. Details unten — häufig ist der Dienst nur vorübergehend nicht erreichbar.",
+
+    endpoint: "Geprüfte Adresse",
+
+    /*
+     * Which register, in words (P107-01).
+     *
+     * The address alone does not answer it. EIV call their sandbox
+     * `backend-test.eiv-fobi.de` and the live register `backend.eiv-fobi.de`,
+     * so one word separates a rehearsal from a statutory filing — and the
+     * client read the two as the same thing, which is exactly the outcome to
+     * expect from anyone who has not memorised EIV's naming (§9.4).
+     *
+     * "Echtsystem" and "Testsystem" rather than "live"/"test": these are the
+     * words a German operator uses about a system they are afraid of breaking.
+     */
+    tierLabel: "System",
+    tier: {
+      mock: "Lokales Testsystem der Plattform — erreicht die Ärztekammer nicht",
+      test: "Testsystem der EIV — Meldungen landen in keinem echten Register",
+      live: "Echtsystem der Ärztekammer — Meldungen sind verbindlich",
+      unknown: "Unbekannte Adresse — wird wie ein Echtsystem behandelt",
+    },
+
+    /*
+     * Whether the worker is armed, which decides what a completed Fortbildung
+     * actually does. It was readable only in `config.env` over SSH — so the one
+     * person who can decide whether to go live could not see the current state
+     * of the decision.
+     */
+    submissionsLabel: "Punktemeldung",
+    submissionsOn: "Aktiv — abgeschlossene Fortbildungen werden gemeldet",
+    submissionsOff: "Abgeschaltet — es wird nichts gemeldet",
+
+    /*
+     * The one combination worth a warning rather than a label. Everything else
+     * on this screen is a statement; this is the state in which the next
+     * physician to finish files a statutory report against their own EFN, and
+     * the person reading it should know before they close the tab.
+     */
+    liveArmed:
+      "Diese Installation meldet Punkte verbindlich an die Ärztekammer. " +
+      "Jede abgeschlossene Fortbildung erzeugt eine echte Punktemeldung auf die " +
+      "EFN der teilnehmenden Person.",
+
+    reportedCount: "Bereits gemeldete Teilnahmen",
+    passwordSource: "Passwort",
+    passwordTyped: "hier eingegeben, nicht gespeichert",
+
+    eventTitle: "Das sagt die Ärztekammer zu dieser VNR",
+    eventName: "Veranstaltung",
+    eventCategory: "Kategorie",
+    /*
+     * The accredited period, which is not decoration.
+     *
+     * A `teilnahmedatum` outside this window is refused, and for an on-demand
+     * Fortbildung taken across a year that is potentially every completion.
+     */
+    eventPeriod: "Anerkennungszeitraum",
+    eventPoints: "Punkte",
+    pointsValue: (attendance: number | null, assessment: number | null): string =>
+      `Teilnahme ${attendance ?? "—"} · Lernerfolg ${assessment ?? "—"}`,
+    lernerfolgMismatch:
+      "Diese Fortbildung meldet den Lernerfolgspunkt, die Ärztekammer führt für diese VNR aber keinen. Eine Meldung mit Lernerfolg würde abgelehnt.",
+    eventLocked:
+      "Diese Veranstaltung ist bei der Ärztekammer für Meldungen gesperrt. Es kann keine weitere Teilnahme gemeldet werden.",
+
+    detailToggle: "Technische Details",
+    steps: {
+      authenticate: "Anmeldung mit VNR und Passwort",
+      event: "Veranstaltungsdaten lesen",
+      reported: "Bereits gemeldete Punkte lesen",
+    },
+    stepOk: "erfolgreich",
+    stepFailed: "fehlgeschlagen",
+
+    /** Each names what to do, not what happened. */
+    advice: {
+      auth: "VNR und Passwort prüfen — beide stehen im Anerkennungsbescheid.",
+      rate_limited: "Zu viele Anfragen. In einigen Minuten erneut prüfen.",
+      server: "Beim EIV ist ein Fehler aufgetreten. Später erneut prüfen.",
+      network:
+        "Der EIV war von diesem Server aus nicht erreichbar. Netzwerk oder Adresse prüfen.",
+      business:
+        "Die Ärztekammer hat die Anfrage inhaltlich abgelehnt. Bitte den Anerkennungsbescheid prüfen.",
+      format:
+        "Die Antwort des EIV war unerwartet aufgebaut. Bitte den Support einschalten.",
+      unknown: "Unerwarteter Fehler. Die technische Meldung steht daneben.",
+    },
+  },
+
   courses: {
     title: "Fortbildungen",
+    /*
+     * The one screen that had no intro at all, and the one an operator opens
+     * first (P136-01). A reviewer put it plainly: the learner side explains
+     * itself from the screens, and the administration does not — "if I look at
+     * the viewer who is going to use it, few things still need to be improved".
+     *
+     * It names the three stages rather than the table's columns, because what
+     * a newcomer cannot work out is not what a row means: it is that a course
+     * is invisible until somebody publishes it, which is the state every
+     * course they create will be in.
+     */
+    intro:
+      "Alle Fortbildungen dieses Kunden. Eine neue Fortbildung entsteht in drei Schritten: Inhalte anlegen, Zertifizierung ausfüllen, veröffentlichen. Bis zur Veröffentlichung ist sie ein Entwurf und für Teilnehmende nicht sichtbar.",
     empty: "Für diesen Mandanten sind keine Fortbildungen hinterlegt.",
     emptyHint:
       "Eine Fortbildung besteht aus Modulen, Kapiteln und Inhalten. Sie können sie anlegen und später jederzeit erweitern.",
@@ -989,6 +1457,27 @@ export const german = {
     /** "3 von 12 abgeschlossen" */
     completedOf: (completed: number, total: number): string =>
       `${completed} von ${total} abgeschlossen`,
+
+    /*
+     * Deleting a Fortbildung (P101-02).
+     *
+     * `DELETE /admin/courses/{slug}` has existed since P12-04 and no screen
+     * offered it, so the only way to remove a course created by mistake was a
+     * request nobody in the console could make. §9.2's mirror: an action the
+     * system performs and the screen hides is as misleading as one it refuses.
+     *
+     * Same rule as the structure rows — a course with recorded participations
+     * is evidence for points already awarded — so the same marker and the same
+     * sentence, rather than a second vocabulary for one rule.
+     */
+    columnActions: "Aktionen",
+    delete: "Löschen",
+    deleteConfirm: "Wirklich löschen?",
+    deleteAria: (title: string): string => `Fortbildung „${title}“ löschen`,
+    lockedByEnrolments:
+      "Kann nicht gelöscht werden: es sind bereits Teilnahmen erfasst. Diese Daten sind der Nachweis für bereits vergebene Punkte.",
+    deleteRule:
+      "Eine Fortbildung ohne erfasste Teilnahmen kann gelöscht werden; mit Teilnahmen nicht mehr.",
   },
 
   course: {
@@ -1019,7 +1508,6 @@ export const german = {
     cmePoints: "CME-Punkte",
     cmePointsHint: "Laut Anerkennungsbescheid.",
     cmeCategory: "Kategorie",
-    fortbildungsnummer: "Fortbildungsnummer",
     validFrom: "Anerkennung gültig ab",
     validTo: "Anerkennung gültig bis",
     validityHint: "Aus dem Anerkennungsbescheid der Ärztekammer.",
@@ -1122,8 +1610,17 @@ export const german = {
   /** Participant accounts (P21-04) — people, not enrolments. */
   participantAccounts: {
     title: "Zugänge",
+    /*
+     * Says which of the two people-screens this is (P136-01).
+     *
+     * "Zugänge" and "Teilnehmende" are one letter apart in meaning to anybody
+     * who has not built this: one is a person who can sign in, the other is
+     * that person's progress through one Fortbildung. Each now says what it is
+     * *and* names the other, because the question is never "what is this
+     * table" — it is "which of the two am I looking at".
+     */
     intro:
-      "Teilnehmende dieses Kunden. Hier werden Zugänge angelegt, Passwörter zurückgesetzt und Konten gesperrt.",
+      "Die Personen dieses Kunden, die sich anmelden können — eine Zeile je Person. Hier legen Sie Zugänge an, setzen Passwörter zurück und sperren Konten. Wie weit jemand in einer Fortbildung ist, steht unter „Teilnehmende“.",
     search: "Suche",
     /* Split in two for the empty state (P30-02): the first line says what is
        missing, the second what to do about it. */

@@ -27,6 +27,7 @@ import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { Pool } from "pg";
 import { schema, userIdentities, users, userRoles } from "../../db/schema.js";
+import { runInTenant } from "../../db/tenant-db.js";
 
 export interface UserRow {
   id: string;
@@ -65,12 +66,13 @@ export interface UserRepositoryPort {
   ): Promise<UserRow | undefined>;
   provisionOrUpdate(input: UserProfileInput): Promise<UserRow>;
   rolesFor(userId: string): Promise<readonly RoleGrant[]>;
+  grantLearnerMembership(userId: string, customerId: string): Promise<void>;
 }
 
 export class UserRepository implements UserRepositoryPort {
   private readonly db: ReturnType<typeof drizzle<typeof schema>>;
 
-  constructor(pool: Pool) {
+  constructor(private readonly pool: Pool) {
     this.db = drizzle(pool, { schema });
   }
 
@@ -150,5 +152,53 @@ export class UserRepository implements UserRepositoryPort {
       })
       .from(userRoles)
       .where(eq(userRoles.userId, userId));
+  }
+
+  /**
+   * Make a federated learner a participant of the customer they arrived at
+   * (P94-03).
+   *
+   * ## Why this had to exist at all
+   *
+   * P1-02 provisioned the *person* from the token and stopped there. Nothing
+   * anywhere wrote the membership or the grant, so every physician arriving
+   * from MEDICE's WordPress met a 403 naming a user id they had never seen — a
+   * rule half built, which is CLAUDE.md §9.3 with the missing half in the
+   * layer above rather than below.
+   *
+   * ## Why the two statements are the two they are
+   *
+   * They are `ParticipantRepository.createMembership`'s, deliberately the same
+   * shape: a portal participant and a WordPress participant must end up as the
+   * same kind of row, or the console lists one of them and not the other.
+   *
+   * `NOT EXISTS` rather than `ON CONFLICT` on `user_roles`, because its unique
+   * key includes `department_id`, which is NULL here, and in PostgreSQL two
+   * NULLs are distinct — the constraint never fires and `DO NOTHING` would
+   * insert a duplicate on every request.
+   *
+   * ## Why `runInTenant`, on a repository whose header says it does not
+   *
+   * That header is about `users`, `user_identities` and `user_roles`, none of
+   * which are tenant-scoped — role resolution is what the tenant context is
+   * built *from*, so it cannot presuppose one. `user_customers` **is** scoped
+   * and under FORCE ROW LEVEL SECURITY, and an insert on the bare pool matches
+   * no policy and writes nothing while reporting success (§9.6). The context is
+   * the customer the project binding named, which is known before any of this
+   * and is not the learner's own claim.
+   */
+  async grantLearnerMembership(userId: string, customerId: string): Promise<void> {
+    await runInTenant(this.pool, { customerId, role: "system" }, async (db) => {
+      await db.execute(sql`
+        INSERT INTO user_customers (user_id, customer_id) VALUES (${userId}, ${customerId})
+        ON CONFLICT (user_id, customer_id) DO NOTHING`);
+      await db.execute(sql`
+        INSERT INTO user_roles (user_id, role, customer_id)
+        SELECT ${userId}, 'learner', ${customerId}
+         WHERE NOT EXISTS (
+           SELECT 1 FROM user_roles
+            WHERE user_id = ${userId} AND role = 'learner'
+              AND customer_id = ${customerId} AND department_id IS NULL)`);
+    });
   }
 }

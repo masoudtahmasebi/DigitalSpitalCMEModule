@@ -115,7 +115,7 @@ async function seedSubmission(input: {
   efn?: string;
   eventEndAt?: Date;
   firstSubmittedAt?: Date | null;
-}): Promise<{ enrolmentId: string; submissionId: string }> {
+}): Promise<{ enrolmentId: string; submissionId: string; userId: string }> {
   const suffix = randomUUID().slice(0, 8);
   const eventEndAt = input.eventEndAt ?? new Date();
   const userId = (
@@ -148,7 +148,7 @@ async function seedSubmission(input: {
     ],
   );
 
-  return { enrolmentId, submissionId };
+  return { enrolmentId, submissionId, userId };
 }
 
 const ACTOR = { customerId: "", staffUserId: randomUUID() };
@@ -166,7 +166,10 @@ async function withService<T>(run: (service: EivAdminService) => Promise<T>): Pr
           new EivAdminRepository(db, cipher),
           new EivAccreditationReporter(),
           new AuditService(seedPool),
-          { baseUrl: mock.url },
+          // Armed, so the report's `submissionsEnabled` has a value that is
+          // not the type's default — a fixture pinned to `false` could not tell
+          // "reports the flag" from "reports nothing".
+          { baseUrl: mock.url, submissionsEnabled: true },
         ),
       ),
   );
@@ -183,6 +186,51 @@ async function statusOf(submissionId: string): Promise<string> {
   );
   return rows[0]?.status ?? "";
 }
+
+describe("the connection check says which installation this is (P107-01)", () => {
+  /*
+   * The client set the live endpoint, read the console, and reported
+   * *"i updated this, still shows with test in verwaltung"* — the deploy had
+   * not run, and nothing on the screen distinguished
+   * `backend-test.eiv-fobi.de` from `backend.eiv-fobi.de` anyway.
+   *
+   * Tested here rather than only in the console, because the console renders
+   * whatever it is handed: the property that matters is that the API derives
+   * the tier from the endpoint it is *actually configured with*, and reports
+   * the worker's real flag rather than a constant. `eivEndpointTier` itself is
+   * exhaustively unit-tested in `@ds/eiv-client`; this names its caller (§9.7).
+   */
+  it("derives the tier from the endpoint the API is running against", async () => {
+    // The fixture points at the local mock, so this is the honest answer for
+    // this installation — and it is the one that must never read `live`.
+    const report = await withService((service) =>
+      service.checkConnection(courseSlug, undefined, actor()),
+    );
+
+    expect(report.endpoint).toBe(mock.url);
+    expect(report.tier).toBe("mock");
+  });
+
+  it("reports the worker's own flag, not a constant", async () => {
+    // `withService` arms it; a report that said `false` here would be reading
+    // something other than `EIV_WORKER_ENABLED`.
+    const report = await withService((service) =>
+      service.checkConnection(courseSlug, undefined, actor()),
+    );
+
+    expect(report.submissionsEnabled).toBe(true);
+  });
+
+  it("still carries no password field of any kind", async () => {
+    // The field added beside it must not have loosened this. A masked secret
+    // in a response is still a secret in a response (§4 invariant 7).
+    const report = await withService((service) =>
+      service.checkConnection(courseSlug, undefined, actor()),
+    );
+
+    expect(JSON.stringify(report)).not.toContain(VNR_PASSWORD);
+  });
+});
 
 describe("asking the authority about the event (P31-02)", () => {
   it("reads the accredited period and the point values", async () => {
@@ -242,6 +290,108 @@ describe("requeueing an abandoned Punktemeldung (P31-02)", () => {
     expect(rows[0]?.status).toBe("queued");
     expect(rows[0]?.last_error).toBeNull();
     expect(rows[0]?.attempt_count).toBe(0);
+  });
+
+  /**
+   * P118. The requeue used to keep the EFN frozen at completion while the
+   * certificate read `efn_profiles` live, so an operator repairing a typo got a
+   * certificate with the new number and a Meldung with the old — and both
+   * reported success.
+   */
+  it("adopts the physician's corrected EFN, because nothing was reported", async () => {
+    const CORRECTED = "802760699000001";
+    const { enrolmentId, submissionId, userId } = await seedSubmission({
+      status: "failed_permanent",
+      efn: "802760699999999",
+    });
+
+    // What the physician does themselves in the portal — support has no path
+    // to this table and must not (ADR-0004).
+    await seedPool.query(
+      `INSERT INTO efn_profiles (user_id, efn) VALUES ($1,$2)
+       ON CONFLICT (user_id) DO UPDATE SET efn = EXCLUDED.efn`,
+      [userId, CORRECTED],
+    );
+
+    await withService((s) => s.requeue(enrolmentId, actor(), new Date()));
+
+    const { rows } = await seedPool.query<{ efn: string; status: string }>(
+      "SELECT efn, status FROM eiv_submissions WHERE id = $1",
+      [submissionId],
+    );
+    expect(rows[0]?.efn).toBe(CORRECTED);
+    expect(rows[0]?.status).toBe("queued");
+  });
+
+  it("refuses to re-file under a new EFN once the old one was accepted", async () => {
+    /*
+     * S30. Correcting a name changes how one physician is described;
+     * correcting an EFN changes which physician was credited, and the points
+     * already on the first record cannot be taken back from here. A refusal is
+     * the right answer to an unanswered rule; filing a guess is not.
+     */
+    const { enrolmentId, submissionId, userId } = await seedSubmission({
+      status: "submitted",
+      efn: "802760699999999",
+    });
+    await seedPool.query(
+      `INSERT INTO efn_profiles (user_id, efn) VALUES ($1,$2)
+       ON CONFLICT (user_id) DO UPDATE SET efn = EXCLUDED.efn`,
+      [userId, "802760699000002"],
+    );
+
+    await expect(
+      withService((s) => s.requeue(enrolmentId, actor(), new Date())),
+    ).rejects.toMatchObject({ kind: "conflict" });
+
+    // And it changed nothing on the way out.
+    const { rows } = await seedPool.query<{ efn: string; status: string }>(
+      "SELECT efn, status FROM eiv_submissions WHERE id = $1",
+      [submissionId],
+    );
+    expect(rows[0]?.efn).toBe("802760699999999");
+    expect(rows[0]?.status).toBe("submitted");
+  });
+
+  it("still requeues an accepted row whose EFN has not moved", async () => {
+    // The control. A requeue after acceptance is a legitimate correction of
+    // something else, and refusing it over an EFN that did not change would be
+    // a refusal with no defect behind it (§9.2, inverted).
+    const { enrolmentId, submissionId, userId } = await seedSubmission({
+      status: "submitted",
+      efn: "802760699999998",
+    });
+    await seedPool.query(
+      `INSERT INTO efn_profiles (user_id, efn) VALUES ($1,$2)
+       ON CONFLICT (user_id) DO UPDATE SET efn = EXCLUDED.efn`,
+      [userId, "802760699999998"],
+    );
+
+    await withService((s) => s.requeue(enrolmentId, actor(), new Date()));
+
+    const { rows } = await seedPool.query<{ status: string }>(
+      "SELECT status FROM eiv_submissions WHERE id = $1",
+      [submissionId],
+    );
+    expect(rows[0]?.status).toBe("queued");
+  });
+
+  it("keeps the submission's own EFN when the subject has been erased", async () => {
+    // Erasure deletes `efn_profiles` and leaves a submission still owed. There
+    // is nothing newer to adopt, and a LEFT join is what stops "no profile"
+    // reading as "no submission" (§9.6).
+    const { enrolmentId, submissionId } = await seedSubmission({
+      status: "failed_permanent",
+      efn: "802760699999997",
+    });
+
+    await withService((s) => s.requeue(enrolmentId, actor(), new Date()));
+
+    const { rows } = await seedPool.query<{ efn: string }>(
+      "SELECT efn FROM eiv_submissions WHERE id = $1",
+      [submissionId],
+    );
+    expect(rows[0]?.efn).toBe("802760699999997");
   });
 
   it("refuses once the reporting window has closed", async () => {

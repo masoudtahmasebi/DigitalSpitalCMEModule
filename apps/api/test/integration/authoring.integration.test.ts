@@ -18,6 +18,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { expectNoAnswerKey } from "../support/answer-leak.js";
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
@@ -623,6 +624,17 @@ describe("authoring a quiz", () => {
   });
 });
 
+/*
+ * Editing a Lernerfolgskontrolle a physician has already sat (P114-01).
+ *
+ * The report: *"this lernerfolgskontrolle has 11 questions, I want to make it
+ * to only 2 questions and i can not."* Every answered question refused
+ * deletion, so a single attempt froze the exam permanently.
+ *
+ * These run against a real Postgres because the properties are all about what
+ * survives a write, and the one that matters most — an already-scored attempt
+ * keeps its result — is a claim about rows the API never returns.
+ */
 describe("what a learner has touched cannot be deleted", () => {
   let enrolmentId = "";
 
@@ -814,6 +826,7 @@ describe("an authored course is a course the learner API can serve", () => {
     expect(quiz.body.questions).toHaveLength(2);
     // P4-01: the learner-facing shape has nowhere to put a correctness marker.
     expect(JSON.stringify(quiz.body)).not.toContain("isCorrect");
+    expectNoAnswerKey(quiz.body, "the learner's quiz");
     expect(JSON.stringify(quiz.body)).not.toContain("correct");
   });
 });
@@ -1045,4 +1058,281 @@ describe("project settings", () => {
     });
     expect(created.status).toBe(422);
   });
+});
+
+describe("an answered question leaves the exam and keeps its record", () => {
+  let retiredId = "";
+  let attemptId = "";
+
+  /*
+   * This suite adds its **own** question and retires that one.
+   *
+   * The first version retired one of the two questions the rest of the file
+   * shares, and five later tests went red — they assert a two-question exam.
+   * That is CLAUDE.md §9.8's lesson one layer along: state that outlives a test
+   * shows up as a failure attributed to the wrong code, and the next person
+   * would have gone looking at the learner endpoint rather than at this block.
+   *
+   * So the fixture is appended and removed within these tests, and the shared
+   * exam is exactly as it was afterwards.
+   */
+  beforeAll(async () => {
+    const { body: before } = await asAdmin(
+      "GET",
+      `/admin/contents/${quizContentId}/quiz`,
+    );
+
+    const passthrough = (question: any) => ({
+      id: question.id,
+      prompt: question.prompt,
+      kind: question.kind,
+      options: question.options.map((option: any) => ({
+        id: option.id,
+        label: option.label,
+        isCorrect: option.isCorrect,
+      })),
+    });
+
+    const { status, body } = await asAdmin(
+      "PUT",
+      `/admin/contents/${quizContentId}/quiz`,
+      {
+        questions: [
+          ...before.questions.map(passthrough),
+          {
+            prompt: "Frage, die zurückgezogen wird",
+            kind: "single",
+            options: [
+              { label: "Richtig", isCorrect: true },
+              { label: "Falsch", isCorrect: false },
+            ],
+          },
+        ],
+      },
+    );
+    expect(status, JSON.stringify(body)).toBe(200);
+    retiredId = body.questions.at(-1).id;
+
+    /*
+     * An attempt written straight into the database rather than driven through
+     * the learner endpoints. The gate wants a watched video and a passing
+     * score, and none of that is what this block is about — what matters is
+     * that a `quiz_answers` row points at `retiredId`, because that row is
+     * exactly what the old refusal was protecting.
+     */
+    /*
+     * Reuse the enrolment the learner suite above already created, rather than
+     * inventing one. `users` has had no `subject` column since P21-01 moved
+     * identity to person/credential, so a hand-built insert here would be
+     * writing against a schema that no longer exists — and this block runs last
+     * precisely so the enrolment is there to find.
+     */
+    const enrolmentId = await insert(
+      `SELECT e.id FROM enrolments e
+         JOIN courses c ON c.id = e.course_id
+        WHERE c.slug = $1
+        ORDER BY e.created_at
+        LIMIT 1`,
+      [courseSlug],
+    );
+
+    attemptId = await insert(
+      `INSERT INTO quiz_attempts
+         (customer_id, enrolment_id, content_id, attempt_number,
+          correct_count, total_count, score_percent, passed)
+       SELECT customer_id, id, $2, 1, 3, 3, 100, true FROM enrolments WHERE id = $1
+       RETURNING id`,
+      [enrolmentId, quizContentId],
+    );
+
+    await insert(
+      `INSERT INTO quiz_answers (customer_id, attempt_id, question_id, is_correct)
+       SELECT customer_id, id, $2, true FROM quiz_attempts WHERE id = $1
+       RETURNING id`,
+      [attemptId, retiredId],
+    );
+  });
+
+  it("reports the recorded answer, which is what used to refuse the edit", async () => {
+    const { body } = await asAdmin("GET", `/admin/contents/${quizContentId}/quiz`);
+    const answered = body.questions.find((q: any) => q.id === retiredId);
+    expect(answered.answerCount).toBe(1);
+  });
+
+  it("accepts an edit that drops it — this is the whole defect", async () => {
+    const { body: current } = await asAdmin(
+      "GET",
+      `/admin/contents/${quizContentId}/quiz`,
+    );
+
+    const { status, body } = await asAdmin(
+      "PUT",
+      `/admin/contents/${quizContentId}/quiz`,
+      {
+        questions: current.questions
+          .filter((q: any) => q.id !== retiredId)
+          .map((question: any) => ({
+            id: question.id,
+            prompt: question.prompt,
+            kind: question.kind,
+            options: question.options.map((option: any) => ({
+              id: option.id,
+              label: option.label,
+              isCorrect: option.isCorrect,
+            })),
+          })),
+      },
+    );
+
+    // Before P114-01 this was a 409 naming the answer count, for ever.
+    expect(status, JSON.stringify(body)).toBe(200);
+    expect(body.questions.map((q: any) => q.id)).not.toContain(retiredId);
+  });
+
+  it("keeps the row, so the evidence behind a CME point still exists", async () => {
+    const { rows } = await seedPool.query<{ retired: boolean }>(
+      `SELECT retired_at IS NOT NULL AS retired FROM quiz_questions WHERE id = $1`,
+      [retiredId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.retired).toBe(true);
+  });
+
+  it("keeps the recorded answer, which ON DELETE RESTRICT would have blocked", async () => {
+    const { rows } = await seedPool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM quiz_answers WHERE question_id = $1`,
+      [retiredId],
+    );
+    expect(rows[0]!.n).toBe(1);
+  });
+
+  it("does not move an already-scored attempt", async () => {
+    // The property that makes any of this safe: a past result is denormalised
+    // onto the attempt, so shortening the exam cannot retroactively change what
+    // a physician scored — or whether they passed.
+    const { rows } = await seedPool.query(
+      `SELECT correct_count, total_count, score_percent, passed
+         FROM quiz_attempts WHERE id = $1`,
+      [attemptId],
+    );
+    expect(rows[0]).toMatchObject({
+      correct_count: 3,
+      total_count: 3,
+      score_percent: 100,
+      passed: true,
+    });
+  });
+
+  it("says how many were retired, so the absence is not read as data loss", async () => {
+    const { body } = await asAdmin("GET", `/admin/contents/${quizContentId}/quiz`);
+    expect(body.retiredCount).toBe(1);
+  });
+
+  it("never serves the retired question to a learner again", async () => {
+    const { rows } = await seedPool.query<{ n: number }>(
+      `SELECT count(*)::int AS n
+         FROM quiz_questions
+        WHERE content_id = $1 AND retired_at IS NULL AND id = $2`,
+      [quizContentId, retiredId],
+    );
+    expect(rows[0]!.n).toBe(0);
+  });
+
+  it("does not count it in a future attempt's total", async () => {
+    /*
+     * `findQuestionsForLearner` and `findAnswerKey` are separate queries, and
+     * filtering one but not the other gives an exam whose visible questions and
+     * whose scoring disagree. A retired question left in the key inflates
+     * `totalCount`, so every learner is measured against an exam they were
+     * never shown and the pass threshold quietly becomes unreachable.
+     */
+    const { rows } = await seedPool.query<{ n: number }>(
+      `SELECT count(DISTINCT q.id)::int AS n
+         FROM quiz_questions q
+         JOIN quiz_options o ON o.question_id = q.id
+        WHERE q.content_id = $1 AND q.retired_at IS NULL`,
+      [quizContentId],
+    );
+    const { body } = await asAdmin("GET", `/admin/contents/${quizContentId}/quiz`);
+    expect(rows[0]!.n).toBe(body.questions.length);
+  });
+
+  it("leaves the shared exam exactly as it found it", async () => {
+    // Named as its own test rather than left implicit: if this block ever does
+    // start leaking, the failure should say so here instead of surfacing three
+    // describes later as "expected 2, got 1" (§9.8).
+    const { body } = await asAdmin("GET", `/admin/contents/${quizContentId}/quiz`);
+    expect(body.questions).toHaveLength(2);
+  });
+});
+
+describe("media-check against a host that does not answer (P146-02)", () => {
+  /*
+   * `GET /admin/courses/:slug/media-check` probes every distinct media URL in a
+   * course to ask whether a browser could seek it. The probes are
+   * **sequential**, each with an 8-second deadline, and until this ticket the
+   * whole loop ran inside the request's RLS transaction.
+   *
+   * So one operator opening the media report on a course whose CDN is wedged
+   * held a pooled connection for `8 s × N distinct URLs` — the largest single
+   * exposure of the shape P145 fixed for uploads, and one P145 did not touch
+   * because I looked at the module in front of me instead of running the search
+   * CLAUDE.md §11 rule 11 requires.
+   *
+   * §11 rule 10: this is fired concurrently, because a sequential version of
+   * this test passes on the broken code — one probe holding one connection out
+   * of ten is invisible.
+   */
+  let silent: Server;
+  let silentUrl: string;
+
+  beforeAll(async () => {
+    silent = createServer(() => {
+      // Accepts the connection, answers nothing. A host that returns 500 would
+      // release the connection immediately and prove nothing (§9.13).
+    });
+    await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
+    const address = silent.address();
+    if (address === null || typeof address === "string") throw new Error("no port");
+    silentUrl = `http://127.0.0.1:${String(address.port)}/wedged.mp4`;
+  });
+
+  afterAll(async () => {
+    // The in-flight probes are deliberately never answered, and `close()` waits
+    // for open connections — so without this the file hangs in teardown.
+    silent.closeAllConnections();
+    await new Promise<void>((resolve) => silent.close(() => resolve()));
+  });
+
+  it("keeps serving every other route while the probes are outstanding", async () => {
+    const created = await asAdmin("POST", `/admin/chapters/${chapterIds[0]}/contents`, {
+      kind: "video",
+      title: "Video auf einem toten Host",
+      sources: [{ url: silentUrl, mimeType: "video/mp4" }],
+      durationSec: 600,
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+
+    // More than the pool's `max` of ten, so that on the old code every
+    // connection is held and an eleventh caller has nothing to wait for.
+    const probing = Array.from({ length: 12 }, () =>
+      asAdmin("GET", `/admin/courses/${courseSlug}/media-check`).catch(
+        (error: unknown) => ({ status: 0, body: { error: String(error) } }),
+      ),
+    );
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      const started = Date.now();
+      const answer = await asAdmin("GET", "/admin/courses");
+      const elapsed = Date.now() - started;
+
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      // Well under the 5 s checkout timeout: the point is that it never queued.
+      expect(elapsed).toBeLessThan(2_000);
+    } finally {
+      await Promise.all(probing);
+    }
+  }, 40_000);
 });

@@ -56,22 +56,21 @@ import pg from "pg";
 /**
  * Courses that are allowed to be shallow, and why.
  *
- * `adhs-akademie-adult` mirrors the real Ärztekammer Westfalen-Lippe
- * Anerkennungsbescheid: five modules, one chapter each, because that is how
- * the accredited course is actually structured. Reshaping it to satisfy a test
- * would make the fixture stop matching the document it exists to represent,
- * which is a worse outcome than an exemption somebody can read.
+ * **Empty since 31.08.2026, and that is the point.** `adhs-akademie-adult` was
+ * the only entry: it mirrored the Anerkennungsbescheid as five modules of one
+ * chapter, so the exemption was a claim that *reality* was shallow rather than
+ * that the check was inconvenient.
  *
- * An entry here is a claim that reality is shallow, not that the check is
- * inconvenient. Anything added without that justification is the exemption
- * quietly becoming the rule.
+ * MEDICE then specified the course they actually want — three modules, two
+ * chapters each, the Lernerfolgskontrolle as Kapitel 3.3 (P126-01) — so reality
+ * stopped being shallow and the exemption stopped being true. It is removed
+ * rather than left in place with a corrected sentence: an exemption nothing
+ * needs is one the next course inherits by copying.
+ *
+ * An entry here is a claim about the world, not about the test. Anything added
+ * without that justification is the exemption quietly becoming the rule.
  */
-const EXEMPT_COURSES = new Map([
-  [
-    "adhs-akademie-adult",
-    "mirrors the real ÄKWL Anerkennungsbescheid, which has one chapter per module",
-  ],
-]);
+const EXEMPT_COURSES = new Map();
 
 const MIN_MODULES = 2;
 const MIN_CHAPTERS_PER_MODULE = 2;

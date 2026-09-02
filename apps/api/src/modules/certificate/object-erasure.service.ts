@@ -30,6 +30,7 @@
  */
 
 import type { Pool } from "pg";
+import { withDeadline } from "../../shared/deadline-fetch.js";
 import type { AppConfig } from "../../config/config.js";
 import { hasObjectStorage } from "../../shared/object-storage.factory.js";
 import { S3Presigner, type Presigner } from "../../shared/s3-presigner.js";
@@ -57,7 +58,9 @@ export class ObjectErasureService {
     private readonly pool: Pool,
     private readonly presigner: Presigner,
     private readonly logger: ErasureLogger,
-    private readonly fetchImpl: typeof fetch = fetch,
+    // A deadline by default (P144-01). An erasure that hangs is worse than
+    // one that fails: the row stays claimed and the deletion never retries.
+    private readonly fetchImpl: typeof fetch = withDeadline(),
   ) {}
 
   async drain(): Promise<ObjectErasureResult> {

@@ -76,12 +76,28 @@ const CONTENT = `mx-auto ${CONTENT_WIDTH} px-4`;
 export interface CatalogSection {
   readonly id: string;
   readonly label: string;
+  /**
+   * One line saying what this section *is*, above its filters (P106-01).
+   *
+   * The overview layout heads the list **"On-Demand-Fortbildungen – volle
+   * Flexibilität und jederzeit verfügbar"**, and the tab that replaced it
+   * (P58-02, so Live and Zoom have somewhere to go) kept the first half and
+   * dropped the second. A tab label is a *name*; this is the sentence that
+   * tells a physician why they would pick it — which is the only part of the
+   * heading doing any work, since the name is already on the tab above.
+   *
+   * Per section rather than one line above the tabs, because it differs per
+   * section: "jederzeit verfügbar" is exactly what a live event is not.
+   */
+  readonly description: string;
   readonly Panel: (props: CatalogPanelProps) => ReactElement;
 }
 
 export interface CatalogPanelProps {
   readonly client: ApiClient;
   readonly onOpen: (slug: string, intent: "start" | "resume") => void;
+  /** The section's own line, drawn above its filters (P106-01). */
+  readonly description?: string | undefined;
 }
 
 /**
@@ -94,11 +110,13 @@ export const CATALOG_SECTIONS: readonly CatalogSection[] = [
   {
     id: "on-demand",
     label: de.catalog.sections.onDemand,
+    description: de.catalog.sections.onDemandDescription,
     Panel: (props) => <CoursePanel {...props} deliveryTypes={["on_demand"]} />,
   },
   {
     id: "weitere",
     label: de.catalog.sections.weitere,
+    description: de.catalog.sections.weitereDescription,
     // Everything that is not on-demand. Named by exclusion rather than by
     // listing `live` and `praesenz`, so a delivery type added later appears
     // here instead of silently belonging to no tab at all.
@@ -150,7 +168,11 @@ export function CourseList(props: {
           label={de.catalog.title}
           onSelect={setSectionId}
         >
-          <section.Panel client={props.client} onOpen={props.onOpen} />
+          <section.Panel
+            client={props.client}
+            onOpen={props.onOpen}
+            description={section.description}
+          />
         </TabbedPanel>
       </div>
     </section>
@@ -247,6 +269,23 @@ function CoursePanel(
   return (
     <div className={panel}>
       <div className="border-b border-gray-200 p-5 sm:p-7">
+        {/*
+          What this section is, above the controls that narrow it (P106-01).
+
+          The overview layout puts it exactly here, in the brand teal, and it
+          is the right place: a physician decides *whether this list is the one
+          they want* before they start narrowing it, and two dropdowns above an
+          unheaded list answer the second question without having answered the
+          first.
+
+          An `<h2>` rather than a styled paragraph. The hero's title is the
+          `<h1>`, so this is the only thing between it and the course titles —
+          without it, somebody moving by headings goes from the page's name
+          straight into a list of courses with nothing saying what the list is.
+        */}
+        {props.description === undefined ? null : (
+          <h2 className="mb-6 text-lg font-bold text-brand-600">{props.description}</h2>
+        )}
         <div className="grid gap-5 sm:grid-cols-2">
           <FacetSelect
             id={`ds-thema-${props.deliveryTypes.join("-")}`}
@@ -401,7 +440,18 @@ function CatalogHero(props: { branding: Branding }) {
           photograph is the whole hero, so the same element re-anchors to the
           content column's right edge.
         */}
-        <div className="pointer-events-none absolute bottom-10 left-4 sm:inset-0 sm:bottom-auto sm:left-auto">
+        {/*
+          `sm:bottom-0 sm:left-0 sm:right-0 sm:top-0` and **not** `sm:inset-0`
+          with `bottom-auto`/`left-auto` (P91-01).
+
+          That was the first version and it is why the seal arrived clipped
+          into the hero's top-right corner: `bottom:auto; left:auto` shrinks
+          this box to its content, so the `h-full` below measured the seal
+          rather than the hero and `top-[44%]` centred it on itself. The four
+          sides are written out because Tailwind emits `inset-0` *before*
+          `bottom-10`, so a bare `sm:inset-0` loses to the mobile anchor.
+        */}
+        <div className="pointer-events-none absolute bottom-10 left-4 sm:bottom-0 sm:left-0 sm:right-0 sm:top-0">
           {/*
             The content column, repeated, so the seal is centred on *its* right
             edge rather than on the viewport's — which is where the layout puts
@@ -412,7 +462,17 @@ function CatalogHero(props: { branding: Branding }) {
             full is a class name it never generates.
           */}
           <div className="relative mx-auto h-full sm:w-full sm:max-w-[1082px]">
-            <div className="sm:absolute sm:right-4 sm:top-[44%] sm:-translate-y-1/2 sm:translate-x-1/2">
+            {/*
+              Inside the hero, not centred on its edge (P91-01).
+
+              The drawing centres the seal **on** the content column's right
+              edge, which works there because the hero bleeds to the viewport.
+              This hero cannot: the widget is as wide as whatever container the
+              host gives it, so half a seal would fall outside and
+              `sm:overflow-hidden` would cut it — which is exactly what the
+              portal was showing.
+            */}
+            <div className="sm:absolute sm:right-6 sm:top-1/2 sm:-translate-y-1/2">
               <HeroSeal
                 branding={branding}
                 className="h-[11rem] w-[11rem] sm:h-[8.2rem] sm:w-[8.2rem]"

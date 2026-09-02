@@ -100,7 +100,16 @@ export function orderSources(sources: readonly MediaSource[]): readonly MediaSou
     .map((entry) => entry.source);
 }
 
-/** True when at least one source is an adaptive stream. */
+/**
+ * True when at least one source is an adaptive stream.
+ *
+ * **Called by nothing, on purpose** — `scripts/unused-rules.mjs` reports it and
+ * this is the answer (P134-02). Adaptive delivery needs media transcoding, which
+ * CLAUDE.md §3 defers by name, so there is no HLS or DASH source on this
+ * platform to ask the question about. It stays because `orderSources` beside it
+ * already has to know the distinction, and a predicate that exists and is unused
+ * is cheaper than the same rule re-derived by whoever builds transcoding.
+ */
 export function hasAdaptiveSource(sources: readonly MediaSource[]): boolean {
   return sources.some((source) => streamingKindOf(source.mimeType) !== "progressive");
 }

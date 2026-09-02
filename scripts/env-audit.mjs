@@ -87,6 +87,14 @@ const READ_WITHOUT_DOCUMENTATION = new Set([
   "DS_APP_PASSWORD_URL",
   "DS_MIGRATOR_PASSWORD",
   "DS_MIGRATOR_PASSWORD_URL",
+  // The schema reader (P149-01). Same class as the two above: generated into
+  // secrets.env by `secrets.sh`, never set by a human. `SCHEMA_READER_DATABASE_URL`
+  // is assembled from it inside the compose file, exactly as DATABASE_URL is
+  // from DS_APP_PASSWORD_URL — documenting either would invite somebody to set
+  // it by hand and get a role and a URL that disagree.
+  "DS_SCHEMA_READER_PASSWORD",
+  "DS_SCHEMA_READER_PASSWORD_URL",
+  "SCHEMA_READER_DATABASE_URL",
   "POSTGRES_SUPERUSER_PASSWORD_URL",
   "BACKUP_ENCRYPTION_KEY",
   "BACKUP_DATABASE_URL",
@@ -97,6 +105,23 @@ const READ_WITHOUT_DOCUMENTATION = new Set([
   "KEYCLOAK_ORIGIN",
   "API_ORIGIN",
   "CORS_ALLOWED_ORIGINS",
+  /*
+   * Whether the installation files Punktemeldungen for real (P113-01).
+   *
+   * Computed by `deploy.yml`'s `derive` step from the **host's** own
+   * `EIV_BASE_URL` and `EIV_WORKER_ENABLED`, through the host's own
+   * `ds_eiv_worker_will_file_live`, and handed to the smoke job as a job
+   * output. It is an answer *about* a machine, not a setting *of* one.
+   *
+   * Deliberately in neither template, and this is the strongest case in this
+   * list: the variable it replaced was `EIV_ALLOW_LIVE`, read in the runner
+   * where nothing had ever set it, so the guard always concluded "not live" and
+   * could never fire. A template entry is an invitation to set it by hand —
+   * and a hand-set `EIV_REPORTS_LIVE=no` is precisely that failure restored,
+   * with the smoke test cheerfully driving an installation that reports to the
+   * Ärztekammer.
+   */
+  "EIV_REPORTS_LIVE",
   // Where the browser suite finds Chromium (P35-01). Deliberately in neither
   // template: `run-e2e.mjs` locates the pre-installed browser itself and
   // refuses to start if there is none, so neither is a value anybody sets by
@@ -146,8 +171,18 @@ const SOURCES = [
   { path: "infra/deploy/Caddyfile", pattern: /\{\$([A-Z][A-Z0-9_]+)/g },
 ];
 
-/** Shell names that are the interpreter's, not ours. */
+/**
+ * Shell names that are the interpreter's, not ours.
+ *
+ * `SUDO_USER` belongs here for the same reason as `PWD`: it is set by `sudo`,
+ * read to find out who invoked the script, and would be nonsense in a config
+ * template — a value nobody sets and everybody has. `TMPDIR` is the same: the
+ * OS provides it, and a deployment that had to *configure* where scratch files
+ * go would be a deployment nobody could run.
+ */
 const SHELL_BUILTINS = new Set([
+  "SUDO_USER",
+  "TMPDIR",
   "LINENO",
   "BASH_SOURCE",
   "FUNCNAME",

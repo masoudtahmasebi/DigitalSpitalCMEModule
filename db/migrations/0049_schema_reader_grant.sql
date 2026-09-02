@@ -1,0 +1,72 @@
+-- The one grant `ds_schema_reader` holds (P149-01).
+--
+-- ## Why this role exists at all
+--
+-- P148-01: `bootstrap-admin` was given `assertSchemaCurrent`, which reads
+-- `schema_migrations`, and the documented invocation
+--
+--     docker compose run --rm --entrypoint node api dist/bootstrap-admin.js
+--
+-- runs in the `api` service, where `MIGRATION_DATABASE_URL` is not set and must
+-- not be. So the platform's first-boot command failed on every fresh host, and
+-- the change was reverted.
+--
+-- Two fixes were available and a human refused both: reading it as `ds_app`
+-- rests the check on the application role, and giving the api container the
+-- migrator's URL hands a request-serving process the ability to rewrite the
+-- schema. This is the third: a login role that can do exactly one harmless
+-- thing and is granted nothing else anywhere.
+--
+-- ## A correction to what P148/P149 said about `ds_app` (P151-02)
+--
+-- Those tickets, and the first version of this header, said `ds_app` "holds no
+-- grant on schema_migrations (ADR-0002, the application role owns nothing)".
+-- That is false, and it was never checked against a database. `init-roles.sql`
+-- runs
+--
+--     ALTER DEFAULT PRIVILEGES FOR ROLE ds_migrator IN SCHEMA public
+--       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ds_app;
+--
+-- which covers every table the migrator creates, and the ledger is one of them.
+-- Verified on a live database:
+--
+--     pg_class.relacl  ->  ds_app=arwd/ds_migrator
+--     as ds_app: INSERT INTO schema_migrations(filename) VALUES ('probe')
+--                -> INSERT 0 1     (rolled back)
+--
+-- So `ds_app` can read the ledger, and can also rewrite it. That does not make
+-- this role wrong — it makes it more necessary: a check on schema freshness
+-- should not rest on a blanket default privilege that we would rather narrow,
+-- and least of all on one that also grants writes to the thing being checked.
+--
+-- Narrowing `ds_app`'s privilege on this table is a separate decision with its
+-- own migration and its own review; it predates this branch and is not changed
+-- here. It is recorded in docs/backlog/P151.md so it is somebody's to take.
+--
+-- ## Why the grant is here and not in init-roles.sql
+--
+-- `schema_migrations` does not exist when `init-roles.sql` runs on a fresh
+-- database — the migrator creates it, `packages/migrator/src/index.ts:150`,
+-- on its first run. A grant there would fail on exactly the installation this
+-- exists for. `deploy.sh` applies roles first, then migrations, so by the time
+-- this file runs the role exists and the table does.
+--
+-- ## Why SELECT and nothing else
+--
+-- The role never writes, and it must never be able to. There is no
+-- `GRANT USAGE ON SCHEMA` beyond what `PUBLIC` already has, no sequence grant,
+-- no default privileges. If somebody later needs this role to read a second
+-- table, that is a review, not a convenience — the whole argument for its
+-- existence is that its blast radius is one `SELECT`.
+--
+-- If this grant is ever dropped, `assertSchemaCurrent` fails closed and
+-- `bootstrap-admin` refuses to run. That is the behaviour we want there: a
+-- first-boot command that cannot verify the schema should stop, because nothing
+-- downstream of it is time-critical. `subject-erasure` takes the opposite
+-- decision for the opposite reason — see P149-02.
+
+BEGIN;
+
+GRANT SELECT ON schema_migrations TO ds_schema_reader;
+
+COMMIT;

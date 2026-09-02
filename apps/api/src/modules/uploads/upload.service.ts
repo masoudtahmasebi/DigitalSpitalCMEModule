@@ -40,9 +40,19 @@
 
 import { AppError } from "../../shared/problem-details.js";
 import type { ObjectStorage, UploadRefusal } from "../../shared/object-storage.js";
-import { customerPrefix, keyBelongsToCustomer, storageKeyOf } from "@ds/domain";
+import {
+  customerPrefix,
+  keyBelongsToCustomer,
+  planMultipart,
+  storageKeyOf,
+} from "@ds/domain";
 import type { StorageAuditPort, UploadRepositoryPort } from "./upload.repository.js";
 import type {
+  MultipartBegin,
+  MultipartComplete,
+  MultipartSign,
+  MultipartSignResponse,
+  MultipartTicketResponse,
   MediaAssetResponse,
   MediaDescribe,
   MediaList,
@@ -609,6 +619,267 @@ export class UploadService {
   }
 
   // -------------------------------------------------------------------------
+
+  /*
+   * =====================================================================
+   * Multipart (P129-04)
+   * =====================================================================
+   *
+   * Three calls where the single PUT has two. The extra one is `signParts`,
+   * and it is where the security of the whole path sits: it is the only
+   * endpoint that mints capabilities repeatedly for an upload that is already
+   * in flight, so every call re-establishes the same three facts rather than
+   * trusting that `beginMultipart` established them once.
+   */
+
+  /**
+   * Begin a large upload.
+   *
+   * Everything `begin` does, plus a split. The key is minted from the caller's
+   * own customer and a course RLS has agreed they can see, and the **mint is
+   * recorded before the client is told anything** — the recorded size and type
+   * are what `completeMultipart` measures the assembled object against, and a
+   * capability nobody wrote down is one nobody can account for.
+   */
+  async beginMultipart(
+    courseSlug: string,
+    input: MultipartBegin,
+    actor: UploadActor,
+    now: Date,
+  ): Promise<MultipartTicketResponse> {
+    const storage = this.requireStorage();
+    const courseId = await this.requireCourse(courseSlug);
+
+    const plan = storage.plan(input);
+    if (!plan.ok) {
+      await this.record(actor, courseId, {
+        action: "refuse",
+        objectKey: `${actor.customerId}/courses/${courseId}/`,
+        sizeBytes: input.sizeBytes,
+        mimeType: input.mimeType,
+        succeeded: false,
+        detail: plan.reason,
+      });
+      throw new AppError("validation", `upload refused: ${plan.reason}`);
+    }
+
+    const split = planMultipart(plan.sizeBytes);
+    if (split === undefined) {
+      // Below the threshold, or beyond what 10,000 parts can carry. Both are
+      // "use the other endpoint", and saying which is not the client's business.
+      throw new AppError(
+        "validation",
+        "size outside the multipart range",
+        "this size is not uploaded in parts — use the single upload",
+      );
+    }
+
+    const begun = await storage.beginMultipart(
+      plan,
+      { customerId: actor.customerId, courseId },
+      split,
+      now,
+    );
+
+    if (!begun.ok) {
+      await this.record(actor, courseId, {
+        action: "refuse",
+        objectKey: `${actor.customerId}/courses/${courseId}/`,
+        sizeBytes: plan.sizeBytes,
+        mimeType: plan.mimeType,
+        succeeded: false,
+        detail: `bucket refused the upload: ${begun.refusal.kind}`,
+      });
+      throw new AppError("upstream_unavailable", "bucket refused CreateMultipartUpload");
+    }
+
+    await this.record(actor, courseId, {
+      action: "mint",
+      objectKey: begun.upload.key,
+      sizeBytes: plan.sizeBytes,
+      mimeType: plan.mimeType,
+      succeeded: true,
+      detail: null,
+    });
+
+    return {
+      key: begun.upload.key,
+      uploadId: begun.upload.uploadId,
+      partCount: begun.upload.partCount,
+      partBytes: begun.upload.partBytes,
+      expiresAt: begun.upload.expiresAt.toISOString(),
+    };
+  }
+
+  /**
+   * Sign a bounded batch of part URLs.
+   *
+   * Three checks, cheapest first, and none of them is skippable because the
+   * client holds the `uploadId` between calls:
+   *
+   * 1. **The key is inside the caller's prefix.** Answered without touching the
+   *    database or the bucket, exactly as `complete` does.
+   * 2. **We minted this key, for this tenant.** `findMint` runs under RLS, so
+   *    another customer's key finds nothing regardless of what the prefix check
+   *    thought. This is what stops a caller signing parts against a key they
+   *    guessed rather than one they were given.
+   * 3. **The part number is inside the plan.** Derived from the *recorded*
+   *    size, never from this request — a client that asks for part 9,000 of a
+   *    96-part upload is asking for a capability that should not exist, and the
+   *    bucket would happily create it.
+   */
+  async signParts(
+    courseSlug: string,
+    input: MultipartSign,
+    actor: UploadActor,
+    now: Date,
+  ): Promise<MultipartSignResponse> {
+    const storage = this.requireStorage();
+    const courseId = await this.requireCourse(courseSlug);
+
+    if (!keyBelongsToCustomer(input.key, actor.customerId)) {
+      await this.record(actor, courseId, {
+        action: "refuse",
+        objectKey: input.key,
+        sizeBytes: null,
+        mimeType: null,
+        succeeded: false,
+        detail: "key is outside this customer's prefix",
+      });
+      throw this.unknownUpload();
+    }
+
+    const mint = await this.repository.findMint(input.key);
+    if (mint === undefined) throw this.unknownUpload();
+
+    const split = planMultipart(mint.sizeBytes);
+    if (split === undefined) throw this.unknownUpload();
+
+    const outOfRange = input.partNumbers.filter((part) => part > split.partCount);
+    if (outOfRange.length > 0) {
+      await this.record(actor, courseId, {
+        action: "refuse",
+        objectKey: input.key,
+        sizeBytes: null,
+        mimeType: null,
+        // The count, not the numbers: a detail is written by us and is not a
+        // place to echo a request back (§9.5).
+        succeeded: false,
+        detail: `${String(outOfRange.length)} part number(s) outside the plan`,
+      });
+      throw new AppError("validation", "part number outside the recorded plan");
+    }
+
+    const signed = storage.signParts(input.key, input.uploadId, input.partNumbers, now);
+
+    return {
+      parts: signed.parts,
+      expiresAt: signed.expiresAt.toISOString(),
+    };
+  }
+
+  /**
+   * Assemble, then verify — in that order, and both.
+   *
+   * The parts come from the **bucket's** own listing rather than from the
+   * client, and once assembled the object is measured against the recorded mint
+   * by the same `verifyUpload` a single PUT goes through. A multipart upload
+   * that assembles into the wrong size is discarded exactly like a single one
+   * that arrives at the wrong size, and for the same reason: the reference this
+   * returns is what a course will point at.
+   */
+  async completeMultipart(
+    courseSlug: string,
+    input: MultipartComplete,
+    actor: UploadActor,
+    now: Date,
+  ): Promise<UploadConfirmedResponse> {
+    const storage = this.requireStorage();
+    const courseId = await this.requireCourse(courseSlug);
+
+    if (!keyBelongsToCustomer(input.key, actor.customerId)) {
+      await this.record(actor, courseId, {
+        action: "refuse",
+        objectKey: input.key,
+        sizeBytes: null,
+        mimeType: null,
+        succeeded: false,
+        detail: "key is outside this customer's prefix",
+      });
+      throw this.unknownUpload();
+    }
+
+    const mint = await this.repository.findMint(input.key);
+    if (mint === undefined) throw this.unknownUpload();
+
+    const listed = await storage.listParts(input.key, input.uploadId, now);
+    if (!listed.ok) {
+      throw new AppError("upstream_unavailable", "bucket refused ListParts");
+    }
+
+    const assembled = await storage.completeMultipart(
+      input.key,
+      input.uploadId,
+      listed.parts,
+      now,
+    );
+
+    if (!assembled.ok) {
+      /*
+       * Give the storage back before answering.
+       *
+       * A failed assembly leaves every part behind, and they are billed and
+       * invisible (P129-03). The lifecycle rule would reach them in a day; this
+       * reaches them now, and its own failure does not change the answer.
+       */
+      await storage.abortMultipart(input.key, input.uploadId, now);
+      await this.record(actor, courseId, {
+        action: "refuse",
+        objectKey: input.key,
+        sizeBytes: null,
+        mimeType: null,
+        succeeded: false,
+        detail: `assembly failed: ${assembled.refusal.kind}`,
+      });
+      throw new AppError(
+        "upstream_unavailable",
+        "bucket refused CompleteMultipartUpload",
+      );
+    }
+
+    const verified = await storage.verifyUpload(
+      input.key,
+      { contentType: mint.mimeType, sizeBytes: mint.sizeBytes },
+      now,
+    );
+
+    if (!verified.ok) {
+      await this.record(actor, courseId, {
+        action: "refuse",
+        objectKey: input.key,
+        sizeBytes: null,
+        mimeType: null,
+        succeeded: false,
+        detail: `stored object refused: ${verified.refusal.kind}`,
+      });
+      throw new AppError("validation", "stored object failed verification");
+    }
+
+    await this.record(actor, courseId, {
+      action: "store",
+      objectKey: input.key,
+      sizeBytes: verified.upload.sizeBytes,
+      mimeType: verified.upload.contentType,
+      succeeded: true,
+      detail: null,
+    });
+
+    return {
+      reference: verified.upload.reference,
+      sizeBytes: verified.upload.sizeBytes,
+      mimeType: verified.upload.contentType,
+    };
+  }
 
   private requireStorage(): ObjectStorage {
     if (this.storage !== undefined) return this.storage;

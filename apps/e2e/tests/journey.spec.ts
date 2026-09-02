@@ -65,6 +65,18 @@
  * when one does. A fixture that cannot reach a state cannot find a bug in it,
  * which is CLAUDE.md §9.13's second rule in a new place.
  *
+ * **Three of those eighteen seconds are now grace** (P93-01). The client's rule
+ * is that watching to within three seconds of the end completes a video, so
+ * this fixture's gate opens at fifteen. That is a sixth of the fixture and
+ * 0.2 %% of a real twenty-five-minute module — the fixture is where the ratio is
+ * unflattering, not the product. It is written down here rather than fixed by
+ * regenerating the file, because a longer fixture would buy no coverage: the
+ * boundary itself is pinned exactly, at the second, by
+ * `watch.test.ts`'s "the tail grace" and by `learning.service.test.ts`'s
+ * "completes a video watched to within three seconds of its end" and its
+ * control. What the journey proves is that a physician who watches the video
+ * gets through — and it still plays the whole thing, on the clock.
+ *
  * **And it is still not a real recording**, which is a known gap rather than a
  * decision (P71-02). The client supplied real 1080p H.264 files for this, and
  * `fixtures/fortbildung-modul.mp4` is one of them, committed. It uploads and
@@ -88,6 +100,7 @@ import {
   menu,
   readIssuedPassword,
   signInToConsole,
+  uploadThroughMediaDialog,
 } from "../support/console.js";
 import { openCourseFromCatalogue } from "../support/catalogue.js";
 import { openWidgetShadowRoots } from "../support/shadow.js";
@@ -311,6 +324,18 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         .inputValue();
       expect(courseSlug).toMatch(/^e2e-fortbildung-[a-z0-9]+$/u);
 
+      /*
+       * Through the wizard's steps (P132-03).
+       *
+       * Creating a course is three steps now — Grunddaten, Darstellung, Prüfen
+       * & anlegen — and only the last one writes. Walking them is not padding:
+       * the risk a wizard adds over a flat form is precisely that a field
+       * entered on step 1 is dropped by the time step 3 submits, and this is
+       * the only test that would notice, because the title read back below is
+       * the one typed two steps earlier.
+       */
+      await operator.getByRole("button", { name: "Weiter" }).click();
+      await operator.getByRole("button", { name: "Weiter" }).click();
       await operator.getByRole("button", { name: "Fortbildung anlegen" }).click();
 
       // The editor opens on the structure tab, which is where the author's next
@@ -343,18 +368,21 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       await operator.locator("#content-new-title").fill("Die Aufzeichnung");
 
       /*
-       * `setInputFiles` on the hidden picker, which is what the "Video
-       * hochladen" button opens. From here the console does the real three-step
-       * upload: it asks the API for a ticket, PUTs the bytes straight to the
-       * bucket over a presigned URL, and asks the API to confirm the object
-       * landed. The API never sees a byte.
+       * Through the media dialog, which is the one control this form now has
+       * for supplying a file (P90-01) — the three buttons the client could not
+       * tell apart are its three tabs.
+       *
+       * From here the console does the real three-step upload: it asks the API
+       * for a ticket, PUTs the bytes straight to the bucket over a presigned
+       * URL, and asks the API to confirm the object landed. The API never sees
+       * a byte.
        *
        * Everything that can go wrong here went wrong in production and was
        * green in this suite: a CSP that does not name the bucket, a bucket with
        * no CORS for PUT, a signature over the wrong canonical request, a
        * `Content-Length` that does not match. All four now fail this line.
        */
-      await operator.locator('input[type="file"]').first().setInputFiles(VIDEO);
+      await uploadThroughMediaDialog(operator, VIDEO);
 
       const stored = operator.getByText(/hochgeladen|gespeichert/iu).first();
       try {
@@ -769,9 +797,150 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
           mediaTrail(),
       ).toBeGreaterThan(16);
 
+      /*
+       * A forward seek is refused, in a real browser (P120-01).
+       *
+       * ## Why this is here and not only in VideoPlayer.test.tsx
+       *
+       * Four component tests already cover the clamp, and they pass. They drive
+       * a jsdom element whose `currentTime` is a plain property: setting it
+       * fires nothing the browser would fire, and the element never buffers,
+       * never re-ranges, and has no native controls to fight with. Every one of
+       * those differences is a way the clamp could hold in the suite and not in
+       * Chromium — which is exactly the shape of the client's report, and §9.13:
+       * a test can cover a function exhaustively and prove nothing about the
+       * product.
+       *
+       * So this asks the question the physician asked. The playhead is around
+       * seventeen seconds into an eighteen-second fixture, so a seek to the end
+       * is a *small* forward jump — deliberately, because a large one is the
+       * easy case. The ceiling is what has been watched plus five seconds of
+       * tolerance, so the assertion is that the playhead did not end up
+       * meaningfully past where it already was.
+       */
+      const beforeSeek = await video.evaluate(
+        (element: HTMLVideoElement) => element.currentTime,
+      );
+      await video.evaluate((element: HTMLVideoElement) => {
+        // What dragging a scrub bar to the end does, at the level the element
+        // sees it. The widget draws its own controls and clamps them, and this
+        // goes underneath that — the element's own `seeking` event is the last
+        // line of defence and the one a determined person reaches.
+        element.currentTime = element.duration;
+      });
+      await learner.waitForTimeout(500);
+
+      const afterSeek = await video.evaluate(
+        (element: HTMLVideoElement) => element.currentTime,
+      );
+      expect(
+        afterSeek,
+        `a forward seek to the end was allowed: ${beforeSeek.toFixed(1)}s → ` +
+          `${afterSeek.toFixed(1)}s. The gate would still be honest — the ` +
+          "watched percentage is the union of intervals and a jump credits " +
+          "nothing — but a physician can skip to the end, which is the thing " +
+          "the client reported and what the accreditation's watch condition is " +
+          "for.",
+      ).toBeLessThan(beforeSeek + 8);
+
+      /*
+       * Backwards is untouched, and this is the control (§9.2 inverted).
+       *
+       * A player that refused *every* seek would pass the assertion above and
+       * be a worse product than one that allowed all of them: re-watching a
+       * passage you did not follow is the ordinary use of a scrub bar, and the
+       * accreditation asks that the material be seen, not that it be endured
+       * in one pass.
+       */
+      await video.evaluate((element: HTMLVideoElement) => {
+        element.currentTime = 2;
+      });
+      await learner.waitForTimeout(500);
+      expect(
+        await video.evaluate((element: HTMLVideoElement) => element.currentTime),
+        "a backwards seek was refused — re-watching is allowed and always was",
+      ).toBeLessThan(6);
+
+      /*
+       * Pause, from a state where pausing is possible (P124-01, P132-01).
+       *
+       * The player draws one button with three names — `Pause` while playing,
+       * `Erneut abspielen` once the video has ended, `Abspielen` otherwise
+       * (`VideoPlayer.tsx`, and `publish()` derives `playing` as
+       * `!video.paused && !video.ended`). So a click on `Pause` is only
+       * meaningful if the element is actually playing when it happens, and by
+       * this point in the act it usually is not:
+       *
+       *   * the watch loop above exits at sixteen seconds of an eighteen-second
+       *     fixture, and the three seeks and two 500 ms waits that follow are
+       *     easily the remaining two seconds;
+       *   * the forward-seek probe deliberately sets `currentTime = duration`,
+       *     which is the fastest way there is to end a video;
+       *   * and a seek on an **ended** element does not resume playback — the
+       *     spec keeps it paused — so the later seeks put the playhead back in
+       *     the middle of a video that is standing still.
+       *
+       * The button then reads `Abspielen`, `Pause` never appears, and the click
+       * waits the full thirty seconds. That is what failed on production on
+       * 27.08 and again on 31.08.
+       *
+       * ## The first fix was wrong, and this records it
+       *
+       * P124-01 read the failure as "the video ends during the 500 ms wait" and
+       * moved the seek from `duration - 1` to `duration - 5`. That theory was
+       * tested against production by shipping it: the run of 31.08 failed on
+       * the same line with the fix demonstrably in it (the line number moved
+       * with the comment). More runway does not help when the element is not
+       * advancing in the first place.
+       *
+       * ## Why this is not a conditional click
+       *
+       * Skipping the click when `Pause` is absent would leave a broken pause
+       * button green for ever, which is the §9.1 trap this suite exists to
+       * avoid. So the precondition is **established**, not assumed away: if the
+       * element is not playing, press the player's own play control and wait
+       * for the element to say it is playing, then pause it and assert that it
+       * stopped. Both halves are the product's — a `video.play()` from the test
+       * would prove the element works and nothing about the widget.
+       */
+      await video.evaluate((element: HTMLVideoElement) => {
+        element.currentTime = Math.max(0, element.duration - 5);
+      });
+      await learner.waitForTimeout(500);
+
+      if (await video.evaluate((element: HTMLVideoElement) => element.paused)) {
+        /*
+         * Whichever name the one button is wearing. `Erneut abspielen` when the
+         * element ended and nothing has moved the playhead since, `Abspielen`
+         * once a seek has cleared `ended` — the distinction is the widget's and
+         * this does not care which, only that a person looking at the screen
+         * has a control that starts it.
+         */
+        const resume = learner
+          .getByRole("button", { name: /^(Abspielen|Erneut abspielen)$/u })
+          .first();
+        await expect(
+          resume,
+          "the video was not playing and the player offered no control to " +
+            "start it — a physician arriving here has a still picture and " +
+            "nothing to press",
+        ).toBeVisible();
+        await resume.click();
+        await expect
+          .poll(() => video.evaluate((element: HTMLVideoElement) => element.paused), {
+            message:
+              "the player's own play control did not start the video. This " +
+              "is the control the whole course depends on, and it is the " +
+              "same button Act 12 presses after a reload.",
+          })
+          .toBe(false);
+      }
+
       await learner.getByRole("button", { name: "Pause", exact: true }).first().click();
       await expect
-        .poll(() => video.evaluate((element: HTMLVideoElement) => element.paused))
+        .poll(() => video.evaluate((element: HTMLVideoElement) => element.paused), {
+          message: "Pause was pressed and the video kept playing",
+        })
         .toBe(true);
 
       /*
@@ -806,9 +975,16 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * checking — that the watched time reached the server and came back — is
        * still checked, one line down, by the player's own percentage; and this
        * now checks the thing the fix was for.
+       *
+       * **The section's own control, not the screen's primary action** (P93-03).
+       * This was `Fortbildung pausieren`, which is the player's action only
+       * while there is still watching to do — and once the tail grace credits
+       * the video the sidebar correctly offers `Lernerfolgskontrolle beginnen`
+       * instead. Asserting a control that legitimately changes with the gate
+       * makes the test about the gate rather than about the reload.
        */
       await expect(
-        learner.getByRole("button", { name: "Fortbildung pausieren" }).first(),
+        learner.getByRole("button", { name: "Abspielen" }).first(),
         "a reload did not return to the section the learner was in (P82-04)",
       ).toBeVisible({ timeout: 30_000 });
 

@@ -13,7 +13,7 @@
 
 import { Module } from "@nestjs/common";
 import type { Pool } from "pg";
-import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
+import { APP_CONFIG, PG_POOL, PG_SIDE_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { AuditService } from "../../audit/audit.service.js";
 import { createSecretCipher } from "../../shared/secret-cipher.js";
@@ -36,8 +36,9 @@ import {
     },
     {
       provide: AuditService,
+      // The audit log's own connection — see PG_SIDE_POOL (P142-01).
       useFactory: (pool: Pool) => new AuditService(pool),
-      inject: [PG_POOL],
+      inject: [PG_SIDE_POOL],
     },
     {
       provide: StaffService,

@@ -12,7 +12,7 @@
  * answer key, rather than relying on a caller to drop a column (P4-01).
  */
 
-import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "../../db/tenant-db.js";
 import {
   contentProgress,
@@ -78,7 +78,15 @@ export interface AssessmentRepositoryPort {
 export class AssessmentRepository implements AssessmentRepositoryPort {
   constructor(private readonly db: Db) {}
 
-  /** The learner-facing read. `quizOptions.isCorrect` is not in the selection. */
+  /**
+   * The learner-facing read. `quizOptions.isCorrect` is not in the selection.
+   *
+   * Retired questions are excluded (P114-01). This is one of **two** places
+   * that filter — `findAnswerKey` is the other — and they are separate queries
+   * for separate purposes, so a change that fixes one and forgets the other
+   * produces a quiz whose visible questions and whose scoring disagree. Both
+   * have their own test naming that failure.
+   */
   async findQuestionsForLearner(contentId: string) {
     const questions = await this.db
       .select({
@@ -88,7 +96,7 @@ export class AssessmentRepository implements AssessmentRepositoryPort {
         prompt: quizQuestions.prompt,
       })
       .from(quizQuestions)
-      .where(eq(quizQuestions.contentId, contentId))
+      .where(and(eq(quizQuestions.contentId, contentId), isNull(quizQuestions.retiredAt)))
       .orderBy(asc(quizQuestions.ordinal));
 
     const questionIds = questions.map((row) => row.id);
@@ -113,7 +121,20 @@ export class AssessmentRepository implements AssessmentRepositoryPort {
     };
   }
 
-  /** Scoring input. Its result never reaches a response body. */
+  /**
+   * Scoring input. Its result never reaches a response body.
+   *
+   * Retired questions are excluded here too (P114-01), and the consequence of
+   * forgetting is worse than in the projection above: a retired question left
+   * in the key is counted in `totalCount`, so every learner's percentage is
+   * measured against an exam they were never shown, and the pass threshold
+   * silently becomes unreachable.
+   *
+   * A learner whose browser still holds the old form submits answers for
+   * questions no longer in the key. `scoreQuiz` raises `UnknownQuestionError`
+   * for those and the service turns it into a refusal telling them to reload —
+   * which is the honest outcome. Scoring a stale exam would be worse.
+   */
   async findAnswerKey(contentId: string): Promise<AnswerKeyRow[]> {
     const rows = await this.db
       .select({
@@ -124,7 +145,7 @@ export class AssessmentRepository implements AssessmentRepositoryPort {
       })
       .from(quizQuestions)
       .innerJoin(quizOptions, eq(quizOptions.questionId, quizQuestions.id))
-      .where(eq(quizQuestions.contentId, contentId))
+      .where(and(eq(quizQuestions.contentId, contentId), isNull(quizQuestions.retiredAt)))
       .orderBy(asc(quizQuestions.ordinal));
 
     const byQuestion = new Map<string, AnswerKeyRow>();

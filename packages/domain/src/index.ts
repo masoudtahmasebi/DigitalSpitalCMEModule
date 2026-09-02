@@ -35,6 +35,18 @@ export type {
   ModuleNode,
 } from "./types.js";
 
+/*
+ * `creditedDurationSec` and `TAIL_GRACE_SEC` are deliberately **not** here.
+ *
+ * They are the tail grace (P93-01), and every rule that has to know about them
+ * — `watchedPercent`, `watchedSecondsWithin`, `uncoveredSpans`,
+ * `courseWatchCoverage`, `watchedCoverageBars` — already applies them inside
+ * this package. Exporting them would put a second way to reach the same
+ * arithmetic one import away from an API or a screen, which is how §4
+ * invariant 6 gets broken and how P68-02 happened: two callers of the same
+ * number that stopped agreeing. `scripts/unused-rules.mjs` says the same thing
+ * from the other direction — it reported both as exported and uncalled.
+ */
 export {
   isSeekAllowed,
   maxWatchedPosition,
@@ -51,6 +63,12 @@ export type {
   SegmentValidationResult,
   WatchedSegment,
 } from "./watch.js";
+
+export {
+  embedOriginAllowed,
+  invalidEmbedOriginPatterns,
+  isEmbedOriginPattern,
+} from "./embed-origin.js";
 
 export { evaluateGate, evaluateSequence } from "./gating.js";
 export type { GateReason, GateResult, GateStatus, GatingItem } from "./gating.js";
@@ -89,6 +107,7 @@ export {
   seekFraction,
   seekPositionSec,
   VOLUME_STEP,
+  watchedCoverageBars,
 } from "./playback.js";
 export type { CoverageBar } from "./playback.js";
 
@@ -103,6 +122,7 @@ export type { Branding } from "./branding.js";
 export {
   canDelete,
   deletionVerdict,
+  questionRemoval,
   contentProblems,
   correctOptionCount,
   questionProblems,
@@ -115,6 +135,7 @@ export type {
   ContentProblem,
   DeletionVerdict,
   HierarchyLevel,
+  QuestionRemoval,
   OrderedKind,
   QuestionDraft,
   QuestionProblem,
@@ -149,11 +170,17 @@ export {
   InvalidUploadTokenError,
   planUpload,
   UPLOAD_MAX_BYTES,
+  uploadLimitLabel,
+  planMultipart,
+  MULTIPART_PART_BYTES,
+  MULTIPART_MAX_PARTS,
+  MULTIPART_THRESHOLD_BYTES,
   UPLOAD_TYPES,
   uploadObjectName,
 } from "./upload.js";
 export type {
   AcceptedUploadType,
+  MultipartPlan,
   UploadPlan,
   UploadPurpose,
   UploadRejection,
@@ -173,7 +200,9 @@ export type { Answer, Question, QuestionKind, QuizResult } from "./assessment.js
 export {
   CORRECTION_WINDOW_DAYS,
   eivDeadlines,
+  isPlaceholderVnr,
   isValidEfn,
+  PLACEHOLDER_VNR,
   REPORTING_WINDOW_DAYS,
 } from "./eiv.js";
 
@@ -306,16 +335,27 @@ export {
 } from "./totp.js";
 export type { TotpRejection, TotpVerdict } from "./totp.js";
 
+export { punktemeldungOutcome } from "./punktemeldung.js";
+export type {
+  PunktemeldungActor,
+  PunktemeldungInput,
+  PunktemeldungKind,
+  PunktemeldungOutcome,
+} from "./punktemeldung.js";
+
 export {
   certificateAction,
+  efnRefresh,
   maskEfn,
   nameCorrection,
   subjectErasure,
+  submissionStage,
 } from "./moderation.js";
 export type {
   CertificateAction,
   CertificateActionVerdict,
   CertificateStatus,
+  EfnRefreshVerdict,
   ErasureVerdict,
   NameCorrectionVerdict,
   SubmissionStage,

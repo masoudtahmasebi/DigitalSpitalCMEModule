@@ -39,6 +39,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { withDeadline } from "../../shared/deadline-fetch.js";
 import { certificateArchiveKey } from "@ds/domain";
 import type { AppConfig } from "../../config/config.js";
 import { hasObjectStorage } from "../../shared/object-storage.factory.js";
@@ -71,7 +72,9 @@ export class CertificateArchive implements CertificateArchivePort {
   constructor(
     private readonly presigner: Presigner,
     private readonly logger: ArchiveLogger,
-    private readonly fetchImpl: typeof fetch = fetch,
+    // A deadline by default (P144-01): a bucket that never answers must
+    // not hold the delivery sweep open until the next tick.
+    private readonly fetchImpl: typeof fetch = withDeadline(),
   ) {}
 
   async store(input: {

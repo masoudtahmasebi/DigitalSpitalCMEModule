@@ -29,6 +29,9 @@
 #   ./deploy.sh --no-build      restart without rebuilding (config change only)
 #   ./deploy.sh --no-migrate    skip migrations
 #   ./deploy.sh --rollback SHA  run images already built from an older commit
+#   ./deploy.sh --install-timers install the systemd units only, then exit.
+#                               The one step that needs root; everything else
+#                               runs as the deploy user.
 #
 # ## The order, and why it is that order
 #
@@ -58,6 +61,7 @@ RUN_MIGRATIONS=1
 RUN_BUILD=1
 ROLLBACK_TAG=""
 DRY_RUN=0
+INSTALL_TIMERS_ONLY=0
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; exit 1; }
@@ -76,10 +80,201 @@ while [[ $# -gt 0 ]]; do
     # alternative is finding out halfway through.
     --check)      DRY_RUN=1; shift ;;
     --rollback)   ROLLBACK_TAG="${2:-}"; [[ -n "$ROLLBACK_TAG" ]] || die "--rollback needs a commit"; shift 2 ;;
-    -h|--help)    sed -n '2,30p' "$0"; exit 0 ;;
-    *)            die "unknown option: $1" ;;
+    # Install the systemd units and nothing else.
+    #
+    # It exists because `ds_install_timers` needs root and the deploy user
+    # deliberately does not have it without a password. Without this flag the
+    # deploy's own warning told the operator to run a command that did not
+    # exist — CLAUDE.md §9.2, in a shell script: a control offered by a message
+    # is still a control, and one the program refuses is worse than none.
+    --install-timers) INSTALL_TIMERS_ONLY=1; shift ;;
+    -h|--help)    sed -n '2,33p' "$0"; exit 0 ;;
+    # Naming the options is the difference between "I mistyped" and "this
+    # feature does not exist", and the operator cannot tell those apart (§9.4).
+    *)            die "unknown option: $1
+Valid options: --check --no-build --no-migrate --rollback SHA --install-timers --help" ;;
   esac
 done
+
+# ---------------------------------------------------------------------------
+# The scheduled jobs, installed rather than described (P140-01)
+# ---------------------------------------------------------------------------
+#
+# `backup.timer` in this directory carried four systemd units and an instruction
+# to *"copy the four sections below into /etc/systemd/system/"*. On 01.09.2026
+# the client confirmed what CLAUDE.md §9.9 predicts about that shape:
+#
+#   > "They were never installed."
+#
+# So the platform had run for weeks with **no backup of any kind** — a
+# meticulous runbook, an encrypted dump, a retention policy, a freshness check,
+# and nothing on a schedule to produce a file for any of it to act on. That is
+# the CORS rule of P70-01 exactly: documentation instructing a human to apply a
+# setting is a setting that is not applied.
+#
+# It was worse than not-done. The units hard-coded `User=ds` and
+# `/home/ds/ds-education/repo/…`, and the installation they were written for
+# runs as `deploy` out of `~/Repositories/DigitalSpitalCMEModule`. A diligent
+# operator following the runbook to the letter would have installed three units
+# that fail on every fire — so the manual step was not merely skipped, it could
+# not have succeeded.
+#
+# Now the deploy writes them, from the paths it is actually running from, and
+# enables them. `--check` skips this: it changes host state.
+ds_install_timers() {
+  local unit_dir="/etc/systemd/system"
+
+  # The **binary** is not the question; a usable init is (P144-01).
+  #
+  # `command -v systemctl` succeeds inside a container that has the package and
+  # no systemd, and the next line then fails with "Failed to connect to bus:
+  # Host is down" and takes an otherwise successful deploy down with it. Ask
+  # whether it can actually talk to the manager instead.
+  if ! systemctl list-units --type=service >/dev/null 2>&1; then
+    log "No usable systemd on this host — skipping timer installation."
+    log "  Backups and the watchdog will NOT run. Schedule these by hand:"
+    log "    ${SCRIPT_DIR}/dsc run --rm backup database"
+    log "    ${SCRIPT_DIR}/watchdog.sh"
+    # A refusal that is correct is still a refusal: under `--install-timers`
+    # this was the whole job, so say so with a status rather than exiting 0 and
+    # letting the operator believe timers exist (§9.1).
+    [[ "${INSTALL_TIMERS_ONLY:-0}" == "1" ]] && die "--install-timers cannot do anything on a host without systemd"
+    return 0
+  fi
+
+  # `sudo -n`: non-interactive. A deploy that stops to ask for a password is a
+  # deploy that hangs in CI, and the SSH session it runs in has no terminal.
+  local sudo=""
+  if [[ "$(id -u)" != "0" ]]; then
+    if sudo -n true 2>/dev/null; then
+      sudo="sudo -n"
+    else
+      printf '\033[1;33m!!\033[0m %s\n' \
+        "Cannot write ${unit_dir} without a password, so the backup and watchdog timers were NOT installed." >&2
+      printf '\033[1;33m!!\033[0m %s\n' \
+        "Run once, as a user who can: sudo ${SCRIPT_DIR}/deploy.sh --install-timers" >&2
+      return 0
+    fi
+  fi
+
+  local user="${SUDO_USER:-$(id -un)}"
+  log "Installing systemd units as user=${user} dir=${SCRIPT_DIR}"
+
+  # Written from the real paths, every time. A unit that drifted from the
+  # checkout is the same class of defect as a Caddyfile the container never
+  # re-read (§9.9a) — so this rewrites rather than skipping when present.
+  ds_write_unit() {
+    local name="$1"
+    $sudo tee "${unit_dir}/${name}" >/dev/null
+  }
+
+  ds_write_unit ds-backup.service <<UNIT
+[Unit]
+Description=DS Education — database and object backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=${user}
+WorkingDirectory=${SCRIPT_DIR}
+ExecStart=${SCRIPT_DIR}/dsc run --rm backup database
+ExecStart=${SCRIPT_DIR}/dsc run --rm backup objects
+TimeoutStartSec=7200
+OnFailure=ds-watchdog.service
+UNIT
+
+  ds_write_unit ds-backup.timer <<'UNIT'
+[Unit]
+Description=DS Education — nightly backup
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+  ds_write_unit ds-backup-verify.service <<UNIT
+[Unit]
+Description=DS Education — is there a recent, restorable backup?
+After=docker.service
+
+[Service]
+Type=oneshot
+User=${user}
+WorkingDirectory=${SCRIPT_DIR}
+ExecStart=${SCRIPT_DIR}/dsc run --rm backup verify
+OnFailure=ds-watchdog.service
+UNIT
+
+  ds_write_unit ds-backup-verify.timer <<'UNIT'
+[Unit]
+Description=DS Education — backup freshness check
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+OnCalendar=*-*-* 16:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+  ds_write_unit ds-watchdog.service <<UNIT
+[Unit]
+Description=DS Education — is anything broken, and does anybody know?
+After=docker.service
+
+[Service]
+Type=oneshot
+User=${user}
+WorkingDirectory=${SCRIPT_DIR}
+EnvironmentFile=-${CONFIG_FILE}
+ExecStart=${SCRIPT_DIR}/watchdog.sh
+UNIT
+
+  ds_write_unit ds-watchdog.timer <<'UNIT'
+[Unit]
+Description=DS Education — service watchdog
+
+[Timer]
+# Every two minutes. The incident it exists for lasted twenty-two hours; the
+# cost of asking is two `docker` calls, and the heartbeat it sends when healthy
+# is what tells an external service the host is still alive.
+OnBootSec=2min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+  $sudo systemctl daemon-reload
+  $sudo systemctl enable --now ds-backup.timer ds-backup-verify.timer ds-watchdog.timer
+
+  # Assert the effect, not the exit code (§9.9a). `enable --now` returning 0
+  # says the command ran; the question is whether three timers are now armed,
+  # and P140 exists because for weeks the answer to that was no.
+  local armed
+  armed="$(systemctl list-timers 'ds-*' --no-pager --all 2>/dev/null | grep -c 'ds-.*\.timer' || true)"
+  if [[ "${armed:-0}" -lt 3 ]]; then
+    die "expected 3 ds-* timers to be armed, systemd lists ${armed:-0}"
+  fi
+
+  log "Timers installed and enabled:"
+  systemctl list-timers 'ds-*' --no-pager 2>/dev/null | sed 's/^/    /' || true
+
+  if [[ -z "${ALERT_WEBHOOK_URL:-}" ]]; then
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "ALERT_WEBHOOK_URL is empty: the watchdog will find problems and report them to a log file nobody reads." >&2
+  fi
+  if [[ -z "${HEARTBEAT_URL:-}" ]]; then
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "HEARTBEAT_URL is empty: nothing outside this host will notice if the host itself stops." >&2
+  fi
+}
 
 # ---------------------------------------------------------------------------
 # 1. Preflight
@@ -142,6 +337,18 @@ set -a
 # shellcheck disable=SC1090 # runtime path, deliberately not resolvable at lint time
 source "$CONFIG_FILE"
 set +a
+
+# `--install-timers` does this one thing and stops (P144-01).
+#
+# It is the only step that needs root, and the deploy user deliberately cannot
+# get root without a password — so the deploy warns and carries on rather than
+# hanging on a prompt. That warning used to name a flag that did not exist,
+# which is §9.2 in a shell script: the operator ran exactly what they were told
+# and got `unknown option`.
+if [[ "$INSTALL_TIMERS_ONLY" == "1" ]]; then
+  ds_install_timers
+  exit 0
+fi
 
 # Everything the stack cannot start without and cannot derive. Named here, in
 # one list, so the drift check below can speak about exactly these.
@@ -256,9 +463,27 @@ done
 
 # The EIV live guard, at deploy time rather than at submission time. A
 # Punktemeldung cannot be withdrawn once the correction window closes, so
-# pointing at the real endpoint has to be a deliberate act (ADR-0005).
-if [[ "${EIV_BASE_URL:-}" == *"eiv-fobi.de"* && "${EIV_ALLOW_LIVE:-}" != "yes" ]]; then
-  die "EIV_BASE_URL points at the live endpoint but EIV_ALLOW_LIVE is not 'yes'"
+# pointing at the real register has to be a deliberate act (ADR-0005).
+#
+# ## The test system is not the live one (P104-01)
+#
+# This used to match `*eiv-fobi.de*`, which is true of
+# `backend-test.eiv-fobi.de` as well — EIV's **test** system, the one they
+# instruct integrators to develop against. So configuring the platform against
+# the safe system required setting `EIV_ALLOW_LIVE=yes`, and an operator who
+# did that then had a deployment that would also submit to the production
+# register the moment somebody edited a URL. A safety flag that must be
+# switched off to do ordinary work is a flag that is always off.
+#
+# The rule now lives in `packages/eiv-client/src/endpoint.ts` and is unit
+# tested there; `eiv-endpoint.sh` is the shell reading of it, and
+# `eiv-endpoint.test.sh` drives both over one fixture table so they cannot
+# drift (§9.11).
+# shellcheck source=./eiv-endpoint.sh
+source "$(dirname "${BASH_SOURCE[0]}")/eiv-endpoint.sh"
+
+if ds_eiv_requires_live_consent "${EIV_BASE_URL:-}" && [[ "${EIV_ALLOW_LIVE:-}" != "yes" ]]; then
+  die "EIV_BASE_URL is the live register (or an unrecognised host) but EIV_ALLOW_LIVE is not 'yes'"
 fi
 
 # The API never reads a VNR or its password from the environment, and an
@@ -596,6 +821,19 @@ fi
 # ---------------------------------------------------------------------------
 # 4b. The portal's realm and the project's realm are the same realm
 # ---------------------------------------------------------------------------
+# The loopback pattern, named once (P101-03).
+#
+# `packages/seed/src/keycloak-binding.ts` is the authority — it parses the URL
+# and asks the hostname, which is the right way and is unit-tested against nine
+# addresses. This is the same question asked in POSIX ERE because step 4b runs
+# before the API image does, with nothing but `psql`.
+#
+# Two implementations of one rule is exactly what §9.11 warns about, so this one
+# is pinned by `keycloak-issuer.test.sh` over the same fixture table, including
+# the case that makes a naive pattern wrong: `localhost.medice.com` is a public
+# host and must not match.
+DS_LOOPBACK_ISSUER_RE='^https?://(127\.[0-9.]+|localhost|\[::1\]|[^/]*\.localhost)(:[0-9]+)?(/|$)'
+
 # A half-configured Keycloak binding, on any project (P24-01).
 #
 # The API validates a learner's token against that project's own
@@ -611,6 +849,45 @@ fi
 # A warning, never a refusal. On a first deploy there are no projects at all,
 # and a check that can fail an install is worse than no check. `|| true`
 # throughout for the same reason.
+# What the worker will do on its first tick, before it does it (P107-02).
+#
+# Arming the worker against the live register is not only a decision about the
+# *next* physician to finish. `claim_due_eiv_submissions` claims every row in
+# `queued` or `failed_retryable` whose `next_attempt_at` has passed — so the
+# first sweep after the deploy flushes whatever is already sitting in the
+# queue, in a batch, to the Ärztekammer. On an installation that has been
+# tested against the mock or against EIV's test system, that backlog is exactly
+# the set of rows nobody intends to file.
+#
+# It is invisible: there is no queue screen in the console, and the operator
+# arming the worker edits two lines in a file with nothing in between that says
+# how much is behind them.
+#
+# So the deploy counts them and says so, to the person who is already trusted
+# with the answer (§9.10) at the moment it is actionable. A count and a due
+# date, never an EFN — ADR-0004 holds here as everywhere else.
+#
+# A warning, not a refusal: a backlog is a legitimate state (the worker may
+# simply have been off for an hour), and only the operator knows which it is.
+if [[ "$RUN_MIGRATIONS" == "1" ]] &&
+  ds_eiv_worker_will_file_live "${EIV_BASE_URL:-}" "${EIV_WORKER_ENABLED:-}"; then
+  queued="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
+    psql -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
+    -c "SELECT count(*) FROM eiv_submissions
+         WHERE status IN ('queued', 'failed_retryable')
+           AND (next_attempt_at IS NULL OR next_attempt_at <= now())" \
+    2>/dev/null | tr -d '\n' || true)"
+
+  if [[ -n "$queued" && "$queued" != "0" ]]; then
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "${queued} Punktemeldung(en) are due and the worker is armed against ${EIV_BASE_URL:-?}." >&2
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "The first sweep after this deploy files them at the Ärztekammer. Set EIV_WORKER_ENABLED=no and re-deploy if that is not intended." >&2
+  else
+    log "EIV queue empty — arming the worker files nothing that already exists"
+  fi
+fi
+
 if [[ "$RUN_MIGRATIONS" == "1" ]]; then
   half_bound="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
     psql -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
@@ -626,6 +903,43 @@ if [[ "$RUN_MIGRATIONS" == "1" ]]; then
       "A learner will sign in successfully and then have every request refused. Set both, or neither, in the console." >&2
   else
     log "No half-configured Keycloak bindings"
+  fi
+
+  # A *complete* binding that points at this machine (P101-03).
+  #
+  # ## Why the check above was green for months on a broken project
+  #
+  # It asks whether the pair is complete. `medice-adhs` had both columns set —
+  # to `http://127.0.0.1:8080/realms/ds-dev` and `ds-education-api`, the seed's
+  # old fallback — so it passed, printed "No half-configured Keycloak bindings",
+  # and an operator reading that line reasonably concluded the bindings were
+  # fine. Every physician arriving from MEDICE's WordPress got a bare 401 on a
+  # real, correctly-signed token, because the API was comparing its `iss`
+  # against an address inside the API container.
+  #
+  # That is CLAUDE.md §9.1's second form: a check that silently covers less than
+  # its own success message claims. Completeness was never the property that
+  # mattered — reachability from a physician's browser was.
+  #
+  # The seed now refuses outright, which is the hard gate. This stays a warning
+  # and stays here because it covers what the seed cannot: a project somebody
+  # created by hand in the console, on an installation whose seeds never ran.
+  loopback_bound="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
+    psql -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
+    -c "SELECT string_agg(slug, ', ' ORDER BY slug)
+          FROM projects
+         WHERE keycloak_issuer ~* '${DS_LOOPBACK_ISSUER_RE}'" \
+    2>/dev/null | tr -d '\n' || true)"
+
+  if [[ -n "$loopback_bound" ]]; then
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "These projects are bound to a Keycloak on loopback: ${loopback_bound}." >&2
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "No learner can sign in to them — the token's issuer is compared against an address inside this container." >&2
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "Fix: Verwaltung -> Organisation -> Projekte -> <project> -> Bearbeiten (Issuer, Audience, Realm)." >&2
+  else
+    log "No project bound to a Keycloak on loopback"
   fi
 fi
 
@@ -896,6 +1210,54 @@ if ! ds_policies_match 15; then
 fi
 log "Caddy serves the policy this checkout defines"
 
+# ---------------------------------------------------------------------------
+# 6d. The widget bundle is reachable, and loadable from somebody else's page
+# ---------------------------------------------------------------------------
+#
+# Since P96-01 every customer's WordPress site loads `ds-lms.js` from here
+# rather than shipping its own copy — which is what makes a widget fix reach
+# them without a plugin update, and also what makes this host a single point of
+# failure for every embedded Fortbildung on the platform.
+#
+# Two things can go wrong and neither appears in any log of ours:
+#
+#   * the host does not answer — DNS, a certificate, a container that did not
+#     start — and every embedding page renders an empty area;
+#   * it answers **without CORS**, and the browser fetches the file, refuses to
+#     execute it, and says so only in a console nobody on our side is looking
+#     at. That is P70-01's bucket, one origin over.
+#
+# So the deploy asks the same question a customer's browser will. A `HEAD`,
+# because the bytes are not in question and the headers are.
+log "Verifying the widget bundle"
+ds_widget_headers=""
+for attempt in $(seq 1 20); do
+  ds_widget_headers="$(
+    curl --fail --silent --show-error --max-time 10 --head "${WIDGET_URL}" 2>/dev/null || true
+  )"
+  [[ -n "$ds_widget_headers" ]] && break
+  # First deploy: Caddy may still be completing the ACME challenge for this
+  # hostname, exactly as for the API above.
+  [[ "$attempt" == "20" ]] && {
+    die "${WIDGET_URL} did not answer. Every WordPress site embedding a
+   Fortbildung loads its JavaScript from there, so each of them is currently
+   rendering an empty page with nothing in our logs to say so. Check that
+   ${WIDGET_DOMAIN} resolves to this host and that the widget container is up."
+  }
+  sleep 5
+done
+
+if ! printf '%s' "$ds_widget_headers" \
+  | grep -qi '^access-control-allow-origin: *\*'; then
+  die "${WIDGET_URL} answers, but without an Access-Control-Allow-Origin header.
+   A browser on a customer's own domain will download the file and refuse to
+   execute it, which looks to them like a widget that does nothing and to us
+   like a successful request. infra/nginx/widget.conf sets the header — note
+   that nginx drops every inherited header the moment a location block declares
+   one of its own, so check that block rather than the server."
+fi
+log "${WIDGET_URL} is reachable and loadable cross-origin"
+
 # Old images and build layers accumulate fast on a host that builds; a full
 # disk is its own outage. A week keeps enough tags for a rollback to be
 # instant, which is the point of tagging by commit.
@@ -951,3 +1313,9 @@ if [[ "$RUN_MIGRATIONS" == "1" ]]; then
       "Create one in the console, or run a seed: ./dsc seed medice" >&2
   fi
 fi
+
+# A deploy that swapped the containers and passed every check has succeeded,
+# even if it could not write to /etc — so this reports rather than aborts.
+# `--install-timers` above is the opposite: there, failing is the answer.
+ds_install_timers || printf '\033[1;33m!!\033[0m %s\n' \
+  "The timers were not installed. Run: sudo ${SCRIPT_DIR}/deploy.sh --install-timers" >&2

@@ -14,6 +14,7 @@ that could still bite.
 | Purpose          | Host                                                                     |
 | ---------------- | ------------------------------------------------------------------------ |
 | API, test system | `https://backend-test.eiv-fobi.de` — the only server the Swagger names   |
+| API, live system | `https://backend.eiv-fobi.de` — not in the Swagger; see below            |
 | Web app, test    | `https://punktemeldung-test.eiv-fobi.de/`                                |
 | Web app, live    | `https://punktemeldung.eiv-fobi.de/` — named by the Anerkennungsbescheid |
 | API, live        | **not published** — see S26                                              |
@@ -105,12 +106,12 @@ failure an append-only log of our own attempts structurally cannot detect.
 
 ## What is still not known
 
-| #   | Question                                                                                                                     | Owner       |
-| --- | ---------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| S26 | The **production** API base URL. The Swagger names only the test server; `punktemeldung.eiv-fobi.de` is the web app.         | MEDICE      |
-| S25 | Which point flags a completion may claim for the accredited course. `veranstaltung` answers it against the test system.      | MEDICE/ÄKWL |
-| S11 | Whether the accredited `ende` for an on-demand course permits completions throughout the validity window.                    | ÄKWL        |
-| —   | Whether the interface **cross-checks** the flags against the event's point values. The mock deliberately does not (see S25). | —           |
+| #       | Question                                                                                                                                                                                                                                                                                            | Owner       |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| ~~S26~~ | ~~The production API base URL~~ — **`https://backend.eiv-fobi.de`, closed 20.08.** Not published anywhere: read off the live web app's own requests with DevTools open. Recorded with its provenance because an observation is weaker than a contract — if EIV move the host, nothing announces it. | —           |
+| S25     | Which point flags a completion may claim for the accredited course. `veranstaltung` answers it against the test system.                                                                                                                                                                             | MEDICE/ÄKWL |
+| S11     | Whether the accredited `ende` for an on-demand course permits completions throughout the validity window.                                                                                                                                                                                           | ÄKWL        |
+| —       | Whether the interface **cross-checks** the flags against the event's point values. The mock deliberately does not (see S25).                                                                                                                                                                        | —           |
 
 The 4xx bodies are documented as _"historisch gewachsen und aktuell nicht in
 jedem Fall einheitlich"_, with a unification planned. The client therefore never

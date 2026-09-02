@@ -19,10 +19,11 @@
  */
 
 import { useEffect, useState } from "react";
-import type { AdminCourseDetail, ApiClient, EivEvent } from "@ds/sdk";
+import type { AdminCourseDetail, ApiClient } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
 import { Badge, Button, Field, Notice, TextInput } from "./ui.js";
+import { EivCheckPanel } from "./EivCheck.js";
 
 /** Mirrors `ACCREDITED_MIN_PASS_PERCENT` on the server, which is the authority. */
 const ACCREDITED_MIN_PASS_PERCENT = 70;
@@ -283,6 +284,23 @@ export function CourseSettings(props: {
           hint={de.course.vnrPasswordHint}
           htmlFor="vnrPassword"
         >
+          {/*
+            `maxLength` is a bound, not a rule, and there is deliberately no
+            other validation on this field.
+
+            The VNR password's length is **not the same at every Ärztekammer**:
+            Baden-Württemberg documents an 8-stellige TAN, the Pfalz a
+            4-stellige one. A `minLength`, a digit pattern or an exact length
+            derived from whichever Kammer we happened to look at first would
+            refuse a legitimate credential from another — and it would refuse it
+            at the one moment an operator is configuring a course they cannot
+            report without.
+
+            That is the same trap as the VNR check digit and the EFN Prüfziffer
+            (S23, S21): a rule inferred from a sample of one, rejecting valid
+            input at the last step. `CLAUDE.md` §7. Let the authority refuse a
+            wrong password — it is the only party that knows.
+          */}
           <TextInput
             id="vnrPassword"
             type="password"
@@ -339,110 +357,26 @@ export function CourseSettings(props: {
       </Button>
 
       <AssetUpload client={props.client} course={course} onSaved={props.onSaved} />
-      <EivEventCheck client={props.client} course={course} />
+      {/*
+        The connection check (P103-01), replacing `EivEventCheck`.
+
+        That component read the event and nothing else, and it required the
+        credentials to be *saved* first — so the only way to test a password was
+        to overwrite the working one. This one covers the handshake and both
+        read-only queries, takes a password without storing it, and tells an
+        operator which of the three failed. One implementation of the question,
+        not two (§9.11).
+      */}
+      <EivCheckPanel
+        client={props.client}
+        courseSlug={course.slug}
+        hasVnr={course.vnr !== null && course.vnr !== ""}
+        claimsLernerfolg={course.eivPunkteLernerfolg}
+      />
     </div>
   );
 }
 
-/**
- * Ask the Ärztekammer what it holds about this VNR (P31-02).
- *
- * The single most useful thing on this screen, and the reason it exists: EIV
- * refuses a Punktemeldung whose date falls outside the accredited period with
- * a 406, and for an on-demand Fortbildung taken across a year that is
- * potentially *every* completion. Before this, that was discovered after a
- * physician had been shown a completed Zertifizierung.
- *
- * On demand rather than on load: it is an authenticated call to somebody
- * else's system, and opening a settings screen should not make one.
- */
-function EivEventCheck(props: { client: ApiClient; course: AdminCourseDetail }) {
-  const [event, setEvent] = useState<EivEvent | undefined>();
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | undefined>();
-
-  const ready = props.course.vnr !== null && props.course.hasVnrPassword;
-
-  async function check(): Promise<void> {
-    setBusy(true);
-    setProblem(undefined);
-    try {
-      setEvent(await props.client.adminDescribeEivEvent(props.course.slug));
-    } catch (error) {
-      setEvent(undefined);
-      setProblem(describeError(error, de.error.generic));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section className="space-y-3 border-t border-gray-200 pt-6">
-      <h3 className="text-base font-semibold text-gray-900">{de.course.eivCheck}</h3>
-      <p className="text-xs text-gray-600">{de.course.eivCheckHint}</p>
-
-      <Button variant="secondary" disabled={!ready || busy} onClick={() => void check()}>
-        {busy ? de.course.eivChecking : de.course.eivCheckAction}
-      </Button>
-      {ready ? null : (
-        <p className="text-xs text-amber-700">{de.course.eivCheckNeedsCredentials}</p>
-      )}
-
-      {problem === undefined ? null : <Notice tone="error">{problem}</Notice>}
-
-      {event === undefined ? null : (
-        <div className="space-y-2">
-          {/* The two findings worth shouting about, before the raw values. */}
-          {event.locked === true ? (
-            <Notice tone="error">{de.course.eivLocked}</Notice>
-          ) : null}
-          {event.assessmentPoints === 0 && props.course.eivPunkteLernerfolg ? (
-            <Notice tone="warning">{de.course.eivLernerfolgMismatch}</Notice>
-          ) : null}
-
-          <dl className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[12rem_1fr]">
-            <Detail label={de.course.eivThema} value={event.title} />
-            <Detail
-              label={de.course.eivZeitraum}
-              value={`${event.validFrom ?? "?"} – ${event.validUntil ?? "?"}`}
-            />
-            <Detail label={de.course.eivKategorie} value={event.category} />
-            <Detail
-              label={de.course.eivPunkteBasis}
-              value={
-                event.attendancePoints === null ? null : String(event.attendancePoints)
-              }
-            />
-            <Detail
-              label={de.course.eivPunkteLernerfolg}
-              value={
-                event.assessmentPoints === null ? null : String(event.assessmentPoints)
-              }
-            />
-          </dl>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function Detail(props: { label: string; value: string | null | undefined }) {
-  return (
-    <>
-      <dt className="text-gray-600">{props.label}</dt>
-      <dd className="text-gray-900">{props.value ?? "—"}</dd>
-    </>
-  );
-}
-
-/**
- * Stamp and signature upload.
- *
- * Read in the browser as base64 and posted as JSON — the API takes them that
- * way deliberately (see the endpoint's description). The file's real type is
- * decided by the server from its magic bytes; the `accept` attribute here is a
- * convenience for the file picker, not a check.
- */
 function AssetUpload(props: {
   client: ApiClient;
   course: AdminCourseDetail;

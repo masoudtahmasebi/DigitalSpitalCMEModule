@@ -116,6 +116,46 @@ export interface Presigner extends ReadPresigner {
    * explained to whoever reads a bucket listing later.
    */
   presignDelete(key: string, expiresInSec: number, now: Date): string;
+
+  /*
+   * Multipart (P129-02). The four the server calls and the one it hands out.
+   *
+   * On the interface rather than only on the class because `ObjectStorage`
+   * depends on the port — a fake presigner in a test must be forced to answer
+   * these too, or the multipart paths would be exercised against a double that
+   * quietly lacks them.
+   */
+  presignCreateMultipart(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    contentType: string,
+  ): string;
+  presignUploadPart(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    uploadId: string,
+    partNumber: number,
+  ): string;
+  presignListParts(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    uploadId: string,
+  ): string;
+  presignCompleteMultipart(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    uploadId: string,
+  ): string;
+  presignAbortMultipart(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    uploadId: string,
+  ): string;
 }
 
 /**
@@ -163,6 +203,123 @@ export class S3Presigner implements Presigner {
 
   presignDelete(key: string, expiresInSec: number, now: Date): string {
     return this.presign("DELETE", key, expiresInSec, now, {});
+  }
+
+  /*
+   * ---------------------------------------------------------------------
+   * Multipart upload (P129-01)
+   * ---------------------------------------------------------------------
+   *
+   * A single signed PUT is one network event: it either finishes or it is
+   * worth nothing, and `UPLOAD_MAX_BYTES.video` was 2 GiB for exactly that
+   * reason. A 3 GB lecture over a clinic's connection is tens of minutes in
+   * which one reset costs the whole upload.
+   *
+   * Multipart makes the unit of failure a **part** instead of a file. The five
+   * operations below are the whole protocol, and the division of labour keeps
+   * the property this platform is built on: **the bytes never touch the API.**
+   *
+   *   create   — server, once. Returns an UploadId.
+   *   part     — signed here, uploaded *by the browser*, one URL per part.
+   *   list     — server. What actually landed, according to the bucket.
+   *   complete — server. Assembles the parts the bucket says it has.
+   *   abort    — server. Releases the storage a dead upload is holding.
+   *
+   * **The browser never sees an ETag, and that is deliberate.** The obvious
+   * design has the client collect each part's `ETag` response header and send
+   * them up to complete the upload — which needs `ExposeHeaders: ETag` in the
+   * bucket's CORS policy, a setting no installation has ever had (P70-01 is the
+   * same story about CORS itself). Asking the bucket what it holds is both one
+   * less thing to configure and the more honest answer: it is the bucket's
+   * account of the upload, not the client's claim about it, in the same way
+   * `verify` already refuses to take "the PUT returned 200" as evidence.
+   *
+   * It is also what makes **resume** work after a browser crash. Nothing about
+   * which parts arrived lives in the tab.
+   */
+
+  /** `POST /{key}?uploads` — begins an upload and yields an UploadId. */
+  presignCreateMultipart(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    contentType: string,
+  ): string {
+    return this.presign(
+      "POST",
+      key,
+      expiresInSec,
+      now,
+      { "content-type": contentType },
+      { uploads: "" },
+    );
+  }
+
+  /**
+   * `PUT /{key}?partNumber=N&uploadId=…` — the one URL a browser is given.
+   *
+   * The length is **not** signed, unlike `presignPut`. A part's size is decided
+   * by the client's chunking and the last part is whatever remains, so binding
+   * it would mean the server predicting the split. The constraint that matters
+   * is still there: the URL names one key, one part number and one upload, and
+   * the upload was created by us against a key built from the caller's own
+   * prefix.
+   */
+  presignUploadPart(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    uploadId: string,
+    partNumber: number,
+  ): string {
+    return this.presign(
+      "PUT",
+      key,
+      expiresInSec,
+      now,
+      {},
+      {
+        partNumber: String(partNumber),
+        uploadId,
+      },
+    );
+  }
+
+  /** `GET /{key}?uploadId=…` — the parts the bucket actually holds. */
+  presignListParts(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    uploadId: string,
+  ): string {
+    return this.presign("GET", key, expiresInSec, now, {}, { uploadId });
+  }
+
+  /** `POST /{key}?uploadId=…` — assemble. The body lists the parts. */
+  presignCompleteMultipart(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    uploadId: string,
+  ): string {
+    return this.presign("POST", key, expiresInSec, now, {}, { uploadId });
+  }
+
+  /**
+   * `DELETE /{key}?uploadId=…` — give the storage back.
+   *
+   * An abandoned multipart upload keeps its parts, is billed for, and appears
+   * in no object listing — so it is invisible until somebody reads an invoice.
+   * The lifecycle rule in `bucket-lifecycle.ts` is the backstop for uploads
+   * nobody aborts; this is the polite path for the ones we know about.
+   */
+  presignAbortMultipart(
+    key: string,
+    expiresInSec: number,
+    now: Date,
+    uploadId: string,
+  ): string {
+    return this.presign("DELETE", key, expiresInSec, now, {}, { uploadId });
   }
 
   /**
@@ -287,6 +444,36 @@ export class S3Presigner implements Presigner {
   }
 
   /**
+   * `?lifecycle` on the bucket itself (P129-03).
+   *
+   * Same shape as `presignBucketCors` and for the same reason: a bucket-level
+   * document, signed with its own MD5 so the store can refuse a truncated body.
+   *
+   * What it configures is invisible until it costs money. An abandoned
+   * multipart upload keeps every part it received and appears in **no object
+   * listing** — a browser closed at 80 % of a 3 GB lecture leaves 2.4 GB that
+   * nothing will ever show you. `AbortIncompleteMultipartUpload` is the only
+   * thing that reclaims it.
+   */
+  presignBucketLifecycle(
+    method: "GET" | "PUT",
+    expiresInSec: number,
+    now: Date,
+    contentMd5?: string,
+  ): string {
+    return this.presign(
+      method,
+      "",
+      expiresInSec,
+      now,
+      contentMd5 === undefined
+        ? {}
+        : { "content-md5": contentMd5, "content-type": "application/xml" },
+      { lifecycle: "" },
+    );
+  }
+
+  /**
    * The one implementation of SigV4 query signing.
    *
    * Every method goes through here rather than each growing its own copy: the
@@ -304,7 +491,7 @@ export class S3Presigner implements Presigner {
    * needs and what nothing else may use.
    */
   private presign(
-    method: "GET" | "PUT" | "HEAD" | "DELETE",
+    method: "GET" | "PUT" | "POST" | "HEAD" | "DELETE",
     key: string,
     expiresInSec: number,
     now: Date,

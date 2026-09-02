@@ -97,8 +97,24 @@ export class RolesGuard implements CanActivate {
       // login form — so "pick a customer" presented as "you have been logged
       // out", which is exactly how it was reported.
       if (request.staffProfile !== undefined) {
+        /*
+         * Name **both** headers, because there are two and the console uses the
+         * one this message did not mention (P127-01).
+         *
+         * `X-DS-Project` was the only way to scope a request until P22-03 added
+         * `X-DS-Customer`, which is what the console has sent ever since. So an
+         * operator who reached this — and one did, from the Mediathek — was
+         * handed the name of a header their client never sends, about a
+         * situation that is not theirs to fix anyway.
+         *
+         * It stays developer-facing on purpose: a person should not see this at
+         * all. Reaching it means a screen called a tenant-scoped route without a
+         * customer selected, which the console now refuses to do before the
+         * request is made.
+         */
         throw AppError.badRequest(
-          "this route is tenant-scoped and no X-DS-Project header was sent",
+          "this route is tenant-scoped and neither X-DS-Customer nor " +
+            "X-DS-Project was sent — no customer is selected",
         );
       }
 

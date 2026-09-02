@@ -30,7 +30,7 @@ import {
   type OnModuleInit,
 } from "@nestjs/common";
 import type { Pool } from "pg";
-import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
+import { APP_CONFIG, PG_POOL, PG_SIDE_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { AuditService } from "../../audit/audit.service.js";
 import { createSecretCipher } from "../../shared/secret-cipher.js";
@@ -50,6 +50,9 @@ export class CertificateDeliveryScheduler implements OnModuleInit, OnModuleDestr
 
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
+    // The audit log writes on its own connection by design, so it takes the
+    // side pool — see PG_SIDE_POOL (P142-01).
+    @Inject(PG_SIDE_POOL) sidePool: Pool,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {
     const channel = pluginRegistry().find("deliveryChannel");
@@ -64,7 +67,7 @@ export class CertificateDeliveryScheduler implements OnModuleInit, OnModuleDestr
         createSecretCipher(config.NODE_ENV, config.SECRETS_KMS_KEY),
       ),
       channel,
-      new AuditService(pool),
+      new AuditService(sidePool),
       {
         batchSize: config.CERTIFICATE_DELIVERY_BATCH_SIZE,
         // Two sweeps of headroom, so a slow SMTP round trip is never

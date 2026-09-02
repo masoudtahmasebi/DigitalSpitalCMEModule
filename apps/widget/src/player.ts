@@ -64,6 +64,28 @@ export function locateContent(
 }
 
 /**
+ * A module's position in the course, zero-based (P115-01).
+ *
+ * The one source for a module's number. `locateContent` answers this for the
+ * content a learner is looking at; the sidebar needs it for every module in a
+ * list that is **not** `course.modules` — the enrolment state — and used its own
+ * position in that list instead. The two disagreed on a real course, and the
+ * symptom was the sidebar and the heading below the video naming the same
+ * module differently.
+ *
+ * `undefined` when the module is not in the course, for the same reason
+ * `locateContent` returns it: a caller that cannot place the module should
+ * decide what to do, not be handed a plausible wrong answer.
+ */
+export function moduleNumber(
+  course: Pick<CourseDetail, "modules">,
+  moduleId: string,
+): number | undefined {
+  const at = course.modules.findIndex((module) => module.id === moduleId);
+  return at === -1 ? undefined : at;
+}
+
+/**
  * Which glyph an outline item gets.
  *
  * The order of the tests is the whole content of this function:

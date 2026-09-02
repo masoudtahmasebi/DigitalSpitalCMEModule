@@ -31,6 +31,8 @@
  * message just gets worse.
  */
 
+import { isPlaceholderVnr } from "./eiv.js";
+
 /**
  * The fields the Teilnahmebescheinigung and the Punktemeldung read.
  *
@@ -39,9 +41,10 @@
  * without this list being looked at. The two that are *not* here are worth
  * naming:
  *
- * - `fortbildungsnummer` — nothing reads it (docs/show-stoppers.md S24). It
- *   renders one line on the Zertifizierung tab and is absent from the
- *   certificate and the Meldung alike. Requiring it would be inventing a rule.
+ * - `fortbildungsnummer` — gone as a field (S31, closed 27.08.2026). MEDICE
+ *   confirmed it is the VNR under another name, so the Zertifizierung tab's
+ *   line is fed by `vnr` and there is no second value to require. `vnr` is
+ *   already a blocker below, which is now the only place it needs to be.
  * - the media sources — they live on `contents`, not on the course, so this
  *   function cannot see them. That is P62-03's check.
  */
@@ -92,7 +95,15 @@ export function publishBlockers(course: PublishCandidate): readonly PublishBlock
 
   const missing: PublishBlocker[] = [];
 
-  if (isBlank(course.vnr)) missing.push("vnr");
+  /*
+   * Blank **or** the seed's placeholder (P117-01).
+   *
+   * Nineteen zeros is not blank, so this test used to pass it — and a course
+   * published that way issued a Teilnahmebescheinigung printing a VNR no
+   * Ärztekammer ever assigned, with no gate anywhere objecting. `isBlank` was
+   * asking "is anything there", when the question is "is a real event named".
+   */
+  if (isBlank(course.vnr) || isPlaceholderVnr(course.vnr)) missing.push("vnr");
   // A boolean, not the ciphertext: the domain is pure and must never be handed
   // a credential, encrypted or otherwise (CLAUDE.md §4 invariant 7).
   if (!course.hasVnrPassword) missing.push("vnrPassword");

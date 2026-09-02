@@ -130,7 +130,16 @@ test.describe("die beiden Kundenrollen", () => {
      * "Ihr Konto hat keine Berechtigung für die Verwaltung" along with
      * everything else.
      */
-    await page.getByRole("button", { name: COURSE_WITH_POINTS_TITLE }).click();
+    /*
+     * `exact`, because the row's delete button carries the course's title in
+     * its own accessible name — "Fortbildung „…“ löschen" — and a substring
+     * match therefore resolves to two elements the moment the course has no
+     * enrolments and the delete control is drawn. The test was passing on the
+     * state where it was hidden.
+     */
+    await page
+      .getByRole("button", { name: COURSE_WITH_POINTS_TITLE, exact: true })
+      .click();
     await expect(
       page.getByRole("heading", { name: COURSE_WITH_POINTS_TITLE }),
     ).toBeVisible({ timeout: 15_000 });

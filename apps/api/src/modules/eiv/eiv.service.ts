@@ -17,7 +17,12 @@
  * stored `last_error` — only the failure *kind* does.
  */
 
-import { EivError, EIV_PASSWORD_KEY, type EivFailureKind } from "@ds/eiv-client";
+import {
+  EivError,
+  EIV_PASSWORD_KEY,
+  requiresLiveConsent,
+  type EivFailureKind,
+} from "@ds/eiv-client";
 import type { AccreditationReporter } from "@ds/plugin-api";
 import { eivDeadlines, planEivAttempt, type EivAttemptFailure } from "@ds/domain";
 import { SYSTEM_ACTOR, type AuditServicePort } from "../../audit/audit.service.js";
@@ -134,11 +139,15 @@ export class EivService {
     // burned through the retry budget: it is an admin data problem, and the
     // window is better spent once someone fixes it.
     if (row.vnrPassword === null || row.vnrPassword === "") {
-      await this.abandon(claim, row, "missing_vnr_password");
+      // `auth` and not undefined: nothing was sent, but the reason it could not
+      // be sent is a credential — which is the operator's to fix, and that is
+      // the question `failure_kind` answers. Migration 0048 backfills the same
+      // value onto historic rows for the same reason.
+      await this.abandon(claim, row, "missing_vnr_password", row.attemptCount, "auth");
       return "abandoned";
     }
 
-    if (!this.options.allowLive && !isLocal(this.options.baseUrl)) {
+    if (!this.options.allowLive && requiresLiveConsent(this.options.baseUrl)) {
       // Refusing loudly beats submitting real data to the Ärztekammer from a
       // misconfigured environment.
       await this.abandon(claim, row, "live_submission_not_allowed");
@@ -277,7 +286,13 @@ export class EivService {
     });
 
     if (next.action === "abandon") {
-      await this.abandon(claim, row, next.reason ?? "attempts_exhausted", attemptCount);
+      await this.abandon(
+        claim,
+        row,
+        next.reason ?? "attempts_exhausted",
+        attemptCount,
+        failure,
+      );
       return "abandoned";
     }
 
@@ -311,6 +326,19 @@ export class EivService {
     row: DueSubmission,
     reason: string,
     attemptCount = row.attemptCount,
+    /**
+     * What EIV said, where there was an EIV answer (P119-01).
+     *
+     * `reason` is the queue's word for why it stopped and collapses `auth`,
+     * `business` and `validation` into `permanent_rejection` — fine for
+     * deciding not to retry, useless for deciding *who can fix it*. A 422 means
+     * the physician's EFN was refused; a 406 means the event was. Only one of
+     * those is something a physician can act on, and telling them the wrong one
+     * is §9.2 aimed at the person least able to do anything about it.
+     *
+     * Absent for the reasons reached without sending anything.
+     */
+    failureKind?: EivAttemptFailure,
   ): Promise<void> {
     const windowClosed =
       reason === "reporting_window_missed" || reason === "correction_window_closed";
@@ -320,13 +348,19 @@ export class EivService {
       attemptCount,
       reason,
       windowClosed,
+      ...(failureKind === undefined ? {} : { failureKind }),
     });
 
     await this.audit.recordForCustomer(row.customerId, {
       actor: SYSTEM_ACTOR,
       action: "eiv.abandoned",
       subject: row.enrolmentId,
-      detail: { reason, attemptCount, windowClosed },
+      detail: {
+        reason,
+        attemptCount,
+        windowClosed,
+        ...(failureKind ? { failureKind } : {}),
+      },
     });
   }
 }
@@ -343,20 +377,5 @@ function toFailure(kind: EivFailureKind | string): EivAttemptFailure {
       return kind;
     default:
       return "unknown";
-  }
-}
-
-/** Localhost and the docker-compose mock; anything else is "live". */
-function isLocal(baseUrl: string): boolean {
-  try {
-    const { hostname } = new URL(baseUrl);
-    return (
-      hostname === "127.0.0.1" ||
-      hostname === "localhost" ||
-      hostname === "::1" ||
-      hostname === "eiv-mock"
-    );
-  } catch {
-    return false;
   }
 }

@@ -33,7 +33,6 @@ export interface CourseRow {
   learningObjectives: string[];
   targetAudience: string | null;
   prerequisites: string | null;
-  fortbildungsnummer: string | null;
   deliveryType: "on_demand" | "live" | "praesenz";
   thema: string[];
   altersgruppe: string[];

@@ -255,16 +255,33 @@ export class DsLmsElement extends HTMLElement {
     const provider = resolveTokenProvider({
       provider: this.tokenProvider,
       endpoint: this.getAttribute("token-endpoint") ?? undefined,
+      header: this.getAttribute("token-header") ?? undefined,
     });
 
     const apiBase = this.getAttribute("api-base") ?? "";
     const projectSlug = this.getAttribute("project") ?? "";
 
+    /*
+     * `signed-in` is tri-state on purpose (P99-03): "yes", "no", or absent.
+     *
+     * Absent means the host said nothing, and every host that predates this
+     * attribute is in that case — they must keep behaving exactly as before,
+     * so absent maps to `undefined` rather than to `false`. Reading a missing
+     * attribute as "not signed in" would blank the widget on every page that
+     * has not been updated.
+     */
+    const declared = this.getAttribute("signed-in");
+    const signedIn = declared === null ? undefined : declared !== "no";
+
     root.render(
       createElement(App, {
         apiBase,
         projectSlug,
+        signedIn,
+        signInUrl: this.getAttribute("sign-in-url") ?? undefined,
         courseSlug: this.getAttribute("course") ?? "",
+        // Forwarded, never parsed here (P105-01).
+        profileHint: this.getAttribute("learner-profile") ?? undefined,
         // `open-at="resume"` puts a course-pinned element straight into the
         // content the learner left off at, which is how a routing host honours
         // the catalogue's **Fortbildung fortsetzen** across its own navigation.

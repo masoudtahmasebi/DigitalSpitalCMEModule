@@ -68,6 +68,10 @@ function fakeClient(overrides: Partial<ApiClient> = {}): ApiClient {
       url: "https://storage.example/signed-get",
       expiresAt: new Date(Date.now() + 600_000).toISOString(),
     })),
+    // The dialog's library tab loads on open (P90-01). Empty is the honest
+    // default here: these cases are about uploading, and a library with rows in
+    // it would have every case render cards nobody asserts on.
+    adminListMedia: vi.fn(async () => []),
     ...overrides,
   } as unknown as ApiClient;
 }
@@ -92,7 +96,22 @@ function renderField(props: Partial<Parameters<typeof UploadField>[0]> = {}) {
   return { onChange, client };
 }
 
-/** The hidden `<input type="file">`, which has no accessible role by design. */
+/**
+ * Open the media dialog on its upload tab (P90-01).
+ *
+ * The field used to carry a hidden file input of its own. It now carries one
+ * button, and every way of supplying a file is a tab behind it — so these cases
+ * take the two clicks an author takes. Idempotent: a case that has already
+ * opened it can call this again without closing anything.
+ */
+function openUpload(): void {
+  if (screen.queryByRole("dialog") === null) {
+    fireEvent.click(screen.getByRole("button", { name: "Medien auswählen" }));
+  }
+  fireEvent.click(screen.getByRole("tab", { name: "Datei hochladen" }));
+}
+
+/** The `<input type="file">` inside the dialog's upload tab. */
 function filePicker(): HTMLInputElement {
   const input = document.querySelector('input[type="file"]');
   if (input === null) throw new Error("no file input rendered");
@@ -118,6 +137,7 @@ function readAsText(file: Blob): Promise<string> {
 }
 
 function choose(file: File): void {
+  openUpload();
   const input = filePicker();
   Object.defineProperty(input, "files", { value: [file], configurable: true });
   fireEvent.change(input);
@@ -151,13 +171,16 @@ describe("what an author sees", () => {
   });
 
   it("says why uploading is unavailable before the course exists", () => {
-    // Not hidden. A control that vanishes is a control an author looks for.
+    /*
+     * Not hidden, and the dialog still opens (P90-01). Uploading needs a course
+     * to upload against; **choosing a file that is already stored does not**, so
+     * hiding the button would take away the tab that works in order to disable
+     * the one that does not. The upload tab says which it is.
+     */
     renderField({ courseSlug: undefined });
+    openUpload();
 
-    expect(
-      (screen.getByRole("button", { name: "Datei hochladen" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    expect(filePicker().disabled).toBe(true);
     expect(screen.getByText(/speichern Sie die Fortbildung zuerst/i)).toBeTruthy();
   });
 
@@ -165,6 +188,8 @@ describe("what an author sees", () => {
     // Mirrors UPLOAD_TYPES. Offering a `.mov` a browser will let you pick and
     // the server will refuse is a round trip and a message, for nothing.
     renderField({ purpose: "material" });
+    openUpload();
+
     expect(filePicker().accept).toBe("application/pdf");
   });
 });
@@ -400,6 +425,7 @@ describe("subtitles the author already has", () => {
 
   it("offers the picker both formats", () => {
     renderField({ purpose: "captions" });
+    openUpload();
     const accept = filePicker().getAttribute("accept") ?? "";
     expect(accept).toContain(".srt");
     expect(accept).toContain(".vtt");

@@ -19,6 +19,7 @@ import {
   remainingSec,
   seekFraction,
   seekPositionSec,
+  watchedCoverageBars,
 } from "./playback.js";
 
 describe("remainingSec", () => {
@@ -184,6 +185,53 @@ describe("coverageBars", () => {
     expect(coverageBars([{ startSec: 0, endSec: 50 }], Number.NaN)).toEqual([]);
     // Entirely beyond the media.
     expect(coverageBars([{ startSec: 300, endSec: 400 }], 200)).toEqual([]);
+  });
+});
+
+describe("watchedCoverageBars", () => {
+  it("fills the tail once nothing is outstanding", () => {
+    // A ten-second video watched to 9.2 s: the gate says 100 % (P93-01), so a
+    // bar with a third of its width unfilled next to the words "100 %
+    // angesehen" is the screen disagreeing with the answer.
+    expect(watchedCoverageBars([{ startSec: 0, endSec: 9.2 }], 10)).toEqual([
+      { startPercent: 0, widthPercent: 100 },
+    ]);
+  });
+
+  it("leaves the tail alone while something is still outstanding", () => {
+    // Stopped at 6 s of ten, one second short of the requirement: the bar must
+    // still show a gap, because there is one.
+    expect(watchedCoverageBars([{ startSec: 0, endSec: 6 }], 10)).toEqual([
+      { startPercent: 0, widthPercent: 60 },
+    ]);
+  });
+
+  it("does not close a hole in the middle by filling the end", () => {
+    // The case that would make this a lie: everything after the hole is
+    // watched, so the last bar reaches the credited end — and the video is
+    // still not complete.
+    expect(
+      watchedCoverageBars(
+        [
+          { startSec: 0, endSec: 4 },
+          { startSec: 6, endSec: 10 },
+        ],
+        10,
+      ),
+    ).toEqual([
+      { startPercent: 0, widthPercent: 40 },
+      { startPercent: 60, widthPercent: 40 },
+    ]);
+  });
+
+  it("draws nothing for a video nobody has watched", () => {
+    expect(watchedCoverageBars([], 10)).toEqual([]);
+    expect(watchedCoverageBars([{ startSec: 0, endSec: 5 }], 0)).toEqual([]);
+  });
+
+  it("agrees with coverageBars on a video with no tail to close", () => {
+    const segments = [{ startSec: 0, endSec: 100 }];
+    expect(watchedCoverageBars(segments, 100)).toEqual(coverageBars(segments, 100));
   });
 });
 

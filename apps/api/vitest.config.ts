@@ -15,6 +15,12 @@ export default defineConfig({
   test: {
     // `test/contract` belongs here, not in the integration suite: those are
     // compile-time type assertions and need no infrastructure at all.
-    include: ["src/**/*.test.ts", "test/contract/**/*.test.ts"],
+    include: [
+      "src/**/*.test.ts",
+      "test/contract/**/*.test.ts",
+      // The shared test helpers have tests of their own: a matcher that cannot
+      // fire is a green assertion that proves nothing (§9.1).
+      "test/support/**/*.test.ts",
+    ],
   },
 });

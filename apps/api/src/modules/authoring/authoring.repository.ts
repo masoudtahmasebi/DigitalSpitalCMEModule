@@ -32,7 +32,7 @@
  * written out in full.
  */
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { ChildCensus } from "@ds/domain";
 import type { Db } from "../../db/tenant-db.js";
 import {
@@ -255,10 +255,30 @@ export interface QuizRows {
     answerCount: number;
     options: Array<{ id: string; label: string; isCorrect: boolean }>;
   }>;
+  /**
+   * How many questions have been retired out of this exam (P114-01).
+   *
+   * Not the questions themselves: they are not the Lernerfolgskontrolle any
+   * more, and rendering them would offer an author rows they cannot act on.
+   * The count exists so the screen can say they are there — an exam that
+   * silently went from eleven questions to two reads as data loss to the next
+   * person who opens it (§9.4).
+   */
+  retiredCount: number;
 }
 
 export interface QuizPlan {
   deleteQuestionIds: string[];
+  /**
+   * Questions leaving the exam that a physician has already answered (P114-01).
+   *
+   * Separate from `deleteQuestionIds` because the two are different statements
+   * against different rows, and collapsing them into one list with a flag is
+   * how the wrong one gets run. These are stamped `retired_at` and keep
+   * everything — options, `quiz_answers`, and the ordinal they held when they
+   * were answered.
+   */
+  retireQuestionIds: string[];
   deleteOptionIds: string[];
   questions: Array<{
     id: string | undefined;
@@ -935,7 +955,27 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
   // Assessment
   // -------------------------------------------------------------------------
 
+  /**
+   * The exam as an author edits it: live questions only (P114-01).
+   *
+   * A retired question is not part of the Lernerfolgskontrolle any more, so
+   * listing it in the editor would offer an author a row they cannot reorder,
+   * score or remove — §9.2. `retiredCount` carries the fact that they exist, so
+   * their absence reads as a decision somebody made rather than as data that
+   * went missing (§9.4).
+   *
+   * `setQuiz` diffs against this list, which is the property that makes
+   * retirement idempotent: an already-retired question is not in `existing`, so
+   * it is never named for removal a second time.
+   */
   async loadQuiz(contentId: string): Promise<QuizRows> {
+    const [retired] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(quizQuestions)
+      .where(
+        and(eq(quizQuestions.contentId, contentId), isNotNull(quizQuestions.retiredAt)),
+      );
+
     const questionRows = await this.db
       .select({
         id: quizQuestions.id,
@@ -946,7 +986,7 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
         )`,
       })
       .from(quizQuestions)
-      .where(eq(quizQuestions.contentId, contentId))
+      .where(and(eq(quizQuestions.contentId, contentId), isNull(quizQuestions.retiredAt)))
       .orderBy(quizQuestions.ordinal);
 
     const questionIds = questionRows.map((row) => row.id);
@@ -972,6 +1012,7 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
           .filter((option) => option.questionId === question.id)
           .map(({ id, label, isCorrect }) => ({ id, label, isCorrect })),
       })),
+      retiredCount: retired?.count ?? 0,
     };
   }
 
@@ -987,11 +1028,35 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
         .where(inArray(quizQuestions.id, plan.deleteQuestionIds));
     }
 
+    /*
+     * Retire before parking, and park only the live (P114-01).
+     *
+     * Order matters both ways. Retiring first takes those rows out of the
+     * partial unique index before the survivors are renumbered into the
+     * ordinals they used to hold. And the parking `WHERE` gained
+     * `retired_at IS NULL` because a retired question must keep the ordinal it
+     * had when somebody answered it — parking flips it negative and nothing
+     * below ever flips it back, so without this clause every tombstone would
+     * drift to a negative position on the next unrelated edit.
+     */
+    if (plan.retireQuestionIds.length > 0) {
+      await this.db
+        .update(quizQuestions)
+        .set({ retiredAt: new Date() })
+        .where(
+          and(
+            inArray(quizQuestions.id, plan.retireQuestionIds),
+            isNull(quizQuestions.retiredAt),
+          ),
+        );
+    }
+
     // Park the survivors, so re-ordering questions cannot collide on
-    // `UNIQUE (content_id, ordinal)`.
+    // `quiz_questions_live_ordinal`.
     await this.db.execute(
       sql`UPDATE quiz_questions SET ordinal = -1 - ordinal
-           WHERE content_id = ${contentId} AND ordinal >= 0`,
+           WHERE content_id = ${contentId} AND ordinal >= 0
+             AND retired_at IS NULL`,
     );
 
     for (const [index, question] of plan.questions.entries()) {

@@ -40,17 +40,54 @@ final class DS_LMS_Renderer {
 	}
 
 	public static function register(): void {
+		/*
+		 * The bundle comes from the platform, not from this plugin (P96-01).
+		 *
+		 * It used to be `DS_LMS_URL . 'assets/ds-lms.js'` — a copy placed in
+		 * the plugin by `pnpm wp:bundle`, which is a build step a human had to
+		 * remember before packaging. The file is a build artefact and is
+		 * gitignored, so **every copy of this plugin taken from the repository
+		 * was missing it**, and nothing said so: `wp_register_script` happily
+		 * points at a URL, the browser 404s, and the page renders a `<ds-lms>`
+		 * element that never upgrades. A staging install found it exactly that
+		 * way. CLAUDE.md §9.9 — a step documented for a human is a step that
+		 * does not happen.
+		 *
+		 * Loading it from the platform's own widget host fixes the class
+		 * rather than the instance, and is what the client asked for: a fix to
+		 * the widget reaches every site on our next deploy, with no plugin
+		 * update anywhere. `infra/nginx/widget.conf` serves it with the CORS
+		 * and cache headers that makes that safe and quick.
+		 *
+		 * **No version query string.** `DS_LMS_VERSION` is the *plugin's*
+		 * version and would pin visitors to whatever bundle was current when
+		 * the plugin was last released — which is the coupling this removes.
+		 * Freshness is the cache header's job now, not the URL's.
+		 */
+		$widget_url = DS_LMS_Settings::all()['widget_url'];
+		if ( '' === $widget_url ) {
+			// Nothing to register. `render()` says so where somebody can act
+			// on it, rather than enqueuing a handle that resolves to nothing.
+			self::register_content_hooks();
+			return;
+		}
+
 		wp_register_script(
 			self::HANDLE,
-			DS_LMS_URL . 'assets/ds-lms.js',
+			$widget_url,
 			array(),
-			DS_LMS_VERSION,
+			null,
 			// In the footer, and as a module: the widget is a custom element
 			// and upgrades markup that was already parsed, so it does not need
 			// to block rendering.
 			array( 'strategy' => 'defer', 'in_footer' => true )
 		);
 
+		self::register_content_hooks();
+	}
+
+	/** The block and the shortcode, which exist whether or not a bundle does. */
+	private static function register_content_hooks(): void {
 		add_shortcode( 'ds_lms', array( self::class, 'shortcode' ) );
 
 		// The block is registered from block.json so the editor and the front
@@ -81,10 +118,26 @@ final class DS_LMS_Renderer {
 	 */
 	public static function shortcode( $atts ): string {
 		$atts = shortcode_atts(
-			array( 'course' => '' ),
+			array(
+				'course' => '',
+				/*
+				 * Retained, and now a synonym for the default (P99-05).
+				 *
+				 * `[ds_lms]` *is* the catalogue since 2.0.0, so this attribute
+				 * says nothing new. It stays because pages were written with it
+				 * during the hours it was the only way to ask — removing it
+				 * would break them for no gain, and "explicit" is a legitimate
+				 * thing for a page author to want.
+				 */
+				'catalogue' => '',
+			),
 			is_array( $atts ) ? $atts : array(),
 			'ds_lms'
 		);
+
+		if ( '' !== (string) $atts['catalogue'] && '0' !== (string) $atts['catalogue'] ) {
+			return self::render( '' );
+		}
 
 		return self::render( (string) $atts['course'] );
 	}
@@ -116,9 +169,24 @@ final class DS_LMS_Renderer {
 	private static function render( string $course_override ): string {
 		$settings = DS_LMS_Settings::all();
 
+		/*
+		 * No slug means the catalogue. Full stop (P99-05).
+		 *
+		 * It used to mean "the Standard-Fortbildung setting, and the catalogue
+		 * only if that happened to be empty" — which made the commonest thing a
+		 * page wants, the list of every Fortbildung, depend on a field in a
+		 * different screen being blank. A page said `[ds_lms]` and got
+		 * something decided elsewhere.
+		 *
+		 * The setting is gone rather than merely unused: a **Standard-
+		 * Fortbildung** field that no code reads is a control that looks like a
+		 * decision and is not one (§9.2). A page that wants one Fortbildung
+		 * names it — `[ds_lms course="…"]` — which is one word longer and says
+		 * exactly what it does.
+		 */
 		$course = '' !== $course_override
 			? (string) preg_replace( '/[^a-z0-9-]/', '', strtolower( $course_override ) )
-			: $settings['course_slug'];
+			: '';
 
 		if ( '' === $settings['api_base'] || '' === $settings['project_slug'] ) {
 			// Editors see what is wrong; visitors see nothing at all rather
@@ -132,9 +200,32 @@ final class DS_LMS_Renderer {
 			return '';
 		}
 
+		/*
+		 * The bundle's address, checked separately and named separately
+		 * (P96-01).
+		 *
+		 * Folding it into the test above would tell an editor to fill in the
+		 * API base they have already filled in. This is a different field with
+		 * a different fix, and the message says which — §9.4, say what the
+		 * person does next.
+		 *
+		 * It can only be empty when `base_domain` is empty too *and* nobody
+		 * typed a URL, so in practice the first guard catches it; this exists
+		 * for the case that is left, and so that the silent 404 the staging
+		 * install met can never happen again without somebody being told.
+		 */
+		if ( '' === $settings['widget_url'] ) {
+			if ( current_user_can( 'edit_posts' ) ) {
+				return '<p>' . esc_html__(
+					'DS Education: Es ist keine Adresse für das Widget-JavaScript hinterlegt. Bitte Basis-Domain oder Widget-URL in den Einstellungen eintragen.',
+					'ds-lms'
+				) . '</p>';
+			}
+			return '';
+		}
+
 		wp_enqueue_script( self::HANDLE );
 		add_filter( 'script_loader_tag', array( self::class, 'as_module' ), 10, 2 );
-		self::attach_token_provider();
 
 		// The attribute is omitted entirely rather than emitted empty: the
 		// widget distinguishes "no course attribute" (show the catalogue) from
@@ -144,83 +235,133 @@ final class DS_LMS_Renderer {
 			: sprintf( ' course="%s"', esc_attr( $course ) );
 
 		return sprintf(
-			'<ds-lms api-base="%1$s" project="%2$s"%3$s></ds-lms>',
+			'<ds-lms api-base="%1$s" project="%2$s"%3$s%4$s%5$s data-ds-plugin="%6$s"></ds-lms>',
 			esc_url( $settings['api_base'] ),
 			esc_attr( $settings['project_slug'] ),
-			$course_attribute
+			$course_attribute,
+			self::session_attributes(),
+			self::token_attributes(),
+			// Which plugin is on this site, answerable from the browser rather
+			// than over FTP. The widget writes `data-ds-build` beside it, so
+			// one element carries both halves of "which build?" (§9.9).
+			esc_attr( DS_LMS_VERSION )
 		);
 	}
 
 	/**
-	 * Teach the widget how to get a token from WordPress.
+	 * What this page knows about its own visitor (P99-03).
 	 *
-	 * The widget knows nothing about WordPress and should not: it exposes a
-	 * `tokenProvider` property, and this is the WordPress implementation of it.
-	 * Doing it here rather than teaching the widget about `X-WP-Nonce` keeps
-	 * the widget host-agnostic — the same bundle runs in the dev harness and,
-	 * later, anywhere else.
+	 * ## Why the page gets to answer this
 	 *
-	 * Nothing in this script is secret. The nonce is bound to the visitor's own
-	 * session and is useless without their cookie.
+	 * Because it is the only thing that can. Signing in happens on this site,
+	 * in this site's session, and the widget has no way to see it. Without the
+	 * answer the widget could only infer "no token, therefore something is
+	 * broken", and it said so — a physician who had simply not logged in was
+	 * told the Fortbildung was *nicht korrekt eingebunden* and to contact the
+	 * site's operator.
+	 *
+	 * ## What this is not
+	 *
+	 * **It is not authorisation, and it must never be mistaken for it.** This
+	 * decides what a person sees; it decides nothing about what they may do.
+	 * Every request the widget makes still carries a token the API validates
+	 * against Keycloak's JWKS — signature, issuer, audience, expiry — so a page
+	 * asserting `signed-in="yes"` gains a caller precisely nothing. CLAUDE.md
+	 * §4 invariant 2 is untouched: **never trust WordPress that a user is
+	 * authenticated.** We trust it only about what to draw.
+	 *
+	 * ## Signed in for this purpose means "holds a Keycloak token"
+	 *
+	 * Not "is signed in to the website". A DocCheck visitor is signed in and
+	 * has no Keycloak token, and a CME point cannot be awarded to somebody the
+	 * accreditation chain cannot name — so they are shown the same invitation
+	 * to sign in with a MEDICE account, which is exactly what they need to do.
 	 */
-	private static function attach_token_provider(): void {
-		if ( ! is_user_logged_in() ) {
-			// No session, no token, no point installing a provider — the widget
-			// will show its "not signed in" state.
-			return;
+	private static function session_attributes(): string {
+		$signed_in = DS_LMS_Token_Source::available();
+
+		return sprintf(
+			' signed-in="%1$s" sign-in-url="%2$s"',
+			$signed_in ? 'yes' : 'no',
+			esc_url( DS_LMS_Settings::sign_in_url() )
+		);
+	}
+
+	/**
+	 * Where the widget can get a token, and the header it must send.
+	 *
+	 * ## What used to be here, and why it is not
+	 *
+	 * Forty lines of inline JavaScript: a `fetch` of the token endpoint with
+	 * `X-WP-Nonce`, a `refresh=1` query parameter, error handling, and the
+	 * property assignment that survives a custom element upgrading late.
+	 *
+	 * Every one of those lines already existed inside the widget, in
+	 * `apps/widget/src/token.ts`. Two implementations of one behaviour is the
+	 * shape CLAUDE.md warns about generally; here it had a specific cost, and
+	 * it is the cost the client asked to be rid of: **a change to how a token
+	 * is fetched needed a plugin update on every customer site.** A retry, a
+	 * timeout, a different failure — all of it was frozen at whatever version
+	 * of the plugin that site last installed (P96-03).
+	 *
+	 * So the page now says *where* and *what header*, and says nothing about
+	 * *how*. The how ships with the bundle and updates with it.
+	 *
+	 * ## What is in the attributes
+	 *
+	 * The endpoint URL, which is public, and a WordPress REST nonce, which is
+	 * not a credential: it is bound to this visitor's own session and is
+	 * useless without their cookie. It was already in the page — in the script
+	 * that is gone — so nothing is exposed here that was not before.
+	 *
+	 * **No token.** There has never been one in the markup and there must never
+	 * be one.
+	 *
+	 * @return string The attributes, ready to concatenate, or empty.
+	 */
+	private static function token_attributes(): string {
+		if ( ! DS_LMS_Token_Source::available() ) {
+			/*
+			 * Not `is_user_logged_in()` (P98-01).
+			 *
+			 * MEDICE's physicians are never WordPress users — their login is a
+			 * theme-level PHP session — so that test was false for every one of
+			 * them and the element went out with no way to authenticate at all.
+			 *
+			 * The honest question is whether there is a token to fetch, and it
+			 * is asked without producing one. A DocCheck visitor reaches here
+			 * too: signed in to the site, holding no Keycloak token, which is
+			 * exactly the case the widget's signed-out state is for.
+			 */
+			return '';
 		}
 
 		$endpoint = rest_url( DS_LMS_Token_Endpoint::NAMESPACE . DS_LMS_Token_Endpoint::ROUTE );
-		$nonce    = wp_create_nonce( 'wp_rest' );
 
-		$script = sprintf(
-			<<<'JS'
-(function () {
-  var endpoint = %1$s;
-  var nonce = %2$s;
+		/*
+		 * The profile, base64url'd (P105-01).
+		 *
+		 * An attribute rather than a second endpoint, because it is the same
+		 * fact as the token and travels the same way. Base64 because a name may
+		 * contain any UTF-8 and this becomes a header, where a raw umlaut is not
+		 * expressible and a newline is a response-splitting primitive.
+		 *
+		 * Absent when the session holds no profile, so a host that has one adds
+		 * an attribute and one that does not is unchanged.
+		 */
+		$profile = DS_LMS_Token_Source::profile();
+		$hint    = array() === $profile
+			? ''
+			: sprintf(
+				' learner-profile="%s"',
+				esc_attr( rtrim( strtr( base64_encode( (string) wp_json_encode( $profile ) ), '+/', '-_' ), '=' ) )
+			);
 
-  function provider(request) {
-    var url = new URL(endpoint, window.location.href);
-    if (request && request.refresh) url.searchParams.set("refresh", "1");
-
-    return fetch(url, {
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: { accept: "application/json", "X-WP-Nonce": nonce },
-    })
-      .then(function (response) {
-        return response.ok ? response.json() : null;
-      })
-      .then(function (body) {
-        return body && typeof body.token === "string" ? body.token : undefined;
-      })
-      .catch(function () {
-        return undefined;
-      });
-  }
-
-  // Custom elements upgrade asynchronously, and the element may be parsed
-  // before or after this script runs. Assigning the property works either way:
-  // it lands on the instance, and connectedCallback reads it when it fires.
-  function attach() {
-    document.querySelectorAll("ds-lms").forEach(function (element) {
-      element.tokenProvider = provider;
-    });
-  }
-
-  attach();
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", attach);
-  }
-})();
-JS
-			,
-			wp_json_encode( $endpoint ),
-			wp_json_encode( $nonce )
+		return sprintf(
+			' token-endpoint="%1$s" token-header="%2$s"%3$s',
+			esc_url( $endpoint ),
+			esc_attr( 'X-WP-Nonce: ' . wp_create_nonce( 'wp_rest' ) ),
+			$hint
 		);
-
-		// `before` so the provider is assigned prior to the module executing
-		// and upgrading the element.
-		wp_add_inline_script( self::HANDLE, $script, 'before' );
 	}
 }

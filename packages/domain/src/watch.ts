@@ -132,6 +132,70 @@ export function mergeWatchedSegments(
 const BOUNDARY_TOLERANCE_SEC = 0.5;
 
 /**
+ * The tail of a video that is not required to be watched (P93-01).
+ *
+ * ## Why a whole three seconds, when there is already a half-second snap
+ *
+ * The client, twice, and the second time after watching a ten-second video to
+ * the end and being told **92 % angesehen** with
+ * "Diese Stellen fehlen noch: 0:09–0:10":
+ *
+ * > _"for completion of the video, check how long the video is, and if the user
+ * > watches until 3 second less than the end of the video, consider it done!"_
+ *
+ * `BOUNDARY_TOLERANCE_SEC` was the previous answer to the same shape and it is
+ * not enough. It assumes the only error is the sampling interval — the last
+ * `timeupdate` landing a fraction before the end — and that is one of at least
+ * three:
+ *
+ * 1. **The sampling interval.** `timeupdate` fires about every 250 ms, and the
+ *    last one before `ended` can be a quarter-second short.
+ * 2. **A stored length longer than the file.** `durationSec` is written by the
+ *    console from the object's own header, and a container whose header
+ *    rounds up — or a re-encode after the length was stored — leaves a tail
+ *    nobody can ever watch. That is P87-07, still open.
+ *  3. **The flush.** A segment is closed at the last observed position, not at
+ *    `duration`, so a browser that stops firing events before the end reports
+ *    a short interval however carefully the person watched.
+ *
+ * Half a second covers the first. Three seconds covers all three, and it is
+ * what was asked for.
+ *
+ * ## What it does not weaken
+ *
+ * The union is still the union: the seconds before the tail must genuinely be
+ * covered, so dragging the scrub bar still earns nothing (§4 invariant 5). What
+ * changes is the **length being measured against** — the last three seconds of
+ * a video are not part of the requirement, for the percentage, for the gate and
+ * for the list of gaps alike.
+ *
+ * On MEDICE's accredited course this is three seconds of a twenty-five minute
+ * module — 0.2 % — against a rule the Bescheid states as a proportion of the
+ * material. On a ten-second test upload it is 30 %, which is the case that
+ * produced the report and is not accredited content.
+ *
+ * A video shorter than the grace keeps its whole length: shrinking a two-second
+ * clip to zero would mark it watched without anybody watching it, which is the
+ * one outcome worse than the bug this fixes.
+ */
+export const TAIL_GRACE_SEC = 3;
+
+/**
+ * The length a learner is actually required to cover.
+ *
+ * Every rule that asks *what is still missing* measures against this rather
+ * than the raw length — one place, so the list of gaps and the completion
+ * verdict cannot disagree about where a video's requirement ends (§4
+ * invariant 6, which P68-02 was about).
+ *
+ * Note what does **not** use it: the percentage. See `watchedSecondsWithin`.
+ */
+export function creditedDurationSec(durationSec: number): number {
+  if (!Number.isFinite(durationSec) || durationSec <= 0) return 0;
+  return durationSec <= TAIL_GRACE_SEC ? durationSec : durationSec - TAIL_GRACE_SEC;
+}
+
+/**
  * The union, with each end snapped to the content's own bounds when it lands
  * within a sampling artefact of them.
  *
@@ -199,10 +263,41 @@ export function watchedSecondsWithin(
   if (!Number.isFinite(durationSec) || durationSec <= 0) return 0;
 
   const merged = snapToBounds(mergeWatchedSegments(segments), durationSec);
-  return Math.min(
-    merged.reduce((total, s) => total + (s.endSec - s.startSec), 0),
-    durationSec,
-  );
+
+  /*
+   * Nothing outstanding means the whole video is credited (P94-01).
+   *
+   * The tail grace used to shrink the **denominator** instead, and the client
+   * caught what that costs on a short video: seven seconds of a ten-second
+   * upload read "100 % angesehen", and the obvious reading is that the number
+   * is not counting what it says it counts —
+   *
+   *   > "i just watched one second, and the percentage increased, so the
+   *   >  percentage is just being added up, not checking exactly what second
+   *   >  is being watched"
+   *
+   * The union *was* being checked; the denominator was the requirement rather
+   * than the file, so the number was a fraction of something the learner
+   * cannot see. Now it is a fraction of the video, always, and the grace lives
+   * in this one branch: when there is nothing left for the learner to go and
+   * watch, the video is fully watched — including its last three seconds.
+   *
+   * The property that falls out, and which is the point:
+   *
+   *     watchedPercent(…) === 100   ⟺   uncoveredSpans(…) is empty
+   *
+   * One statement, drawn two ways. P68-02 was two readings of one number that
+   * stopped agreeing; this makes the disagreement unrepresentable.
+   */
+  if (uncoveredSpans(merged, durationSec).length === 0) return durationSec;
+
+  const covered = merged.reduce((total, segment) => {
+    const start = Math.max(0, Math.min(segment.startSec, durationSec));
+    const end = Math.max(0, Math.min(segment.endSec, durationSec));
+    return total + Math.max(0, end - start);
+  }, 0);
+
+  return Math.min(covered, durationSec);
 }
 
 /**
@@ -216,6 +311,10 @@ export function watchedSecondsWithin(
  * The endpoints are snapped first — see `BOUNDARY_TOLERANCE_SEC`. Flooring and
  * snapping answer different questions: flooring refuses to round a *hole* away,
  * snapping refuses to call the sampling interval a hole.
+ *
+ * **Of the whole video** (P94-01). A learner who has seen seven seconds of ten
+ * is shown 70, not 100 — the number means what its label says. It reaches 100
+ * only when `uncoveredSpans` is empty, which is where the tail grace lives.
  */
 export function watchedPercent(
   segments: readonly WatchedSegment[],
@@ -343,29 +442,52 @@ function rejectionReason(
  * sliver far below a playback sample is not something a person can go and
  * watch, and listing it would send somebody hunting for a gap they cannot
  * close. Default a quarter second — one `timeupdate`.
+ *
+ * ## The tolerance is a budget for the whole video, not per gap (P94-01)
+ *
+ * It used to be per gap, which was fine while this only *listed* things.
+ * Since `watchedSecondsWithin` decides completion by asking whether this is
+ * empty, a per-gap tolerance would be a way to skip content: a client
+ * reporting `[0,0.24] [0.49,0.73] …` clears every gap individually and leaves
+ * half the video unwatched. Summing first bounds what can be forgiven at a
+ * quarter second of the whole file, whatever shape the holes are.
+ *
+ * The list is filtered to the gaps worth naming, and **never emptied by that
+ * filter** — a learner told there is nothing missing while the gate withholds
+ * completion is P85-01's report exactly, and is the one state this must not
+ * produce.
  */
 export function uncoveredSpans(
   segments: readonly WatchedSegment[],
   durationSec: number,
   toleranceSec = 0.25,
 ): readonly WatchedSegment[] {
-  if (!Number.isFinite(durationSec) || durationSec <= 0) return [];
+  /*
+   * Bounded by the credited length, not the raw one (P93-01).
+   *
+   * This is the list the player prints as "Diese Stellen fehlen noch", and it
+   * has to name spans the gate is actually still waiting for. Listing the tail
+   * — which no longer counts — sent the client to 0:09–0:10 of a ten-second
+   * video to close a gap that had already stopped mattering.
+   */
+  const credited = creditedDurationSec(durationSec);
+  if (credited <= 0) return [];
 
   const gaps: WatchedSegment[] = [];
   let cursor = 0;
 
   for (const segment of segments) {
-    const start = Math.max(0, Math.min(segment.startSec, durationSec));
-    const end = Math.max(0, Math.min(segment.endSec, durationSec));
-    if (start - cursor > toleranceSec) {
-      gaps.push({ startSec: cursor, endSec: start });
-    }
+    const start = Math.max(0, Math.min(segment.startSec, credited));
+    const end = Math.max(0, Math.min(segment.endSec, credited));
+    if (start > cursor) gaps.push({ startSec: cursor, endSec: start });
     cursor = Math.max(cursor, end);
   }
 
-  if (durationSec - cursor > toleranceSec) {
-    gaps.push({ startSec: cursor, endSec: durationSec });
-  }
+  if (credited > cursor) gaps.push({ startSec: cursor, endSec: credited });
 
-  return gaps;
+  const outstanding = gaps.reduce((total, gap) => total + (gap.endSec - gap.startSec), 0);
+  if (outstanding <= toleranceSec) return [];
+
+  const worthNaming = gaps.filter((gap) => gap.endSec - gap.startSec > toleranceSec);
+  return worthNaming.length === 0 ? gaps : worthNaming;
 }

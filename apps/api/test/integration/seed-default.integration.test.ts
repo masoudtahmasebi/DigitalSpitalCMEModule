@@ -25,6 +25,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import { createPool } from "@ds/postgres";
 import { seedDsDefault } from "@ds/seed";
+import { PLACEHOLDER_VNR } from "@ds/domain";
 import { requireEnv } from "./support/env.js";
 
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
@@ -421,4 +422,77 @@ describe("what the seeds leave publishable", () => {
       ),
     ).rejects.toThrow(/courses_published_cme_is_complete/);
   });
+
+  /*
+   * P117-01, and the case the constraint could not see for five migrations.
+   *
+   * The row below is complete by every measure 0042 knew: the VNR is present,
+   * nineteen characters, not blank. It is also `PLACEHOLDER_VNR` — the string
+   * the seed writes when it has no accredited number — so it names a
+   * Veranstaltung no Ärztekammer register holds.
+   *
+   * Before 0047 this INSERT succeeded, the course published, and a physician
+   * who finished it received a Teilnahmebescheinigung printing nineteen zeros.
+   * That is what happened on the QA installation, and nothing anywhere said so:
+   * the API logged no error because there was none to log, and EIV-FOBI showed
+   * nothing because there is no such event to report against.
+   */
+  it("refuses the seed's placeholder VNR, which is present and is not a VNR", async () => {
+    const { rows } = await admin.query<{ id: string; customer_id: string }>(
+      "SELECT id, customer_id FROM projects LIMIT 1",
+    );
+    const project = rows[0];
+    expect(project).toBeDefined();
+
+    await expect(
+      publishAccreditedCourse(project!, { vnr: PLACEHOLDER_VNR }),
+    ).rejects.toThrow(/courses_published_cme_is_complete/);
+  });
+
+  it("accepts the same row with a real VNR — so the refusal is about the value", async () => {
+    const { rows } = await admin.query<{ id: string; customer_id: string }>(
+      "SELECT id, customer_id FROM projects LIMIT 1",
+    );
+    const project = rows[0];
+    expect(project).toBeDefined();
+
+    // The control. Without it the test above would pass on a constraint that
+    // refuses everything, which is CLAUDE.md §9.1 in its other direction: a
+    // check that cannot go green proves as little as one that cannot go red.
+    await expect(
+      publishAccreditedCourse(project!, { vnr: "2760552025919300018" }),
+    ).resolves.toBeUndefined();
+  });
+
+  /**
+   * One statement, so the two cases above differ in exactly one value.
+   *
+   * Draft first, then publish: the constraint is checked per row per statement,
+   * so an INSERT that lands `published` and incomplete is refused before any
+   * UPDATE could complete it — the order `support/accredited-course.ts`
+   * documents, and the order an operator works in.
+   */
+  async function publishAccreditedCourse(
+    project: { id: string; customer_id: string },
+    fields: { vnr: string },
+  ): Promise<void> {
+    const slug = `p117-${randomUUID()}`;
+    await admin.query(
+      `INSERT INTO courses (customer_id, project_id, slug, title,
+                            required_watch_percent, pass_threshold_percent,
+                            cme_points, status,
+                            vnr, vnr_password_enc, cme_category,
+                            accreditation_body, organizer, event_location,
+                            scientific_lead_name, certificate_issue_place,
+                            stamp_image, signature_image)
+       VALUES ($1,$2,$3,'Platzhalter-VNR',100,70,4,'draft',
+               $4, '\\x00'::bytea, 'D',
+               'Ärztekammer Westfalen-Lippe', 'Medice', 'online',
+               'Prof. Dr. med. Muster', 'Iserlohn',
+               '\\x00'::bytea, '\\x00'::bytea)`,
+      [project.customer_id, project.id, slug, fields.vnr],
+    );
+
+    await admin.query("UPDATE courses SET status = 'published' WHERE slug = $1", [slug]);
+  }
 });

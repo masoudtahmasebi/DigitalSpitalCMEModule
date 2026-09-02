@@ -5,6 +5,7 @@ import {
   contentProblems,
   correctOptionCount,
   questionProblems,
+  questionRemoval,
   validateReorder,
   type ContentDraft,
   type QuestionDraft,
@@ -383,5 +384,41 @@ describe("correctOptionCount", () => {
         ],
       }),
     ).toBe(2);
+  });
+});
+
+describe("removing a question from a Lernerfolgskontrolle (P114-01)", () => {
+  /*
+   * The rule the client's report produced: "this lernerfolgskontrolle has 11
+   * questions, I want to make it to only 2 questions and i can not."
+   *
+   * It could not, because every answered question refused deletion outright.
+   * The row must survive — it is the evidence behind a CME point — but the
+   * question leaving the exam is a different claim, and that is what retirement
+   * separates.
+   */
+  it("deletes a question nobody has answered", () => {
+    expect(questionRemoval(0)).toBe("delete");
+  });
+
+  it("retires a question rather than refusing, from the very first answer", () => {
+    // One answer is the whole case: before this, one attempt by one physician
+    // froze the exam permanently.
+    expect(questionRemoval(1)).toBe("retire");
+  });
+
+  it("retires however many answers there are", () => {
+    for (const count of [2, 11, 500]) {
+      expect(questionRemoval(count)).toBe("retire");
+    }
+  });
+
+  it("agrees with canDelete about which rows may leave the database", () => {
+    // The two rules must not drift: anything canDelete refuses is exactly what
+    // has to be retired instead, or a question would be both undeletable and
+    // unretirable — which is the state the client was stuck in.
+    for (const count of [0, 1, 2, 11]) {
+      expect(questionRemoval(count) === "delete").toBe(canDelete(count));
+    }
   });
 });

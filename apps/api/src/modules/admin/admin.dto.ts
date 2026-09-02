@@ -37,7 +37,6 @@ export const adminCourseSummarySchema = z.object({
   /** The "Vorkenntnisse" paragraph (layout page 02). */
   prerequisites: z.string().nullable(),
   heroImageUrl: z.string().nullable(),
-  fortbildungsnummer: z.string().nullable(),
   /** ISO 8601. The accreditation window from the Anerkennungsbescheid. */
   validFrom: z.string().nullable(),
   validTo: z.string().nullable(),
@@ -133,7 +132,6 @@ export const adminCourseUpdateSchema = z.object({
   heroImageUrl: z.string().url().max(2000).nullable().optional(),
   cmePoints: z.number().int().positive().max(100).nullable().optional(),
   cmeCategory: z.string().max(50).nullable().optional(),
-  fortbildungsnummer: z.string().max(100).nullable().optional(),
   /**
    * The Veranstaltungsnummer — what a Punktemeldung is credited against.
    *

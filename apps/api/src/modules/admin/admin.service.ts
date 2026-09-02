@@ -39,7 +39,6 @@ import {
   type PublishCandidate,
 } from "@ds/domain";
 import { AppError } from "../../shared/problem-details.js";
-import { MediaCheckService, type MediaCheckResult } from "./media-check.service.js";
 import type { Db } from "../../db/tenant-db.js";
 import type { SecretCipher } from "../../shared/secret-cipher.js";
 import {
@@ -94,8 +93,6 @@ export class AdminService {
     private readonly repository: AdminRepositoryPort,
     private readonly learning: LearningRepositoryPort,
     private readonly cipher: SecretCipher,
-    /** Injected so the media probe can be exercised without a network (P62-03). */
-    private readonly mediaCheck: MediaCheckService = new MediaCheckService(),
   ) {}
 
   static fromDb(db: Db, cipher: SecretCipher): AdminService {
@@ -200,7 +197,6 @@ export class AdminService {
     assign(patch, "heroImageUrl", update.heroImageUrl);
     assign(patch, "cmePoints", update.cmePoints);
     assign(patch, "cmeCategory", update.cmeCategory);
-    assign(patch, "fortbildungsnummer", update.fortbildungsnummer);
 
     // Dates arrive as ISO strings and are stored as `timestamptz`. Parsed here
     // rather than in the repository, which has no business knowing the wire
@@ -318,16 +314,20 @@ export class AdminService {
    * to PNG and JPEG is that neither is executable.
    */
   /**
-   * Ask this course's media host whether a browser could seek (P62-03).
+   * Every distinct media URL in this course (P62-03, P146-02).
    *
-   * The caller `MediaCheckService` exists for. Reporting only — it refuses no
-   * publish, because a host can be healthy at publish time and wedged an hour
-   * later, and a gate that implied otherwise would be a promise nothing keeps.
+   * The database half of the media report, and **only** the database half. The
+   * probing lives in the controller now, deliberately: `MediaCheckService.check`
+   * walks the list sequentially with an 8-second deadline each, and this method
+   * used to await that loop — which meant a course pointing at a wedged CDN
+   * held a pooled connection for `8 s × N distinct URLs`.
+   *
+   * Splitting it here is what lets the route hold a connection for this query
+   * and nothing else. See `db/tenant-runner.ts`.
    */
-  async checkCourseMedia(slug: string): Promise<readonly MediaCheckResult[]> {
+  async courseMediaUrls(slug: string): Promise<readonly string[]> {
     const row = await this.requireCourse(slug);
-    const urls = await this.repository.listCourseMediaUrls(row.id);
-    return this.mediaCheck.check(urls);
+    return this.repository.listCourseMediaUrls(row.id);
   }
 
   async setCertificateAssets(
@@ -795,7 +795,6 @@ function presentationOf(row: {
   targetAudience: string | null;
   prerequisites: string | null;
   heroImageUrl: string | null;
-  fortbildungsnummer: string | null;
   validFrom: Date | null;
   validTo: Date | null;
 }) {
@@ -808,7 +807,6 @@ function presentationOf(row: {
     targetAudience: row.targetAudience,
     prerequisites: row.prerequisites,
     heroImageUrl: row.heroImageUrl,
-    fortbildungsnummer: row.fortbildungsnummer,
     // ISO 8601 on the wire; `timestamptz` in the column. The console renders a
     // date input from it, which needs a string it can slice.
     validFrom: row.validFrom?.toISOString() ?? null,

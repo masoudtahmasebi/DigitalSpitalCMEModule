@@ -51,6 +51,16 @@ export { seedDsDefault, type DsDefaultOptions } from "./ds-default.js";
 export { seedDsDemo } from "./ds-demo.js";
 export { describeDsTest, seedDsTest, type DsTestCredentials } from "./ds-test.js";
 export { seedMediceAdhs } from "./medice-adhs.js";
+/*
+ * Exported so `scripts/` and the deploy can ask the same question the seed asks
+ * (P101-03), rather than a second implementation of "is this project bound to
+ * anything real" drifting from this one.
+ */
+export {
+  bindingProblem,
+  seedKeycloakBinding,
+  type SeedKeycloakBinding,
+} from "./keycloak-binding.js";
 export {
   describeDemoStaff,
   seedDemoStaff,

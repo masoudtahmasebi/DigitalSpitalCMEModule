@@ -33,6 +33,7 @@
  */
 
 import type { Pool } from "pg";
+import { assertPoolNotHeld, holdingPool } from "../db/pool-reentry.js";
 
 export type AuditActor =
   /** A physician acting on their own record, authenticated by an IdP. */
@@ -71,14 +72,28 @@ export interface AuditServicePort {
 }
 
 export class AuditService implements AuditServicePort {
+  /**
+   * The pool passed here must be `PG_SIDE_POOL`, never `PG_POOL` (P142-01).
+   *
+   * The independence described above — an audit row that survives the rollback
+   * of the operation it audits — is exactly what makes this a *second*
+   * connection taken while the request still holds its first. On the request
+   * pool that deadlocks under concurrency; on its own pool it cannot.
+   *
+   * Not enforceable by the type (both are a `pg.Pool`), so it is enforced where
+   * it happens, by `assertPoolNotHeld` below, and asserted at the wiring by
+   * `pool-wiring.integration.test.ts`.
+   */
   constructor(private readonly pool: Pool) {}
 
   async recordForCustomer(customerId: string, entry: AuditEntry): Promise<void> {
+    assertPoolNotHeld(this.pool, "AuditService.recordForCustomer");
+
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       await client.query("SELECT set_config('app.customer_id', $1, true)", [customerId]);
-      await this.insert(client, customerId, entry);
+      await holdingPool(this.pool, () => this.insert(client, customerId, entry));
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);

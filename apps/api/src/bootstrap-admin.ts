@@ -58,6 +58,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createPool } from "@ds/postgres";
 import { hashPassword } from "./modules/staff/credentials.js";
+import { assertSchemaCurrent, schemaReaderDatabaseUrl } from "./schema-freshness.js";
 
 /* eslint-disable no-console -- this is a CLI; its output is the point. */
 
@@ -134,6 +135,48 @@ async function main(): Promise<void> {
   if (connectionString === undefined || connectionString === "") {
     throw new Error("DATABASE_URL is required");
   }
+
+  /*
+   * The schema must be the one this code was written against (P149-01).
+   *
+   * ## The history, because this line has been wrong twice
+   *
+   * P147 added it reading `MIGRATION_DATABASE_URL`. That broke first boot on
+   * every fresh host: the documented invocation is
+   *
+   *     docker compose run --rm --entrypoint node api dist/bootstrap-admin.js
+   *
+   * which runs in the `api` service, where the migrator's URL is not set and
+   * must not be — a request-serving container that can rewrite the schema is a
+   * worse problem than the one being solved. P148 reverted it.
+   *
+   * Reading it as `ds_app` was the other obvious fix and is also wrong, though
+   * not for the reason P148 and P149 gave. They said `ds_app` holds no grant on
+   * `schema_migrations`; it holds `arwd` on it, from the blanket
+   * `ALTER DEFAULT PRIVILEGES … TO ds_app` in `init-roles.sql` — verified
+   * against a live database, and corrected in migration 0049's header
+   * (P151-02). The real objection is that resting this check on that grant
+   * rests it on an over-grant we would rather narrow, one that lets the
+   * application role rewrite the very ledger being read.
+   *
+   * So: `ds_schema_reader`, a login role whose entire authority is
+   * `SELECT ON schema_migrations` (migration 0049). Its URL is on the `api`
+   * service in both compose files, and `check:runtime-config` fails if it goes
+   * missing — which is the check P148-01 did not have.
+   *
+   * ## Why this may refuse to run
+   *
+   * It fails closed, deliberately. Without it the failure is P43-02's shape —
+   * an error naming an innocent statement, "column display_name does not
+   * exist", to somebody whose actual problem is an un-migrated database on
+   * their first five minutes with the platform. Nothing downstream of
+   * bootstrap is time-critical, so stopping is the right answer here.
+   *
+   * `subject-erasure` makes the opposite choice for the opposite reason
+   * (P149-02): a statutory erasure has a one-month deadline and must never be
+   * blocked by a diagnostic.
+   */
+  await assertSchemaCurrent(schemaReaderDatabaseUrl());
 
   // `createPool`, not `new Pool` — see @ds/postgres (P76-04).
   const pool = createPool({ connectionString });

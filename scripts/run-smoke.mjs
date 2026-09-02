@@ -31,11 +31,14 @@
  * accumulate one refused submission per deploy, each one an alert somebody has
  * to read and dismiss.
  *
- * So the run refuses when `EIV_ALLOW_LIVE` is set, and says why rather than
- * skipping quietly. The alternative — a per-course "does not report" switch —
- * is product surface this budget does not have, and it is recorded in
- * `docs/backlog/P68.md` as the thing to build if the smoke ever has to run on a
- * live-reporting installation.
+ * So the run refuses when the **installation** reports live, and says why
+ * rather than skipping quietly. It asks the host, via `EIV_REPORTS_LIVE`, and
+ * refuses just as loudly when it cannot get an answer — see the guard below for
+ * why that direction matters and how the previous version of it never fired.
+ *
+ * The alternative — a per-course "does not report" switch — is product surface
+ * this budget does not have, and it is recorded in `docs/backlog/P68.md` as the
+ * thing to build if the smoke ever has to run on a live-reporting installation.
  */
 
 import { existsSync } from "node:fs";
@@ -71,14 +74,60 @@ if (missing.length > 0) {
   process.exit(2);
 }
 
-if ((process.env["EIV_ALLOW_LIVE"] ?? "") !== "") {
+/*
+ * Does the installation we are about to drive file Punktemeldungen for real?
+ *
+ * ## Why this is not `EIV_ALLOW_LIVE` any more (P113-01)
+ *
+ * It was, and it never worked. `EIV_ALLOW_LIVE` is set in the **host's**
+ * `config.env`; this script runs in a GitHub Actions runner, where that
+ * variable has never been set by anything. So the guard read an always-empty
+ * value, concluded "not live", and let every run through. It has never been
+ * able to fire — §9.1's third form, green because of what it was not scanning,
+ * in the one guard standing between a smoke test and a statutory register.
+ *
+ * The workflow already knows how to do this properly, and says so where it
+ * asks the host for its own hostnames: *"Ask the host what it believes its own
+ * API hostname is, rather than rebuilding the derivation here from a copy of
+ * the configuration this workflow no longer holds."* The EIV posture is the
+ * one thing that was never asked. Now it is: `deploy.yml` runs the host's own
+ * `ds_eiv_worker_will_file_live` — the same function `deploy.sh` uses — over
+ * the host's own `EIV_BASE_URL` and `EIV_WORKER_ENABLED`, and passes the answer
+ * in as `EIV_REPORTS_LIVE`.
+ *
+ * ## Why absence is refused rather than assumed safe
+ *
+ * The old guard failed open: no variable meant no danger. That is exactly the
+ * shape of §9.6 — a missing answer indistinguishable from a legitimate "no" —
+ * and it is why nobody noticed for the life of the file. So an unset or
+ * unrecognised value is now a refusal that names the workflow step responsible,
+ * not a shrug. A run that cannot establish what it is pointed at does not
+ * start.
+ */
+const reportsLive = process.env["EIV_REPORTS_LIVE"] ?? "";
+
+if (reportsLive !== "yes" && reportsLive !== "no") {
+  console.error(
+    "smoke: cannot establish whether this installation reports to EIV-FOBI live.\n\n" +
+      `EIV_REPORTS_LIVE is ${reportsLive === "" ? "unset" : `"${reportsLive}"`}; it must be\n` +
+      'exactly "yes" or "no", and it comes from the host rather than from this runner —\n' +
+      "the `derive` step in .github/workflows/deploy.yml asks the server itself.\n\n" +
+      "This refuses instead of assuming 'no' on purpose. The variable it replaced\n" +
+      "(EIV_ALLOW_LIVE) was only ever set on the host, so reading it here always said\n" +
+      "'not live' and the guard could never fire (P113-01).",
+  );
+  process.exit(2);
+}
+
+if (reportsLive === "yes") {
   console.error(
     "smoke: refusing to run against an installation that reports to EIV-FOBI live.\n\n" +
       "The journey publishes an accredited Fortbildung and completes it, which queues\n" +
       "a Punktemeldung. Its VNR is reserved and belongs to no Veranstaltung, so every\n" +
       "such submission would be refused by the Ärztekammer and would raise an alert a\n" +
       "person then has to dismiss — once per deploy, for ever.\n\n" +
-      "docs/backlog/P68.md records what to build if this run has to happen anyway.",
+      "Set EIV_WORKER_ENABLED=no on the host to run the smoke, or see\n" +
+      "docs/backlog/P68.md for what to build if this run has to happen anyway.",
   );
   process.exit(2);
 }

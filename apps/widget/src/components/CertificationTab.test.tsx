@@ -26,7 +26,7 @@ function courseWith(overrides: Partial<CourseDetail>): CourseDetail {
     cmePoints: 4,
     cmeCategory: "D",
     accreditationBody: "Ärztekammer Westfalen-Lippe",
-    fortbildungsnummer: "2026-ADHS-12345",
+    vnr: "2760552025919300018",
     validFrom: "2026-01-01T00:00:00.000Z",
     validTo: "2026-12-31T00:00:00.000Z",
     requiredWatchPercent: 80,
@@ -62,8 +62,22 @@ describe("an accredited course", () => {
     render(<CertificationTab course={courseWith({})} certificate={null} />);
 
     expect(screen.getByText(/Ärztekammer Westfalen-Lippe/)).toBeTruthy();
-    expect(screen.getByText("Fortbildungsnummer: 2026-ADHS-12345")).toBeTruthy();
+    /*
+     * The **VNR**, under the layout's label (S31, answered 27.08.2026).
+     *
+     * The number is asserted rather than the label, and it is the same string
+     * the Punktemeldung reports. Until this change the line was fed by a
+     * separate `fortbildungsnummer` column an operator could set to anything,
+     * so the screen and the Meldung could disagree and nothing would say so.
+     */
+    expect(screen.getByText("Fortbildungsnummer: 2760552025919300018")).toBeTruthy();
     expect(screen.getByText(/Gültigkeit:/)).toBeTruthy();
+  });
+
+  it("omits the Fortbildungsnummer when the course has no VNR", () => {
+    render(<CertificationTab course={courseWith({ vnr: null })} certificate={null} />);
+
+    expect(screen.queryByText(/Fortbildungsnummer:/)).toBeNull();
   });
 
   it("omits the validity line rather than printing half of it", () => {
@@ -83,7 +97,7 @@ describe("a course without accreditation", () => {
         course={courseWith({
           cmePoints: null,
           accreditationBody: null,
-          fortbildungsnummer: null,
+          vnr: null,
           validFrom: null,
           validTo: null,
         })}

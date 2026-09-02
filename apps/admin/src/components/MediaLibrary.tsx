@@ -36,11 +36,12 @@
  * what somebody needs in order to go and unpick it.
  */
 
-import { useMemo, useState } from "react";
-import type { ApiClient } from "@ds/sdk";
+import { useEffect, useMemo, useState } from "react";
+import type { AdminCourseSummary, ApiClient } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { humanBytes, useMediaLibrary, type MediaKind } from "../media-library.js";
 import { MediaCard } from "./MediaCard.js";
+import { MediaUpload } from "./MediaUpload.js";
 import { Button, Notice, TextInput } from "./ui.js";
 
 /**
@@ -63,6 +64,42 @@ export function MediaLibrary(props: { client: ApiClient }) {
   const [search, setSearch] = useState("");
   const library = useMediaLibrary(props.client, kind);
 
+  /*
+   * The courses, for the upload panel's one required field (P131-01).
+   *
+   * Loaded here rather than inside the panel so a failure to list them does not
+   * take the library with it: an operator who came to rename a file should not
+   * lose the screen because the upload control could not populate a dropdown.
+   * An empty list simply leaves the panel unable to accept anything, and its
+   * own hint says why.
+   */
+  const [courses, setCourses] = useState<readonly AdminCourseSummary[]>([]);
+  useEffect(() => {
+    let alive = true;
+    /*
+     * `try` around the call as well as `catch` on the promise.
+     *
+     * The comment above claims a failure here does not take the library with
+     * it, and until the tests found otherwise that was only true of a *rejected*
+     * promise: a client without the method at all throws synchronously, which
+     * unmounted the whole screen. A claim in a comment that the code does not
+     * keep is worse than no comment.
+     */
+    try {
+      void props.client
+        .adminListCourses()
+        .then((rows) => {
+          if (alive) setCourses(rows);
+        })
+        .catch(() => undefined);
+    } catch {
+      // Nothing to list. The panel says why it cannot accept a file.
+    }
+    return () => {
+      alive = false;
+    };
+  }, [props.client]);
+
   /**
    * The rows this filter and this search leave.
    *
@@ -84,7 +121,7 @@ export function MediaLibrary(props: { client: ApiClient }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-[color:var(--ds-ink-muted)]">{de.media.screenIntro}</p>
+      <MediaUpload client={props.client} courses={courses} onUploaded={library.reload} />
 
       <div className="flex flex-wrap items-end gap-3">
         <div

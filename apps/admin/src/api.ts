@@ -40,7 +40,13 @@
  * behaviour for an expired admin session is the login form.
  */
 
-import { createClient, isForbidden, problemDetail, type ApiClient } from "@ds/sdk";
+import {
+  createClient,
+  isForbidden,
+  problemCorrelationId,
+  problemDetail,
+  type ApiClient,
+} from "@ds/sdk";
 import { currentCsrfToken } from "./staff-auth.js";
 import type { AdminConfig } from "./config.js";
 
@@ -89,8 +95,27 @@ function staffClient(
  * which role they lack is more than they need to act on it.
  */
 export function describeError(error: unknown, generic: string): string {
-  if (isForbidden(error)) return generic;
-  return problemDetail(error) ?? generic;
+  const sentence = isForbidden(error) ? generic : (problemDetail(error) ?? generic);
+
+  /*
+   * The correlation id, appended (P122-01).
+   *
+   * The API has minted one per failure and returned it on every error response
+   * since observability landed, and no client read it — so the single string
+   * that finds the failing request in the server log reached the payload and
+   * stopped there. Somebody reporting "it did not work" could not hand over the
+   * thing that would locate it, because nothing showed it to them.
+   *
+   * Appended to the sentence rather than given its own element: an operator
+   * copying an error message copies the whole line, and an id in a separate
+   * box is an id that does not travel with the report.
+   *
+   * Safe to render. It is a random UUID identifying a log line, never a person
+   * (§9.5), and `problem-details.ts` guarantees the sentence beside it carries
+   * no identifiers either.
+   */
+  const id = problemCorrelationId(error);
+  return id === undefined ? sentence : `${sentence} (Referenz: ${id})`;
 }
 
 // Re-exported so components import their failure vocabulary from one place

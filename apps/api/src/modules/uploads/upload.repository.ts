@@ -25,6 +25,7 @@ import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import type { Pool } from "pg";
 import { contents, courses, mediaAssets, storageAuditLog } from "../../db/schema.js";
 import { runInTenant, type Db, type TenantContext } from "../../db/tenant-db.js";
+import type { TenantRunner } from "../../db/tenant-runner.js";
 
 export interface RecordedMint {
   readonly courseId: string;
@@ -126,12 +127,20 @@ export interface UploadRepositoryPort {
  * Writes an audit row that survives the request failing.
  *
  * Separated from `UploadRepositoryPort` because it must **not** run in the
- * request's transaction, and a single interface would hide that. Every route
- * here runs inside `TenantTransactionInterceptor`'s transaction, which rolls
- * back when the handler throws — and a refusal *is* the handler throwing. An
- * audit row written on that connection would be rolled back with it, so the log
- * would faithfully record every upload that worked and nothing else, which is
- * the opposite of what it is for (CLAUDE.md §4 invariant 8).
+ * caller's transaction, and a single interface would hide that. A refusal *is*
+ * the handler throwing, so an audit row written on the transaction that is
+ * rolling back goes with it — and the log would faithfully record every upload
+ * that worked and nothing else, which is the opposite of what it is for
+ * (CLAUDE.md §4 invariant 8).
+ *
+ * This paragraph used to say "every route here runs inside
+ * `TenantTransactionInterceptor`'s transaction". P145 made that false for three
+ * of them without updating it, and the §11 verifier pass caught it one commit
+ * later — which is §11 rule 9 demonstrating itself: a comment is a claim, and
+ * this one went stale the moment the code moved. It does not matter to the
+ * behaviour, because the side pool is right either way; it matters because the
+ * next person reasoning from it would be reasoning from a false premise, which
+ * is exactly how the "pool of one would deadlock" comment cost two outages.
  *
  * It also matches the facts. These events describe something that happened in a
  * bucket, and a bucket does not participate in a Postgres transaction: the
@@ -383,13 +392,102 @@ export class UploadRepository implements UploadRepositoryPort {
 }
 
 /**
+ * The same repository, one short transaction per call (P145-01).
+ *
+ * ## Why this exists rather than a change to `UploadRepository`
+ *
+ * Every upload handler has the same shape:
+ *
+ *     read some rows → **talk to the object store** → write one row
+ *
+ * Under the ambient transaction the connection is held for all three, so the
+ * middle step — a call to somebody else's server — occupies one of ten pooled
+ * connections for as long as that server takes. P144 bounded that wait; a bound
+ * is not a fix, and "it is only fifteen seconds" is the same shape of answer as
+ * "a pool of one would deadlock" (§9.10a).
+ *
+ * With this, the connection is held for the reads and for the write, and
+ * **released while the bucket is thinking**. A bucket that is slow, or gone,
+ * costs the uploads and nothing else.
+ *
+ * It delegates to `UploadRepository` rather than reimplementing it, because two
+ * copies of a query under RLS is exactly how one of them quietly stops matching
+ * the policy. Every method here is the same SQL, in its own transaction, with
+ * the same tenant context — `TenantRun` opens `runInTenant` with the request's
+ * own principal.
+ *
+ * ## What is given up
+ *
+ * The handler is no longer one atomic transaction. Nothing on these routes
+ * spans the gap that atomicity protected: by the time `rememberAsset` runs the
+ * object is already in the bucket, `rememberAsset` is idempotent on
+ * `(customer_id, storage_key)` by design, and no invariant relates the mint
+ * that was read to the row that is written. A route where that is not true
+ * keeps the ambient transaction — which is why `@NoAmbientTransaction()` is
+ * per-route and not a new default.
+ */
+export class RunnerUploadRepository implements UploadRepositoryPort {
+  constructor(private readonly run: TenantRunner) {}
+
+  findCourseId(slug: string): Promise<string | undefined> {
+    return this.run((db) => new UploadRepository(db).findCourseId(slug));
+  }
+
+  findMint(objectKey: string): Promise<RecordedMint | undefined> {
+    return this.run((db) => new UploadRepository(db).findMint(objectKey));
+  }
+
+  listAssets(filter: LibraryFilter): Promise<readonly LibraryRow[]> {
+    return this.run((db) => new UploadRepository(db).listAssets(filter));
+  }
+
+  findAsset(id: string): Promise<LibraryRow | undefined> {
+    return this.run((db) => new UploadRepository(db).findAsset(id));
+  }
+
+  describeAsset(
+    id: string,
+    title: string | null,
+    altText: string | null,
+  ): Promise<boolean> {
+    return this.run((db) => new UploadRepository(db).describeAsset(id, title, altText));
+  }
+
+  countAssetUses(reference: string): Promise<number> {
+    return this.run((db) => new UploadRepository(db).countAssetUses(reference));
+  }
+
+  countUsesFor(references: readonly string[]): Promise<ReadonlyMap<string, number>> {
+    return this.run((db) => new UploadRepository(db).countUsesFor(references));
+  }
+
+  forgetAsset(id: string): Promise<boolean> {
+    return this.run((db) => new UploadRepository(db).forgetAsset(id));
+  }
+
+  rememberAsset(entry: LibraryEntry): Promise<void> {
+    return this.run((db) => new UploadRepository(db).rememberAsset(entry));
+  }
+}
+
+/**
  * Records storage events on their own connection, in their own transaction.
  *
- * Takes the pool rather than the request's `Db`, which is the whole point — see
+ * Takes a pool rather than the request's `Db`, which is the whole point — see
  * `StorageAuditPort`. It opens a second connection while the request still
- * holds one, so the pool must have room for two per in-flight upload; uploads
- * are rare and the pool is sized in tens, but a pool of one would deadlock and
- * that is worth knowing before somebody tunes it down.
+ * holds one.
+ *
+ * ## The bound this comment used to state, and got wrong (P142-01)
+ *
+ * It said "a pool of one would deadlock", which sounds like a warning about
+ * tuning and is not one. The real bound is a pool of **N** with **N concurrent
+ * requests**: each holds its first connection and waits for a second that only
+ * another of the N can release. With `max: 10` that is ten people — or one
+ * person opening the Mediathek, which asks for a signed URL per tile. It
+ * happened, twice, and the API stopped answering until somebody restarted it.
+ *
+ * So the pool passed here must be `PG_SIDE_POOL`, which the request path never
+ * holds. `guardReentry` refuses it if a caller ever passes the request's.
  *
  * `runInTenant` rather than a raw INSERT, so the row is written under the same
  * RLS policy as everything else and a customer id that does not match the

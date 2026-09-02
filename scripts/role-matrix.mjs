@@ -56,6 +56,9 @@ const SCREEN_LOADS = {
   // Mediathek (P88-01). One read at mount — the customer's own file index,
   // bounded by RLS rather than by a course.
   media: ["GET /admin/media"],
+  // Punktemeldungen (P110-01). One read at mount, bounded by RLS to the
+  // caller's customer — the queue is per installation, not per course.
+  punktemeldungen: ["GET /admin/eiv/submissions"],
   security: ["GET /admin/auth/second-factor/policy"],
 };
 
@@ -99,7 +102,9 @@ function navigation() {
     const kind = /^([a-z-]+)"/.exec(chunk)?.[1];
     if (kind === undefined) continue;
     const capability = /capability:\s*"([a-z_]+)"/.exec(chunk);
-    entries.push({ kind, capability: capability?.[1] });
+    // Whether the entry says what its screen is for. See `undescribed` below.
+    const described = /description:\s*de\./.test(chunk);
+    entries.push({ kind, capability: capability?.[1], described });
   }
   return entries;
 }
@@ -223,6 +228,38 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
+/*
+ * Every screen says what it is for (P136-01).
+ *
+ * A reviewer looking at the console as its *user* rather than its author put it
+ * exactly: the Fortbildung side explains itself from the screens, and the
+ * administration does not — "if I look at the viewer who is going to use it,
+ * few things still need to be improved".
+ *
+ * `Fortbildungen` — the screen an operator opens first — had no description at
+ * all, and nothing said so, because a missing sentence breaks nothing. That is
+ * §9.4 in the place it is hardest to see: the screen was correct, loaded for
+ * every role that is drawn it, and left a newcomer to infer that a course they
+ * create is invisible until they publish it.
+ *
+ * Checked here rather than in a test because this file already parses `NAV` and
+ * already runs in `pnpm verify` and in CI. A screen added without a description
+ * fails, which is the only way a sentence nobody is forced to write gets
+ * written.
+ */
+const undescribed = nav.filter((entry) => !entry.described).map((entry) => entry.kind);
+
+if (undescribed.length > 0) {
+  console.error(
+    "role-matrix: screens that do not say what they are for\n\n" +
+      undescribed.map((kind) => `  ${kind}`).join("\n") +
+      "\n\nGive the NAV entry a `description:` naming what the section is and, " +
+      "where two screens read alike, how it differs from its neighbour.",
+  );
+  process.exit(1);
+}
+
 console.log(
-  `role-matrix: ${ROLES.length} roles × ${nav.length} screens, every drawn screen loads`,
+  `role-matrix: ${ROLES.length} roles × ${nav.length} screens, ` +
+    "every drawn screen loads and says what it is for",
 );

@@ -43,7 +43,7 @@ import {
   isForbidden,
 } from "./api.js";
 import { de } from "./locale/de.js";
-import { Badge, Button, Notice, Spinner, Table } from "./components/ui.js";
+import { Badge, Button, ConfirmButton, Notice, Spinner, Table } from "./components/ui.js";
 import { EmptyState, Page, type Crumb } from "./components/page.js";
 import { CopySettings } from "./components/CopySettings.js";
 import { MediaLibrary } from "./components/MediaLibrary.js";
@@ -61,6 +61,7 @@ import { Customers } from "./components/Customers.js";
 import { Learners } from "./components/Learners.js";
 import { ParticipantAccounts } from "./components/ParticipantAccounts.js";
 import { Certificates } from "./components/Certificates.js";
+import { EivQueue } from "./components/EivQueue.js";
 import { StaffAccounts } from "./components/StaffAccounts.js";
 import { Security } from "./components/Security.js";
 import { SignIn } from "./components/SignIn.js";
@@ -244,14 +245,14 @@ function Shell(props: {
     <div className="min-h-screen bg-[color:var(--ds-surface)] md:flex">
       {signedIn ? (
         <aside
-          className={`shrink-0 bg-[color:var(--ds-ink)] md:block md:min-h-screen md:w-60 ${
+          className={`shrink-0 bg-[color:var(--ds-ink)] md:block md:min-h-screen md:w-64 ${
             menuOpen ? "block" : "hidden"
           }`}
         >
           <div className="flex items-center gap-2.5 px-4 py-4">
             <span
               aria-hidden
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-brand-500 text-xs font-bold text-white"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-500 text-xs font-bold text-white shadow-sm"
             >
               DS
             </span>
@@ -264,14 +265,14 @@ function Shell(props: {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white px-5 py-2.5">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white px-6 py-3">
           {signedIn ? (
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 aria-expanded={menuOpen}
                 onClick={() => props.onToggleMenu?.()}
-                className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm font-medium text-gray-700 md:hidden"
+                className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-700 shadow-sm md:hidden"
               >
                 {menuOpen ? de.nav.closeMenu : de.nav.menu}
               </button>
@@ -313,10 +314,23 @@ function Shell(props: {
           ) : null}
         </header>
 
-        <main className="min-w-0 flex-1 p-5">
-          <div className={signedIn ? "mx-auto max-w-6xl" : "mx-auto max-w-md pt-12"}>
-            {props.children}
-          </div>
+        <main className="min-w-0 flex-1 p-5 sm:p-6">
+          {/*
+            No width cap on the content once signed in (P104-02).
+
+            `max-w-6xl` centred every screen in a 72rem column, which on a wide
+            monitor left a band of empty grey on both sides of a *table* — and a
+            table is the one thing that genuinely wants the width, because the
+            alternative is truncated titles and a horizontal scrollbar. P100-01
+            capped the things that should be capped: prose at `max-w-3xl`, form
+            fields at `max-w-2xl`, each where it is rendered. A second cap on the
+            whole page then constrained the lists as well, which was never the
+            intent.
+
+            The sign-in screen keeps its own — a lone form centred in a full
+            screen is the one case where the column *is* the layout.
+          */}
+          <div className={signedIn ? "" : "mx-auto max-w-md pt-12"}>{props.children}</div>
         </main>
 
         {/* Rendered by Shell rather than passed in at each of the five call
@@ -378,6 +392,7 @@ type View =
   | { kind: "branding" }
   | { kind: "copy" }
   | { kind: "media" }
+  | { kind: "punktemeldungen" }
   | { kind: "customers" }
   | { kind: "participants" }
   | { kind: "learners" }
@@ -469,7 +484,14 @@ const NAV: readonly NavGroup[] = [
         description: de.organisation.intro,
         capability: "project",
       },
-      { kind: "courses", label: de.nav.courses, title: de.courses.title },
+      {
+        kind: "courses",
+        label: de.nav.courses,
+        title: de.courses.title,
+        // The screen an operator opens first, and the only one that had no
+        // description at all (P136-01).
+        description: de.courses.intro,
+      },
       /*
        * The Mediathek (P88-01), under ANGEBOT beside the courses whose files it
        * holds — it is content, not a setting.
@@ -515,6 +537,23 @@ const NAV: readonly NavGroup[] = [
         label: de.certificates.title,
         title: de.certificates.title,
         description: de.certificates.intro,
+        capability: "certificate",
+      },
+      /*
+       * The Punktemeldung queue (P110-01), beside the certificates it produces
+       * — they are two halves of one completion, and an operator looking at a
+       * physician's certificate is one row away from the point it reports.
+       *
+       * `certificate`, the same capability: this row is about one person's CME
+       * record, which is exactly what that capability governs. A weaker one
+       * would put a masked EFN and a statutory deadline in front of somebody
+       * the platform does not trust with the certificate itself.
+       */
+      {
+        kind: "punktemeldungen",
+        label: de.eivQueue.nav,
+        title: de.eivQueue.title,
+        description: de.eivQueue.screenIntro,
         capability: "certificate",
       },
     ],
@@ -576,6 +615,84 @@ const NAV: readonly NavGroup[] = [
  * in production — the defaults are exactly what was there — and make the shell's
  * behaviour assertable, which is where every one of those bugs lived.
  */
+
+/**
+ * The panel a tenant screen shows when no customer is chosen (P127-01).
+ *
+ * The previous version was one amber sentence — *"Bitte wählen Sie oben einen
+ * Kunden aus"* — which is true and leaves the operator to find the control it
+ * refers to. §9.4: where an action is impossible, say why **at the point
+ * somebody looks for it**, and give them the next step rather than directions
+ * to it.
+ *
+ * So the two ways forward are the two controls. Which of them appears depends on
+ * the account: an operator without the `customer` capability cannot create one,
+ * and offering it would be a button that can only refuse (§9.2).
+ */
+function ChooseCustomerPrompt(props: {
+  customers: readonly { readonly id: string; readonly name: string }[];
+  canCreate: boolean;
+  onChoose: (id: string) => void;
+  onCreate: () => void;
+}) {
+  const { customers, canCreate } = props;
+
+  return (
+    <div className="mx-auto max-w-lg rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <h2 className="text-lg font-semibold text-gray-900">
+        {de.customerPicker.promptTitle}
+      </h2>
+      <p className="mt-2 text-sm text-gray-600">
+        {customers.length === 0
+          ? de.customerPicker.promptEmptyBody
+          : de.customerPicker.promptBody}
+      </p>
+
+      {/*
+        One button per customer, not a second dropdown.
+
+        The shell already carries a customer picker in its header, and a
+        `<select>` here would be the same control twice on one screen — two
+        places to do one thing, which is how they end up disagreeing about which
+        is authoritative. It also broke fifteen tests that reasonably assumed
+        there is one combobox in the console. Buttons make the choice one click
+        rather than open-then-pick, on the screen whose whole purpose is that
+        choice.
+      */}
+      {customers.length === 0 ? null : (
+        <ul className="mt-5 space-y-2">
+          {customers.map((customer) => (
+            <li key={customer.id}>
+              <button
+                type="button"
+                onClick={() => props.onChoose(customer.id)}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-left text-sm font-medium text-gray-900 shadow-sm transition-colors hover:border-brand-500 hover:bg-brand-50"
+              >
+                {customer.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {canCreate ? (
+        <div className="mt-5">
+          <Button variant="primary" onClick={props.onCreate}>
+            {de.customerPicker.promptCreate}
+          </Button>
+        </div>
+      ) : customers.length === 0 ? (
+        /*
+         * Nothing exists and this operator cannot create one. Saying so is the
+         * honest end of the road — the alternative is a screen that looks
+         * broken to somebody who has done nothing wrong (§9.10).
+         */
+        <p className="mt-5 text-sm text-gray-600">{de.customerPicker.promptNoRights}</p>
+      ) : null}
+    </div>
+  );
+}
+
 export function Console(props: {
   config: ReturnType<typeof readConfig> & object;
   profile: StaffProfile;
@@ -715,13 +832,31 @@ export function Console(props: {
    * — which is what makes a fresh installation recoverable: the operator can
    * create the first customer from a console that has none.
    */
-  const TENANT_VIEWS: ReadonlySet<View["kind"]> = new Set([
-    "courses",
-    "course",
-    "organisation",
-    "branding",
-    "learners",
-    "certificates",
+  /*
+   * Which screens sit **above** any customer (P127-01).
+   *
+   * This was the other way round — a hand-written list of the six tenant
+   * screens — and it had drifted to cover six of ten. `media`, `copy`,
+   * `participants` and `punktemeldungen` were all missing, so each of them
+   * skipped the guard below, called a tenant-scoped route with no customer
+   * header, and rendered the API's developer-facing refusal above a "Loading …"
+   * that never resolved. Reported from the Mediathek, true of four screens.
+   *
+   * That is CLAUDE.md §9.1's second form: a check that silently covers less
+   * than it claims, the same shape as `role-matrix.mjs` parsing five of nine
+   * screens (P41-02). Listing the exceptions instead of the rule is what fixes
+   * the class — there are three platform screens and they are the ones with a
+   * reason to be here, so a screen added tomorrow is tenant-scoped by default
+   * and fails into "choose a customer" rather than into a red box.
+   *
+   * The three are exactly the screens rendered with `platformClient`: the
+   * customer registry spans customers, and operator accounts and sign-in rules
+   * sit above any one of them.
+   */
+  const PLATFORM_VIEWS: ReadonlySet<View["kind"]> = new Set([
+    "customers",
+    "staff",
+    "security",
   ]);
 
   /*
@@ -758,6 +893,30 @@ export function Console(props: {
       else setProblem(describeError(error, de.error.generic));
     }
   }, [client, customerId]);
+
+  /*
+   * Deleting a Fortbildung (P101-02).
+   *
+   * The list is re-read rather than filtered locally: the API refuses a course
+   * with recorded participations, and `enrolmentCount` here is a snapshot that
+   * may be older than the enrolment that arrived while this screen was open.
+   * Dropping the row on a request the server refused would show a course as
+   * gone until the next reload — the console holding a shape the server does
+   * not, which is the mistake CourseStructure's header warns about one screen
+   * over.
+   */
+  const removeCourse = useCallback(
+    async (slug: string) => {
+      setProblem(undefined);
+      try {
+        await client.adminDeleteCourse(slug);
+      } catch (error) {
+        setProblem(describeError(error, de.error.generic));
+      }
+      await loadCourses();
+    },
+    [client, loadCourses],
+  );
 
   useEffect(() => {
     void loadCourses();
@@ -836,7 +995,7 @@ export function Console(props: {
         <select
           value={customerId ?? ""}
           onChange={(event) => setCustomerId(event.target.value || undefined)}
-          className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-900 shadow-sm"
+          className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-900 shadow-sm transition-colors hover:border-gray-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/25"
         >
           <option value="">{de.customerPicker.choose}</option>
           {customers.map((customer) => (
@@ -885,7 +1044,7 @@ export function Console(props: {
           <div key={group.heading} className="mb-4">
             <p
               id={headingId}
-              className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/40"
+              className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35"
             >
               {group.heading}
             </p>
@@ -901,10 +1060,10 @@ export function Console(props: {
                         setView({ kind: section.kind } as View);
                         setMenuOpen(false);
                       }}
-                      className={`mb-0.5 block w-full rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+                      className={`mb-0.5 block w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ds-ink)] ${
                         active
-                          ? "bg-brand-500 text-white"
-                          : "text-white/70 hover:bg-white/10 hover:text-white"
+                          ? "bg-brand-500 text-white shadow-[0_1px_12px_-2px_rgba(228,0,61,0.65)]"
+                          : "text-white/65 hover:bg-white/10 hover:text-white"
                       }`}
                     >
                       {section.label}
@@ -1061,16 +1220,23 @@ export function Console(props: {
     );
   }
 
-  // A tenant screen with no customer chosen has nothing to act within. Saying
-  // so beats an empty list, which reads as a customer with no content, and
-  // beats a wall of 422s from an API that is answering correctly.
-  if (customerId === undefined && TENANT_VIEWS.has(view.kind)) {
+  /*
+   * A tenant screen with no customer chosen has nothing to act within.
+   *
+   * It now *asks*, rather than stating the problem and leaving the operator to
+   * work out the remedy (§9.4). The two ways forward are the two controls:
+   * choose one of the customers that exist, or create the first. Which of those
+   * is even possible depends on the account, so the panel renders what this
+   * operator can actually do rather than naming a screen they may not reach.
+   */
+  if (customerId === undefined && !PLATFORM_VIEWS.has(view.kind)) {
     return frame(
-      <>
-        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          {customers.length === 0 ? de.customerPicker.noneYet : de.customerPicker.none}
-        </p>
-      </>,
+      <ChooseCustomerPrompt
+        customers={customers}
+        canCreate={props.profile.capabilities.includes("customer")}
+        onChoose={setCustomerId}
+        onCreate={() => setView({ kind: "customers" })}
+      />,
     );
   }
 
@@ -1084,6 +1250,10 @@ export function Console(props: {
 
   if (view.kind === "certificates") {
     return headed(<Certificates client={client} />);
+  }
+
+  if (view.kind === "punktemeldungen") {
+    return headed(<EivQueue client={client} />);
   }
 
   if (view.kind === "staff") {
@@ -1159,47 +1329,76 @@ export function Console(props: {
           }
         />
       ) : (
-        <Table
-          headers={[
-            de.courses.columnTitle,
-            de.courses.columnVnr,
-            de.courses.columnPoints,
-            de.courses.columnParticipants,
-            de.courses.columnCertificate,
-          ]}
-        >
-          {courses.map((course) => (
-            <tr key={course.slug} className="border-b border-gray-100">
-              <td className="px-3 py-2">
-                <button
-                  type="button"
-                  className="font-medium text-brand-700 underline"
-                  onClick={() =>
-                    setView({ kind: "course", slug: course.slug, tab: "structure" })
-                  }
-                >
-                  {course.title}
-                </button>
-              </td>
-              <td className="px-3 py-2 text-gray-600">{course.vnr ?? "—"}</td>
-              <td className="px-3 py-2">
-                {course.cmePoints === null
-                  ? "—"
-                  : `${course.cmePoints} (${course.cmeCategory ?? "?"})`}
-              </td>
-              <td className="px-3 py-2 text-gray-700">
-                {de.courses.completedOf(course.completedCount, course.enrolmentCount)}
-              </td>
-              <td className="px-3 py-2">
-                <Badge tone={course.certificateReady ? "ok" : "warn"}>
-                  {course.certificateReady
-                    ? de.courses.certificateReady
-                    : de.courses.certificateNotReady}
-                </Badge>
-              </td>
-            </tr>
-          ))}
-        </Table>
+        <>
+          {/*
+          The rule, once, above the table — the same shape as the structure
+          screen (P100-01): identical on every row, so it belongs where the
+          screen is explained rather than repeated per line.
+        */}
+          <p className="mb-3 max-w-3xl text-sm text-gray-600">{de.courses.deleteRule}</p>
+          <Table
+            headers={[
+              de.courses.columnTitle,
+              de.courses.columnVnr,
+              de.courses.columnPoints,
+              de.courses.columnParticipants,
+              de.courses.columnCertificate,
+              de.courses.columnActions,
+            ]}
+          >
+            {courses.map((course) => (
+              <tr
+                key={course.slug}
+                className="border-b border-gray-100 transition-colors last:border-0 hover:bg-gray-50/70"
+              >
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    className="rounded font-medium text-brand-700 underline decoration-brand-700/30 underline-offset-2 transition-colors hover:text-brand-800 hover:decoration-brand-700"
+                    onClick={() =>
+                      setView({ kind: "course", slug: course.slug, tab: "structure" })
+                    }
+                  >
+                    {course.title}
+                  </button>
+                </td>
+                <td className="px-4 py-3 text-gray-600">{course.vnr ?? "—"}</td>
+                <td className="px-4 py-3">
+                  {course.cmePoints === null
+                    ? "—"
+                    : `${course.cmePoints} (${course.cmeCategory ?? "?"})`}
+                </td>
+                <td className="px-4 py-3 text-gray-700">
+                  {de.courses.completedOf(course.completedCount, course.enrolmentCount)}
+                </td>
+                <td className="px-4 py-3">
+                  <Badge tone={course.certificateReady ? "ok" : "warn"}>
+                    {course.certificateReady
+                      ? de.courses.certificateReady
+                      : de.courses.certificateNotReady}
+                  </Badge>
+                </td>
+                <td className="px-4 py-3">
+                  <ConfirmButton
+                    label={de.courses.delete}
+                    ariaLabel={de.courses.deleteAria(course.title)}
+                    confirmLabel={de.courses.deleteConfirm}
+                    cancelLabel={de.common.cancel}
+                    disabledReason={
+                      course.enrolmentCount > 0
+                        ? de.courses.lockedByEnrolments
+                        : undefined
+                    }
+                    lockedLabel={de.structure.locked}
+                    onConfirm={() => {
+                      void removeCourse(course.slug);
+                    }}
+                  />
+                </td>
+              </tr>
+            ))}
+          </Table>
+        </>
       )}
     </>,
     /*
@@ -1339,14 +1538,24 @@ function CourseScreen(props: {
       }
       trail={trail}
     >
-      <nav className="flex flex-wrap gap-1 border-b border-gray-200">
+      {/*
+        Scrolls, never wraps (P100-01).
+
+        `flex-wrap` put the six course tabs on two rows below about 700px — the
+        second row reading as a separate control, and the whole header growing
+        by a line exactly when vertical space is scarcest. A horizontal scroller
+        keeps them one row at any width, which is what every tab strip on a
+        phone does. `scrollbar-none` hides the bar; the overflow is still
+        keyboard- and touch-scrollable, and the fade at the edge is the affordance.
+      */}
+      <nav className="flex gap-1 overflow-x-auto border-b border-gray-200 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {COURSE_TABS.map(([value, label]) => (
           <button
             key={value}
             type="button"
             aria-current={tab === value ? "page" : undefined}
             onClick={() => props.onTab(value)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm font-medium transition-colors ${
               tab === value
                 ? "border-brand-600 text-brand-700"
                 : "border-transparent text-gray-600"

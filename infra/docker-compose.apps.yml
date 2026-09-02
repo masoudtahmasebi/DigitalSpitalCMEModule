@@ -109,6 +109,14 @@ services:
       # `ds_app` is deliberately not `ds_migrator` — it may not create a
       # customer and it is subject to RLS (ADR-0002), exactly as in production.
       DATABASE_URL: postgres://ds_app:ds_app_dev@postgres:5432/${POSTGRES_DB:-ds_education}
+      # The schema-freshness reader (P149-01). One table, SELECT only.
+      #
+      # Present here and not passed per-invocation like MIGRATION_DATABASE_URL
+      # because the command that needs it — `bootstrap-admin` — is run by hand
+      # from the documented line, which carries no `-e`. That is precisely how
+      # P148-01 happened: an env var assumed present in this service and absent
+      # from it. `check:runtime-config` now fails if it goes missing.
+      SCHEMA_READER_DATABASE_URL: postgres://ds_schema_reader:ds_schema_reader_dev@postgres:5432/${POSTGRES_DB:-ds_education}
       REDIS_URL: redis://redis:6379
 
       # The browser's origins, not the containers'. The console on

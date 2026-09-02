@@ -100,7 +100,6 @@ export function CoursePresentation(props: {
         heroImageUrl: emptyToNull(form.heroImageUrl),
         cmePoints: form.cmePoints.trim() === "" ? null : Number(form.cmePoints),
         cmeCategory: emptyToNull(form.cmeCategory),
-        fortbildungsnummer: emptyToNull(form.fortbildungsnummer),
         // A date input gives `YYYY-MM-DD`; the API wants an instant. Midnight
         // UTC rather than local, so the stored value does not shift by a day
         // depending on which side of the German summer-time change it is read.
@@ -261,14 +260,6 @@ export function CoursePresentation(props: {
             onChange={(value) => set("cmeCategory", value)}
           />
         </Field>
-        <Field label={de.course.fortbildungsnummer} htmlFor="course-fbn">
-          <TextInput
-            id="course-fbn"
-            value={form.fortbildungsnummer}
-            maxLength={100}
-            onChange={(value) => set("fortbildungsnummer", value)}
-          />
-        </Field>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -314,7 +305,6 @@ function initialForm(course: AdminCourseDetail) {
     heroImageUrl: course.heroImageUrl ?? "",
     cmePoints: course.cmePoints === null ? "" : String(course.cmePoints),
     cmeCategory: course.cmeCategory ?? "",
-    fortbildungsnummer: course.fortbildungsnummer ?? "",
     validFrom: dateInput(course.validFrom),
     validTo: dateInput(course.validTo),
   };

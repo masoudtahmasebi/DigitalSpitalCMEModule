@@ -146,8 +146,22 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
     }),
   adminCorrectLearnerName: (c) => c.adminCorrectLearnerName(ID, "Dr. Anna Schmidt"),
   adminEraseSubject: (c) => c.adminEraseSubject(ID, "Löschantrag"),
+  /*
+   * With a password, because that is the shape the console sends and the one
+   * where a mistake matters: it must reach the **body**, never the path.
+   */
+  adminCheckEivConnection: (c) => c.adminCheckEivConnection("adhs", { vnrPassword: "x" }),
   adminDescribeEivEvent: (c) => c.adminDescribeEivEvent("adhs"),
   adminReconcileEiv: (c) => c.adminReconcileEiv("adhs"),
+  /*
+   * With a filter, so the property under test is that the status reaches the
+   * **query string** — the queue screen's whole job is narrowing to
+   * `failed_permanent` or `queued`, and a filter dropped on the way to the API
+   * returns every row and looks like a screen with no filter rather than a
+   * broken one.
+   */
+  adminListEivSubmissions: (c) =>
+    c.adminListEivSubmissions({ status: "failed_permanent", page: 2 }),
   adminRequeueEivSubmission: (c) => c.adminRequeueEivSubmission(ID),
   adminWithdrawEivSubmission: (c) => c.adminWithdrawEivSubmission(ID, "Widerruf"),
   adminListCertificates: (c) => c.adminListCertificates(),
@@ -213,6 +227,24 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
     }),
   adminCompleteUpload: (c) =>
     c.adminCompleteUpload("adhs", "cust/courses/id/video-x.mp4"),
+  adminBeginMultipartUpload: (c) =>
+    c.adminBeginMultipartUpload("adhs", {
+      purpose: "video",
+      mimeType: "video/mp4",
+      // Past the multipart threshold, so this exercises the route it names.
+      sizeBytes: 3 * 1024 * 1024 * 1024,
+    }),
+  adminSignUploadParts: (c) =>
+    c.adminSignUploadParts("adhs", {
+      key: "cust/courses/id/video-x.mp4",
+      uploadId: "up-1",
+      partNumbers: [1, 2],
+    }),
+  adminCompleteMultipartUpload: (c) =>
+    c.adminCompleteMultipartUpload("adhs", {
+      key: "cust/courses/id/video-x.mp4",
+      uploadId: "up-1",
+    }),
   adminViewUpload: (c) => c.adminViewUpload("adhs", "s3://cust/courses/id/video-x.mp4"),
   adminViewMedia: (c) => c.adminViewMedia("11111111-1111-4111-8111-111111111111"),
   adminListMedia: (c) => c.adminListMedia({ kind: "video", limit: 20 }),

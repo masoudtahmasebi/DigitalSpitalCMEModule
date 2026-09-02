@@ -18,7 +18,10 @@ import { decode, encode, type WidgetRoute } from "./route.js";
 const CONTENT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 
 const ROUTES: readonly WidgetRoute[] = [
-  { kind: "outline" },
+  { kind: "outline", tab: "overview" },
+  { kind: "outline", tab: "speakers" },
+  { kind: "outline", tab: "certification" },
+  { kind: "outline", tab: "library" },
   { kind: "content", contentId: CONTENT_ID },
   { kind: "evaluation" },
   { kind: "reporting" },
@@ -33,6 +36,31 @@ describe("encode / decode", () => {
     // CLAUDE.md §5: the copy is German and authoritative, and a link is copy.
     expect(encode({ kind: "content", contentId: CONTENT_ID })).toContain("inhalt");
     expect(encode({ kind: "reporting" })).toContain("punktemeldung");
+    expect(encode({ kind: "outline", tab: "library" })).toContain("mediathek");
+    expect(encode({ kind: "outline", tab: "certification" })).toContain("zertifizierung");
+  });
+
+  /*
+   * The overview keeps the bare prefix (P123-01).
+   *
+   * Every link anybody has sent since P82-04 points at `#ds`, and giving the
+   * overview a segment of its own would leave those links decoding to a tab
+   * that did not exist when they were written.
+   */
+  it("leaves the overview at the address it has always had", () => {
+    expect(encode({ kind: "outline", tab: "overview" })).toBe("ds");
+    expect(decode("#ds")).toEqual({ kind: "outline", tab: "overview" });
+  });
+
+  /*
+   * A tab segment must not be mistaken for a screen, or the reverse. These four
+   * share one shape — `ds/<word>` — and the only thing keeping them apart is
+   * which table the word is looked up in.
+   */
+  it("tells a tab apart from a screen at the same depth", () => {
+    expect(decode("#ds/mediathek")).toEqual({ kind: "outline", tab: "library" });
+    expect(decode("#ds/evaluation")).toEqual({ kind: "evaluation" });
+    expect(decode("#ds/punktemeldung")).toEqual({ kind: "reporting" });
   });
 });
 
@@ -54,7 +82,7 @@ describe("fragments that belong to the host page", () => {
     // the caller would have no way to tell "change nothing" from "go to the
     // course overview".
     expect(decode("#kontakt")).toBeUndefined();
-    expect(decode("#ds")).toEqual({ kind: "outline" });
+    expect(decode("#ds")).toEqual({ kind: "outline", tab: "overview" });
   });
 });
 
@@ -72,8 +100,8 @@ describe("fragments that are ours but malformed", () => {
   it("falls back to the overview for a shape it does not know", () => {
     // A truncated link, or a fragment from a version that knew another screen.
     // Ours by prefix, so the course's first page is the honest answer.
-    expect(decode("#ds/zertifikat")).toEqual({ kind: "outline" });
-    expect(decode("#ds/inhalt")).toEqual({ kind: "outline" });
+    expect(decode("#ds/zertifikat")).toEqual({ kind: "outline", tab: "overview" });
+    expect(decode("#ds/inhalt")).toEqual({ kind: "outline", tab: "overview" });
   });
 
   it("tolerates the slashes a person pastes", () => {

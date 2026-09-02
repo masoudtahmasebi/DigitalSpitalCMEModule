@@ -695,3 +695,89 @@ describe("the log itself", () => {
     }
   });
 });
+
+describe("a bucket that does not answer (P145-01)", () => {
+  /*
+   * The property the client asked for in one sentence: *"can we please make
+   * sure this does not happen again in the whole application that api hangs?"*
+   *
+   * A deadline alone does not deliver it. Under the ambient transaction, an
+   * upload waiting on the object store holds one of ten pooled connections for
+   * the whole wait — so ten uploads against a bucket that is merely *slow*
+   * stall every other screen for the length of the deadline. Fifteen seconds
+   * of that is not a fixed bug, it is a shorter one.
+   *
+   * `@NoAmbientTransaction()` on the routes that call the bucket is what makes
+   * the answer "uploads are failing" rather than "the platform is down".
+   *
+   * `bucket.stall()` holds the response rather than refusing it: a bucket that
+   * answers 500 releases the connection immediately and would prove nothing.
+   * §9.13's rule about fixtures — a bucket that always answers cannot find a
+   * caller that waits.
+   */
+  it("keeps serving every other route while uploads wait on it", async () => {
+    const ticket = await ticketFor(courseSlug, {
+      purpose: "video",
+      mimeType: "video/mp4",
+      sizeBytes: 11,
+    });
+    expect(await put(ticket, Buffer.from("hello video"))).toBe(200);
+
+    const release = bucket.stall();
+
+    // More than the pool's `max` of ten, so that under the old arrangement
+    // every connection is held and the eleventh caller has nothing to wait for.
+    const stalled = Array.from({ length: 12 }, () =>
+      asAdmin("POST", `/admin/courses/${courseSlug}/uploads/complete`, {
+        key: ticket.key,
+      }).catch((error: unknown) => ({ status: 0, body: { error: String(error) } })),
+    );
+
+    try {
+      // Give them time to reach the bucket and be held there.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      /*
+       * The assertion. An unrelated read, on a different route, with twelve
+       * uploads in flight against a bucket that is saying nothing.
+       *
+       * Under the ambient transaction this cannot answer: all ten connections
+       * are held by the stalled handlers, so it waits out
+       * `connectionTimeoutMillis` and fails. It is the whole defect, in one
+       * request.
+       */
+      const started = Date.now();
+      const answer = await asAdmin("GET", "/admin/media");
+      const elapsed = Date.now() - started;
+
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      // Comfortably under the 5 s checkout timeout: the point is that it never
+      // queued at all, not that it queued briefly.
+      expect(elapsed).toBeLessThan(2_000);
+    } finally {
+      release();
+      await Promise.all(stalled);
+    }
+  });
+
+  it("still completes the uploads once the bucket answers", async () => {
+    const ticket = await ticketFor(courseSlug, {
+      purpose: "video",
+      mimeType: "video/mp4",
+      sizeBytes: 11,
+    });
+    expect(await put(ticket, Buffer.from("hello video"))).toBe(200);
+
+    const release = bucket.stall();
+    const pending = asAdmin("POST", `/admin/courses/${courseSlug}/uploads/complete`, {
+      key: ticket.key,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    release();
+
+    const confirmed = await pending;
+    expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
+    expect(confirmed.body.reference).toBe(`s3://${ticket.key}`);
+  });
+});

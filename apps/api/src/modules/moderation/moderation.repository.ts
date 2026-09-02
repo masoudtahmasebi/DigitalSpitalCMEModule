@@ -52,6 +52,21 @@ export interface CertificateRow {
   readonly status: CertificateStatus;
   readonly issuedAt: string | null;
   readonly deliveredAt: string | null;
+  /**
+   * Why delivery was given up on, or null (P118-02).
+   *
+   * `bounced` on its own says the email did not arrive and nothing more, and
+   * the three causes want three different actions: a missing address, an
+   * address the server refused, and a platform whose SMTP has never been
+   * configured. The column has been written since P8-03 and returned by
+   * nothing, so the screen offered **Erneut senden** for all three — which for
+   * the first and third can only fail again (§9.2).
+   *
+   * Safe to return: the values are `no_recipient`, `permanent_rejection` and
+   * `attempts_exhausted`. No address, no server, no message from the far end
+   * (§9.5).
+   */
+  readonly deliveryAbandonedReason: string | null;
 }
 
 export interface ModerationRepositoryPort {
@@ -215,9 +230,10 @@ export class ModerationRepository implements ModerationRepositoryPort {
       status: CertificateRow["status"];
       issued_at: Date | string | null;
       delivered_at: Date | string | null;
+      delivery_abandoned_reason: string | null;
     }>(sql`
       SELECT c.id, c.enrolment_id, c.participant_name, c.status::text AS status,
-             c.issued_at, c.delivered_at
+             c.issued_at, c.delivered_at, c.delivery_abandoned_reason
         FROM certificates c
         JOIN enrolments e ON e.id = c.enrolment_id
         JOIN courses    k ON k.id = e.course_id
@@ -236,9 +252,10 @@ export class ModerationRepository implements ModerationRepositoryPort {
       status: CertificateRow["status"];
       issued_at: Date | string | null;
       delivered_at: Date | string | null;
+      delivery_abandoned_reason: string | null;
     }>(sql`
       SELECT id, enrolment_id, participant_name, status::text AS status,
-             issued_at, delivered_at
+             issued_at, delivered_at, delivery_abandoned_reason
         FROM certificates WHERE id = ${id} LIMIT 1
     `);
     const row = result.rows[0];
@@ -389,6 +406,7 @@ function toCertificate(row: {
   status: CertificateRow["status"];
   issued_at: Date | string | null;
   delivered_at: Date | string | null;
+  delivery_abandoned_reason: string | null;
 }): CertificateRow {
   return {
     id: row.id,
@@ -397,6 +415,7 @@ function toCertificate(row: {
     status: row.status,
     issuedAt: isoOrNull(row.issued_at),
     deliveredAt: isoOrNull(row.delivered_at),
+    deliveryAbandonedReason: row.delivery_abandoned_reason,
   };
 }
 

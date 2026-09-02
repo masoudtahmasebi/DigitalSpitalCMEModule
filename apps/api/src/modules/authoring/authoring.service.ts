@@ -37,6 +37,7 @@ import {
   parseCopyOverrides,
   parseBranding,
   questionProblems,
+  questionRemoval,
   storageKeyOf,
   validateReorder,
   MIN_QUIZ_OPTIONS,
@@ -655,16 +656,37 @@ export class AuthoringService {
   async getQuiz(contentId: string): Promise<AuthoringQuiz> {
     await this.slugOwning(await this.repository.courseIdOfContent(contentId), contentId);
     const rows = await this.repository.loadQuiz(contentId);
-    return { contentId, questions: rows.questions };
+    return { contentId, questions: rows.questions, retiredCount: rows.retiredCount };
   }
 
   /**
-   * Replace a quiz (P9-05).
+   * Replace a quiz (P9-05, revised by P114-01).
    *
    * Diffed rather than wiped and rewritten, for one reason: a question or
    * option a learner has answered must survive, or an already-submitted attempt
-   * stops meaning anything. Anything the caller does not name is a deletion, and
-   * a deletion of something answered is refused with the count.
+   * stops meaning anything. Anything the caller does not name is a removal.
+   *
+   * ## What a removal does, and why that changed
+   *
+   * Until P114-01 a removal was always a delete, and a delete of anything
+   * answered was **refused**. One physician answering one question froze the
+   * exam permanently — reported as *"this lernerfolgskontrolle has 11
+   * questions, I want to make it to only 2 questions and i can not."*
+   *
+   * The refusal conflated the row surviving (required) with the question
+   * staying in the exam (not required by anything). So now `questionRemoval`
+   * decides per question: never answered, delete it; answered, **retire** it —
+   * out of the exam, row and answers intact, never served and never scored
+   * again. `quiz_attempts` stores each attempt's own score, so nothing already
+   * earned moves.
+   *
+   * An **option** on an answered question is still refused outright, and that
+   * asymmetry is deliberate. Retiring a question removes a whole unit of
+   * meaning cleanly; deleting one option out from under a recorded answer
+   * leaves `quiz_answers.selected_option_ids` pointing at a label nobody can
+   * reconstruct, and the attempt becomes unreadable rather than merely
+   * historical. An author who wants different options writes a new question and
+   * lets the old one retire.
    */
   async setQuiz(
     contentId: string,
@@ -704,18 +726,19 @@ export class AuthoringService {
     );
 
     const deleteQuestionIds: string[] = [];
+    const retireQuestionIds: string[] = [];
     const deleteOptionIds: string[] = [];
 
     for (const question of existing.questions) {
       if (!keptQuestionIds.has(question.id)) {
-        if (!canDelete(question.answerCount)) {
-          throw new AppError(
-            "conflict",
-            `question=${question.id} has ${question.answerCount} recorded answers`,
-            `Diese Frage wurde bereits ${question.answerCount}-mal beantwortet und kann nicht gelöscht werden. Bereits abgegebene Versuche müssen nachvollziehbar bleiben.`,
-          );
+        // Answered questions leave the exam and keep their row; unanswered ones
+        // are deleted outright, so a question added and dropped in the same
+        // sitting does not leave a tombstone behind (§`questionRemoval`).
+        if (questionRemoval(question.answerCount) === "retire") {
+          retireQuestionIds.push(question.id);
+        } else {
+          deleteQuestionIds.push(question.id);
         }
-        deleteQuestionIds.push(question.id);
         continue;
       }
 
@@ -735,6 +758,7 @@ export class AuthoringService {
 
     const plan: QuizPlan = {
       deleteQuestionIds,
+      retireQuestionIds,
       deleteOptionIds,
       questions: input.questions.map((question) => ({
         id: question.id,
@@ -749,6 +773,10 @@ export class AuthoringService {
       // Counts, never a prompt and never an answer key.
       questions: input.questions.length,
       deletedQuestions: deleteQuestionIds.length,
+      // Separate from deletions on purpose: "who shortened the exam, and when"
+      // is the question somebody reconstructing a physician's attempt will ask,
+      // and a combined count cannot answer it.
+      retiredQuestions: retireQuestionIds.length,
     });
 
     return this.getQuiz(contentId);

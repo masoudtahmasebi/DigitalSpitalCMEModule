@@ -60,6 +60,18 @@ export function courseWatchCoverage(
           continue;
         }
 
+        /*
+         * The video's own length, both sides of the fraction (§4 invariant 6).
+         *
+         * P93-01 briefly made this the *credited* length, because
+         * `watchedSecondsWithin` could then never return more than that and a
+         * raw denominator capped the rollup at 92 % on a ten-second video. In
+         * P94-01 that function went back to crediting the whole file whenever
+         * nothing is outstanding, so the two agree again on the honest length —
+         * and the course figure is once more a fraction of the seconds of video
+         * the course actually contains, which is what a physician reading
+         * "55 % der Fortbildung absolviert" takes it to be.
+         */
         totalSec += duration;
         /*
          * The **same** seconds the per-content percentage is built on.

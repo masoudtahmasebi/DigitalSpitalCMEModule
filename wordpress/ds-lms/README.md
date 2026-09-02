@@ -11,19 +11,87 @@ JWKS regardless of what this plugin says (ADR-0003, CLAUDE.md §4 invariant 2).
 
 ## Installing
 
-1. Build the widget bundle and copy it in:
+1. Copy `wordpress/ds-lms/` into `wp-content/plugins/` and activate it.
 
-   ```
-   pnpm wp:bundle
-   ```
+2. **Settings → DS Education**: Basis-Domain and Projekt-Slug.
 
-   This writes `assets/ds-lms.js`. It is **not committed** — it is a build
-   artefact of `apps/widget`, and a committed copy would drift from the source
-   it was built from.
+There is no build step and no bundle to copy. The plugin folder in this
+repository is the plugin — what you see is what you install.
 
-2. Copy `wordpress/ds-lms/` into `wp-content/plugins/` and activate it.
+---
 
-3. **Settings → DS Education**: API base URL, project slug, default course.
+## Where the JavaScript comes from
+
+Not from this plugin. `<ds-lms>` is loaded from the platform's own widget host:
+
+```
+https://widget.<Basis-Domain>/ds-lms.js
+```
+
+derived from the Basis-Domain by the same rule `infra/deploy/domains.sh` uses,
+so the two cannot disagree. **Widget-JavaScript-URL** overrides it when a
+customer serves the file from somewhere else.
+
+Two consequences, and both are the point:
+
+- **A fix to the widget needs no plugin update.** It ships on our next deploy
+  and reaches every site within the five minutes `infra/nginx/widget.conf`
+  allows a browser to cache it.
+- **There is no `?ver=`.** A plugin version in the URL would pin visitors to
+  whatever bundle was current when the plugin was last released, which is the
+  coupling this removes. Freshness is the cache header's job.
+
+Until P96-01 the plugin enqueued its own `assets/ds-lms.js`, written by
+`pnpm wp:bundle`. That file was a gitignored build artefact, so **every copy of
+the plugin taken from this repository was missing it** — the browser 404'd, the
+`<ds-lms>` element never upgraded, and WordPress reported nothing at all. A
+staging install found it exactly that way. CLAUDE.md §9.9: a step documented for
+a human to perform is a step that does not happen.
+
+### Is it actually reachable from here?
+
+**Settings → DS Education → Verbindung prüfen** asks this WordPress server
+whether the configured addresses answer, and says what came back — a 404, an
+unreachable host, or a bundle served without the CORS header a browser needs to
+execute it.
+
+It checks the **saved** settings, never a URL from the request, so save before
+checking. The API line reports reachability only: whether _this site's origin_
+may call the API is decided per project in the DigitalSpital console, and a
+server-to-server request carries no `Origin`, so it would pass while every
+visitor's browser was refused.
+
+This exists because the first person to notice that the bundle 404'd noticed by
+typing its URL into a browser.
+
+---
+
+## Pointing a site at staging, or at any other installation
+
+One field decides it: **Basis-Domain**. Both addresses derive from it —
+`api.<domain>` and `widget.<domain>` — so a staging WordPress fills in the
+staging domain and is done, and nothing about the plugin differs between the
+two. A platform whose hostnames follow no convention is what the two optional
+URL fields are for.
+
+The bundle is served with `Access-Control-Allow-Origin: *`, which is correct and
+is not a weakening: it is public JavaScript carrying no credentials. Any number
+of sites — production, staging, a developer's `localhost` — can load the same
+file. The narrow policy is the API's, and it is per project.
+
+### What the customer's site has to allow
+
+If the site sends a `Content-Security-Policy`, it must name the widget host in
+`script-src` — otherwise the browser refuses the script and the page shows an
+empty area with the reason only in its console:
+
+```
+script-src 'self' https://widget.digitalspital.de;
+```
+
+The API is a separate permission: the site's origin has to be listed in the
+project's **Erlaubte Einbettungs-Domains** in the admin console, or every request the widget
+makes is refused by CORS.
 
 ---
 
@@ -32,13 +100,105 @@ JWKS regardless of what this plugin says (ADR-0003, CLAUDE.md §4 invariant 2).
 Either the block (**DS Education — Fortbildung**) or the shortcode:
 
 ```
-[ds_lms]
-[ds_lms course="adhs-akademie-adult"]
+[ds_lms]                                every Fortbildung — the Fortbildungsbereich
+[ds_lms course="adhs-akademie-adult"]   one, opened directly
 ```
+
+**The default is the list**, which is the whole first screen of the layout: the
+teal hero, the CME seal, the Thema and Altersgruppe filters, and a card per
+Fortbildung. A page that wants a single Fortbildung names it, which is one word
+longer and says exactly what it does.
+
+`[ds_lms catalogue="1"]` still works and means the same as `[ds_lms]`. It exists
+because it was briefly the only way to ask.
+
+There is deliberately **no Standard-Fortbildung setting**. Until 2.0.0 there was,
+and a bare `[ds_lms]` fell back to it — so the commonest thing a page wants
+depended on a field in a different screen being blank, and a site that had filled
+it in could not show the list at all.
 
 Both go through the same `DS_LMS_Renderer::render()`, so they cannot disagree
 about what they produce. The bundle is enqueued only on pages that actually use
 one of them.
+
+### First check: does the theme render the page body at all?
+
+A shortcode only runs if something prints the content it is written in, and a
+component-driven theme very often does not. MEDICE's `page.php` is exactly that
+shape:
+
+```php
+if ( have_rows( 'components' ) ) {
+    while ( have_rows( 'components' ) ) { the_row();
+        get_template_part( 'components/' . get_row_layout() ); }
+}
+```
+
+No `the_content()` anywhere — so `[ds_lms …]` typed into the editor is never
+printed, produces no markup, logs nothing, and looks from the front end exactly
+like a plugin that does not work. It cost an afternoon to find, so it is the
+first thing to check on any new site: **view source and look for `<ds-lms`.** If
+it is absent, the shortcode never ran; if it is present and nothing renders, the
+problem is the bundle or the API and _Verbindung prüfen_ will say which.
+
+The fix is one page template that calls `the_content()`:
+
+```php
+<?php
+/** Template Name: CME-Fortbildung */
+get_header();
+?>
+<main class="w-full site-content-padding py-12 lg:py-20">
+	<?php while ( have_posts() ) { the_post(); the_content(); } ?>
+</main>
+<?php get_footer();
+```
+
+Create the page, choose that template, paste the shortcode.
+
+### What the container has to give it
+
+Very little. `<ds-lms>` is `display: block; max-width: 100%` and every screen
+inside carries the widths from the layout — the catalogue grid, the player's
+video-plus-sidebar split, the exam column. It constrains itself.
+
+What it must **not** be given is a prose container. A theme's text column
+(`container mx-auto` and friends) is sized for paragraphs and will squash the
+player. Full width plus the site's own horizontal padding is right.
+
+---
+
+## How somebody is recognised — and it is not WordPress
+
+**No physician on the MEDICE site is a WordPress user.** Their login is
+`theme/functions/login-class.php`: a password grant against Keycloak, whose
+whole response is stored in `$_SESSION['LOGIN_SESSION']`. There is no
+`wp_signon`, no `wp_set_auth_cookie` and no `wp_insert_user` anywhere in the
+theme or the Keycloak plugin, so `is_user_logged_in()` is **false** for every
+one of them.
+
+This plugin therefore does not ask WordPress anything about identity. It asks
+one question: **is there an access token in this request's session?**
+
+| Setting                          | Meaning                                                              |
+| -------------------------------- | -------------------------------------------------------------------- |
+| **Session-Schlüssel des Logins** | The `$_SESSION` key the site's login writes. MEDICE: `LOGIN_SESSION` |
+
+Only `access_token` is read from it. The refresh token, the userinfo and
+everything else in that array are left alone.
+
+A **DocCheck** login is the site's other sign-in and involves no Keycloak: such
+a visitor holds no access token, gets no token endpoint on the element, and sees
+the widget's signed-out state. That is correct rather than broken — DocCheck
+does not identify a physician to the accreditation chain, and a CME point cannot
+be awarded to somebody it cannot name.
+
+A host that would rather hand the token over explicitly can still do so, and
+nothing else changes:
+
+```php
+add_filter( 'ds_lms_access_token', fn() => $token_you_already_have );
+```
 
 ---
 
@@ -52,11 +212,22 @@ kill switch that takes effect immediately with no deployment.
 
 | Condition         | Behaviour                                                        |
 | ----------------- | ---------------------------------------------------------------- |
-| Feature flag off  | Route is not registered at all — 404, not a 403 that confirms it |
+| Feature flag off  | Route is not registered at all — 404 `{"code":"rest_no_route"}`  |
 | Not logged in     | 401 from the permission callback; the handler never runs         |
 | Missing/bad nonce | Refused. `X-WP-Nonce` for `wp_rest` is required                  |
-| No token held     | `404 {"token": null}` — whether one exists is not disclosed      |
+| No token held     | 404 `{"token":null,"reason":"no_token_held"}`                    |
 | Any request       | `Cache-Control: no-store, private` plus WordPress's no-cache set |
+
+**The two 404s are different, and the body is the only thing that says so.** A
+browser console prints `404 (Not Found)` for both, so switching the feature flag
+on and off changes nothing an observer can see — which is exactly how a
+production report was misread for a day (P97-01). The first means _no route_;
+the second means _the route ran and WordPress is holding no Keycloak token for
+you_. **Verbindung prüfen** tells them apart in words.
+
+Naming the reason is not a disclosure: the caller has already presented their
+own session cookie and a valid nonce, so it is a fact about their own session,
+not an answer about anybody else's.
 
 **There is no `user` parameter, and there cannot be one.**
 `DS_LMS_Token_Source::current()` takes no arguments — "returns only the
@@ -91,20 +262,44 @@ If they add that, none of the fallback strategies run.
 
 ---
 
-## Why the token provider is installed by an inline script
+## Why the plugin ships no JavaScript
 
-The widget exposes a `tokenProvider` property and knows nothing about
-WordPress — no nonce header, no REST route, no cookie assumptions. The
-WordPress-specific half lives in `DS_LMS_Renderer::attach_token_provider()`, so
-the same bundle runs unchanged in the dev harness and anywhere else it is
-embedded later.
+The page carries two attributes and no script:
 
-The inline script runs **before** the deferred module that defines the custom
-element, so it assigns the property to an element that has not upgraded yet.
-The widget handles that explicitly (`#upgradeProperty` in `element.ts`); the
-naive implementation loses the value at upgrade and shows "not correctly
-embedded" on a perfectly configured page. There is a test for that exact
-ordering.
+```html
+<ds-lms
+  api-base="…"
+  project="…"
+  course="…"
+  token-endpoint="/wp-json/ds-lms/v1/token"
+  token-header="X-WP-Nonce: …"
+  data-ds-plugin="1.0.0"
+></ds-lms>
+```
+
+Until 1.0.0 the plugin inlined about forty lines of JavaScript that fetched the
+endpoint, handled the refresh case and assigned a `tokenProvider` property. Every
+one of those lines already existed inside the widget, in
+`apps/widget/src/token.ts` — so a change to _how a token is fetched_ meant a
+plugin update on every site (P96-03).
+
+Now the plugin says **where** and **what header**, and the widget owns the
+**how**. The widget is still host-agnostic: it knows "fetch a token from this URL
+with this header", not "WordPress".
+
+`token-header` is deliberately one header and not a mechanism. WordPress needs
+exactly this — a nonce proving the request came from a page it rendered rather
+than from another origin borrowing the visitor's cookie — and a general header
+facility would be a way for a page to make the widget send anything anywhere. A
+malformed value is dropped rather than passed to `fetch`, which would throw
+inside the provider and surface as "no token".
+
+Neither attribute is emitted for a logged-out visitor: there is no token to
+fetch, and the widget shows its signed-out state.
+
+**`data-ds-plugin`** is the plugin's version, beside the `data-ds-build` the
+widget writes for its own. Between them, "which build is this site running?" is
+answerable from a browser rather than over FTP.
 
 ---
 

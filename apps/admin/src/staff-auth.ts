@@ -189,12 +189,30 @@ export async function currentStaff(apiBase: string): Promise<StaffProfile | unde
 }
 
 export async function signOut(apiBase: string): Promise<void> {
+  /*
+   * `currentCsrfToken()`, not the module variable (P139-02).
+   *
+   * `csrfToken` is set when this module signs somebody in and is gone the
+   * moment the page reloads; the cookie the API set beside the session is not.
+   * So an operator who reloaded the console and then signed out sent **no**
+   * CSRF header, the API refused with 403, the `.catch` below swallowed it, and
+   * the lines after this cleared the local state anyway.
+   *
+   * The result is the worst shape available: the console says you are signed
+   * out and the **server session is still valid**, with its cookie still in the
+   * browser. Pressing Back is enough to be signed in again.
+   *
+   * `currentCsrfToken()` falls back to the cookie, which is exactly the case
+   * this had wrong.
+   */
+  const csrf = currentCsrfToken();
+
   await fetch(new URL("/admin/auth/logout", apiBase), {
     method: "POST",
     credentials: "include",
     headers: {
       accept: "application/json",
-      ...(csrfToken === undefined ? {} : { [CSRF_HEADER]: csrfToken }),
+      ...(csrf === undefined ? {} : { [CSRF_HEADER]: csrf }),
     },
   }).catch(() => undefined);
 
@@ -324,12 +342,25 @@ export async function writePlatformSender(
  * have nothing to do with each other.
  */
 export async function sendPlatformTestMail(apiBase: string): Promise<{
-  status: "sent" | "not_configured" | "failed" | "unreachable";
+  status: "sent" | "not_configured" | "failed" | "unreachable" | "refused";
   reason?: string;
   sentTo?: string;
 }> {
   try {
     const response = await post(apiBase, "/admin/auth/platform-smtp/test", {});
+    /*
+     * A refusal is not a network problem (P139-03).
+     *
+     * Every non-2xx used to become `unreachable`, which the screen renders as
+     * "The request could not be made. Please check your connection and whether
+     * you are still signed in." The API had answered `403 Forbidden` — a
+     * complete, deliberate answer — and the console turned it into a suggestion
+     * to check the wi-fi. §9.4: the sentence has to name what actually
+     * happened, because it is the only thing the person acts on.
+     */
+    if (response.status >= 400 && response.status < 500) {
+      return { status: "refused" };
+    }
     if (!response.ok) return { status: "unreachable" };
     const body = (await response.json()) as {
       status?: string;
@@ -352,7 +383,28 @@ export async function sendPlatformTestMail(apiBase: string): Promise<{
   }
 }
 
+/**
+ * A POST to the staff plane, **with the CSRF token** (P139-01).
+ *
+ * It did not send one, and for a long time that cost nothing visible: every
+ * other caller of this helper is a `@Public()` route — sign-in, TOTP enrolment
+ * and verification, credential redemption, password reset — and the CSRF check
+ * only applies to a request carrying a staff session. So the omission was
+ * invisible until the first *authenticated* POST went through here, which was
+ * "Send test email".
+ *
+ * The API answered `403 Forbidden`, correctly: `AppError.forbidden("missing or
+ * invalid CSRF token")`. The console reported "The request could not be made.
+ * Please check your connection and whether you are still signed in", which is
+ * the one sentence guaranteed to send somebody looking in the wrong place.
+ *
+ * `currentCsrfToken()` rather than the module variable, and that difference is
+ * the whole of P139-02: the variable is set at sign-in and lost on reload,
+ * while the cookie the API sets survives it.
+ */
 function post(apiBase: string, path: string, body: unknown): Promise<Response> {
+  const csrf = currentCsrfToken();
+
   return fetch(new URL(path, apiBase), {
     method: "POST",
     // `include` and not `same-origin`: the console is served from
@@ -360,7 +412,11 @@ function post(apiBase: string, path: string, body: unknown): Promise<Response> {
     // even though they are the same site. Without this the browser sends no
     // cookie and never stores the one the API sets.
     credentials: "include",
-    headers: { "content-type": "application/json", accept: "application/json" },
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+      ...(csrf === undefined ? {} : { [CSRF_HEADER]: csrf }),
+    },
     body: JSON.stringify(body),
   });
 }

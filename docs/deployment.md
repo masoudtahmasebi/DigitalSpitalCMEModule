@@ -197,6 +197,267 @@ GitHub next.
 
 ---
 
+## 3a. Reaching the host from CI once a firewall is in front of it
+
+Added 25.08, after a firewall was put on the server and the deploy stopped at
+`ssh: connect to host … port 22: Connection timed out`. Nothing was deployed —
+the workflow fails before it checks anything out — but a deploy pipeline that
+cannot reach the host is not a deploy pipeline.
+
+### The move to not make
+
+GitHub publishes its runner addresses at `https://api.github.com/meta` under
+`actions`, and allow-listing them is the obvious idea. Three reasons not to:
+
+- **It is thousands of CIDR blocks**, not a handful. Hetzner Cloud Firewalls cap
+  the rules per firewall far below that, so it may not physically fit.
+- **It changes.** The allow-list rots, and the symptom arrives weeks later as a
+  deploy that times out for no reason anyone remembers.
+- **It is not a boundary.** Those are shared Azure ranges. "Allow GitHub" means
+  "allow anybody who can start a VM in Azure" — the whole maintenance cost, and
+  almost none of the isolation you wanted when you added the firewall.
+
+### Option A — a private network between the runner and the host (recommended)
+
+The runner joins a tailnet and reaches the host over it. **Port 22 stays closed
+to the internet.**
+
+This is recommended because it changes the least. The SSH design here was never
+the weak part — it pins the host key rather than trusting on first use, and
+nothing from the runner is copied to the server. Only the _path_ broke, so only
+the path is replaced.
+
+**Do these in this order.** Advertising a tag re-registers the node, and a tag
+the policy does not know is refused — which leaves the machine logged out and
+showing as **Expired** in the admin console, with no message saying why. That is
+what happens if you install and tag before writing the policy, and it is the
+mistake this paragraph exists to stop.
+
+#### 1. Declare the tags, before any machine claims one
+
+Admin console → **Access controls → Policies → JSON editor**. Not the "Add rule"
+form: that form writes access rules and cannot declare a tag's _owner_, which is
+the field `--advertise-tags` checks.
+
+A current tailnet's default policy is written in **`grants`**, not the older
+`acls`. Both are accepted, but match whichever your editor already contains
+rather than pasting the other — a file carrying both is legal and unreadable.
+
+```jsonc
+{
+  "tagOwners": {
+    "tag:server": ["autogroup:admin"],
+    "tag:ci": ["autogroup:admin"],
+  },
+}
+```
+
+Save. `tagOwners` says who is allowed to _apply_ a tag; without an entry, nobody
+is, including you.
+
+#### 2. Install on the host and claim the tag
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --ssh=false --hostname=ds-cme --advertise-tags=tag:server
+```
+
+It prints a login URL. **Open it** — a tag change is a new registration, not an
+edit, so the node is unauthenticated until you do. Afterwards the machine's owner
+column reads `tag:server` instead of a person's name.
+
+If the machine is already installed and now shows **Expired**, this same command
+is the fix: declare the tags first, run it again, follow the URL.
+
+#### Why tag it at all
+
+Two things depend on it, and both fail silently:
+
+- **The ACL rule needs something to match.** A rule granting `tag:ci` access to
+  `tag:server` does not apply to a machine that carries no tag.
+- **A machine registered under a user account expires.** Tailscale's default
+  node-key lifetime applies to user-owned devices, so the server signs itself
+  out of the tailnet some months later, on a day nobody chose, and the deploy
+  starts timing out with nothing having changed. Tagged devices do not expire.
+  (Disabling key expiry on the machine in the admin console works too, and is
+  the same decision made in a place nobody reads again.)
+
+  This is §9.9a's shape: the file is right, the deploy was green, and the thing
+  quietly stopped answering.
+
+#### 3. Let CI reach it, and nothing else
+
+A new tailnet's default policy is allow-all, so the deploy will work the moment
+the runner joins. Narrow it — a deploy runner has no business anywhere but this
+one machine, on one port:
+
+```jsonc
+{
+  "tagOwners": {
+    "tag:server": ["autogroup:admin"],
+    "tag:ci": ["autogroup:admin"],
+  },
+
+  "grants": [
+    // Replaces the default {"src": ["*"], "dst": ["*"], "ip": ["*"]}.
+    // People, to the server, on anything.
+    { "src": ["autogroup:member"], "dst": ["tag:server"], "ip": ["*"] },
+    // CI, to the server, on SSH and nothing else.
+    { "src": ["tag:ci"], "dst": ["tag:server"], "ip": ["22"] },
+  ],
+}
+```
+
+Port 22 only for CI: the runner runs one command over SSH and has no business
+anywhere else.
+
+And assert it, in the same file, because Tailscale runs `tests` on every save —
+a gate where the work happens rather than one somebody remembers to check
+(§9.11):
+
+```jsonc
+  "tests": [
+    {
+      "src": "tag:ci",
+      "accept": ["ds-cme.tail5262f6.ts.net:22"],
+      "deny": ["ds-cme.tail5262f6.ts.net:443"],
+    },
+  ],
+```
+
+The `deny` line is the half that matters. `accept` alone would pass on the
+allow-all policy this replaced — it could not have gone red (§9.1). The pair
+says the rule is a restriction and not merely a permission, and a later edit
+that widens `tag:ci` back to `["*"]` fails on save instead of at leisure.
+
+**Keep the first grant.** Tagging the machine is what makes the second one
+necessary, and it is easy to write only the second — which locks you out of your
+own server over the tailnet, quietly, in the same edit that secured it.
+
+Which is this setting's other side, and the reason it deserves a paragraph
+(§9.10a). A tagged device **stops being yours**: ownership moves to the tag, so
+`autogroup:self` no longer covers it, and neither does anything else naming a
+person. That is the point — a server nobody personally owns cannot be
+disconnected by somebody leaving — and it is also why access has to be granted
+back explicitly. The `ssh` block in the default policy is Tailscale SSH, which
+this host does not run (`--ssh=false`), so it does not fill the gap: the deploy
+uses the host's own `sshd` with the host key pinned, and that is deliberate.
+
+#### 4. Give the runner its own identity
+
+Admin console → **Settings → OAuth clients → Generate**. It needs the
+`auth_keys` **write** scope and the tag **`tag:ci`** — the tag on the client is
+what the runner is allowed to register itself as, and the workflow passes the
+same string.
+
+The two halves become repository secrets:
+
+| Secret               |                                                   |
+| -------------------- | ------------------------------------------------- |
+| `TS_OAUTH_CLIENT_ID` | its presence is what switches the private path on |
+| `TS_OAUTH_SECRET`    |                                                   |
+
+An OAuth client rather than a fixed auth key on purpose: the runner mints a
+short-lived key per job and the node is ephemeral, so a leaked workflow log
+grants nothing that outlives the run.
+
+#### 5. Point the deploy at the tailnet name
+
+Repoint `DEPLOY_HOST` at the MagicDNS name — `ds-cme.tail5262f6.ts.net`, from
+the Machines list — and close 22 in the Hetzner firewall.
+
+The MagicDNS name rather than `100.74.161.46`: the tailnet address is stable in
+practice but is not a promise, and the name is the thing the ACL and the admin
+console both talk about.
+
+`DEPLOY_KNOWN_HOSTS` **does** change, and this is the step that is easy to get
+wrong because the reasoning against it sounds right: the server's SSH key is the
+same key however the packets arrived, so why re-pin it?
+
+Because a `known_hosts` entry is keyed by the **name you connect to**. Move
+`DEPLOY_HOST` from the public address to the tailnet name and nothing in the file
+matches, and `ssh` says only `Host key verification failed.` — the same sentence
+it prints when a key has genuinely _changed_, which is the one case where the
+right response is to stop rather than to re-pin. The workflow now tells the two
+apart before connecting.
+
+On the host, print the lines for the new name:
+
+```bash
+for f in /etc/ssh/ssh_host_*_key.pub; do
+  printf '%s %s\n' "ds-cme.tail5262f6.ts.net" "$(cut -d' ' -f1,2 "$f")"
+done
+```
+
+**Append** them to `DEPLOY_KNOWN_HOSTS`, keeping the existing lines. Two names for
+one key is normal, and it means a deploy over the public address still verifies
+if the tailnet is ever unavailable.
+
+`ssh-keyscan` is the usual way to produce these and is not available here: it
+would have to run from a machine already on the tailnet, and the only one is the
+server itself.
+
+The workflow checks reachability over the tailnet **before** the first `ssh`,
+because every way this can be half-configured — untagged host, missing ACL rule,
+`DEPLOY_HOST` still public, expired node key — produces the identical twenty-
+second SSH timeout, which is also what an internet firewall looks like. The
+check names which one instead.
+
+One thing to confirm on the host once 22 is closed publicly: `sshd` must still
+accept connections arriving on the `tailscale0` interface. If the host firewall
+is `ufw` or `nftables` rather than only Hetzner's, allow in on that interface —
+Hetzner Cloud Firewalls do not see tailnet traffic at all, so closing 22 there is
+enough for the internet and irrelevant to the private path.
+
+The workflow step is **conditional on `TS_OAUTH_CLIENT_ID`**: with no secret it
+is skipped and the deploy behaves exactly as before. There is no flag day — set
+the secrets when ready, and the next run takes the new path.
+
+> Check the action's current major tag before relying on it
+> (`tailscale/github-action`). The version pinned in the workflow was written
+> from memory and has not been executed here.
+
+### Option B — a self-hosted runner on the host
+
+Removes SSH from the deploy entirely: the runner polls GitHub **outbound**,
+picks the job up automatically, and runs `deploy.sh` locally. Automatic CI/CD is
+unaffected — same triggers, same workflow — and `DEPLOY_SSH_KEY`,
+`DEPLOY_KNOWN_HOSTS` and the SSH steps all disappear.
+
+It fits ADR-0013, where the host already builds its own images from its own
+checkout. The reason it is second rather than first: it puts a long-lived agent
+on the production machine that executes workflow code, so anyone who can trigger
+the workflow can run commands there. The current SSH user has a full shell, so
+the delta is smaller than it sounds — but it is a persistent agent rather than a
+key used for one command, and it wants `--ephemeral`, an unprivileged user and a
+protected `production` environment with required reviewers.
+
+### Option C — keep 22 open, harden it
+
+What was in place before the firewall, and a normal posture: key-only
+authentication, no root login, fail2ban. Fine on its own terms; listed so the
+choice is deliberate rather than a reversal by default.
+
+### Doing a deploy by hand meanwhile
+
+Nothing above is needed to deploy. The workflow only does three things, and they
+can be run from any machine that can reach the host:
+
+```bash
+ssh <user>@<host>
+cd ~/Repositories/DigitalSpitalCMEModule
+git fetch origin && git checkout --force <sha>
+git status --porcelain          # must print nothing
+cd infra/deploy && ./deploy.sh
+```
+
+Then, from anywhere, check what the internet sees:
+
+```bash
+curl -sS https://<api-domain>/health
+curl -sS -o /dev/null -w '%{http_code}\n' https://<api-domain>/metrics   # expect 404
+```
+
 ## 4. Configuration
 
 Two files on the server, and four secrets in GitHub. Nothing that unlocks the

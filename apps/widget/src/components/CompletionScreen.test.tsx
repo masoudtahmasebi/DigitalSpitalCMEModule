@@ -20,6 +20,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient, EnrolmentState } from "@ds/sdk";
 import type { Branding } from "@ds/domain";
 import { CompletionScreen } from "./CompletionScreen.js";
+import { de } from "../locale/de.js";
 
 afterEach(cleanup);
 
@@ -222,5 +223,98 @@ describe("the postal address", () => {
     fillNames();
     const submit = screen.getByRole("button", { name: /Daten übermitteln/ });
     expect((submit as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+/**
+ * P119-02. Until this, the screen a physician lands on after claiming their
+ * points said one thing for ever — *"Die Punkte werden an die Ärztekammer
+ * gemeldet."* Future tense, unconditional, and still there when the Meldung had
+ * been refused. They kept a certificate saying four CME points and had none.
+ *
+ * Each case here asserts the pair that matters: **what they are told**, and
+ * **whether they are asked to do anything** — because getting the second one
+ * backwards is worse than silence. A physician told to correct their EFN when
+ * the VNR was blocked follows an instruction that cannot succeed.
+ */
+describe("what a finished physician is told about their Punktemeldung", () => {
+  const finished = (punktemeldung: EnrolmentState["punktemeldung"]) =>
+    stateWith({
+      completedAt: "2026-08-26T09:00:00.000Z",
+      punktemeldung,
+    } as Partial<EnrolmentState>);
+
+  const efnField = () =>
+    screen.queryByLabelText(de.completion.punktemeldung.checkEfn.label);
+
+  it("says the points are on their way while it is in flight", () => {
+    renderScreen(clientWith(), finished("pending"));
+
+    expect(screen.getByText(de.completion.punktemeldung.pending.body)).toBeTruthy();
+    expect(efnField()).toBeNull();
+  });
+
+  it("says they were reported once they were", () => {
+    renderScreen(clientWith(), finished("reported"));
+
+    expect(screen.getByText(de.completion.punktemeldung.reported.body)).toBeTruthy();
+    expect(efnField()).toBeNull();
+  });
+
+  /* The one branch a physician can act on, and the field is the point of it. */
+  it("asks them to correct a refused EFN, and offers the field", () => {
+    renderScreen(clientWith(), finished("check_efn"));
+
+    expect(screen.getByText(de.completion.punktemeldung.checkEfn.body)).toBeTruthy();
+    expect(efnField()).not.toBeNull();
+  });
+
+  it("saves a corrected EFN through setEfn, not through completeCourse", async () => {
+    const setEfn = vi.fn(async () => undefined);
+    const completeCourse = vi.fn(async () => undefined);
+    renderScreen(
+      clientWith({ setEfn, completeCourse } as unknown as Partial<ApiClient>),
+      finished("check_efn"),
+    );
+
+    fireEvent.change(efnField() as HTMLElement, { target: { value: "802760699000001" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: de.completion.punktemeldung.checkEfn.save }),
+    );
+
+    await waitFor(() => expect(setEfn).toHaveBeenCalledWith("802760699000001"));
+    // Claiming the course again as a side effect of fixing a digit would be a
+    // second completion the physician did not ask for.
+    expect(completeCourse).not.toHaveBeenCalled();
+  });
+
+  /*
+   * The direction that does harm. Three different operator-side failures, one
+   * honest sentence, and no field — a physician cannot fix a blocked VNR, a
+   * missing credential, or an answer we could not classify.
+   */
+  it("never asks them to touch their EFN over a problem that is not theirs", () => {
+    for (const kind of ["event_problem", "not_configured", "failed_unknown"] as const) {
+      cleanup();
+      renderScreen(clientWith(), finished(kind));
+
+      expect(screen.getByText(de.completion.punktemeldung.handled.body)).toBeTruthy();
+      expect(efnField()).toBeNull();
+    }
+  });
+
+  it("sends them to the Ärztekammer once the window has closed", () => {
+    renderScreen(clientWith(), finished("window_closed"));
+
+    expect(screen.getByText(de.completion.punktemeldung.windowClosed.body)).toBeTruthy();
+    expect(efnField()).toBeNull();
+  });
+
+  /* A point-free course has no Meldung, and inventing a panel for it would be
+   * a §9.2 affordance about something that does not exist. */
+  it("says nothing at all when there is no Punktemeldung", () => {
+    renderScreen(clientWith(), finished("none"));
+
+    expect(screen.queryByText(de.completion.punktemeldung.heading)).toBeNull();
   });
 });

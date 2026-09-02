@@ -8,9 +8,37 @@
 
 import { useState, type ReactNode } from "react";
 
+/**
+ * The two class strings every control in this file shares (P133-02).
+ *
+ * They are constants rather than repeated literals because the console's look
+ * is the thing the client keeps asking for, and a focus ring or a corner radius
+ * that is written out nine times is one that ends up with nine values. Anything
+ * added here is inherited by every screen at once, which is the whole reason
+ * these primitives exist.
+ *
+ * The focus ring is brand-coloured and offset, and it is not optional: keyboard
+ * users are the a11y floor CLAUDE.md §3 declares non-reducible, and a redesign
+ * that made focus invisible would be a regression dressed as an improvement.
+ */
+const CONTROL_FOCUS =
+  "outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white";
+
+/** Text inputs, textareas and selects, so the three cannot drift apart. */
+const FIELD_SKIN =
+  "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm transition-colors placeholder:text-gray-400 hover:border-gray-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/25 disabled:bg-gray-50 disabled:text-gray-500";
+
 export function Button(props: {
   onClick?: () => void;
   type?: "button" | "submit";
+  /**
+   * A stable handle for a control the browser suite has to find precisely.
+   *
+   * Used where several buttons on one screen share a label — the media dialog's
+   * opener appears once per file field — and a positional locator would depend
+   * on the order the form happens to render in (P90-01).
+   */
+  id?: string;
   variant?: "primary" | "secondary" | "danger";
   disabled?: boolean;
   /**
@@ -30,18 +58,19 @@ export function Button(props: {
   const variant = props.variant ?? "primary";
   const skin =
     variant === "primary"
-      ? "bg-brand-600 text-white hover:bg-brand-700"
+      ? "bg-brand-600 text-white shadow-sm hover:bg-brand-700 active:bg-brand-800"
       : variant === "danger"
-        ? "bg-red-700 text-white hover:bg-red-800"
-        : "border border-gray-300 text-gray-800 hover:bg-gray-50";
+        ? "bg-red-700 text-white shadow-sm hover:bg-red-800"
+        : "border border-gray-300 bg-white text-gray-800 shadow-sm hover:border-gray-400 hover:bg-gray-50";
 
   return (
     <button
       type={props.type ?? "button"}
       disabled={props.disabled === true}
       onClick={props.onClick}
+      {...(props.id === undefined ? {} : { id: props.id })}
       {...(props.ariaLabel === undefined ? {} : { "aria-label": props.ariaLabel })}
-      className={`inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold disabled:opacity-50 ${skin}`}
+      className={`${CONTROL_FOCUS} inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none ${skin}`}
     >
       {props.children}
     </button>
@@ -133,7 +162,7 @@ export function TextInput(props: {
               }
             }
       }
-      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+      className={FIELD_SKIN}
     />
   );
 }
@@ -155,7 +184,7 @@ export function TextArea(props: {
       rows={props.rows ?? 4}
       maxLength={props.maxLength}
       onChange={(event) => props.onChange(event.target.value)}
-      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+      className={FIELD_SKIN}
     />
   );
 }
@@ -174,7 +203,7 @@ export function Select<T extends string>(props: {
       aria-label={props["aria-label"]}
       value={props.value}
       onChange={(event) => props.onChange(event.target.value as T)}
-      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+      className={FIELD_SKIN}
     >
       {props.options.map(([value, label]) => (
         <option key={value} value={value}>
@@ -287,7 +316,7 @@ export function Notice(props: {
 
   return (
     <div
-      className={`rounded-md border p-3 text-sm ${skin}`}
+      className={`rounded-xl border p-3.5 text-sm ${skin}`}
       {...(props.tone === "info" ? {} : { role: "alert" })}
     >
       {props.title === undefined ? null : <p className="font-semibold">{props.title}</p>}
@@ -299,13 +328,15 @@ export function Notice(props: {
 export function Badge(props: { tone: "ok" | "warn" | "muted"; children: ReactNode }) {
   const skin =
     props.tone === "ok"
-      ? "bg-green-50 text-green-800"
+      ? "bg-green-50 text-green-800 ring-green-600/20"
       : props.tone === "warn"
-        ? "bg-amber-50 text-amber-900"
-        : "bg-gray-100 text-gray-600";
+        ? "bg-amber-50 text-amber-900 ring-amber-600/20"
+        : "bg-gray-100 text-gray-600 ring-gray-500/20";
 
   return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${skin}`}>
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${skin}`}
+    >
       {props.children}
     </span>
   );
@@ -329,21 +360,62 @@ export function ConfirmButton(props: {
   confirmLabel: string;
   cancelLabel: string;
   disabledReason?: string | undefined;
+  /**
+   * The short form shown on the row — two or three words. The full
+   * `disabledReason` stays as the title and the accessible name, so nothing is
+   * lost, it is only no longer shouted on every line.
+   */
+  lockedLabel?: string | undefined;
+  /**
+   * The accessible name, when "Löschen" alone does not say what (P101-02).
+   *
+   * A list screen draws one of these per row, and eleven buttons all named
+   * "Löschen" is a name collision: a screen reader announces the same thing
+   * eleven times and the rows become distinguishable only by counting. The
+   * visible label stays short; the name says which course.
+   */
+  ariaLabel?: string | undefined;
   onConfirm: () => void;
 }) {
   const [armed, setArmed] = useState(false);
 
+  /*
+   * A refused delete is marked, not narrated (P100-01).
+   *
+   * This used to render the whole reason inline, where the button would be —
+   * on the course structure screen that is the same 118-character sentence
+   * three times, once per level, and it is what pushed every row to full width
+   * and left the right-hand side of the screen empty. On a phone it was three
+   * lines per row.
+   *
+   * The information design was also inverted: the *rule* is identical on every
+   * row and the *fact* is what varies. So the row carries a short marker with
+   * the reason as its accessible name, and the screen states the rule once —
+   * which is what §9.4 asks for, rather than three verbatim repetitions of it.
+   *
+   * `title` and `aria-label` both, because a title alone is unreachable by
+   * touch and by a screen reader that does not announce it.
+   */
   if (props.disabledReason !== undefined) {
     return (
-      <span className="text-xs text-gray-500" title={props.disabledReason}>
-        {props.disabledReason}
+      <span
+        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600"
+        title={props.disabledReason}
+        aria-label={props.disabledReason}
+      >
+        <LockGlyph />
+        {props.lockedLabel ?? props.disabledReason}
       </span>
     );
   }
 
   if (!armed) {
     return (
-      <Button variant="secondary" onClick={() => setArmed(true)}>
+      <Button
+        variant="secondary"
+        {...(props.ariaLabel === undefined ? {} : { ariaLabel: props.ariaLabel })}
+        onClick={() => setArmed(true)}
+      >
         {props.label}
       </Button>
     );
@@ -367,21 +439,165 @@ export function ConfirmButton(props: {
   );
 }
 
+/**
+ * One row of a hierarchy — module, chapter, content (P100-02).
+ *
+ * ## The pattern, and why it is not a card
+ *
+ * The authoring tree drew a bordered `Panel` per level, nested three deep. Every
+ * dashboard that handles hierarchical content well — Linear's issue tree,
+ * Vercel's project settings, Stripe's nested resources, react-admin's own
+ * `Datagrid` — uses **rows separated by hairlines inside one surface**, not a
+ * card per item. Three reasons, all of which the console was paying:
+ *
+ * 1. A card per row spends 2 × border + 2 × padding on *every* item, so ten
+ *    modules cost twenty borders of vertical space that carry no information.
+ * 2. Nested cards make the deepest item — the one with the most controls —
+ *    the narrowest, because it has paid that padding three times.
+ * 3. Cards imply "separate things". A module and its chapters are one thing.
+ *
+ * ## The anatomy, which is the actually load-bearing part
+ *
+ * ```
+ * ┌───────────────────────────────────────────────────────────────┐
+ * │ MODUL 1  Grundlagen                        [↑] [↓] [Bearbeiten] │
+ * │ ADHS-Definition · Epidemiologie                       Gesperrt  │
+ * └───────────────────────────────────────────────────────────────┘
+ *   eyebrow  title                                          actions
+ *   meta ────────────────────────────────────────────────────────
+ * ```
+ *
+ * The eyebrow sits **inline** with the title. It used to be followed by `<br/>`,
+ * which spent a whole line on the word "MODULE" — on a screen that stacks
+ * module, chapter and content, that is three lines of nothing before any
+ * content. Actions are right-aligned and grouped, so the eye finds them in the
+ * same place on every row instead of wherever the title happened to end.
+ */
+export function Row(props: {
+  /** "MODUL 1" — small, muted, inline before the title. */
+  eyebrow?: string;
+  title: ReactNode;
+  /** Subtitle, counts, anything that qualifies the title. One muted line. */
+  meta?: ReactNode;
+  actions?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="px-3 py-2.5">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            {props.eyebrow === undefined ? null : (
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                {props.eyebrow}
+              </span>
+            )}
+            <span className="text-sm font-semibold text-gray-900">{props.title}</span>
+          </div>
+          {props.meta === undefined ? null : (
+            <div className="mt-0.5 text-xs text-gray-600">{props.meta}</div>
+          )}
+        </div>
+        {props.actions === undefined ? null : (
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+            {props.actions}
+          </div>
+        )}
+      </div>
+      {props.children === undefined || props.children === null ? null : (
+        <div className="mt-2.5 empty:mt-0">{props.children}</div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The surface rows live on: one border for the whole list, hairlines between.
+ *
+ * `first:border-t-0` rather than a border on each row, so the list has no double
+ * rule at the top and none dangling at the bottom.
+ */
+export function RowList(props: {
+  children: ReactNode;
+  /**
+   * Render an `<ol>` rather than a `<div>`.
+   *
+   * The authoring tree is ordered — the whole screen is about which module
+   * comes first — and the move buttons are meaningless without that. The list
+   * semantics have to survive the change of skin, so the ordering is still
+   * announced rather than merely drawn.
+   */
+  ordered?: boolean;
+  /**
+   * Drop the border and the surface, keeping the hairlines and taking an indent
+   * guide instead — `Panel`'s `flush`, for a list.
+   *
+   * A nested level does not need a second box to be understood as nested; it
+   * needs to start further in. Three bordered surfaces is how the innermost row
+   * ended up with the least room for the most controls.
+   */
+  flush?: boolean;
+}) {
+  const skin = props.flush
+    ? "divide-y divide-gray-100 border-l-2 border-gray-200"
+    : "divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 bg-white";
+
+  return props.ordered === true ? (
+    <ol className={skin}>{props.children}</ol>
+  ) : (
+    <div className={skin}>{props.children}</div>
+  );
+}
+
+/**
+ * A form's field column, at prose measure (P100-02).
+ *
+ * Settings screens in Vercel, Stripe and Linear all cap their field column at
+ * roughly 40–48rem regardless of viewport, because a text input 1400 px wide is
+ * harder to use than one at 600 — the eye loses the line, and the label is
+ * nowhere near the value. The console let every form span whatever the card
+ * was, which on a wide monitor put "Titel" a foot from its input.
+ */
+export function FormColumn(props: { children: ReactNode }) {
+  return <div className="max-w-2xl space-y-3">{props.children}</div>;
+}
+
+function LockGlyph() {
+  return (
+    <svg aria-hidden viewBox="0 0 16 16" className="h-3 w-3" fill="currentColor">
+      <path d="M8 1a3 3 0 0 0-3 3v2H4.5A1.5 1.5 0 0 0 3 7.5v6A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 11.5 6H11V4a3 3 0 0 0-3-3Zm0 1.5A1.5 1.5 0 0 1 9.5 4v2h-3V4A1.5 1.5 0 0 1 8 2.5Z" />
+    </svg>
+  );
+}
+
 /** A bordered block. Used to separate levels of the authoring tree visually. */
 export function Panel(props: {
   title?: ReactNode;
   actions?: ReactNode;
   tone?: "default" | "nested";
+  /**
+   * `flush` drops the border and the surface, keeping only the padding
+   * (P100-01).
+   *
+   * The course structure nests module → chapter → content, and with every
+   * level a bordered box inside a bordered box the innermost row — which
+   * carries the most controls — has the least room, having paid two borders and
+   * two paddings to get there. A nested level that only needs *grouping* takes
+   * an indent guide instead.
+   */
+  flush?: boolean;
   children: ReactNode;
 }) {
-  return (
-    <div
-      className={`rounded-md border p-3 ${
+  const skin = props.flush
+    ? "border-l-2 border-gray-200 pl-3"
+    : `rounded-xl border p-4 ${
         props.tone === "nested"
           ? "border-gray-200 bg-gray-50"
-          : "border-gray-300 bg-white"
-      }`}
-    >
+          : "border-gray-200 bg-white shadow-sm"
+      }`;
+
+  return (
+    <div className={skin}>
       {props.title === undefined && props.actions === undefined ? null : (
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="text-sm font-semibold text-gray-900">{props.title}</div>
@@ -405,15 +621,25 @@ export function Panel(props: {
  */
 export function Table(props: { headers: readonly string[]; children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-md border border-gray-200 bg-white">
-      <table className="min-w-full border-collapse text-sm">
+    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+      {/*
+        Cell padding belongs to the table, not to fifty call sites (P133-02).
+
+        It was written out as `px-3 py-2` on every `<td>` in eight screens, so
+        changing the header's padding here left the body misaligned everywhere
+        and there was no single place to fix it. The arbitrary variant is more
+        specific than a utility on the cell itself, so a row cannot quietly
+        disagree with its own header — which is the same reasoning as the
+        surface being applied here rather than per screen.
+      */}
+      <table className="min-w-full border-collapse text-sm [&_td]:px-4 [&_td]:py-3">
         <thead>
-          <tr className="border-b border-gray-200 bg-gray-50 text-left">
+          <tr className="border-b border-gray-200 bg-gray-50/80 text-left">
             {props.headers.map((header) => (
               <th
                 key={header}
                 scope="col"
-                className="px-3 py-2.5 font-semibold text-gray-700"
+                className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500"
               >
                 {header}
               </th>
@@ -422,6 +648,57 @@ export function Table(props: { headers: readonly string[]; children: ReactNode }
         </thead>
         <tbody>{props.children}</tbody>
       </table>
+    </div>
+  );
+}
+
+/**
+ * An upload's progress, with a cancel (P23-04; moved here in P90-01).
+ *
+ * ## Why the bar is not decoration
+ *
+ * A lecture is hundreds of megabytes and takes minutes. A spinner with no
+ * percentage in front of that is indistinguishable from a hang, and the
+ * reasonable response to a hang is to reload the page — which, with no
+ * resumable upload behind it, throws away everything transferred so far. The
+ * percentage is what stops that.
+ *
+ * `role="progressbar"` with the ARIA value attributes rather than a `<progress>`
+ * element: the styling has to match the rest of the console and a `<progress>`
+ * is close to unstyleable across browsers. The semantics are the part that
+ * matters and they are all here.
+ *
+ * It lives in `ui.tsx` because two components render it — the field and the
+ * media dialog — and one of those renders the other. See `uploads.ts` for the
+ * same reasoning applied to the upload itself.
+ */
+export function UploadProgress(props: {
+  percent: number;
+  cancelLabel: string;
+  label: string;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="mt-1 flex items-center gap-3">
+      <div
+        role="progressbar"
+        aria-label={props.label}
+        aria-valuenow={props.percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        className="h-2 flex-1 overflow-hidden rounded-full bg-[color:var(--ds-surface)]"
+      >
+        <div
+          className="h-full bg-[color:var(--ds-brand-500)] transition-[width]"
+          style={{ width: `${props.percent}%` }}
+        />
+      </div>
+      <span className="w-12 text-right text-xs tabular-nums text-[color:var(--ds-ink-muted)]">
+        {props.percent}%
+      </span>
+      <Button variant="secondary" onClick={props.onCancel}>
+        {props.cancelLabel}
+      </Button>
     </div>
   );
 }

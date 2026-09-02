@@ -25,7 +25,12 @@
  */
 
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { createServer, type IncomingMessage, type Server } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import type { AddressInfo } from "node:net";
 
 export interface FakeS3Object {
@@ -44,6 +49,18 @@ export interface FakeS3 {
   readonly objects: Map<string, FakeS3Object>;
   /** Every request that arrived, in order, whether or not it verified. */
   readonly requests: readonly FakeS3Request[];
+  /**
+   * Stop answering, and return the function that starts again (P145-01).
+   *
+   * A bucket that always answers instantly cannot find a caller that holds a
+   * database connection while it waits — the fixture would be modelling the
+   * good day, which is the §9.13 trap that let sixteen green browser tests
+   * coexist with an upload nobody could perform. Requests still arrive and are
+   * still recorded; the response is simply withheld until the returned function
+   * is called, which is what a slow or unreachable object store looks like from
+   * the API's side.
+   */
+  stall(): () => void;
   close(): Promise<void>;
 }
 
@@ -83,7 +100,20 @@ export async function startFakeS3(): Promise<FakeS3> {
   const objects = new Map<string, FakeS3Object>();
   const requests: FakeS3Request[] = [];
 
+  /** Non-null while stalling; every held response is resumed on release. */
+  let held: Array<() => void> | undefined;
+
   const server: Server = createServer((request, response) => {
+    if (held !== undefined) {
+      // Held, not refused: the socket stays open and the API keeps waiting,
+      // which is the case a bucket that answers 500 would not reproduce.
+      held.push(() => handle(request, response));
+      return;
+    }
+    handle(request, response);
+  });
+
+  function handle(request: IncomingMessage, response: ServerResponse): void {
     const record = (status: number, key: string, refusal?: string): void => {
       requests.push(
         refusal === undefined
@@ -212,7 +242,7 @@ export async function startFakeS3(): Promise<FakeS3> {
         response.end();
       }
     }
-  });
+  }
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
@@ -222,6 +252,14 @@ export async function startFakeS3(): Promise<FakeS3> {
     ...CREDENTIALS,
     objects,
     requests,
+    stall: () => {
+      held = [];
+      return () => {
+        const queued = held ?? [];
+        held = undefined;
+        for (const resume of [...queued]) resume();
+      };
+    },
     // Idempotent, because a test that closes the bucket to prove the API
     // survives an outage still runs its `afterEach`. A second close reporting
     // "Server is not running" would fail the test that just passed.

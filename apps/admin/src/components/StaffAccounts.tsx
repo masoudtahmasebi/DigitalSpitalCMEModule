@@ -288,20 +288,20 @@ export function StaffAccounts(props: {
           const disabled = account.disabledAt !== null;
           return (
             <tr key={account.id} className="border-t border-gray-100">
-              <td className="px-3 py-2 text-sm font-medium">{account.displayName}</td>
-              <td className="px-3 py-2 text-sm text-gray-600">{account.email}</td>
-              <td className="px-3 py-2 text-sm">
+              <td className="text-sm font-medium">{account.displayName}</td>
+              <td className="text-sm text-gray-600">{account.email}</td>
+              <td className="text-sm">
                 {account.grants.map((grant) => de.staff.role_[grant.role]).join(", ")}
               </td>
-              <td className="px-3 py-2 text-sm">
+              <td className="text-sm">
                 <Badge tone={account.totpEnrolled ? "ok" : "muted"}>
                   {account.totpEnrolled ? de.staff.enrolled : de.staff.notEnrolled}
                 </Badge>
               </td>
-              <td className="px-3 py-2 text-sm">
+              <td className="text-sm">
                 {account.lastLoginAt === null ? "—" : account.lastLoginAt.slice(0, 10)}
               </td>
-              <td className="px-3 py-2">
+              <td>
                 <div className="flex flex-wrap justify-end gap-2">
                   <Button
                     variant="secondary"

@@ -177,6 +177,11 @@ export class EivRepository implements EivRepositoryPort {
           attemptCount: input.attemptCount,
           nextAttemptAt: input.nextAttemptAt,
           lastError: input.failure,
+          // The same value here, because on a retryable failure the queue's
+          // reasoning and the far end's answer happen to coincide. They stop
+          // coinciding the moment the row is abandoned, which is the case
+          // P119-01 exists for.
+          failureKind: input.failure,
           updatedAt: new Date(),
         })
         .where(eq(eivSubmissions.id, input.claim.submissionId));
@@ -195,6 +200,15 @@ export class EivRepository implements EivRepositoryPort {
     attemptCount: number;
     reason: string;
     windowClosed: boolean;
+    /**
+     * What EIV said, when there was an EIV answer to have (P119-01).
+     *
+     * Absent for the reasons the queue reached on its own —
+     * `reporting_window_missed`, `correction_window_closed`,
+     * `missing_vnr_password` — where nothing was ever sent and there is no far
+     * end to quote. Writing a kind there would be inventing one.
+     */
+    failureKind?: EivAttemptFailure;
   }): Promise<void> {
     await this.inTenant(input.claim, async (db) => {
       await db
@@ -204,6 +218,7 @@ export class EivRepository implements EivRepositoryPort {
           attemptCount: input.attemptCount,
           nextAttemptAt: null,
           lastError: input.reason,
+          ...(input.failureKind === undefined ? {} : { failureKind: input.failureKind }),
           updatedAt: new Date(),
         })
         .where(

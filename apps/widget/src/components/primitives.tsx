@@ -475,8 +475,7 @@ export function LockIcon(props: { className?: string }) {
 }
 
 /**
- * The four state glyphs of the player's Modul Übersicht (layout §4.3), plus
- * the fifth the layout implies — see `ItemState`.
+ * The state glyphs of the player's Modul Übersicht (layout §4.3).
  *
  * `role="img"` with a name rather than `aria-hidden`, because in this sidebar
  * the icon is the *only* thing distinguishing a finished chapter from a locked
@@ -485,17 +484,59 @@ export function LockIcon(props: { className?: string }) {
  *
  * Colour carries the same information a second time and never alone (WCAG
  * 1.4.1): every state has a distinct shape.
+ *
+ * ## The palette is the layout's, and I had half of it backwards (P95-02)
+ *
+ * The complete desktop layout draws a **finished module as a teal disc with a
+ * white tick** and a **module under way as an orange disc with pause bars**.
+ * P94-02 made both orange, from an older Zeplin export in which the finished
+ * module is orange too — the newer PDF is the authority and this follows it.
+ *
+ * The split is meaningful and worth keeping straight: teal is the platform's
+ * own colour and marks what is *done*; orange is what
+ * `tailwind.preset.js` calls *"resume the thing you started"* and marks the one
+ * place in the list that wants the learner back. Making both orange gives a
+ * finished course five things all asking for attention.
+ *
+ * `tone` is the level the glyph is drawn at. A finished **chapter** is a bare
+ * orange tick in the drawing rather than a disc — the disc belongs to the
+ * module, which is the row somebody scans for. Both are branded variables, so a
+ * customer restyling the widget restyles these; `status.completed` was a fixed
+ * green no customer could reach.
+ *
+ * A disc is filled and its tick is the hole in it, so the readable pairing is
+ * white-on-colour rather than colour-on-white, which is what keeps it above the
+ * contrast floor at 16 px while matching the drawing.
  */
 export function StateIcon(props: {
-  state: "completed" | "playing" | "paused" | "available" | "locked";
+  state: "completed" | "playing" | "paused" | "inProgress" | "available" | "locked";
   label: string;
+  /** `module` is the disc; `item` is the lighter glyph a chapter or content gets. */
+  tone?: "module" | "item";
+  /**
+   * `exam` draws a clipboard instead of the neutral circle (P103-02).
+   *
+   * A Lernerfolgskontrolle now sits in its chapter beside the videos, and in a
+   * list of identical circles the only thing marking it as the exam is its
+   * title — which an author may have called anything. The glyph says what kind
+   * of thing it is at a glance, which is what the client asked for.
+   *
+   * Deliberately **not** applied to `locked` or `completed`. Those two shapes
+   * carry information no other row carries — may I open this, and did I pass —
+   * and replacing either with a clipboard would trade a state a physician needs
+   * for a category they can read in the title. Every state keeps a distinct
+   * shape (WCAG 1.4.1); this only replaces the two neutral ones.
+   */
+  kind?: "exam";
 }) {
+  const item = props.tone === "item";
   const skin: Record<typeof props.state, string> = {
-    completed: "text-status-completed",
+    completed: item ? "text-cta-500" : "text-brand-600",
     playing: "text-brand-600",
-    paused: "text-brand-600",
+    paused: "text-cta-500",
+    inProgress: "text-cta-500",
     available: "text-gray-400",
-    locked: "text-status-locked",
+    locked: "text-gray-500",
   };
 
   return (
@@ -506,6 +547,8 @@ export function StateIcon(props: {
     >
       {props.state === "locked" ? (
         <LockIcon className="h-4 w-4" />
+      ) : props.kind === "exam" && props.state !== "completed" ? (
+        <ExamIcon className="h-4 w-4" />
       ) : (
         <svg
           viewBox="0 0 16 16"
@@ -514,8 +557,13 @@ export function StateIcon(props: {
           aria-hidden="true"
         >
           {props.state === "completed" ? (
-            <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm3.86 5.9-4.5 5a1 1 0 0 1-1.46.04L3.9 8.94a1 1 0 1 1 1.42-1.42l1.25 1.25 3.8-4.22a1 1 0 0 1 1.49 1.34Z" />
-          ) : props.state === "paused" ? (
+            item ? (
+              /* A bare tick, as the drawing gives a finished chapter. */
+              <path d="M6.2 12.3 2.4 8.5a1 1 0 0 1 1.42-1.42l2.4 2.4 6-6.06A1 1 0 0 1 13.6 4.8l-6.7 6.75a1 1 0 0 1-1.42 0Z" />
+            ) : (
+              <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm3.86 5.9-4.5 5a1 1 0 0 1-1.46.04L3.9 8.94a1 1 0 1 1 1.42-1.42l1.25 1.25 3.8-4.22a1 1 0 0 1 1.49 1.34Z" />
+            )
+          ) : props.state === "paused" || props.state === "inProgress" ? (
             <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0ZM7 11H5.5V5H7v6Zm3.5 0H9V5h1.5v6Z" />
           ) : props.state === "playing" ? (
             <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm-1.5 4.6 4.4 2.9a.6.6 0 0 1 0 1L6.5 11.4a.6.6 0 0 1-.93-.5V5.1a.6.6 0 0 1 .93-.5Z" />
@@ -526,6 +574,54 @@ export function StateIcon(props: {
         </svg>
       )}
     </span>
+  );
+}
+
+/**
+ * A ticked checklist — the Lernerfolgskontrolle's own glyph (P103-02, P106-03).
+ *
+ * A checklist rather than a question mark or a pencil: the exam is a set of
+ * questions the physician works through and is marked on, and a question mark
+ * reads as "help" in every other interface they use that day. `aria-hidden`
+ * because `StateIcon` names the row; a second announcement of "exam" beside a
+ * row already titled *Lernerfolgskontrolle* is noise to a screen reader.
+ *
+ * ## Why it is not the clipboard it started as
+ *
+ * The clipboard was drawn eight units wide in a sixteen-unit box, full height —
+ * a tall, narrow, rounded shape. At the 16 px this actually renders at, in
+ * `text-gray-400`, beside a column of circles, it read as a grey pill: the
+ * client's report was *"maybe another icon for Lernerfolgskontrolle to make it
+ * distinguished"*, and looking at the screenshot it is not distinguishable at
+ * all — the detail that made it a clipboard is below the size it is used at.
+ *
+ * This one is built out of the box's full width in strokes, so what survives
+ * downscaling is the silhouette — two ticks and two lines — rather than an
+ * outline whose interior disappears. Nothing else in the sidebar is wider than
+ * it is tall, which is the property doing the work.
+ */
+export function ExamIcon(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={props.className}
+      aria-hidden="true"
+      // Named so a test can tell this glyph from the state circle. Without it
+      // `querySelector("svg")` is true of every row and the assertion cannot go
+      // red — a gate that only ever agrees (§9.1).
+      data-ds-icon="exam"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* Two ticked items. The ticks are the half that says "answered". */}
+      <path d="M0.9 4.1 2.4 5.6 5.1 2.5" />
+      <path d="M0.9 11.6 2.4 13.1 5.1 10" />
+      <path d="M7.6 4.4h7.5" />
+      <path d="M7.6 11.9h7.5" />
+    </svg>
   );
 }
 
@@ -573,6 +669,43 @@ export function ErrorNotice(props: {
             {props.retryLabel}
           </Button>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Not signed in — deliberately not an `ErrorNotice` (P99-03).
+ *
+ * A red alert box with `role="alert"` is for something the learner did not
+ * cause and cannot see coming. Not being signed in is neither: it is the
+ * ordinary state of anybody who has not logged in yet, and the only thing it
+ * needs is a way to do so. Rendering it as a failure is what produced the
+ * previous message — a physician told to contact the site's operator because
+ * they had not logged in.
+ *
+ * The action is an `<a>`, not a button: signing in is a navigation, it belongs
+ * in the browser's history, and a physician may reasonably want it in a new
+ * tab.
+ */
+export function SignedOutNotice(props: {
+  title: string;
+  message: string;
+  actionLabel: string;
+  /** Where signing in happens. Absent when the host named none. */
+  signInUrl?: string | undefined;
+}) {
+  return (
+    <div className="rounded-md border border-gray-200 bg-gray-50 p-6 text-center">
+      <p className="text-base font-semibold text-gray-900">{props.title}</p>
+      <p className="mx-auto mt-2 max-w-prose text-sm text-gray-700">{props.message}</p>
+      {props.signInUrl !== undefined && props.signInUrl !== "" ? (
+        <a
+          className="mt-4 inline-block rounded-full bg-cta-500 px-6 py-2.5 text-sm font-semibold text-white no-underline hover:opacity-90"
+          href={props.signInUrl}
+        >
+          {props.actionLabel}
+        </a>
       ) : null}
     </div>
   );

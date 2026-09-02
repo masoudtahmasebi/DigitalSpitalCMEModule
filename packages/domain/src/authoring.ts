@@ -277,6 +277,43 @@ export function canDelete(learnerRecords: number): boolean {
   return learnerRecords === 0;
 }
 
+/** What removing a question from a Lernerfolgskontrolle actually does. */
+export type QuestionRemoval = "delete" | "retire";
+
+/**
+ * Removing a question from an exam: delete the row, or retire it? (P114-01)
+ *
+ * ## The report this exists because of
+ *
+ * *"this lernerfolgskontrolle has 11 questions, I want to make it to only 2
+ * questions and i can not."* True, and by design: `canDelete` above refused
+ * every question a physician had answered, so one attempt froze the exam
+ * permanently.
+ *
+ * The refusal conflated two claims. **The row must survive** — always, because
+ * `quiz_answers` is the evidence behind a CME point. **The question must stay
+ * in the exam** — which no accreditation rule requires, and which is what an
+ * author revising a draft is actually asking to change.
+ *
+ * ## Why this is not the soft delete `canDelete` rejects
+ *
+ * That rejection is about the course tree: *"a tree where ordering, gating and
+ * the rollup all have to know about tombstones."* A quiz question is in none of
+ * them — the rollup counts contents, gating reads videos, and ordering inside
+ * one exam is local to that exam. The blast radius is a single `contents` row,
+ * which is why the tombstone is affordable here and nowhere above it.
+ *
+ * ## Why an unanswered question is still deleted outright
+ *
+ * Retiring everything would be simpler and worse. An author who adds a question
+ * and removes it a minute later has created nothing anybody needs to
+ * reconstruct, and a tombstone for it is clutter that makes the genuine ones
+ * harder to see. Tombstones are for rows something else points at.
+ */
+export function questionRemoval(answerCount: number): QuestionRemoval {
+  return canDelete(answerCount) ? "delete" : "retire";
+}
+
 /** A level of `Customer → Department → Project → Course → Modul → Kapitel → Inhalt`. */
 export type HierarchyLevel =
   "customer" | "department" | "project" | "course" | "module" | "chapter" | "content";

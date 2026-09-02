@@ -272,9 +272,31 @@ jobs:
       # only thing that checks the claim. The MEDICE one runs first because the
       # DS tenant's whole point is being a *second* customer — if the ordering
       # mattered, that is a tenancy bug worth failing on.
+      #
+      # The Keycloak binding is stated, and stated as the unroutable sentinel
+      # the integration suites already use (P112-01).
+      #
+      # Without it this step failed, and the guard that failed it was right.
+      # `bindingProblem` refuses a project holding a **loopback** issuer that
+      # nobody asked for — the production fault where every physician arriving
+      # from the customer's site gets a 401 against a token that is otherwise
+      # valid. The integration suites run first, against this same database,
+      # and write `http://127.0.0.1:1/realms/unused` into their fixtures. The
+      # seed step then declared no issuer, so "nobody asked for loopback, yet
+      # loopback is stored" was literally true.
+      #
+      # Stating it is the honest fix rather than a weakened guard: CI *does*
+      # mean loopback, because CI has no Keycloak and nobody will ever sign in
+      # here. The guard's own branches stay covered by
+      # `keycloak-binding.test.ts`, which is pure and exercises all thirteen of
+      # them — this step was never the thing testing it (§9.1: the check that
+      # matters keeps its teeth; the step that is not about Keycloak stops
+      # pretending to be).
       - name: Seeds run, and run twice
         env:
           MIGRATION_DATABASE_URL: postgres://ds_migrator:ds_migrator_dev@127.0.0.1:5432/ds_education
+          KEYCLOAK_ISSUER: http://127.0.0.1:1/realms/unused
+          KEYCLOAK_AUDIENCE: ds-lms-ci
         run: |
           pnpm db:seed
           pnpm db:seed
@@ -501,6 +523,23 @@ jobs:
       # source, and none of them worth finding in production.
       - name: Screens every role can actually open
         run: node scripts/role-matrix.mjs
+
+      # A read of a tenant-scoped table outside runInTenant. Under FORCE ROW
+      # LEVEL SECURITY it matches zero rows — correctly, the system fails closed
+      # — and a repository that maps rows[0] to nulls turns that into "not
+      # configured". P40-03 shipped exactly that: a correctly configured project
+      # sent no mail while the endpoint answered 202, with nothing in any log.
+      # Nothing fails, so only reading finds it, so a script reads it.
+      - name: Tenant-scoped reads are inside runInTenant
+        run: node scripts/tenant-reads.mjs
+
+      # An outbound call with no deadline. `fetch` waits for ever by default,
+      # and a request handler waits holding a pooled database connection — so
+      # a bucket that does not answer takes the API down rather than failing a
+      # request. That is P142's outage arriving by a second road (P143-01), and
+      # it is the absence of a line of code, which no diff review shows.
+      - name: Outbound calls have deadlines
+        run: node scripts/check-deadlines.mjs
 
       - name: Scan for committed secrets
         uses: gitleaks/gitleaks-action@v2

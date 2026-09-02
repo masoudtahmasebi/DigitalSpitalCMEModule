@@ -17,7 +17,7 @@ import { Module } from "@nestjs/common";
 import { APP_GUARD, Reflector } from "@nestjs/core";
 import type { Pool } from "pg";
 import type { Redis } from "ioredis";
-import { APP_CONFIG, PG_POOL, REDIS_CLIENT } from "../db/tokens.js";
+import { APP_CONFIG, PG_POOL, PG_SIDE_POOL, REDIS_CLIENT } from "../db/tokens.js";
 import type { AppConfig } from "../config/config.js";
 import { AuditService } from "../audit/audit.service.js";
 import { ProjectBindingRepository } from "../modules/projects/project-binding.repository.js";
@@ -78,8 +78,14 @@ import { StaffService } from "../modules/staff/staff.service.js";
     },
     {
       provide: AuditService,
+      /*
+       * The side pool (P142-01). Most of this module runs in the guard, before
+       * the interceptor opens the request transaction, so it is not nested
+       * today — but `AuditService` is handed to services that are, and one rule
+       * for every audit writer is what stops the next one being wrong.
+       */
       useFactory: (pool: Pool) => new AuditService(pool),
-      inject: [PG_POOL],
+      inject: [PG_SIDE_POOL],
     },
     {
       provide: AuthGuard,

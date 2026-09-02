@@ -26,6 +26,7 @@
 import { useCallback, useMemo, useState } from "react";
 import type { ApiClient, DepartmentSummary, ProjectSummary } from "@ds/sdk";
 import { de } from "../locale/de.js";
+import { invalidEmbedOriginPatterns } from "@ds/domain";
 import { slugify } from "../drafts.js";
 import { useLoaded, useSaver } from "../hooks.js";
 import {
@@ -33,6 +34,8 @@ import {
   Field,
   Notice,
   Panel,
+  Row,
+  RowList,
   SaveProblem,
   Select,
   Spinner,
@@ -121,7 +124,7 @@ function Departments(props: {
         >
           {props.departments.map((department) => (
             <tr key={department.slug} className="border-b border-gray-100 align-top">
-              <td className="px-3 py-2">
+              <td>
                 {editing === department.slug ? (
                   <RenameDepartment
                     client={props.client}
@@ -136,11 +139,9 @@ function Departments(props: {
                   <span className="font-medium text-gray-900">{department.name}</span>
                 )}
               </td>
-              <td className="px-3 py-2 font-mono text-xs text-gray-600">
-                {department.slug}
-              </td>
-              <td className="px-3 py-2 text-gray-700">{department.projectCount}</td>
-              <td className="px-3 py-2 text-right">
+              <td className="font-mono text-xs text-gray-600">{department.slug}</td>
+              <td className="text-gray-700">{department.projectCount}</td>
+              <td className="text-right">
                 {editing === department.slug ? null : (
                   <Button
                     variant="secondary"
@@ -311,11 +312,10 @@ function Projects(props: {
       ) : props.projects.length === 0 ? (
         <p className="text-sm text-gray-600">{de.organisation.projectsEmpty}</p>
       ) : (
-        <div className="space-y-3">
+        <RowList>
           {props.projects.map((project) => (
-            <Panel
+            <Row
               key={project.slug}
-              tone="nested"
               title={
                 <span>
                   {project.name}{" "}
@@ -367,9 +367,9 @@ function Projects(props: {
                   />
                 </dl>
               )}
-            </Panel>
+            </Row>
           ))}
-        </div>
+        </RowList>
       )}
     </Panel>
   );
@@ -514,6 +514,22 @@ function ProjectSettings(props: {
   // entry with a space in it, both of which the API refuses and neither of
   // which looks wrong on screen.
   const [embedOrigins, setEmbedOrigins] = useState(project.embedOrigins.join("\n"));
+  /*
+   * The lines the API will refuse, named before it does (P94-04).
+   *
+   * `invalidEmbedOriginPatterns` is `@ds/domain`'s and the DTO enforces the
+   * same rule per element — but a 422 names the *field*, so an operator with
+   * six origins and one typo is told "embedOrigins" and left to find it. This
+   * is the same rule read forwards, which is what `invalidBrandingFields`
+   * exists for one field down and is the shape P41-01 was about: a rule that
+   * refuses without saying which value it refused is a rule somebody argues
+   * with.
+   *
+   * The values are shown, not hidden. §9.5's rule is about values that identify
+   * a person; a hostname the operator typed thirty seconds ago is not one, and
+   * an error that will not repeat the input is unusable here.
+   */
+  const rejectedOrigins = invalidEmbedOriginPatterns(originLines(embedOrigins));
   const [smtpHost, setSmtpHost] = useState(project.smtpHost ?? "");
   const [smtpPort, setSmtpPort] = useState(
     project.smtpPort === null ? "" : String(project.smtpPort),
@@ -550,10 +566,7 @@ function ProjectSettings(props: {
               keycloakIssuer: blankToNull(issuer),
               keycloakAudience: blankToNull(audience),
               keycloakRealm: blankToNull(realm),
-              embedOrigins: embedOrigins
-                .split("\n")
-                .map((line) => line.trim())
-                .filter((line) => line !== ""),
+              embedOrigins: originLines(embedOrigins),
               smtpHost: blankToNull(smtpHost),
               smtpPort: smtpPort.trim() === "" ? null : Number(smtpPort),
               smtpUsername: blankToNull(smtpUsername),
@@ -604,6 +617,11 @@ function ProjectSettings(props: {
           rows={3}
           onChange={setEmbedOrigins}
         />
+        {rejectedOrigins.length === 0 ? null : (
+          <p className="mt-2 text-sm text-red-700" role="alert">
+            {de.organisation.embedOriginsRejected(rejectedOrigins)}
+          </p>
+        )}
       </Field>
 
       {/*
@@ -874,4 +892,22 @@ function brandingPayload(form: ReturnType<typeof brandingForm>) {
 function blankToNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * One origin per line, trimmed, blanks dropped.
+ *
+ * Shared by the validator and the payload so the operator is never warned about
+ * a line the save then sends, or the reverse — which is the same "two readings
+ * of one thing" defect as a percentage computed twice, at form scale.
+ *
+ * A comma-separated box was the alternative and invites a trailing comma and an
+ * entry with a space in it, both of which the API refuses and neither of which
+ * looks wrong on screen.
+ */
+function originLines(value: string): string[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
 }

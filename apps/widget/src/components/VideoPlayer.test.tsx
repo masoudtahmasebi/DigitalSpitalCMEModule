@@ -219,6 +219,67 @@ describe("forward seeking", () => {
     return { ...rendered, video, writes, at: () => current };
   }
 
+  /**
+   * Resuming where the learner left off (P120-02).
+   *
+   * ## Why this was missing
+   *
+   * `startAtSec: 875` has been in this file's default fixture since the prop
+   * existed, and **nothing asserted the element ever opens there** — every case
+   * that cares about seeking overrides it to 0, which is the honest thing for
+   * those cases and left the resume itself covered by nobody.
+   *
+   * The rule is exhaustively tested (`resume.test.ts`: 875 → 840) and the API
+   * returns it (`learning-flow`: `resumeAtSec` is 540 after a position of 600).
+   * Between those two and the screen sat one `handleLoadedMetadata`, untested —
+   * §9.7 exactly: name the caller, or the call site is what is untested.
+   *
+   * The client asked for this behaviour by describing it: *"I am watching a
+   * video which is 18 minutes, at 12:34 i pause or close the window, and after
+   * a day i resume … my video starts from 12:01."*
+   */
+  it("opens where the learner left off, once the element knows its duration", () => {
+    const { video, at } = trackedPlayer({ startAtSec: 840, seekCeilingSec: 845 });
+
+    // Before metadata there is no duration, and every browser silently
+    // discards a `currentTime` written this early. Asserting the *order* is
+    // the point: a resume applied on mount is a resume that does not happen.
+    expect(at()).toBe(0);
+
+    Object.defineProperty(video, "duration", { configurable: true, value: 1080 });
+    fireEvent.loadedMetadata(video);
+
+    expect(at()).toBe(840);
+  });
+
+  it("does not seek past the end of a video shorter than the stored position", () => {
+    // A re-encoded or replaced file is shorter than the one the position was
+    // recorded against. Seeking beyond `duration` leaves the element in a state
+    // that presents as a player that will not start.
+    const { video, at } = trackedPlayer({ startAtSec: 840, seekCeilingSec: 845 });
+
+    Object.defineProperty(video, "duration", { configurable: true, value: 300 });
+    fireEvent.loadedMetadata(video);
+
+    expect(at()).toBe(300);
+  });
+
+  it("leaves a learner who is already somewhere alone", () => {
+    /*
+     * The control. `handleLoadedMetadata` can fire more than once — a source
+     * change, a re-range, a codec switch — and a resume that re-applied itself
+     * would drag somebody backwards mid-lesson, which is the report P71-01 was.
+     */
+    const { video, at } = trackedPlayer({ startAtSec: 840, seekCeilingSec: 845 });
+
+    Object.defineProperty(video, "duration", { configurable: true, value: 1080 });
+    fireEvent.loadedMetadata(video);
+    video.currentTime = 900;
+    fireEvent.loadedMetadata(video);
+
+    expect(at()).toBe(900);
+  });
+
   it("stops a drag to the end at what has actually been watched", () => {
     // Five minutes watched of a 25-minute module: dragging to the end lands at
     // 5:05, not at 25:45. The clamp is what makes the accreditation's "must be
@@ -490,6 +551,86 @@ describe("failures", () => {
   it("reports the failure as an alert, since the learner did not cause it", () => {
     failWith(2);
     expect(screen.getByRole("alert")).toBeTruthy();
+  });
+});
+
+describe("clicking the picture", () => {
+  /*
+   * P106-02. The client: *"when video is being played, clicking one more time
+   * on it, the click doesn't stop the video."*
+   *
+   * The cause was a condition, not a missing feature: the centred play button
+   * covered the whole picture and was rendered `!state.playing`, so the first
+   * click started playback and removed the only thing that could receive the
+   * second. Nothing was broken enough to notice from the code — the button
+   * worked, the shortcut worked, the Controls button worked — and clicking a
+   * video is what every physician does without thinking about it.
+   *
+   * jsdom implements no media pipeline, so `paused` is redefined and `pause` is
+   * a spy. That is enough: what is under test is which control exists and what
+   * it calls, not whether a video decodes.
+   */
+  function playing() {
+    const { container } = renderPlayer();
+    const video = container.querySelector("video") as HTMLVideoElement;
+    Object.defineProperty(video, "paused", { value: false, configurable: true });
+    video.pause = vi.fn();
+    fireEvent.play(video);
+    return { container, video };
+  }
+
+  function surface(container: HTMLElement): HTMLButtonElement {
+    const node = container.querySelector('[data-ds-control="surface"]');
+    if (node === null) throw new Error("the video has no click surface");
+    return node as HTMLButtonElement;
+  }
+
+  it("pauses a video that is playing", () => {
+    const { container, video } = playing();
+    fireEvent.click(surface(container));
+    expect(video.pause).toHaveBeenCalled();
+  });
+
+  it("is labelled for what the next click will do", () => {
+    // Not decoration: it is the accessible name of a control covering the
+    // whole picture, and "Abspielen" on a playing video is a lie.
+    const { container } = renderPlayer();
+    expect(surface(container).getAttribute("aria-label")).toBe("Abspielen");
+
+    cleanup();
+    const started = playing();
+    expect(surface(started.container).getAttribute("aria-label")).toBe("Pause");
+  });
+
+  it("draws the centred play button only while stopped", () => {
+    // The surface stays; what is drawn in it does not. A play circle sitting
+    // over a running video is the same defect from the other side.
+    const { container } = renderPlayer();
+    expect(surface(container).querySelector("svg")).not.toBeNull();
+
+    cleanup();
+    const started = playing();
+    expect(surface(started.container).querySelector("svg")).toBeNull();
+  });
+
+  it("adds no second stop to the tab order", () => {
+    // The Controls bar already has a visible play/pause button with the same
+    // name. Two, one of them invisible, is a keyboard user tabbing through
+    // nothing.
+    const { container } = renderPlayer();
+    expect(surface(container).getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("gets out of the way of a failure", () => {
+    // On an error the overlay underneath carries the message and the retry.
+    // A transparent full-size button over it would swallow both.
+    const { container } = renderPlayer();
+    const video = container.querySelector("video") as HTMLVideoElement;
+    Object.defineProperty(video, "error", { value: { code: 2 }, configurable: true });
+    fireEvent.error(video);
+
+    expect(container.querySelector('[data-ds-control="surface"]')).toBeNull();
+    expect(screen.getByRole("button", { name: "Erneut laden" })).toBeTruthy();
   });
 });
 

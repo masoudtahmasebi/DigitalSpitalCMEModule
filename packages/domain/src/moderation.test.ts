@@ -9,9 +9,11 @@
 import { describe, expect, it } from "vitest";
 import {
   certificateAction,
+  efnRefresh,
   maskEfn,
   nameCorrection,
   subjectErasure,
+  submissionStage,
   type SubmissionStage,
 } from "./moderation.js";
 
@@ -154,5 +156,107 @@ describe("certificateAction", () => {
     expect(certificateAction({ action: "regenerate", status: "delivered" })).toEqual({
       ok: true,
     });
+  });
+});
+
+/**
+ * P118. The requeue path used to send the EFN frozen at completion while the
+ * certificate read the profile live, so an EFN correction produced two
+ * documents naming different physicians and reported success for both.
+ */
+describe("efnRefresh", () => {
+  const OLD = "123456789012345";
+  const NEW = "987654321098765";
+
+  const refreshing = (stage: SubmissionStage, onProfile: string | null = NEW) =>
+    efnRefresh({ onSubmission: OLD, onProfile, stage });
+
+  it("adopts the corrected EFN while nothing has been reported", () => {
+    for (const stage of ["none", "pending", "abandoned"] as const) {
+      expect(refreshing(stage)).toEqual({ kind: "refresh", efn: NEW });
+    }
+  });
+
+  /*
+   * The half that is S30. Correcting a *name* changes how one physician is
+   * described; correcting an EFN changes which physician was credited, and the
+   * points already on the first one's record cannot be taken back from here.
+   */
+  it("refuses once the old EFN reached the Ärztekammer", () => {
+    expect(refreshing("submitted")).toEqual({
+      kind: "refused",
+      reason: "already_submitted",
+    });
+    expect(refreshing("withdrawn")).toEqual({
+      kind: "refused",
+      reason: "already_submitted",
+    });
+  });
+
+  it("does not refuse a submitted row whose EFN is unchanged", () => {
+    // A requeue after an accepted filing is a legitimate correction of
+    // something else. Refusing it because of an EFN that did not move would be
+    // §9.2 in reverse — a refusal with no defect behind it.
+    expect(efnRefresh({ onSubmission: OLD, onProfile: OLD, stage: "submitted" })).toEqual(
+      { kind: "unchanged" },
+    );
+  });
+
+  it("ignores surrounding whitespace on both sides", () => {
+    expect(
+      efnRefresh({ onSubmission: ` ${OLD} `, onProfile: `\n${OLD}`, stage: "pending" }),
+    ).toEqual({ kind: "unchanged" });
+  });
+
+  /*
+   * GDPR erasure deletes `efn_profiles` and leaves a submission that is still
+   * owed. There is nothing newer to adopt, and treating absence as a change
+   * would file a blank EFN against a real Veranstaltung.
+   */
+  it("keeps the submission's own EFN when there is no profile", () => {
+    for (const absent of [null, undefined, "", "   "]) {
+      expect(
+        efnRefresh({ onSubmission: OLD, onProfile: absent, stage: "pending" }),
+      ).toEqual({ kind: "unchanged" });
+    }
+  });
+});
+
+/**
+ * The SQL twin is `STAGE_SQL` in `moderation.repository.ts`. Enumerated rather
+ * than sampled: a value added to `eiv_status` and not to both falls through to
+ * `pending` here and would be a wrong compliance answer, not a type error.
+ */
+describe("submissionStage", () => {
+  it("maps every member of the eiv_status enum", () => {
+    expect(submissionStage(null)).toBe("none");
+    expect(submissionStage(undefined)).toBe("none");
+    expect(submissionStage("queued")).toBe("pending");
+    expect(submissionStage("held")).toBe("pending");
+    expect(submissionStage("failed_retryable")).toBe("pending");
+    expect(submissionStage("failed_permanent")).toBe("abandoned");
+    expect(submissionStage("window_closed")).toBe("abandoned");
+    expect(submissionStage("submitted")).toBe("submitted");
+    expect(submissionStage("withdrawn")).toBe("withdrawn");
+  });
+
+  it("agrees with nameCorrection about what is still correctable", () => {
+    // The property both rules turn on, asserted once rather than assumed twice.
+    for (const status of [
+      "queued",
+      "held",
+      "failed_retryable",
+      "failed_permanent",
+      "window_closed",
+    ]) {
+      expect(
+        nameCorrection({ proposed: "Dr. A", stage: submissionStage(status) }).ok,
+      ).toBe(true);
+    }
+    for (const status of ["submitted", "withdrawn"]) {
+      expect(
+        nameCorrection({ proposed: "Dr. A", stage: submissionStage(status) }).ok,
+      ).toBe(false);
+    }
   });
 });

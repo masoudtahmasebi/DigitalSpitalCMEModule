@@ -203,3 +203,43 @@ export async function fillNearest(
 ): Promise<void> {
   await page.getByRole("textbox", { name: label }).last().fill(value);
 }
+
+/**
+ * Put a file into the content form's video sources, through the media dialog
+ * (P90-01).
+ *
+ * ## Why this is a helper and not two lines in each spec
+ *
+ * The control changed shape once already. It was a hidden `<input type=file>`
+ * behind a "Video hochladen" button, and both journeys reached past the button
+ * to the input with `locator('input[type="file"]').first()` — which worked, and
+ * which quietly depended on that input being the first one on the page.
+ *
+ * It is now one button opening a dialog, because the client could not tell
+ * three buttons apart. Two specs reaching into the same rebuilt control is
+ * exactly the thing that should have one implementation: the next change to it
+ * edits this function, not every act that uploads something.
+ *
+ * `#content-new-choose-media` rather than the button's label, and the id exists
+ * for this: the same label appears on the poster, the subtitles and the material
+ * fields of the same form, so a locator by name is ambiguous and a positional
+ * one depends on the order the form renders in.
+ */
+export async function uploadThroughMediaDialog(page: Page, file: string): Promise<void> {
+  await page.locator("#content-new-choose-media").click();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog, "the media dialog did not open").toBeVisible({ timeout: 15_000 });
+
+  /*
+   * The upload tab, explicitly, and never mind which tab is showing.
+   *
+   * The dialog opens on the Mediathek, and this is deliberately not conditional
+   * on whether the library is empty: on the local rig it is and on the
+   * installation it is not, so a spec that branched would exercise a different
+   * path in each place — which is how a post-deploy failure ends up being about
+   * the harness (§9.13).
+   */
+  await dialog.getByRole("tab", { name: "Datei hochladen" }).click();
+  await dialog.locator('input[type="file"]').setInputFiles(file);
+}

@@ -158,16 +158,12 @@ export function Customers(props: {
         >
           {customers.map((customer) => (
             <tr key={customer.slug} className="border-t border-gray-100">
-              <td className="px-3 py-2 text-sm font-medium">{customer.name}</td>
-              <td className="px-3 py-2 font-mono text-xs text-gray-600">
-                {customer.slug}
-              </td>
-              <td className="px-3 py-2 text-sm tabular-nums">
-                {customer.departmentCount}
-              </td>
-              <td className="px-3 py-2 text-sm tabular-nums">{customer.projectCount}</td>
-              <td className="px-3 py-2 text-sm tabular-nums">{customer.courseCount}</td>
-              <td className="px-3 py-2 text-right">
+              <td className="text-sm font-medium">{customer.name}</td>
+              <td className="font-mono text-xs text-gray-600">{customer.slug}</td>
+              <td className="text-sm tabular-nums">{customer.departmentCount}</td>
+              <td className="text-sm tabular-nums">{customer.projectCount}</td>
+              <td className="text-sm tabular-nums">{customer.courseCount}</td>
+              <td className="text-right">
                 <ConfirmButton
                   label={de.customers.remove}
                   confirmLabel={de.customers.removeConfirm}

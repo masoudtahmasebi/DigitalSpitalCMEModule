@@ -227,7 +227,6 @@ function toDetail(
     prerequisites: course.prerequisites,
     vnr: course.vnr,
     accreditationBody: course.accreditationBody,
-    fortbildungsnummer: course.fortbildungsnummer,
     organizer: course.organizer,
     eventLocation: course.eventLocation,
     validFrom: course.validFrom?.toISOString() ?? null,

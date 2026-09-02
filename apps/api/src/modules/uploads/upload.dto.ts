@@ -78,6 +78,86 @@ export type UploadBegin = z.infer<typeof uploadBeginSchema>;
 export type UploadComplete = z.infer<typeof uploadCompleteSchema>;
 export type UploadView = z.infer<typeof uploadViewSchema>;
 
+/*
+ * ---------------------------------------------------------------------------
+ * Multipart (P129-04)
+ * ---------------------------------------------------------------------------
+ */
+
+/**
+ * A key, as a client is allowed to name one.
+ *
+ * Bounded and pattern-checked before it reaches anything that concatenates it
+ * into a URL. `keyBelongsToCustomer` is the check that matters and it runs in
+ * the service; this is the cheaper one that keeps a 4 KB path or a newline out
+ * of a signature in the first place.
+ */
+const objectKey = z
+  .string()
+  .trim()
+  .min(1)
+  .max(1024)
+  .regex(/^[A-Za-z0-9!_.*'()\-/]+$/u, "not a storage key");
+
+/**
+ * An UploadId, as the bucket issues them.
+ *
+ * Opaque and store-specific — AWS uses long base64-ish tokens, MinIO uses
+ * UUIDs — so this bounds and charset-checks rather than pretending to know the
+ * format. It goes into a signed query string, which is why a newline or a `&`
+ * must not survive this line.
+ */
+const uploadId = z
+  .string()
+  .trim()
+  .min(1)
+  .max(1024)
+  .regex(/^[A-Za-z0-9+/=._~-]+$/u, "not an upload id");
+
+export const multipartBeginSchema = uploadBeginSchema;
+
+export const multipartSignSchema = z.object({
+  key: objectKey,
+  uploadId,
+  /**
+   * Which parts to sign, explicitly.
+   *
+   * A **bounded** list, not a range and not "all of them". Every URL returned
+   * is a live capability, so a 5 GiB upload's 160 parts must not all be minted
+   * because a client asked once — an uploader that stalls at part 3 would leave
+   * 157 signatures valid for the rest of their lifetime. The uploader asks for
+   * the next batch as it goes, and a resumed upload asks only for what the
+   * bucket says is missing.
+   */
+  partNumbers: z.array(z.number().int().min(1).max(10_000)).min(1).max(32),
+});
+
+export const multipartCompleteSchema = z.object({
+  key: objectKey,
+  uploadId,
+});
+
+export type MultipartBegin = z.infer<typeof multipartBeginSchema>;
+export type MultipartSign = z.infer<typeof multipartSignSchema>;
+export type MultipartComplete = z.infer<typeof multipartCompleteSchema>;
+
+/** What `uploads/multipart` answers with: where to send the bytes, in what sizes. */
+export interface MultipartTicketResponse {
+  readonly key: string;
+  readonly uploadId: string;
+  readonly partCount: number;
+  readonly partBytes: number;
+  readonly expiresAt: string;
+}
+
+export interface MultipartSignResponse {
+  readonly parts: ReadonlyArray<{
+    readonly partNumber: number;
+    readonly url: string;
+  }>;
+  readonly expiresAt: string;
+}
+
 /**
  * What `view` answers with.
  *

@@ -80,7 +80,31 @@ export const de = {
      */
     sections: {
       onDemand: "On Demand",
+      /*
+       * The layout's own section heading, verbatim (§5 — the layout copy is
+       * authoritative).
+       *
+       * The drawing has no tab row: this line *is* how the list is introduced.
+       * P58-02 added the tabs so Live and Zoom would have somewhere to go, kept
+       * the name and dropped the sentence — and the sentence is the half doing
+       * the work, because "On Demand" says what the courses are called and
+       * "jederzeit verfügbar" says why a physician would open them.
+       *
+       * It repeats the tab's own word, which is deliberate rather than
+       * overlooked: trimming it to fit the tab would be editing a string the
+       * client's designer wrote, to accommodate a control they did not draw.
+       */
+      onDemandDescription:
+        "On-Demand-Fortbildungen – volle Flexibilität und jederzeit verfügbar",
       weitere: "Weitere",
+      /*
+       * Not from the layout — there is no drawing of this tab yet. Written to
+       * the same shape as the line above so the two read as one family, and
+       * kept to what the platform can actually deliver: a date. It claims
+       * nothing about registration or places, neither of which is modelled.
+       */
+      weitereDescription:
+        "Live-Veranstaltungen und Präsenzfortbildungen – zu festen Terminen",
     },
 
     deliveryType: {
@@ -157,9 +181,102 @@ export const de = {
     unauthenticated:
       "Ihre Sitzung ist abgelaufen. Bitte laden Sie die Seite neu und melden Sie sich erneut an.",
     generic: "Bitte versuchen Sie es später erneut.",
+    /**
+     * The reference to quote when reporting a failure (P122-01).
+     *
+     * Shown only on the "something went wrong" case, never on an expired
+     * session or a Fortbildung that does not exist — those are outcomes a
+     * physician can act on, and a reference number there is noise attached to
+     * something ordinary.
+     *
+     * It is a random id identifying one line in our log. It says nothing about
+     * the person and is safe on screen.
+     */
+    reference: (id: string) => `Referenz: ${id}`,
     noCourse: "Diese Fortbildung wurde nicht gefunden.",
     misconfigured:
       "Diese Fortbildung ist nicht korrekt eingebunden. Bitte wenden Sie sich an den Betreiber der Seite.",
+  },
+
+  /**
+   * Not signed in — which is not an error, and used to be shown as one.
+   *
+   * Before P99-03 a visitor who was simply not signed in got
+   * `error.misconfigured`: *"Diese Fortbildung ist nicht korrekt eingebunden.
+   * Bitte wenden Sie sich an den Betreiber der Seite."* — a physician told to
+   * ring the webmaster because they had not logged in. Everything about that is
+   * wrong: the diagnosis, the audience, and the absence of anything to do.
+   *
+   * The host page knows perfectly well whether somebody is signed in, so it now
+   * says so on the element and the widget renders this instead — with a link
+   * that actually signs them in, and **without calling the API at all**, so a
+   * signed-out page produces no failed requests.
+   *
+   * This is presentation only. It decides what a person sees, never what they
+   * may do: every request still carries a token the API validates against
+   * Keycloak's JWKS, and a page claiming somebody is signed in gains them
+   * nothing (CLAUDE.md §4 invariant 2).
+   */
+  /**
+   * That the physician's name and email come from their MEDICE account
+   * (P105-01).
+   *
+   * A new category of personal data crosses from the host site, and the client
+   * asked for it to be visible rather than buried: *"we should add a sign that
+   * your progress is synced with your medice account."* That is the right
+   * instinct — a transfer nobody is told about is one nobody can object to.
+   *
+   * Drawn beside the account details rather than as a banner over the whole
+   * widget, because it is a fact about *those fields* and a physician reading
+   * their own name is exactly who it concerns.
+   */
+  accountSync: {
+    title: "Ihr MEDICE-Konto",
+    /** Says what is taken, from where, and what it is used for. */
+    message:
+      "Name und E-Mail-Adresse stammen aus Ihrem MEDICE-Konto. Ihr Fortbildungsfortschritt und Ihre Teilnahmebescheinigung werden dazu gespeichert.",
+    /** Where to change it — this platform is not where a name is corrected. */
+    change: "Ihre Angaben ändern Sie in Ihrem MEDICE-Konto.",
+  },
+
+  signedOut: {
+    title: "Bitte melden Sie sich an",
+    /** Both the never-signed-in and the DocCheck cases land here. */
+    message:
+      "Diese Fortbildung ist Fachkreisangehörigen vorbehalten. Bitte melden Sie sich mit Ihrem MEDICE-Konto an, um sie zu starten.",
+    action: "Anmelden",
+    /**
+     * The session ended mid-course, and a reload will not fix it.
+     *
+     * Distinct from the above because the fix differs: the previous copy said
+     * "laden Sie die Seite neu", which re-reads the same expired session and
+     * changes nothing (P99-02).
+     */
+    expiredTitle: "Ihre Anmeldung ist abgelaufen",
+    expiredMessage:
+      "Ihr Fortschritt ist gespeichert. Bitte melden Sie sich erneut an, um dort weiterzumachen, wo Sie aufgehört haben.",
+  },
+
+  /**
+   * The page could not obtain a token, and that is not the reader's fault
+   * (P101-03).
+   *
+   * Every other message here is written for a physician. This one has two
+   * audiences and cannot pretend otherwise: the physician needs to know it is
+   * not them and that nothing they do will help, and whoever maintains the site
+   * needs enough to act — which is the endpoint and the status it answered.
+   *
+   * So the sentence is plain and the technical fact is a separate, quieter
+   * line. Telling the physician to "sign in again" here — which is what this
+   * screen used to say — sends the one person who cannot fix it into a loop,
+   * while the person who can fix it never hears about it at all.
+   */
+  tokenUnavailable: {
+    title: "Die Fortbildung kann gerade nicht geladen werden",
+    message:
+      "Diese Seite konnte keine Anmeldedaten für das Lernmodul abrufen. Das liegt nicht an Ihrem Konto — bitte versuchen Sie es später erneut oder wenden Sie sich an den Betreiber der Seite.",
+    /** "Technische Angabe: Token-Endpunkt antwortete 404." */
+    detail: (reason: string): string => `Technische Angabe: Token-Endpunkt — ${reason}.`,
   },
 
   /** The meta strip under the course hero. */
@@ -266,6 +383,21 @@ export const de = {
 
     outline: "Modul Übersicht",
     toggleModule: (title: string): string => `Modul „${title}“ ein- oder ausklappen`,
+    /**
+     * The same control's name with the count in it (P93-03).
+     *
+     * The visible "2/3" beside each module row is gone — `Player-Ansicht-*`
+     * draws a glyph, a title and a chevron and nothing else. Sighted, that
+     * loses little: the glyph carries the state and expanding the module shows
+     * every chapter with a glyph of its own.
+     *
+     * Heard, it loses more. A screen reader announces one row at a time, so
+     * "Abgeschlossen, Modul 2 – Diagnostik" says the module is done and nothing
+     * about a module that is half done. The count moves into the name rather
+     * than out of the product.
+     */
+    toggleModuleProgress: (title: string, completed: number, total: number): string =>
+      `Modul „${title}“ ein- oder ausklappen — ${completed} von ${total} Abschnitten abgeschlossen`,
 
     /**
      * The accessible name of each sidebar state glyph. Not decorative: in the
@@ -276,6 +408,16 @@ export const de = {
       completed: "Abgeschlossen",
       playing: "Wird angesehen",
       paused: "Pausiert",
+      /**
+       * A **module** that is under way (P94-02).
+       *
+       * The layout draws the module you are inside with a pause glyph and the
+       * chapter you are on with a play arrow, and the distinction is real: the
+       * module is a container you are part-way through, the chapter is the
+       * thing in front of you. "Wird angesehen" on a module would be a claim
+       * about five chapters at once.
+       */
+      inProgress: "Wird bearbeitet",
       available: "Verfügbar",
       locked: "Gesperrt",
     },
@@ -299,6 +441,46 @@ export const de = {
      * done the exam is the way forward rather than a pause.
      */
     quizBegin: "Lernerfolgskontrolle beginnen",
+    /**
+     * The locked exam announcement between the video and the tabs (P93-03).
+     *
+     * `Player-Ansicht-Tab-Zusammenfassung-V2` draws it right-aligned there,
+     * as a sentence and a padlocked button:
+     *
+     *     Wird nach Modul 3 freigeschaltet 〔🔒 Zur Teilprüfung〕
+     *
+     * The padlocked Lernerfolgskontrolle tab already says the exam exists and
+     * is shut. What nothing on the screen said is **what opens it** — CLAUDE.md
+     * §9.4, where an action is deliberately impossible, say why at the point
+     * somebody looks for it.
+     *
+     * The button is disabled and stays drawn, which is not §9.2's "never offer
+     * what the system will refuse": it is not an offer, it is the label the
+     * sentence is about, and removing it would leave the sentence describing
+     * nothing.
+     *
+     * **On the word.** The drawing carries a *Lernerfolgskontrolle* tab and a
+     * *Zur Teilprüfung* button on the same screen, which P91-04 raised as a
+     * vocabulary question — one thing under two names, or two things? Since
+     * P87 gave every module its own exam they are the same object: the button
+     * opens this module's assessment, which is exactly what the tab beside it
+     * is. §5 makes the layout's copy authoritative, so both words are kept as
+     * drawn. Worth one sentence of confirmation from MEDICE; not worth blocking
+     * a screen the client has already said does not match.
+     */
+    /**
+     * One exam row among several (P95-01).
+     *
+     * The layout draws a single **Lernerfolgskontrolle** row under the module
+     * list, and that word is what a course with one exam gets. Since P87 a
+     * course may have one per module — and an author naming all of them
+     * "Lernerfolgskontrolle" is not a mistake, it is the obvious thing to type —
+     * so when there is more than one the module is what tells them apart.
+     * Three identical rows are three rows a physician cannot choose between
+     * (§9.4), and no amount of authoring discipline fixes that from here.
+     */
+    examInModule: (title: string, moduleOrdinal: number): string =>
+      `${title} – Modul ${moduleOrdinal}`,
     reportingLocked: "Wird nach bestandener Lernerfolgskontrolle freigeschaltet.",
     reportingOpen: "Zur CME Punktemeldung",
   },
@@ -692,7 +874,66 @@ export const de = {
 
     submit: "Daten übermitteln",
     submitting: "Wird übermittelt …",
-    done: "Ihre Fortbildung ist abgeschlossen. Die Punkte werden an die Ärztekammer gemeldet.",
+    done: "Ihre Fortbildung ist abgeschlossen.",
+
+    /**
+     * What became of the Punktemeldung (P119-02).
+     *
+     * ## Why `done` above got shorter
+     *
+     * It used to end "Die Punkte werden an die Ärztekammer gemeldet." — future
+     * tense, unconditional, and shown for ever. It was the platform's promise
+     * that the reporting had worked, made before the reporting had happened and
+     * never withdrawn when it failed. A physician read that sentence, kept a
+     * certificate saying four points, and had none.
+     *
+     * The tense is now the state's to choose, and every branch below is written
+     * so it is true of the row it describes.
+     *
+     * ## Only one of these asks the physician for anything
+     *
+     * `checkEfn` — EIV answered 422, which means the EFN was refused, and the
+     * physician is the only person who can correct it. The others are the
+     * operator's, and a physician told "die VNR ist gesperrt" learns only that
+     * something is wrong with a system they do not control. They are told the
+     * truth — not yet reported, being dealt with — which is all they can use
+     * (§9.10).
+     *
+     * **Client-facing copy about somebody's CME points. MEDICE should approve
+     * the wording before launch** (P119 §Open).
+     */
+    punktemeldung: {
+      heading: "Punktemeldung",
+      pending: {
+        body: "Ihre Punkte werden an die Ärztekammer gemeldet. Das geschieht automatisch und kann einige Minuten dauern.",
+      },
+      reported: {
+        body: "Ihre Punkte wurden an die Ärztekammer gemeldet.",
+      },
+      withdrawn: {
+        body: "Diese Punktemeldung wurde zurückgenommen. Bitte wenden Sie sich an den Veranstalter, wenn Sie dazu Fragen haben.",
+      },
+      checkEfn: {
+        body: "Die Ärztekammer hat die angegebene EFN nicht akzeptiert. Ihre Punkte sind dadurch noch nicht gutgeschrieben. Bitte prüfen Sie Ihre EFN und korrigieren Sie sie hier — die Meldung wird anschließend erneut eingereicht.",
+        label: "Ihre EFN",
+        hint: "Die EFN besteht aus genau 15 Ziffern. Sie finden sie auf Ihrem Arztausweis oder in Ihrem Kammerkonto.",
+        save: "EFN korrigieren",
+        saved: "Ihre EFN wurde gespeichert. Die Punktemeldung wird erneut eingereicht.",
+        invalid: "Die EFN muss aus genau 15 Ziffern bestehen.",
+      },
+      /*
+       * One message for `event_problem`, `not_configured` and
+       * `failed_unknown`. They differ in what the *operator* must do and not at
+       * all in what the physician can — three sentences here would be three
+       * ways of saying "not your doing, and not your fix".
+       */
+      handled: {
+        body: "Ihre Punkte konnten noch nicht an die Ärztekammer gemeldet werden. Das liegt nicht an Ihren Angaben. Der Veranstalter wurde informiert und kümmert sich darum.",
+      },
+      windowClosed: {
+        body: "Die Frist für die elektronische Meldung dieser Teilnahme ist abgelaufen. Eine nachträgliche Anerkennung ist nur noch direkt über Ihre Ärztekammer möglich — bitte wenden Sie sich mit Ihrer Teilnahmebescheinigung an sie.",
+      },
+    },
     outstanding: "Es fehlt noch:",
     /**
      * Why the button below it is inactive, and what to do instead (P82-01).

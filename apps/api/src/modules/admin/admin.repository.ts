@@ -49,7 +49,6 @@ export interface AdminCourseRow {
   targetAudience: string | null;
   prerequisites: string | null;
   heroImageUrl: string | null;
-  fortbildungsnummer: string | null;
   validFrom: Date | null;
   validTo: Date | null;
   vnr: string | null;
@@ -193,7 +192,6 @@ export interface CoursePatch {
   heroImageUrl?: string | null;
   cmePoints?: number | null;
   cmeCategory?: string | null;
-  fortbildungsnummer?: string | null;
   validFrom?: Date | null;
   validTo?: Date | null;
   requiredWatchPercent?: number;
@@ -231,7 +229,6 @@ const COURSE_COLUMNS = {
   targetAudience: courses.targetAudience,
   prerequisites: courses.prerequisites,
   heroImageUrl: courses.heroImageUrl,
-  fortbildungsnummer: courses.fortbildungsnummer,
   validFrom: courses.validFrom,
   validTo: courses.validTo,
   vnr: courses.vnr,

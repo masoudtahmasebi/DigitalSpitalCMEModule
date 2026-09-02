@@ -57,30 +57,33 @@ at all**, so P6-02's premise is void and MEDICE has a decision to make this
 week. And it surfaced **S15**, a live API key hardcoded in that file, which
 wants action today.
 
-| #       | Item                                                                               | Blocks           | Needed by | Owner              |
-| ------- | ---------------------------------------------------------------------------------- | ---------------- | --------- | ------------------ |
-| ~~S12~~ | ~~"Originalstempel" may invalidate an emailed certificate~~                        | **CLOSED 11.08** | —         | —                  |
-| ~~S15~~ | ~~Live API key hardcoded in the MEDICE plugin~~ — **rotated by MEDICE 11.08**      | **CLOSED 11.08** | —         | —                  |
-| S18     | **Offline refresh token exposed — revoke, and stop requesting `offline_access`**   | —                | **today** | MEDICE             |
-| S17     | **Token `aud` is `account`; add an audience mapper or no learner can log in**      | M1 · 09.08       | **31.07** | MEDICE dev         |
-| S2      | **The WP plugin stores no token.** Decide how it will — lifespan now known (600 s) | M1 · 09.08       | **31.07** | MEDICE dev         |
-| S4      | Scope decision on 4 layout features not in the 140 h                               | M2 · 23.08       | **06.08** | PM + DigitalSpital |
-| S11     | Confirm `Veranstaltungsende` = the learner's completion date                       | M3 · 30.08       | 07.08     | ÄKWL               |
-| S5      | Certificate-after-EIV vs the launch fallback                                       | M3 · 30.08       | 14.08     | PM + MEDICE        |
-| S7      | `required_watch_percent`: 80 % or 100 %, in writing                                | M2 · 23.08       | 14.08     | MEDICE             |
-| S8      | ADHS SMTP configuration, and which MEDICE account sends                            | M3 · 30.08       | 21.08     | MEDICE             |
-| S14     | Accreditation expires 12.10.2026; platform change must be notified                 | post-launch      | 24.08     | MEDICE             |
-| S9      | Hetzner account ownership and DNS                                                  | M4 · 06.09       | 24.08     | DigitalSpital      |
-| S10     | VNR password was shared over chat                                                  | —                | now       | DigitalSpital      |
-| S23     | **VNR format, and whether any VNR-less completion already exists**                 | —                | 14.08     | MEDICE / ÄKWL      |
-| S25     | **Which point flags may a completion claim for this VNR?**                         | M3 · 30.08       | **14.08** | MEDICE / ÄKWL      |
-| S26     | **The production EIV API base URL is not published**                               | M3 · 30.08       | 21.08     | MEDICE             |
-| S27     | **Test-system credentials from EIV support, so the client can be proven**          | M3 · 30.08       | **14.08** | MEDICE             |
-| ~~S24~~ | ~~Export the EIV Veranstalter Swagger~~                                            | **CLOSED 09.08** | —         | —                  |
-| ~~S3~~  | ~~WordPress repository access~~                                                    | **CLOSED 28.07** | —         | —                  |
-| ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                               | **CLOSED 28.07** | —         | —                  |
-| ~~S6~~  | ~~Signature/stamp asset~~                                                          | **CLOSED 28.07** | —         | —                  |
-| ~~S1~~  | ~~Repository write access~~                                                        | **CLOSED 27.07** | —         | —                  |
+| #       | Item                                                                                      | Blocks           | Needed by | Owner         |
+| ------- | ----------------------------------------------------------------------------------------- | ---------------- | --------- | ------------- |
+| ~~S12~~ | ~~"Originalstempel" may invalidate an emailed certificate~~                               | **CLOSED 11.08** | —         | —             |
+| ~~S15~~ | ~~Live API key hardcoded in the MEDICE plugin~~ — **rotated by MEDICE 11.08**             | **CLOSED 11.08** | —         | —             |
+| S18     | **Offline refresh token exposed — revoke, and stop requesting `offline_access`**          | —                | **today** | MEDICE        |
+| S17     | **Token `aud` is `account`; add an audience mapper or no learner can log in**             | M1 · 09.08       | **31.07** | MEDICE dev    |
+| S2      | **The WP plugin stores no token.** Decide how it will — lifespan now known (600 s)        | M1 · 09.08       | **31.07** | MEDICE dev    |
+| S4      | Scope decision on 4 layout features not in the 140 h — **PM is deciding**                 | M2 · 23.08       | **06.08** | PM            |
+| S11     | **The register holds a one-day event; correct the period, or name the date**              | **launch**       | 07.08     | ÄKWL          |
+| ~~S5~~  | ~~Certificate-after-EIV vs the launch fallback~~ — **decided 24.08: issue on completion** | **CLOSED 24.08** | —         | —             |
+| ~~S7~~  | ~~80 % or 100 %~~ — **already per course; a field, not a constant. 20.08**                | **CLOSED 20.08** | —         | —             |
+| S8      | ADHS SMTP configuration — **PM is setting it in the console**                             | M3 · 30.08       | 21.08     | PM            |
+| ~~S14~~ | ~~Expiry 12.10.2026 and change notification~~ — **MEDICE owns both, 27.08**               | **CLOSED 27.08** | —         | MEDICE        |
+| ~~S9~~  | ~~Hetzner account ownership and DNS~~ — **DigitalSpital's own, confirmed 20.08**          | **CLOSED 20.08** | —         | —             |
+| S10     | VNR password shared over chat — **rotation requested from MEDICE in a call 20.08**        | —                | now       | MEDICE        |
+| S23     | **VNR format, and whether any VNR-less completion already exists**                        | —                | 14.08     | MEDICE / ÄKWL |
+| S25     | **Which point flags may a completion claim for this VNR?**                                | M3 · 30.08       | **14.08** | MEDICE / ÄKWL |
+| ~~S26~~ | ~~Production EIV API base URL~~ — **`https://backend.eiv-fobi.de`, 20.08**                | **CLOSED 20.08** | —         | —             |
+| S28     | **Learner tokens carry no name or email — the certificate cannot be filled**              | M3 · 30.08       | **24.08** | MEDICE / DS   |
+| ~~S27~~ | ~~Test-system credentials from EIV support~~ — **arrived 31.08; password not in repo**    | **CLOSED 31.08** | —         | —             |
+| S29     | **The Veranstalter interface we integrate against has an announced shutdown**             | **launch**       | **now**   | EIV / BÄK     |
+| ~~S31~~ | ~~Is `fortbildungsnummer` the VNR?~~ — **it is; implemented 27.08 (P125-01)**             | **CLOSED 27.08** | —         | —             |
+| ~~S24~~ | ~~Export the EIV Veranstalter Swagger~~                                                   | **CLOSED 09.08** | —         | —             |
+| ~~S3~~  | ~~WordPress repository access~~                                                           | **CLOSED 28.07** | —         | —             |
+| ~~S13~~ | ~~`Anschrift` and two VNR barcodes~~                                                      | **CLOSED 28.07** | —         | —             |
+| ~~S6~~  | ~~Signature/stamp asset~~                                                                 | **CLOSED 28.07** | —         | —             |
+| ~~S1~~  | ~~Repository write access~~                                                               | **CLOSED 27.07** | —         | —             |
 
 S11 drops from first place to fifth: the Muster answers it, and the answer is
 already what the code does. It stays open because confirming a reading is not
@@ -88,7 +91,85 @@ the same as having one.
 
 ---
 
-## S11 · What is `Veranstaltungsende` for an on-demand course? — **the Muster answers it; confirm it**
+## S11 · The register holds a one-day event for a twelve-month Fortbildung
+
+> **Updated 24.08.2026 — the value is known now, and it is the bad one.**
+>
+> The connection check against the live register returned the accredited period
+> EIV holds for VNR 2760552025919300018:
+>
+> ```
+> beginn  2025-10-12T22:00:00.000Z   → 13.10.2025 00:00 (MESZ)
+> ende    2025-10-13T21:00:00.000Z   → 13.10.2025 23:00 (MESZ)
+> ```
+>
+> One day. `push_teilnahme` refuses a `teilnahmedatum` outside the accredited
+> period with a **406**, so on today's data **every completion this platform
+> reports is refused** — which is what the 09.08 note below predicted would
+> happen if `ende` turned out to be 13.10.2025.
+>
+> **This is now two questions, not one, and the first is the better one.**
+>
+> The ÄKWL's own _Richtlinien zur Anerkennung und Bewertung von
+> Fortbildungsmaßnahmen_ work with an **Anerkennungszeitraum** inside which many
+> individual sessions may fall, and recognise **Fortbildungsreihen** for a
+> calendar year. A twelve-month accredited period with a completion date
+> anywhere inside it is therefore a shape the ÄKWL already handles — and a
+> one-day `beginn`/`ende` on a twelve-month on-demand Fortbildung looks like a
+> register field filled in as though it were a live event.
+>
+> So ask both, in one sentence, and accept either answer:
+>
+> 1. **Should the accredited period be corrected** to the recognition period
+>    from the Anerkennungsbescheid, 13.10.2025 – 12.10.2026?
+> 2. **If not, which `teilnahmedatum` do you expect** for an on-demand
+>    Fortbildung taken across that period?
+>
+> (1) unblocks the platform as built and needs no code. (2) is only needed if
+> (1) is refused, and it is the one that may cost an implementation. Asking (1)
+> first is not politeness — it is the reading their own Richtlinien support.
+
+### 25.08 — S11 and S25 are one defect, not two, and that changes how to ask
+
+EIV publishes how a VNR's dataset comes into being:
+
+> _"Aus den Angaben des Antrages wird von der Ärztekammer zu der VNR ein
+> Datensatz (u.a. Titel, Datum, Ort, Kategorie, Anzahl Fortbildungspunkte) …
+> angelegt und an den EIV übertragen"_
+> — `eiv-fobi.de/fuer-veranstalter`
+
+So the register's `beginn`/`ende` **and** its `punkte_basis`/`punkte_lernerfolg`
+split come from the **same source**: the Antrag, as transcribed by the Kammer.
+S11 and S25 are not two independent surprises about two fields. They are one
+question about one dataset, and it is a **data-entry correction the Kammer can
+make** — not a workaround for us to choose.
+
+That is a materially stronger request, and it should be sent as one:
+
+> Der bei der EIV hinterlegte Datensatz zur VNR `2760552025919300018` weicht in
+> zwei Punkten vom Anerkennungsbescheid vom 18.06.2026 ab:
+>
+> 1. **Anerkennungszeitraum.** Die Schnittstelle liefert `beginn` und `ende`
+>    beide am 13.10.2025, also einen einzigen Tag. Der Bescheid erkennt die
+>    Fortbildung vom 13.10.2025 bis 12.10.2026 an. Da es sich um eine
+>    On-Demand-Fortbildung handelt, liegt das Teilnahmedatum jeder Teilnehmerin
+>    zwangsläufig innerhalb dieses Jahres — `push_teilnahme` weist ein
+>    Teilnahmedatum außerhalb des hinterlegten Zeitraums jedoch mit HTTP 406 ab.
+>    **Derzeit ist damit jede Punktemeldung zu dieser Fortbildung unmöglich.**
+> 2. **Punkteaufteilung.** Der Bescheid vergibt 4 Punkte der Kategorie D unter
+>    der Voraussetzung von mindestens 70 % richtig beantworteter Fragen. Bitte
+>    bestätigen Sie, wie sich diese 4 Punkte im Datensatz auf `punkte_basis` und
+>    `punkte_lernerfolg` verteilen, damit die Meldung die richtigen Flags setzt.
+>
+> Wir bitten um Korrektur bzw. Bestätigung des Datensatzes.
+
+Point 2 is only needed if the EIV-Abgleich screen shows `assessmentPoints: 0` —
+see S25, which can be read off a screen today without asking anybody. Sending
+both together is still right when point 1 has to be sent regardless: it is one
+correction to one dataset, and splitting it across two mails invites two partial
+answers.
+
+## S11 (original) · What is `Veranstaltungsende` for an on-demand course? — **the Muster answers it; confirm it**
 
 > **Plain-language version of the question, since it was asked on 28.07:**
 >
@@ -251,7 +332,79 @@ matters at all.
 
 ---
 
-## S2 · The WordPress plugin does **not** persist a token — **ANSWERED 28.07, and the answer is the bad one**
+## S2 · The token was there all along — **CLOSED 19.08. The 28.07 answer was wrong, and it was ours**
+
+> **19.08 — the client supplied the theme, and it changes the answer (P98-01).**
+>
+> This entry has said since 28.07 that MEDICE persists no token, so nothing
+> could be read and the integration was blocked on their developer. **That was
+> a reading error on our side.** The 28.07 analysis read
+> `keycloakwordpressplugin` and concluded about the system; the login lives in
+> the **theme**:
+>
+> ```php
+> // theme/functions/login-class.php
+> $tokenResponse = Keycloak::getAccessTokenByUnamePass($username, $password);
+> $data          = array_merge($tokenResponse['data'], ['userinfo' => …]);
+> self::storeIntoSession($data);          // → $_SESSION['LOGIN_SESSION']
+> ```
+>
+> `$tokenResponse['data']` is the whole token response, so the session holds
+> `access_token`, `refresh_token`, `expires_in` and `refresh_expires_in`, and
+> the grant's scope includes **`offline_access`**.
+>
+> **Consequences:**
+>
+> - **No MEDICE code change is required.** Plugin 1.1.0 reads the session
+>   directly, at a configurable key defaulting to `LOGIN_SESSION`.
+> - **The lifespan concern below is softened, not removed.** There is a refresh
+>   token and it is offline, so a 25-minute module no longer depends on a long
+>   access-token lifespan. 30 minutes remains the comfortable setting.
+> - **The real blocker was different and is fixed.** MEDICE create no WordPress
+>   user at all — no `wp_signon`, no `wp_set_auth_cookie` — so
+>   `is_user_logged_in()` was false for every physician, and our plugin gated
+>   three separate things on it. See P98.
+>
+> **What replaces this as the open question:** the project's `keycloak_issuer`
+> and `keycloak_audience` must match the claims in MEDICE's token, or the API
+> refuses it as a 401 that looks like "not signed in". The plugin's _Verbindung
+> prüfen_ now prints both values from the live token so they can be copied.
+> Owner: **DigitalSpital**, one console setting.
+
+<details>
+<summary>The superseded 28.07 analysis, kept because the mistake is instructive</summary>
+
+**The WordPress plugin does not persist a token — ANSWERED 28.07, and the answer is the bad one**
+
+> **19.08 — now observed in production, not predicted (P97-01).** The client
+> signed into the MEDICE staging WordPress as a Keycloak user, with the plugin
+> installed, the origin allowed and the bundle loading. The widget was still
+> signed out, and the chain is exactly the one this entry predicted three weeks
+> ago:
+>
+> ```
+> GET /wp-json/ds-lms/v1/token            → 404  (route ran; nothing held)
+> GET  api…/courses/adhs-akademie-adult   → 401  (no bearer to send)
+> PUT  api…/courses/…/enrolment           → 401
+> ```
+>
+> **Nothing on our side is broken and nothing on our side can fix it.** The
+> plugin, the widget, the API and the CORS policy all behave exactly as
+> specified. `keycloakwordpressplugin` obtains an access token by password grant,
+> uses it for a userinfo lookup, and drops it — so `DS_LMS_Token_Source` has
+> nothing to read, by construction.
+>
+> **This is now on the critical path to launch, not a risk.** The unblocking
+> change is one `add_filter( 'ds_lms_access_token', … )` in whatever performs the
+> login, plus persisting the token at login if it is not already held. Owner:
+> **MEDICE**. Until it lands, no physician can start a Fortbildung from
+> WordPress.
+>
+> One thing we did get wrong and have fixed: both "the endpoint is switched off"
+> and "the endpoint answered and there is no token" produced a bare `404`, so
+> toggling the setting changed nothing an observer could see and the report was
+> misread for a day. Plugin 1.0.1 names the reason and the settings screen tells
+> the three states apart.
 
 > **12.08 — measured rather than argued (P62-04).** The dev realm was set to a
 > 60-second access-token lifespan and a module watched across the expiry.
@@ -424,6 +577,8 @@ same remedy — credentials belong in the environment or a secret store, never i
 source.
 
 ---
+
+</details>
 
 ## S3 · WordPress repository access
 
@@ -600,6 +755,64 @@ Moving this course onto a new platform is plausibly such a change. A proactive
 note to the ÄKWL costs nothing; discovering after launch that the accreditation
 lapsed would be expensive.
 
+### 27.08.2026 — the client's answer, and what it does and does not settle
+
+> _"the course will be making longer, and we will not change the format, and if
+> put it on an online format, we are not going to change the format, and the
+> content is going to stay the same."_
+
+Two different things, and only one of them is ours to conclude.
+
+**Settled, because it is the client's own fact:** the Fortbildung stays
+on-demand online, the content is unchanged, and the extension will be applied
+for. That is exactly the premise the drafted letter already states — points,
+category and Lernerfolgskontrolle unchanged — so the letter is accurate and
+needs no edit on this point.
+
+**Not settled, and not ours to settle:** whether the platform change is
+_anzeigepflichtig_. The Bescheid says changes "jeglicher Art" must be notified
+and names _Umwandlung in ein Online-Format_ as an example; whether a delivery
+platform swap with identical content counts is the ÄKWL's determination, not
+ours. "We are not changing anything" is the content of the notification, not a
+reason to skip it — deciding otherwise from here is the invented rule §7
+refuses. Questions 5 and 6 stay in the letter.
+
+The extension makes Question 6 more urgent, not less: the accreditation expires
+12.10.2026, five weeks after launch, and a longer course is a course that
+outlives its own recognition unless somebody files.
+
+### 27.08.2026 — MEDICE owns both obligations. **Closed on our side.**
+
+> _"the medice takes care of the Questions 5 and 6 … we don't need to bother
+> ourselves with it."_
+
+Correct, and it was always so: both duties in the Bescheid fall on the
+**Veranstalter**, and the Veranstalter is MEDICE. The Anzeige of the platform
+change and the Antrag auf Verlängerung run through them. **Questions 5 and 6 come
+out of the ÄKWL letter** — leaving one letter about one subject, the EIV dataset.
+
+Two channels asking the same Kammer about the same Maßnahme is how you get two
+answers, so removing them is tidier than leaving them in "since it costs
+nothing".
+
+**What is still ours, and is not paperwork.** The platform enforces the window
+correctly — `courseAvailability` returns `ended` past `validTo`, and both the
+catalogue and the learning service refuse — so on **13.10.2026 the ADHS course
+simply stops being offered**. Nothing warns anybody first. There is no
+expiry-approaching signal anywhere in the console, in the API or in the domain:
+grep for one and the result is empty.
+
+So the failure mode is a correct refusal with no audience told in advance (§9.4),
+five weeks after launch, discovered by a physician finding the Fortbildung gone.
+That is the same shape as §9.10 — the refusal is right and the answer belongs
+somewhere else, in front of the operator who can act on it.
+
+**Not built, because it is new scope and the client has just narrowed it.**
+Raised here as a costed question instead: a pure `accreditationExpiry(window,
+now)` in `@ds/domain` and a banner on the course screen once expiry is inside
+~90 days is a couple of hours including tests. Today the MEDICE course is 46 days
+out, so it would be warning already. The decision is the client's.
+
 ---
 
 ## S16 · What does the player's `63% absolviert` measure? — **shipped with a stated referent, confirm the wording**
@@ -672,6 +885,23 @@ disagreed with the percentage next to it.
 ## S17 · MEDICE's tokens carry the wrong audience — **every learner is refused today**
 
 Owner: MEDICE (Keycloak admin). Needed by **31.07**, with S2. Blocks M1.
+
+> **25.08 — the request is drafted and ready to send:**
+> `docs/correspondence/S17-keycloak-audience-mapper.md`, in German for the
+> Keycloak administrator with a plain-language summary for the PM. It carries
+> the click-path, the verification step (`aud` on a fresh token), and the
+> instruction to send S18 with it since the same administrator does both.
+>
+> **Still true, and still the largest non-EIV blocker.** Verified again on 25.08
+> against the code: nothing in `apps/api/src/auth/` accepts `azp`, and no
+> per-project fallback column exists. The strict check is exactly as described
+> below.
+>
+> **Why nobody has noticed it in testing** (§9.13): every suite runs on the `ds`
+> tenant with local participants and never touches MEDICE's Keycloak. This
+> defect is structurally invisible to all of them. The check that closes S17 is
+> one real MEDICE account signing in at `/medice` and opening one course — and
+> it cannot be run until the mapper exists.
 
 The access token from `login.medice.com` carries:
 
@@ -916,6 +1146,38 @@ Worth asking for anyway, because the payoff is real: a local check digit turns a
 "validation" failure discovered _after_ the certificate was shown into a typo caught
 in the form.
 
+### Corroborated 25.08 — four Kammern, a national identifier namespace, and a route to the Prüfziffer
+
+**15 is now confirmed well past the point of doubt.** The EFN is documented as
+15-stellig, personengebunden, lebenslang gültig and bundesweit einheitlich
+aufgebaut by the Ärztekammer Hamburg, DocCheck Flexikon and Springer Medizin;
+Sachsen-Anhalt names it as "15 Ziffern auf den Fortbildungsbarcodes oder dem
+Fortbildungsausweis".
+
+There is also a **HL7 FHIR identifier system** for it —
+`http://fhir.de/sid/bundesaerztekammer/efn` (`ig.fhir.de/basisprofile-de`). That
+is worth recording beyond "the length is right": it establishes the EFN as a
+**standardised national identifier with its own namespace**, not a MEDICE or
+ÄKWL convention. Noted in ADR-0004, which is where our handling of it is
+justified.
+
+So `isValidEfn` is right, and **page 13's caption is a designer fix with a
+citation attached** — not an open question, and not something to wait on. It
+must read _Die 15-stellige EFN_, and the eighteen-character placeholder must
+shrink, before it goes in front of a physician.
+
+**What remains open here is only the Prüfziffer**, and S23 above now offers a
+route to it that did not exist on 08.08: the Ärztekammer Hamburg documents that
+_"Die VNR ist analog der Elektronischen Fortbildungsnummer (EFN) aufgebaut"_, and
+the one real VNR we hold satisfies Luhn while the two other simple mod-10
+schemes do not. Confirm Luhn on the VNR and it becomes evidence for the EFN.
+
+**It does not become proof.** "Analog aufgebaut" is a sentence in an FAQ, not an
+algorithm, and one valid specimen of each number is still a sample of one. The
+rule stands: two or three known-valid EFNs, checked, before `isValidEfn` gains a
+check digit. The cost of being wrong is unchanged — a valid EFN refused at the
+last step of a completed Fortbildung, silently, for only some physicians.
+
 ---
 
 ## S24 · The EIV Veranstalter API — **CLOSED 09.08, and five of our six assumptions were wrong**
@@ -990,7 +1252,41 @@ is in `reporter.ts`:
 
 A wrong answer that fails is recoverable; a wrong answer that succeeds is not.
 
-**One command settles it** once S27 provides test credentials:
+**Update 25.08 — this needs no email and no test credentials. The answer is
+already on a screen nobody has opened.**
+
+Asked "what is the email for S25", and the honest answer is that there isn't
+one. `GET /fobi/veranstalter/veranstaltung` returns `punkte_basis` and
+`punkte_lernerfolg` for the VNR, the client has parsed both since P31-01
+(`client.ts`, `readNumber(body, "punkte_basis")`), the contract carries them as
+`attendancePoints` / `assessmentPoints` on `EivEvent`, and
+`apps/admin/src/components/EivCheck.tsx` renders both — with a warning on
+exactly this trap when `assessmentPoints === 0` and the course claims
+Lernerfolg.
+
+It is the **same call** whose response produced the S11 evidence above. The
+accredited period was read out of it and written down; the two point values came
+back in the same body and were not.
+
+So: **Verwaltung → the ADHS course → EIV-Abgleich, and read two numbers.** No
+test system needed — this is a read against the register, not a submission, and
+it is the read that already ran successfully on 24.08.
+
+What each outcome means:
+
+| `assessmentPoints` | What it means                                                                                                     |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| **4** (or any > 0) | the event carries Lernerfolg credit; sending both flags true is right, S25 closes                                 |
+| **0**              | the 4 Punkte are all `punkte_basis`; sending `punkte_lernerfolg_flag` risks a 406, and the screen already says so |
+
+Only if it is `0` is there a question left for ÄKWL — and it is then a precise
+one worth one line, not a general enquiry: _the Bescheid awards 4 Punkte
+Kategorie D with 70 % on the Lernerfolgskontrolle as a condition; the register
+carries those 4 as Basispunkte with 0 Lernerfolgspunkte — should a Meldung set
+`punkte_lernerfolg_flag`?_
+
+The harness reaches the same data from a terminal, against the **test** system
+once S27 lands:
 
 ```bash
 EIV_BASE_URL=https://backend-test.eiv-fobi.de EIV_ALLOW_LIVE=yes \
@@ -1020,9 +1316,44 @@ confirmed with EIV support, not inferred.
 
 ---
 
-## S27 · Test-system credentials, so the client can be proven before it is trusted
+## S27 · Test-system credentials — **CLOSED 31.08.2026, they arrived**
 
-- **Owner:** MEDICE · **Blocks:** the last unverified half of P7 · **Raised:** 09.08
+> **What arrived**, from EIV support via the client:
+>
+> |                        |                                                                     |
+> | ---------------------- | ------------------------------------------------------------------- |
+> | Swagger                | `https://veranstalter-swagger-ui.eiv-fobi.de/`                      |
+> | Test Punktemeldung app | `https://punktemeldung-test.eiv-fobi.de/`                           |
+> | Test VNRs              | `2760012024200354002`, `2760012024200355009`, `2760012024200356007` |
+> | Test EFNs              | 44 of them, `802760020090329` … `802760020090758`                   |
+> | Password               | **not recorded here — see below**                                   |
+>
+> Code examples per language were promised "in Kürze" and are not published yet.
+>
+> **The password is deliberately absent from this repository.** CLAUDE.md §4
+> invariant 7 makes VNR passwords write-only: encrypted at rest under the
+> application KMS key, never plaintext, never logged, never returned by any API.
+> A test password committed to a file is the same habit as a live one, and this
+> project has already had the live VNR password shared over chat twice (S10).
+>
+> It goes in one of two places and nowhere else:
+>
+> - the console — **Verwaltung → Angebot → Fortbildung → VNR-Passwort**, which
+>   is a write-only field, or
+> - `EIV_VNR_PASSWORD` in the host's `config.env`, for the harness.
+>
+> **What this unblocks.** The client has never spoken to a real EIV server, and
+> the remaining unknowns are the ones only a real response answers: whether Basic
+> on a GET behaves as documented behind their gateway, what the 4xx bodies
+> actually look like ("historisch gewachsen", by their own admission), and
+> whether `teilnahmedatum` is validated as we expect.
+>
+> It also gives **S11 a way forward that does not need the ÄKWL.** The test VNRs
+> have accredited periods of their own, so the platform's behaviour against a
+> one-day window versus a real one can be established on the test system while
+> the correction request is still in the post.
+
+- **Owner:** MEDICE · **Blocks:** the last unverified half of P7 · **Raised:** 09.08 · **Closed:** 31.08
 
 The specification is explicit: _"Bitte nutzen Sie für die Entwicklung
 ausschließlich das Test-System. Zugangsdaten und Test-Veranstaltungen erhalten
@@ -1160,6 +1491,92 @@ time, and `CLAUDE.md` §7 is explicit about inventing rules of that kind. A
 format confirmed against the real interface would let the console reject a
 typo where the operator can see it, instead of at submission time.
 
+**Documented, 25.08 — the Ärztekammer Hamburg says the VNR carries a check
+digit, in terms.** Their FAQ:
+
+> _"Die VNR ist 19-stellig … **Die VNR ist analog der Elektronischen
+> Fortbildungsnummer (EFN) aufgebaut**"_
+> — `aerztekammer-hamburg.org/…/FAQ_VNR.pdf`
+
+S21 below establishes that the EFN's 15th digit **is** a Prüfziffer derived from
+the preceding digits. So a check digit on the VNR is now **specified**, not
+inferred from a form refusing our fixture. That moves this from "something in
+their JavaScript rejects it" to "the number is defined to have one, and their
+form enforces it."
+
+**And the field narrows to one candidate.** Of the three simple mod-10 schemes,
+only Luhn is consistent with the one real specimen:
+
+| Scheme                       | Predicts for `276055202591930001?` | Actual |
+| ---------------------------- | ---------------------------------- | ------ |
+| Luhn (mod 10)                | **8**                              | 8 ✓    |
+| plain digit-sum mod 10       | 3                                  | 8 ✗    |
+| ten's complement of that sum | 3                                  | 8 ✗    |
+
+So the experiment below has exactly **one** hypothesis to kill rather than
+several — which is what makes it worth running rather than guessing.
+
+**The bigger prize, if it holds.** "Analog der EFN aufgebaut" cuts both ways: a
+confirmed Luhn on the VNR is evidence for Luhn on the **EFN**, which is S21's
+deliberately-unimplemented half and the more valuable of the two. An EFN check
+digit turns a rejection discovered _after_ a physician has completed a
+Fortbildung into a typo caught in the form. Test a known-valid EFN against Luhn
+the moment one is available — and note that a _single_ valid EFN is the same
+sample-of-one problem again, so this needs two or three before it is
+implementable.
+
+**A warning for the field one along: do not validate the VNR password's
+length.** It is not the same at every Kammer — Baden-Württemberg documents an
+**8-stellige** TAN, the Pfalz a **4-stellige** one. A length rule derived from
+whichever we looked at first would refuse a legitimate credential at the moment
+an operator configures a course. The console field carries only a generous
+`maxLength` bound and a comment saying why, so nobody "tightens" it later.
+
+**The original finding, 25.08 — the answer is obtainable without asking
+anybody.** The client pasted the e2e fixture's VNR `2760000000000000000` into
+EIV's own web application at `punktemeldung.eiv-fobi.de` and it was refused
+**before submit**: red outline, error icon, "Veranstaltung hinzufügen" greyed
+out. Nineteen digits, all numeric, correct `2760` Kammer prefix — so a
+length-and-digits rule would have accepted it. Something in their page computes
+a **check digit**, which means the rule is in JavaScript a browser has already
+downloaded, and is readable.
+
+A Luhn (mod-10) check fits both specimens:
+
+| VNR                                  | Luhn sum mod 10 | implied last digit | actual |
+| ------------------------------------ | --------------- | ------------------ | ------ |
+| `2760552025919300018` (the Bescheid) | **0** — valid   | 8                  | 8      |
+| `2760000000000000000` (the fixture)  | 3 — invalid     | 7                  | 0      |
+
+**This is not enough to implement, and it has deliberately not been
+implemented.** One real specimen passing Luhn is a one-in-ten coincidence, and
+S23 above is the standing reason: the same trade was refused for the EFN's
+Prüfziffer, where a wrong Modulo would reject a _valid_ number at the last step
+of a completed Fortbildung. A VNR check digit guessed wrong stops MEDICE saving
+their own accredited course.
+
+**The experiment that settles it — thirty seconds, and anybody with the EIV
+login can run it.** In that same form, enter each of these and note whether the
+red outline appears:
+
+| VNR                   | Luhn    | If the field accepts it                                   |
+| --------------------- | ------- | --------------------------------------------------------- |
+| `2760000000000000007` | valid   | the rule **is** a mod-10 check digit — implement it       |
+| `2760000000000000000` | invalid | (the known refusal, as a control)                         |
+| `2760000000000000001` | invalid | if this is _also_ accepted, the rule is not a check digit |
+
+If the first is accepted and the third refused, we have the algorithm from
+observation rather than from guessing, and the console can catch a mistyped VNR
+in the form instead of eight days later as a `failed_permanent` Punktemeldung.
+Reading the page's own JavaScript would confirm it outright.
+
+**Why it matters more than it looks.** Nothing in the platform validates the
+VNR at all today — not the console field, not the authoring DTO, not the
+schema. An operator can mistype it, the console answers "Gespeichert.", the
+course publishes, and the first evidence is a refused submission with the
+statutory 8-day clock already running. That is §9.4: EIV's own form tells you at
+the moment you type, and ours does not.
+
 **Worth naming as a class**, because it is the third of its kind found in this
 project: a control that is present, looks implemented, and does nothing. The
 others were the `Mehr lesen…` toggle (P27-01) and the participant sign-in that
@@ -1241,9 +1658,34 @@ producing the sheet they sign. One question to `zertifizierung@aekwl.de`.
 
 ---
 
-## S24 · What is `fortbildungsnummer`? — **raised 12.08 (P62-02)**
+## S31 · What is `fortbildungsnummer`? — **CLOSED 27.08.2026: it is the VNR**
+
+> **Answered by the client, 27.08.2026:** _"Fortbildungsnummer is the same as
+> vnr."_
+>
+> That is option 1 below, and it was implemented the same day (P125-01): the
+> Zertifizierung tab's line is fed by `vnr`, the console's field is gone, and
+> the property is out of the contract, the SDK and both DTOs. The database
+> column survives one release unread — a deploy migrates before it swaps
+> containers, so dropping it in the same change would leave the old API
+> selecting a column that no longer exists. Its drop is P125-02 and asserts
+> first that no row holds a value differing from its `vnr`.
+>
+> **Question 4 can come out of the ÄKWL letter.** It asked the Kammer what this
+> file already needed only MEDICE to answer.
 
 **Owner: MEDICE / ÄKWL.**
+
+> **This was S24 until 27.08.2026, and S24 was already taken.** The Swagger
+> export closed under that number on 09.08, so the index above carried one row
+> reading **S24 · CLOSED** and this question had no row at all. Anyone checking
+> "is S24 still open?" — including whoever is about to send the ÄKWL letter that
+> asks it as Question 4 — got the answer _closed_, about a different question.
+>
+> Two live questions sharing one identifier is §9.2 in a tracker: an answer that
+> looks like a decision and was never about the thing you asked. Renumbered
+> rather than merged, because they are unrelated, and the outgoing letter cites
+> no S-numbers so nothing external moves.
 
 `courses.fortbildungsnummer` has existed since `0001_init`, is editable in the
 admin console, and renders exactly one line on the learner's Zertifizierung tab.
@@ -1274,3 +1716,248 @@ inventing a rule (CLAUDE.md §7).
 
 One sentence from MEDICE or the ÄKWL: _"Fortbildungsnummer is / is not the
 VNR."_ Everything else follows.
+
+### 25.08 — reading 1 is very probably right, so ask it as a confirmation
+
+Several Kammern call the VNR exactly that, in those words. Baden-Württemberg:
+_"die 19-stellige **Nummer der Fortbildung** (VNR)"_; the Ärztekammer Pfalz uses
+the identical phrasing in its Rundschreiben an Fortbildungsveranstalter. And
+nothing in any published source describes a **second** Kammer reference for an
+event — EIV's own Veranstalter page describes one number per anerkannte
+Maßnahme, plus its password.
+
+So "Fortbildungsnummer" reads as colloquial Kammer usage for the VNR, and
+reading 1 is the likely answer. That does not change what we need — a column is
+still not deleted on an inference — but it changes the **shape** of the ask, and
+a confirmation gets answered faster than an open question:
+
+> Ist mit "Fortbildungsnummer" auf der Zertifizierungs-Seite die VNR gemeint,
+> oder gibt es dazu eine weitere Nummer der Ärztekammer?
+
+**If confirmed:** drop `courses.fortbildungsnummer`, render `vnr` on the
+Zertifizierung tab. Until then the current behaviour is the safe one — the line
+is omitted when the column is NULL, so nothing wrong is shown to a physician,
+and the risk it guards against (an operator entering two different numbers, the
+platform showing one and reporting the other) only materialises if somebody
+fills the field in.
+
+**Worth saying to the operator in the meantime**, since the field is editable
+and its meaning is unresolved: it is a candidate for a hint on the course
+settings screen telling an author to leave it empty pending that answer. Not
+built — flagged.
+
+---
+
+## S29 · We may be integrated against an interface that is being switched off
+
+- **Owner:** EIV / Bundesärztekammer (via MEDICE) · **Blocks:** the launch ·
+  **Raised:** 24.08.2026, by the client, from the official sources
+
+### What was found
+
+The Bundesärztekammer now runs the Punktemeldung on a **new platform with its
+own REST API**, documented at `veranstalter-swagger-ui.eiv-fobi.de`. Its own
+pages state that support for the old Java client ended **31.12.2024**, and that
+for the old XML interface _"Eine Abschaltung der Schnittstelle steht an."_
+Ärztekammer Bremen goes further: from **01.01.2026** organisers may report only
+via `punkte.eiv-fobi.de` / `punktemeldung.eiv-fobi.de`, and the old interface is
+then switched off.
+
+### Why this is a show-stopper and not a nice-to-know
+
+`packages/eiv-client` speaks the **old Veranstalter interface**:
+`POST /fobi/veranstalter/push_teilnahme` against `eiv-fobi.de`, VNR and password
+exchanged for a JWT. It works — the connection check on 24.08 proves it end to
+end against the live register — but a Bremen-level reading says it should
+already be off.
+
+So the platform is about to put a **statutory** reporting path onto an interface
+with an announced shutdown, with no migration ticket and no knowledge of whether
+the new API is contract-compatible. The failure mode is the worst available: it
+works on launch day and stops working later, quietly, with physicians' points
+sitting in the queue behind it.
+
+### What has to be established
+
+1. Which endpoint should a **new** Veranstalter system integrate against as of
+   06.09.2026?
+2. Until when is the current interface available?
+3. Is the new API contract-compatible with `push_teilnahme`, or a different
+   shape?
+
+(1) and (2) are one extra sentence in the EIV support mail S27 already needs —
+and asking as somebody **migrating** rather than somebody **stuck** makes the
+test-system request land better.
+
+(3) was expected to need nobody — **it does.** Checked from an unrestricted
+connection on 24.08: `veranstalter-swagger-ui.eiv-fobi.de` answers, and the
+specification is **not served from it**. Every springdoc and swagger-ui-dist
+convention returns nginx's own 404:
+
+| Path                                                           |                                 |
+| -------------------------------------------------------------- | ------------------------------- |
+| `/`, `/index.html`                                             | 200, empty body — the JS shell  |
+| `/v3/api-docs`, `/v2/api-docs`                                 | 404 (nginx, not an application) |
+| `/swagger-config`, `/v3/api-docs/swagger-config`               | 404                             |
+| `/swagger-ui/index.html`, `/swagger-ui/swagger-ui.html`        | 404                             |
+| `/swagger-initializer.js`, `/openapi.json`, `/api/v3/api-docs` | 404                             |
+| `veranstalter-api.eiv-fobi.de`                                 | does not resolve                |
+
+That reads as a **static Swagger UI bundle served by nginx against a spec URL on
+another host** — plausibly one requiring Veranstalter credentials, plausibly not
+public at all. Two consequences:
+
+- The spec URL is in the page's JavaScript. Somebody with a real browser can
+  read it from the network tab — and what to look for is the request the page
+  fires _after_ load, to a host that is probably not this one. **The URL is the
+  deliverable, not only the JSON.**
+- Failing that, this is a second thing to ask EIV support for, and it makes the
+  request concrete: _your Veranstalter pages point integrators at this URL, the
+  UI loads, and the specification is not retrievable — please send the OpenAPI
+  document and the API base URL._ That is answerable in one reply, and it pairs
+  with S27 because both are "we are integrating, give us what integrators get".
+
+**So S29 is blocked on the same mail as S27**, not on somebody finding the right
+URL. That is worth knowing: it moves the migration from an unknown to a waiting
+item with a named owner.
+
+**A faster path than a support ticket.** The Bayerische Landesärztekammer
+publish a support line for exactly these questions — **089 4147-123** — and
+their own migration notice records that the FobiApp has been unsupported since
+March 2025, replaced by FobiApp-Web and the new Punktemeldung. A phone call is
+likely to produce the spec URL before a ticket does.
+
+### Not the same question as the endpoint tier
+
+P104-01 taught the platform to tell EIV's **test** system from the **live**
+register, and P107-01 put that on screen. Both of those hosts are the **old**
+interface. A correct tier decision about a switched-off interface is still a
+switched-off interface.
+
+---
+
+## S5 · Certificate-after-EIV — **CLOSED 24.08: issue on completion**
+
+The client's decision, and the reasoning is worth keeping because it is the one
+that makes a launch under an unresolved S11 survivable:
+
+> Issue the certificate on completion, do not wait for EIV. The two facts are
+> independent — the physician completed the Fortbildung, and the points were
+> reported. Coupling them means an EIV outage withholds a document the learner
+> has earned, and S11 proves the EIV can refuse for reasons that have nothing to
+> do with the learner. The reporting status belongs in the portal and the
+> console, not on the PDF.
+
+**No code change: the platform already does this.** `completion.service.ts`
+issues the certificate the moment it is earned (P59-01) and queues the
+Punktemeldung alongside it, not before — a failure in either does not fail the
+other. P51-01 had already split course completion from CME certification.
+
+The consequence the decision buys: **a launch with S11 still open degrades
+gracefully.** Physicians receive valid Teilnahmebescheinigungen carrying the VNR
+and the accredited points, and can self-report — the pre-EIV process the Kammern
+still accept — while the register question is settled.
+
+---
+
+## S7 · 80 % or 100 % — **REOPENED and settled 24.08: 100**
+
+Closed on 20.08 as "already per course; a field, not a constant", which answered
+the mechanism and not the value. The seed shipped 100, then 90, and 90 is the
+worst of the three: it satisfies neither source and is indefensible if the ÄKWL
+asks why.
+
+**Seeded at 100**, on the client's call: the layout is a design artifact and
+MEDICE-292 is the compliance record, so where they disagree the compliance
+record wins. The layout's 80 is overridden deliberately, and it stays a per
+course field so another customer can differ.
+
+---
+
+## P112-01 · CI's seed step failed, and the guard that failed it was right
+
+Not a show-stopper — recorded here because the _shape_ is one this file keeps
+teaching, and it caught me from the other side.
+
+The 24.08 CI run failed on **Integration tests (real Postgres)**. All 544 tests
+passed; the job failed at the next step, `pnpm db:seed`:
+
+```
+Error: Project "medice-adhs" is bound to a Keycloak on loopback:
+  http://127.0.0.1:1/realms/unused
+```
+
+That is the guard added after the client's 401 — `bindingProblem` refuses a
+project holding a loopback issuer **that nobody asked for**, which is the
+production fault where every physician arriving from the customer's site is
+refused with a token that is otherwise valid.
+
+**It was telling the truth.** The integration suites run first, against the same
+database, and set `KEYCLOAK_ISSUER=http://127.0.0.1:1/realms/unused` as a
+deliberately unroutable sentinel. The seed step then declared no issuer of its
+own — so "nobody asked for loopback, yet loopback is stored" was literally the
+state of the database.
+
+**The fix is CI's, not the guard's.** The seed step now states the same
+sentinel. CI genuinely _means_ loopback: it has no Keycloak and nobody will ever
+sign in there. Weakening the guard, or giving it an escape hatch, would have
+been the §9.1 trap — an escape hatch CI sets is an escape hatch production can
+set.
+
+Verified by exercising the pure function directly rather than by re-running a
+database:
+
+| `issuerRequested`                               | result                |
+| ----------------------------------------------- | --------------------- |
+| `false` (CI before)                             | the exact error above |
+| `true` (CI after)                               | no problem            |
+| `false`, loopback stored (the production fault) | still fires           |
+
+`keycloak-binding.test.ts` covers all thirteen branches, so the seed step was
+never the thing testing this — it had simply become an accidental second
+assertion, and a step that is not about Keycloak should not be one.
+
+---
+
+## S30 · May a Punktemeldung be re-filed under a corrected EFN? — **raised 26.08 (P118)**
+
+**Owner: DigitalSpital → EIV-FOBI / ÄKWL.** Blocks the second half of P118.
+
+### The situation
+
+A physician supplies an EFN, completes the course, the Punktemeldung is filed —
+and then the EFN turns out to be wrong. A typo in fifteen digits is not exotic;
+it is the failure ADR-0004 calls the worst available, because the points are
+credited to somebody and everything looks successful.
+
+The platform can correct the EFN (the physician does it themselves) and can
+re-file (`POST /learners/{id}/eiv`). The question is what re-filing **means**
+once the first one was accepted.
+
+### The question
+
+> Wenn eine Teilnahme mit einer falschen EFN gemeldet wurde und die richtige EFN
+> erst danach bekannt wird — ist die korrigierte Meldung innerhalb des
+> 7-Tage-Korrekturfensters als Korrektur derselben Teilnahme zu senden, oder muss
+> die erste Meldung zunächst storniert (`withdraw`) und die Teilnahme anschließend
+> unter der richtigen EFN neu gemeldet werden?
+>
+> Und: Was geschieht mit den Punkten, die der zuerst gemeldeten EFN bereits
+> gutgeschrieben wurden — werden diese durch die Korrektur automatisch entzogen,
+> oder ist dafür ein gesonderter Vorgang erforderlich?
+
+### Why we cannot answer it ourselves
+
+Because the EFN is not a field on the record — it **is** the record's subject. A
+name correction changes how one person is described; an EFN correction changes
+_which person_ was credited. Nothing in the platform can take points back from
+the first EFN, and guessing that a correction does so implicitly is exactly the
+invented rule §7 refuses.
+
+### What the platform does in the meantime
+
+`requeue` refuses when the EFN would change on a submission that was accepted,
+and says so. An operator gets a refusal naming the next step rather than a
+second filing nobody asked for. The never-accepted case — `queued`, `held`,
+`failed_*`, `window_closed` — is unambiguous and is fixed in P118: nothing was
+reported, so nothing can disagree, and the requeue picks up the corrected EFN.

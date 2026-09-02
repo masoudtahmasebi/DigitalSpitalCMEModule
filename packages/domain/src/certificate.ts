@@ -22,6 +22,8 @@
  * problem; the lead's *name* is data and lives here.
  */
 
+import { isPlaceholderVnr } from "./eiv.js";
+
 export interface CertificateInput {
   readonly vnr: string;
   readonly courseTitle: string;
@@ -146,7 +148,12 @@ export function missingCertificateFields(
 ): readonly CertificateField[] {
   const missing: CertificateField[] = [];
 
-  if (isBlank(input.vnr)) missing.push("vnr");
+  /*
+   * Blank **or** the placeholder (P117-01). A certificate is the document a
+   * physician files with their Kammer; one naming an event the register does
+   * not hold is worse than one that was never issued, because it looks valid.
+   */
+  if (isBlank(input.vnr) || isPlaceholderVnr(input.vnr)) missing.push("vnr");
   if (isBlank(input.courseTitle)) missing.push("courseTitle");
   if (!(input.completedAt instanceof Date) || Number.isNaN(input.completedAt.getTime()))
     missing.push("completedAt");

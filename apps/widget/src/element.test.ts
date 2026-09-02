@@ -526,3 +526,37 @@ describe("lifecycle", () => {
     expect(() => element.connectedCallback()).not.toThrow();
   });
 });
+
+describe("what the host page says about its own session (P99-03)", () => {
+  /*
+   * The break-check that found this gap: collapsing the attribute's three
+   * states to two compiles cleanly and passes every other test, and it blanks
+   * the widget on every site still running an older plugin — which is all of
+   * them on the day it ships.
+   */
+  it("treats an absent attribute as 'the host said nothing', not as signed out", async () => {
+    const element = new DsLmsElement();
+    element.setAttribute("api-base", "https://api.test");
+    element.setAttribute("project", "medice-adhs");
+
+    host.append(element);
+    const read = (): string => element.shadowRootForTest?.textContent ?? "";
+    await waitForText(read, "nicht korrekt eingebunden");
+
+    expect(read()).not.toContain("Bitte melden Sie sich an");
+  });
+
+  it("renders the invitation when the host says nobody is signed in", async () => {
+    const element = new DsLmsElement();
+    element.setAttribute("api-base", "https://api.test");
+    element.setAttribute("project", "medice-adhs");
+    element.setAttribute("signed-in", "no");
+
+    host.append(element);
+    const read = (): string => element.shadowRootForTest?.textContent ?? "";
+    await waitForText(read, "Bitte melden Sie sich an");
+
+    // And specifically *not* the message that blamed the site's operator.
+    expect(read()).not.toContain("nicht korrekt eingebunden");
+  });
+});

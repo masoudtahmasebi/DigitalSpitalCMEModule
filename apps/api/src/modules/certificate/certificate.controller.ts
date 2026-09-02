@@ -19,6 +19,11 @@ import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
+import {
+  NoAmbientTransaction,
+  TenantRun,
+  type TenantRunner,
+} from "../../db/tenant-runner.js";
 import { CertificateService } from "./certificate.service.js";
 import {
   certificateArchiveFor,
@@ -85,12 +90,20 @@ export class CertificateController {
   // proxy holding a copy is a disclosure the learner did not agree to.
   @Header("cache-control", "no-store, private")
   @Roles(...LEARNER_ROLES)
+  @NoAmbientTransaction()
   async download(
     @Param("slug") slug: string,
     @CurrentPrincipal() principal: Principal,
-    @TenantDb() db: Db,
+    @TenantRun() run: TenantRunner,
   ): Promise<StreamableFile> {
-    const certificate = await CertificateService.fromDb(db, this.archive).download(
+    /*
+     * No ambient transaction (P146-02): the archive step PUTs the PDF to the
+     * object store, and holding a pooled connection across that means ten
+     * physicians downloading during a bucket incident take the platform with
+     * them. `RunnerCertificateRepository`'s header records why splitting is
+     * safe on this path and why completion keeps its transaction.
+     */
+    const certificate = await CertificateService.fromRunner(run, this.archive).download(
       slug,
       { customerId: principal.customerId, userId: principal.userId },
       new Date(),

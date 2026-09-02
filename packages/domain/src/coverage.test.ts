@@ -69,11 +69,15 @@ describe("courseWatchCoverage agrees with watchedPercent", () => {
   });
 
   it("still refuses a video that was genuinely not finished", () => {
-    const segments = [{ startSec: 0, endSec: 6 }];
+    // Three of eight seconds. The figure is a fraction of the **video**
+    // (P94-01), so it is 37 and not 60 — five seconds are still missing and
+    // two of them are inside the requirement. What matters here is that the
+    // two levels say the same thing, and that "not finished" is still refused.
+    const segments = [{ startSec: 0, endSec: 3 }];
 
-    expect(watchedPercent(segments, 8)).toBe(75);
+    expect(watchedPercent(segments, 8)).toBe(37);
     expect(courseWatchCoverage(oneVideo, [{ contentId: "v", segments }]).percent).toBe(
-      75,
+      37,
     );
   });
 });
@@ -203,12 +207,26 @@ describe("courseWatchCoverage weights by duration", () => {
   });
 
   it("floors rather than rounds, so 99.9 % never reads as complete", () => {
+    // Ten seconds short on the long video — outside the three-second tail
+    // grace, so it is genuinely unwatched content and 990/1000 floors to 99.
     const coverage = courseWatchCoverage(course(), [
-      { contentId: "long", segments: [{ startSec: 0, endSec: 899 }] },
+      { contentId: "long", segments: [{ startSec: 0, endSec: 890 }] },
       { contentId: "short", segments: [{ startSec: 0, endSec: 100 }] },
     ]);
 
     expect(coverage.percent).toBe(99);
+  });
+
+  it("credits a video whose last three seconds were not reported", () => {
+    // The control for the case above, and the client's rule at course level:
+    // one second short is inside the grace, so the course is fully watched
+    // rather than stuck at 99 with nothing left to watch.
+    const coverage = courseWatchCoverage(course(), [
+      { contentId: "long", segments: [{ startSec: 0, endSec: 899 }] },
+      { contentId: "short", segments: [{ startSec: 0, endSec: 99 }] },
+    ]);
+
+    expect(coverage).toEqual({ percent: 100, watchedSec: 1000, totalSec: 1000 });
   });
 
   it("is pure — repeated calls with the same input agree", () => {

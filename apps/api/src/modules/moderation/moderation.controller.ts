@@ -47,7 +47,7 @@ import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
-import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
+import { APP_CONFIG, PG_POOL, PG_SIDE_POOL } from "../../db/tokens.js";
 import type { Pool } from "pg";
 import { AuditService } from "../../audit/audit.service.js";
 import type { AppConfig } from "../../config/config.js";
@@ -109,9 +109,38 @@ export class ModerationController {
 
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
+    /**
+     * Both second-connection users on this screen take the side pool
+     * (P142-01): the audit log because its row must outlive the rollback of
+     * what it audits, and `SubjectErasureRepository` because a subject spans
+     * tenants and cannot run inside the request's. Taken from `PG_POOL` these
+     * are checkout number two while the request holds number one, and enough
+     * concurrent erasures would deadlock it.
+     */
+    @Inject(PG_SIDE_POOL) private readonly sidePool: Pool,
     @Inject(APP_CONFIG) config: AppConfig,
   ) {
-    this.objectErasure = objectErasureFor(pool, config, new JsonLogger("info"));
+    /*
+     * The **side** pool, and this was a live defect from P142 until P146-03.
+     *
+     * `drain()` reaches the database with `this.pool.query` — deliberately, on
+     * a bare connection, because `claim_object_erasures` is `SECURITY DEFINER`
+     * and an erasure spans customers. Built on `PG_POOL` that is a second
+     * checkout while the request holds the first, so `guardReentry` (P142)
+     * refuses it — straight into `eraseSubject`'s `.catch(() => undefined)`,
+     * which is there so a bucket failure cannot fail a completed erasure.
+     *
+     * So from P142 until this line changed, **the inline drain did nothing**,
+     * silently, on every GDPR erasure. Nothing was permanently un-erased —
+     * `object_erasures` keeps the obligation and `delivery.scheduler.ts:121`
+     * drains it on the next sweep, outside any request — but the erasure an
+     * operator watched complete deleted no PDFs at that moment, and no log line
+     * said so.
+     *
+     * A swallowed exception plus a pool guard is a combination that produces
+     * exactly this: correct-looking behaviour with the work not done (§9.1).
+     */
+    this.objectErasure = objectErasureFor(sidePool, config, new JsonLogger("info"));
   }
 
   @Get("learners")
@@ -202,8 +231,8 @@ export class ModerationController {
   private service(db: Db): ModerationService {
     return new ModerationService(
       new ModerationRepository(db),
-      new SubjectErasureRepository(this.pool),
-      new AuditService(this.pool),
+      new SubjectErasureRepository(this.sidePool),
+      new AuditService(this.sidePool),
       this.objectErasure,
     );
   }

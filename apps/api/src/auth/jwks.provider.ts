@@ -85,7 +85,16 @@ export class JwksProvider {
     // createRemoteJWKSet keeps the fetched set internally; re-fetch the raw JSON
     // once to store it, tolerating failure since it is only a cache warm.
     try {
-      const response = await fetch(new URL(this.options.jwksUri));
+      // A deadline, because this runs on the token-validation path (P141-01).
+      //
+      // `fetch` has no default timeout: an unreachable Keycloak does not fail
+      // here, it **hangs**, and it hangs holding the request that triggered it.
+      // Given P70-02 — this container had no egress at all for months and
+      // nothing said so — that is not a hypothetical. Five seconds, and the
+      // `catch` below already treats a failure as "cache not warmed".
+      const response = await fetch(new URL(this.options.jwksUri), {
+        signal: AbortSignal.timeout(5_000),
+      });
       if (!response.ok) return;
       const body = await response.text();
       await this.cache.set(this.cacheKey, body, this.options.cacheTtlSec);

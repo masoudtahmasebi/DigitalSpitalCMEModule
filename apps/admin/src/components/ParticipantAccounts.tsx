@@ -153,19 +153,19 @@ export function ParticipantAccounts(props: { client: ApiClient }) {
         <Table headers={de.participantAccounts.headers}>
           {rows.map((row) => (
             <tr key={row.userId} className="border-t border-gray-100">
-              <td className="px-3 py-2">
+              <td>
                 <div className="font-medium text-gray-900">
                   {[row.firstName, row.lastName].filter(Boolean).join(" ") || "—"}
                 </div>
                 <div className="text-xs text-gray-600">{row.email ?? "—"}</div>
               </td>
-              <td className="px-3 py-2 text-sm text-gray-700">
+              <td className="text-sm text-gray-700">
                 {row.completedCount} / {row.enrolmentCount}
               </td>
-              <td className="px-3 py-2">
+              <td>
                 <StatusBadge account={row} />
               </td>
-              <td className="px-3 py-2">
+              <td>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     variant="secondary"

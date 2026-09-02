@@ -142,7 +142,6 @@ export const courseDetailSchema = courseSummarySchema.extend({
    * 04). Distinct from the VNR, which is the EIV credential and never leaves
    * the server.
    */
-  fortbildungsnummer: z.string().nullable(),
   organizer: z.string().nullable(),
   eventLocation: z.string().nullable(),
   validFrom: z.iso.datetime().nullable(),

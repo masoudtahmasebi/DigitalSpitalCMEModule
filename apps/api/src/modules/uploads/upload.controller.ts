@@ -48,17 +48,29 @@ import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { AppError } from "../../shared/problem-details.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
-import { APP_CONFIG, PG_POOL } from "../../db/tokens.js";
+import { APP_CONFIG, PG_POOL, PG_SIDE_POOL } from "../../db/tokens.js";
 import type { AppConfig } from "../../config/config.js";
 import { objectStorageFor } from "../../shared/object-storage.factory.js";
 import {
+  NoAmbientTransaction,
+  TenantRun,
+  type TenantRunner,
+} from "../../db/tenant-runner.js";
+import {
   mediaDescribeSchema,
   mediaListSchema,
+  multipartBeginSchema,
+  multipartCompleteSchema,
+  multipartSignSchema,
   uploadBeginSchema,
   uploadCompleteSchema,
   uploadViewSchema,
 } from "./upload.dto.js";
-import { StorageAuditRecorder, UploadRepository } from "./upload.repository.js";
+import {
+  RunnerUploadRepository,
+  StorageAuditRecorder,
+  UploadRepository,
+} from "./upload.repository.js";
 import { UploadService } from "./upload.service.js";
 import type { ZodType } from "zod";
 
@@ -69,6 +81,8 @@ export class UploadController {
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(PG_POOL) private readonly pool: Pool,
+    // The storage audit log's own connection — see PG_SIDE_POOL (P142-01).
+    @Inject(PG_SIDE_POOL) private readonly sidePool: Pool,
   ) {}
 
   /**
@@ -168,6 +182,7 @@ export class UploadController {
     );
   }
 
+  @NoAmbientTransaction()
   @Post("courses/:slug/uploads/complete")
   // 200, not Nest's default 201 for a POST: nothing is created here. The object
   // already exists — this confirms it and hands back a reference. The contract
@@ -179,11 +194,75 @@ export class UploadController {
     @Param("slug") slug: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
-    @TenantDb() db: Db,
+    @TenantRun() run: TenantRunner,
   ) {
-    return this.service(db, principal).complete(
+    return this.runnerService(run, principal).complete(
       slug,
       parse(uploadCompleteSchema, body, "upload"),
+      actorOf(principal),
+      new Date(),
+    );
+  }
+
+  /*
+   * Multipart (P129-04). Three routes, all rate-limited as uploads.
+   *
+   * `signParts` is called repeatedly for one upload — every 32 parts — so it
+   * carries the same limiter as the others rather than being treated as a cheap
+   * read. It mints signatures, and a route that mints capabilities in a loop is
+   * the one that most wants a ceiling on how fast it can be asked.
+   */
+  @NoAmbientTransaction()
+  @Post("courses/:slug/uploads/multipart")
+  @RateLimit("mediaUpload")
+  @Roles(...AUTHOR_ROLES)
+  async beginMultipart(
+    @Param("slug") slug: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantRun() run: TenantRunner,
+  ) {
+    return this.runnerService(run, principal).beginMultipart(
+      slug,
+      parse(multipartBeginSchema, body, "upload"),
+      actorOf(principal),
+      new Date(),
+    );
+  }
+
+  // 200: the upload already exists; this hands back URLs for part of it.
+  @Post("courses/:slug/uploads/multipart/sign")
+  @HttpCode(200)
+  @RateLimit("mediaUpload")
+  @Roles(...AUTHOR_ROLES)
+  async signParts(
+    @Param("slug") slug: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    return this.service(db, principal).signParts(
+      slug,
+      parse(multipartSignSchema, body, "upload"),
+      actorOf(principal),
+      new Date(),
+    );
+  }
+
+  @NoAmbientTransaction()
+  @Post("courses/:slug/uploads/multipart/complete")
+  @HttpCode(200)
+  @RateLimit("mediaUpload")
+  @Roles(...AUTHOR_ROLES)
+  async completeMultipart(
+    @Param("slug") slug: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantRun() run: TenantRunner,
+  ) {
+    return this.runnerService(run, principal).completeMultipart(
+      slug,
+      parse(multipartCompleteSchema, body, "upload"),
       actorOf(principal),
       new Date(),
     );
@@ -229,7 +308,29 @@ export class UploadController {
   private service(db: Db, principal: Principal): UploadService {
     return new UploadService(
       new UploadRepository(db),
-      new StorageAuditRecorder(this.pool, {
+      new StorageAuditRecorder(this.sidePool, {
+        customerId: principal.customerId,
+        role: principal.role,
+        ...(principal.userId === undefined ? {} : { userId: principal.userId }),
+      }),
+      objectStorageFor(this.config),
+    );
+  }
+
+  /**
+   * The same service, for a route that holds no open transaction (P145-01).
+   *
+   * The five routes below call the object store in the middle of their work.
+   * Under the ambient transaction that call occupies a pooled connection for as
+   * long as the bucket takes — so a slow or unreachable bucket degrades the
+   * whole API rather than uploads alone. `RunnerUploadRepository` opens a short
+   * transaction per query instead, leaving nothing held while the bucket is
+   * thinking. See `db/tenant-runner.ts` for what that gives up.
+   */
+  private runnerService(run: TenantRunner, principal: Principal): UploadService {
+    return new UploadService(
+      new RunnerUploadRepository(run),
+      new StorageAuditRecorder(this.sidePool, {
         customerId: principal.customerId,
         role: principal.role,
         ...(principal.userId === undefined ? {} : { userId: principal.userId }),

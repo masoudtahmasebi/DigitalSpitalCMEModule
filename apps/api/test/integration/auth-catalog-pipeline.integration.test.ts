@@ -294,12 +294,73 @@ describe("GET /courses — deny by default", () => {
     expect(response.status).toBe(401);
   });
 
-  it("403s a validly-authenticated user with no grant reaching this customer", async () => {
+  it("provisions a federated learner the platform has never seen (P94-03)", async () => {
+    /*
+     * This asserted 403 until P94-03, and the 403 was the whole reason a
+     * physician arriving from MEDICE's WordPress could not get in: P1-02
+     * provisioned the *person* from the token and nothing anywhere wrote the
+     * membership or the grant.
+     *
+     * The client's rule — a user whose details reach us from WordPress becomes
+     * a participant if they are not one, and goes on if they are — is now the
+     * guard's, for the customer the project binding names.
+     */
     const token = await mint(UNGRANTED_SUB);
     const response = await fetch(`${baseUrl}/courses`, {
       headers: { authorization: `Bearer ${token}`, "x-ds-project": projectSlug },
     });
+    expect(response.status).toBe(200);
+
+    // Exactly one grant, for exactly this customer, and a membership beside it
+    // — the same pair the console's "Zugang anlegen" writes, so the participant
+    // list shows a WordPress arrival like any other.
+    const { rows } = await seedPool.query<{ role: string; customer_id: string }>(
+      `SELECT r.role, r.customer_id
+         FROM user_roles r
+         JOIN user_identities i ON i.user_id = r.user_id
+        WHERE i.realm = $1 AND i.subject = $2`,
+      [issuer, UNGRANTED_SUB],
+    );
+    expect(rows).toEqual([{ role: "learner", customer_id: customerId }]);
+
+    const { rows: memberships } = await seedPool.query<{ n: string }>(
+      `SELECT count(*) AS n
+         FROM user_customers m
+         JOIN user_identities i ON i.user_id = m.user_id
+        WHERE i.realm = $1 AND i.subject = $2 AND m.customer_id = $3`,
+      [issuer, UNGRANTED_SUB, customerId],
+    );
+    expect(memberships[0]?.n).toBe("1");
+  });
+
+  it("does not widen an existing learner's reach to a second customer", async () => {
+    /*
+     * The control, and the security half of P94-03.
+     *
+     * Provisioning is for somebody the platform holds *no* grant for. A person
+     * who already learns with customer A and opens customer B's project is not
+     * an unprovisioned arrival — quietly granting them B would be privilege
+     * escalation dressed as convenience, and it would be invisible: the request
+     * would simply start working.
+     *
+     * `GRANTED_SUB` holds a grant at `customerId`; the other project belongs to
+     * `otherCustomerId` and the same issuer signs both, so the token verifies
+     * and only the grant decides.
+     */
+    const token = await mint(GRANTED_SUB);
+    const response = await fetch(`${baseUrl}/courses`, {
+      headers: { authorization: `Bearer ${token}`, "x-ds-project": otherProjectSlug },
+    });
     expect(response.status).toBe(403);
+
+    const { rows } = await seedPool.query<{ n: string }>(
+      `SELECT count(*) AS n
+         FROM user_roles r
+         JOIN user_identities i ON i.user_id = r.user_id
+        WHERE i.realm = $1 AND i.subject = $2 AND r.customer_id = $3`,
+      [issuer, GRANTED_SUB, otherCustomerId],
+    );
+    expect(rows[0]?.n, "the refused request granted something anyway").toBe("0");
   });
 
   it("200s a validly-authenticated user with a grant, returning this tenant's course", async () => {

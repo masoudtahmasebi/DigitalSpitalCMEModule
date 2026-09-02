@@ -175,17 +175,49 @@ describe("a super admin with no customer chosen (P22-03)", () => {
     );
   });
 
-  it("says a customer must be chosen when some exist", async () => {
+  it("offers the customers that exist, as the way out", async () => {
     const platform = fakeClient({
       adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
     });
     renderConsole({ platform });
 
-    // Different advice, because "pick one above" is unhelpful when there is
-    // nothing to pick and "create one" is wrong when there is.
+    /*
+     * The prompt asks rather than instructs (P127-01). It used to read "Bitte
+     * wählen Sie oben einen Kunden aus", which is true and leaves the operator
+     * to find the control it refers to — §9.4, where an action is needed, put it
+     * where somebody looks for it.
+     *
+     * Asserted on the customer's own name in a button: the copy can be reworded
+     * without this failing, and a prompt that offers no way forward cannot pass.
+     */
     await waitFor(() =>
-      expect(screen.getByText(/wählen Sie oben einen Kunden/)).toBeTruthy(),
+      expect(screen.getByRole("button", { name: MEDICE.name })).toBeTruthy(),
     );
+  });
+
+  it("blocks a tenant screen that is not on any hand-written list", async () => {
+    /*
+     * The defect, reported from the Mediathek: `TENANT_VIEWS` was a hand-written
+     * list of six that had drifted to cover six of ten, so `media`, `copy`,
+     * `participants` and `punktemeldungen` skipped the guard, called a
+     * tenant-scoped route with no customer header, and rendered the API's
+     * developer-facing refusal over a "Loading …" that never resolved.
+     *
+     * The list is inverted now — three platform screens named, everything else
+     * tenant-scoped by default — so this asserts the property that inversion
+     * buys: a screen nobody remembered to list still asks for a customer.
+     */
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    // `afterEach` above puts the fragment back, so this cannot leak.
+    window.history.replaceState(null, "", "#/mediathek");
+    renderConsole({ platform });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: MEDICE.name })).toBeTruthy(),
+    );
+    expect(screen.queryByText(/tenant-scoped/)).toBeNull();
   });
 
   it("keeps the navigation and the picker visible while a request fails", async () => {
@@ -688,5 +720,96 @@ describe("the build footer (P46-01)", () => {
 
     expect(await screen.findByText("v1.0.480 · 4601f19")).toBeTruthy();
     expect(screen.queryByText(de.build.skew)).toBeNull();
+  });
+});
+
+/*
+ * Deleting a Fortbildung (P101-02).
+ *
+ * The client asked "there is no way to delete a course, can you check if delete
+ * for all of the entities in admin panel is actually there?" — and the answer
+ * was that `DELETE /admin/courses/{slug}` had worked since P12-04 and no screen
+ * had ever offered it. §9.2's mirror: hiding an action the system performs
+ * misleads exactly as much as offering one it refuses, and it is the harder of
+ * the two to notice, because nothing appears on the screen to be wrong about.
+ *
+ * Neither case would go red if the button were simply removed again unless the
+ * second one exists too: "no delete button" is what the broken screen looked
+ * like, so the test that matters is the pair.
+ */
+describe("removing a course", () => {
+  const COURSE = {
+    slug: "adhs-akademie-adult",
+    status: "published" as const,
+    title: "ADHS Akademie adult",
+    description: null,
+    deliveryType: "on_demand" as const,
+    thema: [],
+    altersgruppe: [],
+    learningObjectives: [],
+    targetAudience: null,
+    prerequisites: null,
+    heroImageUrl: null,
+    validFrom: null,
+    validTo: null,
+    vnr: null,
+    cmePoints: null,
+    cmeCategory: null,
+    requiredWatchPercent: 90,
+    passThresholdPercent: 70,
+    enrolmentCount: 0,
+    completedCount: 0,
+    certificateReady: false,
+    missingCertificateFields: [],
+  };
+
+  async function withCourses(courses: readonly unknown[]) {
+    const adminDeleteCourse = vi.fn().mockResolvedValue(undefined);
+    const admin = fakeClient({
+      adminListCourses: vi.fn().mockResolvedValue([...courses]),
+      adminDeleteCourse,
+    });
+    // The customer registry is the *platform* client's, not the tenant one's.
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    renderConsole({ admin, platform });
+
+    // P22-03: no customer chosen means no course list is even requested, so
+    // the picker has to be used before there is a row to delete.
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+
+    await screen.findByText("ADHS Akademie adult");
+    return { adminDeleteCourse };
+  }
+
+  it("offers a delete on a course nobody has enrolled in, and asks first", async () => {
+    const { adminDeleteCourse } = await withCourses([COURSE]);
+
+    const remove = screen.getByRole("button", {
+      name: de.courses.deleteAria("ADHS Akademie adult"),
+    });
+
+    // One click arms, it does not delete. A course is a term's work and the
+    // API's refusal cannot help once there are no enrolments to refuse over.
+    fireEvent.click(remove);
+    expect(adminDeleteCourse).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: de.courses.deleteConfirm }));
+    await waitFor(() => expect(adminDeleteCourse).toHaveBeenCalledWith(COURSE.slug));
+  });
+
+  it("marks a course with participations instead of offering a button that 409s", async () => {
+    const { adminDeleteCourse } = await withCourses([{ ...COURSE, enrolmentCount: 4 }]);
+
+    expect(
+      screen.queryByRole("button", {
+        name: de.courses.deleteAria("ADHS Akademie adult"),
+      }),
+    ).toBeNull();
+    // The marker, and the reason as its accessible name — not the button.
+    expect(screen.getByLabelText(de.courses.lockedByEnrolments)).toBeTruthy();
+    expect(adminDeleteCourse).not.toHaveBeenCalled();
   });
 });
