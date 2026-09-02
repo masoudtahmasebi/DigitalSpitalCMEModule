@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { decode, encode, type WidgetRoute } from "./route.js";
+import { decode, decodeCourseSlug, encode, type WidgetRoute } from "./route.js";
 
 const CONTENT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 
@@ -107,5 +107,67 @@ describe("fragments that are ours but malformed", () => {
   it("tolerates the slashes a person pastes", () => {
     expect(decode("#/ds/punktemeldung")).toEqual({ kind: "reporting" });
     expect(decode("#ds/punktemeldung/")).toEqual({ kind: "reporting" });
+  });
+});
+
+describe("a link that survives a reload on a catalogue page (P156-02)", () => {
+  /*
+   * Reported three times, most recently as:
+   *
+   *   "when i refresh https://…/dscme/#ds/inhalt/f65625e0-… again the main
+   *    page opens."
+   *
+   * Every route this router encodes is **course-relative** — `ds/inhalt/<id>`
+   * names a content and nothing else — and the course comes from the
+   * `course-slug` attribute on `<ds-lms>`. On a page that does not carry that
+   * attribute the widget opens the catalogue, the learner picks a course, and
+   * the fragment starts naming contents inside it. Reload, and the attribute is
+   * still absent, so the catalogue renders again and the fragment can never be
+   * applied: the component that would read it is not mounted.
+   *
+   * §9.8 — the address existed and was incomplete, which is the same defect as
+   * having none.
+   */
+  it("carries the course when the page does not name one", () => {
+    const fragment = encode({ kind: "content", contentId: CONTENT_ID }, "adhs-2026");
+    expect(fragment).toBe(`ds/kurs/adhs-2026/inhalt/${CONTENT_ID}`);
+  });
+
+  it("reads the course back out", () => {
+    expect(decodeCourseSlug(`#ds/kurs/adhs-2026/inhalt/${CONTENT_ID}`)).toBe("adhs-2026");
+  });
+
+  it("decodes the screen the same way whether or not the course is named", () => {
+    expect(decode(`#ds/kurs/adhs-2026/inhalt/${CONTENT_ID}`)).toEqual({
+      kind: "content",
+      contentId: CONTENT_ID,
+    });
+    expect(decode(`#ds/inhalt/${CONTENT_ID}`)).toEqual({
+      kind: "content",
+      contentId: CONTENT_ID,
+    });
+  });
+
+  it("keeps every link anybody has already sent working", () => {
+    // The old form has no course and must still name the same screen.
+    expect(decodeCourseSlug(`#ds/inhalt/${CONTENT_ID}`)).toBeUndefined();
+    expect(decode("#ds")).toEqual({ kind: "outline", tab: "overview" });
+    expect(decode("#ds/kurs/adhs-2026")).toEqual({ kind: "outline", tab: "overview" });
+    expect(decode("#ds/kurs/adhs-2026/zertifizierung")).toEqual({
+      kind: "outline",
+      tab: "certification",
+    });
+  });
+
+  it("refuses a course slug that is not one, rather than passing it on", () => {
+    // The same reasoning as CONTENT_ID: this string is compared against slugs
+    // from the API and written into location.hash.
+    expect(decodeCourseSlug("#ds/kurs/..%2f..%2fetc/inhalt/x")).toBeUndefined();
+    expect(decodeCourseSlug("#ds/kurs//inhalt/x")).toBeUndefined();
+    expect(decodeCourseSlug("#ds/kurs")).toBeUndefined();
+  });
+
+  it("leaves a host page's own anchor alone", () => {
+    expect(decodeCourseSlug("#kontakt")).toBeUndefined();
   });
 });

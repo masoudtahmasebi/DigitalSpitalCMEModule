@@ -33,7 +33,13 @@ import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
 import type { TokenProvider } from "./token.js";
 import { indexTitles, nextAvailableContent } from "./player.js";
-import { decode, encode, type CourseTab, type WidgetRoute } from "./route.js";
+import {
+  decode,
+  decodeCourseSlug,
+  encode,
+  type CourseTab,
+  type WidgetRoute,
+} from "./route.js";
 import { CourseList } from "./components/CourseList.js";
 import { CertificationTab } from "./components/CertificationTab.js";
 import { ProgressCard, StickyMetaBar } from "./components/CourseHeader.js";
@@ -311,8 +317,22 @@ function Routed(
   // The attribute wins for the whole lifetime of the element: a page that
   // names a course is showing that course, and there is no back link to a
   // catalogue the host page never asked for.
+  /*
+   * …or the course the address names, on a page that names none (P156-02).
+   *
+   * Every route this widget encodes is course-relative, and until now the
+   * course came only from the attribute. On a catalogue embed that attribute is
+   * absent, so a reload rendered the catalogue and the fragment — which named a
+   * content inside the course the learner had opened — could never be applied:
+   * the component that reads it was not mounted. Reported three times, most
+   * recently as "when i refresh … again the main page opens."
+   *
+   * The attribute still wins. A page that names a course is showing that
+   * course, and a fragment must not be able to move a learner to a different
+   * one on somebody else's page.
+   */
   const [selected, setSelected] = useState<string | undefined>(
-    courseSlug === "" ? undefined : courseSlug,
+    courseSlug === "" ? decodeCourseSlug(window.location.hash) : courseSlug,
   );
   // A course named by the host attribute is being *browsed* unless the host
   // says otherwise: the page it sits on is the entry point, and dropping
@@ -346,6 +366,7 @@ function Routed(
       courseSlug={selected}
       client={client}
       openAt={intent}
+      addressCourseSlug={courseSlug === "" ? selected : undefined}
       // Only offered when the learner arrived through the catalogue.
       onBackToCatalogue={courseSlug === "" ? () => setSelected(undefined) : undefined}
       onProgress={props.onProgress}
@@ -396,11 +417,19 @@ function Loaded(props: {
   client: ReturnType<typeof createWidgetClient>;
   /** `"resume"` opens the player at the resume point instead of the overview. */
   openAt: OpenIntent;
+  /**
+   * The course to write into the fragment, or `undefined` when the host page
+   * already names it on the element (P156-02).
+   *
+   * Present exactly when the learner arrived through the catalogue, which is
+   * the case where the address is the only record of which course they are in.
+   */
+  addressCourseSlug: string | undefined;
   onBackToCatalogue: (() => void) | undefined;
   onProgress: ((detail: ProgressDetail) => void) | undefined;
   onCourseComplete: ((detail: CourseCompleteDetail) => void) | undefined;
 }) {
-  const { apiBase, projectSlug, courseSlug, client } = props;
+  const { apiBase, projectSlug, courseSlug, client, addressCourseSlug } = props;
 
   // De-duplicated with the logo's fetch and the catalogue's — see branding.ts.
   const branding = useBranding(apiBase, projectSlug);
@@ -498,10 +527,17 @@ function Loaded(props: {
    */
   useEffect(() => {
     if (!addressApplied.current) return;
-    const fragment = `#${encode(routeForScreen(screen, tab))}`;
+    /*
+     * The course goes into the address only when the host page does not name
+     * one (P156-02). On a single-course embed the attribute is the course and
+     * repeating it in the fragment would put the same fact in two places, where
+     * they can disagree; on a catalogue embed it is the only record of which
+     * course the learner is in, and without it a reload loses them.
+     */
+    const fragment = `#${encode(routeForScreen(screen, tab), addressCourseSlug)}`;
     if (window.location.hash === fragment) return;
     window.history.replaceState(null, "", fragment);
-  }, [screen, tab]);
+  }, [screen, tab, addressCourseSlug]);
 
   const resumed = useRef(false);
   useEffect(() => {

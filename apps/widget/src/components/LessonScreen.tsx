@@ -230,10 +230,15 @@ function VideoLesson(props: {
     }
   }, [client, courseSlug, lesson.id, onProgress, onAuthLost]);
 
+  /*
+   * One interval for the life of the screen (P156-01). With `[flush]` it was
+   * cleared and recreated on every re-render, so on a playing video the timer
+   * was reset before it could ever reach fifteen seconds.
+   */
   useEffect(() => {
-    const timer = setInterval(() => void flush(), FLUSH_INTERVAL_MS);
+    const timer = setInterval(() => void flushRef.current(), FLUSH_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [flush]);
+  }, []);
 
   // Flush when the page goes away. `visibilitychange` covers mobile
   // backgrounding, where `beforeunload` never fires.
@@ -241,7 +246,7 @@ function VideoLesson(props: {
     const onHidden = () => {
       if (document.visibilityState === "hidden") {
         trackerRef.current.closeOpen();
-        void flush();
+        void flushRef.current();
       }
     };
     document.addEventListener("visibilitychange", onHidden);
@@ -250,16 +255,43 @@ function VideoLesson(props: {
       document.removeEventListener("visibilitychange", onHidden);
       window.removeEventListener("pagehide", onHidden);
     };
+  }, []);
+
+  /*
+   * And on unmount — leaving for the outline is a page-leave too.
+   *
+   * Through a ref, with **no** dependencies, because the previous shape was
+   * `[flush]` and a cleanup with a dependency array runs on every change of
+   * that dependency, not only on unmount (P156-01). `flush` is a `useCallback`
+   * over `onAuthLost`, which `PlayerScreen` passes as a fresh arrow on every
+   * render — and it re-renders as the video plays, because it keeps
+   * `PlaybackState` in `useState`. So the effect that says "on unmount" ran its
+   * cleanup on every playback re-render, posting progress each time; and the
+   * same chain cleared and recreated the fifteen-second interval just as often,
+   * so the timer that was meant to do this work may never have fired at all.
+   *
+   * Reported as a `progress` POST and an `enrolment` refetch roughly every
+   * second on a playing video, with the flush interval set to fifteen.
+   *
+   * **Honest about the evidence:** the mechanism is React's documented cleanup
+   * semantics and is plain from the four call sites, but it could not be made
+   * to fail in jsdom — which implements no playback clock, so `PlayerScreen`
+   * does not re-render as the video advances and the storm does not appear
+   * there. What the tests below do pin is the property that must hold either
+   * way: a re-render posts nothing, and unmounting still posts.
+   */
+  const flushRef = useRef(flush);
+  useEffect(() => {
+    flushRef.current = flush;
   }, [flush]);
 
-  // And on unmount — leaving for the outline is a page-leave too.
   useEffect(() => {
     const tracker = trackerRef.current;
     return () => {
       tracker.closeOpen();
-      void flush();
+      void flushRef.current();
     };
-  }, [flush]);
+  }, []);
 
   return (
     <>

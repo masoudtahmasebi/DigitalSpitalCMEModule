@@ -78,6 +78,66 @@ export type CourseTab = "overview" | "speakers" | "certification" | "library";
 /** Everything this router answers to. Anything else belongs to the host page. */
 const PREFIX = "ds";
 
+/**
+ * The segment that names which course a route is inside (P156-02).
+ *
+ * ## Why the address needed this
+ *
+ * Every route here is course-**relative**: `ds/inhalt/<id>` names a content and
+ * nothing else, because the course arrives on the `course-slug` attribute of
+ * `<ds-lms>`. On a page that carries that attribute the address is complete.
+ *
+ * On a page that does **not** — a catalogue embed, where the learner picks the
+ * course — it is not. The fragment starts naming contents inside whichever
+ * course was opened, and on reload the attribute is still absent, so the
+ * catalogue renders again and the fragment can never be applied: the component
+ * that would read it is not mounted. Reported three times, most recently as
+ * *"when i refresh … again the main page opens."*
+ *
+ * §9.8 in a form worth naming: the address existed and was **incomplete**,
+ * which is the same defect as having none.
+ *
+ * ## Why a prefix segment and not a query
+ *
+ * A fragment has no query, and inventing one inside it would need its own
+ * parser. A leading segment keeps `decode` a list of `switch`-able shapes and
+ * lets the old form stay legal: a fragment with no `kurs/` is exactly the link
+ * anybody has already sent, and it still names the same screen.
+ */
+const COURSE_SEGMENT = "kurs";
+
+/**
+ * The shape of a course slug this will put in a URL, and accept back out.
+ *
+ * The same reasoning as `CONTENT_ID` one paragraph down: this value is compared
+ * against slugs from the API and written into `location.hash`, so anything
+ * path-like — an encoded slash, `..`, a scheme — has to be refused rather than
+ * trusted. Slugs are lower-case, digits and hyphens, which is what the
+ * authoring side produces.
+ *
+ * Written as a scan rather than as `/^[a-z0-9]+(?:-[a-z0-9]+)*$/`, which the
+ * repository's lint rule refuses as backtracking-prone — and is right to, for
+ * the same reason the slash trimming in `decode` avoids a regex: this input is
+ * a fragment, so whoever sends the link chooses it.
+ */
+const COURSE_SLUG_MAX = 120;
+
+function isCourseSlug(value: string): boolean {
+  if (value.length === 0 || value.length > COURSE_SLUG_MAX) return false;
+  if (value.startsWith("-") || value.endsWith("-")) return false;
+
+  let previousWasHyphen = false;
+  for (const character of value) {
+    const lower = character >= "a" && character <= "z";
+    const digit = character >= "0" && character <= "9";
+    const hyphen = character === "-";
+    if (!lower && !digit && !hyphen) return false;
+    if (hyphen && previousWasHyphen) return false;
+    previousWasHyphen = hyphen;
+  }
+  return true;
+}
+
 const CONTENT_SEGMENT = "inhalt";
 const EVALUATION_SEGMENT = "evaluation";
 const REPORTING_SEGMENT = "punktemeldung";
@@ -116,7 +176,51 @@ const CONTENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * fragment of `#` is what a browser writes for "top of page", and it would make
  * returning to the outline indistinguishable from a link that names nothing.
  */
-export function encode(route: WidgetRoute): string {
+export function encode(route: WidgetRoute, courseSlug?: string): string {
+  const within = encodeWithin(route);
+  if (courseSlug === undefined || !isCourseSlug(courseSlug)) return within;
+  // `ds` + `kurs/<slug>` + whatever the screen adds. The outline encodes as the
+  // bare prefix, so the course form of it is `ds/kurs/<slug>` and not a
+  // trailing slash.
+  const rest = within === PREFIX ? "" : `/${within.slice(PREFIX.length + 1)}`;
+  return `${PREFIX}/${COURSE_SEGMENT}/${courseSlug}${rest}`;
+}
+
+/**
+ * Which course a fragment names, when it names one.
+ *
+ * Separate from `decode` because the two answers are wanted at different
+ * moments and by different components: the course decides which screen tree to
+ * mount at all, and the route decides where inside it to go.
+ */
+export function decodeCourseSlug(hash: string): string | undefined {
+  const segments = fragmentSegments(hash);
+  if (segments === undefined) return undefined;
+  if (segments[1] !== COURSE_SEGMENT) return undefined;
+  const slug = decodeSegment(segments[2] ?? "");
+  if (slug === undefined || !isCourseSlug(slug)) return undefined;
+  return slug;
+}
+
+/**
+ * A fragment split into segments, or `undefined` when it is not ours.
+ *
+ * Shared by `decode` and `decodeCourseSlug` so the two cannot disagree about
+ * what counts as this router's fragment — which is the whole reason the leading
+ * slashes are trimmed without a regex; see `decode`.
+ */
+function fragmentSegments(hash: string): string[] | undefined {
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  let start = 0;
+  while (raw.charAt(start) === "/") start += 1;
+  const trimmed = stripTrailingSlashes(raw.slice(start));
+  if (trimmed === "") return undefined;
+  const segments = trimmed.split("/");
+  if (segments[0] !== PREFIX) return undefined;
+  return segments;
+}
+
+function encodeWithin(route: WidgetRoute): string {
   switch (route.kind) {
     case "outline":
       return route.tab === "overview" ? PREFIX : `${PREFIX}/${TAB_SEGMENTS[route.tab]}`;
@@ -154,8 +258,16 @@ export function decode(hash: string): WidgetRoute | undefined {
   const trimmed = stripTrailingSlashes(raw.slice(start));
   if (trimmed === "") return undefined;
 
-  const segments = trimmed.split("/");
+  let segments = trimmed.split("/");
   if (segments[0] !== PREFIX) return undefined;
+
+  // `ds/kurs/<slug>/…` names the course as well; the screen is decoded from
+  // what follows, so both forms answer identically (P156-02).
+  if (segments[1] === COURSE_SEGMENT) {
+    const slug = decodeSegment(segments[2] ?? "");
+    if (slug === undefined || !isCourseSlug(slug)) return undefined;
+    segments = [PREFIX, ...segments.slice(3)];
+  }
 
   if (segments.length === 1) return { kind: "outline", tab: "overview" };
 
