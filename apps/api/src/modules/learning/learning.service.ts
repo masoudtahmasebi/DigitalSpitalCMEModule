@@ -18,6 +18,7 @@ import {
   courseWatchCoverage,
   evaluateSequence,
   isCourseComplete,
+  fillSamplingGaps,
   mergeWatchedSegments,
   isCourseOffered,
   resumePosition,
@@ -250,7 +251,29 @@ export class LearningService {
     });
 
     const merged = mergeWatchedSegments([...previousSegments, ...validation.accepted]);
-    const percent = watchedPercent(merged, content.durationSec);
+
+    /*
+     * What the learner is credited for, which is not quite what was reported
+     * (P158-02).
+     *
+     * `merged` stays the evidence: every interval the client sent, validated
+     * against the wall clock. `credited` closes the holes a sampling clock
+     * leaves **between two watched regions** — a real forty-minute session
+     * arrived with thirteen of them totalling 37.52 s after the learner had
+     * watched end to end, and was told to go back and re-watch seconds they had
+     * already seen.
+     *
+     * It cannot credit a skip: nothing is added before the first interval or
+     * after the last, and a hole wide enough to be content is left alone. The
+     * drag-to-the-end fragment that killed S32's first attempt has no
+     * neighbour, so there is nothing to bridge.
+     *
+     * Stored raw, returned credited, so the bar, the number and the gap list
+     * all come from one union (§4 inv. 6) and the rule can be withdrawn without
+     * having destroyed the record it was applied to.
+     */
+    const credited = fillSamplingGaps(merged, content.durationSec);
+    const percent = watchedPercent(credited, content.durationSec);
 
     /*
      * A video counts as done at the coverage **the course asks for** (P82-05).
@@ -310,9 +333,9 @@ export class LearningService {
         segment: entry.segment,
         reason: entry.reason,
       })),
-      // The union that was just stored, so the player's bar redraws from what
-      // the gate credited rather than from what the client believed it sent.
-      watchedSegments: [...merged],
+      // The union the gate credited — `merged` with the sampling holes closed
+      // (P158-02) — rather than what the client believed it sent.
+      watchedSegments: [...credited],
       // And how far it may now seek, computed from that same union. Sent rather
       // than left to the client so the ceiling advances as the learner watches
       // without the player owning the rule.
@@ -416,9 +439,15 @@ export class LearningService {
        */
       seekCeilingSec: seekCeiling([...readSegments(progress?.watchedSegments)]),
       watchedPercent: progress?.watchedPercent ?? 0,
-      // The intervals the percentage above was computed from, so the player's
-      // coverage bar and its number come from one source.
-      watchedSegments: [...readSegments(progress?.watchedSegments)],
+      // The intervals the percentage above was computed from, credited the same
+      // way the write path credits them (P158-02) — otherwise the coverage bar
+      // and the number beside it disagree about exactly the holes this closes.
+      watchedSegments: [
+        ...fillSamplingGaps(
+          readSegments(progress?.watchedSegments),
+          content.durationSec ?? 0,
+        ),
+      ],
     };
   }
 

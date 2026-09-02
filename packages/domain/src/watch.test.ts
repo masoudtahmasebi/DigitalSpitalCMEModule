@@ -3,6 +3,7 @@ import type { WatchedSegment } from "./watch.js";
 import { PLAYBACK_RATES, SEEK_JUMP_SEC, SEEK_STEP_SEC } from "./playback.js";
 import {
   creditedDurationSec,
+  fillSamplingGaps,
   MAX_PLAYBACK_RATE,
   isSeekAllowed,
   SEEK_CEILING_TOLERANCE_SEC,
@@ -643,5 +644,118 @@ describe("uncoveredSpans", () => {
 
   it("answers nothing for a video with no usable length", () => {
     expect(uncoveredSpans([{ startSec: 0, endSec: 5 }], 0)).toEqual([]);
+  });
+});
+
+describe("the last seconds of a video, and the holes sampling leaves (P158)", () => {
+  /*
+   * From a real session, reported as "i have watched the whole video" with
+   * 98 % on screen. The response body settles both halves.
+   *
+   *   rejected: [{ segment: { startSec: 2483.913576, endSec: 2490.282667 },
+   *                reason: "beyond_duration" }]
+   *   accepted: 0
+   *   watchedPercent: 98
+   *
+   * The stored duration is 2490 s. The element reported a final position
+   * 0.282667 s past it — browsers do that; `currentTime` at `ended` is not
+   * exactly `duration` — and `validateSegments` rejected the **whole** six-and-
+   * a-half-second segment for it. Every video's last segment meets this.
+   */
+  it("credits playback that overshoots the stored duration, clamped to it", () => {
+    const result = validateSegments([{ startSec: 2483.913576, endSec: 2490.282667 }], {
+      durationSec: 2490,
+      elapsedWallClockSec: 30,
+    });
+
+    expect(
+      result.rejected,
+      "the final seconds of the video were thrown away for a quarter-second overshoot",
+    ).toEqual([]);
+    expect(result.accepted).toEqual([{ startSec: 2483.913576, endSec: 2490 }]);
+  });
+
+  it("still refuses a segment that lies entirely past the end", () => {
+    const result = validateSegments([{ startSec: 3000, endSec: 3010 }], {
+      durationSec: 2490,
+      elapsedWallClockSec: 30,
+    });
+    expect(result.rejected[0]?.reason).toBe("beyond_duration");
+  });
+});
+
+describe("holes a sampling clock leaves behind (P158-02)", () => {
+  /*
+   * The same session's union had **thirteen** interior gaps totalling 37.52 s,
+   * the largest exactly 5.000 s. Every one is bounded by watched material on
+   * both sides — they are what a throttled `timeupdate` and the arrow-key hops
+   * from before P154-01 leave behind, not content anybody skipped.
+   *
+   * ## Why this is not the rule that had to be reverted
+   *
+   * S32's first form credited every whole minute below the furthest point, and
+   * an existing test caught it at once: a learner drags to 09:55 of a
+   * ten-minute video, the client posts one five-second fragment, and the rule
+   * credits nine minutes nobody watched.
+   *
+   * This one closes gaps **between two watched regions**. A single fragment has
+   * no neighbour, so nothing is bridged and the drag case is refused for a
+   * structural reason rather than by a number. Nothing before the first segment
+   * or after the last is ever added, so it cannot credit an unwatched start or
+   * an unwatched end.
+   */
+  it("closes the gaps a real session leaves, and reaches the end", () => {
+    const session = [
+      { startSec: 0, endSec: 15.147841 },
+      { startSec: 20.147841, endSec: 50.27983 },
+      { startSec: 50.363214, endSec: 50.601112 },
+      { startSec: 55.42434, endSec: 55.802273 },
+      { startSec: 66.318741, endSec: 2489.117804 },
+    ];
+
+    expect(fillSamplingGaps(session, 2490)).toEqual([
+      { startSec: 0, endSec: 2489.117804 },
+    ]);
+  });
+
+  it("refuses the drag-to-the-end fragment, which has nothing to bridge to", () => {
+    // The case that killed the previous attempt. One fragment near the end of a
+    // ten-minute video: no neighbour, so no gap, so no credit.
+    const drag = [{ startSec: 595, endSec: 600 }];
+    expect(fillSamplingGaps(drag, 600)).toEqual(drag);
+  });
+
+  it("does not bridge a gap wide enough to be content", () => {
+    const skipped = [
+      { startSec: 0, endSec: 100 },
+      { startSec: 900, endSec: 1000 },
+    ];
+    expect(fillSamplingGaps(skipped, 2490)).toEqual(skipped);
+  });
+
+  it("scales the bridge to the video, so a short one is not swallowed whole", () => {
+    // A ten-second video: a nine-second hole between two samples is most of the
+    // content, not an artefact. The client asked exactly this — "what happens
+    // if a video is only 10 seconds long?"
+    const short = [
+      { startSec: 0, endSec: 0.5 },
+      { startSec: 9.5, endSec: 10 },
+    ];
+    expect(fillSamplingGaps(short, 10)).toEqual(short);
+
+    // …while a tenth of a second still closes.
+    const jitter = [
+      { startSec: 0, endSec: 4.9 },
+      { startSec: 5, endSec: 10 },
+    ];
+    expect(fillSamplingGaps(jitter, 10)).toEqual([{ startSec: 0, endSec: 10 }]);
+  });
+
+  it("never credits before the first sample or after the last", () => {
+    const late = [
+      { startSec: 600, endSec: 700 },
+      { startSec: 705, endSec: 800 },
+    ];
+    expect(fillSamplingGaps(late, 2490)).toEqual([{ startSec: 600, endSec: 800 }]);
   });
 });
