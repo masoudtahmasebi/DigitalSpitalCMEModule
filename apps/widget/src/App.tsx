@@ -847,7 +847,11 @@ function Loaded(props: {
           {/* `max-sm:` drops the top border and the top rounding: below `sm` the
             heading `TabbedPanel` renders supplies both, and two borders meeting
             draw a 2 px rule across what the layout has as one line. */}
-          <div className="min-w-0 rounded-2xl rounded-tl-none border border-gray-100 bg-white p-5 shadow-sm max-sm:rounded-t-none max-sm:border-t-0 max-sm:border-brand-500 sm:p-6">
+          {/* `border-brand-100`, not `border-gray-100` (DEP-28): the active tab
+            standing on this panel's top edge carries the same colour, and the
+            whole point of the folder-tab shape is that the two are one outline.
+            A teal tab meeting a grey panel draws the seam instead of hiding it. */}
+          <div className="min-w-0 rounded-2xl rounded-tl-none border border-brand-100 bg-white p-5 shadow-sm max-sm:rounded-t-none max-sm:border-t-0 max-sm:border-brand-500 sm:p-6">
             {tab === "overview" ? (
               <OverviewTab course={detail} state={state} />
             ) : tab === "speakers" ? (

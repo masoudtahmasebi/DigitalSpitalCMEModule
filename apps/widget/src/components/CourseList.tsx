@@ -235,11 +235,16 @@ function CoursePanel(
    * the drawing has one.
    *
    * The border is `brand-500` at that width for the same reason — the mobile
-   * card's outline is drawn in the brand colour, not in the neutral grey the
-   * wide layout uses.
+   * card's outline is drawn in the brand colour, not in a neutral grey.
+   *
+   * `brand-100` at the wide width, and it is not a preference (DEP-28). The
+   * active tab standing on this card's top edge is drawn by the shared
+   * `TabbedPanel`, whose border the course detail's own panel matches; a tab
+   * and a card outlined in two different colours draw the seam that the
+   * folder-tab shape exists to hide. One component, one outline.
    */
   const panel =
-    "rounded-b-xl rounded-tr-xl border border-gray-200 bg-white max-sm:rounded-tr-none max-sm:border-t-0 max-sm:border-brand-500";
+    "rounded-b-xl rounded-tr-xl border border-brand-100 bg-white max-sm:rounded-tr-none max-sm:border-t-0 max-sm:border-brand-500";
 
   if (list.loading && list.data === undefined) {
     return (

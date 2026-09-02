@@ -118,18 +118,18 @@ content column's right edge.
 
 ## Page 02 — Fortbildung → Übersicht
 
-| #    | The layout draws                                                                                                                                                           | Verdict                                                                                         |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| 2.1  | Hero split in two: teal with the title on the left, the course image full-bleed on the right                                                                               | matches (P19-03)                                                                                |
-| 2.2  | Meta bar: white card overlapping the hero's lower edge — orange `4` badge, `CME Punkte`, clock + duration, module icon + count, teal `Fortbildung fortsetzen` at the right | matches                                                                                         |
-| 2.3  | `← Zurück zur Übersicht` under the bar                                                                                                                                     | matches                                                                                         |
-| 2.4  | Four tabs, the active one white and merged into the panel                                                                                                                  | matches                                                                                         |
-| 2.5  | `Beschreibung der Fortbildung`, then `Mehr lesen…` **inline at the end of the text**, teal and bold                                                                        | matches (#63)                                                                                   |
-| 2.6  | `Lernziele`: intro line, then orange circled ticks                                                                                                                         | matches                                                                                         |
-| 2.7  | `Zielgruppe`: intro line, paragraph, bullet list, `Vorkenntnisse:` paragraph                                                                                               | matches (the structure is authored content, not layout)                                         |
-| 2.8  | `Inhalte`: teal arrow, module title, topic line, duration `25:24 Min.` right-aligned                                                                                       | matches (#63)                                                                                   |
-| 2.9  | Thin rules between sections                                                                                                                                                | matches (#63)                                                                                   |
-| 2.10 | Progress card: teal, ring, `2` over `von 3`, sentence, orange button                                                                                                       | **deliberate** — plus a watch-percentage line. See "The watch line on the progress card" below. |
+| #    | The layout draws                                                                                                                                                           | Verdict                                                                                                                                                         |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2.1  | Hero split in two: teal with the title on the left, the course image full-bleed on the right                                                                               | matches (P19-03)                                                                                                                                                |
+| 2.2  | Meta bar: white card overlapping the hero's lower edge — orange `4` badge, `CME Punkte`, clock + duration, module icon + count, teal `Fortbildung fortsetzen` at the right | matches (DEP-27) — _was_ uniform rounding on the bar and a full pill for the badge, and a 2 × 2 grid for the module glyph. See "The one-odd-corner shape" below |
+| 2.3  | `← Zurück zur Übersicht` under the bar                                                                                                                                     | matches                                                                                                                                                         |
+| 2.4  | Four tabs, the active one white and merged into the panel                                                                                                                  | matches (DEP-28) — the fill was always right; the _shapes_ were not, and "merged" was a pixel short. See below                                                  |
+| 2.5  | `Beschreibung der Fortbildung`, then `Mehr lesen…` **inline at the end of the text**, teal and bold                                                                        | matches (#63)                                                                                                                                                   |
+| 2.6  | `Lernziele`: intro line, then orange circled ticks                                                                                                                         | matches                                                                                                                                                         |
+| 2.7  | `Zielgruppe`: intro line, paragraph, bullet list, `Vorkenntnisse:` paragraph                                                                                               | matches (the structure is authored content, not layout)                                                                                                         |
+| 2.8  | `Inhalte`: teal arrow, module title, topic line, duration `25:24 Min.` right-aligned                                                                                       | matches (#63)                                                                                                                                                   |
+| 2.9  | Thin rules between sections                                                                                                                                                | matches (#63)                                                                                                                                                   |
+| 2.10 | Progress card: teal, ring, `2` over `von 3`, sentence, orange button                                                                                                       | **deliberate** — plus a watch-percentage line. See "The watch line on the progress card" below.                                                                 |
 
 ## Page 03 — Experten/Referenten
 
@@ -241,6 +241,47 @@ only thing that explains the ring.
 
 If the client would rather have the card exactly as drawn, deleting the `footnote`
 prop is the whole change.
+
+## The one-odd-corner shape (2.2, 2.4, 8.x, and the sticky module)
+
+Measured, on 02.09.2026, from `screens/page-02.png` and
+`mobile/progress-sticky-module.png` at pixel level, after DEP-27, DEP-28 and
+DEP-29 arrived on the same morning describing three screens.
+
+They are one finding. **Nothing in this layout is a symmetric rounded
+rectangle.** Every teal and orange block has three corners at one radius and a
+fourth at another, and which corner is odd is consistent per family:
+
+| Element                     | Measured                                             | Built as                                   |
+| --------------------------- | ---------------------------------------------------- | ------------------------------------------ |
+| meta bar (white)            | 10–13 px on three, ~43 px bottom-right, height 86 px | `rounded-xl rounded-br-[1.75rem]`          |
+| CME points badge (orange)   | 4–6 px on three, 22 px bottom-right, height 49 px    | `rounded rounded-br-[1.125rem]`            |
+| inactive tab (teal)         | 22.5 px on three, **0 top-right**, height 45 px      | `rounded-full rounded-tr-none`             |
+| active tab (white)          | 22 px top-left, **0 top-right**, merged below        | `rounded-tl-[1.25rem]` + `relative -mb-px` |
+| inline progress card (teal) | 21 px on three, **0 top-right**, 284 px wide         | `rounded-[1.25rem] rounded-tr-none`        |
+| sticky progress card, open  | 40 px on three, **0 top-right**, 560 px @2×          | `rounded-[1.25rem] rounded-tr-none`        |
+| sticky button, closed       | half-height, **0 top-right**                         | `rounded-full rounded-tr-none` — unchanged |
+
+The closed sticky button already had it, which is why it is the one shape in
+this table nobody reported: it was drawn from the mobile export directly rather
+than assembled from the same defaults as everything else.
+
+Both scales are checkable rather than assumed. P158 settled the desktop half by
+measuring glyph ink — `screens/*.png` is **1:1 at 1920**, so a radius read off
+page 02 is already CSS pixels, and the inline progress card's 284 px is our
+`18rem` almost exactly. The mobile file is 2× a 430 px frame: the sticky card
+measures 560 px in an 860 px-wide export against the built `w-[17.5rem]`, so its
+40 px radius is 20 px of ours — the same number the desktop card gives at 1:1.
+
+Two further details of 2.4, both visible only when the shapes are right:
+
+- the active tab's border is the **light teal** of the panel it stands on
+  (measured `rgb(218, 235, 238)`; built as `border-brand-100`), not the neutral
+  grey it had. A grey tab on a teal panel draws the seam the folder-tab shape
+  exists to hide.
+- `border-b-0` alone does not merge the tab into the panel: the panel still
+  draws its own top edge underneath, a hairline the drawing does not have.
+  `relative -mb-px` lets the tab's fill cover it.
 
 ## The two things not to resolve by guessing
 

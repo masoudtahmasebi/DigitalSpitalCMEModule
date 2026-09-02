@@ -1,3 +1,38 @@
+/*
+ * A visible focus ring is an accessibility floor, not a preference — it is
+ * costed into the budget (CLAUDE.md §3) and must survive any host page that
+ * has blanket-removed outlines. It follows the accent colour so it stays
+ * visible against a customer's own palette.
+ *
+ * ## Why this sits ABOVE `@tailwind utilities`, and must stay there
+ *
+ * `.ds-lms-root :focus-visible` is one class plus one pseudo-class — (0,2,0).
+ * A Tailwind utility written for one element's own focus state,
+ * `.focus-visible\:outline-white:focus-visible`, is also (0,2,0). Specificity
+ * cannot separate them, so **source order decides**, and while this rule sat at
+ * the bottom of the file it beat every one of them.
+ *
+ * Four components had already written their own focus indicator and none of
+ * them ever rendered: the player surface, its play overlay, the scrub bar, and
+ * the sticky progress card's heading — where the floor's dark-blue rectangle
+ * landed on a teal card, at the moment the card opens, because focus is moved
+ * there programmatically. Nobody had to press a key to see it. That is a class
+ * of bug, not four bugs (CLAUDE.md §9.11): every future component that styles
+ * its own focus state would have joined them silently.
+ *
+ * Above the utilities, a component that deliberately restyles its focus state
+ * wins the tie, and everything else — the overwhelming majority, which writes
+ * no focus utility at all — still gets this. The floor also survives a bare
+ * `outline-none`, which is (0,1,0) and still loses: opting out of a visible
+ * focus indicator has to be deliberate enough to name a replacement.
+ *
+ * `scripts/check-focus-ring.mjs` asserts the ordering and the four call sites.
+ */
+.ds-lms-root :focus-visible {
+  outline: 2px solid var(--ds-accent, #255a94);
+  outline-offset: 2px;
+}
+
 @tailwind components;
 @tailwind utilities;
 
@@ -207,17 +242,6 @@
 :where(.ds-lms-root) select {
   font: inherit;
   color: inherit;
-}
-
-/*
- * A visible focus ring is an accessibility floor, not a preference — it is
- * costed into the budget (CLAUDE.md §3) and must survive any host page that
- * has blanket-removed outlines. It follows the accent colour so it stays
- * visible against a customer's own palette.
- */
-.ds-lms-root :focus-visible {
-  outline: 2px solid var(--ds-accent, #255a94);
-  outline-offset: 2px;
 }
 
 /* Respect a learner who has asked the OS for less motion. */

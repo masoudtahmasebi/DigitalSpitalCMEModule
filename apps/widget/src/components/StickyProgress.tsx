@@ -108,9 +108,21 @@ export function StickyProgress(props: {
      */
     <div className="pointer-events-none fixed bottom-4 right-4 z-40 pb-[env(safe-area-inset-bottom)] sm:hidden">
       {open ? (
+        /*
+         * The open card is the closed teardrop grown up, and it keeps the
+         * teardrop's corner (DEP-29).
+         *
+         * `progress-sticky-module.png` is a 2× export of a 430 px frame, which
+         * is checkable rather than assumed: the card measures 560 px across in
+         * it and `w-[17.5rem]` below is 280. At that scale its corners are
+         * 20 px on three sides and **square on the top-right** — the same shape
+         * as the button it opens from, the inline `ProgressPanel` and every
+         * tab. It was `rounded-3xl` on all four, which is both 4 px too round
+         * and one corner too many.
+         */
         <section
           aria-label={de.overview.title}
-          className="pointer-events-auto w-[17.5rem] rounded-3xl bg-brand-600 p-5 text-center text-brand-contrast shadow-2xl"
+          className="pointer-events-auto w-[17.5rem] rounded-[1.25rem] rounded-tr-none bg-brand-600 p-5 text-center text-brand-contrast shadow-2xl"
         >
           <button
             ref={closeRef}
@@ -123,10 +135,22 @@ export function StickyProgress(props: {
               The layout draws a heading, so it should read as one — but it is
               a control and a keyboard user has to be able to see where they
               are. `focus-visible` rather than `focus`: the browser shows the
-              ring for a keyboard and withholds it for a thumb, which is the
-              distinction the two states exist for.
+              indicator for a keyboard and withholds it for a thumb, which is
+              the distinction the two states exist for.
+
+              An **outline**, not a ring, and this is the part that was wrong.
+              It read `outline-none focus-visible:ring-2 ring-white/80`, which
+              cannot work here: `.outline-none` is one class (0,1,0) and
+              `styles.css`'s a11y floor is `.ds-lms-root :focus-visible`
+              (0,2,0), so the floor won and drew its own 2 px `--ds-accent`
+              rectangle — dark blue, on a teal card, at 2 px offset, *plus* the
+              white ring underneath it. Focus lands here programmatically the
+              moment the card opens, so nobody had to press a key to see it.
+              Matching the floor's own idiom (`focus-visible:outline-*`, as the
+              player already does) ties the specificity and lets source order
+              decide, which is what the reordering in `styles.css` is for.
             */
-            className="w-full rounded-lg text-lg font-bold outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+            className="w-full rounded-lg text-lg font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           >
             {de.overview.title}
           </button>

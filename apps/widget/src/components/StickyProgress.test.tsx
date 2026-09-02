@@ -107,6 +107,48 @@ describe("StickyProgress", () => {
     expect(screen.getByRole("button", { name: "Fortbildung fortsetzen" })).toBeTruthy();
   });
 
+  /**
+   * The open card's shape and its focus indicator (DEP-29).
+   *
+   * The report was "a visible rectangular border outline around the card,
+   * where the design has clean rounded corners and none". Two things in this
+   * component could draw one, and both were true at once, so both are asserted:
+   *
+   * 1. the card was `rounded-3xl` on all four corners, where every teal block
+   *    in the layout — this card, the inline `ProgressPanel`, every tab, and
+   *    the very button this opens from — squares its top-right;
+   * 2. the heading carried `outline-none focus-visible:ring-2`, which cannot
+   *    win against `styles.css`'s (0,2,0) `:focus-visible` floor, so the floor
+   *    drew its own 2 px `--ds-accent` rectangle — dark blue, on teal, at the
+   *    moment the card opens, because `closeRef.focus()` runs then.
+   *
+   * jsdom applies no cascade, so this cannot assert the painted result; what
+   * it asserts is that the class list still expresses the intent, and
+   * `scripts/check-focus-ring.mjs` holds the ordering the paint depends on.
+   */
+  it("draws the open card as the layout's teardrop, with no stray outline", () => {
+    render(<StickyProgress state={state()} onResume={() => undefined} />);
+
+    const closed = screen.getByRole("button", { expanded: false });
+    // The shape the open card has to agree with — a disc with a square
+    // top-right, at the other scale.
+    expect(closed.className).toContain("rounded-full");
+    expect(closed.className).toContain("rounded-tr-none");
+
+    fireEvent.click(closed);
+
+    const card = screen.getByRole("region", { name: "Ihr Fortschritt" });
+    expect(card.className).toContain("rounded-[1.25rem]");
+    expect(card.className).toContain("rounded-tr-none");
+    expect(card.className.split(/\s+/u)).not.toContain("rounded-3xl");
+
+    // The heading has to beat the floor rather than ask it to stand down: a
+    // bare `outline-none` is (0,1,0) and loses wherever it sits in the file.
+    const heading = screen.getByRole("button", { name: "Ihr Fortschritt" });
+    expect(heading.className).toContain("focus-visible:outline-white");
+    expect(heading.className.split(/\s+/u)).not.toContain("outline-none");
+  });
+
   it("omits the action entirely when there is nowhere to resume to", () => {
     render(<StickyProgress state={state()} onResume={undefined} />);
 
