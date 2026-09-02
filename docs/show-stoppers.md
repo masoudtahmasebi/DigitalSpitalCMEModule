@@ -1962,10 +1962,13 @@ second filing nobody asked for. The never-accepted case — `queued`, `held`,
 `failed_*`, `window_closed` — is unambiguous and is fixed in P118: nothing was
 reported, so nothing can disagree, and the requeue picks up the corrected EFN.
 
-## S30 — May the furthest playback position stand in for the watched union?
+## S32 — May the furthest playback position stand in for the watched union?
 
-**Owner: Masoud (client). Raised 02.09.2026, P156-03. Blocks nothing today; the
-platform continues to use the union.**
+**Owner: Masoud (client). Raised 02.09.2026 (P156-03). Decided the same day —
+whole minutes. The first implementation was written, found unsafe by the
+platform's own tests, and reverted; see "What the attempt found". Numbered S32
+because S30 and S31 were already taken — the first draft of this section reused
+S30, which is how two questions come to share one name for a year.**
 
 Masoud has asked, twice, for completion to be decided by the furthest position
 reached rather than by the union of watched intervals:
@@ -2001,6 +2004,64 @@ CME point defensible if the Ärztekammer ever asks how it was earned.
 3. Whichever way it goes, it is a §2 human-review change and it needs its own
    ticket, because it changes which physicians receive points.
 
-**Until it is decided** the union stands, and a learner with a real gap is asked
-to re-watch it. Historical gaps recorded before P154 are not back-filled by
-anything.
+### The decision, in the client's words
+
+> the minute check is enough, not every second, if someone reaches the minute 2,
+> then we are sure they watched the minute 1, if someone reaches minute 33, they
+> have watched until minute 32 at least, and we also can use that checkpoint for
+> when we reload the page, it starts from the same place, and we already have
+> this
+
+### What the attempt found — the rule as stated is not safe (P157-01, reverted)
+
+Implemented as "the union plus every whole minute below `maxWatchedPosition`",
+and **three existing integration tests went red immediately.** The clearest is
+`learning-flow.integration.test.ts:426`, which describes the case in its own
+name: _credits a drag to the end as the seconds it claims, not as the position._
+
+A learner drags the scrub bar to 09:55 of a ten-minute video and lets it run.
+The client posts one five-second fragment at the end. That report is perfectly
+plausible — five seconds of playback in five seconds of wall clock — and the
+server accepts it. Under the minute rule `maxWatchedPosition` becomes 600, and
+**everything below it is credited: a drag to the end scores 99 %.**
+
+The reasoning that made the rule look safe was that P154-01 clamped the forward
+seek ceiling. That is true and it is not enough: **the ceiling constrains the
+player, not the API.** Anything that can post a segment can put one anywhere the
+wall-clock budget allows, and `maxWatchedPosition` is computed from what was
+posted. Invariant 5's sentence — _"makes any gate trivially skippable"_ — turns
+out to be about the transport, not about the scrub bar.
+
+Reverted rather than shipped. The tests that caught it are the ones that exist
+for exactly this, and they were watched go red.
+
+### What the client asked next, which is the same question from the other end
+
+> maybe 30s is better, what happens if a video is only 10 seconds long?
+
+A floor in whole units answers this badly at both ends. On a ten-second video
+`floor(9 / 60)` is zero, so the rule never credits anything and the shortest
+content is the one it helps least. Thirty seconds moves the boundary without
+removing it.
+
+### The form that would be safe, for decision
+
+**Fill a gap only when it is bounded by watched material on both sides and is
+shorter than the checkpoint.**
+
+- A learner who played straight through with sampling artefacts has holes of
+  fractions of a second, each bounded by real coverage either side. All filled.
+- The drag-to-the-end client has **no coverage below its fragment**, so there is
+  nothing to bound a gap and nothing is filled. The 99 % case cannot occur.
+- A ten-second video works without a special case: its gaps are small and
+  bounded, so they fill; there is no floor to fall under.
+- A skipped minute is not filled, because the gap is not shorter than the
+  checkpoint.
+
+It still needs a decision on the checkpoint (30 s or 60 s) and on whether a gap
+should additionally be capped as a fraction of the video, so that a nine-second
+hole in a ten-second video is not filled by a rule meant for artefacts.
+
+**Until that is decided** the union stands unchanged, and a learner with a real
+gap is asked to re-watch it. Historical gaps recorded before P154 are not
+back-filled by anything.

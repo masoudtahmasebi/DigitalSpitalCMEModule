@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { WatchedSegment } from "./watch.js";
 import { PLAYBACK_RATES, SEEK_JUMP_SEC, SEEK_STEP_SEC } from "./playback.js";
-import { RESUME_GRANULARITY_SEC } from "./resume.js";
 import {
   creditedDurationSec,
-  creditedWatchedSegments,
   MAX_PLAYBACK_RATE,
-  WATCH_CHECKPOINT_SEC,
   isSeekAllowed,
   SEEK_CEILING_TOLERANCE_SEC,
   maxWatchedPosition,
@@ -646,63 +643,5 @@ describe("uncoveredSpans", () => {
 
   it("answers nothing for a video with no usable length", () => {
     expect(uncoveredSpans([{ startSec: 0, endSec: 5 }], 0)).toEqual([]);
-  });
-});
-
-describe("whole minutes below the furthest point reached (S30, P157-01)", () => {
-  /*
-   * The client's decision, in his words:
-   *
-   *   "if someone reaches the minute 2, then we are sure they watched the
-   *    minute 1, if someone reaches minute 33, they have watched until minute
-   *    32 at least"
-   *
-   * This is only sound because P154-01 closed the way past the watched edge:
-   * the forward seek ceiling is now half a second, well under the smallest
-   * forward control, so the playhead advances past unwatched content **only**
-   * by playing it. Before that, a learner could walk forward in five-second
-   * hops and this rule would have credited everything they hopped over.
-   *
-   * Whole minutes, not seconds, and the same minute the resume point already
-   * uses — so "where you come back to" and "what you are credited for" are one
-   * granularity rather than two that can disagree.
-   */
-  it("credits the completed minutes below the furthest point", () => {
-    // Reached 33:20, with holes: minutes 0–32 are credited, the rest is not.
-    const watched = [
-      { startSec: 0, endSec: 15 },
-      { startSec: 20, endSec: 1980 },
-      { startSec: 1990, endSec: 2000 },
-    ];
-
-    expect(creditedWatchedSegments(watched)).toEqual([
-      { startSec: 0, endSec: 1980 },
-      { startSec: 1990, endSec: 2000 },
-    ]);
-  });
-
-  it("credits nothing before the first whole minute is finished", () => {
-    // Reached 0:47. No minute is complete, so nothing is implied.
-    const watched = [{ startSec: 0, endSec: 47 }];
-    expect(creditedWatchedSegments(watched)).toEqual(watched);
-  });
-
-  it("leaves an empty union empty", () => {
-    expect(creditedWatchedSegments([])).toEqual([]);
-  });
-
-  it("cannot credit past the furthest point actually reached", () => {
-    // The property that keeps this from being "max position wins": everything
-    // above the reached point is untouched.
-    const watched = [{ startSec: 0, endSec: 130 }];
-    const credited = creditedWatchedSegments(watched);
-    expect(maxWatchedPosition(credited)).toBe(130);
-  });
-
-  it("uses the same minute the resume point does", () => {
-    // One granularity, not two that can drift (§9.11). If the resume point ever
-    // moves to a different unit, this fails rather than quietly disagreeing
-    // about what a learner has been credited for.
-    expect(WATCH_CHECKPOINT_SEC).toBe(RESUME_GRANULARITY_SEC);
   });
 });

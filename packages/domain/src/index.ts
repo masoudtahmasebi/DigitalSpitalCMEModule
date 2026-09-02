@@ -48,10 +48,8 @@ export type {
  * from the other direction — it reported both as exported and uncalled.
  */
 export {
-  creditedWatchedSegments,
   isSeekAllowed,
   MAX_PLAYBACK_RATE,
-  WATCH_CHECKPOINT_SEC,
   maxWatchedPosition,
   SEEK_CEILING_TOLERANCE_SEC,
   mergeWatchedSegments,
