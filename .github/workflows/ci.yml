@@ -130,6 +130,13 @@ jobs:
           # P108, P98 and P99, which had lived inside other files since they
           # were written and could not be reached by their own numbers.
           node scripts/check-backlog-numbers.mjs
+          # Every element the console points at the bucket against the
+          # directive that governs it. Three directives have been added one at
+          # a time — connect-src (P67-01), media-src (P74-03), object-src
+          # (P161-02) — each after a person clicked and found a blank frame,
+          # because a CSP refusal happens inside the browser and leaves the
+          # server log clean.
+          node scripts/check-csp-directives.mjs
 
       - name: Build
         run: pnpm build

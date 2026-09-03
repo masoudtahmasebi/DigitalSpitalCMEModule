@@ -554,16 +554,70 @@ describe("reading an object back", () => {
     expect(rows.map((row) => row.action)).toEqual(["mint", "store", "read"]);
   });
 
-  it("refuses an object belonging to another course in the same tenant", async () => {
-    // The check that is stricter than the customer prefix, and the reason it is
-    // there: an author who may edit one course must not be able to read every
-    // object the customer owns by naming a key from another one.
+  it("shows a file this course reuses from the customer's Mediathek", async () => {
+    /*
+     * P161-01. The reuse the Mediathek exists for: a video uploaded while
+     * building one course, picked again from the library while building the
+     * next. Its key carries the *first* course's prefix for ever — keys are
+     * minted once and objects are never copied — so a rule that asks "is this
+     * key under the course I am looking at" refuses every reused file.
+     *
+     * `complete` is what writes the library row, so this is the difference
+     * between a file the customer owns and a key somebody typed.
+     */
+    const body = Buffer.from("hello video");
+    const ticket = await ticketFor(secondCourseSlug, {
+      purpose: "video",
+      mimeType: "video/mp4",
+      sizeBytes: body.byteLength,
+    });
+    await put(ticket, body);
+    await asAdmin("POST", `/admin/courses/${secondCourseSlug}/uploads/complete`, {
+      key: ticket.key,
+    });
+
+    const view = await asAdmin("POST", `/admin/courses/${courseSlug}/uploads/view`, {
+      reference: `s3://${ticket.key}`,
+    });
+    expect(view.status, JSON.stringify(view.body)).toBe(200);
+
+    const fetched = await fetch(view.body.url);
+    expect(fetched.status).toBe(200);
+    expect(Buffer.from(await fetched.arrayBuffer()).toString()).toBe("hello video");
+  });
+
+  it("refuses a key from another course that the library does not know", async () => {
+    /*
+     * The guard on the case above, and what the old course-prefix rule is now
+     * narrowed to. A ticket that was minted and never completed leaves no
+     * library row, so the object is not a file the customer owns — it is a key
+     * a caller named. The relaxation is "the Mediathek has this file", never
+     * "this key is under the customer prefix".
+     *
+     * This case is the previous rule's own test, kept and re-aimed. Its old
+     * comment said the check stopped an author who may edit one course reading
+     * another course's objects. That threat does not exist on this controller:
+     * AUTHOR_ROLES here is customer_admin and super_admin, and both can already
+     * list the whole library and mint a read URL for any row in it through
+     * /admin/media/{id}/view. See P161.
+     */
     const ticket = await ticketFor(secondCourseSlug);
 
     const view = await asAdmin("POST", `/admin/courses/${courseSlug}/uploads/view`, {
       reference: `s3://${ticket.key}`,
     });
     expect(view.status).toBe(404);
+
+    /*
+     * And no capability was issued for it.
+     *
+     * The refusal row itself is deliberately *not* findable by this key — it
+     * is recorded against the course's own prefix, because the reference is
+     * client-supplied and an operator reads that log. So the property asserted
+     * here is the one the key can answer: nothing signed it.
+     */
+    const rows = await auditRows(ticket.key);
+    expect(rows.map((row) => row.action)).not.toContain("read");
   });
 
   it("refuses a key under another customer's prefix", async () => {

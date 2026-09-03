@@ -850,6 +850,17 @@ export const german = {
     durationDetectFailed:
       "Die Länge konnte nicht aus der Datei gelesen werden. Das kommt bei Servern ohne CORS-Freigabe und bei adaptiven Streams vor — bitte die Länge in Sekunden eintragen und mit der tatsächlichen Videolänge vergleichen.",
     /**
+     * The other cause, which used to be reported as the one above (P161-03).
+     *
+     * The message above is for a file the browser reached and could not read.
+     * This one is for a reference the API would not sign at all — the browser
+     * never saw the file. Naming CORS for that sends an author to a bucket
+     * policy that is not the problem, which is the mistake §11 is about and
+     * P70-01 is the price of.
+     */
+    durationUnreadable:
+      "Auf diese Datei konnte nicht zugegriffen werden — die Vorschau und die Längenmessung wurden von der Plattform abgelehnt, nicht vom Speicher. Bitte die Datei erneut aus der Mediathek wählen oder neu hochladen; wenn das bleibt, ist es ein Fehler und kein Einstellungsproblem.",
+    /**
      * Why the button is not there at all (P68-02).
      *
      * The message above is for a probe that ran and failed. This one is for the

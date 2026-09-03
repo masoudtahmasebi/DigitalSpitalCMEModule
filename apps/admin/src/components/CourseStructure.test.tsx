@@ -43,6 +43,8 @@ import type {
 } from "@ds/sdk";
 import { CourseStructureEditor } from "./CourseStructure.js";
 import { de } from "../locale/de.js";
+import type * as MediaPreviewModule from "../media-preview.js";
+import type * as MediaDurationModule from "../media-duration.js";
 
 afterEach(cleanup);
 
@@ -256,4 +258,74 @@ it("puts the chapter's move-to-module control only where there is another module
   const selects = screen.getAllByLabelText(de.structure.moveToModule);
   expect(selects.length).toBe(2);
   expect(within(selects[0] as HTMLElement).getAllByRole("option").length).toBe(2);
+});
+
+/*
+ * The length probe's two failure causes (P161-03).
+ *
+ * Until P161-01 a video reused from the Mediathek in a second course was
+ * refused by our own API, and this field answered "Das kommt bei Servern ohne
+ * CORS-Freigabe … vor" — a confident sentence about a cause nobody observed,
+ * pointing an author at an object-storage setting that was not the problem.
+ *
+ * Both mocks are needed for the pair to be distinguishable at all: with only
+ * one of them the two paths collapse into whichever failure comes first, which
+ * is the defect rather than the test.
+ */
+vi.mock("../media-preview.js", async () => {
+  const actual = await vi.importActual<typeof MediaPreviewModule>("../media-preview.js");
+  return { ...actual, readableUrl: vi.fn() };
+});
+vi.mock("../media-duration.js", async () => {
+  const actual =
+    await vi.importActual<typeof MediaDurationModule>("../media-duration.js");
+  return { ...actual, probeDurationSec: vi.fn() };
+});
+
+const { readableUrl } = await import("../media-preview.js");
+const { probeDurationSec } = await import("../media-duration.js");
+const { MeasuredDuration } = await import("./CourseStructure.js");
+
+function renderProbe(state: "idle" | "running" | "failed" | "unreadable" | number) {
+  const onState = vi.fn();
+  render(
+    <MeasuredDuration
+      id="dauer"
+      client={{} as ApiClient}
+      courseSlug="kurs-b"
+      sources={[{ url: "s3://cust/courses/kurs-a/video-x.mp4", mimeType: "video/mp4" }]}
+      value="0"
+      state={state}
+      onChange={vi.fn()}
+      onState={onState}
+    />,
+  );
+  return onState;
+}
+
+it("says the platform refused, not that the storage has no CORS rule", async () => {
+  vi.mocked(readableUrl).mockResolvedValue(undefined);
+
+  const onState = renderProbe("idle");
+  await waitFor(() => expect(onState).toHaveBeenCalledWith("unreadable"));
+
+  cleanup();
+  renderProbe("unreadable");
+  expect(screen.getByText(de.structure.durationUnreadable)).toBeTruthy();
+  expect(screen.queryByText(de.structure.durationDetectFailed)).toBeNull();
+  // The probe is never reached: there was no URL to probe.
+  expect(probeDurationSec).not.toHaveBeenCalled();
+});
+
+it("still names the file when the browser reached it and could not read it", async () => {
+  vi.mocked(readableUrl).mockResolvedValue("https://bucket.example/video-x.mp4");
+  vi.mocked(probeDurationSec).mockResolvedValue(undefined);
+
+  const onState = renderProbe("idle");
+  await waitFor(() => expect(onState).toHaveBeenCalledWith("failed"));
+
+  cleanup();
+  renderProbe("failed");
+  expect(screen.getByText(de.structure.durationDetectFailed)).toBeTruthy();
+  expect(screen.queryByText(de.structure.durationUnreadable)).toBeNull();
 });

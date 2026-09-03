@@ -555,10 +555,38 @@ export class UploadService {
    * 2. **The key must sit under the caller's customer prefix.** The same
    *    `keyBelongsToCustomer` boundary as `complete`, on a store with no RLS
    *    beneath it.
-   * 3. **The key must sit under *this course's* prefix.** Stricter than (2) on
-   *    purpose: without it, an author who may edit one course could read every
-   *    object their customer owns by naming a key from another course. The
-   *    course is the unit the authoring routes already authorise against.
+   * 3. **The key must be one the customer owns** — under *this course's*
+   *    prefix, or a row in this customer's Mediathek. Either way it is a file
+   *    somebody uploaded through this console, never a key a caller named.
+   *
+   * ### Why (3) is not "this course's prefix" alone (P161-01)
+   *
+   * It was, until the Mediathek's whole point caught up with it. A key is
+   * minted once, under the course being edited at the time, and the object is
+   * never copied — so a video uploaded for course A keeps A's prefix for ever.
+   * Pick it again from the library while building course B, which is the reuse
+   * P88-02 put a button beside every upload field for, and the course-prefix
+   * rule refuses it. The console then showed *"Die Vorschau konnte nicht
+   * geladen werden"* and, worse, *"Die Länge konnte nicht aus der Datei gelesen
+   * werden … Server ohne CORS-Regel"* — a confident explanation of a cause that
+   * was not the cause (§11).
+   *
+   * The rule it replaces claimed to stop "an author who may edit one course
+   * reading every object their customer owns by naming a key from another
+   * course". That threat does not exist on this controller and never did:
+   * `AUTHOR_ROLES` here is `customer_admin` and `super_admin`, both
+   * customer-wide, and both can already list every asset through
+   * `GET /admin/media` and mint a read URL for any of them through
+   * `POST /admin/media/{id}/view` — same roles, same objects, one route along.
+   * A comment is a claim, not a fact (§11 rule 9), and this one is why nobody
+   * looked again when the picker shipped.
+   *
+   * So the library membership check is not a relaxation to "any key under the
+   * customer prefix": a key that is in the bucket but has no `media_assets`
+   * row — a mint nobody completed, a path somebody guessed — is still refused.
+   * It is *exactly* the authorisation `viewAsset` already applies, which is the
+   * point: two routes handing out read URLs for the same objects must not
+   * disagree about who may have one.
    *
    * The refusal for all three is the same `notFound` as an unknown upload —
    * telling a caller that an object exists but is not reachable from here is
@@ -581,12 +609,19 @@ export class UploadService {
     const courseId = await this.requireCourse(courseSlug);
 
     const key = storageKeyOf(input.reference);
+    const ours = key !== undefined && keyBelongsToCustomer(key, actor.customerId);
     const withinCourse =
-      key !== undefined &&
-      keyBelongsToCustomer(key, actor.customerId) &&
-      key.toLowerCase().startsWith(coursePrefix(actor.customerId, courseId));
+      ours && key.toLowerCase().startsWith(coursePrefix(actor.customerId, courseId));
+    /*
+     * Only asked when the cheap test has already failed, so the ordinary path
+     * — a course showing its own files — costs no extra query.
+     */
+    const inLibrary =
+      !withinCourse &&
+      ours &&
+      (await this.repository.findAssetByKey(input.reference)) !== undefined;
 
-    if (!withinCourse) {
+    if (!withinCourse && !inLibrary) {
       await this.record(actor, courseId, {
         action: "refuse",
         // The reference is not echoed: it is client-supplied and this row is
@@ -598,7 +633,9 @@ export class UploadService {
         detail:
           key === undefined
             ? "not a storage reference"
-            : "key is outside this course's prefix",
+            : !ours
+              ? "key is outside this customer's prefix"
+              : "key is outside this course and not in this customer's library",
       });
       throw this.unknownUpload();
     }

@@ -616,7 +616,9 @@ function ContentForm(props: {
       ? ""
       : String(initial.durationSec),
   );
-  const [probe, setProbe] = useState<"idle" | "running" | "failed" | number>("idle");
+  const [probe, setProbe] = useState<
+    "idle" | "running" | "failed" | "unreadable" | number
+  >("idle");
   const [fileUrl, setFileUrl] = useState(initial?.fileUrl ?? "");
   const [mimeType, setMimeType] = useState(initial?.mimeType ?? "");
   const saver = useSaver();
@@ -1089,14 +1091,21 @@ function AutoPoster(props: {
   );
 }
 
-function MeasuredDuration(props: {
+/**
+ * Exported for `CourseStructure.test.tsx` and for nothing else.
+ *
+ * The two failure causes it tells apart (P161-03) are reachable only through
+ * an effect, and an effect nothing drives is a rule with no caller (§9.3).
+ * Rendering the whole editor to reach one field would test the tree instead.
+ */
+export function MeasuredDuration(props: {
   id: string;
   sources: readonly MediaSourceWrite[];
   client: ApiClient;
   courseSlug: string;
   value: string;
-  state: "idle" | "running" | "failed" | number;
-  onState: (next: "idle" | "running" | "failed" | number) => void;
+  state: "idle" | "running" | "failed" | "unreadable" | number;
+  onState: (next: "idle" | "running" | "failed" | "unreadable" | number) => void;
   onChange: (value: string) => void;
 }) {
   const source = probeableSourceUrl(props.sources);
@@ -1150,7 +1159,23 @@ function MeasuredDuration(props: {
       // An `s3://` reference has to become a signed URL before a `<video>` can
       // load it; an ordinary URL passes straight through.
       const url = await readableUrl(client, courseSlug, source);
-      const seconds = url === undefined ? undefined : await probeDurationSec(url);
+      if (cancelled) return;
+      /*
+       * Two causes, two answers (P161-03).
+       *
+       * `readableUrl` returning undefined means *our API* would not sign this
+       * reference — the browser never got as far as the file. Until P161-01
+       * that was the ordinary outcome of reusing a Mediathek file in a second
+       * course, and it rendered `durationDetectFailed`, which tells the author
+       * their object storage has no CORS rule. It is a fluent sentence about a
+       * cause nobody observed, and acting on it means editing a bucket policy
+       * that was never the problem (§11, and P70-01 for what that costs).
+       */
+      if (url === undefined) {
+        onState("unreadable");
+        return;
+      }
+      const seconds = await probeDurationSec(url);
       if (cancelled) return;
       if (seconds === undefined) {
         onState("failed");
@@ -1200,6 +1225,12 @@ function MeasuredDuration(props: {
       {props.state === "failed" ? (
         <p className="mt-1 text-xs text-amber-700" role="status">
           {de.structure.durationDetectFailed}
+        </p>
+      ) : null}
+
+      {props.state === "unreadable" ? (
+        <p className="mt-1 text-xs text-amber-700" role="status">
+          {de.structure.durationUnreadable}
         </p>
       ) : null}
 
