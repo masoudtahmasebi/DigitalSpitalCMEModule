@@ -279,25 +279,25 @@ check_plan() {
 check_plan none '' '' ''
 
 # The safe carries. A worker that was on stays on, at the register it was on.
-check_plan 'carry test true' yes 'https://backend-test.eiv-fobi.de' ''
-check_plan 'carry test true' true 'https://backend-test.eiv-fobi.de/fobi' ''
-check_plan 'carry test true' 1 'https://BACKEND-TEST.EIV-FOBI.DE' ''
-check_plan 'carry mock true' yes 'http://eiv-mock:4010' ''
-check_plan 'carry mock true' yes 'http://127.0.0.1:4010' ''
-check_plan 'carry mock true' yes 'http://[::1]:4010' ''
+check_plan 'carry test true no' yes 'https://backend-test.eiv-fobi.de' ''
+check_plan 'carry test true no' true 'https://backend-test.eiv-fobi.de/fobi' ''
+check_plan 'carry test true no' 1 'https://BACKEND-TEST.EIV-FOBI.DE' ''
+check_plan 'carry mock true no' yes 'http://eiv-mock:4010' ''
+check_plan 'carry mock true no' yes 'http://127.0.0.1:4010' ''
+check_plan 'carry mock true no' yes 'http://[::1]:4010' ''
 
 # A worker that was **off** stays off. The direction that is easy to get wrong
 # and impossible to see: carrying `true` here would arm an installation whose
 # operator had deliberately switched reporting off.
-check_plan 'carry test false' no 'https://backend-test.eiv-fobi.de' ''
-check_plan 'carry test false' false 'https://backend-test.eiv-fobi.de' ''
-check_plan 'carry test false' 0 'https://backend-test.eiv-fobi.de' ''
-check_plan 'carry test false' '' 'https://backend-test.eiv-fobi.de' ''
+check_plan 'carry test false no' no 'https://backend-test.eiv-fobi.de' ''
+check_plan 'carry test false no' false 'https://backend-test.eiv-fobi.de' ''
+check_plan 'carry test false no' 0 'https://backend-test.eiv-fobi.de' ''
+check_plan 'carry test false no' '' 'https://backend-test.eiv-fobi.de' ''
 
 # No EIV_BASE_URL means the compiled-in default, which was the mock. Refusing
 # here would stop a deploy over a variable nobody ever set.
-check_plan 'carry mock true' yes '' ''
-check_plan 'carry mock false' no '' ''
+check_plan 'carry mock true no' yes '' ''
+check_plan 'carry mock false no' no '' ''
 
 # The live register. Refused whatever else is set, and refused on the endpoint
 # rather than on the flag, because the register is what decides whose record is
@@ -314,18 +314,33 @@ check_plan 'refuse-endpoint unknown' yes 'https://backend-test.eiv-fobi.de.examp
 check_plan 'refuse-endpoint unknown' yes 'https://proxy.internal' ''
 check_plan 'refuse-endpoint unknown' yes 'not a url' ''
 
-# EIV_ALLOW_LIVE at a safe register: nothing is at risk, and the flag still
-# stops the deploy, because turning it into a consent is the one thing this must
-# never do. Every spelling of it.
-check_plan 'refuse-consent test' yes 'https://backend-test.eiv-fobi.de' yes
-check_plan 'refuse-consent test' no 'https://backend-test.eiv-fobi.de' true
-check_plan 'refuse-consent mock' yes 'http://eiv-mock:4010' 1
-check_plan 'refuse-consent mock' '' '' on
+# EIV_ALLOW_LIVE at a safe register: **dropped, not refused, and never carried**
+# — the third field says it was found so the deploy can say so in its log.
+#
+# This is the case P182-05 first got wrong. The refusal it had here could only
+# ever fire at `mock` or `test`, because `live` and `unknown` have already
+# returned above — unreachable in the case it was written for and reachable only
+# where it is wrong. And until P104-01 reaching EIV's own **test** system
+# required `EIV_ALLOW_LIVE=yes`, so on an installation configured before that
+# the flag means "I may talk to a non-loopback host". Blocking a deploy over a
+# flag that grants nothing, at a register that files nothing, is the refusal
+# §9.10 warns about: correct-sounding and unhelpful.
+check_plan 'carry test true yes' yes 'https://backend-test.eiv-fobi.de' yes
+check_plan 'carry test false yes' no 'https://backend-test.eiv-fobi.de' true
+check_plan 'carry mock true yes' yes 'http://eiv-mock:4010' 1
+check_plan 'carry mock false yes' '' '' on
 
-# And its falsy spellings, which are not a consent and must not stop anything.
-check_plan 'carry test true' yes 'https://backend-test.eiv-fobi.de' no
-check_plan 'carry test true' yes 'https://backend-test.eiv-fobi.de' false
-check_plan 'carry test true' yes 'https://backend-test.eiv-fobi.de' 0
+# Its falsy spellings are not a flag at all, and must not be reported as one —
+# a log line saying "dropped EIV_ALLOW_LIVE" for a file that said `no` is a
+# false statement about what was on the host.
+check_plan 'carry test true no' yes 'https://backend-test.eiv-fobi.de' no
+check_plan 'carry test true no' yes 'https://backend-test.eiv-fobi.de' false
+check_plan 'carry test true no' yes 'https://backend-test.eiv-fobi.de' 0
+
+# The flag never rescues a register that is refused: the endpoint is judged
+# first, whatever the flag says.
+check_plan 'refuse-endpoint live' yes 'https://backend.eiv-fobi.de' yes
+check_plan 'refuse-endpoint unknown' yes 'https://proxy.internal' yes
 
 # The property that matters more than any single row: **no input produces a
 # plan that carries `live`.** A row added later that did would be a real
