@@ -310,6 +310,16 @@ export class LearningService {
     const validation = validateSegments(report.segments, {
       durationSec: content.durationSec,
       elapsedWallClockSec,
+      /*
+       * The seek ceiling, enforced here rather than only issued to the player
+       * (P168-01). `previousSegments` is this enrolment's stored union for this
+       * content, so a report beginning past the furthest point it reaches is
+       * refused — `[]` for a learner who has watched nothing pins their first
+       * report to the start of the video, which is the case the rule exists
+       * for. §4 invariant 1: "Vorspulen ist nicht möglich" must be true of the
+       * record and not merely of the renderer.
+       */
+      previousSegments,
     });
 
     const merged = mergeWatchedSegments([...previousSegments, ...validation.accepted]);
@@ -334,7 +344,7 @@ export class LearningService {
      * all come from one union (§4 inv. 6) and the rule can be withdrawn without
      * having destroyed the record it was applied to.
      */
-    const credited = fillSamplingGaps(merged, content.durationSec);
+    const credited = fillSamplingGaps(merged);
     const percent = watchedPercent(credited, content.durationSec);
 
     /*
@@ -504,12 +514,7 @@ export class LearningService {
       // The intervals the percentage above was computed from, credited the same
       // way the write path credits them (P158-02) — otherwise the coverage bar
       // and the number beside it disagree about exactly the holes this closes.
-      watchedSegments: [
-        ...fillSamplingGaps(
-          readSegments(progress?.watchedSegments),
-          content.durationSec ?? 0,
-        ),
-      ],
+      watchedSegments: [...fillSamplingGaps(readSegments(progress?.watchedSegments))],
     };
   }
 

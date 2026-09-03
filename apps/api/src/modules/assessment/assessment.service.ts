@@ -94,6 +94,36 @@ export class AssessmentService {
     // the attempt counter, so a refused course never consumes one.
     this.learning.requireCourseStillOffered(course, slug);
 
+    /*
+     * A certified enrolment sits no more exams (P169-01).
+     *
+     * The client: *"we shouldn't let the user fill the exam again, when he has
+     * cleared the exam already and certificate is issued."*
+     *
+     * Until now `submit` looked at the course's dates and the attempt counter
+     * and nothing else, so a physician holding a Teilnahmebescheinigung — with
+     * a Punktemeldung already filed against their EFN — could sit the
+     * Lernerfolgskontrolle again and have the attempt written to the record
+     * that Bescheid rests on. The pass itself was safe (`bestScorePercent` is
+     * best-of), which is exactly why nothing complained: the damage is to the
+     * evidence, not to the outcome. An attempt dated after the certificate is
+     * an assessment record that no longer matches the document issued from it.
+     *
+     * `completedAt`, not `quizPassed`: retrying before certification is a
+     * learner improving their score and stays allowed. This refuses only after
+     * the point has been claimed and the certificate exists.
+     *
+     * Checked before the attempt counter for the same reason as the line above
+     * — a refused attempt must not consume one of a course's allowance.
+     */
+    if (enrolment.completedAt !== null) {
+      throw new AppError(
+        "conflict",
+        `enrolment=${enrolment.id} is certified; content=${contentId} accepts no further attempts`,
+        "Diese Fortbildung ist bereits abgeschlossen und zertifiziert. Die Lernerfolgskontrolle kann nicht erneut abgelegt werden.",
+      );
+    }
+
     const attemptsUsed = await this.repository.countAttempts(enrolment.id, contentId);
     if (enrolment.maxQuizAttempts !== null && attemptsUsed >= enrolment.maxQuizAttempts) {
       throw AppError.forbidden(

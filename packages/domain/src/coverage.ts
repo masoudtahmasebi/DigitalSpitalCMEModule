@@ -109,7 +109,7 @@ export function courseWatchCoverage(
          * against, which is how the omission happened.
          */
         watchedSec += watchedSecondsWithin(
-          fillSamplingGaps(stored.get(content.id) ?? [], duration),
+          fillSamplingGaps(stored.get(content.id) ?? []),
           duration,
         );
       }

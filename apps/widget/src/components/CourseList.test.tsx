@@ -381,4 +381,72 @@ describe("the call to action comes from the server, not from the card", () => {
     await screen.findByRole("button", { name: "Fortbildung ansehen" });
     expect(screen.queryByText(/Zertifizierung noch offen/u)).toBeNull();
   });
+
+  /*
+   * P168-04. The line named a state; the card offered no way into it.
+   *
+   * The client, on the two cards side by side: *"in the list view still is
+   * normal, while the one which has efn transmittal has a weird view, why not a
+   * new button to go the needed layout?"* — one card carried a sentence with
+   * nothing to press, and the finished one carried nothing at all.
+   */
+  it("offers the way to the Punktemeldung, with the intent that lands there", async () => {
+    const onOpen = vi.fn();
+    const listCourses = vi.fn(async () => ({
+      items: [course("k1", { enrolment: finishedNotCertified })],
+      total: 1,
+      page: 1,
+      perPage: 10,
+      facets: { thema: [], altersgruppe: [] },
+    }));
+
+    render(
+      <CourseList
+        client={{ listCourses } as unknown as ApiClient}
+        branding={{}}
+        onOpen={onOpen}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "CME-Punkte geltend machen" }),
+    );
+
+    expect(onOpen).toHaveBeenCalledWith("k1", "certify");
+  });
+
+  it("does not offer it on a course nobody has finished", async () => {
+    const { client } = stubClient(1);
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
+
+    await screen.findByRole("button", { name: "Zur Fortbildung" });
+    expect(
+      screen.queryByRole("button", { name: "CME-Punkte geltend machen" }),
+    ).toBeNull();
+  });
+
+  it("tells a certified course apart from one nobody has opened", async () => {
+    // It used to differ by one word in a button label, which is not a
+    // difference anybody scanning a list of cards will see.
+    const listCourses = vi.fn(async () => ({
+      items: [course("k1", { enrolment: { courseComplete: true, complete: true } })],
+      total: 1,
+      page: 1,
+      perPage: 10,
+      facets: { thema: [], altersgruppe: [] },
+    }));
+
+    render(
+      <CourseList
+        client={{ listCourses } as unknown as ApiClient}
+        branding={{}}
+        onOpen={() => {}}
+      />,
+    );
+
+    expect(await screen.findByText(/Teilnahmebescheinigung verfügbar/u)).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: "CME-Punkte geltend machen" }),
+    ).toBeNull();
+  });
 });

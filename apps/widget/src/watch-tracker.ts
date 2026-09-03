@@ -182,8 +182,14 @@ export class WatchTracker {
      * browser throttles that timer hard **while the media element keeps
      * playing** — audio does not stop — so the next sample lands tens of
      * seconds later, tens of seconds on. Read as a seek, that banks the
-     * interval and opens a new one past a hole `fillSamplingGaps` cannot close:
-     * its limit is `min(60, duration × 0.1)`.
+     * interval and opens a new one past a hole.
+     *
+     * `fillSamplingGaps` closes an interior hole of any width since P169-00, so
+     * that hole would now be credited on the read path — but only after the
+     * report carrying its far side has been **accepted**, and since P168-01 a
+     * segment beginning past the record's furthest point is refused outright.
+     * So this rule is not redundant: without it the far side is never stored at
+     * all, and the learner's progress simply stops advancing.
      *
      * The first attempt at this simply credited every forward jump, and three
      * existing tests refused it — correctly. A scrub from 0:05 to 5:00 is a

@@ -487,10 +487,17 @@ describe("the learner journey", () => {
     );
 
     expect(status).toBe(200);
-    // Five seconds plus the five already stored at the tail: still nothing
-    // like a hundred, and emphatically not the number the client asked for.
+    /*
+     * Five seconds of a ten-minute video: 0 %, and emphatically not the
+     * hundred the client asked for.
+     *
+     * It used to be five seconds *plus* the five the drag case above left at
+     * the tail. Since P168-01 that fragment is refused rather than stored — it
+     * began 595 s past anything this enrolment had watched — so the union here
+     * is the five seconds from the start and the status that follows from them.
+     */
     expect(body.watchedPercent).toBeLessThan(5);
-    expect(body.status).toBe("in_progress");
+    expect(body.status).not.toBe("completed");
   });
 
   it("counts the union of watched intervals, not the furthest position", async () => {
@@ -499,9 +506,16 @@ describe("the learner journey", () => {
     // playback than the milliseconds this suite actually takes.
     await backdateProgress(VIDEO_1_SEC * 2);
 
-    // Watching 0–60 then seeking to 540–600 leaves 480 s unwatched, even though
-    // the playhead reached the end. A max-position implementation would call
-    // this 100 %.
+    /*
+     * Watching 0–60 and then reporting 540–600 claims the playhead reached the
+     * end with 480 s unwatched. A max-position implementation calls that 100 %.
+     *
+     * Since P168-01 the second interval does not even get as far as the union:
+     * it begins 480 s past the furthest point the record reaches, which is a
+     * forward seek the player refuses and the server now refuses too. What the
+     * test is about is unchanged and the answer is stronger — the reported
+     * position buys nothing, and now neither does the fragment at it.
+     */
     const { status, body } = await call(
       "POST",
       `/courses/${courseSlug}/contents/${video1Id}/progress`,
@@ -515,23 +529,26 @@ describe("the learner journey", () => {
     );
 
     expect(status).toBe(200);
-    // 120 s of a 600 s video. The figure is a fraction of the **video**
+    expect(body.rejected).toEqual([
+      { segment: { startSec: 540, endSec: 600 }, reason: "beyond_ceiling" },
+    ]);
+    // 60 s of a 600 s video. The figure is a fraction of the **video**
     // (P94-01), so the tail grace does not move it — it only decides whether
-    // there is anything left to watch, and here there are 480 s. A
+    // there is anything left to watch, and here there are 540 s. A
     // max-position implementation would say 100.
-    expect(body.watchedPercent).toBe(20);
+    expect(body.watchedPercent).toBe(10);
     expect(body.status).toBe("in_progress");
     // The seek ceiling comes back with the union it was computed from — the
     // end of what was actually watched (600), plus the tolerance. It is
     // derived from the segments, never from `lastPositionSec`: a ceiling taken
     // from the reported position would let a client raise its own limit by
     // claiming to have arrived somewhere it never played.
-    // 600.5, not 605: the tolerance above the watched edge is half a second
-    // since P154-01, because five seconds was exactly the forward key's step
-    // and let it walk through unwatched content. The property this test is
-    // about — the ceiling follows the union, not the reported position — is
-    // unchanged.
-    expect(body.seekCeilingSec).toBe(600.5);
+    // 60.5, not 600.5 and not 605: half a second above the watched edge since
+    // P154-01, because five seconds was exactly the forward key's step and let
+    // it walk through unwatched content. The property this test is about — the
+    // ceiling follows the union, not the reported position — is unchanged, and
+    // the union now ends at 60.
+    expect(body.seekCeilingSec).toBe(60.5);
   });
 
   it("resumes at the last whole minute of what is left to watch", async () => {
@@ -541,11 +558,17 @@ describe("the learner journey", () => {
     );
 
     expect(status).toBe(200);
-    // Stopped at 600 — the very end of a 600-second video. Resuming there
-    // presents as a player that will not start, so the resume point is the
-    // last whole minute that still has something in it: 09:00.
+    /*
+     * The client reported a position of 600 — the very end — and it is stored,
+     * because `lastPositionSec` is where the player was and is not evidence of
+     * anything having been watched. The resume point is not taken from it: it
+     * is capped at the seek ceiling first, so a learner comes back to the last
+     * second the server agrees they watched (60) rather than to a position
+     * their own report claimed. That cap predates P168-01 and is why the
+     * refused fragment above cannot move the player either.
+     */
     expect(body.lastPositionSec).toBe(600);
-    expect(body.resumeAtSec).toBe(540);
+    expect(body.resumeAtSec).toBe(60);
     // And it is never beyond the ceiling: the position playback opens at is
     // always one the player is allowed to seek to.
     expect(body.resumeAtSec).toBeLessThanOrEqual(body.seekCeilingSec);
@@ -559,10 +582,18 @@ describe("the learner journey", () => {
 
     await backdateProgress(VIDEO_1_SEC * 2);
 
+    await call("POST", `/courses/${courseSlug}/contents/${video1Id}/progress`, {
+      segments: [{ startSec: 60, endSec: 540 }],
+    });
+
+    await backdateProgress(VIDEO_1_SEC * 2);
+
+    // Continuing from the edge of the union, which is the only way forward
+    // there is since P168-01 — and is what a player does.
     const { body } = await call(
       "POST",
       `/courses/${courseSlug}/contents/${video1Id}/progress`,
-      { segments: [{ startSec: 60, endSec: 540 }] },
+      { segments: [{ startSec: 540, endSec: 600 }] },
     );
 
     // 0–60, 60–540 and 540–600 collapse to one interval covering the whole video.

@@ -78,6 +78,8 @@ function renderQuiz(
     onNext: { title: string; open: () => void };
     /** The best score already on file — `undefined` is a first sitting. */
     passedScorePercent: number;
+    /** The enrolment is certified (P169-01). Defaults to false, as it was. */
+    certified: boolean;
   }> = {},
 ) {
   const { client, submitQuiz } = clientReturning(result);
@@ -92,6 +94,7 @@ function renderQuiz(
       quiz={QUIZ}
       examTitle={EXAM_TITLE}
       passedScorePercent={handlers.passedScorePercent}
+      certified={handlers.certified ?? false}
       onPassed={() => undefined}
       onBack={handlers.onBack ?? (() => undefined)}
       onClaimPoints={claim}
@@ -172,6 +175,54 @@ describe("an exam the learner has already passed (P164-04)", () => {
 
     expect(screen.queryByText(/bereits mit/u)).toBeNull();
     expect(screen.getByRole("button", { name: de.quiz.start(EXAM_TITLE) })).toBeTruthy();
+  });
+});
+
+/*
+ * P169-01. Passed **and** certified is a third state, not a louder second one.
+ *
+ * The client: *"we shouldn't let the user fill the exam again, when he has
+ * cleared the exam already and certificate is issued."* `submit` refuses such
+ * an attempt now, so a repeat button here could only produce an error — which
+ * is §9.2, and the reason the sentence beside it has to explain the absence
+ * (§9.4).
+ */
+describe("an exam behind an issued certificate", () => {
+  it("offers no sitting at all", () => {
+    renderQuiz(attempt({}), { passedScorePercent: 81, certified: true });
+
+    expect(screen.queryByRole("button", { name: de.quiz.repeat })).toBeNull();
+    expect(screen.queryByRole("button", { name: de.quiz.start(EXAM_TITLE) })).toBeNull();
+  });
+
+  it("says why, where the button was", () => {
+    renderQuiz(attempt({}), { passedScorePercent: 81, certified: true });
+
+    expect(screen.getByText(de.quiz.certifiedNoRetry)).toBeTruthy();
+  });
+
+  it("drops the invitation to repeat, which would now be false", () => {
+    // "gewertet wird immer Ihr bestes Ergebnis" is true and, beside a control
+    // that no longer exists, reads as an instruction to go and find it.
+    renderQuiz(attempt({}), { passedScorePercent: 81, certified: true });
+
+    expect(screen.queryByText(/bestes Ergebnis/u)).toBeNull();
+  });
+
+  it("leaves the uncertified repeat alone", () => {
+    // The guard, and the half the client did not ask to change: before the
+    // certificate exists, a retry is a learner improving their score.
+    renderQuiz(attempt({}), { passedScorePercent: 81 });
+
+    expect(screen.getByRole("button", { name: de.quiz.repeat })).toBeTruthy();
+  });
+
+  it("keeps the way back out of the screen", () => {
+    // An intro with no controls at all is a dead end, and this one is reachable
+    // from the sidebar of a finished course.
+    renderQuiz(attempt({}), { passedScorePercent: 81, certified: true });
+
+    expect(screen.getByRole("button", { name: de.player.back })).toBeTruthy();
   });
 });
 

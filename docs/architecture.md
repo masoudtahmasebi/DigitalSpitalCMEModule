@@ -334,6 +334,46 @@ something that fails visibly if it stops being true.
 
 ## 7. Compliance paths worth reading before changing
 
+### What each kind of content contributes to progress
+
+A chapter holds five kinds of content, and the client asked the question this
+table exists to answer: _"as we have multiple content types which we can add for
+a chapter, how do we calculate their progress into the overall course."_ There
+are **two** numbers, they measure different things, and conflating them is how
+a screen ends up disagreeing with itself.
+
+| kind       | completed by                                           | counts in the item rollup | counts in the watch percentage |
+| ---------- | ------------------------------------------------------ | ------------------------- | ------------------------------ |
+| `video`    | union coverage ≥ the enrolment's requirement           | yes                       | yes, weighted by duration      |
+| `text`     | the "Ich habe diesen Abschnitt gelesen." box (P167-01) | yes                       | no                             |
+| `details`  | the same box                                           | yes                       | no                             |
+| `quiz`     | passing it                                             | yes                       | no                             |
+| `material` | nothing — see below                                    | no                        | no                             |
+
+- **The item rollup** (`rollupProgress`) is "how many of the things in this
+  course are done": every content is worth 1, done or not done, and the module
+  and course figures are sums. It drives the module tiles, the "x von y Modulen"
+  sentence, the ring beside it, and the sequential gate.
+- **The watch percentage** (`courseWatchCoverage` → `achievedWatchPercent`) is
+  "how much of the video material has been seen", in **seconds**, weighted by
+  duration across the whole course so a fully-watched two-minute clip cannot
+  mask an untouched forty-minute module. It is the number
+  `requiredWatchPercent` is measured against, and it is about videos only —
+  there are no seconds to count in a text section.
+
+So the course gate is three conditions, not one: **the watch percentage meets
+the requirement, every Lernerfolgskontrolle is passed, and every text or details
+section is acknowledged** (`isCourseComplete`, `outstandingForCourse`). A course
+with no video at all is vacuously 100 % watched and is held open by the third.
+
+`material` — a Mediathek download — is the one kind excluded from both. Nothing
+observable happens when a PDF is fetched, so it has no completion event; putting
+it in the tree would leave its chapter permanently unfinished and lock every
+later module for ever. Downloads are gated on their module's completion instead.
+`isComplianceContent` is the single predicate that says so, and progress, gating
+and the resume target all traverse through it, so the three cannot develop
+different opinions about what counts.
+
 ### Watched percentage
 
 Reported as intervals, merged into a stored union, recomputed server-side. Never
@@ -357,12 +397,22 @@ thirty seconds cannot inflate the percentage. The ceiling is computed from the
 `resumeAtSec` is capped at it — otherwise a client could raise its own scrub bar
 by claiming to have arrived somewhere it never played.
 
-**The player's clamp is not the gate.** Nothing in a browser is. A learner who
-defeats it skips material, leaves a hole, and never reaches the threshold — the
-union is what enforces the accreditation's "must be seen". What the clamp buys
-is an interface that explains itself: the alternative is a scrub bar that drags
-to the end and then silently withholds the points, which a physician experiences
-as a broken platform rather than as a rule.
+**The ceiling is enforced on the way back in, not only on the way out**
+(P168-01). `validateSegments` refuses a segment that begins past the furthest
+point the enrolment's stored union reaches, with a tolerance narrower than the
+smallest forward control the player offers, and charges the gap it leaves to the
+same wall-clock budget the playback is charged to. Until then the rule lived in
+the browser alone: the ceiling was computed, returned and clamped to by the
+player, and a report claiming `[1400, 1489]` on a video nobody had opened was
+stored — which is §4 invariant 1 with a CME point on the end of it.
+
+**The player's clamp is still not the gate.** A learner who defeats it now has
+the report refused rather than merely uncredited; and even if it were credited,
+they would skip material, leave a hole and never reach the threshold, because
+the union is what enforces the accreditation's "must be seen". What the clamp
+buys is an interface that explains itself: the alternative is a scrub bar that
+drags to the end and then silently withholds the points, which a physician
+experiences as a broken platform rather than as a rule.
 
 ### Courses that award no points
 

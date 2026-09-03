@@ -363,6 +363,50 @@ describe("submit", () => {
     expect((error as AppError).kind).toBe("forbidden");
   });
 
+  /*
+   * P169-01. A certified enrolment sits no more exams.
+   *
+   * The client: *"we shouldn't let the user fill the exam again, when he has
+   * cleared the exam already and certificate is issued."*
+   *
+   * The pass was never at risk — `bestScorePercent` is best-of — which is
+   * precisely why nothing complained for nine phases: what changes is the
+   * assessment record behind a Teilnahmebescheinigung that has already been
+   * issued and a Punktemeldung that has already been filed.
+   */
+  it("refuses an attempt once the certificate has been issued", async () => {
+    const { service, recorded } = build({
+      enrolmentOverrides: { completedAt: new Date("2026-08-01T09:00:00Z") },
+    });
+
+    const error = await service
+      .submit(course.slug, QUIZ, allCorrect, learner)
+      .catch((e) => e);
+
+    expect((error as AppError).kind).toBe("conflict");
+    // And nothing was written. A refusal that still records the attempt would
+    // be the defect with an error message on top.
+    expect(recorded).toEqual([]);
+  });
+
+  it("still allows a retry before certification", async () => {
+    // The half that keeps this from being "passed once, closed for ever". A
+    // physician improving their score before claiming the point is doing
+    // something the platform has always allowed, and `courseCompletedAt` — the
+    // course being finished — is not what closes it.
+    const { service } = build({
+      attempts: 1,
+      enrolmentOverrides: {
+        completedAt: null,
+        courseCompletedAt: new Date("2026-08-01T09:00:00Z"),
+      },
+    });
+
+    const result = await service.submit(course.slug, QUIZ, allCorrect, learner);
+
+    expect(result.attemptNumber).toBe(2);
+  });
+
   it("allows unlimited attempts when the enrolment sets no limit", async () => {
     const { service } = build({ attempts: 99 });
 

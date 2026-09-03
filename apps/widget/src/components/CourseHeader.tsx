@@ -135,6 +135,16 @@ export function StickyMetaBar(props: {
 export function ProgressCard(props: {
   state: EnrolmentState;
   onResume: (() => void) | undefined;
+  /**
+   * The way to the Punktemeldung, when there is one (P168-03).
+   *
+   * `undefined` when the caller has nowhere to send them — the catalogue's
+   * preview of a course nobody is enrolled in, and the tests that predate this.
+   * The button is additionally withheld unless the *server* says the course is
+   * complete and uncertified, which is the pair `POST /completion` accepts on:
+   * §9.2, never offer what the API would refuse.
+   */
+  onClaimPoints?: (() => void) | undefined;
 }) {
   const { completed, total } = props.state.moduleCompletion;
   const sentence = de.overview.moduleProgress(completed, total);
@@ -186,9 +196,29 @@ export function ProgressCard(props: {
             {de.overview.complete}
           </p>
           {props.state.completedAt === null ? (
-            <p className="mt-2 text-center text-sm text-gray-700">
-              {de.overview.certificationOpen}
-            </p>
+            <>
+              <p className="mt-2 text-center text-sm text-gray-700">
+                {de.overview.certificationOpen}
+              </p>
+              {/*
+                The control the sentence used to describe (P168-03).
+
+                Until now this state was a paragraph naming the Zertifizierung
+                tab, and the form is not on that tab — so the one screen that
+                knew a physician had finished told them to go somewhere the
+                thing they wanted was not. The Punktemeldung was reachable only
+                by sitting the exam again, which is the client's report and also
+                the wrong act: passing it a second time is not what they came
+                back for.
+              */}
+              {props.onClaimPoints === undefined ? null : (
+                <div className="mt-3 flex justify-center">
+                  <Button variant="cta" onClick={props.onClaimPoints}>
+                    {de.overview.claim}
+                  </Button>
+                </div>
+              )}
+            </>
           ) : null}
         </>
       ) : null}

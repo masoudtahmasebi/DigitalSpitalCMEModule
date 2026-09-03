@@ -32,6 +32,7 @@ import { useBranding } from "./branding.js";
 import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
 import type { TokenProvider } from "./token.js";
+import type { OpenIntent } from "./intent.js";
 import { indexTitles, nextAvailableContent, recordedQuizScore } from "./player.js";
 import {
   decode,
@@ -95,7 +96,12 @@ type Screen =
  * fortsetzen** is *carry on*, straight back into the video they were watching.
  * Sending both to the same screen would make the second button decorative.
  */
-type OpenIntent = "start" | "resume";
+/*
+ * The three ways a course can be opened, in `intent.ts` since P168-04 — the
+ * catalogue card, this file and `element.ts` all name it and none of them may
+ * import the others.
+ */
+export type { OpenIntent };
 
 /**
  * The screen a piece of content opens on.
@@ -188,8 +194,7 @@ export interface AppProps extends WidgetConfig {
    * has taken over navigation, in which case this widget stays put — see
    * `element.ts`. Absent in tests and in any host that does not route.
    */
-  readonly onCourseOpen?:
-    ((slug: string, intent: "start" | "resume") => boolean) | undefined;
+  readonly onCourseOpen?: ((slug: string, intent: OpenIntent) => boolean) | undefined;
   /**
    * Where a course named by the `course` attribute opens.
    *
@@ -197,7 +202,7 @@ export interface AppProps extends WidgetConfig {
    * routing host carries the catalogue's **Fortbildung fortsetzen** across its
    * own navigation. Defaults to the course's start page.
    */
-  readonly openAt?: "start" | "resume" | undefined;
+  readonly openAt?: OpenIntent | undefined;
   /** Fired whenever the server returns a fresh `EnrolmentState`. */
   readonly onProgress?: ((detail: ProgressDetail) => void) | undefined;
   /** Fired once, the first time the server reports the course complete. */
@@ -415,7 +420,7 @@ function Loaded(props: {
   projectSlug: string;
   courseSlug: string;
   client: ReturnType<typeof createWidgetClient>;
-  /** `"resume"` opens the player at the resume point instead of the overview. */
+  /** Where this course opens — see `OpenIntent`. */
   openAt: OpenIntent;
   /**
    * The course to write into the fragment, or `undefined` when the host page
@@ -551,6 +556,35 @@ function Loaded(props: {
   }, [props.openAt, enrolment.data, course.data]);
 
   /*
+   * `open-at="certify"` — the catalogue's **CME-Punkte geltend machen**
+   * (P168-04).
+   *
+   * Once, like the resume intent above and for the same reason: the learner may
+   * navigate away from the Punktemeldung, and re-applying the intent on the
+   * next state refresh would put them back on it.
+   *
+   * The server's answer decides whether it is honoured. `courseComplete` with
+   * the completion still open is the pair `POST /completion` accepts on, so a
+   * card rendered before the last module was finished — or a hand-written
+   * attribute — lands on the course page instead of on a form that would be
+   * refused (§9.2). The evaluation comes first when it is outstanding, exactly
+   * as it does from the quiz-passed screen.
+   */
+  const certified = useRef(false);
+  useEffect(() => {
+    if (props.openAt !== "certify" || certified.current) return;
+    const state = enrolment.data;
+    if (state === undefined) return;
+    certified.current = true;
+    if (!state.courseComplete || state.completedAt !== null) return;
+    setScreen(
+      state.evaluationSubmitted
+        ? { kind: "reporting" }
+        : { kind: "evaluation", then: "reporting" },
+    );
+  }, [props.openAt, enrolment.data]);
+
+  /*
    * The spinner is for the **first** load only.
    *
    * `refresh()` sets `loading` again, and this used to be a bare
@@ -650,6 +684,39 @@ function Loaded(props: {
   const resume = resumeId === undefined ? undefined : () => open(resumeId);
 
   /*
+   * The way to the Punktemeldung from the course itself (P168-03).
+   *
+   * The same rule as the quiz-passed screen's **CME-Punkte geltend machen**,
+   * and deliberately the same two decisions rather than a second opinion about
+   * them:
+   *
+   *   * offered only while `courseComplete` and the completion is still open,
+   *     because that is exactly what `POST /completion` accepts — a button that
+   *     ends in a 409 after somebody has typed their EFN is worse than no
+   *     button (§9.2);
+   *   * the Evaluationsbogen first when it is outstanding, because the API
+   *     refuses a completion without one, so sending them straight to the EFN
+   *     field would be a refusal *after* the personal data.
+   *
+   * It exists because the client could reach `#…/punktemeldung` by URL and not
+   * from the course: *"if I click on back button and I visit the overview list
+   * of courses page and enter the course, I don't have a button which takes me
+   * to this page."* The only route was sitting the exam again — which opens it,
+   * and is not the act they came back to perform.
+   */
+  const claimPoints =
+    state.courseComplete && state.completedAt === null
+      ? () => {
+          refresh();
+          setScreen(
+            state.evaluationSubmitted
+              ? { kind: "reporting" }
+              : { kind: "evaluation", then: "reporting" },
+          );
+        }
+      : undefined;
+
+  /*
    * The player is its own screen, not a fifth tab (layout §4.3).
    *
    * The layout draws it that way and the reason holds up: watching a module is
@@ -733,6 +800,14 @@ function Loaded(props: {
             indexTitles(detail).contents.get(screen.contentId)?.title ?? de.quiz.exam
           }
           passedScorePercent={recordedQuizScore(state, screen.contentId)}
+          /*
+           * Certified, from the server (P169-01). `submit` refuses an attempt
+           * on such an enrolment, so the screen must not offer one — the same
+           * §9.2 rule as `onClaimPoints` two properties down, in the other
+           * direction: that one withholds a control the API would refuse to
+           * *start*, this one withholds a control it would refuse to *finish*.
+           */
+          certified={state.completedAt !== null}
           onPassed={refresh}
           onBack={() => {
             refresh();
@@ -914,7 +989,7 @@ function Loaded(props: {
           how they end up disagreeing.
         */}
           <div className="max-sm:hidden">
-            <ProgressCard state={state} onResume={resume} />
+            <ProgressCard state={state} onResume={resume} onClaimPoints={claimPoints} />
           </div>
 
           {/*
@@ -923,7 +998,7 @@ function Loaded(props: {
           resume affordance *while a video is playing*, which is the one screen
           the inline card is not on.
         */}
-          <StickyProgress state={state} onResume={resume} />
+          <StickyProgress state={state} onResume={resume} onClaimPoints={claimPoints} />
         </div>
       </TabbedPanel>
     </div>
@@ -1036,6 +1111,8 @@ function QuizGate(props: {
   examTitle: string;
   /** Absent while the course is not complete — see `QuizScreen` (P82-01). */
   passedScorePercent: number | undefined;
+  /** The enrolment is certified, so the API refuses another attempt (P169-01). */
+  certified: boolean;
   onClaimPoints: (() => void) | undefined;
   onNext: { readonly title: string; readonly open: () => void } | undefined;
 }) {
@@ -1058,6 +1135,7 @@ function QuizGate(props: {
       quiz={quiz.data}
       examTitle={props.examTitle}
       passedScorePercent={props.passedScorePercent}
+      certified={props.certified}
       onPassed={props.onPassed}
       onBack={props.onBack}
       onClaimPoints={props.onClaimPoints}
