@@ -122,6 +122,26 @@ const READ_WITHOUT_DOCUMENTATION = new Set([
    * Ärztekammer.
    */
   "EIV_REPORTS_LIVE",
+  /*
+   * The three that moved into `platform_settings` (P180-01), read by
+   * `deploy.sh` for **one purpose only**: to carry a pre-P180 installation's
+   * value into the database and then delete the lines from `config.env`
+   * (P182-05).
+   *
+   * They must be in no template, and that is the whole point — a template entry
+   * would be an invitation to set one, `deploy.sh` would carry it, remove it,
+   * and the operator would put it back next time, which is a loop rather than a
+   * migration. `check-eiv-settings.mjs` enforces the same thing from the other
+   * side: no config file may assign them, no source may read them, no document
+   * may instruct setting them.
+   *
+   * Listing them here rather than teaching this audit about `deploy.sh`'s one
+   * exception keeps the exception where somebody reading either script finds
+   * it.
+   */
+  "EIV_BASE_URL",
+  "EIV_WORKER_ENABLED",
+  "EIV_ALLOW_LIVE",
   // Where the browser suite finds Chromium (P35-01). Deliberately in neither
   // template: `run-e2e.mjs` locates the pre-installed browser itself and
   // refuses to start if there is none, so neither is a value anybody sets by

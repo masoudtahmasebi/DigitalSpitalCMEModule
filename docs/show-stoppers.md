@@ -705,7 +705,7 @@ account setup.
 authenticate DigitalSpital to a legally binding accreditation interface.
 
 They are **not** in the repository, and the harness refuses any non-local
-endpoint without an explicit `EIV_ALLOW_LIVE=yes` — a stray run would create a
+endpoint without an explicit `EIV_HARNESS_ALLOW_LIVE` — a stray run would create a
 real Punktemeldung for a real physician, which cannot be withdrawn once the
 7-day correction window closes.
 
@@ -1305,7 +1305,7 @@ The harness reaches the same data from a terminal, against the **test** system
 once S27 lands:
 
 ```bash
-EIV_BASE_URL=https://backend-test.eiv-fobi.de EIV_ALLOW_LIVE=yes \
+EIV_HARNESS_BASE_URL=https://backend-test.eiv-fobi.de EIV_HARNESS_ALLOW_LIVE=yes \
   pnpm --filter @ds/eiv-harness veranstaltung
 ```
 
@@ -1393,7 +1393,10 @@ regardless of what else happens.
 
 ### Update 09.08 — an environment now points at the test system
 
-A deployment configuration has been set to:
+A deployment configuration has been set to the following. **These three
+variables no longer exist** — P180-01 moved them into `platform_settings`, where
+the console sets them; the block is kept as the record of what was configured on
+that date, not as something to copy.
 
 ```
 EIV_BASE_URL=https://backend-test.eiv-fobi.de

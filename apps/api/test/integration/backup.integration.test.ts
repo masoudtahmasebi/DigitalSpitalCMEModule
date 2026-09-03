@@ -43,6 +43,7 @@ import {
   runDatabaseBackup,
   runFreshnessCheck,
   runObjectMirror,
+  runRestore,
 } from "../../src/backup/backup.js";
 import { DEFAULT_RETENTION } from "../../src/backup/retention.js";
 import { BackupStore } from "../../src/backup/store.js";
@@ -364,5 +365,146 @@ describe("the freshness check", () => {
     });
 
     expect(result.fresh).toBe(false);
+  });
+});
+
+describe("the operator's restore, which is the one that has to work at 22:00 (P182-01)", () => {
+  /*
+   * §9.7, on the drill above.
+   *
+   * That drill splits the file, decrypts it with a standalone `node -e` and
+   * calls `pg_restore` by hand — deliberately, because it is checking the
+   * *runbook*. It would pass unchanged with `runRestore` deleted, and for a
+   * year the only way to actually restore a backup was to read it and do the
+   * same by hand.
+   *
+   * These cases drive the command an operator runs. The property is the same
+   * and the caller is the point.
+   */
+  const OPERATOR_DB = `${RESTORE_DB}_operator`;
+
+  afterAll(async () => {
+    await pool.query(`DROP DATABASE IF EXISTS ${OPERATOR_DB}`).catch(() => undefined);
+  });
+
+  it("fetches, decrypts and loads a backup into a database that was empty", async () => {
+    const now = new Date(Date.now() + 4000);
+    const report = await runDatabaseBackup({
+      store,
+      prefix: "backups/",
+      databaseUrl: SUPERUSER_URL,
+      encryptionKey: KEY,
+      workDir,
+      retention: DEFAULT_RETENTION,
+      now,
+    });
+
+    await pool.query(`CREATE DATABASE ${OPERATOR_DB}`);
+    const target = new URL(SUPERUSER_URL);
+    target.pathname = `/${OPERATOR_DB}`;
+
+    const restored = await runRestore({
+      store,
+      key: report.key ?? "",
+      encryptionKey: KEY,
+      targetDatabaseUrl: target.toString(),
+      workDir,
+      now: new Date(),
+    });
+
+    expect(restored.key).toBe(report.key);
+    expect(restored.bytes).toBeGreaterThan(0);
+
+    const restoredPool = createPool({ connectionString: target.toString() });
+    try {
+      const { rows } = await restoredPool.query<{ name: string }>(
+        "SELECT name FROM customers WHERE slug = $1",
+        [customerSlug],
+      );
+      // The row, out of a database that did not exist a moment ago — through
+      // the command rather than through a reproduction of it.
+      expect(rows[0]?.name).toBe("Backup Drill GmbH");
+    } finally {
+      await restoredPool.end();
+    }
+  }, 180_000);
+
+  it("leaves no copy of the database behind", async () => {
+    /*
+     * Both the ciphertext and the plaintext are complete copies of every
+     * physician's record on the platform. A restore that left either in the
+     * container's work directory would be a lasting disclosure created by a
+     * recovery — and nobody would look, because the command succeeded.
+     */
+    const { readdir } = await import("node:fs/promises");
+    const left = (await readdir(workDir)).filter((name) =>
+      name.startsWith("ds-restore-"),
+    );
+
+    expect(left).toEqual([]);
+  });
+
+  it("refuses an archive encrypted with a different key, rather than half-restoring", async () => {
+    const now = new Date(Date.now() + 5000);
+    const report = await runDatabaseBackup({
+      store,
+      prefix: "backups/",
+      databaseUrl: SUPERUSER_URL,
+      encryptionKey: KEY,
+      workDir,
+      retention: DEFAULT_RETENTION,
+      now,
+    });
+
+    const target = new URL(SUPERUSER_URL);
+    target.pathname = `/${OPERATOR_DB}`;
+
+    /*
+     * The reason `backup.ts` chose GCM, exercised through the caller that now
+     * depends on it: the tag authenticates every byte, so a wrong key fails at
+     * `final()` before `pg_restore` is ever started.
+     *
+     * The message has to name the key, not the database. An operator reading
+     * "unable to authenticate data" will spend the night looking at Postgres.
+     */
+    await expect(
+      runRestore({
+        store,
+        key: report.key ?? "",
+        encryptionKey: Buffer.alloc(32, 7),
+        targetDatabaseUrl: target.toString(),
+        workDir,
+        now: new Date(),
+      }),
+    ).rejects.toThrow(/BACKUP_ENCRYPTION_KEY/);
+  }, 120_000);
+
+  it("names a key that is not there", async () => {
+    const target = new URL(SUPERUSER_URL);
+    target.pathname = `/${OPERATOR_DB}`;
+
+    // The most likely failure in an incident is a key mistyped off a listing,
+    // and "get 404" beats a stack trace about an empty file.
+    await expect(
+      runRestore({
+        store,
+        key: "backups/does-not-exist.dump.enc",
+        encryptionKey: KEY,
+        targetDatabaseUrl: target.toString(),
+        workDir,
+        now: new Date(),
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("lists what is there, so a key can be copied rather than guessed", async () => {
+    const keys = await store.list("backups/", new Date());
+
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) {
+      // Every key is fetchable by the same store the restore uses — a listing
+      // that named objects `restore` could not read would be worse than none.
+      expect(await store.size(key, new Date())).toBeGreaterThan(0);
+    }
   });
 });

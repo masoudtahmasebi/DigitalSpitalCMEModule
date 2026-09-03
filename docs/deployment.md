@@ -571,7 +571,10 @@ it configures, and rotated nothing. The server owns both halves now (P17-01).
   contains both, the CSP origin matches the API's hostname, no two services
   share a name;
 - `SECRETS_KMS_KEY` decodes to exactly 32 bytes;
-- the EIV endpoint is not the live one without `EIV_ALLOW_LIVE=yes`;
+- none of the three EIV settings that moved into `platform_settings` is still
+  in `config.env` — and where one is, the deploy carries the endpoint and the
+  worker flag into the database itself and deletes the lines, refusing only
+  where a person's consent is required (P182-05);
 - `config.env` is mode 600.
 
 Each of these was a value somebody used to type twice. They are checks now
@@ -818,9 +821,10 @@ What it creates:
 | `ds-cme-demo`    | 3      | dummy | yes  | the full path, to a Punktemeldung and a PDF |
 | `ds-ohne-punkte` | none   | none  | no   | a course without CME points, which is real  |
 
-The VNR is a documented dummy and the Ärztekammer is fictional. Nothing here
-can reach the live EIV endpoint: `deploy.sh` refuses an `EIV_BASE_URL` pointing
-at eiv-fobi.de unless `EIV_ALLOW_LIVE=yes` is set deliberately (ADR-0005).
+The VNR is a documented dummy and the Ärztekammer is fictional. Nothing here can
+reach the live EIV endpoint: filing at the live register needs a consent given
+in the console by a named super administrator, recorded with the moment they
+gave it, and changing the register clears it (ADR-0005, P180-01).
 
 No staff account comes with it. Create one through the ordinary invitation flow
 and scope it to this customer — a `customer_admin` on `ds` who can see MEDICE is
@@ -887,7 +891,8 @@ in the `dstest` tenant, each named with a fresh suffix, so an old run's course
 is still there to look at when something goes wrong. Nothing it creates is
 visible to MEDICE or to any other customer.
 
-**It refuses to run when `EIV_ALLOW_LIVE` is set**, and says why. The journey
+**It refuses to run against an installation armed for the live register**, and
+says why. The journey
 publishes an accredited Fortbildung — a Teilnahmebescheinigung requires CME
 points and a VNR — and its VNR is a reserved number belonging to no
 Veranstaltung. On an installation reporting live, that would be one refused
@@ -1051,10 +1056,11 @@ Deploying is not the same as being ready to report a physician's CME points.
 These are open and tracked elsewhere; they are listed here because the deploy
 succeeding will not tell you about any of them.
 
-- **`EIV_BASE_URL` points at the mock.** Leave it there. The live endpoint
-  additionally requires `EIV_ALLOW_LIVE=yes`, and `deploy.sh` refuses a live URL
-  without it — a Punktemeldung cannot be withdrawn once the correction window
-  closes. The questions blocking it are S11–S13 in `docs/show-stoppers.md`.
+- **The register is on `Mock` and the worker is off.** Leave them there. Both
+  are set in the console under Plattform → Punktemeldung; the live register
+  additionally requires a consent recording who gave it and when, because a
+  Punktemeldung cannot be withdrawn once the correction window closes. The
+  questions blocking it are S11–S13 in `docs/show-stoppers.md`.
 - **S21 — the EFN length.** The layout says eighteen digits; the platform
   validates fifteen. Unresolved, and it is the field the whole Punktemeldung is
   keyed on.

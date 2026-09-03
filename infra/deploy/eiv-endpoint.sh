@@ -23,8 +23,11 @@
 DS_EIV_TEST_HOST="backend-test.eiv-fobi.de"
 DS_EIV_LIVE_HOST="backend.eiv-fobi.de"
 
-# Prints nothing. Returns 0 when consent is required.
-ds_eiv_requires_live_consent() {
+# The hostname a URL names, lowercased and without its port. Factored out of
+# `ds_eiv_requires_live_consent` when `ds_eiv_choice_for_url` needed the same
+# parsing (P182-05): two copies of this would be two answers to "is that the
+# live register", which is the one question that must have exactly one.
+ds_eiv_host_of() {
   local url="$1" host
 
   # Strip the scheme, then anything from the first `/`, `?` or `#`.
@@ -39,12 +42,45 @@ ds_eiv_requires_live_consent() {
     *) host="${host%%:*}" ;;
   esac
 
-  host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')"
+  printf '%s' "$host" | tr '[:upper:]' '[:lower:]'
+}
 
-  case "$host" in
+# Prints nothing. Returns 0 when consent is required.
+ds_eiv_requires_live_consent() {
+  case "$(ds_eiv_host_of "$1")" in
     127.0.0.1 | localhost | "[::1]" | ::1 | eiv-mock) return 1 ;;
     backend-test.eiv-fobi.de) return 1 ;;
     *) return 0 ;;
+  esac
+}
+
+# Which of the console's three words does this URL mean? (P182-05)
+#
+# The inverse of `ds_eiv_endpoint_url`, and it exists for exactly one job: the
+# deploy that carries a pre-P180 `EIV_BASE_URL` out of `config.env` and into
+# `platform_settings`. Answering `unknown` is a real answer and the caller
+# refuses on it — a host this file does not recognise might be a proxy in front
+# of the real register, and P104-01 is the record of what guessing costs.
+ds_eiv_choice_for_url() {
+  case "$(ds_eiv_host_of "$1")" in
+    127.0.0.1 | localhost | "[::1]" | ::1 | eiv-mock) printf 'mock' ;;
+    "$DS_EIV_TEST_HOST") printf 'test' ;;
+    "$DS_EIV_LIVE_HOST") printf 'live' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+# The spellings a person writes for "on" in a config file. Returns 0 for each.
+#
+# `EIV_WORKER_ENABLED` was documented as `yes`, and `true`/`1`/`on` were all
+# written into somebody's file at some point. Reading only `yes` here would
+# carry a *disabled* worker forward from an installation that was reporting,
+# which is the silent half of the failure this whole carry-forward exists to
+# prevent.
+ds_eiv_truthy() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    yes | y | true | t | 1 | on) return 0 ;;
+    *) return 1 ;;
   esac
 }
 
@@ -94,6 +130,54 @@ ds_eiv_worker_will_file_live() {
   [[ "$consented" == "t" || "$consented" == "true" ]] || return 1
 
   ds_eiv_requires_live_consent "$(ds_eiv_endpoint_url "$choice" "$mock")"
+}
+
+# What should the deploy do with a pre-P180 `config.env`? (P182-05)
+#
+# Pure, and separate from the deploy's `ds_eiv_carry_forward`, which performs
+# it. The decision is the part that can be wrong in a way nobody sees: it
+# chooses whether a real physician's Punktemeldung starts flowing again, stays
+# stopped, or — the one that must never happen — starts flowing to the live
+# Ärztekammer because a script inferred a consent. `eiv-endpoint.test.sh` drives
+# it over a table; the performing half needs a host and a database.
+#
+# Prints exactly one of:
+#
+#   none                     nothing left in config.env — the normal state
+#   refuse-endpoint <choice> `live`, or a host this file does not recognise
+#   refuse-consent  <choice> EIV_ALLOW_LIVE set; consent needs a named person
+#   carry <choice> <armed>   safe to apply: `mock` or `test`, worker true/false
+#
+# The order matters and is deliberate: the **endpoint** is judged before the
+# consent flag, so an installation pointed at the live register is told about
+# the register rather than about the flag. The register is the thing that
+# decides whose record is touched.
+ds_eiv_carry_plan() {
+  local worker="${1:-}" base="${2:-}" allow="${3:-}"
+
+  [[ -n "$worker" || -n "$base" || -n "$allow" ]] || { printf 'none'; return 0; }
+
+  # No EIV_BASE_URL with the other two present means the installation was on
+  # the compiled-in default, which was the mock. Reading that as `unknown` would
+  # refuse a deploy over a variable nobody set.
+  local choice="mock"
+  if [[ -n "$base" ]]; then choice="$(ds_eiv_choice_for_url "$base")"; fi
+
+  case "$choice" in
+    live | unknown)
+      printf 'refuse-endpoint %s' "$choice"
+      return 0
+      ;;
+  esac
+
+  if ds_eiv_truthy "$allow"; then
+    printf 'refuse-consent %s' "$choice"
+    return 0
+  fi
+
+  local armed="false"
+  if ds_eiv_truthy "$worker"; then armed="true"; fi
+  printf 'carry %s %s' "$choice" "$armed"
 }
 
 # The one query that answers all three, so the deploy and the smoke cannot read

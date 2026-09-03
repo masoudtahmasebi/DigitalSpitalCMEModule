@@ -24,10 +24,12 @@ and that development must use the test system: _"Bitte nutzen Sie für die
 Entwicklung ausschließlich das Test-System."_ Credentials and test events come
 from EIV support, not from the live VNR.
 
-None of these is the default `EIV_BASE_URL`. The harness refuses any non-local
-host without `EIV_ALLOW_LIVE=yes`, because the configured VNR belongs to a real
-accredited event and a submission there creates a genuine Punktemeldung for a
-real physician.
+None of these is the harness's default host. The harness refuses any non-local
+host without an explicit `EIV_HARNESS_ALLOW_LIVE`, because the configured VNR
+belongs to a real accredited event and a submission there creates a genuine
+Punktemeldung for a real physician. The platform itself no longer takes either
+value from the environment at all — since P180-01 the register and the consent
+are rows in `platform_settings`, set in the console.
 
 ## The contract, as published
 

@@ -155,5 +155,196 @@ check_worker no mock t t
 check_worker yes 'liv' t t
 check_worker yes '' t t
 
+# ---------------------------------------------------------------------------
+# ds_eiv_choice_for_url — the inverse, used by the carry-forward (P182-05)
+# ---------------------------------------------------------------------------
+#
+# This one decides what an installation that was reporting before P180-01 is
+# switched to afterwards. Getting `test` wrong points a working installation at
+# nothing; getting `unknown` wrong sends a Punktemeldung somewhere nobody chose.
+
+check_choice() {
+  local expected="$1" url="$2" actual
+  actual="$(ds_eiv_choice_for_url "$url")"
+  if [[ "$expected" == "$actual" ]]; then
+    passed=$((passed + 1))
+  else
+    printf 'FAIL  choice %-40s expected %s, got %s\n' "$url" "$expected" "$actual" >&2
+    failed=$((failed + 1))
+  fi
+}
+
+check_choice mock 'http://127.0.0.1:4010'
+check_choice mock 'http://localhost:4010/fobi'
+check_choice mock 'http://[::1]:4010'
+check_choice mock 'http://eiv-mock:4010'
+check_choice test 'https://backend-test.eiv-fobi.de'
+check_choice test 'https://BACKEND-TEST.EIV-FOBI.DE/fobi/veranstalter/veranstaltung'
+check_choice live 'https://backend.eiv-fobi.de'
+check_choice live 'https://backend.eiv-fobi.de/fobi/veranstalter/push_teilnahme'
+
+# Everything else is `unknown`, and the caller refuses on it rather than
+# guessing. `punktemeldung.eiv-fobi.de` is the case that matters: it is treated
+# as needing consent by the tier function above, and it is *not* silently
+# mapped to `live` here — a URL nobody wrote down the meaning of gets a person,
+# not a default.
+check_choice unknown 'https://punktemeldung.eiv-fobi.de/'
+check_choice unknown 'https://backend-test.eiv-fobi.de.example.com'
+check_choice unknown 'https://proxy.internal'
+check_choice unknown ''
+check_choice unknown 'not a url'
+
+# The two must never disagree about what is safe: anything this calls `mock` or
+# `test` is exactly what the tier function lets through without consent.
+for safe_url in 'http://127.0.0.1:4010' 'http://eiv-mock:4010' \
+  'https://backend-test.eiv-fobi.de'; do
+  choice="$(ds_eiv_choice_for_url "$safe_url")"
+  if ds_eiv_requires_live_consent "$safe_url"; then
+    printf 'FAIL  %s is %s but needs consent — the two disagree\n' "$safe_url" "$choice" >&2
+    failed=$((failed + 1))
+  else
+    passed=$((passed + 1))
+  fi
+done
+
+for live_url in 'https://backend.eiv-fobi.de' 'https://proxy.internal'; do
+  if ds_eiv_requires_live_consent "$live_url"; then
+    passed=$((passed + 1))
+  else
+    printf 'FAIL  %s needs consent and the tier function says otherwise\n' "$live_url" >&2
+    failed=$((failed + 1))
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# ds_eiv_truthy — how a person spelled "on" in a file written months ago
+# ---------------------------------------------------------------------------
+#
+# Reading only `yes` would carry a *disabled* worker forward from an
+# installation that was in fact reporting, and nothing on any screen would say
+# so. Every spelling here has been written into a config file by somebody.
+
+check_truthy() {
+  local expected="$1" value="$2" actual="no"
+  if ds_eiv_truthy "$value"; then actual="yes"; fi
+  if [[ "$expected" == "$actual" ]]; then
+    passed=$((passed + 1))
+  else
+    printf 'FAIL  truthy %-12s expected %s, got %s\n' "'$value'" "$expected" "$actual" >&2
+    failed=$((failed + 1))
+  fi
+}
+
+check_truthy yes yes
+check_truthy yes YES
+check_truthy yes Yes
+check_truthy yes y
+check_truthy yes true
+check_truthy yes TRUE
+check_truthy yes t
+check_truthy yes 1
+check_truthy yes on
+
+check_truthy no no
+check_truthy no false
+check_truthy no f
+check_truthy no 0
+check_truthy no off
+check_truthy no ''
+check_truthy no 'yes please'
+
+# ---------------------------------------------------------------------------
+# ds_eiv_carry_plan — what the deploy does with a pre-P180 config.env (P182-05)
+# ---------------------------------------------------------------------------
+#
+# The highest-stakes table in this file. Each row decides, for an installation
+# upgrading across P180-01, whether Punktemeldungen resume, stay stopped, or —
+# the row that must never exist — start flowing to the live Ärztekammer because
+# a shell script inferred a consent nobody gave.
+
+check_plan() {
+  local expected="$1" worker="$2" base="$3" allow="$4" actual
+  actual="$(ds_eiv_carry_plan "$worker" "$base" "$allow")"
+  if [[ "$expected" == "$actual" ]]; then
+    passed=$((passed + 1))
+  else
+    printf 'FAIL  plan w=%-5s b=%-32s a=%-4s expected %q, got %q\n' \
+      "'$worker'" "'$base'" "'$allow'" "$expected" "$actual" >&2
+    failed=$((failed + 1))
+  fi
+}
+
+# Nothing left in the file: every deploy after the first. The table must not be
+# touched here — an operator's console setting would be overwritten (§9.10b).
+check_plan none '' '' ''
+
+# The safe carries. A worker that was on stays on, at the register it was on.
+check_plan 'carry test true' yes 'https://backend-test.eiv-fobi.de' ''
+check_plan 'carry test true' true 'https://backend-test.eiv-fobi.de/fobi' ''
+check_plan 'carry test true' 1 'https://BACKEND-TEST.EIV-FOBI.DE' ''
+check_plan 'carry mock true' yes 'http://eiv-mock:4010' ''
+check_plan 'carry mock true' yes 'http://127.0.0.1:4010' ''
+check_plan 'carry mock true' yes 'http://[::1]:4010' ''
+
+# A worker that was **off** stays off. The direction that is easy to get wrong
+# and impossible to see: carrying `true` here would arm an installation whose
+# operator had deliberately switched reporting off.
+check_plan 'carry test false' no 'https://backend-test.eiv-fobi.de' ''
+check_plan 'carry test false' false 'https://backend-test.eiv-fobi.de' ''
+check_plan 'carry test false' 0 'https://backend-test.eiv-fobi.de' ''
+check_plan 'carry test false' '' 'https://backend-test.eiv-fobi.de' ''
+
+# No EIV_BASE_URL means the compiled-in default, which was the mock. Refusing
+# here would stop a deploy over a variable nobody ever set.
+check_plan 'carry mock true' yes '' ''
+check_plan 'carry mock false' no '' ''
+
+# The live register. Refused whatever else is set, and refused on the endpoint
+# rather than on the flag, because the register is what decides whose record is
+# touched.
+check_plan 'refuse-endpoint live' yes 'https://backend.eiv-fobi.de' yes
+check_plan 'refuse-endpoint live' yes 'https://backend.eiv-fobi.de' ''
+check_plan 'refuse-endpoint live' no 'https://backend.eiv-fobi.de/fobi/veranstalter/push_teilnahme' ''
+check_plan 'refuse-endpoint live' '' 'https://backend.eiv-fobi.de' ''
+
+# A host this platform does not recognise fails closed the same way: it might be
+# a proxy in front of the real register (P104-01).
+check_plan 'refuse-endpoint unknown' yes 'https://punktemeldung.eiv-fobi.de/' ''
+check_plan 'refuse-endpoint unknown' yes 'https://backend-test.eiv-fobi.de.example.com' ''
+check_plan 'refuse-endpoint unknown' yes 'https://proxy.internal' ''
+check_plan 'refuse-endpoint unknown' yes 'not a url' ''
+
+# EIV_ALLOW_LIVE at a safe register: nothing is at risk, and the flag still
+# stops the deploy, because turning it into a consent is the one thing this must
+# never do. Every spelling of it.
+check_plan 'refuse-consent test' yes 'https://backend-test.eiv-fobi.de' yes
+check_plan 'refuse-consent test' no 'https://backend-test.eiv-fobi.de' true
+check_plan 'refuse-consent mock' yes 'http://eiv-mock:4010' 1
+check_plan 'refuse-consent mock' '' '' on
+
+# And its falsy spellings, which are not a consent and must not stop anything.
+check_plan 'carry test true' yes 'https://backend-test.eiv-fobi.de' no
+check_plan 'carry test true' yes 'https://backend-test.eiv-fobi.de' false
+check_plan 'carry test true' yes 'https://backend-test.eiv-fobi.de' 0
+
+# The property that matters more than any single row: **no input produces a
+# plan that carries `live`.** A row added later that did would be a real
+# Punktemeldung filed by inference.
+for w in yes no true false 1 0 ''; do
+  for b in '' 'https://backend.eiv-fobi.de' 'https://backend-test.eiv-fobi.de' \
+    'http://eiv-mock:4010' 'https://proxy.internal' 'not a url'; do
+    for a in '' yes no true 1; do
+      plan="$(ds_eiv_carry_plan "$w" "$b" "$a")"
+      case "$plan" in
+        carry\ live\ *)
+          printf 'FAIL  plan carries LIVE for w=%q b=%q a=%q\n' "$w" "$b" "$a" >&2
+          failed=$((failed + 1))
+          ;;
+        *) passed=$((passed + 1)) ;;
+      esac
+    done
+  done
+done
+
 printf '%d passed, %d failed\n' "$passed" "$failed"
 [[ "$failed" -eq 0 ]]

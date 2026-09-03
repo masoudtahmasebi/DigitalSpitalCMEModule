@@ -109,6 +109,34 @@ export class BackupStore {
     if (!response.ok) throw new ObjectStoreError("put", response.status);
   }
 
+  /**
+   * Download one object to a file (P182-01).
+   *
+   * To disk rather than into memory, for the reason `putFile` streams up: this
+   * is an encrypted database dump, and a restore that needed the whole thing
+   * resident would fail on the day it mattered most — the day the database is
+   * big enough to be worth restoring.
+   *
+   * The transfer budget, not the control one, for the same reason.
+   */
+  async getFile(key: string, path: string, now: Date): Promise<void> {
+    const response = await this.fetchImpl(
+      this.presigner.presignGet(key, OPERATION_TTL_SEC, now),
+      { signal: AbortSignal.timeout(TRANSFER_DEADLINE_MS) },
+    );
+
+    if (!response.ok) throw new ObjectStoreError("get", response.status);
+    if (response.body === null) throw new ObjectStoreError("get", 0);
+
+    const { createWriteStream } = await import("node:fs");
+    const { pipeline } = await import("node:stream/promises");
+    const { Readable } = await import("node:stream");
+
+    // The caller builds this path from its own work directory; no request value
+    // reaches it.
+    await pipeline(Readable.fromWeb(response.body), createWriteStream(path));
+  }
+
   /** The object's size, or undefined when it is not there. */
   async size(key: string, now: Date): Promise<number | undefined> {
     const response = await this.fetchImpl(

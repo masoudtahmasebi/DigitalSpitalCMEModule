@@ -48,6 +48,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.prod.yml"
 compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
 
+# shellcheck source=./backup-state.sh
+source "${SCRIPT_DIR}/backup-state.sh"
+
 problems=()
 
 # --- 1. Every container that should be up, is, and is healthy ---------------
@@ -117,7 +120,35 @@ if [[ "$waiting" =~ ^[0-9]+$ ]] && [[ "$waiting" -gt 0 ]]; then
   problems+=("${waiting} caller(s) queued for a database connection — the pool is saturating")
 fi
 
-# --- 4. Report ---------------------------------------------------------------
+# --- 4. A backup is being taken, and the last one worked --------------------
+#
+# The reason this is here and not left to `OnFailure=` on the backup units:
+# those units *do* start the watchdog when they fail, and the watchdog had
+# nothing in it that could see a backup — so it found three healthy checks,
+# exited 0, and sent the heartbeat. A failed backup produced an affirmative
+# "this host is fine" to the external monitor. `backup-state.sh` explains the
+# sequence; its rule is tested in `backup-state.test.sh`, because a host where
+# the backup has not run since Tuesday is not a fixture anybody can arrange.
+#
+# `ds_backup_state_facts` returns non-zero where there is no systemd — a
+# developer's machine, the e2e rig — and there the question does not apply.
+if facts="$(ds_backup_state_facts)"; then
+  IFS=$'\t' read -r timer_active backup_result backup_last verify_result verify_last \
+    <<<"$facts"
+  while IFS= read -r problem; do
+    # An `if`, not `[[ … ]] &&`. The AND-form leaves the whole loop with exit
+    # status 1 whenever the last line read is empty, which is the normal case.
+    # Verified that `set -e` does *not* exit on it here (bash 5.2 exempts a
+    # loop body's status) — which is precisely why it is worth avoiding: the
+    # loop would still be silently returning 1, and the day somebody moves it
+    # to the end of the file that becomes the script's own exit code, and the
+    # watchdog reports a failure it did not find.
+    if [[ -n "$problem" ]]; then problems+=("backup: ${problem}"); fi
+  done < <(ds_backup_state_problems "$(date +%s)" "$timer_active" "$backup_result" \
+    "$backup_last" "$verify_result" "$verify_last")
+fi
+
+# --- 5. Report ---------------------------------------------------------------
 if [[ ${#problems[@]} -gt 0 ]]; then
   summary="DS Education on $(hostname): ${#problems[@]} problem(s)"
   detail="$(printf '%s\n' "${problems[@]}")"
@@ -143,7 +174,7 @@ if [[ ${#problems[@]} -gt 0 ]]; then
   exit 1
 fi
 
-# --- 4. Healthy: tell the outside world we are still here --------------------
+# --- 6. Healthy: tell the outside world we are still here --------------------
 #
 # Only here. See the header: an unconditional ping is a heartbeat that says
 # "fine" while the building burns.
@@ -152,4 +183,4 @@ if [[ -n "${HEARTBEAT_URL:-}" ]]; then
     printf 'watchdog: healthy, but the heartbeat could not be sent\n' >&2
 fi
 
-printf 'watchdog: all services running and the API is ready\n'
+printf 'watchdog: all services running, the API is ready, backups current\n'

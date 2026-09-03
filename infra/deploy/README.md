@@ -163,8 +163,10 @@ can debug at 22:00.
 
 ### What it does, in order
 
-1. **Preflight.** Refuses on a missing variable, a world-readable env file, or
-   a live EIV endpoint without `EIV_ALLOW_LIVE=yes`. Nothing has changed yet.
+1. **Preflight.** Refuses on a missing variable or a world-readable env file.
+   Nothing has changed yet. (The EIV endpoint is no longer a preflight question:
+   it is a console setting, and the deploy carries a pre-P180 one out of
+   `config.env` after the migration — see step 5a.)
 2. **Pull.** A registry hiccup must not disturb the running site.
 3. **Back up.** `pg_dump` to `/var/backups/ds-education`, before any migration.
    Fourteen kept.
@@ -180,6 +182,14 @@ PRIVILEGES FOR ROLE ds_migrator` only grants `ds_app` on objects
    _ds_migrator_ creates, so migrating as `postgres` leaves `ds_app` with no
    grants at all. That presents as "permission denied" rather than as RLS
    filtering, and looks like isolation working until you read the error.
+   5a. **Carry the EIV setting forward**, once, if `config.env` still holds the
+   pre-P180 `EIV_BASE_URL`, `EIV_WORKER_ENABLED` or `EIV_ALLOW_LIVE`: the
+   endpoint and the worker flag are written into `platform_settings` and the
+   lines are removed from the file, so the console is the only home for them.
+   It refuses instead of carrying where a person's decision is required — the
+   live register, an unrecognised host, or a live-consent flag — because a
+   consent needs a name and a timestamp on it (ADR-0005). After the first
+   deploy there is nothing left to carry and the step does nothing.
 6. **Start**, and wait for the API's health check.
 7. **Verify** over public TLS. An internal health check passing while the
    certificate is broken is a deploy that looks green and serves nothing.
