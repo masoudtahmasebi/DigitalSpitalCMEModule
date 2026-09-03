@@ -294,10 +294,17 @@ export async function startStack(options: {
       KEYCLOAK_ISSUER: "http://127.0.0.1:1/realms/unused",
       KEYCLOAK_AUDIENCE: "unused",
       KEYCLOAK_JWKS_URI: "http://127.0.0.1:1/realms/unused/protocol/openid-connect/certs",
-      // Both workers off: this suite asserts on what a person can see, and a
-      // background sweep changing a row mid-assertion is the definition of a
-      // flaky test. The worker has its own coverage.
-      EIV_WORKER_ENABLED: "no",
+      // The certificate worker off: this suite asserts on what a person can
+      // see, and a background sweep changing a row mid-assertion is the
+      // definition of a flaky test. The worker has its own coverage.
+      //
+      // The **EIV** worker used to be switched off here by `EIV_WORKER_ENABLED`,
+      // which has not existed since P180-01 — it is a row in
+      // `platform_settings`, and the migration creates that row with the worker
+      // off, which is what actually keeps this rig quiet. The dead variable is
+      // removed rather than left: an environment entry that no longer does
+      // anything reads as the reason the suite is stable, and the next person
+      // to make it flaky would have looked here first (P182-05).
       CERTIFICATE_DELIVERY_ENABLED: "no",
       LOG_LEVEL: "warn",
     },

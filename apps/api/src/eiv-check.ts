@@ -28,9 +28,24 @@
  *
  * ## The live guard
  *
- * Mirrors the harness's. A non-local host needs `EIV_ALLOW_LIVE=yes`, because
- * the VNR configured on a production installation is a real accredited event —
- * and question 3 above, though read-only, still authenticates against it.
+ * Mirrors the harness's. A non-local host needs `EIV_CHECK_ALLOW_LIVE=yes`,
+ * because the VNR configured on a production installation is a real accredited
+ * event — and question 3 above, though read-only, still authenticates against
+ * it.
+ *
+ * ## Why `EIV_CHECK_*` and not the names this used to read (P182-05)
+ *
+ * It read `EIV_BASE_URL` and `EIV_ALLOW_LIVE`, and its own error message said
+ * they "must all be set in config.env". Since P180-01 that is precisely where
+ * they may not be: `deploy.sh` refuses a deploy while any of the three remains
+ * in that file, and now carries them into `platform_settings` and deletes them.
+ * So this tool was instructing an operator to do the one thing that stops the
+ * next deploy — and, worse, sharing a spelling with a setting that has moved is
+ * how somebody exports a variable believing it configures the server.
+ *
+ * The same rename, for the same reason, as `EIV_HARNESS_*` in P180-01. These
+ * are arguments to one invocation of a diagnostic, supplied on the command
+ * line; they configure nothing and are read by nothing else.
  *
  * Exit codes, because an operator and a script both read them:
  *
@@ -69,28 +84,42 @@ function report(label: string, exchange: EivExchange): void {
 }
 
 async function main(): Promise<number> {
-  const baseUrl = env("EIV_BASE_URL");
+  const baseUrl = env("EIV_CHECK_BASE_URL");
   const vnr = env("EIV_VNR");
   const password = env("EIV_VNR_PASSWORD");
 
   if (baseUrl === "" || vnr === "" || password === "") {
     console.error(
-      "EIV_BASE_URL, EIV_VNR and EIV_VNR_PASSWORD must all be set in config.env.\n" +
-        "The password is never read from a file in the repository.",
+      [
+        "EIV_CHECK_BASE_URL, EIV_VNR and EIV_VNR_PASSWORD are all required.",
+        "",
+        "Pass them to this one invocation — none of them belongs in config.env,",
+        "and `deploy.sh` refuses a deploy that finds any of them there. The",
+        "register the platform actually reports to is a console setting now",
+        "(Plattform → Punktemeldung); the VNR and its password belong to the",
+        "course and are encrypted at rest.",
+        "",
+        "  cd ~/ds-education/repo/infra/deploy",
+        "  ./dsc run --rm \\",
+        "    -e EIV_CHECK_BASE_URL=https://backend-test.eiv-fobi.de \\",
+        "    -e EIV_VNR=… -e EIV_VNR_PASSWORD=… \\",
+        "    -e EIV_CHECK_ALLOW_LIVE=yes \\",
+        "    --entrypoint node api dist/eiv-check.js",
+      ].join("\n"),
     );
     return 2;
   }
 
-  if (!isLocal(baseUrl) && env("EIV_ALLOW_LIVE") !== "yes") {
+  if (!isLocal(baseUrl) && env("EIV_CHECK_ALLOW_LIVE") !== "yes") {
     console.error(
       [
-        `Refusing to contact ${new URL(baseUrl).hostname} without EIV_ALLOW_LIVE=yes.`,
+        `Refusing to contact ${new URL(baseUrl).hostname} without EIV_CHECK_ALLOW_LIVE=yes.`,
         "",
-        "Even a read authenticates against the configured VNR, which on a",
+        "Even a read authenticates against the VNR you passed, which on a",
         "production installation belongs to a real accredited event.",
         "",
-        "For the EIV test system this is safe and expected:",
-        "  EIV_ALLOW_LIVE=yes EIV_BASE_URL=https://backend-test.eiv-fobi.de ./dsc eiv",
+        "For the EIV test system this is safe and expected — add:",
+        "  -e EIV_CHECK_ALLOW_LIVE=yes",
       ].join("\n"),
     );
     return 2;

@@ -84,8 +84,12 @@ system now, and the fix verified the day the ÄKWL answers.
 **Never point the worker at the live system to try something.** `push_teilnahme`
 against a real VNR files a statutory Punktemeldung against a real physician's
 EFN, and a filed report cannot be unfiled — only withdrawn, which leaves its own
-record. `EIV_ALLOW_LIVE` exists to make that a decision rather than an accident,
-and `EIV_WORKER_ENABLED=no` is currently set on production for the same reason.
+record. The live-register consent exists to make that a decision rather than an
+accident. Since P180-01 it is not a flag in a file: it is a row in
+`platform_settings`, set in the console under **Plattform → Punktemeldung**, and
+it records the name of the person who gave it and the moment they did. Changing
+the register clears it — consent is to one register, not to the idea of
+registers.
 
 ---
 
@@ -94,12 +98,20 @@ and `EIV_WORKER_ENABLED=no` is currently set on production for the same reason.
 ### On the host, read-only — `./dsc eiv`
 
 ```bash
-EIV_ALLOW_LIVE=yes \
-EIV_BASE_URL=https://backend-test.eiv-fobi.de \
+EIV_CHECK_ALLOW_LIVE=yes \
+EIV_CHECK_BASE_URL=https://backend-test.eiv-fobi.de \
 EIV_VNR=2760012024200354002 \
-EIV_VNR_PASSWORD=<the password, from config.env> \
+EIV_VNR_PASSWORD=<the password, from the course in the console> \
   ./dsc eiv
 ```
+
+All four are arguments to **this one run** and belong in none of the
+installation's files — `deploy.sh` refuses a `config.env` that carries any of
+them. `dsc` forwards them into the container by name rather than by value, so
+the password never appears in an argv; type it with a leading space if your
+shell records history. They configure nothing: the register the platform
+actually reports to is the console setting, and the VNR and its password belong
+to the course.
 
 It authenticates, prints the accredited period and the two Punktekennzeichen,
 and lists what has already been reported. **It cannot file a Punktemeldung** —
@@ -109,9 +121,10 @@ cannot be unfiled, only withdrawn, and that leaves its own record.
 Exit codes: `0` the register answered, `1` it refused or could not be reached,
 `2` it was not asked because the configuration would not allow it.
 
-`EIV_ALLOW_LIVE=yes` is required for any non-local host, the test system
-included. That is deliberate: even a read authenticates against the configured
-VNR, and on a production installation that VNR is a real accredited event.
+The `EIV_CHECK_ALLOW_LIVE` argument is required for any non-local host, the
+test system included. That is deliberate: even a read authenticates against the
+VNR you pass, and on a production installation that VNR is a real accredited
+event.
 
 ### The two lines to read
 
@@ -129,14 +142,16 @@ a completion may claim.
 
 Complete a course as a physician would. That is the path actually under test —
 the widget, the gate, the evaluation, the EFN, the worker — and it is the only
-one that proves the whole chain. Point the installation at the test system, set
-a test VNR on the course, and turn the worker on:
+one that proves the whole chain. Set a test VNR on the course, then open
+**Plattform → Punktemeldung** as a super administrator and:
 
-```
-EIV_BASE_URL=https://backend-test.eiv-fobi.de
-EIV_ALLOW_LIVE=yes
-EIV_WORKER_ENABLED=yes
-```
+1. choose the register **EIV-Testsystem**;
+2. switch **Punktemeldung aktiv** on.
+
+No consent tick is needed for the test system — it reaches no real record, and a
+safety switch you must clear to do ordinary work is a switch that is always
+cleared. The worker reads this on every sweep, so it takes effect within a
+minute; there is nothing to deploy and nothing to edit on the host.
 
 Then read the banner on **Verwaltung → Teilnahme → Punktemeldungen**, which says
 in words whether this installation will file anything (P121-01). Use a test EFN
@@ -144,8 +159,10 @@ from the list above.
 
 > **The dangerous combination is the live endpoint with the live VNR and the
 > worker on.** Each alone is harmless. Together they file a statutory report
-> against a real physician. `EIV_WORKER_ENABLED=no` is currently set on
-> production precisely so that combination cannot happen by accident.
+> against a real physician. Two of the three are refused unless somebody
+> deliberately arranges them in the console: the live register needs a consent
+> with a name on it, and reporting has its own switch. Neither can now be set by
+> editing a file on the host.
 
 ## What has been verified, and what has not
 

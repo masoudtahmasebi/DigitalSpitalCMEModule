@@ -490,34 +490,119 @@ source "$(dirname "${BASH_SOURCE[0]}")/eiv-endpoint.sh"
 # against this script. What the deploy still does is *report* the posture it
 # finds, below, after the database is reachable.
 #
-# Refusing the three names outright, so a well-meant edit cannot bring one back
-# and quietly become a second home for the setting the console shows. The same
-# rule `scripts/check-eiv-settings.mjs` enforces in the repository; this is the
-# half that covers a file on a host, which no script in the repository can see.
-for moved in EIV_BASE_URL EIV_WORKER_ENABLED EIV_ALLOW_LIVE; do
-  [[ -z "${!moved:-}" ]] || die \
-    "${moved} is set in ${CONFIG_FILE}, where nothing reads it any more.
+# ## The carry-forward, and why the deploy performs it (P182-05)
+#
+# P180-01 moved these three out of `config.env` and into `platform_settings`,
+# and the first version of this block simply **refused** while any of them
+# remained — with a good message naming the console screen and the `sed` to run.
+#
+# That is the mechanism CLAUDE.md §9.9 exists to reject, one level up. A
+# migration cannot read `config.env`, so the table starts with the worker OFF
+# and the register on `mock`; the old setting reaches the new home only if a
+# person performs a step. §9.9's strongest form is explicit about what happens
+# next: *documentation instructing a human to apply a setting is a setting that
+# is not applied*, and the consequence here is an installation that has silently
+# stopped filing Punktemeldungen while every screen looks well.
+#
+# The deploy **can** apply it — it has `psql`, and it is holding the file. So it
+# does, and §9.9's own rule for that case is the one being followed: if a deploy
+# can apply a setting it applies it; if it cannot, it checks and fails.
+#
+# ## What it will not carry, and that is the whole of the refusal
+#
+# Consent to file at the **live** register. `EIV_ALLOW_LIVE=yes` was a string in
+# a file that nobody signed; P180-01 made it a name and a timestamp, because a
+# Punktemeldung cannot be withdrawn once the correction window closes
+# (ADR-0005). Reconstituting that consent from a file would undo the change and
+# put a real physician's record behind an inference. So `live`, and any host
+# this platform does not recognise, stops the deploy and asks for a person.
+#
+# ## Why this cannot overwrite what an operator typed
+#
+# The §9.10b trap — a seed running on every deploy, silently replacing a console
+# edit. It cannot happen here because the carry is driven by the variables' own
+# presence and ends by removing them from the file. A second deploy finds
+# nothing to carry and touches the table not at all.
+ds_eiv_carry_forward() {
+  local plan choice armed
+  plan="$(ds_eiv_carry_plan "${EIV_WORKER_ENABLED:-}" "${EIV_BASE_URL:-}" "${EIV_ALLOW_LIVE:-}")"
+  choice="$(printf '%s' "$plan" | cut -d' ' -f2)"
+  armed="$(printf '%s' "$plan" | cut -d' ' -f3)"
 
-   Whether the worker files Punktemeldungen, and to which register, moved into
-   the database in P180-01 and is set in the admin console under
-   Plattform → Punktemeldung. A value here would be a second answer to a
-   question the console already answers, and the console would win silently.
+  case "$plan" in
+    none) return 0 ;;
 
-   ** If this installation was reporting, it is not reporting now. **
+    "refuse-endpoint "*)
+      die "EIV_BASE_URL in ${CONFIG_FILE} names ${EIV_BASE_URL:-} — '${choice}' — which
+   this deploy will not carry into the database by itself.
 
-   The database starts with the worker OFF and the register on 'mock'. A
-   migration cannot read this file, so nothing carried your old setting over —
-   and this refusal exists so that you find that out here, at a red deploy,
-   rather than from a physician whose points were never filed.
+   Since P180-01 the register is a setting in the admin console, and filing at
+   the LIVE Ärztekammer register additionally needs a consent recording **who**
+   gave it and **when**. A Punktemeldung cannot be withdrawn once the correction
+   window closes (ADR-0005), so that consent is an act by a person and not a
+   line this script read out of a file. A host this platform does not recognise
+   gets the same answer: it might be a proxy in front of the real register, and
+   P104-01 is the record of what guessing costs.
 
-   So: open the console as a super administrator, go to
-   Plattform → Punktemeldung, set the register and switch reporting on. Queued
-   Meldungen are not lost — they are filed on the first sweep after you do.
+   ** This installation is not filing Punktemeldungen right now. ** Nothing is
+   lost: they queue, and are filed on the first sweep after the worker is armed.
+
+   So, as a super administrator: Plattform → Punktemeldung, choose the register,
+   tick the live confirmation, and switch reporting on.
 
    Then, on the host, as the deploy user:
 
-       sed -i '/^${moved}=/d' ${CONFIG_FILE}"
-done
+       sed -i '/^EIV_BASE_URL=/d;/^EIV_WORKER_ENABLED=/d;/^EIV_ALLOW_LIVE=/d' ${CONFIG_FILE}"
+      ;;
+
+    "refuse-consent "*)
+      die "EIV_ALLOW_LIVE is set in ${CONFIG_FILE}, and this deploy will not turn it
+   into a live-register consent.
+
+   P180-01 replaced the flag with a consent carrying the name of the person who
+   gave it and the moment they did. Rebuilding that from a string in a file
+   would give a real physician's Fortbildungskonto an author of 'a shell script
+   inferred it', which is the one thing the change was made to prevent.
+
+   The register you are pointed at is '${choice}', which files nothing at any
+   Ärztekammer, so nothing is at risk while this is sorted out.
+
+   Give the consent in the console under Plattform → Punktemeldung, then:
+
+       sed -i '/^EIV_ALLOW_LIVE=/d' ${CONFIG_FILE}"
+      ;;
+  esac
+
+  # Everything past here is `mock` or `test`: reversible, files nothing at a
+  # real register, and safe for a script to decide.
+  log "Carrying the pre-P180 EIV settings into platform_settings: endpoint=${choice} worker_enabled=${armed}"
+
+  compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
+    psql -v ON_ERROR_STOP=1 -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
+    -c "UPDATE platform_settings
+           SET eiv_endpoint = '${choice}', eiv_worker_enabled = ${armed}
+         WHERE singleton" >/dev/null ||
+    die "could not write platform_settings — the carry-forward did not happen, and
+   ${CONFIG_FILE} is unchanged, so this deploy can simply be run again."
+
+  # Only now. Removing the lines first and failing on the write would lose the
+  # setting entirely, with nothing left on the host that remembers it.
+  local before after
+  before="$(wc -l <"$CONFIG_FILE")"
+  sed -i '/^EIV_BASE_URL=/d;/^EIV_WORKER_ENABLED=/d;/^EIV_ALLOW_LIVE=/d' "$CONFIG_FILE"
+  after="$(wc -l <"$CONFIG_FILE")"
+
+  # Assert the effect, not the exit code (§9.9a). `sed -i` returns 0 on a file
+  # it changed nothing in, and a variable left behind would be carried again on
+  # every future deploy — overwriting whatever the operator had since set.
+  [[ "$after" -lt "$before" ]] ||
+    die "the three EIV variables are still in ${CONFIG_FILE} after removing them.
+   Delete them by hand before the next deploy, or this carries forward again and
+   overwrites what you set in the console."
+
+  log "Removed EIV_BASE_URL / EIV_WORKER_ENABLED / EIV_ALLOW_LIVE from ${CONFIG_FILE} ($((before - after)) line(s))"
+  log "  The console (Plattform → Punktemeldung) is now the only home for this."
+}
 
 # The API never reads a VNR or its password from the environment, and an
 # operator who believes otherwise has a worker that cannot authenticate.
@@ -911,6 +996,13 @@ DS_LOOPBACK_ISSUER_RE='^https?://(127\.[0-9.]+|localhost|\[::1\]|[^/]*\.localhos
 # has any opinion about the register: it reports what the operator set in the
 # console.
 if [[ "$RUN_MIGRATIONS" == "1" ]]; then
+  # First: carry a pre-P180 setting out of config.env and into the table, if one
+  # is still there. Defined next to the EIV endpoint rules above; it runs here
+  # because `platform_settings` has to exist, which means after the migration.
+  # It reports what it did and refuses only where a person's consent is
+  # required — see its header.
+  ds_eiv_carry_forward
+
   eiv_settings="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
     psql -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
     -c "$(ds_eiv_settings_sql)" 2>/dev/null | tr -d '\n' || true)"

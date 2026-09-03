@@ -183,9 +183,29 @@ ds_as_migrator() {
   # rejects the whole command with `unknown flag: --no-build` (P49-02). It was
   # redundant here anyway — `ds_resolve_image_tag` has already established that
   # this image is on the disk, and compose only builds when one is missing.
+  # Names in DS_FORWARD_ENV are passed as bare `-e NAME` (P182-05).
+  #
+  # Bare on purpose. `-e NAME=value` puts the value in the docker client's argv,
+  # where `ps` shows it to every user on the host — and one of these names is a
+  # VNR password. `-e NAME` takes the value from this process's own environment
+  # instead, so it is never written down anywhere.
+  #
+  # Why any of this: `docker compose run` gives the container the environment
+  # the **compose file** declares, and nothing else. `EIV_CHECK_BASE_URL=… ./dsc
+  # eiv` sets a variable in *this* shell that the container could never see, so
+  # `./dsc eiv` answered "these must all be set" whatever the operator typed —
+  # the entrypoint documented as the way to prove the EIV connection could not
+  # be given a connection to prove.
+  local forward=()
+  local name
+  for name in "${DS_FORWARD_ENV[@]:-}"; do
+    [[ -n "$name" && -n "${!name:-}" ]] && forward+=(-e "$name")
+  done
+
   exec env DS_COMMIT="$tag" \
     docker compose -f "${SCRIPT_DIR}/docker-compose.prod.yml" run --rm \
     -e MIGRATION_DATABASE_URL="postgres://ds_migrator:${DS_MIGRATOR_PASSWORD_URL}@postgres:5432/${POSTGRES_DB}" \
+    "${forward[@]}" \
     --entrypoint node api "$@"
 }
 
@@ -213,13 +233,21 @@ fi
 #
 # Against the EIV test system, which is what it is for:
 #
-#   EIV_ALLOW_LIVE=yes EIV_BASE_URL=https://backend-test.eiv-fobi.de \
-#     EIV_VNR=<test vnr> ./dsc eiv
+#   EIV_CHECK_ALLOW_LIVE=yes \
+#   EIV_CHECK_BASE_URL=https://backend-test.eiv-fobi.de \
+#   EIV_VNR=<test vnr> EIV_VNR_PASSWORD=<test password> ./dsc eiv
 #
-# Credentials come from config.env or the environment, never from a file in the
-# repository.
+# All four come from the invoking shell and **not** from config.env: since
+# P180-01 the register the platform reports to is a console setting, and
+# `deploy.sh` refuses a deploy that finds any of these names in that file. They
+# are arguments to one diagnostic run and configure nothing (P182-05).
+#
+# Type the password with a leading space if your shell is one that records
+# history — it is read from the environment and never appears in any argv, but
+# your own shell is not covered by that.
 if [[ "${1:-}" == "eiv" ]]; then
   shift
+  DS_FORWARD_ENV=(EIV_CHECK_BASE_URL EIV_CHECK_ALLOW_LIVE EIV_VNR EIV_VNR_PASSWORD)
   ds_as_migrator dist/eiv-check.js "$@"
 fi
 

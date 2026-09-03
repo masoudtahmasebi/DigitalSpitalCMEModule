@@ -278,9 +278,14 @@ workflow runs it automatically after `deploy.sh` succeeds; a failure fails the
 deploy. All four variables are required, because a smoke test that fell back to
 `localhost` would report a healthy deployment while looking at nothing.
 
-It refuses to run against an installation with `EIV_ALLOW_LIVE` set, and says
-why: the journey publishes an accredited Fortbildung, and its reserved VNR must
-never become a Punktemeldung at a real Ärztekammer.
+It refuses to run against an installation that reports to EIV-FOBI live, and
+says why: the journey publishes an accredited Fortbildung, and its reserved VNR
+must never become a Punktemeldung at a real Ärztekammer. The answer comes from
+the **host** — `deploy.yml` asks the server for its own EIV posture and passes
+it in as `EIV_REPORTS_LIVE` — and an absent or unrecognised answer is a refusal
+rather than a shrug. The guard this replaced read a variable that was only ever
+set on the host, so from a runner it always said "not live" and could never fire
+(P113-01).
 
 ### Why `db:migrate` connects as `ds_migrator`
 
