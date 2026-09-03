@@ -648,6 +648,12 @@ export const en: DeepPartial<typeof german> = {
 
     lockedByRecords:
       "Cannot be deleted: participations have already been recorded. This data is the evidence for points already awarded.",
+    lockedByChildren: (count: number, what: string): string =>
+      `Cannot be deleted: it still contains ${String(count)} ${what}. Those have to be deleted first.`,
+    childChapters: (count: number): string => (count === 1 ? "chapter" : "chapters"),
+    childContents: (count: number): string =>
+      count === 1 ? "content item" : "content items",
+    childQuestions: (count: number): string => (count === 1 ? "question" : "questions"),
     locked: "In use",
     lockedRule:
       "Modules, chapters and contents with recorded participations can no longer be deleted — this data is the evidence for points already awarded.",

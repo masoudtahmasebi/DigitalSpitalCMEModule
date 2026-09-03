@@ -21,7 +21,7 @@
  */
 
 import type { CourseNode } from "./types.js";
-import { watchedSecondsWithin, type WatchedSegment } from "./watch.js";
+import { fillSamplingGaps, watchedSecondsWithin, type WatchedSegment } from "./watch.js";
 
 /** The stored segments for one piece of video content. */
 export interface ContentSegments {
@@ -83,7 +83,35 @@ export function courseWatchCoverage(
          * was 100 % there and 99 % here, and 99 does not complete a course
          * whose `requiredWatchPercent` is 100. See `watchedSecondsWithin`.
          */
-        watchedSec += watchedSecondsWithin(stored.get(content.id) ?? [], duration);
+        /*
+         * Credited the same way the player credits them (P163-01).
+         *
+         * This was the raw stored intervals, and it was the **third** call site
+         * of a rule that had been applied at two: the write path stores a
+         * percentage computed from `fillSamplingGaps`, the read path returns
+         * segments credited the same way, and this — the figure
+         * `isCourseComplete` compares against `requiredWatchPercent` — did not.
+         *
+         * A learner who watched every video end to end through a
+         * fifteen-second sampling clock was therefore ticked on every content,
+         * shown "100 % der Fortbildung absolviert" from the rollup, passed the
+         * Lernerfolgskontrolle, and told "Für die CME-Punkte fehlen noch
+         * Abschnitte der Fortbildung" — because 597 of 600 seconds floors to
+         * 99, and 99 does not satisfy a requirement of 100. There was no way
+         * onward from that screen and nothing on it named a section to go back
+         * to, because by every other measure there was none.
+         *
+         * §4 invariant 6 is the rule this broke: one rollup path, because two
+         * implementations eventually disagree and disagreeing numbers on a CME
+         * record are a compliance problem. Applying it here rather than at the
+         * caller keeps the duration and the crediting rule in one place — the
+         * caller has the segments but not the length they must be judged
+         * against, which is how the omission happened.
+         */
+        watchedSec += watchedSecondsWithin(
+          fillSamplingGaps(stored.get(content.id) ?? [], duration),
+          duration,
+        );
       }
     }
   }

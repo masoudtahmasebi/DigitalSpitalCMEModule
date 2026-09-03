@@ -895,6 +895,24 @@ export const german = {
     lockedByRecords:
       "Kann nicht gelöscht werden: es sind bereits Teilnahmen erfasst. Diese Daten sind der Nachweis für bereits vergebene Punkte.",
     /**
+     * Still has something inside it (P162-02).
+     *
+     * The API has always refused this — `chapters.module_id` and
+     * `contents.chapter_id` are `ON DELETE RESTRICT` — but until P162-01 the
+     * refusal was a foreign-key violation and reached the operator as
+     * „Internal server error“. Now it is a 409 with a sentence, and the button
+     * that produces it is disabled before it is pressed, which is the half that
+     * makes it an answer rather than an error (§9.2).
+     *
+     * It names the count, because "delete the things inside first" is only
+     * actionable if you know how many and of what.
+     */
+    lockedByChildren: (count: number, what: string): string =>
+      `Kann nicht gelöscht werden: enthält noch ${String(count)} ${what}. Diese müssen zuerst gelöscht werden.`,
+    childChapters: (count: number): string => (count === 1 ? "Kapitel" : "Kapitel"),
+    childContents: (count: number): string => (count === 1 ? "Inhalt" : "Inhalte"),
+    childQuestions: (count: number): string => (count === 1 ? "Frage" : "Fragen"),
+    /**
      * The two words on the row; `lockedByRecords` stays as its title and
      * accessible name (P100-01).
      *

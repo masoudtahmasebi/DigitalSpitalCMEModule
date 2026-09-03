@@ -107,6 +107,10 @@ export interface AuthoringRepositoryPort {
   censusOfDepartment(id: string): Promise<ChildCensus>;
   censusOfProject(id: string): Promise<ChildCensus>;
   censusOfCourse(id: string): Promise<ChildCensus>;
+  censusOfModule(id: string): Promise<ChildCensus>;
+  censusOfChapter(id: string): Promise<ChildCensus>;
+  /** A Lernerfolgskontrolle's questions — children, but not a level (P162-01). */
+  countContentQuestions(id: string): Promise<number>;
   countDepartmentRecords(id: string): Promise<number>;
   countProjectRecords(id: string): Promise<number>;
   countCourseRecords(id: string): Promise<number>;
@@ -702,6 +706,55 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
   // -------------------------------------------------------------------------
   // Deletion. The counts are the input to `canDelete`; the decision is not here.
   // -------------------------------------------------------------------------
+
+  /*
+   * The three censuses below are P162-01, and their absence is why
+   * `deleteModule`, `deleteChapter` and `deleteContent` answered 500.
+   *
+   * The comment above says "two questions per level, matching
+   * `deletionVerdict`". Three of the six levels only ever asked the second, so
+   * a non-empty one reached Postgres and hit `ON DELETE RESTRICT` — an
+   * unhandled foreign-key violation, which is an internal error and not an
+   * answer. Every level asks both now.
+   */
+  async censusOfModule(id: string): Promise<ChildCensus> {
+    const [row] = await this.db
+      .select({
+        chapters: sql<number>`(SELECT count(*)::int FROM chapters c WHERE c.module_id = ${id})`,
+      })
+      .from(modules)
+      .where(eq(modules.id, id));
+    return { chapter: row?.chapters ?? 0 };
+  }
+
+  async censusOfChapter(id: string): Promise<ChildCensus> {
+    const [row] = await this.db
+      .select({
+        contents: sql<number>`(SELECT count(*)::int FROM contents c WHERE c.chapter_id = ${id})`,
+      })
+      .from(chapters)
+      .where(eq(chapters.id, id));
+    return { content: row?.contents ?? 0 };
+  }
+
+  /**
+   * A Lernerfolgskontrolle's questions, which are not a `HierarchyLevel`.
+   *
+   * They are children in every sense that matters here — `quiz_questions`
+   * references `contents` with `ON DELETE RESTRICT`, so an exam that still has
+   * them cannot be deleted — but they are not a level of the
+   * Customer → … → Inhalt chain, and widening `HierarchyLevel` to carry them
+   * would put a question into every census, every label map and every verdict
+   * that has nothing to do with quizzes. Counted separately, refused with its
+   * own sentence.
+   */
+  async countContentQuestions(id: string): Promise<number> {
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(quizQuestions)
+      .where(eq(quizQuestions.contentId, id));
+    return row?.count ?? 0;
+  }
 
   async countModuleRecords(id: string): Promise<number> {
     const [row] = await this.db

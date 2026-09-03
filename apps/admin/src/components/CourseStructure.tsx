@@ -237,7 +237,16 @@ function ModuleBlock(props: {
             label={de.common.delete}
             confirmLabel={de.common.confirmDelete}
             cancelLabel={de.common.cancel}
-            disabledReason={blockedBy > 0 ? de.structure.lockedByRecords : undefined}
+            disabledReason={
+              blockedBy > 0
+                ? de.structure.lockedByRecords
+                : module.chapters.length > 0
+                  ? de.structure.lockedByChildren(
+                      module.chapters.length,
+                      de.structure.childChapters(module.chapters.length),
+                    )
+                  : undefined
+            }
             lockedLabel={de.structure.locked}
             onConfirm={() => props.onMutate(() => client.adminDeleteModule(module.id))}
           />
@@ -382,7 +391,16 @@ function ChapterBlock(props: {
             label={de.common.delete}
             confirmLabel={de.common.confirmDelete}
             cancelLabel={de.common.cancel}
-            disabledReason={blocked ? de.structure.lockedByRecords : undefined}
+            disabledReason={
+              blocked
+                ? de.structure.lockedByRecords
+                : chapter.contents.length > 0
+                  ? de.structure.lockedByChildren(
+                      chapter.contents.length,
+                      de.structure.childContents(chapter.contents.length),
+                    )
+                  : undefined
+            }
             lockedLabel={de.structure.locked}
             onConfirm={() => props.onMutate(() => client.adminDeleteChapter(chapter.id))}
           />
@@ -526,7 +544,14 @@ function ContentRow(props: {
             confirmLabel={de.common.confirmDelete}
             cancelLabel={de.common.cancel}
             disabledReason={
-              content.learnerRecords > 0 ? de.structure.lockedByRecords : undefined
+              content.learnerRecords > 0
+                ? de.structure.lockedByRecords
+                : (content.questionCount ?? 0) > 0
+                  ? de.structure.lockedByChildren(
+                      content.questionCount ?? 0,
+                      de.structure.childQuestions(content.questionCount ?? 0),
+                    )
+                  : undefined
             }
             lockedLabel={de.structure.locked}
             onConfirm={() => props.onMutate(() => client.adminDeleteContent(content.id))}

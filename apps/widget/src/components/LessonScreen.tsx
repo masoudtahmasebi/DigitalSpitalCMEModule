@@ -144,10 +144,37 @@ function VideoLesson(props: {
    * running to the end that a learner cannot close. That is worth seeing: it
    * is the operator's problem and it was invisible.
    */
-  const gaps = useMemo(
-    () => uncoveredSpans(covered, lesson.durationSec ?? 0),
-    [covered, lesson.durationSec],
-  );
+  const gaps = useMemo(() => {
+    const spans = uncoveredSpans(covered, lesson.durationSec ?? 0);
+
+    /*
+     * Only the gaps somebody can actually go to (P163-02).
+     *
+     * P102-01 removed this sentence for a video nobody had opened, because it
+     * told a learner to seek directly above a player saying seeking is
+     * refused. It guarded that one case — `covered.length === 0` — and the same
+     * contradiction survives one step along: watch linearly to 2:06 of a 24:46
+     * video and the remaining tail is a gap, so the screen reads
+     *
+     *     Diese Stellen fehlen noch: 2:06–24:46.
+     *     Spulen Sie dorthin, um die Wiedergabe zu vervollständigen.
+     *
+     * over a player that refuses to spool forward. It is not wrong — those
+     * seconds genuinely are unwatched — and it is useless, because the only way
+     * to close that span is to keep watching, which is what the learner is
+     * already doing. §9.2 and §9.4 together: an instruction the system will not
+     * carry out, in place of the one thing the person needs to know, which is
+     * that nothing is wrong.
+     *
+     * A gap is worth naming only when it lies *behind* the furthest point
+     * reached — that is a span the learner skipped past or lost, seeking back
+     * to it is permitted, and "Spulen Sie dorthin" is then an instruction it can carry out. The
+     * tail ahead of the furthest point is not a gap; it is the rest of the
+     * video.
+     */
+    const furthest = covered.reduce((max, span) => Math.max(max, span.endSec), 0);
+    return spans.filter((span) => span.startSec < furthest);
+  }, [covered, lesson.durationSec]);
 
   /** True while a progress request is outstanding — see `flush`. */
   const inFlightRef = useRef(false);

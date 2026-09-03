@@ -189,9 +189,32 @@ it("offers delete where nothing is recorded, and only there", async () => {
   // them rather than asserting there is one.
   await screen.findAllByText("ADHS behandeln");
 
-  // Three deletable rows in the first module's branch, none in the second's.
-  expect(screen.getAllByRole("button", { name: de.common.delete }).length).toBe(3);
-  expect(screen.getAllByText(de.structure.locked).length).toBe(3);
+  /*
+   * One deletable row, not three (migrated for P162-02).
+   *
+   * This asserted three: the module, its chapter and its content were all
+   * offered, because the only question asked was "has a learner touched it".
+   * Two of those three answered 500 — `ON DELETE RESTRICT` on
+   * `chapters.module_id` and `contents.chapter_id` — so the assertion was
+   * pinning a button whose only possible outcome was an internal error.
+   *
+   * Kept and re-aimed rather than deleted: what it is for is still "offered
+   * exactly where it can work", and there are now two ways for it not to be.
+   * The innermost row of the untouched branch is the one that can be deleted;
+   * everything above it holds something, and the whole second branch holds a
+   * learner record.
+   */
+  expect(screen.getAllByRole("button", { name: de.common.delete }).length).toBe(1);
+  expect(screen.getAllByText(de.structure.locked).length).toBe(5);
+
+  // And the two reasons are told apart, because they need different answers:
+  // one is emptied by the author, the other can never be emptied at all.
+  expect(
+    screen.getAllByLabelText(
+      de.structure.lockedByChildren(1, de.structure.childChapters(1)),
+    ).length,
+  ).toBe(1);
+  expect(screen.getAllByLabelText(de.structure.lockedByRecords).length).toBe(3);
 });
 
 it("says a quiz has no questions on the row, before anybody opens it", async () => {
