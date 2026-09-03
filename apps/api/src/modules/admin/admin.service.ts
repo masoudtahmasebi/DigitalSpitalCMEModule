@@ -109,6 +109,7 @@ export class AdminService {
       return {
         slug: row.slug,
         status: row.status,
+        contentLocked: row.contentLocked,
         title: row.title,
         ...presentationOf(row),
         vnr: row.vnr,
@@ -133,6 +134,7 @@ export class AdminService {
     return {
       slug: row.slug,
       status: row.status,
+      contentLocked: row.contentLocked,
       title: row.title,
       ...presentationOf(row),
       vnr: row.vnr,
@@ -197,6 +199,18 @@ export class AdminService {
     assign(patch, "heroImageUrl", update.heroImageUrl);
     assign(patch, "cmePoints", update.cmePoints);
     assign(patch, "cmeCategory", update.cmeCategory);
+
+    /*
+     * The content lock (P178-01).
+     *
+     * Editable in both directions from here on purpose: the client asked for a
+     * course to be *unlockable*, and the automatic lock set by the first
+     * completion would otherwise be a one-way door with no key on any screen.
+     * Unlocking is a decision with a consequence — it re-denominates everybody
+     * on the course — so the console says so at the switch, and the audit entry
+     * below records `contentLocked` among the fields changed.
+     */
+    assign(patch, "contentLocked", update.contentLocked);
 
     // Dates arrive as ISO strings and are stored as `timestamptz`. Parsed here
     // rather than in the repository, which has no business knowing the wire

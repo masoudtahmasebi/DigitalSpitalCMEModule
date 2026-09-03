@@ -1361,6 +1361,14 @@ export function Console(props: {
                   >
                     {course.title}
                   </button>
+                  {/*
+                   * Visible from the list, because "why can I not edit this
+                   * course" is a question somebody asks before they have
+                   * opened it (P178-01).
+                   */}
+                  {course.contentLocked ? (
+                    <Badge tone="muted">{de.courses.lockedBadge}</Badge>
+                  ) : null}
                 </td>
                 <td className="px-4 py-3 text-gray-600">{course.vnr ?? "—"}</td>
                 <td className="px-4 py-3">
@@ -1603,27 +1611,53 @@ function CourseTabContent(props: {
 }) {
   const { client, slug } = props;
 
+  /*
+   * The three screens below wait for the course row before drawing anything
+   * (P178-01).
+   *
+   * They used to render immediately and fetch their own tree, which was right
+   * while nothing about the course changed what they offered. `contentLocked`
+   * does: rendering them optimistically would draw "Löschen" and "Inhalt
+   * hinzufügen" on a locked course for as long as the request takes, and a
+   * control that appears and then vanishes is worse than one that arrives a
+   * moment late. Presentation and Einstellungen have waited on the same row
+   * since they were written.
+   */
+  const contentLocked = props.course?.contentLocked ?? false;
+
   switch (props.tab) {
     case "structure":
+      if (props.course === undefined) return <Spinner label={de.loading} />;
       return props.quizContentId === undefined ? (
         <CourseStructureEditor
           client={client}
           courseSlug={slug}
+          contentLocked={contentLocked}
           onEditQuiz={props.onEditQuiz}
         />
       ) : (
         <QuizEditor
           client={client}
           contentId={props.quizContentId}
+          contentLocked={contentLocked}
           onDone={props.onCloseQuiz}
         />
       );
 
     case "experts":
+      // Referenten are presentation, like the title and the hero image, and
+      // the lock deliberately does not cover them — see the migration header.
       return <ExpertsEditor client={client} courseSlug={slug} />;
 
     case "evaluation":
-      return <EvaluationEditor client={client} courseSlug={slug} />;
+      if (props.course === undefined) return <Spinner label={de.loading} />;
+      return (
+        <EvaluationEditor
+          client={client}
+          courseSlug={slug}
+          contentLocked={contentLocked}
+        />
+      );
 
     case "presentation":
       return props.course === undefined ? (

@@ -10,12 +10,27 @@
  * not a confirmation. The checkbox here is a courtesy that prevents a
  * surprising 409, not the control itself.
  *
- * ## And the sentence about retroactivity
+ * ## And the sentence about reach
  *
- * Enrolments snapshot their thresholds (P3-01), so an edit never invalidates
- * work already done. That is stated plainly rather than left to be discovered,
- * because an admin who lowers a threshold to help somebody already enrolled
- * will otherwise think it worked.
+ * The three gating thresholds are read **live from the course** (P174-01), at
+ * the client's instruction, so an edit here does reach somebody who is halfway
+ * through — raising the pass mark can un-pass a score that cleared the old one.
+ * A completed enrolment is held complete (`alreadyCompleted`), and nothing else
+ * is. The screen says so, because an admin who lowers a threshold to help
+ * somebody already enrolled has to know it worked, and one who raises it has to
+ * know who it lands on.
+ *
+ * This paragraph said the opposite until P178. It described P3-01's snapshot,
+ * which P174-01 stopped deciding anything, and it survived the change because
+ * prose is not executed (§11).
+ *
+ * ## The content lock
+ *
+ * `contentLocked` (P178-01) is the one edit this screen makes that the whole
+ * authoring surface obeys, so it is its own action beside Veröffentlichen
+ * rather than a field in the form — the same argument P53-01 made about
+ * publishing. Below it is the clone, because the refusal an operator meets on
+ * the Inhalte screen names both remedies and they should be one click apart.
  */
 
 import { useEffect, useState } from "react";
@@ -24,6 +39,7 @@ import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
 import { Badge, Button, Field, Notice, TextInput } from "./ui.js";
 import { EivCheckPanel } from "./EivCheck.js";
+import { encode } from "../routes.js";
 
 /** Mirrors `ACCREDITED_MIN_PASS_PERCENT` on the server, which is the authority. */
 const ACCREDITED_MIN_PASS_PERCENT = 70;
@@ -125,6 +141,31 @@ export function CourseSettings(props: {
     }
   }
 
+  /*
+   * The content lock, as its own action (P178-01).
+   *
+   * Not a field in the form above, for P53-01's reason one control over: a
+   * checkbox among twenty inputs saved by one button makes "may this course's
+   * material still change" indistinguishable from "did I fix a typo", and the
+   * two want different amounts of thought. It is also the control whose effect
+   * is felt by people who are not in the room.
+   */
+  async function setContentLocked(next: boolean): Promise<void> {
+    setBusy(true);
+    setProblem(undefined);
+    setSaved(false);
+    try {
+      props.onSaved(
+        await props.client.adminUpdateCourse(course.slug, { contentLocked: next }),
+      );
+      setSaved(true);
+    } catch (error) {
+      setProblem(describeError(error, de.error.generic));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const isDraft = course.status === "draft";
 
   return (
@@ -146,9 +187,26 @@ export function CourseSettings(props: {
       </section>
 
       <section className="space-y-4">
+        <h3 className="text-base font-semibold text-gray-900">{de.contentLock.legend}</h3>
+
+        <Notice tone={course.contentLocked ? "warning" : "info"}>
+          {course.contentLocked ? de.contentLock.hintLocked : de.contentLock.hintUnlocked}
+        </Notice>
+
+        <Checkbox
+          id="content-locked"
+          label={de.contentLock.label}
+          checked={course.contentLocked}
+          onChange={(next) => void setContentLocked(next)}
+        />
+
+        <CloneCourse client={props.client} course={course} />
+      </section>
+
+      <section className="space-y-4">
         <h3 className="text-base font-semibold text-gray-900">{de.course.compliance}</h3>
 
-        <Notice tone="warning">{de.course.notRetroactive}</Notice>
+        <Notice tone="warning">{de.course.thresholdReach}</Notice>
 
         <Field
           label={de.course.requiredWatchPercent}
@@ -476,6 +534,98 @@ function PercentInput(props: {
       onChange={(event) => props.onChange(event.target.value)}
       className="w-28 rounded-md border border-gray-300 px-3 py-2 text-sm"
     />
+  );
+}
+
+/**
+ * Copy this course into a new draft (P178-02).
+ *
+ * ## Why it lives beside the lock
+ *
+ * The refusal an author meets on the Inhalte screen names two ways forward —
+ * lift the lock, or make a copy — and a sentence that names a remedy is only
+ * as good as the distance to it (§9.4). Both are on this screen, one under
+ * the other.
+ *
+ * ## Why the success state is a link and not a redirect
+ *
+ * Cloning a course with forty content items is not a click somebody makes by
+ * accident, but it is one they make while looking at the original. Jumping
+ * them into the copy takes away the page they were reading; a named link lets
+ * them go when they are ready — and it is a real `href` from `encode`, so it
+ * can be middle-clicked, copied and sent (§9.8).
+ *
+ * The slug is not derived from the source's. `adhs-2`, `adhs-kopie`,
+ * `adhs-2027` are all reasonable and only the author knows which, and a
+ * guessed slug is one they would have to correct in the address of a course
+ * that is already published.
+ */
+function CloneCourse(props: { client: ApiClient; course: AdminCourseDetail }) {
+  const [slug, setSlug] = useState("");
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | undefined>();
+  const [done, setDone] = useState<string | undefined>();
+
+  const ready = slug.trim() !== "" && title.trim() !== "";
+
+  async function clone(): Promise<void> {
+    setBusy(true);
+    setProblem(undefined);
+    setDone(undefined);
+    try {
+      await props.client.adminCloneCourse(props.course.slug, {
+        slug: slug.trim(),
+        title: title.trim(),
+      });
+      setDone(slug.trim());
+      setSlug("");
+      setTitle("");
+    } catch (error) {
+      setProblem(describeError(error, de.error.generic));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+      <h4 className="text-sm font-semibold text-gray-900">
+        {de.contentLock.cloneLegend}
+      </h4>
+      <p className="max-w-3xl text-xs text-gray-600">{de.contentLock.cloneHint}</p>
+
+      {problem === undefined ? null : <Notice tone="error">{problem}</Notice>}
+      {done === undefined ? null : (
+        <Notice tone="success">
+          <p>{de.contentLock.cloneDone}</p>
+          <p className="mt-1">
+            <a
+              className="font-medium text-brand-700 underline underline-offset-2"
+              href={encode({ kind: "course", slug: done, tab: "structure" })}
+            >
+              {de.contentLock.cloneOpen}
+            </a>
+          </p>
+        </Notice>
+      )}
+
+      <Field
+        label={de.contentLock.cloneSlug}
+        hint={de.contentLock.cloneSlugHint}
+        htmlFor="clone-slug"
+      >
+        <TextInput id="clone-slug" value={slug} maxLength={100} onChange={setSlug} />
+      </Field>
+
+      <Field label={de.contentLock.cloneTitle} htmlFor="clone-title">
+        <TextInput id="clone-title" value={title} maxLength={300} onChange={setTitle} />
+      </Field>
+
+      <Button variant="secondary" disabled={busy || !ready} onClick={() => void clone()}>
+        {busy ? de.contentLock.cloning : de.contentLock.cloneAction}
+      </Button>
+    </div>
   );
 }
 

@@ -928,12 +928,29 @@ export const german = {
      * the effect sends them looking for the switch that turned it on.
      */
     locked: "In Verwendung",
+    /*
+     * The content lock (P178-01) — and note this one *is* "Gesperrt".
+     *
+     * P101-01 renamed the row marker from "Gesperrt" to "In Verwendung"
+     * because the client read the first wording as a state somebody had
+     * imposed and went looking for the switch. Here that reading is exactly
+     * right: somebody did impose it, there is a switch, and the sentence says
+     * where. The same word is wrong one screen up and right here, which is why
+     * the two are separate keys rather than one shared string.
+     */
+    contentLockTitle: "Inhalte gesperrt",
+    contentLockBody:
+      "Module, Kapitel, Inhalte und Fragen dieser Fortbildung lassen sich nicht ändern. Die Sperre wird automatisch gesetzt, sobald jemand die Fortbildung abgeschlossen hat: Ein Video, das danach hinzukommt, senkt den Fortschritt aller Teilnehmenden, die bereits fertig waren.",
+    contentLockWays:
+      "Sie haben zwei Möglichkeiten: die Sperre unter „Zertifizierung“ aufheben und diese Fortbildung ändern — oder dort eine Kopie erstellen und diese frei bearbeiten. Die Kopie ist ein Entwurf ohne Teilnehmende und ohne VNR.",
     lockedRule:
       "Module, Kapitel und Inhalte mit erfassten Teilnahmen lassen sich nicht mehr löschen — diese Daten sind der Nachweis für bereits vergebene Punkte.",
     questionCount: (count: number): string =>
       count === 1 ? "1 Frage" : `${count} Fragen`,
     noQuestions: "Keine Fragen — diese Lernerfolgskontrolle kann niemand bestehen.",
     editQuiz: "Fragen bearbeiten",
+    /** The same screen on a locked course, where it can only be read. */
+    viewQuiz: "Fragen ansehen",
 
     reordering: "Reihenfolge wird gespeichert …",
     reorderFailed:
@@ -966,6 +983,11 @@ export const german = {
       count === 1 ? "1 Frage" : `${String(count)} Fragen`,
     railProblem: "Diese Frage ist unvollständig",
     addQuestion: "Frage hinzufügen",
+    /** The read-only view on a content-locked course (P178-01). */
+    lockedBody:
+      "Diese Lernerfolgskontrolle gehört zu einer gesperrten Fortbildung und kann nur gelesen werden. Fragen, Antworten und die Bewertung bleiben unverändert — das ist die Grundlage, auf der bereits jemand bestanden hat.",
+    /** Screen-reader only: „✓“ alone says nothing to a screen reader. */
+    correctOption: "richtige Antwort",
     /*
      * The way out, at the bottom where the work ends (P74-06).
      *
@@ -1041,6 +1063,9 @@ export const german = {
     lockedByAnswers: "Kann nicht gelöscht werden: diese Frage wurde bereits beantwortet.",
     freeTextPrivacy:
       "Freitextantworten können personenbezogene Angaben enthalten. Sie werden ausschließlich aggregiert ausgewertet und erscheinen in keinem Protokoll.",
+    /** The read-only view on a content-locked course (P178-01). */
+    lockedBody:
+      "Der Evaluationsbogen gehört zu einer gesperrten Fortbildung und kann nur gelesen werden. Bereits abgegebene Antworten beziehen sich auf genau diese Fragen.",
   },
 
   /** Texte — the customer's own words for the learner's screens (P83-04). */
@@ -1472,8 +1497,35 @@ export const german = {
     },
   },
 
+  contentLock: {
+    legend: "Inhaltssperre",
+    label: "Inhalte dieser Fortbildung sperren",
+    /**
+     * Two hints, because the consequence of the switch is different in each
+     * direction and a single sentence would describe only the state it is
+     * already in (§9.4).
+     */
+    hintUnlocked:
+      "Solange die Sperre nicht gesetzt ist, können Module, Kapitel und Inhalte jederzeit geändert werden. Die Sperre wird automatisch gesetzt, sobald jemand die Fortbildung abschließt.",
+    hintLocked:
+      "Die Inhalte sind gesperrt. Wenn Sie die Sperre aufheben und danach Inhalte hinzufügen, sinkt der Fortschritt aller Teilnehmenden, die die Fortbildung bereits abgeschlossen haben — auch derjenigen, die ihre Punkte noch nicht geltend gemacht haben. Für eine neue Fassung ist eine Kopie der sichere Weg.",
+
+    cloneLegend: "Kopie erstellen",
+    cloneHint:
+      "Kopiert Module, Kapitel, Inhalte, Fragen, Referenten und den Evaluationsbogen in eine neue Fortbildung. Die Kopie ist ein Entwurf, ist nicht gesperrt und hat keine Teilnehmenden. VNR, VNR-Passwort und Gültigkeitszeitraum werden nicht übernommen — sie gehören zu genau einer akkreditierten Veranstaltung.",
+    cloneSlug: "Kürzel der Kopie",
+    cloneSlugHint: "Kleinbuchstaben, Ziffern und Bindestriche. Wird Teil der Adresse.",
+    cloneTitle: "Titel der Kopie",
+    cloneAction: "Kopie erstellen",
+    cloning: "Kopie wird erstellt …",
+    cloneDone: "Die Kopie wurde erstellt.",
+    cloneOpen: "Kopie öffnen",
+  },
+
   courses: {
     title: "Fortbildungen",
+    /** Shown beside a course whose contents are closed to edits (P178-01). */
+    lockedBadge: "Inhalte gesperrt",
     /*
      * The one screen that had no intro at all, and the one an operator opens
      * first (P136-01). A reviewer put it plainly: the learner side explains
@@ -1593,8 +1645,28 @@ export const german = {
     accreditationConfirm:
       "Ich habe verstanden, dass dieser Wert dem Anerkennungsbescheid widerspricht.",
 
-    notRetroactive:
-      "Änderungen gelten nur für neue Teilnahmen. Bereits begonnene Teilnahmen behalten die Werte, die bei ihrem Start gültig waren.",
+    /*
+     * This used to read "Änderungen gelten nur für neue Teilnahmen. Bereits
+     * begonnene Teilnahmen behalten die Werte, die bei ihrem Start gültig
+     * waren." — and it stopped being true in P174-01, when the client asked
+     * for the three gating thresholds to come from the course:
+     *
+     *   > The three gating thresholds — required_watch_percent,
+     *   > pass_threshold_percent, max_quiz_attempts should come from the
+     *   > course.
+     *
+     * `findEnrolment` reads all three from `courses` today. The enrolment's
+     * snapshot columns are still written and are no longer what any gate is
+     * decided on. So an edit here does reach somebody who is halfway through,
+     * which is what was asked for — and this sentence was telling the operator
+     * the opposite (§11.9: a comment is a claim; §11.14: repeating a stale
+     * note asserts it).
+     *
+     * Renamed with it. `notRetroactive` would have gone on describing the
+     * behaviour it no longer has, in every call site and every search.
+     */
+    thresholdReach:
+      "Änderungen wirken sofort — auch auf laufende Teilnahmen. Wer die Fortbildung bereits abgeschlossen hat, behält seinen Abschluss; wer noch dabei ist, wird ab sofort an den neuen Werten gemessen.",
 
     organizer: "Veranstaltender",
     eventLocation: "Veranstaltungsort",

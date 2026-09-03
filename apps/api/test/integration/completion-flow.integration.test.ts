@@ -523,6 +523,40 @@ describe("the road to a CME point", () => {
     expect(body.quizPassed).toBe(true);
   });
 
+  it("locks the course's content the moment somebody finishes it (P178-01)", async () => {
+    /*
+     * The client's scenario, exactly:
+     *
+     *   > I have viewed the course, done with first video and done with the
+     *   > exam. I have not done the part to enter the EFN […] Now I have opened
+     *   > the course in verwaltung and I have added a new video content for
+     *   > module 1 — Earlier the video percentage was 100%, now it shows 75%.
+     *
+     * This learner is in precisely that state: video watched, exam passed, EFN
+     * and evaluation still outstanding. `courseComplete` is true, so the state
+     * read above has stamped `course_completed_at` — and the same write closes
+     * the course to structural edits, so no operator can re-denominate them.
+     *
+     * Asserted here rather than in a service test because the lock is written
+     * by the repository inside the same statement path as the completion
+     * stamp: a service test with a stub repository would assert my stub
+     * (§9.7). What must be true is that a **real** completion locks a **real**
+     * course row.
+     */
+    const { rows } = await seedPool.query<{
+      content_locked: boolean;
+      course_completed_at: Date | null;
+    }>(
+      `SELECT c.content_locked, e.course_completed_at
+         FROM enrolments e JOIN courses c ON c.id = e.course_id
+        WHERE e.id = $1`,
+      [enrolmentId],
+    );
+
+    expect(rows[0]!.course_completed_at).not.toBeNull();
+    expect(rows[0]!.content_locked).toBe(true);
+  });
+
   it("refuses an EFN that is not 15 digits, without echoing it back", async () => {
     const { status, body } = await call("PUT", "/profile/efn", { efn: "12345" });
 

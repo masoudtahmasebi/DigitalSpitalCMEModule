@@ -655,10 +655,16 @@ export const en: DeepPartial<typeof german> = {
       count === 1 ? "content item" : "content items",
     childQuestions: (count: number): string => (count === 1 ? "question" : "questions"),
     locked: "In use",
+    contentLockTitle: "Contents locked",
+    contentLockBody:
+      "This course's modules, chapters, contents and questions cannot be changed. The lock is set automatically as soon as somebody completes the course: a video added afterwards lowers the progress of everybody who had already finished.",
+    contentLockWays:
+      "You have two options: lift the lock under \u201eZertifizierung\u201c and change this course \u2014 or create a copy there and edit that freely. The copy is a draft with no participants and no VNR.",
     lockedRule:
       "Modules, chapters and contents with recorded participations can no longer be deleted — this data is the evidence for points already awarded.",
     noQuestions: "No questions — nobody can pass this Lernerfolgskontrolle.",
     editQuiz: "Edit questions",
+    viewQuiz: "View questions",
 
     reordering: "Saving the order …",
     reorderFailed: "The order could not be saved. Nothing was changed.",
@@ -689,6 +695,9 @@ export const en: DeepPartial<typeof german> = {
       count === 1 ? "1 question" : `${String(count)} questions`,
     railProblem: "This question is incomplete",
     addQuestion: "Add question",
+    lockedBody:
+      "This Lernerfolgskontrolle belongs to a locked course and can only be read. Questions, answers and the marking stay as they are — they are what somebody has already passed against.",
+    correctOption: "correct answer",
     backToStructure: "Back to the contents",
     unsavedChanges: "Unsaved changes will be lost.",
     prompt: "Question",
@@ -739,6 +748,8 @@ export const en: DeepPartial<typeof german> = {
     lockedByAnswers: "Cannot be deleted: this question has already been answered.",
     freeTextPrivacy:
       "Free-text answers may contain personal information. They are evaluated only in aggregate and appear in no log.",
+    lockedBody:
+      "The evaluation form belongs to a locked course and can only be read. Answers already given refer to exactly these questions.",
   },
 
   media: {
@@ -1041,8 +1052,30 @@ export const en: DeepPartial<typeof german> = {
     },
   },
 
+  contentLock: {
+    legend: "Content lock",
+    label: "Lock this course's contents",
+    hintUnlocked:
+      "While the lock is off, modules, chapters and contents can be changed at any time. It is set automatically as soon as somebody completes the course.",
+    hintLocked:
+      "The contents are locked. If you lift the lock and then add content, the progress of everybody who has already completed the course drops \u2014 including those who have not yet claimed their points. For a new version, a copy is the safe route.",
+
+    cloneLegend: "Create a copy",
+    cloneHint:
+      "Copies modules, chapters, contents, questions, speakers and the evaluation form into a new course. The copy is a draft, is not locked and has no participants. The VNR, its password and the validity window are not carried over \u2014 they belong to exactly one accredited event.",
+    cloneSlug: "Slug of the copy",
+    cloneSlugHint:
+      "Lowercase letters, digits and hyphens. It becomes part of the address.",
+    cloneTitle: "Title of the copy",
+    cloneAction: "Create a copy",
+    cloning: "Creating the copy \u2026",
+    cloneDone: "The copy was created.",
+    cloneOpen: "Open the copy",
+  },
+
   courses: {
     title: "Courses",
+    lockedBadge: "Contents locked",
     intro:
       "Every course for this customer. A new one takes three steps: add the content, fill in the certification, publish. Until it is published it is a draft and participants cannot see it.",
     empty: "No courses are stored for this tenant.",
@@ -1118,8 +1151,8 @@ export const en: DeepPartial<typeof german> = {
     accreditationConfirm:
       "I understand that this value contradicts the Anerkennungsbescheid.",
 
-    notRetroactive:
-      "Changes apply to new participations only. Participations already begun keep the values that were in force when they started.",
+    thresholdReach:
+      "Changes take effect immediately, including for participations already under way. Anybody who has already completed the course keeps their completion; anybody still working through it is measured against the new values from now on.",
 
     organizer: "Organiser",
     eventLocation: "Location",

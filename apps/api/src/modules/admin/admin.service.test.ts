@@ -48,6 +48,7 @@ const course: AdminCourseRow = {
   id: COURSE_ID,
   slug: "adhs-akademie-adult",
   status: "published",
+  contentLocked: false,
   title: "ADHS Akademie adult",
   description: null,
   deliveryType: "on_demand",

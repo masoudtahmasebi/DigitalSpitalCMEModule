@@ -56,7 +56,19 @@ interface DraftQuestion {
   readonly responseCount: number;
 }
 
-export function EvaluationEditor(props: { client: ApiClient; courseSlug: string }) {
+export function EvaluationEditor(props: {
+  client: ApiClient;
+  courseSlug: string;
+  /**
+   * The course's content lock (P178-01).
+   *
+   * `PUT /admin/courses/{slug}/evaluation` is refused on a locked course, so
+   * this screen reads rather than edits — the same treatment the exam gets one
+   * screen over, and for the same reason: a form that takes keystrokes and
+   * then answers 409 is a control the system will refuse (§9.2).
+   */
+  contentLocked: boolean;
+}) {
   const { client, courseSlug } = props;
 
   const load = useCallback(
@@ -81,6 +93,38 @@ export function EvaluationEditor(props: { client: ApiClient; courseSlug: string 
   }
 
   if (questions === undefined) return <Spinner label={de.loading} />;
+
+  if (props.contentLocked) {
+    return (
+      <section className="space-y-4">
+        <Notice tone="warning" title={de.structure.contentLockTitle}>
+          <p>{de.evaluation.lockedBody}</p>
+          <p className="mt-2">{de.structure.contentLockWays}</p>
+        </Notice>
+
+        {questions.length === 0 ? (
+          <p className="text-sm text-gray-600">{de.evaluation.empty}</p>
+        ) : (
+          <ol className="space-y-2">
+            {questions.map((question, index) => (
+              <li
+                key={question.key}
+                className="rounded-xl border border-gray-200 bg-white p-4"
+              >
+                <p className="text-sm font-medium text-gray-900">
+                  {index + 1}. {question.prompt}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {de.evaluation.kinds[question.kind]}
+                  {question.required ? ` · ${de.evaluation.required}` : ""}
+                </p>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+    );
+  }
 
   const hasFreeText = questions.some((question) => question.kind === "text");
   const incomplete = questions.some((question) => question.prompt.trim() === "");

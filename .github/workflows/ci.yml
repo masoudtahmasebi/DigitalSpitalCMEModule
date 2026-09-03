@@ -143,6 +143,13 @@ jobs:
           # MEDICE course's title, its CME points and its category — under a
           # test comment claiming every editable field was covered (P171-02).
           node scripts/check-seed-overwrites.mjs
+          # The content lock is a rule with twelve call sites, and a guard that
+          # has to be remembered once per method is the shape §9.3 keeps
+          # catching. This derives the list of structural writes from the
+          # repository port, so a new one added to an unguarded service method
+          # fails here rather than by re-denominating a physician who had
+          # already finished (P178-01).
+          node scripts/check-content-lock.mjs
 
       - name: Build
         run: pnpm build

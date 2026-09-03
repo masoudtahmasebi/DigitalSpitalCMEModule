@@ -39,6 +39,8 @@ export interface AdminCourseRow {
   slug: string;
   /** Editorial state (P53-01): `draft` is invisible to every learner. */
   status: "draft" | "published";
+  /** Content lock (P178-01) — orthogonal to `status`, see migration 0050. */
+  contentLocked: boolean;
   title: string;
   // Presentation — what the learner-facing layout draws (P13-01).
   description: string | null;
@@ -207,6 +209,8 @@ export interface CoursePatch {
   vnrPasswordEnc?: Buffer;
   eivPunkteBasis?: boolean;
   eivPunkteLernerfolg?: boolean;
+  /** Close the course's structure to further edits, or reopen it (P178-01). */
+  contentLocked?: boolean;
 }
 
 export interface CertificateAssetPatch {
@@ -232,6 +236,7 @@ const COURSE_COLUMNS = {
   validFrom: courses.validFrom,
   validTo: courses.validTo,
   vnr: courses.vnr,
+  contentLocked: courses.contentLocked,
   cmePoints: courses.cmePoints,
   cmeCategory: courses.cmeCategory,
   requiredWatchPercent: courses.requiredWatchPercent,

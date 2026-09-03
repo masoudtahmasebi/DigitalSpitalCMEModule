@@ -436,6 +436,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/courses/{slug}/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy a course into a new unlocked draft
+         * @description Copies the presentation and the whole tree — modules, chapters,
+         *     contents with their media references, the Lernerfolgskontrolle's
+         *     questions, the Referenten, the Evaluationsbogen. It copies **no
+         *     people**: the clone has no enrolments, no progress, no attempts and no
+         *     certificates, which is what makes it safe to edit.
+         *
+         *     Reset on the copy, each for its own reason: `status` to `draft`, so a
+         *     copy never appears on a catalogue because somebody clicked once;
+         *     `contentLocked` to false, which is the point of the feature; the VNR
+         *     and its password to null, because a VNR identifies one accredited event
+         *     and a Punktemeldung filed against a clone would credit the original's
+         *     registration; and the validity window, which belongs to a Bescheid this
+         *     course does not have yet. CME points and category are kept as a
+         *     starting value — the publish precondition still refuses a published,
+         *     point-bearing course with no VNR.
+         *
+         *     A **locked** source may be cloned. That is the way to carry a
+         *     Fortbildung somebody has completed into a new one with different
+         *     videos, without editing material a physician was graded against.
+         */
+        post: operations["adminCloneCourse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/courses/{slug}": {
         parameters: {
             query?: never;
@@ -3443,6 +3481,12 @@ export interface components {
              */
             certificateReady: boolean;
             missingCertificateFields: string[];
+            /**
+             * @description Whether the course refuses structural edits (P178-01). The console
+             *     reads this to disable the controls that would 409, and to say why
+             *     at the point somebody looks for them.
+             */
+            contentLocked: boolean;
         };
         /**
          * @description One leg of the connection check.
@@ -3728,6 +3772,20 @@ export interface components {
             heroImageUrl?: string | null;
             cmePoints?: number | null;
             cmeCategory?: string | null;
+            /**
+             * @description Close the course's structure to further edits, or reopen it
+             *     (P178-01). Governs modules, chapters, contents and a
+             *     Lernerfolgskontrolle's questions — never the course's own fields, so
+             *     a VNR arriving from the Bescheid can still be recorded on a locked
+             *     course.
+             *
+             *     Set automatically the first time an enrolment on the course
+             *     completes, because a Fortbildung somebody has been graded against
+             *     must not grow under them. Unlocking is allowed and is the operator's
+             *     decision; cloning (`adminCloneCourse`) is the alternative that
+             *     leaves the completed course alone.
+             */
+            contentLocked?: boolean;
             eivPunkteBasis?: boolean;
             eivPunkteLernerfolg?: boolean;
             /**
@@ -4262,6 +4320,23 @@ export interface components {
             title: string;
             description?: string | null;
             deliveryType?: components["schemas"]["DeliveryType"];
+            /**
+             * @description Start the course with its structure closed (P178-01). Absent means
+             *     false — a course is open unless somebody says otherwise. An operator
+             *     building a course against a fixed Anerkennungsbescheid can say so
+             *     once, rather than remembering to lock it after the first physician
+             *     finishes.
+             */
+            contentLocked?: boolean;
+        };
+        /**
+         * @description The two fields a copy must not share with its source (P178-02). A
+         *     course's slug is unique per customer, and its title is what tells two
+         *     near-identical copies apart in a list.
+         */
+        CourseClone: {
+            slug: components["schemas"]["Slug"];
+            title: string;
         };
         AuthoringContent: {
             /** Format: uuid */
@@ -5991,6 +6066,66 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminCloneCourse: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CourseClone"];
+            };
+        };
+        responses: {
+            /** @description The new course's structure. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStructure"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
         };

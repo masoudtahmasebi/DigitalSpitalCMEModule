@@ -318,6 +318,19 @@ the endpoint answered 202 (P40-03). The same mistake is documented on
 `runInTenant`. If a method can return an all-null shape, that shape must not be
 indistinguishable from a legitimate "unset".
 
+**And the same trap in a fixture** (P177-01). A new integration case hung a
+`quiz_attempts` row on `SELECT id FROM enrolments LIMIT 1`. Locally that was an
+enrolment of the tenant under test and the case passed; in CI it was another
+customer's, RLS hid it from the census that was supposed to count it, the count
+came back zero, and `main` went red with the exact 500 the guard exists to
+prevent. A row RLS hides looks identical to a row that is not there — in a test
+as much as in a repository, and the test is where it will be blamed on the
+product.
+
+**So:** a fixture row for a tenant-scoped table is created _through_ the tenant
+under test, or selected by joining to something that pins it (`JOIN courses c ON
+… WHERE c.slug = $1`). Never `LIMIT 1` over a shared table.
+
 ### 9.7 The test that passes on the broken system
 
 A test can cover a function exhaustively and prove nothing about the product,
@@ -399,6 +412,38 @@ than the code writing to it fails somewhere deep and blames the writer.
 names a constraint, a column or a type, ask whether the _schema_ is the version
 the code expects before reading the code.
 
+### 9.9b A label on a run is not the trigger of it
+
+Two days were lost to a report I made and then had to withdraw twice, and the
+root of it is one setting: **this repository's default branch is
+`claude/education-platform-roadmap-3vgrqh`, not `main`** (P175-01).
+
+`github.ref` on a `workflow_run` event is the _default_ branch, whatever the
+triggering run was on. So every Deploy run is labelled in the API and the UI
+with the feature branch, while `workflow_run.head_branch` is `main` and the SHA
+it deploys is main's merge commit. I read the label as the trigger and reported
+that feature-branch pushes were deploying to production. They were not, and the
+evidence against it was already in hand — an earlier deploy's smoke test had
+reported a merge commit as live, which a branch deploy cannot produce.
+
+It also broke something real: P155-01's manual-deploy guard compared against
+`github.event.repository.default_branch`, so on this repository it would have
+**allowed** a hand-picked deploy of the feature branch — the very thing it was
+written to stop — and refused `main`. The deploy branch is now the literal
+`main`, beside the `branches: [main]` filter that already named it.
+
+**Checks:**
+
+- Before explaining _why_ a pipeline did something, read the **payload the job
+  saw**, not the list API's metadata about the run. `echo` the values into the
+  log; the guard that refused a deploy is what finally printed
+  `DEFAULT_BRANCH: claude/…` and ended the guessing.
+- Never derive "what may reach production" from a repository setting that can be
+  changed in a dropdown by somebody not thinking about deployment.
+- Timing correlation is not causation: three deploys firing seconds after CI on
+  `main` completed were consistent with both of my wrong stories and with the
+  right one.
+
 ### 9.10 Correct is not the same as usable
 
 A component can answer exactly right and leave the person with nothing to do.
@@ -467,6 +512,48 @@ somebody had traced one S3 failure and fixed the service in front of them.
 relying on the half you needed. And when a comment explains a setting, it is
 claiming completeness; a comment that names one consequence of two is worse
 than none, because it stops the next person looking.
+
+### 9.10b A value has one home, and every reader goes there
+
+The recurring compliance defect of the last week, in four instances and two
+directions:
+
+| Instance                                                           | Read from            | Should read   |
+| ------------------------------------------------------------------ | -------------------- | ------------- |
+| the certificate's VNR (P164-01)                                    | `enrolments.vnr`     | `courses.vnr` |
+| its CME points and category (P171-01)                              | the enrolment's copy | the course    |
+| whether an EFN is asked for at all (P171-01)                       | the enrolment's copy | the course    |
+| the watch and pass thresholds the gate applies (P174-01)           | the enrolment's copy | the course    |
+| the MEDICE course's title, points and category on **every deploy** | the seed             | left alone    |
+
+The client found the first four by reading one screen: the Zertifizierung tab
+said the course was accredited with **10** CME-Punkte three lines above a
+Teilnahmebescheinigung offering **4**, because the paragraph read `courses` and
+the document read the enrolment's copy of it. _"How can you set these hard coded
+when there are values in course!"_
+
+An enrolment **snapshot** is legitimate for what the _learner_ did or stated —
+their attested name, their address, the date they finished. It is wrong for what
+the **event is**: a physician does not earn a number of points, the Ärztekammer
+decides what the event is worth, and correcting a course must correct every
+document that names it. Where a snapshot decides a gate, the client has ruled
+that the course wins and a finished enrolment is protected instead
+(`alreadyCompleted`, P167-01/P174-01).
+
+**Checks:**
+
+- For a field an operator can edit, `grep` every reader before changing one.
+  Two readers of one value is §4 invariant 6, and the _quiet_ direction is the
+  expensive one: a course accredited after somebody enrolled never asked them
+  for an EFN, so no Punktemeldung was filed and no screen said so.
+- `pnpm check:seed-overwrites` derives the operator-editable columns from
+  `adminCourseUpdateSchema` and the unconditional `= EXCLUDED.…` assignments
+  from every customer seed, and fails on an overlap. A seed runs on **every
+  deploy**, so an unguarded assignment silently replaces what somebody typed in
+  Verwaltung — with a green deploy and no log line. It found a second instance
+  (`ds-default.ts`) on its first run.
+- A seed supplies **a starting value where there is nothing, never a
+  replacement**: `COALESCE(courses.x, EXCLUDED.x)`.
 
 ### 9.11 Fix the class, not the instance
 
@@ -560,6 +647,12 @@ form — has **not** been done. When it is, it is its own ticket, it has to
 account for the keys the test pack already occupies, and historic commits are
 not rewritten.
 
+Since 03.09.2026 the board also carries **defect tickets** the client files
+directly — DEP-25, DEP-28 … DEP-33 are real reports against the running system,
+not test cases. A phase ticket that closes one names it in its heading, as
+`docs/backlog/P172.md` does. Commits still carry the `P`-number; the DEP key
+goes in the body, where it is a reference rather than an identifier.
+
 ---
 
 ## 11. Verification-first — a claim carries the command that proves it
@@ -643,6 +736,20 @@ confident one gets believed.
     take priority — the **last line of that turn** names the step it stopped at
     and says it resumes there, or asks. Dropping a stated plan without saying so
     is a defect in its own right.
+
+13. **A correction is a claim too.** Twice in one afternoon I reported a cause,
+    withdrew it, and the withdrawal was also wrong — the deploy story of §9.9b,
+    where the truth was a repository setting neither version had looked at. When
+    you correct yourself, hold the correction to the same standard as the
+    original: name the command, quote the output, and say what you have _still_
+    not checked. Two confident wrong explanations cost more than one, because
+    the second buys back the credibility the first spent.
+
+14. **A stale note repeated is a stale note asserted.** "P162 — tests written,
+    product fix not" rode through six summaries after the fix had shipped and
+    been deployed, because it was copied forward rather than re-read. Before
+    carrying an open item into a summary, `git log` the file it names. A list of
+    outstanding work is a set of claims about the present, not a diary.
 
 Before the final message of any turn, reread it and delete or label every
 sentence stating a cause, a number or a behaviour not verified by a command

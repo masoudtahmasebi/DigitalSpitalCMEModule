@@ -92,6 +92,17 @@ export function QuizEditor(props: {
    * only where it began.
    */
   onDone: () => void;
+  /**
+   * The course's content lock (P178-01).
+   *
+   * A locked exam is **read**, not edited: `PUT /admin/contents/{id}/quiz` is
+   * refused by the API, so a form that accepted keystrokes and then answered
+   * 409 on save would be the §9.2 mistake with a paragraph of typing thrown
+   * away. The read-only view below is a different rendering rather than the
+   * same one with `disabled` on every field, because a disabled form still
+   * looks like a form somebody has permission to fix.
+   */
+  contentLocked: boolean;
 }) {
   const { client, contentId } = props;
 
@@ -118,6 +129,49 @@ export function QuizEditor(props: {
   }
 
   if (questions === undefined) return <Spinner label={de.loading} />;
+
+  if (props.contentLocked) {
+    return (
+      <section className="space-y-4">
+        <Notice tone="warning" title={de.structure.contentLockTitle}>
+          <p>{de.quiz.lockedBody}</p>
+          <p className="mt-2">{de.structure.contentLockWays}</p>
+        </Notice>
+
+        {questions.length === 0 ? (
+          <p className="text-sm text-gray-600">{de.quiz.empty}</p>
+        ) : (
+          <RowList ordered>
+            {questions.map((question) => (
+              <li key={question.key}>
+                <div className="rounded-xl border border-gray-200 bg-white p-4">
+                  <p className="text-sm font-medium text-gray-900">{question.prompt}</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {de.quiz.kinds[question.kind]}
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {question.options.map((option) => (
+                      <li key={option.key} className="text-sm text-gray-700">
+                        <span aria-hidden="true">{option.isCorrect ? "✓ " : "· "}</span>
+                        {option.label}
+                        {option.isCorrect ? (
+                          <span className="sr-only"> {de.quiz.correctOption}</span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </li>
+            ))}
+          </RowList>
+        )}
+
+        <Button variant="secondary" onClick={props.onDone}>
+          {de.quiz.backToStructure}
+        </Button>
+      </section>
+    );
+  }
 
   const problems = questions.map(describeProblems);
   const anyProblem = problems.some((list) => list.length > 0);

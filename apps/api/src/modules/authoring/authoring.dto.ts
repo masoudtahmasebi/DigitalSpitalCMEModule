@@ -271,6 +271,26 @@ export const courseCreateSchema = z.object({
   title,
   description: richText.nullable().optional(),
   deliveryType: z.enum(["on_demand", "live", "praesenz"]).default("on_demand"),
+  /**
+   * Start the course with its structure closed (P178-01). The client asked for
+   * the lock to be *"set when a course is created"* — an operator building a
+   * course from a fixed Bescheid can say so once rather than remembering to
+   * lock it after the first physician finishes.
+   */
+  contentLocked: z.boolean().default(false),
+});
+
+/**
+ * Clone a published course into a new draft (P178-02).
+ *
+ * Only the two fields that must be new: a course's slug is unique per customer
+ * and its title is what an author reads in a list of near-identical copies.
+ * Everything else is copied — see `cloneCourse` in the repository for what is
+ * deliberately not.
+ */
+export const courseCloneSchema = z.object({
+  slug,
+  title,
 });
 
 // ---------------------------------------------------------------------------
@@ -536,6 +556,7 @@ export type ProjectCreate = z.infer<typeof projectCreateSchema>;
 export type ProjectUpdate = z.infer<typeof projectUpdateSchema>;
 export type ProjectSummary = z.infer<typeof projectSummarySchema>;
 export type CourseCreate = z.infer<typeof courseCreateSchema>;
+export type CourseClone = z.infer<typeof courseCloneSchema>;
 export type CourseStructure = z.infer<typeof courseStructureSchema>;
 export type AuthoringModule = z.infer<typeof authoringModuleSchema>;
 export type AuthoringChapter = z.infer<typeof authoringChapterSchema>;
