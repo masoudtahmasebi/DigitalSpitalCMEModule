@@ -205,7 +205,26 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF: ${{ github.ref }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          # The branch production is deployed from, as a literal (P175-01).
+          #
+          # It was `github.event.repository.default_branch`, and on this
+          # repository that is **not** `main` — the default branch is currently
+          # `claude/education-platform-roadmap-3vgrqh`, which the first run of
+          # this guard printed and refused on:
+          #
+          #     TRIGGERING_BRANCH: main
+          #     DEFAULT_BRANCH:    claude/education-platform-roadmap-3vgrqh
+          #
+          # So the guard rejected a deploy of `main` for not being the default
+          # branch, and P155-01's manual-run arm — same expression — would have
+          # *allowed* a manual deploy of the feature branch and refused `main`.
+          #
+          # The trigger's own `branches: [main]` filter names the branch as a
+          # literal three dozen lines up. This is that same literal, so the two
+          # halves of "only main reaches production" cannot disagree — and it no
+          # longer depends on a repository setting that can be changed in the
+          # UI, by somebody who is not thinking about deployment at all.
+          DEPLOY_BRANCH: main
           # The branch CI actually ran on (P173-01).
           #
           # `github.ref` is the default branch on every `workflow_run` event,
@@ -220,14 +239,14 @@ jobs:
           source infra/deploy/release-guards.sh
 
           if ds_release_ref_allowed \
-            "$EVENT_NAME" "$REF" "${DEFAULT_BRANCH:-main}" "${TRIGGERING_BRANCH:-}"; then
+            "$EVENT_NAME" "$REF" "${DEPLOY_BRANCH:-main}" "${TRIGGERING_BRANCH:-}"; then
             echo "event=$EVENT_NAME ref=$REF ci-branch=${TRIGGERING_BRANCH:-n/a} — allowed"
             exit 0
           fi
 
           echo "::error::Refusing to deploy to production." \
                "event=${EVENT_NAME} ref=${REF} ci-branch=${TRIGGERING_BRANCH:-n/a}." \
-               "Only the default branch (${DEFAULT_BRANCH:-main}) reaches production:" \
+               "Only ${DEPLOY_BRANCH:-main} reaches production:" \
                "CI passing on it is what deploys, and a manual run may name it and" \
                "nothing else. Merge the change first."
           exit 1
