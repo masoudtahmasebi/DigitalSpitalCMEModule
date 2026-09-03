@@ -493,14 +493,32 @@ describe("the road to a CME point", () => {
     expect(body.attemptNumber).toBe(3);
   });
 
-  it("keeps the best score after a later failed attempt", async () => {
-    await call("POST", `/courses/${courseSlug}/contents/${quizId}/quiz`, {
-      answers: questionIds.map((id) => ({
-        questionId: id,
-        selectedOptionIds: [wrongOptionByQuestion.get(id)],
-      })),
-    });
+  it("refuses a further attempt once the exam is passed (P170-01)", async () => {
+    /*
+     * This case used to be "keeps the best score after a later failed attempt":
+     * it submitted a wrong set after the pass and asserted `quizPassed` was
+     * still true. The client closed that door — *"if someone has passed a
+     * lernerfolgskontrolle, we shouldn't let that user fill the
+     * lernerfolgskontrolle again"* — so the later attempt is now refused
+     * outright, which is a stronger guarantee of the same thing.
+     *
+     * It is the whole rule in one HTTP call, which the service test cannot be:
+     * the refusal has to survive the controller, the DTO and the transaction.
+     */
+    const { status } = await call(
+      "POST",
+      `/courses/${courseSlug}/contents/${quizId}/quiz`,
+      {
+        answers: questionIds.map((id) => ({
+          questionId: id,
+          selectedOptionIds: [wrongOptionByQuestion.get(id)],
+        })),
+      },
+    );
 
+    expect(status).toBe(409);
+
+    // And the pass is untouched — nothing was recorded against it.
     const { body } = await call("GET", `/courses/${courseSlug}/enrolment`);
     expect(body.quizPassed).toBe(true);
   });

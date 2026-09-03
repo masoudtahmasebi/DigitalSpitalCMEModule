@@ -736,7 +736,8 @@ export const de = {
   },
   quiz: {
     /**
-     * What the intro says to somebody who has already passed (P164-04).
+     * What the intro says to somebody who has already passed (P164-04,
+     * rewritten P170-01).
      *
      * The client, from the running system: *"when the doctor finished the
      * course, cleared the exam and got the certificate — I can still see the
@@ -744,31 +745,32 @@ export const de = {
      * **Lernerfolgskontrolle beginnen**, which on a finished course reads as an
      * outstanding task, and nothing on it said the exam was behind them.
      *
-     * It names the score, because "you have passed" without the figure invites
-     * exactly the retake this is explaining. And it states the consequence,
-     * which is the part a physician cannot know and would reasonably fear: the
-     * stored result is the best of all attempts, so sitting it again cannot
-     * take away what they have. That is `upsertQuizProgress`'s own rule, not a
-     * reassurance invented for the screen.
+     * It named the score and then reassured: *"gewertet wird immer Ihr bestes
+     * Ergebnis, ein weiterer Versuch kann Ihr Bestehen also nicht aufheben."*
+     * True, useful, and obsolete the moment the client closed the retake —
+     * beside a button that no longer exists, a reassurance about repeating
+     * reads as an instruction to go and find it.
+     *
+     * It still names the score, because "you have passed" without the figure is
+     * the sentence that invites somebody to go looking for a way to improve it.
      */
     alreadyPassed: (scorePercent: number): string =>
       `Sie haben diese Lernerfolgskontrolle bereits mit ${String(scorePercent)} % bestanden. ` +
-      "Sie können sie zur Wiederholung erneut bearbeiten — gewertet wird immer Ihr bestes " +
-      "Ergebnis, ein weiterer Versuch kann Ihr Bestehen also nicht aufheben.",
-    /** The button, when it is a repeat rather than the first sitting. */
-    repeat: "Zur Wiederholung erneut bearbeiten",
+      "Sie kann nicht erneut abgelegt werden — Ihr Ergebnis ist erfasst und bleibt erhalten.",
     /**
-     * Passed **and** certified, which is where the repeat stops (P169-01).
+     * Passed **and** certified (P169-01).
      *
      * The client: *"we shouldn't let the user fill the exam again, when he has
      * cleared the exam already and certificate is issued."* The API refuses
-     * such an attempt now, so the button must go — a control that can only
-     * produce an error is worse than an absent one (§9.2).
+     * such an attempt, so the button must go — a control that can only produce
+     * an error is worse than an absent one (§9.2) — and an absent button reads
+     * as an unfinished feature unless something says why at the place somebody
+     * looks for it (§9.4).
      *
-     * And because an absent button reads as an unfinished feature, the sentence
-     * says *why* at the place somebody looks for it (§9.4), and says what the
-     * exam is still good for: the questions and the recorded result stay
-     * readable, it is only the sitting of it that is closed.
+     * P170-01 moved the closing of the exam to the **pass**, so this sentence
+     * no longer decides anything: `alreadyPassed` covers the general case and
+     * this one is shown instead when a Bescheid exists, because a physician
+     * holding one is better served by hearing about it than about their score.
      */
     certifiedNoRetry:
       "Diese Fortbildung ist abgeschlossen und zertifiziert. Die Lernerfolgskontrolle " +

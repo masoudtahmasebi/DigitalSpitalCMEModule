@@ -389,6 +389,69 @@ describe("submit", () => {
     expect(recorded).toEqual([]);
   });
 
+  /*
+   * P170-01. The line is the pass, not the certificate.
+   *
+   * The client, the day after P169-01 shipped: *"if someone has passed a
+   * lernerfolgskontrolle, we shouldn't let that user fill the
+   * lernerfolgskontrolle again, when he has cleared the exam already."*
+   */
+  it("refuses an attempt once this exam has been passed", async () => {
+    const { service, recorded } = build({ attempts: 1, bestScore: 100 });
+
+    const error = await service
+      .submit(course.slug, QUIZ, allCorrect, learner)
+      .catch((e) => e);
+
+    expect((error as AppError).kind).toBe("conflict");
+    expect(recorded).toEqual([]);
+  });
+
+  it("refuses it at the threshold exactly, not only above it", async () => {
+    // 70 % against a 70 % threshold is a pass, and `upsertQuizProgress` uses
+    // the same `>=`. An exam that reopened at exactly the pass mark would be
+    // open for every learner who scraped through.
+    const { service } = build({ attempts: 1, bestScore: 70 });
+
+    const error = await service
+      .submit(course.slug, QUIZ, allCorrect, learner)
+      .catch((e) => e);
+
+    expect((error as AppError).kind).toBe("conflict");
+  });
+
+  it("still allows a retry after a failed attempt", async () => {
+    // The half that must not move: an exam is closed by passing it, not by
+    // having been sat. 60 % against 70 % leaves it open.
+    const { service } = build({ attempts: 1, bestScore: 60 });
+
+    const result = await service.submit(course.slug, QUIZ, allCorrect, learner);
+
+    expect(result.attemptNumber).toBe(2);
+    expect(result.passed).toBe(true);
+  });
+
+  it("measures against the enrolment's threshold, not the course's current one", async () => {
+    /*
+     * The enrolment snapshots `passThresholdPercent`. A course later tightened
+     * to 90 % must not reopen an exam somebody passed at 80 under the rule they
+     * enrolled on — that would be a retroactive change to a completed
+     * assessment, which is the thing enrolment snapshots exist to prevent.
+     */
+    const { service } = build({
+      attempts: 1,
+      bestScore: 80,
+      courseOverrides: { passThresholdPercent: 90 },
+      enrolmentOverrides: { passThresholdPercent: 70 },
+    });
+
+    const error = await service
+      .submit(course.slug, QUIZ, allCorrect, learner)
+      .catch((e) => e);
+
+    expect((error as AppError).kind).toBe("conflict");
+  });
+
   it("still allows a retry before certification", async () => {
     // The half that keeps this from being "passed once, closed for ever". A
     // physician improving their score before claiming the point is doing
@@ -415,8 +478,19 @@ describe("submit", () => {
     expect(result.attemptNumber).toBe(100);
   });
 
-  it("keeps the best score, so a curious retry cannot lose an earned pass", async () => {
-    const { service, progressWrites } = build({ attempts: 1, bestScore: 100 });
+  /*
+   * This case used to be "keeps the best score, so a curious retry cannot lose
+   * an earned pass", with a stored best of 100 and a fresh attempt of 0.
+   *
+   * P170-01 removed the situation it described: a curious retry after a pass is
+   * refused, so there is no longer a way to submit an attempt while a passing
+   * score is on file. The rule underneath survives and still matters between
+   * *failing* attempts — a learner who scores 60 then 20 keeps the 60 — so the
+   * case is rewritten to the half that is still reachable rather than deleted
+   * along with the behaviour it was guarding.
+   */
+  it("keeps the best of several failing attempts", async () => {
+    const { service, progressWrites } = build({ attempts: 1, bestScore: 60 });
 
     await service.submit(
       course.slug,
@@ -425,8 +499,9 @@ describe("submit", () => {
       learner,
     );
 
-    expect(progressWrites[0]?.["scorePercent"]).toBe(100);
-    expect(progressWrites[0]?.["passed"]).toBe(true);
+    expect(progressWrites[0]?.["scorePercent"]).toBe(60);
+    // 60 is under the enrolment's 70 % threshold, so the exam stays open.
+    expect(progressWrites[0]?.["passed"]).toBe(false);
   });
 
   it("rejects answers referencing a question outside this quiz", async () => {

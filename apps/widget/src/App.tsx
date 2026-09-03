@@ -832,8 +832,19 @@ function Loaded(props: {
            * had typed their EFN — the worst place to be refused, because the
            * refusal arrives after the personal data.
            */
+          /*
+           * And not once the point has been claimed (P170-02).
+           *
+           * `courseComplete` alone was enough while this button only ever
+           * appeared on the screen you land on straight after passing. Since
+           * P170-02 the *intro* offers it too — the screen a physician returns
+           * to weeks later — and for a certified enrolment "geltend machen"
+           * describes something already done. Same condition as the course
+           * page's own button (P168-02), so the two cannot disagree about
+           * whether there is a point left to claim.
+           */
           onClaimPoints={
-            state.courseComplete
+            state.courseComplete && state.completedAt === null
               ? () => {
                   refresh();
                   setScreen(
