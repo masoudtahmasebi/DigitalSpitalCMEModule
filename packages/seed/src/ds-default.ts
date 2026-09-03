@@ -253,10 +253,34 @@ export async function seedDsDefault(
          $10, $11, 'image/png', $11, 'image/png'
        )
        ON CONFLICT (project_id, slug) DO UPDATE SET
-         title = EXCLUDED.title,
-         description = EXCLUDED.description,
-         learning_objectives = EXCLUDED.learning_objectives,
-         target_audience = EXCLUDED.target_audience,
+         /*
+          * A starting value where there is nothing, never a replacement
+          * (P171-02).
+          *
+          * These four were unconditional, and this is the seed an operator is
+          * *meant* to find and work in — so the first thing anybody does with a
+          * fresh installation is edit DSCourse, and the next deploy put the
+          * lorem ipsum back. The file's own header says it is "idempotent on
+          * its slugs … so the first deploy and the fiftieth produce the same
+          * rows", which is true and is the defect: identical rows are what a
+          * fixture wants and the opposite of what a starting point wants.
+          *
+          * title is NOT NULL and learning_objectives is
+          * text[] NOT NULL DEFAULT '{}', so neither has a NULL to fall back
+          * from: an existing row keeps what it has, and the empty array is
+          * treated as the empty state it is.
+          *
+          * Found by scripts/check-seed-overwrites.mjs on its first run, which
+          * is the point of writing the check rather than another list.
+          */
+         title = courses.title,
+         description = COALESCE(courses.description, EXCLUDED.description),
+         learning_objectives = CASE
+                                 WHEN courses.learning_objectives = '{}'
+                                   THEN EXCLUDED.learning_objectives
+                                 ELSE courses.learning_objectives
+                               END,
+         target_audience = COALESCE(courses.target_audience, EXCLUDED.target_audience),
          updated_at = now()
        RETURNING id`,
       [

@@ -258,6 +258,9 @@ describe("what the seeds leave behind", () => {
               scientific_lead_name    = 'Prof. Dr. Operator',
               scientific_lead_title   = 'Wissenschaftliche Leitung',
               certificate_issue_place = 'Iserlohn',
+              title                   = 'Der Titel des Betreibers',
+              cme_points              = 10,
+              cme_category            = 'A',
               stamp_image             = $1,
               stamp_image_mime        = 'image/png',
               signature_image         = $1,
@@ -279,6 +282,9 @@ describe("what the seeds leave behind", () => {
       lead: string | null;
       leadTitle: string | null;
       place: string | null;
+      title: string;
+      points: number | null;
+      category: string | null;
       stamp: Buffer | null;
       signature: Buffer | null;
     }>(
@@ -287,6 +293,9 @@ describe("what the seeds leave behind", () => {
               scientific_lead_name    AS lead,
               scientific_lead_title   AS "leadTitle",
               certificate_issue_place AS place,
+              title                   AS title,
+              cme_points              AS points,
+              cme_category            AS category,
               stamp_image             AS stamp,
               signature_image         AS signature
          FROM courses WHERE slug = 'adhs-akademie-adult'`,
@@ -300,6 +309,24 @@ describe("what the seeds leave behind", () => {
     expect(row?.place).toBe("Iserlohn");
     expect(row?.stamp?.equals(stamp)).toBe(true);
     expect(row?.signature?.equals(stamp)).toBe(true);
+
+    /*
+     * The three the claim above did not cover (P171-02).
+     *
+     * "Every field an operator can edit in Verwaltung is asserted here
+     * together" has been in this comment since P108-01, and `title`,
+     * `cme_points` and `cme_category` were assigned `EXCLUDED.*`
+     * unconditionally the whole time — so every deploy wrote the MEDICE
+     * course's points back to the seed's 4, silently, on a green run. A check
+     * that covers less than it claims is §9.1's second form, and the claim is
+     * what stopped anybody looking.
+     *
+     * `scripts/check-seed-overwrites.mjs` now derives the list mechanically, so
+     * the next field cannot be missed by a human reading a comment.
+     */
+    expect(row?.title).toBe("Der Titel des Betreibers");
+    expect(row?.points).toBe(10);
+    expect(row?.category).toBe("A");
   }, 60_000);
 
   it("still supplies a starting value on a course that has none (P108-01)", async () => {

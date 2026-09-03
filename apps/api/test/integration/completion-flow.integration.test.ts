@@ -922,8 +922,11 @@ describe("the Teilnahmebescheinigung", () => {
      *
      * The client's decision, and it is theirs to make (§7): the VNR identifies
      * the accredited event, so correcting it must correct every certificate.
-     * `cmePoints`, `cmeCategory` and the attested identity stay snapshotted —
-     * those are what the learner earned and what they attested to.
+     *
+     * This comment used to end *"`cmePoints`, `cmeCategory` and the attested
+     * identity stay snapshotted — those are what the learner earned"*. Two
+     * thirds of that was wrong and the client found it in a browser; the case
+     * below is the rest of the same fix (P171-01).
      *
      * Until now course and enrolment carried the same value in every fixture,
      * so no test could tell which one was being read (§9.1).
@@ -949,6 +952,47 @@ describe("the Teilnahmebescheinigung", () => {
       courseSlug,
       VNR,
     ]);
+  });
+
+  it("carries the course's points and category today, not the snapshot", async () => {
+    /*
+     * P171-01, and the client's own screenshot is the specification: one
+     * Zertifizierung tab showing
+     *
+     *   > Diese Fortbildung ist … mit **10** CME-Punkten akkreditiert.
+     *   > … mit **4** Punkten (Kategorie D) anrechenbar.
+     *
+     * because the accreditation paragraph renders `courses.cme_points` and the
+     * Teilnahmebescheinigung rendered `enrolments.cme_points`. Same shape as
+     * the VNR above, same fix, and the same reason: a physician does not earn a
+     * number of points — the **event** is worth them, the Ärztekammer decided
+     * it, and the certificate must say what the register says.
+     *
+     * *"how can you set these hard coded when there are values in course!"*
+     */
+    await seedPool.query(
+      "UPDATE courses SET cme_points = 10, cme_category = 'A' WHERE slug = $1",
+      [courseSlug],
+    );
+
+    const { body } = await call("GET", `/courses/${courseSlug}/certificate`);
+
+    expect(body.cmePoints).toBe(10);
+    expect(body.creditSentence).toContain("10 Punkten (Kategorie A)");
+
+    // The snapshot is untouched: this changes which column is read, not the
+    // record of what was in force at enrolment.
+    const { rows } = await seedPool.query<{ points: number; category: string }>(
+      "SELECT cme_points AS points, cme_category AS category FROM enrolments WHERE id = $1",
+      [enrolmentId],
+    );
+    expect(rows[0]?.points).toBe(4);
+    expect(rows[0]?.category).toBe("D");
+
+    await seedPool.query(
+      "UPDATE courses SET cme_points = 4, cme_category = 'D' WHERE slug = $1",
+      [courseSlug],
+    );
   });
 
   it("templates the creditability sentence from the course's own values", async () => {
