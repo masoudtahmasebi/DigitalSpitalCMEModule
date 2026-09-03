@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# The two guards that decide what reaches production (P155-01/02).
+# The two guards that decide what reaches production (P155-01/02, P173, P175-01).
 #
 # Both rows that earn this file come from a real run rather than from reading
 # the workflow: `workflow_dispatch` deployed a feature branch to production on
@@ -66,6 +66,38 @@ check no "CI on main does not deploy to a repository whose default is trunk" \
 
 check no "an event nobody has thought about is refused, not waved through" \
   ds_release_ref_allowed push refs/heads/main main main
+
+# ---------------------------------------------------------------------------
+# The row P175-01 earns, and it cost a refused deploy to find.
+#
+# The workflow fed this function `github.event.repository.default_branch`, and
+# on this repository that is not `main` — it is the feature branch. So the first
+# real run printed
+#
+#     TRIGGERING_BRANCH: main
+#     DEFAULT_BRANCH:    claude/education-platform-roadmap-3vgrqh
+#
+# and refused a deploy of `main` for not being the default branch. The manual
+# arm, reading the same expression, would have done the opposite: allowed a
+# hand-picked deploy of the feature branch and refused `main`.
+#
+# The parameter is the **deploy branch** for that reason. What reaches
+# production is a decision this repository makes in one literal, not a
+# repository setting somebody can change in a dropdown.
+# ---------------------------------------------------------------------------
+
+check yes "CI on main deploys whatever the repository default happens to be" \
+  ds_release_ref_allowed workflow_run \
+  refs/heads/claude/education-platform-roadmap-3vgrqh main main
+
+check no "and the feature branch does not, even when it is the repository default" \
+  ds_release_ref_allowed workflow_run \
+  refs/heads/claude/education-platform-roadmap-3vgrqh main \
+  claude/education-platform-roadmap-3vgrqh
+
+check no "a manual run of the repository default is refused when it is not the deploy branch" \
+  ds_release_ref_allowed workflow_dispatch \
+  refs/heads/claude/education-platform-roadmap-3vgrqh main
 check yes "a manual run from main deploys — rollback needs this" \
   ds_release_ref_allowed workflow_dispatch refs/heads/main main
 check yes "a manual run naming the branch without the ref prefix" \
