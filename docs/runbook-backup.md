@@ -10,20 +10,44 @@ Introduced by **P23-03**.
 
 ## 1. What runs, and when
 
-| When            | What              | Fails how                                    |
-| --------------- | ----------------- | -------------------------------------------- |
-| 02:15 daily     | `backup database` | non-zero exit → `ds-backup.service` goes red |
-| 02:15 daily     | `backup objects`  | same unit, after the database job            |
-| 08:00 and 16:00 | `backup verify`   | non-zero exit when no backup is < 26 h old   |
+| When              | What              | Fails how                                    |
+| ----------------- | ----------------- | -------------------------------------------- |
+| 02:15 daily       | `backup database` | non-zero exit → `ds-backup.service` goes red |
+| 02:15 daily       | `backup objects`  | same unit, after the database job            |
+| 08:00 and 16:00   | `backup verify`   | non-zero exit when no backup is < 26 h old   |
+| every two minutes | `watchdog.sh`     | reports any of the three above, and alerts   |
 
-Units are in `infra/deploy/backup.timer` — copy them into
-`/etc/systemd/system/`, wire `OnFailure=` to whatever pages you, then
-`systemctl enable --now ds-backup.timer ds-backup-verify.timer`.
+**You do not install these.** `deploy.sh` writes all six units and arms the
+three timers on every deploy, and asserts afterwards that systemd lists them —
+`--install-timers` does that step alone, for a host where the deploy could not
+get a root password. Until P144-01 this section told you to copy four unit files
+out of `infra/deploy/backup.timer` by hand, which is CLAUDE.md §9.9's strongest
+form and is why no installation of this platform had a backup timer for weeks.
+That file is gone; the units live in `ds_install_timers` in `deploy.sh` and
+nowhere else.
 
 **`verify` is the one that matters.** A timer that stopped firing three weeks
 ago is indistinguishable from one that is working, right up until a restore.
 Nothing inside the backup job can report a run that never happened, which is why
 this is a second unit on a second schedule.
+
+**And the watchdog is what makes any of it reach a person (P182-03).** The
+backup units carry `OnFailure=ds-watchdog.service`, which reads as "a failed
+backup raises the alarm" and until now did not: the watchdog checked containers,
+`/health/ready` and the database pool, found all three healthy — correctly — and
+sent the **success** heartbeat. A failed backup produced an affirmative "this
+host is fine" to the external monitor. It now asks four questions of its own,
+every two minutes, from systemd's own record:
+
+- is `ds-backup.timer` armed at all?
+- did the last run succeed?
+- when did one last succeed — anything over 30 h is reported;
+- did the last `backup verify` succeed?
+
+The rule is `infra/deploy/backup-state.sh` and its table of cases is
+`backup-state.test.sh`, which `pnpm verify` runs. A host where the backup has
+not run since Tuesday is not a fixture anybody can arrange, so the rule is pure
+and the host facts are gathered separately.
 
 ### Checking by hand
 
@@ -59,6 +83,38 @@ action that cannot be undone.
 ---
 
 ## 3. Restoring the database
+
+### 3.0 The one command, first (P182-01)
+
+Since P182-01 the platform restores its own backups, and this is the path to
+take unless something about it does not work.
+
+```bash
+cd ~/ds-education/repo/infra/deploy
+
+# What is there, newest first, with sizes.
+./dsc run --rm backup list
+
+# Restore one into a database that does not exist yet. Never into the live one
+# — the command refuses that, and §3.3 explains why it is the right refusal.
+./dsc run --rm -e RESTORE_DATABASE_URL="postgres://…/ds_restore_check" \
+  backup restore backups/2026-08-07T02-15-00Z.dump.enc
+```
+
+It downloads the object, checks the authentication tag, decrypts, runs
+`pg_restore --single-transaction`, prints any complaints, and removes both the
+ciphertext and the plaintext before it exits. A wrong key fails before
+`pg_restore` starts, with a message naming the key rather than the database.
+
+`RESTORE_DATABASE_URL` is deliberately a separate variable rather than a flag:
+the destination has to be typed on purpose, and pointing it at the database
+`BACKUP_DATABASE_URL` names is refused.
+
+**Everything below is the manual path.** It exists because the command above
+depends on the container starting, the credentials being right and the network
+being up — and a restore is exactly when those assumptions are worth least. It
+is also what `backup.integration.test.ts` executes on every CI run, so it cannot
+drift from the code that wrote the file. Keep it; use §3.0 first.
 
 ### 3.1 Get the file
 

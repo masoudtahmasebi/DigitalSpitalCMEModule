@@ -69,10 +69,33 @@ plumbing around it.
 
 ## Running it
 
-Node 22 (`.nvmrc`), pnpm 10, Docker, and PHP only if you want to run the
-WordPress plugin's tests.
+### From a fresh clone, in four commands
 
-There are two ways to run it, and the difference matters.
+```bash
+git clone git@github.com:masoudtahmasebi/DigitalSpitalCMEModule.git
+cd DigitalSpitalCMEModule
+pnpm install
+pnpm start          # .env, containers, schema, three tenants, a console account
+pnpm dev            # the apps, with watchers
+```
+
+`pnpm start` prints the URLs and the console password it just created. Nothing
+else is required and nothing is left as an exercise — it writes `.env` from
+`.env.example` if you have none, generates a local `SECRETS_KMS_KEY` so the
+encrypted-at-rest path behaves the way it does in production, and names the one
+missing prerequisite rather than answering "check your setup".
+
+That is deliberate to the point of being the ticket it came from: the README
+once listed four of the five steps, omitted `cp .env.example .env`, and left the
+console account two sections further down. Each of those is easy once you know
+it, and the cost is not the typing — it is that a failure anywhere in the chain
+looks like "the project is broken" rather than "step three has not been run".
+
+Prerequisites: Node 22 (`.nvmrc`), pnpm 10, Docker, and PHP only if you want to
+run the WordPress plugin's tests. No PostgreSQL client is needed — where you
+have none, the database commands use the postgres container's own.
+
+### The other way to run it, and why to use both
 
 ```bash
 ./run-on-local.sh      # the production containers, on this machine
@@ -80,16 +103,8 @@ There are two ways to run it, and the difference matters.
 
 builds and runs the **same images the server runs**, with the same entrypoints
 and the same runtime configuration — then migrates, seeds all three tenants,
-creates a console account and prints what to open. It needs nothing but Docker.
-
-```bash
-pnpm install
-pnpm start             # .env, dependencies, schema, tenants, a console account
-pnpm dev               # the apps from source, with watchers
-```
-
-runs the applications from source with hot reload. Faster to iterate in, and it
-never exercises the containers.
+creates a console account and prints what to open. It needs nothing but Docker:
+no Node, no pnpm, no checkout of the workspace's dependencies.
 
 | Want                                          | Use                      |
 | --------------------------------------------- | ------------------------ |
@@ -109,10 +124,29 @@ resolved against the wrong directory. A Vite dev server cannot see any of them;
 ./run-on-local.sh --fresh    start again from an empty database
 ```
 
-Both write `.env` from `.env.example` if you have none, generate a local
-`SECRETS_KMS_KEY` so the encrypted-at-rest path behaves the way it does in
-production, and name the one prerequisite that is missing rather than a generic
-"check your setup". `pnpm start --keep` skips dropping the database.
+`pnpm start --keep` is the same for the source stack: everything else, without
+dropping the database.
+
+### Keeping a local database you can get back to
+
+```bash
+pnpm db:snapshot            # db/snapshots/2026-09-03T21-40-11.dump
+pnpm db:snapshot before-migration
+pnpm db:snapshots           # what you have, newest first
+pnpm db:restore before-migration
+```
+
+`pnpm db:dev:reset` gets you back to _seeded_. This gets you back to **the state
+you were in** — the course you built by hand, the enrolment half-way through a
+video, the twenty minutes of clicking that reproduce the bug. It is a `pg_dump`
+into a git-ignored directory, and it uses the postgres container's own client
+where your machine has none.
+
+It is deliberately **not** the production backup system, which encrypts with the
+deployment's key and uploads off-host ([`docs/runbook-backup.md`](docs/runbook-backup.md)).
+Keeping them apart is the point: the production tool must never grow a "local
+mode" that skips encryption, because that flag would then exist on the machine
+holding real records.
 
 ### The containerised stack: one port block, 5539x
 
@@ -282,12 +316,15 @@ erasure, which is cross-tenant by nature. See
 | What are the standing rules for changing this code?               | [`CLAUDE.md`](CLAUDE.md)                                                        |
 | How is the system put together, and why that way?                 | [`docs/architecture.md`](docs/architecture.md)                                  |
 | Why was _this_ decided?                                           | [`docs/adr/`](docs/adr/README.md)                                               |
-| What is being built, in what order, for how many hours?           | [`docs/roadmap.md`](docs/roadmap.md), [`docs/backlog/`](docs/backlog/README.md) |
+| What is being built, and in what order?                           | [`docs/roadmap.md`](docs/roadmap.md), [`docs/backlog/`](docs/backlog/README.md) |
 | What personal data exists and what happens on an erasure request? | [`docs/gdpr.md`](docs/gdpr.md)                                                  |
 | What is still unanswered and blocking?                            | [`docs/show-stoppers.md`](docs/show-stoppers.md)                                |
 | How do I add a module without breaking the layering?              | [`CONTRIBUTING.md`](CONTRIBUTING.md)                                            |
 | How do I put this on a server the first time?                     | [`docs/deployment.md`](docs/deployment.md)                                      |
 | How is this deployed, and how do I roll it back?                  | [`infra/deploy/README.md`](infra/deploy/README.md)                              |
+| Something is wrong on the server — where do I look?               | [`docs/observability.md`](docs/observability.md)                                |
+| What is watching it, and who does it tell?                        | [`docs/observability.md`](docs/observability.md) §7                             |
+| How do I get the data back?                                       | [`docs/runbook-backup.md`](docs/runbook-backup.md)                              |
 | How does the WordPress side work?                                 | [`wordpress/ds-lms/README.md`](wordpress/ds-lms/README.md)                      |
 | How do I extend it — and what may I not extend?                   | [`docs/adr/0010-extension-points.md`](docs/adr/0010-extension-points.md)        |
 | What did the security review find, and what is accepted risk?     | [`docs/security-audit.md`](docs/security-audit.md)                              |
@@ -341,7 +378,9 @@ Ignoring it is safe — both buttons then land on the start page, as before.
 
 ## Status
 
-Pre-launch. Target **06.09.2026**, budget fixed at 140 h.
+Pre-launch. Target **06.09.2026**. The 140 h budget was withdrawn by the client
+on 26.08.2026 — the date and the deferred list in [`CLAUDE.md`](CLAUDE.md) §3
+are what remain binding, and hours are not.
 
 The admin console is complete: compliance settings, certificate assets,
 branding, participant reporting, **and** authoring — departments and projects,

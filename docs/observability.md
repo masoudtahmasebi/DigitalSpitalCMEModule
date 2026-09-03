@@ -164,16 +164,61 @@ drift is a compliance incident rather than an inconvenience.
   format is ingestible by any of them the day there is a reason.
 - **No tracing.** One API process and one database; a span tree would tell you
   what `durationMs` already does.
-- **No alerting rules.** `ALERT_WEBHOOK_URL` already posts EIV deadline alarms,
-  and `infra/deploy/backup.timer` has `OnFailure=` hooks. Wiring those to a
-  pager is a deployment decision, not a code one.
+- **No Prometheus, and no alerting _rules_.** There is nothing scraping
+  `/metrics` on a schedule and no PromQL evaluated anywhere; the query above is
+  for a person or for whatever you point at it. What the platform does have is
+  `watchdog.sh` on a two-minute timer — see §8 — which is a much smaller thing
+  and asks its questions from inside the host rather than of a scraper.
 - **No `stack` in a log by default.** A stack quotes source lines, and in this
   codebase those include SQL. Unhandled errors log theirs in a named field,
   redacted with everything else.
 
 ---
 
-## 7. Turning up the detail during an incident
+## 7. What tells somebody, and what it can see
+
+`/metrics` and the health probes answer when asked. Nothing asks them on a
+schedule except `watchdog.sh`, and what it checks is therefore the whole of what
+this installation notices by itself.
+
+| Every two minutes it asks           | Because                                                                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| is every container running, healthy | the API reported `unhealthy` for **22 hours** while serving traffic, and the client noticed first (P140-01)  |
+| does `/health/ready` answer 200     | "Redis is up and not answering" is invisible from outside — every route that does not touch it keeps working |
+| is anybody queued for a connection  | `ds_pg_pool_waiting > 0` sustained is the outage of 01.09 forming, minutes before a screen dies (P144-01)    |
+| is a backup being taken, and recent | four facts from systemd's own record — see `backup-state.sh` and §1 of the backup runbook (P182-03)          |
+
+Two things about how it reports, and both are the point:
+
+- **`ALERT_WEBHOOK_URL`** takes the problems. Slack and Teams both read the
+  `text` field. No credential and no URL from `config.env` goes into the
+  payload. With it empty, the alarm reaches a log file nobody is watching, and
+  the script says so in that log — and so does `deploy.sh`, loudly, at install.
+- **`HEARTBEAT_URL`** is pinged **only when everything is healthy**, so an
+  external service (healthchecks.io, Better Stack, Cronitor) raises the alarm
+  when the pings stop. A watchdog on a dead host reports nothing: the failure
+  that silences the alarm is the failure the alarm is for, so the "this host is
+  gone" alert has to come from somewhere that is not the host.
+
+  That direction is also what made the backup blind spot serious rather than
+  merely absent. Before P182-03, a failed nightly backup started the watchdog
+  through `OnFailure=`, the watchdog found its three checks green, and it sent
+  the heartbeat — the external monitor was told, affirmatively, that everything
+  was fine, at the exact moment it was not.
+
+What it deliberately does **not** do is restart anything. A watchdog that
+restarts on unhealthy turns a recoverable dependency failure into a restart
+loop, which is the same argument `health.service.ts` makes about liveness.
+
+```bash
+systemctl list-timers 'ds-*'            # are the three timers armed?
+journalctl -u ds-watchdog --since -1d   # what has it been finding?
+./watchdog.sh                           # run it now, in the foreground
+```
+
+---
+
+## 8. Turning up the detail during an incident
 
 ```bash
 # In ~/ds-education/config.env

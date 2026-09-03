@@ -26,6 +26,14 @@
  *   database   dump, encrypt, upload, confirm, prune
  *   objects    mirror course media into the backup bucket
  *   verify     is there a recent database backup? — run this separately
+ *   list       what is in the bucket, newest first, with sizes
+ *   restore    fetch one, decrypt it, and load it into RESTORE_DATABASE_URL
+ *
+ * `list` and `restore` were added in P182-01, and their absence was the gap
+ * that mattered: the backup had been taken, encrypted, uploaded, pruned and
+ * freshness-checked nightly since P23-03, and the only way to *use* one was to
+ * read the integration test and reproduce it by hand. A procedure that exists
+ * as a test file is not a procedure at 22:00 (§9.9a).
  *
  * `verify` is deliberately not folded into `database`. A freshness check that
  * runs inside the job it checks can only ever report on a run that happened,
@@ -33,7 +41,13 @@
  */
 
 import { S3Presigner } from "../shared/s3-presigner.js";
-import { runDatabaseBackup, runFreshnessCheck, runObjectMirror } from "./backup.js";
+import {
+  runDatabaseBackup,
+  runFreshnessCheck,
+  runObjectMirror,
+  runRestore,
+  sameDatabase,
+} from "./backup.js";
 import { DEFAULT_RETENTION } from "./retention.js";
 import { BackupStore } from "./store.js";
 
@@ -151,8 +165,106 @@ async function main(): Promise<number> {
       return fresh ? 0 : 1;
     }
 
+    case "list": {
+      /*
+       * What is actually there, newest first (P182-01).
+       *
+       * The first thing anybody needs in an incident, and there was no way to
+       * get it: the keys were visible only to whoever could reach the bucket
+       * with an S3 client and the right credentials. An operator restoring at
+       * 22:00 should not have to install one.
+       *
+       * Sizes come from a HEAD each, which is one request per object and fine
+       * for a retention window of a few dozen. `verify` already answers "is
+       * there a recent one" without any of this.
+       */
+      const keys = (await backupStore.list(env.prefix, now)).sort().reverse();
+
+      for (const key of keys) {
+        const bytes = await backupStore.size(key, now);
+        log({ event: "backup.item", key, bytes: bytes ?? null });
+      }
+
+      log({ event: "backup.list", prefix: env.prefix, count: keys.length });
+      // Zero backups is not an error here — `verify` is the check with an
+      // opinion, and this command answers a question.
+      return 0;
+    }
+
+    case "restore": {
+      const key = process.argv[3] ?? "";
+      if (key === "") {
+        process.stderr.write(
+          "usage: backup restore <key>\n\n" +
+            "  The key is one of the lines `backup list` prints.\n" +
+            "  RESTORE_DATABASE_URL says where it goes, and must not be the\n" +
+            "  database BACKUP_DATABASE_URL names.\n",
+        );
+        return 1;
+      }
+
+      const target = required("RESTORE_DATABASE_URL");
+
+      /*
+       * The guard, and the reason `restore` takes its own variable rather than
+       * a `--into` flag.
+       *
+       * A restore is the one operation in this CLI that **writes** to a
+       * database, and the database this container already has a superuser URL
+       * for is production. A flag would put the difference between "recover
+       * into a scratch database" and "overwrite everything" one keystroke
+       * apart, at the moment somebody is least able to afford it.
+       *
+       * So the destination is a separate variable that has to be set
+       * deliberately, and pointing it at the source is refused. That refusal is
+       * not the whole safety — `pg_restore` without `--clean` will fail on the
+       * existing objects anyway — it is the one that gives a person a sentence
+       * instead of a wall of constraint violations.
+       *
+       * Compared on the parsed connection, not the string: `postgres://…/ds`
+       * and `postgres://…/ds?sslmode=require` are the same database.
+       */
+      if (sameDatabase(target, env.databaseUrl)) {
+        process.stderr.write(
+          "refusing to restore into the database being backed up.\n\n" +
+            "  RESTORE_DATABASE_URL points at the same database as\n" +
+            "  BACKUP_DATABASE_URL. Restore into a new database instead:\n\n" +
+            "      createdb ds_restore_check\n" +
+            "      RESTORE_DATABASE_URL=…/ds_restore_check backup restore <key>\n\n" +
+            "  and promote it once you have looked at what came back.\n",
+        );
+        return 1;
+      }
+
+      const report = await runRestore({
+        store: backupStore,
+        key,
+        encryptionKey: env.encryptionKey,
+        targetDatabaseUrl: target,
+        workDir: env.workDir,
+        now,
+      });
+
+      // The warnings are printed, not swallowed. A restore across differing
+      // roles is rarely silent, and an operator has to be able to tell an
+      // ownership complaint from a missing table.
+      for (const warning of report.warnings) {
+        log({ event: "backup.restore.warning", message: warning });
+      }
+      log({
+        event: "backup.restore",
+        key: report.key,
+        bytes: report.bytes,
+        digest: report.digest,
+        warnings: report.warnings.length,
+      });
+      return 0;
+    }
+
     default:
-      process.stderr.write("usage: backup <database|objects|verify>\n");
+      process.stderr.write(
+        "usage: backup <database|objects|verify|list|restore <key>>\n",
+      );
       return 1;
   }
 }

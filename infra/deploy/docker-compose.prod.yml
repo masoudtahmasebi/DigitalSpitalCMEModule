@@ -418,8 +418,9 @@ services:
   #   ./dsc run --rm backup objects    # mirror course media
   #   ./dsc run --rm backup verify     # is there a recent backup? — exit 1 if not
   #
-  # See `infra/deploy/backup.timer` for the schedule and
-  # `docs/runbook-backup.md` for the restore.
+  # The schedule is the systemd units `deploy.sh` writes — see
+  # `ds_install_timers` there, which is the only place they exist — and
+  # `docs/runbook-backup.md` is the restore.
   backup:
     image: ds-education/backup:${DS_COMMIT}
     # No registry to pull from — see the note on `api`.

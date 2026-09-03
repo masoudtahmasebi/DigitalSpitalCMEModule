@@ -42,3 +42,10 @@ infra/deploy/.env.production
 # has since been fixed.
 apps/e2e/test-results/
 apps/e2e/playwright-report/
+
+# Local development database snapshots (`pnpm db:snapshot`, P181-01). These are
+# plaintext dumps of whatever is in the dev database — seed data today, and a
+# copy of somebody's restored production backup tomorrow, which is precisely
+# why they must never be tracked. The production backups are a different
+# system: encrypted, off-host, and described in docs/runbook-backup.md.
+db/snapshots/

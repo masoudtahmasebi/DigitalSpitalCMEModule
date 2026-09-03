@@ -42,15 +42,16 @@
  */
 
 import { spawn } from "node:child_process";
-import { createCipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { rm, stat } from "node:fs/promises";
+import { open, rm, stat } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import { applyRetention, backupKey, isFresh, type RetentionPolicy } from "./retention.js";
 import { fileDigest, type BackupStore } from "./store.js";
 
 /** AES-256-GCM: 12-byte nonce, 16-byte tag. Both are the standard sizes. */
 const NONCE_BYTES = 12;
+const TAG_BYTES = 16;
 
 export interface BackupReport {
   readonly kind: string;
@@ -188,6 +189,238 @@ function dumpAndEncrypt(
     }),
     finished,
   ]).then(() => undefined);
+}
+
+/**
+ * Do two connection strings name the same database on the same server?
+ *
+ * The guard `backup restore` uses before it writes anything. Host, port and
+ * database name; user and query parameters ignored, because `?sslmode=require`
+ * and a different role do not make it a different database.
+ *
+ * A URL that will not parse counts as **the same**, which is the safe answer
+ * when the question being asked is "am I about to overwrite production". A
+ * typo in `RESTORE_DATABASE_URL` costs a refusal and a second attempt; the
+ * other failure mode costs the database.
+ *
+ * Exported for its tests rather than because anything else calls it: it is the
+ * one line standing between a recovery and an overwrite, and CLAUDE.md §9.3 is
+ * about rules that are correct, untested where it counts, and therefore
+ * believed.
+ */
+export function sameDatabase(a: string, b: string): boolean {
+  try {
+    const left = new URL(a);
+    const right = new URL(b);
+    return (
+      left.hostname === right.hostname &&
+      (left.port || "5432") === (right.port || "5432") &&
+      left.pathname === right.pathname
+    );
+  } catch {
+    return true;
+  }
+}
+
+export interface RestoreOptions {
+  readonly store: BackupStore;
+  /** The exact object key, as `list` prints it. */
+  readonly key: string;
+  readonly encryptionKey: Buffer;
+  /** Where the dump is restored **into**. Never the live database — see below. */
+  readonly targetDatabaseUrl: string;
+  readonly workDir: string;
+  readonly now: Date;
+}
+
+export interface RestoreReport {
+  readonly key: string;
+  readonly bytes: number;
+  readonly digest: string;
+  /** `pg_restore`'s own complaints, kept — a restore is rarely perfectly clean. */
+  readonly warnings: readonly string[];
+}
+
+/**
+ * Fetch one backup and restore it into a database (P182-01).
+ *
+ * ## Why this exists, having not existed
+ *
+ * The backup has been taken nightly, encrypted, uploaded, pruned and
+ * freshness-checked since P23-03, and the integration suite has restored one on
+ * every CI run since — *"a backup that has never been restored is a
+ * hypothesis"*. What there was no way to do was restore one **as an operator**.
+ * The procedure existed as a test file to read at 22:00 on the worst night of
+ * the year, which is CLAUDE.md §9.9a's shape: a documented procedure is not a
+ * procedure.
+ *
+ * ## The three things it refuses
+ *
+ * **A wrong key.** The dump is AES-256-GCM and the tag authenticates every
+ * byte. `decipher.final()` throws on a mismatch, so a corrupted or
+ * wrong-keyed archive fails here rather than half-restoring — the property
+ * `backup.ts`'s header says GCM was chosen for, now with a caller that relies
+ * on it.
+ *
+ * **A missing object.** Named, with the key, because the most likely reason is
+ * a typo in a key copied off a listing.
+ *
+ * **Restoring over the source.** The caller enforces that (see `cli.ts`): this
+ * function restores wherever it is pointed, and the guard belongs where the two
+ * URLs are both in view.
+ *
+ * ## What it does not do
+ *
+ * Create the database, or drop what is there. `--clean --if-exists` would make
+ * "restore into the wrong place" silently destructive, and the operator running
+ * this is one `psql -c "CREATE DATABASE"` away from an empty target. A restore
+ * into a database that already has these tables fails loudly on the conflicts,
+ * which is the right outcome.
+ */
+export async function runRestore(options: RestoreOptions): Promise<RestoreReport> {
+  const stamp = options.now.toISOString().replace(/[:.]/gu, "-");
+  const encrypted = `${options.workDir}/ds-restore-${stamp}.enc`;
+  const plain = `${options.workDir}/ds-restore-${stamp}.dump`;
+
+  try {
+    await options.store.getFile(options.key, encrypted, options.now);
+
+    const digest = await fileDigest(encrypted);
+    const bytes = await decryptToFile(encrypted, plain, options.encryptionKey);
+    const warnings = await pgRestore(options.targetDatabaseUrl, plain);
+
+    return { key: options.key, bytes, digest, warnings };
+  } finally {
+    // Both, always. The plaintext is a complete copy of the database and must
+    // not outlive the command that needed it; the ciphertext is one too, to
+    // anybody who also has the key.
+    await rm(encrypted, { force: true });
+    await rm(plain, { force: true });
+  }
+}
+
+/**
+ * Reverse `dumpAndEncrypt`: nonce, ciphertext, tag.
+ *
+ * Read in the same layout it was written — 12 bytes of nonce at the front, 16
+ * bytes of tag at the end — and the tag is set **before** the final block is
+ * flushed, which is what makes `final()` the authentication check rather than a
+ * formality.
+ */
+async function decryptToFile(
+  source: string,
+  destination: string,
+  encryptionKey: Buffer,
+): Promise<number> {
+  // Paths this module built from its own work directory.
+  /* eslint-disable security/detect-non-literal-fs-filename -- see above */
+  const total = (await stat(source)).size;
+
+  if (total <= NONCE_BYTES + TAG_BYTES) {
+    throw new Error(`${source} is too small to be an encrypted dump`);
+  }
+
+  const handle = await open(source, "r");
+  try {
+    const nonce = Buffer.alloc(NONCE_BYTES);
+    await handle.read(nonce, 0, NONCE_BYTES, 0);
+
+    const tag = Buffer.alloc(TAG_BYTES);
+    await handle.read(tag, 0, TAG_BYTES, total - TAG_BYTES);
+
+    const decipher = createDecipheriv("aes-256-gcm", encryptionKey, nonce);
+    decipher.setAuthTag(tag);
+
+    await pipeline(
+      handle.createReadStream({
+        start: NONCE_BYTES,
+        end: total - TAG_BYTES - 1,
+        autoClose: false,
+      }),
+      decipher,
+      createWriteStream(destination),
+    );
+
+    return total;
+  } catch (error) {
+    // The one failure worth naming precisely: an operator who reads
+    // "unsupported state or unable to authenticate data" will look at the
+    // database, and the answer is the key or the file.
+    throw new Error(
+      `could not decrypt ${source}: the archive is corrupt or BACKUP_ENCRYPTION_KEY ` +
+        `is not the key it was written with (${
+          error instanceof Error ? error.message : "unknown error"
+        })`,
+    );
+  } finally {
+    await handle.close();
+  }
+  /* eslint-enable security/detect-non-literal-fs-filename */
+}
+
+function pgRestore(databaseUrl: string, path: string): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    /*
+     * `--no-owner --no-privileges` because the dump was taken that way, and
+     * `--exit-on-error` is deliberately **absent**: a restore into a database
+     * whose roles differ from the source produces per-object complaints that
+     * are not failures, and stopping on the first would leave a half-restored
+     * database and no report. The warnings are returned instead, so a person
+     * decides.
+     *
+     * The connection goes in the environment, not on the command line: `ps` is
+     * readable by every process on the host.
+     */
+    const env = libpqEnv(databaseUrl);
+
+    /*
+     * `--dbname` carries the **name only**, and it has to be there.
+     *
+     * Unlike `pg_dump`, `pg_restore` refuses without one — "one of -d/--dbname
+     * and -f/--file must be specified" — so the libpq environment alone is not
+     * enough. Passing the name and nothing else keeps the rule the dump path
+     * documents: the host, the user and above all the password stay in the
+     * environment, because a command line is readable in `ps` by every other
+     * process on the host.
+     */
+    const restore = spawn(
+      "pg_restore",
+      [
+        "--no-owner",
+        "--no-privileges",
+        "--single-transaction",
+        "--dbname",
+        env["PGDATABASE"] ?? "",
+        path,
+      ],
+      {
+        env: { ...process.env, ...env },
+        stdio: ["ignore", "ignore", "pipe"],
+      },
+    );
+
+    let stderr = "";
+    restore.stderr.on("data", (chunk: Buffer) => {
+      if (stderr.length < 64_000) stderr += chunk.toString("utf8");
+    });
+
+    restore.on("error", reject);
+    restore.on("close", (code) => {
+      const warnings = stderr
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line !== "");
+
+      /*
+       * `--single-transaction`, so a non-zero exit means **nothing** was
+       * restored rather than some of it. That is the property that makes a
+       * failed restore safe to retry, and it is why this rejects with the
+       * complaints attached instead of returning them.
+       */
+      if (code === 0) resolve(warnings);
+      else reject(new Error(`pg_restore exited ${code}: ${warnings.join(" | ")}`));
+    });
+  });
 }
 
 /**

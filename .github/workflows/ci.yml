@@ -157,6 +157,11 @@ jobs:
           # so the three names are refused everywhere but the prose explaining
           # where they went.
           node scripts/check-eiv-settings.mjs
+          # Prose is not executed, so a command a document tells somebody to run
+          # is asserted by nothing but the sentence. `sudo deploy.sh
+          # --install-timers` was written that confidently and answered "unknown
+          # option" — CLAUDE.md §11's own example (P181-01).
+          node scripts/check-docs-commands.mjs
 
       - name: Build
         run: pnpm build
@@ -532,16 +537,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      # Hard gate on what actually ships. A vulnerable linter is a real finding
-      # but not a production exposure, so dev-only advisories are reported
-      # without failing the build — otherwise the gate gets disabled the first
-      # time it blocks a release for a transitive dev dependency.
-      - name: Audit production dependencies (blocking)
-        run: pnpm audit --prod --audit-level=moderate
-
-      - name: Audit all dependencies (advisory)
-        run: pnpm audit --audit-level=moderate || true
-
       # Catches a committed secret before it reaches the default branch. The VNR
       # password and SMTP credentials must never enter git (CLAUDE.md §4).
       # A configuration variable documented in a template with no reader, or
@@ -584,6 +579,38 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ----------------------------------------------------------------------
+      # The audits go **last**, and that is the point of this ordering (P182-02).
+      #
+      # They were first. On 03.09 the npm advisory endpoint timed out for four
+      # minutes on a push to `main`, the blocking step exited non-zero, and
+      # every step after it in this job was **skipped** — configuration drift,
+      # the role matrix, tenant reads, outbound deadlines and gitleaks. A
+      # registry outage silently disabled the secret scanner, and the build was
+      # red for a reason that had nothing to do with the commit.
+      #
+      # Everything above this line runs offline and is evidence about the diff.
+      # Everything below asks somebody else a question. Ordering them this way
+      # means a bad answer costs the answer and nothing else.
+      #
+      # `audit-dependencies.mjs` is the second half: it reads the report rather
+      # than the exit code, so an advisory blocks and an unreachable registry
+      # warns loudly without blocking — see its header for why that is the right
+      # trade and not a weakening.
+      # ----------------------------------------------------------------------
+      - name: The audit wrapper's own tests
+        run: node scripts/audit-dependencies.test.mjs
+
+      - name: Audit production dependencies (blocking)
+        run: node scripts/audit-dependencies.mjs --prod
+
+      # A vulnerable linter is a real finding but not a production exposure, so
+      # dev-only advisories are reported without failing the build — otherwise
+      # the gate gets disabled the first time it blocks a release for a
+      # transitive dev dependency.
+      - name: Audit all dependencies (advisory)
+        run: node scripts/audit-dependencies.mjs || true
 
   codeql:
     name: CodeQL
