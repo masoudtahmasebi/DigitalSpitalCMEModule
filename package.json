@@ -45,7 +45,7 @@
     "check:runtime-config": "node scripts/check-runtime-config.mjs",
     "check:egress": "node scripts/check-egress.mjs",
     "check:shell": "for t in infra/deploy/*.test.sh; do \"$t\" || exit 1; done",
-    "verify": "pnpm lint && pnpm format && pnpm typecheck && pnpm test && pnpm test:integration && pnpm test:wp && pnpm check:roles && pnpm check:tenant-reads && pnpm check:deadlines && pnpm check:i18n && pnpm check:copy && pnpm check:sdk && pnpm check:runtime-config && pnpm check:egress && pnpm check:env && pnpm check:local-ports && pnpm check:shell && pnpm audit --prod --audit-level=moderate",
+    "verify": "pnpm lint && pnpm format && pnpm typecheck && pnpm test && pnpm test:integration && pnpm test:wp && pnpm check:roles && pnpm check:tenant-reads && pnpm check:deadlines && pnpm check:i18n && pnpm check:copy && pnpm check:sdk && pnpm check:runtime-config && pnpm check:egress && pnpm check:env && pnpm check:local-ports && pnpm check:focus-ring && pnpm check:shell && pnpm audit --prod --audit-level=moderate",
     "test:integration": "node scripts/run-integration.mjs",
     "audit:prod": "pnpm audit --prod --audit-level=moderate",
     "db:test": "node scripts/testdb.mjs",
@@ -62,7 +62,8 @@
     "check:roles": "node scripts/role-matrix.mjs",
     "check:rules": "node scripts/unused-rules.mjs",
     "check:sdk": "node scripts/check-sdk.mjs",
-    "check:seed-structure": "node scripts/check-seed-structure.mjs"
+    "check:seed-structure": "node scripts/check-seed-structure.mjs",
+    "check:focus-ring": "node scripts/check-focus-ring.mjs"
   },
   "devDependencies": {
     "@ds/config": "workspace:*",

@@ -875,30 +875,26 @@ entry — `apps/widget/src/locale/de.ts` (`player.courseProgress`) and the panel
 in `PlayerScreen.tsx`; every candidate above is already on `EnrolmentState`. If MEDICE want the bare `63% absolviert` wording back,
 that is their call to make in writing, and this note records that it was raised.
 
-**A third finding, 02.09 — the longer sentence does not fit the card the drawing
-draws, and DEP-24 is the client noticing.** Amruth reported the autosave note
-sitting under the percentage instead of beside it. It is arithmetic, not a
-rendering fault. Measured in Chromium at the shipped sizes:
-`0 % der Fortbildung absolviert` is **221 px** in Inter where the drawing's
-`0% absolviert` is **110 px**, and beside a 268 px
-`Ihr Fortschritt wird automatisch gespeichert` the footer needs **505 px** of
-one line where the drawing needed 394. The card in
-`player-zusammenfassung-v1.png` measures 576 px in a 1920 px render of a 1440 px
-layout — **432 CSS px**, a 400 px content box. It was never measured for this
-sentence and cannot hold it.
+**A third finding, 02.09 — and it turned out not to be a question for MEDICE
+after all.** Amruth reported (DEP-24) the autosave note sitting under the
+percentage instead of beside it, and this note first recorded that as a
+geometric conflict with the wording above — that
+`0 % der Fortbildung absolviert` was 111 px longer than the drawing's
+`0% absolviert` and would not fit the card. **That was wrong, and it is
+withdrawn.**
 
-P156 resolved it by giving the card the width the German needs (26 rem → 36 rem)
-and pinning the row so no font can break it again, which makes the card a third
-wider than the drawing. **That is the trade this question now decides:** the
-drawing's card and the drawing's label, or the stated referent and a wider card.
-Reverting is one line in `packages/copy/src/de.ts` plus P156-01. Until MEDICE
-answer, the stated referent wins, on the same grounds as the original entry —
-§7 does not permit guessing at the number, and it does permit a wider panel.
+It rested on reading `player-zusammenfassung-v1.png` as a 1440 px layout
+rendered at 1920. It is drawn **1:1 for 1920×1080**. Measured by glyph ink at
+1:1, the drawing's `0% absolviert` is 95 × 12 px and Inter 14 px semibold
+renders it at 94 × 12 — the drawing's card is **576 px**, not 432, and the
+implementation's `26rem` was 160 px narrower than the artwork rather than
+matching it.
 
-Related: the same panel's `14:35 / 25:45` is drawn against the **authored**
-video length, because that is what the server computes the watch percentage
-from. A player reading the media element's own duration could show a total that
-disagreed with the percentage next to it.
+At the drawn width the footer has 544 px of content and the shipped sentence
+needs 505. **The stated referent fits the card the client drew.** P158 widened
+the card to the drawing and nothing was traded; the wording question below
+stands exactly where it stood, on its own merits, and no decision about it is
+blocking anything.
 
 ---
 

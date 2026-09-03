@@ -517,7 +517,48 @@ function Shell(props: {
    */
   const apiBase = readConfig()?.apiBase;
   return (
-    <div className="mx-auto max-w-6xl p-4 sm:p-6">
+    /*
+      `max-w-screen-2xl`, and why the player needed the container to grow
+      (DEP-24).
+
+      This was `max-w-6xl` — 1152, a 1104 px column. The player's own drawing,
+      `player-zusammenfassung-v1.png`, is 1:1 for 1920×1080 and puts the video
+      at **1022 px** inside a 1398 px panel; at 1104 the same layout left the
+      video **744**, because the panel is the column and the video is what is
+      left of it after the sidebar. No arrangement inside the widget can
+      recover 278 px it was never given.
+
+      The drawing's own row is
+
+          1022 (video) + 24 (gap) + 304 (sidebar) + 48 (padding) = 1398
+
+      and every term but the video is a Tailwind step already, so the container
+      is the one that decides. `max-w-screen-2xl` is 1536 — the nearest step to
+      the 1480 the drawing's exact figures ask for — and it holds the drawing's
+      *proportions* rather than its pixels:
+
+          1536 − 48 (`sm:p-6` here) − 32 (`p-4`, the widget's gutter in
+          App.tsx) = 1456 panel
+          1456 − 2 (border) − 48 (`sm:p-6`) − 24 (`gap-6`) − 320 (`20rem`)
+          = 1062 video
+
+      1062 / 1456 is **72.9 %** of the panel against the drawing's
+      1022 / 1398 = 73.1 %. Four per cent larger than the artwork, in the same
+      shape, out of Tailwind's own scale — which is the trade Masoud asked for
+      over a container width nobody could name.
+
+      The catalogue is unaffected: `CourseList` caps its own content at
+      `max-w-[1082px]`, and the course detail screen now caps itself at
+      `max-w-6xl` — the width this container used to impose on it — see
+      `apps/widget/src/App.tsx`. Both were already narrower than this; only the
+      player uses what it gives.
+
+      This is the DS portal only. Inside a customer's WordPress the column is
+      their theme's, and the video is whatever that leaves — which is the
+      honest answer for an embedded widget and the reason none of the widget's
+      own layout depends on this number.
+    */
+    <div className="mx-auto max-w-screen-2xl p-4 sm:p-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-4">
         <a href="/" className="text-lg font-bold text-gray-900">
           {de.appTitle}

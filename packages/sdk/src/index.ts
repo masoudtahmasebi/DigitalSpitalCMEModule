@@ -660,7 +660,7 @@ export function createClient(options: ClientOptions) {
      */
     adminCheckEivConnection: (
       slug: string,
-      input: { vnrPassword?: string } = {},
+      input: { vnrPassword?: string; environment?: "configured" | "test" } = {},
     ): Promise<EivConnectionReport> =>
       request(`/admin/courses/${seg(slug)}/eiv/check`, {
         method: "POST",

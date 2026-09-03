@@ -3,6 +3,34 @@
  *
  * Everything here is dumb on purpose: no fetching, no gate decisions, no
  * German copy of its own. Copy arrives as props from `locale/de.ts`.
+ *
+ * ## The one-odd-corner shape, and why several components repeat it
+ *
+ * The MEDICE layout does not draw symmetric rounded rectangles. Every teal or
+ * orange block in it has **three corners at one radius and a fourth at
+ * another**, and which corner is the odd one out is consistent per family:
+ *
+ * | Element                         | Three corners | The odd corner        |
+ * | ------------------------------- | ------------- | --------------------- |
+ * | meta bar (white)                | 12 px         | bottom-right, ~28 px  |
+ * | CME points badge (orange)       | 4 px          | bottom-right, ~18 px  |
+ * | tab, progress card, sticky card | ~20 px / pill | top-right, **square** |
+ *
+ * Those numbers are measured, not guessed — `docs/design/screens/page-02.png`
+ * and `docs/design/mobile/progress-sticky-module.png` at pixel level, written
+ * up in `docs/design/README.md` rows 2.2, 2.4 and 8.x. Uniform rounding is what
+ * DEP-27, DEP-28 and DEP-29 all reported from three different screens, which is
+ * the tell that it is one motif and not three coincidences: get it wrong in one
+ * place and the widget stops looking like the layout everywhere at once.
+ *
+ * `rounded-full rounded-tr-none` is the load-bearing idiom for the second
+ * family. CSS clamps a 9999 px radius down so the radii on any one edge fit
+ * that edge, which on a box shorter than it is wide lands exactly on
+ * half-the-height — the design's radius — without anybody hard-coding the
+ * element's height. Where a corner has to survive that clamp at a *fixed*
+ * size (the active tab, which rounds only one corner and would otherwise clamp
+ * to the full height) the radius is written out in rem and the height it was
+ * derived from is named beside it.
  */
 
 import type { ReactNode } from "react";
@@ -141,15 +169,41 @@ export function TabbedPanel<T extends string>(props: {
                 props.onSelect(tab.id);
               }}
               className={
-                "rounded-t-xl px-6 py-2.5 text-sm font-semibold transition-colors " +
+                "px-6 py-2.5 text-sm font-semibold transition-colors " +
                 (selected
                   ? // The active tab is white and joins the panel below it,
                     // which is what makes the row read as tabs rather than as
                     // buttons. Hidden below `sm`, where the heading above the
                     // panel *is* this tab — a selected tab rendered among the
                     // buttons underneath would read as somewhere else to go.
-                    "border border-b-0 border-gray-100 bg-white text-brand-700 max-sm:hidden"
-                  : "bg-brand-600 text-brand-contrast hover:bg-brand-700 max-sm:rounded-full max-sm:py-3.5 max-sm:text-base")
+                    //
+                    // `rounded-tl-[1.25rem]`, not `rounded-tl-full`: only one
+                    // corner is rounded here, so the clamp that gives the
+                    // inactive tab its half-height radius would instead give
+                    // this one the *full* height. 1.25rem is half of the tab's
+                    // 40 px box (20 px line-height + `py-2.5`), which is the
+                    // radius the inactive tab beside it resolves to — the two
+                    // have to agree or the row steps.
+                    //
+                    // Teal border, not grey (DEP-28): the panel it merges into
+                    // is outlined in the same light teal, and a grey tab on a
+                    // teal panel draws the seam it exists to hide.
+                    //
+                    // `relative -mb-px` is what makes "merges into the panel"
+                    // true rather than nearly true. `border-b-0` removes the
+                    // tab's own bottom edge, but the panel underneath still
+                    // draws its top edge across the full width — so the tab sat
+                    // on a hairline the drawing does not have. The negative
+                    // margin lets the tab's white fill overlap that line by the
+                    // one pixel it is wide, and `relative` puts it in front:
+                    // the tablist is after the panel in the DOM (`order-*`
+                    // reorders what you see, never what paints on top).
+                    "relative -mb-px rounded-tl-[1.25rem] border border-b-0 border-brand-100 bg-white text-brand-700 max-sm:hidden"
+                  : // Half-height on three corners, square on the top-right —
+                    // the layout's shape for every teal block (see the file
+                    // header). It was `rounded-t-xl`, which squares off the two
+                    // bottom corners the drawing sweeps.
+                    "rounded-full rounded-tr-none bg-brand-600 text-brand-contrast hover:bg-brand-700 max-sm:rounded-full max-sm:py-3.5 max-sm:text-base")
               }
             >
               {tab.label}
@@ -186,7 +240,14 @@ export function CourseMetaBar(props: {
      * the desktop row would produce three left-aligned lines and a button
      * floating off to one side, which is a different drawing.
      */
-    <div className="relative z-10 mx-4 -mt-7 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl bg-white px-5 py-3 shadow-md max-sm:flex-col max-sm:gap-y-4 max-sm:px-5 max-sm:py-6">
+    /*
+     * `rounded-br-[1.75rem]` is the odd corner (see this file's header). The
+     * bar was uniformly `rounded-xl`, which is the shape DEP-27a reported: at
+     * 12 px on all four corners the card reads as a plain rectangle beside a
+     * hero whose own bottom-right sweeps, and the two stop looking like one
+     * masthead. Both exports draw the sweep at roughly half the bar's height.
+     */
+    <div className="relative z-10 mx-4 -mt-7 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl rounded-br-[1.75rem] bg-white px-5 py-3 shadow-md max-sm:flex-col max-sm:gap-y-4 max-sm:px-5 max-sm:py-6">
       {props.points === null ? null : (
         /*
          * **One orange pill with an internal hairline**, at every width — not
@@ -197,11 +258,18 @@ export function CourseMetaBar(props: {
          * orange. The earlier reading came from the PDF's softer edges, where
          * the hairline is hard to see and the pill reads as two elements.
          *
-         * `overflow-hidden` on the pill and square corners on the halves: the
-         * outer radius is the pill's, and letting each half round its own end
+         * `overflow-hidden` on the badge and square corners on the halves: the
+         * outer radius is the badge's, and letting each half round its own end
          * would put a notch where the hairline is.
+         *
+         * **Not a full pill** (DEP-27c). It was `rounded-full`, and both
+         * exports draw something else: 4 px on three corners and a single long
+         * sweep on the bottom-right, the same odd-corner shape the white bar
+         * around it has. A full pill and a square badge are equally wrong, and
+         * they are wrong in opposite directions — which is why the report and
+         * the drawing can both be right about "this is not the shape".
          */
-        <span className="flex items-center overflow-hidden rounded-full bg-cta-500 text-cta-contrast">
+        <span className="flex items-center overflow-hidden rounded rounded-br-[1.125rem] bg-cta-500 text-cta-contrast">
           <span className="px-4 py-1.5 text-base font-bold max-sm:py-2 max-sm:text-lg">
             {props.points}
           </span>
@@ -252,16 +320,56 @@ export function ClockIcon(props: { className?: string }) {
   );
 }
 
+/**
+ * The glyph beside `N Module` in the meta strip.
+ *
+ * It was a 2 × 2 grid of filled squares — the generic "tiles" icon — and the
+ * layout draws something specific instead (DEP-27b): **two stacked sheets, the
+ * top one tilted, with a play badge over the lower-right corner.** That is not
+ * decoration. A grid says "several things"; the drawing says "several things
+ * you watch", which is what a Modul is on this platform, and it is the only
+ * place in the meta strip that says the course is video at all.
+ *
+ * Stroked outline for the sheets, solid for the badge, exactly as both exports
+ * draw it. The play triangle is a hole punched with `evenodd` rather than a
+ * white triangle, so the glyph still reads on a fill that is not white.
+ */
 export function ModulesIcon(props: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 20 20"
+      viewBox="0 0 24 24"
       // Orange, for the reason on ClockIcon.
       className={props.className ?? "h-5 w-5 text-cta-500"}
-      fill="currentColor"
       aria-hidden="true"
     >
-      <path d="M3 3h6v6H3V3Zm0 8h6v6H3v-6Zm8-8h6v6h-6V3Zm0 8h6v6h-6v-6Z" />
+      {/*
+        One polyline, drawn from the right edge anticlockwise: down the short
+        right side, up over the tilted top sheet, down the left side and along
+        the bottom. It stops short of the lower-right corner because the badge
+        occupies it — the drawing has a gap there, not an overlap.
+      */}
+      <path
+        d="M14.8 11.4V8.2L12.2 4.6 4.4 8.2v11.4h6.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* The lower sheet's own top edge, which is what makes the pair a stack
+          rather than one sheet with a bent lid. */}
+      <path
+        d="M4.4 8.2h10.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+      />
+      <path
+        d="M17 12.2a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm-1.4 2.5 3.7 2.5-3.7 2.5v-5Z"
+        fill="currentColor"
+        fillRule="evenodd"
+      />
     </svg>
   );
 }
@@ -421,7 +529,14 @@ export function ProgressPanel(props: {
   footnote?: string;
 }) {
   return (
-    <aside className="rounded-2xl bg-brand-600 p-5 text-center text-brand-contrast shadow-md">
+    /*
+     * `rounded-[1.25rem] rounded-tr-none` — the teal family's shape, and the
+     * card DEP-29 asks the sticky one to be "consistent with". Measured at
+     * 21 px on a 284 px-wide card in the desktop export, against this card's
+     * `18rem`; the top-right is square there, as it is on the sticky card and
+     * on every tab.
+     */
+    <aside className="rounded-[1.25rem] rounded-tr-none bg-brand-600 p-5 text-center text-brand-contrast shadow-md">
       <p className="text-base font-bold">{props.title}</p>
       <div className="mt-3 flex justify-center">
         <ProgressRing

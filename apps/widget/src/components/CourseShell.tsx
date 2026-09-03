@@ -116,42 +116,64 @@ export function CourseShell(props: {
         {/*
           The title and the progress card side by side, as
           `Player-Ansicht-*` draws them: the card is a white panel in the teal,
-          right-aligned, and it wraps under the title rather than shrinking on a
-          narrow host. `lg:` because below that the widget's column is the
-          phone layout, where the card belongs above the video and the sticky
-          progress teardrop is the resume affordance.
+          right-aligned, with the title shrinking beside it. `lg:` because below
+          that the widget's column is the phone layout, where the card belongs
+          above the video and the sticky progress teardrop is the resume
+          affordance.
 
-          ## Why 36rem and not the drawing's 27rem (DEP-24)
+          ## The card's width, and the row it sits in (DEP-24)
 
-          `player-zusammenfassung-v1.png` draws this card 576 px wide in a
-          1920 px render of a 1440 px layout — 432 CSS px, which is what the
-          previous `26rem` (416 px) was matching. At that width the drawing's
-          footer fits on one line because its label is the bare
-          `0% absolviert`: 110 px in Inter, against 268 px for the autosave
-          note, in a 400 px content box.
+          `player-zusammenfassung-v1.png` is drawn **1:1 for 1920×1080**, which
+          is worth stating because an earlier reading of it here was wrong. The
+          artwork's `0% absolviert` measures 95×12 px of ink and Inter 14 px
+          semibold renders it at 94×12 — the drawing's own type, at the sizes
+          this file already uses. So its card is **576 px = 36rem**, not the
+          432 px a scaled reading suggested, and the previous `26rem` was
+          simply 160 px narrower than the drawing.
 
-          The shipped label is S16's `0 % der Fortbildung absolviert`, which
-          names the quantity the number refers to and is 221 px in Inter. The
-          footer therefore needs 505 px where the drawing needed 394, and the
-          card the drawing specifies is 105 px too narrow to hold a line it was
-          never measured for. That is the whole of the client's report, and it
-          is a consequence of a copy deviation rather than of this row.
+          That is the whole of the client's report. The footer needs 505 px in
+          Inter (221 label + 16 gap + 268 note); `26rem` gave it 384 and the
+          note went to a second line. At the drawn 36rem it has 544 and fits,
+          with the S16 wording, with 39 px to spare.
 
-          So the card takes the width the German sentence needs: 36rem is
-          576 px, a 544 px content box, which holds the pair in Inter (505 px)
-          and in Arial metrics (483 px) with room to spare. `max-w-full` because the
-          host's column is WordPress's, not ours, and a fixed 576 px inside a
-          narrower one would overflow the page rather than the card.
+          ## Why the row is three widths and not one
 
-          Measured with the real Inter faces at the shipped sizes; the numbers
-          are in `docs/backlog/P156.md`. The alternative — restoring the
-          drawing's shorter label — is S16's to decide and not this ticket's.
+          A drawing is one viewport. Three things change under it:
+
+          - **The title.** `Titel der Fortbildung` is 413 px; the MEDICE course
+            is `Basisseminar 2026 – Diagnostik und Therapie bei Erwachsenen`,
+            928 px at `sm:text-3xl`. With `basis-auto` the row could not hold
+            both at their natural widths at *any* width this platform is served
+            at, so it wrapped and the card landed under the title, left-aligned
+            — the arrangement the drawing does not have, on every screen. The
+            title now takes `basis-full` below `lg` and `lg:basis-[18rem]`
+            above it: it shrinks and wraps so the card can keep its size, and
+            the row still breaks if a host's column is narrower than
+            18rem + gap + card.
+          - **The host's column.** This is WordPress's, not ours: `max-w-full`
+            and the `basis` above are what keep a 36rem card from overflowing a
+            column that never agreed to it.
+          - **The viewport.** `xl:w-[36rem]` is the drawing — `max-w-xl`'s own
+            value — from 1280 up. At `lg` (1024) it would leave the title
+            312 px, so the card steps down to `lg:w-[32rem]`, which is
+            `max-w-lg`. That is 478 px of content against the 505 the footer
+            wants, so between 1024 and 1280 the two halves keep their row and
+            wrap inside it; §9.4's question — *what does the person do next* —
+            is answered either way, and a title squeezed to four lines is not.
+
+          Below `lg` the card is full width under the title, which is what
+          `player-ansicht-abgeschlossen.png` draws for the phone.
+
+          Measured with the real Inter faces at the shipped sizes, at 320, 360,
+          390, 414, 540, 640, 768, 834, 900, 1024, 1280, 1440, 1600 and 1920 —
+          no horizontal overflow at any of them. The numbers are in
+          `docs/backlog/P158.md`.
         */}
         <div className="mt-6 flex flex-wrap items-end justify-between gap-6">
-          <h1 className="min-w-0 text-2xl font-bold text-brand-contrast sm:text-3xl">
+          <h1 className="min-w-0 grow basis-full text-2xl font-bold text-brand-contrast sm:text-3xl lg:basis-[18rem]">
             {props.course.title}
           </h1>
-          <div className="w-full max-w-full lg:w-[36rem]">
+          <div className="w-full max-w-full lg:w-[32rem] xl:w-[36rem]">
             <PlayerProgressCard
               state={props.state}
               moduleIndex={here?.moduleIndex}
@@ -174,7 +196,27 @@ export function CourseShell(props: {
         scroll position rather than at most of them.
       */}
       <div className="-mt-14 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm max-sm:pb-24 sm:p-6">
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        {/*
+          The sidebar is `20rem`, the drawing's is 304 px (DEP-24).
+
+          Scanned off `player-zusammenfassung-v1.png`, which is 1:1 for 1920:
+          the module rows run x 1322…1625, so 304 px — exactly between
+          Tailwind's `w-72` (288) and `w-80` (320), and rounded up to the step
+          rather than left on a number from a ruler. It used to be `18rem`.
+
+          The video is not a width anybody sets; it is what is left of this row:
+
+              video = panel − border − 2 × sm:p-6 − gap-6 − sidebar
+
+          so it is right only when the column is. At the portal's
+          `max-w-screen-2xl` that is 1062 px against the drawing's 1022 — the
+          same 73 % of the panel, four per cent larger, which is what taking
+          every term from Tailwind's scale costs. `apps/portal/src/App.tsx`
+          carries the arithmetic. Inside a customer's WordPress column it is
+          whatever that theme allows, and the grid degrades to one column below
+          `lg` regardless.
+        */}
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="min-w-0 space-y-4">
             <PlayerStatusContext.Provider value={setStatus}>
               {props.children}

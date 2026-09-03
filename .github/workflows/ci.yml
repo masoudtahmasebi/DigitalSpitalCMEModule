@@ -118,6 +118,11 @@ jobs:
           # to name published ports rather than service names — a mistake
           # whose only symptom is CORS failing in a browser.
           node scripts/check-local-ports.mjs
+          # Whose focus outline the browser actually paints. Two rules at
+          # (0,2,0) are separated by source order alone, and the widget's
+          # a11y floor sat last in the file — so all four components that
+          # styled their own focus state were drawn over, silently.
+          node scripts/check-focus-ring.mjs
 
       - name: Build
         run: pnpm build

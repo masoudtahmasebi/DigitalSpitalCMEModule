@@ -810,7 +810,24 @@ function Loaded(props: {
   }
 
   return (
-    <div className="space-y-6 p-4">
+    /*
+      Capped at the width its own drawing has (DEP-24).
+
+      `detailseite-uebersicht.png` is 1:1 for 1920 like the rest of them, and
+      its panel measures x 262…1329 — **1068 px**. This screen never declared a
+      width, so it took whatever the host column was; that was 1104 and near
+      enough, until the portal's column grew to 1430 for the player and this
+      screen would have stretched 362 px past its artwork with nothing to say
+      so.
+
+      `max-w-6xl` is 1152 — the Tailwind step nearest that drawing, and, not by
+      accident, exactly the width this screen already had: it is what the
+      portal's own container used to impose before the player needed a wider
+      one. So this is not a new width for the detail page, it is the width it
+      has always been, written down where it belongs now that the container no
+      longer says it.
+    */
+    <div className="mx-auto w-full max-w-6xl space-y-6 p-4">
       <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
 
       <StickyMetaBar
@@ -847,7 +864,11 @@ function Loaded(props: {
           {/* `max-sm:` drops the top border and the top rounding: below `sm` the
             heading `TabbedPanel` renders supplies both, and two borders meeting
             draw a 2 px rule across what the layout has as one line. */}
-          <div className="min-w-0 rounded-2xl rounded-tl-none border border-gray-100 bg-white p-5 shadow-sm max-sm:rounded-t-none max-sm:border-t-0 max-sm:border-brand-500 sm:p-6">
+          {/* `border-brand-100`, not `border-gray-100` (DEP-28): the active tab
+            standing on this panel's top edge carries the same colour, and the
+            whole point of the folder-tab shape is that the two are one outline.
+            A teal tab meeting a grey panel draws the seam instead of hiding it. */}
+          <div className="min-w-0 rounded-2xl rounded-tl-none border border-brand-100 bg-white p-5 shadow-sm max-sm:rounded-t-none max-sm:border-t-0 max-sm:border-brand-500 sm:p-6">
             {tab === "overview" ? (
               <OverviewTab course={detail} state={state} />
             ) : tab === "speakers" ? (
