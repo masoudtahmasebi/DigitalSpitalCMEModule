@@ -139,6 +139,30 @@ function resolvePhase(
 export const PLACEHOLDER_VNR = "0000000000000000000";
 
 /**
+ * The seed's own VNR, which is worse than the placeholder above (P164-02).
+ *
+ * `PLACEHOLDER_VNR` is nineteen zeros: not real, and visibly not real. This one
+ * is not real and looks exactly like a number an Ärztekammer issued, which is
+ * why it survived every gate — a course seeded and never configured published,
+ * awarded four points and printed this on a Teilnahmebescheinigung as two
+ * barcodes, with nothing anywhere reporting a problem.
+ *
+ * Found in production. The client had set their real VNR on the course and the
+ * certificate carried this one, for the separate reason P164-01 fixes; asked
+ * about it, they were unambiguous: *"that number should not be there in real
+ * system anywhere, that is only for the seeder."*
+ *
+ * It stays the seed's written value rather than being swapped for the sentinel
+ * above, because `medice-adhs.ts` compares an existing row against
+ * `PLACEHOLDER_VNR` to decide whether a re-run may repair and republish it
+ * (P108-01, P117-01). Making the two equal would let a re-run republish a
+ * course an operator had deliberately unpublished. So the seed keeps writing a
+ * distinct value and the domain refuses it — which is the property that was
+ * actually missing.
+ */
+export const SEEDED_VNR = "2760552025919300018";
+
+/**
  * Is this the placeholder rather than an accredited event's number?
  *
  * ## Why a check for exactly one value, and not a format rule
@@ -154,6 +178,9 @@ export const PLACEHOLDER_VNR = "0000000000000000000";
  * A certificate carrying that number is **not valid**: it names an event the
  * register does not hold. It was issued to a named physician anyway.
  *
+ * Since P164-02 it knows **two** such strings: the zero placeholder and the
+ * seed's own number. Both are ours and no Ärztekammer issued either.
+ *
  * This deliberately does **not** validate the VNR's format. S23 records why:
  * the check digit is documented but unconfirmed, and a rule guessed from a
  * sample of one would refuse a legitimate number from another Kammer at the one
@@ -162,7 +189,8 @@ export const PLACEHOLDER_VNR = "0000000000000000000";
  * Ärztekammer issued it.
  */
 export function isPlaceholderVnr(vnr: string | null | undefined): boolean {
-  return (vnr ?? "").trim() === PLACEHOLDER_VNR;
+  const trimmed = (vnr ?? "").trim();
+  return trimmed === PLACEHOLDER_VNR || trimmed === SEEDED_VNR;
 }
 
 /**

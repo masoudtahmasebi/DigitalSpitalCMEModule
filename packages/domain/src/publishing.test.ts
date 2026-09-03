@@ -11,7 +11,7 @@ import { PLACEHOLDER_VNR } from "./eiv.js";
 const complete: PublishCandidate = {
   status: "published",
   cmePoints: 4,
-  vnr: "2760552025919300018",
+  vnr: "2761234202512345678",
   hasVnrPassword: true,
   cmeCategory: "D",
   accreditationBody: "Ärztekammer Westfalen-Lippe",

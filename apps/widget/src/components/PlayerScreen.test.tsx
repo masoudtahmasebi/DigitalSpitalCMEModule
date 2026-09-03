@@ -160,6 +160,10 @@ function state(overrides: Partial<EnrolmentState> = {}): EnrolmentState {
     requiredWatchPercent: 80,
     passThresholdPercent: 70,
     achievedWatchPercent: 41,
+    // 875 / 2130 floors to 41, so the pair and the percentage in this fixture
+    // are the same reading rather than two invented numbers (P164-03).
+    watchedSec: 875,
+    totalSec: 2130,
     quizPassed: false,
     evaluationSubmitted: false,
     efnPresent: false,
@@ -295,11 +299,23 @@ describe("the progress panel", () => {
     expect(screen.getByText("63 % der Fortbildung absolviert")).toBeTruthy();
   });
 
-  it("shows the resume position against the authored length, not the element's", () => {
-    // 875 s and 1545 s — the layout's own `14:35 / 25:45`. jsdom reports
-    // `duration: NaN`, so a player reading the element would print NaN here.
+  it("shows the course's watched seconds against the course's total", () => {
+    /*
+     * P164-03, migrating what this asserted rather than deleting it.
+     *
+     * It used to read `14:35 / 25:45` — the current lesson's resume position
+     * against that lesson's authored length, which was right for the card as
+     * built and is the defect the client found: a module with a 41:30 and a
+     * 24:49 video showed `41:23 / 41:30` beside a course-wide `33 %`, two
+     * scopes on one line with nothing naming either.
+     *
+     * The property the old assertion really held — that the numbers come from
+     * the server and not from the media element, which reports `duration: NaN`
+     * in jsdom — is unchanged and still the reason this cannot regress to
+     * reading the element.
+     */
     renderPlayer();
-    expect(screen.getByText("14:35 / 25:45")).toBeTruthy();
+    expect(screen.getByText("14:35 / 35:30")).toBeTruthy();
   });
 
   it("promises the autosave the flush behaviour actually delivers", () => {
@@ -324,13 +340,28 @@ describe("the progress panel", () => {
    * across a real token expiry. That run is in docs/backlog/P62.md.
    */
 
-  it("omits the timeline for a lesson that has none", () => {
+  it("keeps the course timeline on a lesson that is not a video", () => {
+    /*
+     * The inversion P164-03 makes, and it is the point of the change.
+     *
+     * The pair used to describe the lesson on screen, so a text lesson had no
+     * timeline and the line vanished. It now describes the *course*, which does
+     * not stop existing because the learner opened a text section — and a
+     * counter that disappears when you navigate is exactly the "two scopes,
+     * neither named" confusion this replaces.
+     */
     renderPlayer({
       lesson: lesson({ kind: "text", sources: [], durationSec: null, id: "v3" }),
     });
+    expect(screen.getByText("14:35 / 35:30")).toBeTruthy();
+    expect(screen.getByText("Modul 3 von 5")).toBeTruthy();
+  });
+
+  it("draws no timeline for a course with no scorable video at all", () => {
+    // `totalSec` 0 is "nothing to measure", and a `0:00 / 0:00` counter is a
+    // number pretending to be information.
+    renderPlayer({ state: { ...state(), totalSec: 0, watchedSec: 0 } });
     expect(screen.queryByText(/\d+:\d\d \/ /)).toBeNull();
-    // The module counter and the course figure are not about the media, so
-    // they stay.
     expect(screen.getByText("Modul 3 von 5")).toBeTruthy();
   });
 });

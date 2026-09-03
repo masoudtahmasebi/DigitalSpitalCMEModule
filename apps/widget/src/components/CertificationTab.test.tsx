@@ -26,7 +26,7 @@ function courseWith(overrides: Partial<CourseDetail>): CourseDetail {
     cmePoints: 4,
     cmeCategory: "D",
     accreditationBody: "Ärztekammer Westfalen-Lippe",
-    vnr: "2760552025919300018",
+    vnr: "2761234202512345678",
     validFrom: "2026-01-01T00:00:00.000Z",
     validTo: "2026-12-31T00:00:00.000Z",
     requiredWatchPercent: 80,
@@ -70,7 +70,7 @@ describe("an accredited course", () => {
      * separate `fortbildungsnummer` column an operator could set to anything,
      * so the screen and the Meldung could disagree and nothing would say so.
      */
-    expect(screen.getByText("Fortbildungsnummer: 2760552025919300018")).toBeTruthy();
+    expect(screen.getByText("Fortbildungsnummer: 2761234202512345678")).toBeTruthy();
     expect(screen.getByText(/Gültigkeit:/)).toBeTruthy();
   });
 

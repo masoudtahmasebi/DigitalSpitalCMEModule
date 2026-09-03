@@ -50,12 +50,29 @@ export function PlayerProgressCard(props: {
           </p>
         )}
 
-        {props.status?.position === undefined ? null : (
+        {/*
+          The course's seconds, not this video's (P164-03).
+
+          It used to be `status.position` — the head position of whatever video
+          is playing, against that video's own length. Beside it, in the same
+          card, sat the *course* percentage. So a module with a 41:30 and a
+          24:49 video showed `41:23 / 41:30` next to `33 %`, and the client read
+          them as one quantity, which is the only reasonable way to read two
+          numbers on one line. Two scopes in one card and nothing naming either.
+
+          `watchedSec` and `totalSec` come from `courseWatchCoverage` — the same
+          union `achievedWatchPercent` is floored from and the completion gate
+          compares, so the pair, the percentage and the bar are three readings
+          of one number (§4 invariant 6) rather than three opinions. They are
+          `totalSec` is 0 for a course with no scorable video, and the pair is
+          then meaningless rather than wrong — so it is not drawn.
+        */}
+        {props.state.totalSec === 0 ? null : (
           <p className="tabular-nums text-gray-700">
             <span className="sr-only">{de.player.positionLabel}: </span>
             {de.player.position(
-              clockTime(props.status.position.positionSec),
-              clockTime(props.status.position.durationSec),
+              clockTime(props.state.watchedSec),
+              clockTime(props.state.totalSec),
             )}
           </p>
         )}

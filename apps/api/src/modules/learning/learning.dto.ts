@@ -160,6 +160,8 @@ export const enrolmentStateSchema = z.object({
   requiredWatchPercent: z.number().int().min(0).max(100),
   passThresholdPercent: z.number().int().min(0).max(100),
   achievedWatchPercent: z.number().int().min(0).max(100),
+  watchedSec: z.number().int().min(0),
+  totalSec: z.number().int().min(0),
   quizPassed: z.boolean(),
   evaluationSubmitted: z.boolean(),
   /** Whether an EFN is on file. The EFN itself is never returned (ADR-0004). */

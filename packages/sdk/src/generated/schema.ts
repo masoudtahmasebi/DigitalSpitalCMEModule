@@ -2670,6 +2670,22 @@ export interface components {
             passThresholdPercent: number;
             /** @description Union coverage across all video content in the course. */
             achievedWatchPercent: number;
+            /**
+             * @description Seconds of video credited across the whole course — the numerator of
+             *     `achievedWatchPercent`, and the same union the completion gate reads
+             *     (P164-03). The player's progress card shows this against `totalSec`;
+             *     before it existed the card showed the *current video's* head position
+             *     against that video's own length, beside a course-wide percentage, so
+             *     one card carried two different scopes and said which for neither.
+             */
+            watchedSec: number;
+            /**
+             * @description Seconds of video the course contains, over every module. Videos with
+             *     no stored duration are excluded from both this and `watchedSec`,
+             *     because a video that cannot be scored must not silently inflate or
+             *     deflate the fraction.
+             */
+            totalSec: number;
             quizPassed: boolean;
             evaluationSubmitted: boolean;
             /** @description Whether an EFN is on file. The EFN itself is never returned. */

@@ -223,6 +223,14 @@ export async function accreditSeededCourse(superuserUrl: string): Promise<void> 
       `UPDATE courses
           SET scientific_lead_name = 'Dr. E2E',
               certificate_issue_place = 'Münster',
+              -- A VNR of the harness's own (P164-02). The seed writes
+              -- SEEDED_VNR, which the domain now refuses precisely so it
+              -- cannot reach a real Teilnahmebescheinigung -- so a demo course
+              -- left carrying it has no certificate path at all, and this
+              -- helper exists to give that course one. Distinct from the
+              -- journey's own FIXTURE_VNR and from both numbers the platform
+              -- wrote itself.
+              vnr = '2760000000000000001',
               stamp_image = $2, stamp_image_mime = 'image/png',
               signature_image = $2, signature_image_mime = 'image/png'
         WHERE slug = $1`,

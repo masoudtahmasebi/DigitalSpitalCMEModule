@@ -892,6 +892,47 @@ describe("the Teilnahmebescheinigung", () => {
     ]);
   });
 
+  it("carries the course's VNR today, not the one snapshotted at enrolment", async () => {
+    /*
+     * P164-01. The client, from the running system: the course was configured
+     * with the Anerkennungsbescheid's real number and the Teilnahmebescheinigung
+     * came out with the seed's — because `certificateSourceColumns` read
+     * `enrolments.vnr`, snapshotted when the physician enrolled, while the
+     * Punktemeldung reads `courses.vnr` live. Two different VNRs for one
+     * participation: the barcode a Kammer scans would not match what EIV-FOBI
+     * was told.
+     *
+     * The client's decision, and it is theirs to make (§7): the VNR identifies
+     * the accredited event, so correcting it must correct every certificate.
+     * `cmePoints`, `cmeCategory` and the attested identity stay snapshotted —
+     * those are what the learner earned and what they attested to.
+     *
+     * Until now course and enrolment carried the same value in every fixture,
+     * so no test could tell which one was being read (§9.1).
+     */
+    const corrected = "2760012024200354002";
+    await seedPool.query("UPDATE courses SET vnr = $2 WHERE slug = $1", [
+      courseSlug,
+      corrected,
+    ]);
+
+    const { body } = await call("GET", `/courses/${courseSlug}/certificate`);
+    expect(body.vnr).toBe(corrected);
+
+    // And the snapshot is untouched — this changes which column is read, not
+    // the record of what was in force.
+    const { rows } = await seedPool.query<{ vnr: string }>(
+      "SELECT vnr FROM enrolments WHERE id = $1",
+      [enrolmentId],
+    );
+    expect(rows[0]?.vnr).toBe(VNR);
+
+    await seedPool.query("UPDATE courses SET vnr = $2 WHERE slug = $1", [
+      courseSlug,
+      VNR,
+    ]);
+  });
+
   it("templates the creditability sentence from the course's own values", async () => {
     const { body } = await call("GET", `/courses/${courseSlug}/certificate`);
 

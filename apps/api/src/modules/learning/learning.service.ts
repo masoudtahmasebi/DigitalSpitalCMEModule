@@ -852,6 +852,8 @@ export class LearningService {
       requiredWatchPercent: enrolment.requiredWatchPercent,
       passThresholdPercent: enrolment.passThresholdPercent,
       achievedWatchPercent: figures.achievedWatchPercent,
+      watchedSec: figures.watchedSec,
+      totalSec: figures.totalSec,
       quizPassed: figures.quizPassed,
       evaluationSubmitted,
       efnPresent,
@@ -909,6 +911,8 @@ export function summariseEnrolment(input: {
   cmePoints: number | null;
 }): {
   achievedWatchPercent: number;
+  watchedSec: number;
+  totalSec: number;
   quizPassed: boolean;
   progress: CourseRollup["course"];
   moduleCompletion: CourseRollup["moduleCompletion"];
@@ -937,6 +941,16 @@ export function summariseEnrolment(input: {
 
   return {
     achievedWatchPercent: coverage.percent,
+    /*
+     * The seconds behind the percentage (P164-03).
+     *
+     * Rounded here rather than in the widget so every consumer sees one value.
+     * They are the numerator and denominator `coverage.percent` is floored
+     * from, which is what makes the card and the gate two readings of one
+     * number rather than two opinions (§4 invariant 6).
+     */
+    watchedSec: Math.round(coverage.watchedSec),
+    totalSec: Math.round(coverage.totalSec),
     quizPassed,
     progress: rollup.course,
     moduleCompletion: rollup.moduleCompletion,

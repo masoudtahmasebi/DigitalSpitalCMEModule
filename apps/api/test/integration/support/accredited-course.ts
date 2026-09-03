@@ -48,7 +48,7 @@ const PLACEHOLDER_IMAGE = Buffer.from(
  * Synthetic. A real VNR identifies a real accredited event at a real
  * Ärztekammer and does not belong in a fixture.
  */
-export const FIXTURE_VNR = "2760552025919300018";
+export const FIXTURE_VNR = "2761234202512345678";
 
 /** What a suite passes to `EivService` when it wants the submission to succeed. */
 export const FIXTURE_VNR_PASSWORD = "fixture-vnr-password";

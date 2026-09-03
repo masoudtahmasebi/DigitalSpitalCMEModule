@@ -32,7 +32,7 @@ import { useBranding } from "./branding.js";
 import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
 import type { TokenProvider } from "./token.js";
-import { indexTitles, nextAvailableContent } from "./player.js";
+import { indexTitles, nextAvailableContent, recordedQuizScore } from "./player.js";
 import {
   decode,
   decodeCourseSlug,
@@ -732,6 +732,7 @@ function Loaded(props: {
           examTitle={
             indexTitles(detail).contents.get(screen.contentId)?.title ?? de.quiz.exam
           }
+          passedScorePercent={recordedQuizScore(state, screen.contentId)}
           onPassed={refresh}
           onBack={() => {
             refresh();
@@ -1034,6 +1035,7 @@ function QuizGate(props: {
   /** This exam's own name, from the catalogue tree — see `QuizScreen` (P87-02). */
   examTitle: string;
   /** Absent while the course is not complete — see `QuizScreen` (P82-01). */
+  passedScorePercent: number | undefined;
   onClaimPoints: (() => void) | undefined;
   onNext: { readonly title: string; readonly open: () => void } | undefined;
 }) {
@@ -1055,6 +1057,7 @@ function QuizGate(props: {
       courseSlug={props.courseSlug}
       quiz={quiz.data}
       examTitle={props.examTitle}
+      passedScorePercent={props.passedScorePercent}
       onPassed={props.onPassed}
       onBack={props.onBack}
       onClaimPoints={props.onClaimPoints}

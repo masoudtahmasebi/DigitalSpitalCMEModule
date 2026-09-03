@@ -460,7 +460,7 @@ describe("what the seeds leave publishable", () => {
     // refuses everything, which is CLAUDE.md §9.1 in its other direction: a
     // check that cannot go green proves as little as one that cannot go red.
     await expect(
-      publishAccreditedCourse(project!, { vnr: "2760552025919300018" }),
+      publishAccreditedCourse(project!, { vnr: "2761234202512345678" }),
     ).resolves.toBeUndefined();
   });
 

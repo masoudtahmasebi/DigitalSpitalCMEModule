@@ -666,7 +666,7 @@ describe("a course carrying the seed's placeholder VNR", () => {
      * whatever the seed would prefer.
      */
     await admin.query(
-      `UPDATE courses SET vnr = '2760552025919300018', status = 'draft'
+      `UPDATE courses SET vnr = '2761234202512345678', status = 'draft'
         WHERE slug = $1`,
       [SLUG],
     );

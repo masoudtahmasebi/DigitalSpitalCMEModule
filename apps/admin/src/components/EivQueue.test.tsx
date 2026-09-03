@@ -30,7 +30,7 @@ function row(over: Partial<EivSubmissionRow> = {}): EivSubmissionRow {
     efnMasked: "…7314",
     courseSlug: "adhs-akademie-adult",
     courseTitle: "ADHS Akademie adult",
-    vnr: "2760552025919300018",
+    vnr: "2761234202512345678",
     status: "queued",
     attemptCount: 0,
     eventEndAt: "2026-08-24T10:00:00.000Z",
@@ -93,7 +93,7 @@ describe("what the screen discloses", () => {
 
   it("shows the VNR, which is not a secret and is what an operator reconciles against", async () => {
     mount();
-    expect(await screen.findByText(/2760552025919300018/u)).toBeTruthy();
+    expect(await screen.findByText(/2761234202512345678/u)).toBeTruthy();
   });
 });
 
