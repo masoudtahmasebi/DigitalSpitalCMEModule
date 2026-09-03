@@ -52,6 +52,7 @@ export {
   isSeekAllowed,
   MAX_PLAYBACK_RATE,
   SAMPLING_GAP_MAX_SEC,
+  CEILING_ACCEPTANCE_TOLERANCE_SEC,
   maxWatchedPosition,
   SEEK_CEILING_TOLERANCE_SEC,
   mergeWatchedSegments,

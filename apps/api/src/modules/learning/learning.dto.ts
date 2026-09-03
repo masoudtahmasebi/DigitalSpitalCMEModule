@@ -250,6 +250,7 @@ export const rejectedSegmentSchema = z.object({
     "negative",
     "zero_or_reversed",
     "beyond_duration",
+    "beyond_ceiling",
     "faster_than_wallclock",
   ]),
 });

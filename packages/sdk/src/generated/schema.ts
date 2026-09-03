@@ -2978,7 +2978,7 @@ export interface components {
              *     parallel one that could drift from it.
              * @enum {string}
              */
-            reason: "not_finite" | "negative" | "zero_or_reversed" | "beyond_duration" | "faster_than_wallclock";
+            reason: "not_finite" | "negative" | "zero_or_reversed" | "beyond_duration" | "beyond_ceiling" | "faster_than_wallclock";
         };
         /** @description The server's own recomputed figures, never the client's. */
         ProgressResult: {

@@ -65,6 +65,7 @@ import styles from "./styles.css?inline";
 import { brandingCssVariables, fontFaceRule, parseBranding } from "@ds/domain";
 import { App } from "./App.js";
 import { cachingProvider, resolveTokenProvider, type TokenProvider } from "./token.js";
+import type { OpenIntent } from "./intent.js";
 
 export const WIDGET_ELEMENT_NAME = "ds-lms";
 
@@ -84,18 +85,39 @@ export const PROGRESS_EVENT = "ds-lms:progress";
 /** Dispatched once, when the server marks the course complete. */
 export const COURSE_COMPLETE_EVENT = "ds-lms:course-complete";
 
+/**
+ * The `open-at` attribute, which is a string a host page wrote (P168-04).
+ *
+ * Anything unrecognised — including the attribute being absent — is `"start"`,
+ * because opening a video or a form the learner did not ask for is the worse
+ * failure of the two. It is a `switch` over the union rather than a cast, so
+ * adding a fourth intent is a compiler error here instead of an attribute that
+ * silently does nothing.
+ */
+function readOpenAt(value: string | null): OpenIntent {
+  switch (value) {
+    case "resume":
+      return "resume";
+    case "certify":
+      return "certify";
+    default:
+      return "start";
+  }
+}
+
 export interface CourseOpenDetail {
   readonly slug: string;
   /**
-   * Which of the catalogue's two buttons was pressed.
+   * Which of the catalogue's buttons was pressed — see `OpenIntent`.
    *
-   * `"start"` is **Zur Fortbildung** — the course's start page. `"resume"` is
-   * **Fortbildung fortsetzen** — straight into the content the learner left
-   * off at. A routing host that ignores this lands both on the start page,
-   * which is the old behaviour and is not wrong, only less helpful; a host
-   * that honours it should mount the element with `open-at="resume"`.
+   * `"start"` is **Zur Fortbildung**, `"resume"` is **Fortbildung fortsetzen**,
+   * and `"certify"` (P168-04) is **CME-Punkte geltend machen** on a card whose
+   * course is finished and whose point is unclaimed. A routing host that
+   * ignores this lands all three on the start page, which is the old behaviour
+   * and is not wrong, only less helpful; a host that honours it mounts the
+   * element with the same word as `open-at`.
    */
-  readonly intent: "start" | "resume";
+  readonly intent: OpenIntent;
 }
 
 export interface ProgressDetail {
@@ -282,15 +304,10 @@ export class DsLmsElement extends HTMLElement {
         courseSlug: this.getAttribute("course") ?? "",
         // Forwarded, never parsed here (P105-01).
         profileHint: this.getAttribute("learner-profile") ?? undefined,
-        // `open-at="resume"` puts a course-pinned element straight into the
-        // content the learner left off at, which is how a routing host honours
-        // the catalogue's **Fortbildung fortsetzen** across its own navigation.
-        // Anything else — including the attribute being absent — is "start",
-        // because opening a video the learner did not ask for is the worse
-        // failure of the two.
-        openAt: this.getAttribute("open-at") === "resume" ? "resume" : "start",
+        // Where the course opens — see `readOpenAt`.
+        openAt: readOpenAt(this.getAttribute("open-at")),
         getToken: provider === undefined ? undefined : cachingProvider(provider),
-        onCourseOpen: (slug: string, intent: "start" | "resume") =>
+        onCourseOpen: (slug: string, intent: OpenIntent) =>
           this.#announceCourseOpen(slug, intent),
         onProgress: (detail: ProgressDetail) => this.#announce(PROGRESS_EVENT, detail),
         onCourseComplete: (detail: CourseCompleteDetail) =>
@@ -323,7 +340,7 @@ export class DsLmsElement extends HTMLElement {
     );
   }
 
-  #announceCourseOpen(slug: string, intent: "start" | "resume"): boolean {
+  #announceCourseOpen(slug: string, intent: OpenIntent): boolean {
     const detail: CourseOpenDetail = { slug, intent };
     return this.dispatchEvent(
       new CustomEvent(COURSE_OPEN_EVENT, {

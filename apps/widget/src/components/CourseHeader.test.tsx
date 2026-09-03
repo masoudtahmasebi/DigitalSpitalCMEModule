@@ -15,6 +15,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { CourseDetail, EnrolmentState } from "@ds/sdk";
+import { de } from "../locale/de.js";
 import { ProgressCard, StickyMetaBar } from "./CourseHeader.js";
 
 afterEach(cleanup);
@@ -154,7 +155,7 @@ describe("ProgressCard", () => {
     render(<ProgressCard state={state({ courseComplete: true })} onResume={undefined} />);
 
     expect(screen.getByText("Fortbildung abgeschlossen")).toBeTruthy();
-    expect(screen.getByText(/Zertifizierung/)).toBeTruthy();
+    expect(screen.getByText(de.overview.certificationOpen)).toBeTruthy();
   });
 
   it("drops the follow-up line once the point has been claimed", () => {
@@ -166,7 +167,51 @@ describe("ProgressCard", () => {
     );
 
     expect(screen.getByText("Fortbildung abgeschlossen")).toBeTruthy();
-    expect(screen.queryByText(/Zertifizierung/)).toBeNull();
+    expect(screen.queryByText(de.overview.certificationOpen)).toBeNull();
+  });
+
+  /*
+   * P168-03. The sentence used to be the whole answer, and it named a tab that
+   * does not hold the form.
+   *
+   * The client had to reach the Punktemeldung by typing its URL: *"if I visit
+   * the overview list of courses page and enter the course, I don't have a
+   * button which takes me to this page."* These three cases are the rule —
+   * offered when the server says the course is finished and the point is
+   * unclaimed, and never otherwise.
+   */
+  it("offers the way to the Punktemeldung when the course is finished", () => {
+    const claim = vi.fn();
+    render(
+      <ProgressCard
+        state={state({ courseComplete: true })}
+        onResume={undefined}
+        onClaimPoints={claim}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: de.overview.claim }));
+    expect(claim).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not offer it while the course is still running", () => {
+    render(
+      <ProgressCard state={state()} onResume={undefined} onClaimPoints={() => {}} />,
+    );
+
+    expect(screen.queryByRole("button", { name: de.overview.claim })).toBeNull();
+  });
+
+  it("does not offer it once the point has been claimed", () => {
+    render(
+      <ProgressCard
+        state={state({ courseComplete: true, completedAt: "2026-09-10T08:00:00Z" })}
+        onResume={undefined}
+        onClaimPoints={() => {}}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: de.overview.claim })).toBeNull();
   });
 
   it("never announces completion on the strength of a certification date alone", () => {

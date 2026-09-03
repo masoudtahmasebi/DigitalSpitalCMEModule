@@ -23,6 +23,7 @@ export type SegmentRejectionReason =
   | "negative"
   | "zero_or_reversed"
   | "beyond_duration"
+  | "beyond_ceiling"
   | "faster_than_wallclock";
 
 export interface RejectedSegment {
@@ -55,6 +56,26 @@ export interface SegmentValidationOptions {
    * (P153-01).
    */
   readonly wallClockToleranceSec?: number;
+  /**
+   * What this enrolment had already watched of this content (P168-01).
+   *
+   * The player is given `seekCeilingSec` and clamps to it, and until now that
+   * was the *only* place the rule lived: `rejectionReason` refused a segment
+   * past the **duration** and nothing refused one past the **ceiling**. So
+   * "Vorspulen ist nicht möglich" was a property of the client, and a report
+   * claiming `[1400, 1489]` on a video nobody had opened was stored.
+   *
+   * That is §4 invariant 1 — the client is a renderer and may never be the
+   * source of truth for anything deciding a CME point — and it is what let the
+   * client ask the question this exists to answer: *"how can i have reached the
+   * end of the video if i have not watched that part when i can not skip?"*
+   *
+   * Omit it and the check does not run. `undefined` means "the caller holds no
+   * record to compare against", which is not the same as "nothing was watched"
+   * — the latter is `[]`, and it correctly pins a first report to the start of
+   * the video.
+   */
+  readonly previousSegments?: readonly WatchedSegment[];
 }
 
 const DEFAULT_WALL_CLOCK_TOLERANCE_SEC = 2;
@@ -138,6 +159,23 @@ export const MAX_PLAYBACK_RATE = 2;
  * coverage is a union, so re-watching cannot inflate it.
  */
 export const SEEK_CEILING_TOLERANCE_SEC = 0.5;
+
+/**
+ * How far past the watched edge a *reported* segment may begin (P168-01).
+ *
+ * The player may seek to `SEEK_CEILING_TOLERANCE_SEC` past the edge — that is
+ * what the ceiling is — and then begin playing there, and the first `timeupdate`
+ * lands a sample later. So the bound is the ceiling's own tolerance plus a
+ * couple of sampling steps, and nothing more: this number is the width of the
+ * crack a forward jump can squeeze through, and `watch.test.ts` holds it below
+ * the smallest forward control the player offers for the same reason
+ * `SEEK_CEILING_TOLERANCE_SEC` is held there.
+ *
+ * It is not, on its own, what stops a client hopping the video in
+ * tolerance-wide steps. That is `validateSegments` charging the hop to the
+ * wall-clock budget — see the `gap` there, and the exploit it closes.
+ */
+export const CEILING_ACCEPTANCE_TOLERANCE_SEC = SEEK_CEILING_TOLERANCE_SEC + 2;
 
 /**
  * The widest hole that can be a sampling artefact rather than content
@@ -535,11 +573,39 @@ export function validateSegments(
 
   let claimed = 0;
 
+  /*
+   * The furthest the record says this learner has reached, which is the
+   * furthest a segment may begin (P168-01). Recomputed from stored state
+   * rather than trusted from the request — the client is told the ceiling, it
+   * does not get to declare it.
+   *
+   * It advances as segments in **this** report are accepted, and it has to: a
+   * flush carries a run of consecutive intervals — `[100, 115]`, `[115.2, 130]`
+   * — and against a ceiling fixed at the stored maximum every interval after
+   * the first would be refused. That is not a hypothetical; it is what one
+   * heartbeat of an ordinary player looks like.
+   *
+   * `undefined` means the caller holds no record to compare against, and then
+   * the rule does not run at all.
+   */
+  let furthest =
+    options.previousSegments === undefined
+      ? undefined
+      : maxWatchedPosition(options.previousSegments);
+
   for (const reported of segments) {
     const reason = rejectionReason(reported, options.durationSec);
 
     if (reason !== undefined) {
       rejected.push({ segment: reported, reason });
+      continue;
+    }
+
+    if (
+      furthest !== undefined &&
+      reported.startSec > furthest + CEILING_ACCEPTANCE_TOLERANCE_SEC
+    ) {
+      rejected.push({ segment: reported, reason: "beyond_ceiling" });
       continue;
     }
 
@@ -569,13 +635,31 @@ export function validateSegments(
 
     const length = segment.endSec - segment.startSec;
 
-    if (budget !== undefined && claimed + length > budget) {
+    /*
+     * The hole this segment leaves behind is charged to the budget as if it had
+     * been watched (P168-01), because it will be: a gap this small is below
+     * `fillSamplingGaps`' limit and is credited on every read path.
+     *
+     * Without this, the tolerance is a free hop. A client posting
+     * `[t, t + 0.1]` at `t = furthest + 2.5` walks 2.6 s of video per 0.1 s of
+     * budget — twenty-six times real time — and every hole it leaves is bridged
+     * into full coverage. Charging the gap makes the hop cost exactly what
+     * watching it would have cost, which is the property the wall-clock check
+     * was always supposed to have.
+     */
+    const gap =
+      furthest !== undefined && segment.startSec > furthest
+        ? segment.startSec - furthest
+        : 0;
+
+    if (budget !== undefined && claimed + gap + length > budget) {
       rejected.push({ segment, reason: "faster_than_wallclock" });
       continue;
     }
 
-    claimed += length;
+    claimed += gap + length;
     accepted.push(segment);
+    if (furthest !== undefined && segment.endSec > furthest) furthest = segment.endSec;
   }
 
   return { accepted, rejected };

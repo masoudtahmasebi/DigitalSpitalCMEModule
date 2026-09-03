@@ -40,6 +40,7 @@
 import { useState, type ReactElement } from "react";
 import type { Branding } from "@ds/domain";
 import type { ApiClient, CourseSummary, DeliveryType } from "@ds/sdk";
+import type { OpenIntent } from "../intent.js";
 import { de } from "../locale/de.js";
 import { describeError, useAsync } from "../hooks.js";
 import {
@@ -95,7 +96,7 @@ export interface CatalogSection {
 
 export interface CatalogPanelProps {
   readonly client: ApiClient;
-  readonly onOpen: (slug: string, intent: "start" | "resume") => void;
+  readonly onOpen: (slug: string, intent: OpenIntent) => void;
   /** The section's own line, drawn above its filters (P106-01). */
   readonly description?: string | undefined;
 }
@@ -127,7 +128,7 @@ export const CATALOG_SECTIONS: readonly CatalogSection[] = [
 export function CourseList(props: {
   client: ApiClient;
   branding: Branding;
-  onOpen: (slug: string, intent: "start" | "resume") => void;
+  onOpen: (slug: string, intent: OpenIntent) => void;
 }) {
   const [sectionId, setSectionId] = useState(CATALOG_SECTIONS[0]?.id ?? "");
   const section =
@@ -550,7 +551,7 @@ function HeroSeal(props: { branding: Branding; className: string }) {
 
 function CourseCard(props: {
   course: CourseSummary;
-  onOpen: (intent: "start" | "resume") => void;
+  onOpen: (intent: OpenIntent) => void;
 }) {
   const { course } = props;
 
@@ -645,10 +646,36 @@ function CourseCard(props: {
           the point not yet claimed. Without it a physician who stopped before
           the Evaluationsbogen sees a card that looks identical to a course
           they have fully certified, and no reason to open it again.
+
+          The sentence was where it stopped, and that is what the client found
+          (P168-04): *"why not a new button to go the needed layout?"* Naming a
+          state and leaving the person to find their own way to it is §9.4 — the
+          screen knows exactly which page they need. `"certify"` opens the
+          course on the Punktemeldung, which is a real address (§9.8), so it can
+          equally be arrived at by link.
         */}
         {certificationOpen ? (
-          <p className="mt-3 text-sm font-medium text-brand-700">
-            {de.catalog.certificationOpen}
+          <div className="mt-3">
+            <p className="text-sm font-medium text-brand-700">
+              {de.catalog.certificationOpen}
+            </p>
+            <div className="mt-2">
+              <Button variant="cta" onClick={() => props.onOpen("certify")}>
+                {de.overview.claim}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {/*
+          And the state after it: certified, with a Teilnahmebescheinigung
+          waiting (P168-04). It differed from a course nobody had ever opened by
+          the word "ansehen" in a button, which is why the client's finished
+          course looked "normal" beside the one that still owed an EFN.
+        */}
+        {course.enrolment !== null && course.enrolment.complete ? (
+          <p className="mt-3 text-sm font-medium text-status-completed">
+            {de.catalog.certified}
           </p>
         ) : null}
       </div>

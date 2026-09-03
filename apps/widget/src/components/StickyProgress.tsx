@@ -40,6 +40,15 @@ import { Button, ProgressRing } from "./primitives.js";
 export function StickyProgress(props: {
   state: EnrolmentState;
   onResume: (() => void) | undefined;
+  /**
+   * The way to the Punktemeldung, when there is one (P168-03).
+   *
+   * The inline `ProgressCard` is `max-sm:hidden` and this panel is what
+   * replaces it, so a button added only there is a button no phone has. That
+   * is the responsive floor doing its job as a rule rather than as a review
+   * comment.
+   */
+  onClaimPoints?: (() => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -183,6 +192,22 @@ export function StickyProgress(props: {
               </Button>
             </div>
           )}
+
+          {/*
+            Finished, uncertified: the same act the inline card offers, on the
+            panel that stands in for it below `sm` (P168-03). Both are gated on
+            the server's `courseComplete`, so neither can offer a completion the
+            API would refuse.
+          */}
+          {props.state.courseComplete &&
+          props.state.completedAt === null &&
+          props.onClaimPoints !== undefined ? (
+            <div className="mt-3">
+              <Button variant="cta" onClick={props.onClaimPoints}>
+                {de.overview.claim}
+              </Button>
+            </div>
+          ) : null}
         </section>
       ) : (
         <button

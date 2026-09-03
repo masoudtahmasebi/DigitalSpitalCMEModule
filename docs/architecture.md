@@ -357,12 +357,22 @@ thirty seconds cannot inflate the percentage. The ceiling is computed from the
 `resumeAtSec` is capped at it — otherwise a client could raise its own scrub bar
 by claiming to have arrived somewhere it never played.
 
-**The player's clamp is not the gate.** Nothing in a browser is. A learner who
-defeats it skips material, leaves a hole, and never reaches the threshold — the
-union is what enforces the accreditation's "must be seen". What the clamp buys
-is an interface that explains itself: the alternative is a scrub bar that drags
-to the end and then silently withholds the points, which a physician experiences
-as a broken platform rather than as a rule.
+**The ceiling is enforced on the way back in, not only on the way out**
+(P168-01). `validateSegments` refuses a segment that begins past the furthest
+point the enrolment's stored union reaches, with a tolerance narrower than the
+smallest forward control the player offers, and charges the gap it leaves to the
+same wall-clock budget the playback is charged to. Until then the rule lived in
+the browser alone: the ceiling was computed, returned and clamped to by the
+player, and a report claiming `[1400, 1489]` on a video nobody had opened was
+stored — which is §4 invariant 1 with a CME point on the end of it.
+
+**The player's clamp is still not the gate.** A learner who defeats it now has
+the report refused rather than merely uncredited; and even if it were credited,
+they would skip material, leave a hole and never reach the threshold, because
+the union is what enforces the accreditation's "must be seen". What the clamp
+buys is an interface that explains itself: the alternative is a scrub bar that
+drags to the end and then silently withholds the points, which a physician
+experiences as a broken platform rather than as a rule.
 
 ### Courses that award no points
 

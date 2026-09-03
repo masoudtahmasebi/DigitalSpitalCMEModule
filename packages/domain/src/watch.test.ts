@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { WatchedSegment } from "./watch.js";
 import { PLAYBACK_RATES, SEEK_JUMP_SEC, SEEK_STEP_SEC } from "./playback.js";
 import {
+  CEILING_ACCEPTANCE_TOLERANCE_SEC,
   creditedDurationSec,
   fillSamplingGaps,
   MAX_PLAYBACK_RATE,
@@ -757,5 +758,212 @@ describe("holes a sampling clock leaves behind (P158-02)", () => {
       { startSec: 705, endSec: 800 },
     ];
     expect(fillSamplingGaps(late, 2490)).toEqual([{ startSec: 600, endSec: 800 }]);
+  });
+});
+
+/*
+ * P168-01. The invariant the player promises, enforced by the server.
+ *
+ * The client, on a video they had played to the very end:
+ *
+ * > _"how can i have reached the end of the video if i have not watched that
+ * > part when i can not skip?"_
+ *
+ * They are right, and the answer is that they *could* — not in the player, but
+ * in the record. `rejectionReason` refused a segment past the **duration**;
+ * nothing refused one past the **seek ceiling**. The ceiling was computed,
+ * handed to the player and clamped there, and never checked on the way back in,
+ * so "Vorspulen ist nicht möglich" was a property of the renderer. CLAUDE.md §4
+ * invariant 1, exactly: the client may not be the source of truth for anything
+ * that decides a CME point. A first report of `[1400, 1489]` on a video nobody
+ * had opened was accepted and stored.
+ *
+ * ## Why the answer is refusal and not credit
+ *
+ * The tempting fix was the other one: they reached the end, so bridge the hole
+ * and credit it. Every version of that reduces to crediting media time nobody
+ * reported, justified by wall-clock time — and wall-clock time accumulates
+ * while a page sits open. A ten-minute video, an hour-old tab and one
+ * five-second fragment at 09:55 would then be a completed Fortbildung. That is
+ * `watchedPercent` becoming max-position by a longer route, which is the one
+ * thing §4 invariant 5 exists to prevent.
+ *
+ * Refusing the jump makes the sentence true instead of aspirational, and the
+ * hole cannot form: to be credited at 07:50 you must have reported your way
+ * there.
+ *
+ * ## Why refusing does not strand anybody
+ *
+ * A rejected report leaves the record where it was, and `resumeAtSec` is
+ * already capped at `seekCeiling(storedSegments)` — so a reload puts the
+ * learner back at the last second the server agrees they watched, never past
+ * it. A failed flush is re-sent (`restore`), and a throttled tab is bridged in
+ * the tracker while it is still an observation rather than a claim (P166-01).
+ */
+describe("a forward jump the server never authorised", () => {
+  it("refuses a segment starting beyond the ceiling the record implies", () => {
+    const result = validateSegments([{ startSec: 600, endSec: 700 }], {
+      durationSec: 1489,
+      previousSegments: [{ startSec: 0, endSec: 100 }],
+      elapsedWallClockSec: 3600,
+    });
+
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected[0]?.reason).toBe("beyond_ceiling");
+  });
+
+  it("refuses it however long the page has been open", () => {
+    /*
+     * The guard on the rule that was not shipped. An hour of wall clock is
+     * enough budget for ten minutes of video, so the wall-clock check alone
+     * accepts a drag to 09:55 — the ceiling is what refuses it, and it must not
+     * be expressible in seconds of elapsed time.
+     */
+    const result = validateSegments([{ startSec: 595, endSec: 600 }], {
+      durationSec: 600,
+      previousSegments: [],
+      elapsedWallClockSec: 3600,
+    });
+
+    expect(result.rejected[0]?.reason).toBe("beyond_ceiling");
+  });
+
+  it("allows playback continuing from where the record left off", () => {
+    const result = validateSegments([{ startSec: 100, endSec: 200 }], {
+      durationSec: 1489,
+      previousSegments: [{ startSec: 0, endSec: 100 }],
+      elapsedWallClockSec: 3600,
+    });
+
+    expect(result.accepted).toEqual([{ startSec: 100, endSec: 200 }]);
+  });
+
+  it("allows a rewind, which cannot manufacture coverage", () => {
+    const result = validateSegments([{ startSec: 10, endSec: 50 }], {
+      durationSec: 1489,
+      previousSegments: [{ startSec: 0, endSec: 900 }],
+      elapsedWallClockSec: 3600,
+    });
+
+    expect(result.accepted).toEqual([{ startSec: 10, endSec: 50 }]);
+  });
+
+  it("starts a fresh enrolment at the beginning and nowhere else", () => {
+    // Nothing watched, so the ceiling is the start of the video. This is the
+    // case that makes the rule bite: without it a first report of [1400, 1489]
+    // would be accepted on a video nobody had opened.
+    const result = validateSegments([{ startSec: 1400, endSec: 1489 }], {
+      durationSec: 1489,
+      previousSegments: [],
+      elapsedWallClockSec: 3600,
+    });
+
+    expect(result.rejected[0]?.reason).toBe("beyond_ceiling");
+  });
+
+  it("accepts a run of consecutive intervals in one report", () => {
+    /*
+     * The case that decides whether this rule is shippable at all. One flush of
+     * an ordinary player carries several intervals in playback order, and each
+     * begins past what the *stored* record reaches — so a ceiling fixed at the
+     * stored maximum refuses everything after the first, and a learner watching
+     * normally is credited one heartbeat in four.
+     *
+     * Written before the ceiling advanced within a report, and it was red.
+     */
+    const result = validateSegments(
+      [
+        { startSec: 100, endSec: 115 },
+        { startSec: 115.2, endSec: 130 },
+        { startSec: 130.1, endSec: 145 },
+      ],
+      {
+        durationSec: 1489,
+        previousSegments: [{ startSec: 0, endSec: 100 }],
+        elapsedWallClockSec: 30,
+      },
+    );
+
+    expect(result.rejected).toEqual([]);
+    expect(result.accepted).toHaveLength(3);
+  });
+
+  it("does not let a report walk itself past the ceiling in one jump", () => {
+    // The other half of the running ceiling: it advances by what was
+    // *accepted*, so a batch cannot manufacture reach. [0,100] moves it to 100;
+    // [900,1000] is still eight hundred seconds beyond it.
+    const result = validateSegments(
+      [
+        { startSec: 0, endSec: 100 },
+        { startSec: 900, endSec: 1000 },
+      ],
+      {
+        durationSec: 1489,
+        previousSegments: [],
+        elapsedWallClockSec: 3600,
+      },
+    );
+
+    expect(result.accepted).toEqual([{ startSec: 0, endSec: 100 }]);
+    expect(result.rejected[0]?.reason).toBe("beyond_ceiling");
+  });
+
+  it("is not applied when the caller has no record to compare against", () => {
+    // `previousSegments` omitted: the admin re-scoring path and the unit tests
+    // that predate this have no prior state, and inventing one would refuse
+    // every segment they pass.
+    const result = validateSegments([{ startSec: 600, endSec: 700 }], {
+      durationSec: 1489,
+      elapsedWallClockSec: 3600,
+    });
+
+    expect(result.accepted).toEqual([{ startSec: 600, endSec: 700 }]);
+  });
+
+  it("charges the hop to the budget, so the tolerance is not a free skip", () => {
+    /*
+     * The exploit the tolerance opens if the hole below it is free, and the
+     * reason `validateSegments` charges `gap` as well as `length`.
+     *
+     * A client posts a tenth of a second of playback every
+     * `CEILING_ACCEPTANCE_TOLERANCE_SEC` — each report legal on its own, each
+     * leaving a hole small enough for `fillSamplingGaps` to bridge into full
+     * coverage. Uncharged, that walks 2.6 s of video per 0.1 s of budget and a
+     * twenty-five-minute Fortbildung is complete in one request.
+     *
+     * Charged, the budget bounds the furthest point reached to what real time
+     * allows, which is the same bound a person watching has.
+     */
+    // A step just inside the tolerance, so the ceiling itself never refuses a
+    // hop and the budget is the only thing standing in the way.
+    const step = CEILING_ACCEPTANCE_TOLERANCE_SEC - 0.1;
+    const hops: WatchedSegment[] = [];
+    for (let i = 0; i < 200; i += 1) {
+      hops.push({ startSec: i * step, endSec: i * step + 0.1 });
+    }
+
+    const elapsedWallClockSec = 30;
+    const result = validateSegments(hops, {
+      durationSec: 1489,
+      previousSegments: [],
+      elapsedWallClockSec,
+    });
+
+    // The budget is elapsed x MAX_PLAYBACK_RATE + 2 s of tolerance, and nothing
+    // may reach past it — 62 s of a 24:49 video, not 520.
+    const budget = elapsedWallClockSec * MAX_PLAYBACK_RATE + 2;
+    expect(maxWatchedPosition(result.accepted)).toBeLessThanOrEqual(budget);
+    expect(result.rejected.some((r) => r.reason === "faster_than_wallclock")).toBe(true);
+  });
+
+  it("keeps the tolerance below the smallest forward control the player offers", () => {
+    /*
+     * The same property `SEEK_CEILING_TOLERANCE_SEC` is held to one function
+     * up, for the same reason: a tolerance as wide as a forward control is a
+     * way to walk the video in hops. This one is a sampling step wider, because
+     * playback may begin *at* the ceiling and the first sample lands after it.
+     */
+    expect(CEILING_ACCEPTANCE_TOLERANCE_SEC).toBeLessThan(SEEK_STEP_SEC);
+    expect(CEILING_ACCEPTANCE_TOLERANCE_SEC).toBeLessThan(SEEK_JUMP_SEC);
   });
 });

@@ -89,7 +89,7 @@ function course(): CourseDetail {
   } as unknown as CourseDetail;
 }
 
-function enrolmentState(): EnrolmentState {
+function enrolmentState(overrides: Partial<EnrolmentState> = {}): EnrolmentState {
   const progress = {
     status: "in_progress" as const,
     completedCount: 0,
@@ -129,7 +129,27 @@ function enrolmentState(): EnrolmentState {
         ],
       },
     ],
+    ...overrides,
   } as unknown as EnrolmentState;
+}
+
+/**
+ * The enrolment `open-at="certify"` exists for: the Fortbildung is done and the
+ * CME point is not claimed. `evaluationSubmitted` is true so the intent lands
+ * on the Punktemeldung directly rather than on the Evaluationsbogen first —
+ * both routes are exercised below.
+ */
+function finishedUncertified(overrides: Partial<EnrolmentState> = {}): EnrolmentState {
+  return enrolmentState({
+    courseComplete: true,
+    complete: false,
+    quizPassed: true,
+    evaluationSubmitted: true,
+    achievedWatchPercent: 100,
+    outstanding: ["efn"],
+    outstandingForCourse: [],
+    ...overrides,
+  } as Partial<EnrolmentState>);
 }
 
 /**
@@ -186,14 +206,51 @@ function selectedTab(): string | undefined {
   return selected?.textContent ?? undefined;
 }
 
-function renderApp() {
+function renderApp(openAt?: "start" | "resume" | "certify") {
   return render(
     <App
       apiBase="https://api.test"
       projectSlug="medice-adhs"
       courseSlug={COURSE_SLUG}
       getToken={async () => "token"}
+      openAt={openAt}
     />,
+  );
+}
+
+/**
+ * Answer `/enrolment` with this state instead of the default one.
+ *
+ * The `beforeEach` stub is shaped for a course nobody has finished, which is
+ * the right default for a file about addresses and the wrong fixture for the
+ * three cases below.
+ */
+function stubEnrolment(state: EnrolmentState): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      /*
+       * `/evaluation` has to be answered with its own shape, unlike in the
+       * cases above that never open it. Falling through to the course made
+       * `EvaluationScreen` read `questions` off a `CourseDetail` and throw —
+       * which vitest reports as an unhandled error *outside* any test, so the
+       * file said "10 passed" and the run still failed.
+       */
+      const body = url.includes("/materials")
+        ? { groups: [] }
+        : url.includes("/evaluation")
+          ? { questions: [] }
+          : url.includes("/contents/")
+            ? lesson()
+            : url.includes("/enrolment")
+              ? state
+              : course();
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }),
   );
 }
 
@@ -393,5 +450,74 @@ describe("the learner's address", () => {
     await waitFor(() => {
       expect(selectedTab()).toBe("Übersicht");
     });
+  });
+});
+
+/*
+ * P168-04. `open-at="certify"`, which is the catalogue's **CME-Punkte geltend
+ * machen** arriving as an attribute.
+ *
+ * It belongs in this file rather than beside the card, because the card's own
+ * test proves it *asks* — `onOpen("k1", "certify")` — and would be exactly as
+ * green if nothing acted on the word. That is §9.7: name the caller, and test
+ * the wiring separately from the thing being wired.
+ *
+ * The intent is a request. The server's `courseComplete` decides whether it is
+ * granted, so the last case is the one that keeps this from being a way past
+ * the gate.
+ */
+describe("opening a course straight on the Punktemeldung", () => {
+  it("lands on the Punktemeldung when the course is finished and unclaimed", async () => {
+    stubEnrolment(finishedUncertified());
+
+    renderApp("certify");
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#ds/punktemeldung");
+    });
+  });
+
+  it("takes the Evaluationsbogen first when it is still outstanding", async () => {
+    // The API refuses a completion without one, so going straight to the EFN
+    // field would be a refusal arriving after the personal data.
+    stubEnrolment(finishedUncertified({ evaluationSubmitted: false }));
+
+    renderApp("certify");
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#ds/evaluation");
+    });
+  });
+
+  it("ignores the intent on a course the server has not finished", async () => {
+    /*
+     * A stale card, a bookmarked attribute, or somebody typing it. The
+     * Punktemeldung would refuse the completion, and a form that cannot be
+     * submitted is worse than no button (§9.2) — so the course opens on its own
+     * page instead.
+     */
+    stubEnrolment(enrolmentState());
+
+    renderApp("certify");
+
+    /*
+     * Waiting for something only the **loaded** outline draws, and not with
+     * `waitFor`. Both of the obvious versions are green on the broken code:
+     *
+     *   * `inOutline()` reads the course title, which the shell draws over the
+     *     player, the exam and the Evaluationsbogen as well;
+     *   * `waitFor(() => expect(selectedTab()).toBe("Übersicht"))` passes on the
+     *     first tick, before the enrolment has even arrived — it asserts the
+     *     screen the widget starts on, not the screen it settles on.
+     *
+     * The progress card's watch line is rendered from `EnrolmentState`, so
+     * finding it proves the fetch resolved and the intent had its chance. Both
+     * were watched to go red with the `courseComplete` guard removed.
+     */
+    await screen.findByText(/der Videoinhalte angesehen/u);
+
+    expect(selectedTab()).toBe("Übersicht");
+    expect(window.location.hash).not.toContain("punktemeldung");
+    expect(window.location.hash).not.toContain("evaluation");
   });
 });

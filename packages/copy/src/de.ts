@@ -63,6 +63,20 @@ export const de = {
      * is missing.
      */
     certificationOpen: "Abgeschlossen – Zertifizierung noch offen",
+    /**
+     * The state the card could not tell apart from an unenrolled one (P168-04).
+     *
+     * A certified course differed from a course nobody had opened by one word
+     * in a button label — "Fortbildung ansehen" rather than "Zur Fortbildung" —
+     * which is not a difference anybody scanning a list of cards will see. The
+     * client, on the course they had just finished: *"in the list view still is
+     * normal."*
+     *
+     * It names the document rather than the state, because a physician
+     * returning to a finished course is almost always coming for the
+     * Teilnahmebescheinigung, and the line's job is to say it is there.
+     */
+    certified: "Abgeschlossen – Teilnahmebescheinigung verfügbar",
     back: "Zurück zur Übersicht",
 
     /**
@@ -299,17 +313,38 @@ export const de = {
       `${achieved} % der Videoinhalte angesehen (erforderlich: ${required} %).`,
     complete: "Fortbildung abgeschlossen",
     /**
-     * Shown when the course is done but the point is not yet claimed (P51-01).
+     * Shown when the course is done but the point is not yet claimed (P51-01,
+     * rewritten P168-03).
      *
      * The physician has finished — the banner above says so — and this line
      * exists only to answer the question that immediately follows it: *and
-     * now?* Naming the tab is the whole point; "Ihre Zertifizierung ist noch
-     * offen" on its own is the correct-and-useless answer CLAUDE.md §9.4 is
-     * about. There is no deadline in this sentence because there is none: they
-     * may come back whenever they like.
+     * now?* It used to answer it by naming a tab: "Sie finden sie unter
+     * ‚Zertifizierung'". That tab is informational — five prose sections about
+     * the accreditation — and #60 moved the EFN form off it deliberately, so
+     * the sentence sent people to a page where the thing it promised was not.
+     *
+     * The client found it the way §9.4 predicts: *"if I click on
+     * .../punktemeldung I land on the page where I can enter the details and
+     * EFN. But if I visit the overview list of courses and enter the course, I
+     * don't have a button which takes me to this page."* The answer is not
+     * better prose — it is the button beside this line.
+     *
+     * There is no deadline in the sentence because there is none: they may come
+     * back whenever they like.
      */
     certificationOpen:
-      "Für Ihre CME-Punkte fehlen noch Angaben. Sie finden sie unter „Zertifizierung“ und können sie jederzeit nachtragen.",
+      "Für Ihre CME-Punkte fehlen noch Angaben. Sie können sie jederzeit nachtragen.",
+    /**
+     * The way to the Punktemeldung from the course itself (P168-03).
+     *
+     * The same words as the quiz-passed screen's button, because it is the same
+     * act and a physician meets both — one straight after the exam, one on
+     * returning to a course they finished last week. `de.quiz.claim` is not
+     * reused across the two: this screen is the Übersicht's vocabulary and that
+     * one is the exam's, and a shared key would make either screen's wording
+     * impossible to change without changing the other's.
+     */
+    claim: "CME-Punkte geltend machen",
   },
 
   /**
