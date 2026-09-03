@@ -109,9 +109,9 @@ export class AssessmentService {
      * evidence, not to the outcome. An attempt dated after the certificate is
      * an assessment record that no longer matches the document issued from it.
      *
-     * `completedAt`, not `quizPassed`: retrying before certification is a
-     * learner improving their score and stays allowed. This refuses only after
-     * the point has been claimed and the certificate exists.
+     * Kept as its own branch above the passing rule below, and only for the
+     * message: a certified physician is told about their Bescheid rather than
+     * about their score, which is the more useful of the two true sentences.
      *
      * Checked before the attempt counter for the same reason as the line above
      * — a refused attempt must not consume one of a course's allowance.
@@ -121,6 +121,37 @@ export class AssessmentService {
         "conflict",
         `enrolment=${enrolment.id} is certified; content=${contentId} accepts no further attempts`,
         "Diese Fortbildung ist bereits abgeschlossen und zertifiziert. Die Lernerfolgskontrolle kann nicht erneut abgelegt werden.",
+      );
+    }
+
+    /*
+     * A passed Lernerfolgskontrolle is finished, certificate or not (P170-01).
+     *
+     * The client widened P169-01 the day after it shipped: *"if someone has
+     * passed a lernerfolgskontrolle, we shouldn't let that user fill the
+     * lernerfolgskontrolle again, when he has cleared the exam already."*
+     *
+     * So the line is the **pass**, not the certificate. P169-01's reasoning
+     * carried to its end: an attempt after the pass cannot change the outcome
+     * (`bestScorePercent` is best-of) and can only add rows to the assessment
+     * record behind a result that is already decided. Between passing and
+     * certifying there is no question left for a further attempt to answer —
+     * the score is not a grade a physician is marked on, it is a threshold they
+     * are over.
+     *
+     * Read from the **stored attempts**, not from the progress row's `passed`
+     * flag: `upsertQuizProgress` writes that flag from exactly this comparison,
+     * so re-deriving it here keeps one rule rather than two that could drift
+     * (§4 invariant 6). `passThresholdPercent` is the enrolment's snapshot, so
+     * re-tightening a published course cannot retroactively reopen an exam
+     * somebody has already passed.
+     */
+    const bestSoFar = await this.repository.bestScorePercent(enrolment.id, contentId);
+    if (bestSoFar !== null && bestSoFar >= enrolment.passThresholdPercent) {
+      throw new AppError(
+        "conflict",
+        `enrolment=${enrolment.id} already passed content=${contentId}`,
+        "Sie haben diese Lernerfolgskontrolle bereits bestanden. Sie kann nicht erneut abgelegt werden.",
       );
     }
 

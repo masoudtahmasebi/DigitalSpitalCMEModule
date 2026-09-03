@@ -153,20 +153,24 @@ describe("an exam the learner has already passed (P164-04)", () => {
     expect(screen.getByText(/bereits mit 81 % bestanden/u)).toBeTruthy();
   });
 
-  it("promises what the stored rule actually does — the best attempt counts", () => {
-    // Not a reassurance invented for the screen: it is `Math.max` over the
-    // attempts, in assessment.repository.ts.
+  it("says the sitting is over rather than inviting another (P170-01)", () => {
+    /*
+     * This case used to assert the opposite — "gewertet wird immer Ihr bestes
+     * Ergebnis, ein weiterer Versuch kann Ihr Bestehen also nicht aufheben" —
+     * which was a true and useful sentence while a repeat was offered. The
+     * client closed the repeat, so the sentence became an invitation to hunt
+     * for a control that is not there.
+     */
     renderQuiz(attempt({}), { passedScorePercent: 81 });
 
-    expect(screen.getByText(/bestes Ergebnis/u)).toBeTruthy();
-    expect(screen.getByText(/kann Ihr Bestehen also nicht aufheben/u)).toBeTruthy();
+    expect(screen.getByText(/nicht erneut abgelegt werden/u)).toBeTruthy();
+    expect(screen.queryByText(/bestes Ergebnis/u)).toBeNull();
   });
 
-  it("offers a repeat rather than a start, and stops shouting about it", () => {
+  it("offers no sitting at all, because the API refuses one (P170-01)", () => {
     renderQuiz(attempt({}), { passedScorePercent: 81 });
 
-    expect(screen.getByRole("button", { name: de.quiz.repeat })).toBeTruthy();
-    expect(screen.queryByText(de.quiz.start(EXAM_TITLE))).toBeNull();
+    expect(screen.queryByRole("button", { name: de.quiz.start(EXAM_TITLE) })).toBeNull();
   });
 
   it("is the ordinary start screen on a first sitting", () => {
@@ -187,11 +191,78 @@ describe("an exam the learner has already passed (P164-04)", () => {
  * is §9.2, and the reason the sentence beside it has to explain the absence
  * (§9.4).
  */
+/*
+ * P170-02. A passed exam is not a dead end.
+ *
+ * The client, in the same breath as closing the retake: *"although the user is
+ * not able to do the exam, if they match the criteria to do the point
+ * declaration, they can see the button of `CME-Punkte geltend machen`. For the
+ * users who have done the lernerfolgskontrolle, we can show either the next
+ * steps or if done button of CME-Punkte geltend machen."*
+ *
+ * The passed **result** screen already did this. The **intro** — where a
+ * learner lands when they return to an exam they finished last week — said what
+ * had happened and offered nothing to do about it.
+ */
+describe("returning to a passed exam", () => {
+  it("offers the Punktemeldung when the course is finished", () => {
+    const claim = vi.fn();
+    renderQuiz(attempt({}), { passedScorePercent: 81, onClaimPoints: claim });
+
+    fireEvent.click(screen.getByRole("button", { name: /CME-Punkte geltend machen/u }));
+
+    expect(claim).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers the next section when it is not", () => {
+    // `onClaimPoints: null` is this file's way of saying the course is *not*
+    // complete — see the note on `handlers`.
+    const open = vi.fn();
+    renderQuiz(attempt({}), {
+      passedScorePercent: 81,
+      onClaimPoints: null,
+      onNext: { title: "Modul 3", open },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Modul 3/u }));
+
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not offer both at once", () => {
+    // Two teal buttons proposing different directions is a screen asking the
+    // learner to decide something the server has already decided.
+    renderQuiz(attempt({}), {
+      passedScorePercent: 81,
+      onClaimPoints: () => undefined,
+      onNext: { title: "Modul 3", open: () => undefined },
+    });
+
+    expect(screen.queryByRole("button", { name: /Modul 3/u })).toBeNull();
+  });
+
+  it("still shows the way back when there is nothing else to offer", () => {
+    renderQuiz(attempt({}), { passedScorePercent: 81, onClaimPoints: null });
+
+    expect(screen.getByRole("button", { name: de.player.back })).toBeTruthy();
+  });
+
+  it("offers neither on an exam nobody has passed", () => {
+    // The guard: the intro of an unsat exam is a start button, not a shortcut
+    // past it.
+    renderQuiz(attempt({}), { onClaimPoints: () => undefined });
+
+    expect(screen.getByRole("button", { name: de.quiz.start(EXAM_TITLE) })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /CME-Punkte geltend machen/u }),
+    ).toBeNull();
+  });
+});
+
 describe("an exam behind an issued certificate", () => {
   it("offers no sitting at all", () => {
     renderQuiz(attempt({}), { passedScorePercent: 81, certified: true });
 
-    expect(screen.queryByRole("button", { name: de.quiz.repeat })).toBeNull();
     expect(screen.queryByRole("button", { name: de.quiz.start(EXAM_TITLE) })).toBeNull();
   });
 
@@ -201,20 +272,13 @@ describe("an exam behind an issued certificate", () => {
     expect(screen.getByText(de.quiz.certifiedNoRetry)).toBeTruthy();
   });
 
-  it("drops the invitation to repeat, which would now be false", () => {
-    // "gewertet wird immer Ihr bestes Ergebnis" is true and, beside a control
-    // that no longer exists, reads as an instruction to go and find it.
+  it("names the Bescheid rather than the score", () => {
+    // The only thing certification still changes on this screen: which of two
+    // true sentences a physician is shown.
     renderQuiz(attempt({}), { passedScorePercent: 81, certified: true });
 
-    expect(screen.queryByText(/bestes Ergebnis/u)).toBeNull();
-  });
-
-  it("leaves the uncertified repeat alone", () => {
-    // The guard, and the half the client did not ask to change: before the
-    // certificate exists, a retry is a learner improving their score.
-    renderQuiz(attempt({}), { passedScorePercent: 81 });
-
-    expect(screen.getByRole("button", { name: de.quiz.repeat })).toBeTruthy();
+    expect(screen.getByText(de.quiz.certifiedNoRetry)).toBeTruthy();
+    expect(screen.queryByText(/bereits mit 81 %/u)).toBeNull();
   });
 
   it("keeps the way back out of the screen", () => {

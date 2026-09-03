@@ -155,6 +155,8 @@ export function QuizScreen(props: {
         certified={props.certified}
         onStart={() => setPhase({ kind: "question", index: 0 })}
         onBack={props.onBack}
+        onClaimPoints={props.onClaimPoints}
+        onNext={props.onNext}
       />
     );
   }
@@ -289,10 +291,19 @@ function QuizIntro(props: {
   quiz: Quiz;
   examTitle: string;
   passedScorePercent: number | undefined;
-  /** The enrolment is certified, so `submit` refuses another attempt (P169-01). */
+  /**
+   * The enrolment is certified (P169-01).
+   *
+   * It no longer decides whether a sitting is offered — passing does, since
+   * P170-01 — and decides only which sentence explains that.
+   */
   certified: boolean;
   onStart: () => void;
   onBack: () => void;
+  /** The way on, when the course is finished — see `QuizScreen` (P170-02). */
+  onClaimPoints: (() => void) | undefined;
+  /** The next section, when it is not. */
+  onNext: { readonly title: string; readonly open: () => void } | undefined;
 }) {
   const { quiz } = props;
   const total = quiz.questions.length;
@@ -347,20 +358,22 @@ function QuizIntro(props: {
       </p>
 
       {/*
-        Somebody who has already passed is not looking at an outstanding task
-        (P164-04), and once they are certified they may not sit it at all
-        (P169-01).
+        A passed exam is finished, and this screen is where a learner finds that
+        out (P164-04 → P169-01 → P170-01).
 
-        Three states, not two. Unpassed: a teal **beginnen**. Passed and still
-        certifying: the banner names the score and the button drops to
-        secondary, because reviewing an exam is legitimate and the stored result
-        is the best of all attempts, so a repeat cannot cost them anything.
-        Certified: no sitting at all — `submit` refuses it, and the sentence
-        below says so where somebody would otherwise look for the button.
+        The rule arrived in three steps and landed on the simplest of them: it
+        was "offer a repeat, quieter"; then "no repeat once the certificate is
+        issued"; and now, from the client, **no repeat once it is passed**. So
+        there are two states here, not three — unsat, and done — and the second
+        offers no sitting at all, because `submit` refuses one.
 
-        The middle case's reassurance is deliberately not shown in the third:
-        "a further attempt cannot undo your pass" is true and, next to a control
-        that no longer exists, reads as an invitation to hunt for it.
+        Which sentence explains it is the only thing certification still changes:
+        a physician holding a Bescheid is told about that rather than about their
+        score, which is the more useful of two true sentences.
+
+        And an explanation without a way onward is half a screen (§9.4), so the
+        controls below carry the next step: the Punktemeldung when the course is
+        finished, otherwise the section that follows.
       */}
       {props.passedScorePercent === undefined ? null : (
         <div className="flex gap-4 rounded-xl border border-status-passed bg-status-passedSoft p-4">
@@ -379,15 +392,35 @@ function QuizIntro(props: {
       )}
 
       <div className="flex flex-wrap gap-3">
-        {props.certified ? null : (
-          <Button
-            variant={props.passedScorePercent === undefined ? "cta" : "secondary"}
-            onClick={props.onStart}
-          >
-            {props.passedScorePercent === undefined
-              ? de.quiz.start(props.examTitle)
-              : de.quiz.repeat}
+        {props.passedScorePercent === undefined ? (
+          <Button variant="cta" onClick={props.onStart}>
+            {de.quiz.start(props.examTitle)}
           </Button>
+        ) : (
+          /*
+           * Passed: the way on, in the same order the passed *result* screen
+           * uses (P170-02). Claiming the points when the course is finished and
+           * the point is unclaimed — the parent decides that from the server's
+           * own answer — and otherwise the next section, which is what a
+           * learner who has just finished a middle module actually needs.
+           *
+           * Both may be absent: a finished course whose point is already
+           * claimed, on its last exam, has nothing to offer but the way back,
+           * and the sentence above has already said why.
+           */
+          <>
+            {props.onClaimPoints === undefined ? null : (
+              <Button variant="cta" onClick={props.onClaimPoints}>
+                {de.quiz.claim}
+                <span aria-hidden="true">→</span>
+              </Button>
+            )}
+            {props.onClaimPoints === undefined && props.onNext !== undefined ? (
+              <Button variant="cta" onClick={props.onNext.open}>
+                {de.player.nextSection(props.onNext.title)}
+              </Button>
+            ) : null}
+          </>
         )}
         <Button variant="secondary" onClick={props.onBack}>
           {de.player.back}
