@@ -101,7 +101,7 @@ beforeAll(async () => {
       projectId,
       `cert-course-${suffix}`,
       "ADHS Akademie adult",
-      "2761234202512345678",
+      "2760552025919300018",
       "Medice Arzneimittel Pütter GmbH & Co. KG, Iserlohn",
       "Ärztekammer Westfalen-Lippe",
       "Muster-Leitung",
@@ -170,7 +170,7 @@ async function queueCertificate(
      VALUES ($1,$2,$3,100,70,now(),$4,$5,$6) RETURNING id`,
     over.bare === true
       ? [customerId, bareCourseId, userId, null, null, null]
-      : [customerId, courseId, userId, "2761234202512345678", 4, "D"],
+      : [customerId, courseId, userId, "2760552025919300018", 4, "D"],
   );
 
   const certificateId = await insert(

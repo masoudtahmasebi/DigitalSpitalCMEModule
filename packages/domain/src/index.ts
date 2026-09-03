@@ -207,7 +207,6 @@ export {
   isPlaceholderVnr,
   isValidEfn,
   PLACEHOLDER_VNR,
-  SEEDED_VNR,
   REPORTING_WINDOW_DAYS,
 } from "./eiv.js";
 

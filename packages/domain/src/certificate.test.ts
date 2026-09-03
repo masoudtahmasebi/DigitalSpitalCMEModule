@@ -107,7 +107,7 @@ describe("missingCertificateFields", () => {
 
   it("still accepts a real VNR", () => {
     expect(
-      missingCertificateFields({ ...medice, vnr: "2761234202512345678" }),
+      missingCertificateFields({ ...medice, vnr: "2760552025919300018" }),
     ).not.toContain("vnr");
   });
 

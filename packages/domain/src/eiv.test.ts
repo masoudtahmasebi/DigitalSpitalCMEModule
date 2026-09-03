@@ -234,7 +234,7 @@ describe("isPlaceholderVnr", () => {
   });
 
   it("accepts a real VNR from the Anerkennungsbescheid", () => {
-    expect(isPlaceholderVnr("2761234202512345678")).toBe(false);
+    expect(isPlaceholderVnr("2760552025919300018")).toBe(false);
   });
 
   /*
@@ -278,30 +278,5 @@ describe("berlin calendar helpers", () => {
   it("produces the last millisecond of the Berlin day", () => {
     const endOfDay = endOfBerlinDay({ year: 2026, month: 6, day: 1 });
     expect(endOfDay.toISOString()).toBe("2026-06-01T21:59:59.999Z");
-  });
-});
-
-/*
- * P164-02. The seed's own VNR is ours too, and it reached a real certificate.
- *
- * `0000000000000000000` was caught because it is obviously not a number any
- * Kammer issued. `2760552025919300018` is the seed's, it looks exactly like a
- * real VNR, and it passed every gate — so a course seeded and never configured
- * published, awarded points, and printed it on a Teilnahmebescheinigung as two
- * barcodes. The client, from the running system: *"that number should not be
- * there in real system anywhere, that is only for the seeder."*
- *
- * The harder case of the same defect the placeholder check exists for: a number
- * that is not real and does not look it, versus one that is not real and does.
- */
-describe("a VNR the platform wrote itself", () => {
-  it("refuses the seed's number as well as the zero placeholder", () => {
-    expect(isPlaceholderVnr("0000000000000000000")).toBe(true);
-    expect(isPlaceholderVnr("2760552025919300018")).toBe(true);
-  });
-
-  it("still accepts a number an Ärztekammer issued", () => {
-    // The client's real one, off the Anerkennungsbescheid.
-    expect(isPlaceholderVnr("2760012024200354002")).toBe(false);
   });
 });

@@ -39,7 +39,7 @@ const WORKING: EivConnectionReport = {
    */
   tier: "live",
   submissionsEnabled: false,
-  vnr: "2761234202512345678",
+  vnr: "2760552025919300018",
   usedStoredPassword: true,
   steps: [
     { step: "authenticate", ok: true },
