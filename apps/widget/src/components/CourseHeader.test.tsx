@@ -129,11 +129,21 @@ describe("ProgressCard", () => {
     expect(arcLength(container)).toBe(0);
   });
 
-  it("shows the watch requirement the course actually configured", () => {
+  it("does not report video coverage beside the module count (DEP-32)", () => {
+    /*
+     * This case asserted the opposite until DEP-32: "41 % der Videoinhalte
+     * angesehen (erforderlich: 80 %)." The client's review with Philipp removed
+     * the line — the card answers how many *modules* are done, and a percentage
+     * measured against a different denominator beside it is two answers to one
+     * question.
+     *
+     * Kept and inverted rather than deleted, because the guard is worth having:
+     * this card must not grow a second figure again.
+     */
     render(<ProgressCard state={state()} onResume={undefined} />);
-    expect(
-      screen.getByText("41 % der Videoinhalte angesehen (erforderlich: 80 %)."),
-    ).toBeTruthy();
+
+    expect(screen.queryByText(/der Videoinhalte angesehen/u)).toBeNull();
+    expect(screen.getByText("Sie haben 2 von 5 Modulen abgeschlossen.")).toBeTruthy();
   });
 
   it("says nothing about completion while the course is still running", () => {

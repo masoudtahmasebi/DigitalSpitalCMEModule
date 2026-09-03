@@ -35,6 +35,7 @@ import type { TokenProvider } from "./token.js";
 import type { OpenIntent } from "./intent.js";
 import { indexTitles, nextAvailableContent, recordedQuizScore } from "./player.js";
 import {
+  clearCourseFragment,
   decode,
   decodeCourseSlug,
   encode,
@@ -373,7 +374,23 @@ function Routed(
       openAt={intent}
       addressCourseSlug={courseSlug === "" ? selected : undefined}
       // Only offered when the learner arrived through the catalogue.
-      onBackToCatalogue={courseSlug === "" ? () => setSelected(undefined) : undefined}
+      onBackToCatalogue={
+        courseSlug === ""
+          ? () => {
+              /*
+               * The address leaves with the learner (DEP-33).
+               *
+               * Without this the fragment went on naming the course — and the
+               * tab within it — while the catalogue was on screen, so a reload
+               * put them back inside the course they had just left. The screen
+               * changing without the URL changing is §9.8's third symptom, and
+               * the one that only shows up on F5.
+               */
+              clearCourseFragment();
+              setSelected(undefined);
+            }
+          : undefined
+      }
       onProgress={props.onProgress}
       onCourseComplete={props.onCourseComplete}
     />

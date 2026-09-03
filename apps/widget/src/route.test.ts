@@ -12,8 +12,14 @@
  * fragments are *not* ours. `<ds-lms>` runs inside a customer's WordPress page.
  */
 
-import { describe, expect, it } from "vitest";
-import { decode, decodeCourseSlug, encode, type WidgetRoute } from "./route.js";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  clearCourseFragment,
+  decode,
+  decodeCourseSlug,
+  encode,
+  type WidgetRoute,
+} from "./route.js";
 
 const CONTENT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 
@@ -169,5 +175,43 @@ describe("a link that survives a reload on a catalogue page (P156-02)", () => {
 
   it("leaves a host page's own anchor alone", () => {
     expect(decodeCourseSlug("#kontakt")).toBeUndefined();
+  });
+});
+
+/*
+ * DEP-33. The address leaves with the learner.
+ *
+ * **Zurück zur Übersicht** rendered the catalogue and left the fragment naming
+ * the course — and the tab inside it — so the URL was wrong immediately and a
+ * reload put the learner back in the course they had just left.
+ *
+ * `App.route.test.tsx` asserts the button calls this; these cases are the rule
+ * itself, and the second is the one with the sharp edge: `<ds-lms>` does not
+ * own its page.
+ */
+describe("leaving a course for the catalogue", () => {
+  afterEach(() => {
+    window.history.replaceState(null, "", window.location.pathname);
+  });
+
+  it("removes a fragment this router wrote", () => {
+    window.history.replaceState(null, "", "#ds/kurs/adhs-2026/referenten");
+
+    expect(clearCourseFragment()).toBe(true);
+    expect(window.location.hash).toBe("");
+  });
+
+  it("leaves the host page's own anchor exactly where it was", () => {
+    // A learner may have arrived from the theme's menu at …/fortbildungen#kontakt.
+    // Clearing that would move a WordPress page under them.
+    window.history.replaceState(null, "", "#kontakt");
+
+    expect(clearCourseFragment()).toBe(false);
+    expect(window.location.hash).toBe("#kontakt");
+  });
+
+  it("does nothing when there is no fragment at all", () => {
+    expect(clearCourseFragment()).toBe(false);
+    expect(window.location.hash).toBe("");
   });
 });

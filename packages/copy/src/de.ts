@@ -309,8 +309,6 @@ export const de = {
     /** "Sie haben 2 von 5 Modulen abgeschlossen." */
     moduleProgress: (completed: number, total: number): string =>
       `Sie haben ${completed} von ${total} ${total === 1 ? "Modul" : "Modulen"} abgeschlossen.`,
-    watchProgress: (achieved: number, required: number): string =>
-      `${achieved} % der Videoinhalte angesehen (erforderlich: ${required} %).`,
     complete: "Fortbildung abgeschlossen",
     /**
      * Shown when the course is done but the point is not yet claimed (P51-01,

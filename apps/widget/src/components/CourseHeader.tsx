@@ -156,16 +156,29 @@ export function ProgressCard(props: {
         computed elsewhere is what let an earlier version draw a ring that
         disagreed with the sentence printed beside it.
       */}
+      {/*
+        No watch-percentage line (DEP-30's sibling, DEP-32).
+
+        It read "8 % der Videoinhalte angesehen (erforderlich: 100 %)" under the
+        module count, and the client's review with Philipp removed it: the card
+        answers one question — how many modules are done — and a second
+        percentage measured against a different denominator beside it is two
+        answers to "how far am I".
+
+        The figure has not gone anywhere. The Zertifizierung tab states the
+        requirement as an accreditation condition, and the player's own progress
+        card reports coverage while a video is running, which is where a
+        percentage of *video* belongs.
+
+        `ProgressPanel`'s `footnote` stays in its signature: the panel is a
+        primitive and this is one caller's decision, not the primitive's.
+      */}
       <ProgressPanel
         title={de.overview.title}
         completed={completed}
         total={total}
         value={de.overview.ringValue(completed, total)}
         sentence={sentence}
-        footnote={de.overview.watchProgress(
-          props.state.achievedWatchPercent,
-          props.state.requiredWatchPercent,
-        )}
         action={
           props.onResume === undefined ? null : (
             <Button variant="cta" onClick={props.onResume}>

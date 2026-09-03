@@ -206,6 +206,61 @@ function selectedTab(): string | undefined {
   return selected?.textContent ?? undefined;
 }
 
+/**
+ * The catalogue's own answer, for the two DEP-33 cases below.
+ *
+ * The `beforeEach` stub answers every unmatched URL with `course()`, which is a
+ * `CourseDetail` — `CoursePanel` reads `items` off it and renders nothing. This
+ * one recognises the list endpoint.
+ */
+function stubCatalogue(): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const list = /\/courses(\?|$)/u.test(url);
+      const body = list
+        ? {
+            items: [
+              {
+                ...(course() as unknown as Record<string, unknown>),
+                enrolment: null,
+              },
+            ],
+            total: 1,
+            page: 1,
+            perPage: 10,
+            facets: { thema: [], altersgruppe: [] },
+          }
+        : url.includes("/materials")
+          ? { groups: [] }
+          : url.includes("/evaluation")
+            ? { questions: [] }
+            : url.includes("/contents/")
+              ? lesson()
+              : url.includes("/enrolment")
+                ? enrolmentState()
+                : course();
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }),
+  );
+}
+
+/** The widget as a catalogue embed: no `course` attribute. */
+function renderCatalogue() {
+  return render(
+    <App
+      apiBase="https://api.test"
+      projectSlug="medice-adhs"
+      courseSlug=""
+      getToken={async () => "token"}
+    />,
+  );
+}
+
 function renderApp(openAt?: "start" | "resume" | "certify") {
   return render(
     <App
@@ -510,14 +565,73 @@ describe("opening a course straight on the Punktemeldung", () => {
      *     first tick, before the enrolment has even arrived — it asserts the
      *     screen the widget starts on, not the screen it settles on.
      *
-     * The progress card's watch line is rendered from `EnrolmentState`, so
+     * The progress card's module sentence is rendered from `EnrolmentState`, so
      * finding it proves the fetch resolved and the intent had its chance. Both
      * were watched to go red with the `courseComplete` guard removed.
+     *
+     * It was the card's watch-percentage line until DEP-32 deleted that line,
+     * and this case failed the moment it went — which is the suite noticing a
+     * settle signal had become unreachable rather than silently waiting on
+     * nothing.
      */
-    await screen.findByText(/der Videoinhalte angesehen/u);
+    await screen.findByText(/von 1 Modul abgeschlossen/u);
 
     expect(selectedTab()).toBe("Übersicht");
     expect(window.location.hash).not.toContain("punktemeldung");
     expect(window.location.hash).not.toContain("evaluation");
+  });
+});
+
+/*
+ * DEP-33. Zurück zur Übersicht changes the address as well as the screen.
+ *
+ * `route.test.ts` proves `clearCourseFragment` removes our fragment and leaves
+ * a host page's alone. It would pass unchanged on a widget that never called it
+ * — which is exactly the shape this file exists for (§9.7), and exactly the
+ * defect: the catalogue rendered, the URL did not move, and a reload went back
+ * into the course.
+ */
+describe("returning to the catalogue", () => {
+  it("clears the course fragment, so a reload lands on the list", async () => {
+    stubCatalogue();
+    window.history.replaceState(null, "", `#ds/kurs/${COURSE_SLUG}/referenten`);
+
+    renderCatalogue();
+
+    // The fragment named a course, so the widget opens that course.
+    await waitFor(() => {
+      expect(selectedTab()).toBe("Experten/Referenten");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Zurück zur Übersicht/u }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("");
+    });
+  });
+
+  it("still shows the catalogue, not just a cleared URL", async () => {
+    // The other half: clearing the address without leaving the course would be
+    // the same defect facing the other way.
+    stubCatalogue();
+    window.history.replaceState(null, "", `#ds/kurs/${COURSE_SLUG}`);
+
+    renderCatalogue();
+    await waitFor(() => {
+      expect(inOutline()).toBe(true);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Zurück zur Übersicht/u }));
+
+    /*
+     * Not "no tabs": the catalogue has its own two (On Demand / Weitere), which
+     * is what the first version of this assertion tripped over. The course's
+     * tab row is what must be gone, and Zertifizierung appears on no other
+     * screen.
+     */
+    await waitFor(() => {
+      expect(screen.queryByRole("tab", { name: "Zertifizierung" })).toBeNull();
+    });
+    expect(screen.getAllByRole("tab", { name: /On Demand/u }).length).toBeGreaterThan(0);
   });
 });
