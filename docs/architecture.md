@@ -334,6 +334,46 @@ something that fails visibly if it stops being true.
 
 ## 7. Compliance paths worth reading before changing
 
+### What each kind of content contributes to progress
+
+A chapter holds five kinds of content, and the client asked the question this
+table exists to answer: _"as we have multiple content types which we can add for
+a chapter, how do we calculate their progress into the overall course."_ There
+are **two** numbers, they measure different things, and conflating them is how
+a screen ends up disagreeing with itself.
+
+| kind       | completed by                                           | counts in the item rollup | counts in the watch percentage |
+| ---------- | ------------------------------------------------------ | ------------------------- | ------------------------------ |
+| `video`    | union coverage ≥ the enrolment's requirement           | yes                       | yes, weighted by duration      |
+| `text`     | the "Ich habe diesen Abschnitt gelesen." box (P167-01) | yes                       | no                             |
+| `details`  | the same box                                           | yes                       | no                             |
+| `quiz`     | passing it                                             | yes                       | no                             |
+| `material` | nothing — see below                                    | no                        | no                             |
+
+- **The item rollup** (`rollupProgress`) is "how many of the things in this
+  course are done": every content is worth 1, done or not done, and the module
+  and course figures are sums. It drives the module tiles, the "x von y Modulen"
+  sentence, the ring beside it, and the sequential gate.
+- **The watch percentage** (`courseWatchCoverage` → `achievedWatchPercent`) is
+  "how much of the video material has been seen", in **seconds**, weighted by
+  duration across the whole course so a fully-watched two-minute clip cannot
+  mask an untouched forty-minute module. It is the number
+  `requiredWatchPercent` is measured against, and it is about videos only —
+  there are no seconds to count in a text section.
+
+So the course gate is three conditions, not one: **the watch percentage meets
+the requirement, every Lernerfolgskontrolle is passed, and every text or details
+section is acknowledged** (`isCourseComplete`, `outstandingForCourse`). A course
+with no video at all is vacuously 100 % watched and is held open by the third.
+
+`material` — a Mediathek download — is the one kind excluded from both. Nothing
+observable happens when a PDF is fetched, so it has no completion event; putting
+it in the tree would leave its chapter permanently unfinished and lock every
+later module for ever. Downloads are gated on their module's completion instead.
+`isComplianceContent` is the single predicate that says so, and progress, gating
+and the resume target all traverse through it, so the three cannot develop
+different opinions about what counts.
+
 ### Watched percentage
 
 Reported as intervals, merged into a stored union, recomputed server-side. Never

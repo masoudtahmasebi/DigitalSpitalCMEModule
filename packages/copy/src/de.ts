@@ -757,6 +757,23 @@ export const de = {
       "Ergebnis, ein weiterer Versuch kann Ihr Bestehen also nicht aufheben.",
     /** The button, when it is a repeat rather than the first sitting. */
     repeat: "Zur Wiederholung erneut bearbeiten",
+    /**
+     * Passed **and** certified, which is where the repeat stops (P169-01).
+     *
+     * The client: *"we shouldn't let the user fill the exam again, when he has
+     * cleared the exam already and certificate is issued."* The API refuses
+     * such an attempt now, so the button must go — a control that can only
+     * produce an error is worse than an absent one (§9.2).
+     *
+     * And because an absent button reads as an unfinished feature, the sentence
+     * says *why* at the place somebody looks for it (§9.4), and says what the
+     * exam is still good for: the questions and the recorded result stay
+     * readable, it is only the sitting of it that is closed.
+     */
+    certifiedNoRetry:
+      "Diese Fortbildung ist abgeschlossen und zertifiziert. Die Lernerfolgskontrolle " +
+      "kann nicht erneut abgelegt werden — Ihr Ergebnis und Ihre Teilnahmebescheinigung " +
+      "bleiben unverändert erhalten.",
     title: "Lernerfolgskontrolle",
     /**
      * The heading under the eyebrow on page 08, and on every question screen.

@@ -344,7 +344,7 @@ export class LearningService {
      * all come from one union (§4 inv. 6) and the rule can be withdrawn without
      * having destroyed the record it was applied to.
      */
-    const credited = fillSamplingGaps(merged, content.durationSec);
+    const credited = fillSamplingGaps(merged);
     const percent = watchedPercent(credited, content.durationSec);
 
     /*
@@ -514,12 +514,7 @@ export class LearningService {
       // The intervals the percentage above was computed from, credited the same
       // way the write path credits them (P158-02) — otherwise the coverage bar
       // and the number beside it disagree about exactly the holes this closes.
-      watchedSegments: [
-        ...fillSamplingGaps(
-          readSegments(progress?.watchedSegments),
-          content.durationSec ?? 0,
-        ),
-      ],
+      watchedSegments: [...fillSamplingGaps(readSegments(progress?.watchedSegments))],
     };
   }
 

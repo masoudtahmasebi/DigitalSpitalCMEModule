@@ -400,8 +400,12 @@ describe("intervals survive a failed request (P154-02)", () => {
  * later at a position tens of seconds further on. The delta rule read that as a
  * seek, banked the interval, and opened a new one after the hole.
  *
- * `fillSamplingGaps` then could not close it: its limit is
- * `min(60, duration × 0.1)`, and this hole was ninety seconds.
+ * `fillSamplingGaps` then could not close it: its limit was
+ * `min(60, duration × 0.1)`, and this hole was ninety seconds. P169-00 removed
+ * that limit — but this rule still carries its own weight, and more of it than
+ * before: since P168-01 the server refuses a segment that begins past the
+ * furthest point the record reaches, so a client that lets the hole form does
+ * not get a hole, it gets every later report rejected.
  *
  * The delta rule is **redundant for a real seek**: `VideoPlayer` fires
  * `onStop("seek")` from the element's own `seeking` event, which calls

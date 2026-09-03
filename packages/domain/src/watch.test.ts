@@ -714,42 +714,52 @@ describe("holes a sampling clock leaves behind (P158-02)", () => {
       { startSec: 66.318741, endSec: 2489.117804 },
     ];
 
-    expect(fillSamplingGaps(session, 2490)).toEqual([
-      { startSec: 0, endSec: 2489.117804 },
-    ]);
+    expect(fillSamplingGaps(session)).toEqual([{ startSec: 0, endSec: 2489.117804 }]);
   });
 
   it("refuses the drag-to-the-end fragment, which has nothing to bridge to", () => {
     // The case that killed the previous attempt. One fragment near the end of a
-    // ten-minute video: no neighbour, so no gap, so no credit.
+    // ten-minute video: no neighbour, so no gap, so no credit. Since P168-01
+    // the write path refuses to store it in the first place, and this stays as
+    // the second lock on the same door.
     const drag = [{ startSec: 595, endSec: 600 }];
-    expect(fillSamplingGaps(drag, 600)).toEqual(drag);
+    expect(fillSamplingGaps(drag)).toEqual(drag);
   });
 
-  it("does not bridge a gap wide enough to be content", () => {
+  /*
+   * These two asserted the width limit, and P168-04 removed it. They are kept
+   * and inverted rather than deleted, because the change is not "the threshold
+   * got bigger" — it is that a threshold was answering the wrong question.
+   *
+   * A width asks *is this hole too wide to be jitter?* What decides a CME point
+   * is *could this learner have got to the far side of it?* Since P168-01 the
+   * answer is no unless they reported their way across, and the crossing is
+   * charged to the wall-clock budget either way. So these are exactly the cases
+   * that used to separate a bridged hole from an unbridged one, and both are
+   * now bridged. The case that must never be bridged is the one directly above,
+   * and it is refused structurally rather than by a number.
+   */
+  it("bridges a wide interior hole, which a refused forward seek cannot produce", () => {
     const skipped = [
       { startSec: 0, endSec: 100 },
       { startSec: 900, endSec: 1000 },
     ];
-    expect(fillSamplingGaps(skipped, 2490)).toEqual(skipped);
+
+    expect(fillSamplingGaps(skipped)).toEqual([{ startSec: 0, endSec: 1000 }]);
   });
 
-  it("scales the bridge to the video, so a short one is not swallowed whole", () => {
-    // A ten-second video: a nine-second hole between two samples is most of the
-    // content, not an artefact. The client asked exactly this — "what happens
-    // if a video is only 10 seconds long?"
+  it("bridges an interior hole on a very short video too", () => {
+    // A ten-second video with a nine-second hole between two samples. Under the
+    // old rule this was "most of the content, not an artefact" — but reporting
+    // 9.5 s requires having been allowed there. The client's ten-second case
+    // ("what happens if a video is only 10 seconds long?") is answered by the
+    // write path now, rather than by a fraction of the length.
     const short = [
       { startSec: 0, endSec: 0.5 },
       { startSec: 9.5, endSec: 10 },
     ];
-    expect(fillSamplingGaps(short, 10)).toEqual(short);
 
-    // …while a tenth of a second still closes.
-    const jitter = [
-      { startSec: 0, endSec: 4.9 },
-      { startSec: 5, endSec: 10 },
-    ];
-    expect(fillSamplingGaps(jitter, 10)).toEqual([{ startSec: 0, endSec: 10 }]);
+    expect(fillSamplingGaps(short)).toEqual([{ startSec: 0, endSec: 10 }]);
   });
 
   it("never credits before the first sample or after the last", () => {
@@ -757,7 +767,7 @@ describe("holes a sampling clock leaves behind (P158-02)", () => {
       { startSec: 600, endSec: 700 },
       { startSec: 705, endSec: 800 },
     ];
-    expect(fillSamplingGaps(late, 2490)).toEqual([{ startSec: 600, endSec: 800 }]);
+    expect(fillSamplingGaps(late)).toEqual([{ startSec: 600, endSec: 800 }]);
   });
 });
 

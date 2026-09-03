@@ -800,6 +800,14 @@ function Loaded(props: {
             indexTitles(detail).contents.get(screen.contentId)?.title ?? de.quiz.exam
           }
           passedScorePercent={recordedQuizScore(state, screen.contentId)}
+          /*
+           * Certified, from the server (P169-01). `submit` refuses an attempt
+           * on such an enrolment, so the screen must not offer one — the same
+           * §9.2 rule as `onClaimPoints` two properties down, in the other
+           * direction: that one withholds a control the API would refuse to
+           * *start*, this one withholds a control it would refuse to *finish*.
+           */
+          certified={state.completedAt !== null}
           onPassed={refresh}
           onBack={() => {
             refresh();
@@ -1103,6 +1111,8 @@ function QuizGate(props: {
   examTitle: string;
   /** Absent while the course is not complete — see `QuizScreen` (P82-01). */
   passedScorePercent: number | undefined;
+  /** The enrolment is certified, so the API refuses another attempt (P169-01). */
+  certified: boolean;
   onClaimPoints: (() => void) | undefined;
   onNext: { readonly title: string; readonly open: () => void } | undefined;
 }) {
@@ -1125,6 +1135,7 @@ function QuizGate(props: {
       quiz={quiz.data}
       examTitle={props.examTitle}
       passedScorePercent={props.passedScorePercent}
+      certified={props.certified}
       onPassed={props.onPassed}
       onBack={props.onBack}
       onClaimPoints={props.onClaimPoints}

@@ -69,6 +69,15 @@ export function QuizScreen(props: {
    * (P164-04). `undefined` on a first sitting.
    */
   passedScorePercent: number | undefined;
+  /**
+   * The enrolment is certified (P169-01).
+   *
+   * The API refuses a further attempt once the certificate is issued, so the
+   * screen must not offer one. From the server's `completedAt`, like every
+   * other gate this component honours — the screen renders the answer, it does
+   * not compute it.
+   */
+  certified: boolean;
   onPassed: () => void;
   onBack: () => void;
   /**
@@ -143,6 +152,7 @@ export function QuizScreen(props: {
         quiz={quiz}
         examTitle={props.examTitle}
         passedScorePercent={props.passedScorePercent}
+        certified={props.certified}
         onStart={() => setPhase({ kind: "question", index: 0 })}
         onBack={props.onBack}
       />
@@ -279,6 +289,8 @@ function QuizIntro(props: {
   quiz: Quiz;
   examTitle: string;
   passedScorePercent: number | undefined;
+  /** The enrolment is certified, so `submit` refuses another attempt (P169-01). */
+  certified: boolean;
   onStart: () => void;
   onBack: () => void;
 }) {
@@ -336,14 +348,19 @@ function QuizIntro(props: {
 
       {/*
         Somebody who has already passed is not looking at an outstanding task
-        (P164-04).
+        (P164-04), and once they are certified they may not sit it at all
+        (P169-01).
 
-        The banner says so and names the score, and the button stops being the
-        primary call to action — a physician holding the certificate should not
-        meet a teal **beginnen** on a course they have finished. Nothing is
-        taken away: the exam is still sittable, because reviewing it is a
-        legitimate thing to want and the stored result is the best of all
-        attempts, so a repeat cannot cost them anything.
+        Three states, not two. Unpassed: a teal **beginnen**. Passed and still
+        certifying: the banner names the score and the button drops to
+        secondary, because reviewing an exam is legitimate and the stored result
+        is the best of all attempts, so a repeat cannot cost them anything.
+        Certified: no sitting at all — `submit` refuses it, and the sentence
+        below says so where somebody would otherwise look for the button.
+
+        The middle case's reassurance is deliberately not shown in the third:
+        "a further attempt cannot undo your pass" is true and, next to a control
+        that no longer exists, reads as an invitation to hunt for it.
       */}
       {props.passedScorePercent === undefined ? null : (
         <div className="flex gap-4 rounded-xl border border-status-passed bg-status-passedSoft p-4">
@@ -354,20 +371,24 @@ function QuizIntro(props: {
             ✓
           </span>
           <p className="text-sm leading-relaxed text-gray-800">
-            {de.quiz.alreadyPassed(props.passedScorePercent)}
+            {props.certified
+              ? de.quiz.certifiedNoRetry
+              : de.quiz.alreadyPassed(props.passedScorePercent)}
           </p>
         </div>
       )}
 
       <div className="flex flex-wrap gap-3">
-        <Button
-          variant={props.passedScorePercent === undefined ? "cta" : "secondary"}
-          onClick={props.onStart}
-        >
-          {props.passedScorePercent === undefined
-            ? de.quiz.start(props.examTitle)
-            : de.quiz.repeat}
-        </Button>
+        {props.certified ? null : (
+          <Button
+            variant={props.passedScorePercent === undefined ? "cta" : "secondary"}
+            onClick={props.onStart}
+          >
+            {props.passedScorePercent === undefined
+              ? de.quiz.start(props.examTitle)
+              : de.quiz.repeat}
+          </Button>
+        )}
         <Button variant="secondary" onClick={props.onBack}>
           {de.player.back}
         </Button>

@@ -102,21 +102,43 @@ describe("courseWatchCoverage weights by duration", () => {
     expect(coverage.percent).toBe(10);
   });
 
-  it("counts the union of intervals, not the furthest position", () => {
-    // Watching 0–100 then seeking to 800–900 is 200 s of a 900 s video, even
-    // though the playhead reached the end.
+  /*
+   * Where the anti-skip property lives, after P168-04.
+   *
+   * It used to be here: two fragments with 700 s between them counted 200 s,
+   * because `fillSamplingGaps` refused to bridge a hole wider than a minute.
+   * The client's decision — *"credit the hole because the user reached the
+   * end"* — removed that limit, and it is only sound because P168-01 made the
+   * seek ceiling a rule of the **write path**: a report beginning past the
+   * furthest second the record reaches is refused, so the far fragment below
+   * cannot be stored in the first place, and every hole is charged to the
+   * wall-clock budget as if it had been watched.
+   *
+   * So this layer no longer distinguishes a hole from watched material, and
+   * saying so out loud is the point of these two cases. What it still refuses
+   * is everything **outside** the reported range — which is what a drag to the
+   * end produces, and what the completion gate actually reads.
+   */
+  it("never credits a second past the furthest one reported", () => {
     const coverage = courseWatchCoverage(course(), [
-      {
-        contentId: "long",
-        segments: [
-          { startSec: 0, endSec: 100 },
-          { startSec: 800, endSec: 900 },
-        ],
-      },
+      { contentId: "long", segments: [{ startSec: 0, endSec: 100 }] },
     ]);
 
-    expect(coverage.watchedSec).toBe(200);
-    expect(coverage.percent).toBe(20);
+    // 100 s of the 900 s video, not 900. A max-position implementation would
+    // agree here; the case below is the one that separates them.
+    expect(coverage.watchedSec).toBe(100);
+  });
+
+  it("never credits a second before the first one reported", () => {
+    // The drag to 13:20 of a fifteen-minute video: one fragment, no neighbour,
+    // nothing bridged. Worth its own case because "coverage is the union" and
+    // "coverage is the furthest position" give different answers to exactly
+    // this, and only this.
+    const coverage = courseWatchCoverage(course(), [
+      { contentId: "long", segments: [{ startSec: 800, endSec: 900 }] },
+    ]);
+
+    expect(coverage.watchedSec).toBe(100);
   });
 
   it("collapses overlapping reports rather than double-counting them", () => {
@@ -291,18 +313,42 @@ describe("the course figure credits the same seconds the player does", () => {
     expect(coverage.percent).toBe(100);
   });
 
-  it("still refuses a hole too big to be a sampling artefact", () => {
-    // Ten minutes of video, four minutes skipped in the middle. Nothing about
-    // that is a missed flush, and crediting it would make the gate skippable.
-    const realGap = [
+  it("credits a wide hole too, because the write path refuses the seek that makes one", () => {
+    /*
+     * Ten minutes of video with four minutes missing in the middle. This used
+     * to assert 60 % — "nothing about that is a missed flush" — and the
+     * premise was wrong in a way that mattered: until P168-01 nothing stopped a
+     * client posting the far side of a hole, so the width was evidence of
+     * nothing, and a physician whose tab was throttled for four minutes was
+     * told to re-watch what they had seen.
+     *
+     * Now a segment beginning past the furthest second the record reaches is
+     * refused (`beyond_ceiling`), and the crossing is charged to the wall-clock
+     * budget. A record in this shape is therefore a report of ours that never
+     * arrived — or one written before that rule existed. The client's ruling:
+     * *"credit the hole because the user reached the end."*
+     *
+     * The gate is not skippable as a result: it is the **write path** that
+     * refuses the skip, and `watch.test.ts` holds it to that.
+     */
+    const hole = [
       { startSec: 0, endSec: 120 },
       { startSec: 360, endSec: 600 },
     ];
 
+    const coverage = courseWatchCoverage(oneVideo, [{ contentId: "v1", segments: hole }]);
+
+    expect(coverage.percent).toBe(100);
+  });
+
+  it("still credits nothing for a fragment with no neighbour", () => {
+    // The guard that survived, and the one that carries the weight here: a
+    // single fragment near the end is 5 s of a 600 s video, whatever position
+    // it claims.
     const coverage = courseWatchCoverage(oneVideo, [
-      { contentId: "v1", segments: realGap },
+      { contentId: "v1", segments: [{ startSec: 595, endSec: 600 }] },
     ]);
 
-    expect(coverage.percent).toBe(60);
+    expect(coverage.percent).toBe(0);
   });
 });
