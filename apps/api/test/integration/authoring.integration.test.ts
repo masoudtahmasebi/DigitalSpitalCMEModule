@@ -853,13 +853,34 @@ describe("a level that still has something inside it refuses, rather than failin
       .flatMap((c: any) => c.contents)
       .find((x: any) => x.title === "P176 Lernerfolgskontrolle").id;
 
+    /*
+     * An enrolment **on this course**, not `enrolments LIMIT 1`.
+     *
+     * The first version took any enrolment, and CI found what a local run did
+     * not: the row it picked belonged to another customer, so the census —
+     * which reads through the tenant-scoped connection, correctly — could not
+     * see the attempt, counted zero, and let the delete reach Postgres. The 500
+     * in that CI log is this fixture's, not the product's.
+     *
+     * CLAUDE.md §9.6 in a test rather than in a repository: a row RLS hides
+     * looks exactly like a row that is not there. A cross-tenant attempt is
+     * also a state production cannot reach — an attempt is always written in
+     * its enrolment's tenant — so asserting against one proves nothing about
+     * the guard.
+     */
     const { rows } = await seedPool.query<{ id: string }>(
-      `SELECT id, customer_id FROM enrolments LIMIT 1`,
+      `SELECT e.id
+         FROM enrolments e
+         JOIN courses c ON c.id = e.course_id
+        WHERE c.slug = $1
+        ORDER BY e.created_at
+        LIMIT 1`,
+      [courseSlug],
     );
     const enrolmentId = rows[0]?.id;
     expect(
       enrolmentId,
-      "the fixture needs one enrolment to hang an attempt on",
+      "this course needs an enrolment of its own to hang an attempt on",
     ).toBeDefined();
 
     await seedPool.query(
