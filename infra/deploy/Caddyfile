@@ -150,7 +150,26 @@ import /etc/caddy/sites/*.caddy
 	# for the upload and the read half was not, because nothing read yet. The
 	# portal's policy below has carried a `media-src` since it was written, for
 	# the learner's player — the console needed the same and did not have it.
-	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: {$S3_ORIGIN}; media-src 'self' {$S3_ORIGIN}; connect-src 'self' {$API_DOMAIN_URL} {$S3_ORIGIN}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+	#
+	# `object-src` is the same story a third time (P161-02). `media-src` covers
+	# `<video>` and `<audio>`; a PDF in the Mediathek is an `<embed>`, and an
+	# `<embed>` is governed by `object-src` — which was not set, so it fell back
+	# to `default-src 'self'` and every PDF preview was blocked:
+	#
+	#     Loading plugin data from 'https://…/material-….pdf' violates the
+	#     following Content Security Policy directive: "default-src 'self'".
+	#     Note that 'object-src' was not explicitly set, so 'default-src' is
+	#     used as a fallback. The action has been blocked.
+	#
+	# Three directives, three separate discoveries, one per file type somebody
+	# eventually clicked. The rule that would have found all three at once is
+	# not "add every directive" — the paragraph above is right that a permission
+	# for a request nobody makes is a permission to delete — it is: for every
+	# element the console points at the bucket, name the directive that governs
+	# it. Today that is `<img>` (img-src), `<video>`/`<audio>` (media-src),
+	# `<embed>` (object-src) and `fetch` (connect-src). There is no `<iframe>`
+	# and no `<object>` anywhere in apps/admin, so no `frame-src` is listed.
+	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: {$S3_ORIGIN}; media-src 'self' {$S3_ORIGIN}; object-src 'self' {$S3_ORIGIN}; connect-src 'self' {$API_DOMAIN_URL} {$S3_ORIGIN}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 	reverse_proxy admin:80
 }

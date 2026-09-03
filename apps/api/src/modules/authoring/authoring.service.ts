@@ -420,8 +420,11 @@ export class AuthoringService {
       await this.repository.courseIdOfModule(id),
       id,
     );
-    const records = await this.repository.countModuleRecords(id);
-    this.assertDeletable(records, "Modul");
+    this.assertRemovable(
+      await this.repository.countModuleRecords(id),
+      await this.repository.censusOfModule(id),
+      "Modul",
+    );
 
     await this.repository.deleteModule(id);
     await this.audit(actor, "admin.module.delete", id, {});
@@ -467,7 +470,11 @@ export class AuthoringService {
       await this.repository.courseIdOfChapter(id),
       id,
     );
-    this.assertDeletable(await this.repository.countChapterRecords(id), "Kapitel");
+    this.assertRemovable(
+      await this.repository.countChapterRecords(id),
+      await this.repository.censusOfChapter(id),
+      "Kapitel",
+    );
 
     await this.repository.deleteChapter(id);
     await this.audit(actor, "admin.chapter.delete", id, {});
@@ -575,6 +582,7 @@ export class AuthoringService {
       id,
     );
     this.assertDeletable(await this.repository.countContentRecords(id), "Inhaltselement");
+    this.assertNoQuestions(await this.repository.countContentQuestions(id));
 
     await this.repository.deleteContent(id);
     await this.audit(actor, "admin.content.delete", id, {});
@@ -974,6 +982,33 @@ export class AuthoringService {
    * whether learners have touched it. Both delegate the decision to
    * `deletionVerdict`; neither decides anything itself.
    */
+  /**
+   * A Lernerfolgskontrolle still holding its questions (P162-01).
+   *
+   * `quiz_questions` references `contents` with `ON DELETE RESTRICT`, so this
+   * used to be a foreign-key violation and a 500 — the console offering a
+   * button whose only possible outcome was an internal error (§9.2). It is not
+   * routed through `deletionVerdict` because a question is not a
+   * `HierarchyLevel`: widening that type to carry one would put a question into
+   * every census and every label map on the platform.
+   *
+   * Refused rather than cascaded, deliberately and on the client's own reading
+   * — *"it should not be enabled to be able to delete when the inhalt inside
+   * there are not empty"*. Deleting an exam's questions as a side effect of
+   * deleting the exam is the kind of quiet data loss this platform cannot
+   * afford, and emptying the list first is one click in the editor that already
+   * exists.
+   */
+  private assertNoQuestions(questions: number): void {
+    if (questions === 0) return;
+
+    throw new AppError(
+      "conflict",
+      `refused: content still holds ${questions} quiz questions`,
+      `Diese Lernerfolgskontrolle enthält noch ${questions} Fragen. Diese müssen zuerst entfernt werden.`,
+    );
+  }
+
   private assertRemovable(records: number, children: ChildCensus, label: string): void {
     const verdict = deletionVerdict({ learnerRecords: records, children });
     if (verdict.ok) return;

@@ -723,6 +723,104 @@ describe("what a learner has touched cannot be deleted", () => {
   });
 });
 
+/*
+ * P162-01. The three deletes that answered 500.
+ *
+ * `deletionVerdict` in @ds/domain asks two questions per level — is anything
+ * inside it, and has any learner touched anything inside it — and the
+ * repository's own comment says the levels match it. Three of the six call
+ * sites only ever asked the second: `deleteModule`, `deleteChapter` and
+ * `deleteContent` counted `content_progress` and never counted their children,
+ * so a non-empty one reached Postgres and hit `ON DELETE RESTRICT`. An
+ * unhandled foreign-key violation is a 500, which is the console offering a
+ * button whose only possible outcome is an internal error (§9.2).
+ *
+ * The reason this was invisible: the one module-delete case in this file
+ * creates a module and deletes it in the next line, so it is always empty. The
+ * one chapter case is refused for *learner records* before children are ever
+ * reached. Neither could have gone red.
+ *
+ * Everything here is built fresh and untouched by any learner, so learner
+ * records cannot be the reason for any refusal below.
+ */
+describe("a level that still has something inside it refuses, rather than failing", () => {
+  let moduleId = "";
+  let chapterId = "";
+  let quizId = "";
+
+  beforeAll(async () => {
+    const created = await asAdmin("POST", `/admin/courses/${courseSlug}/modules`, {
+      title: "P162 Modul",
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    moduleId = created.body.modules.find((m: any) => m.title === "P162 Modul").id;
+
+    const chapter = await asAdmin("POST", `/admin/modules/${moduleId}/chapters`, {
+      title: "P162 Kapitel",
+    });
+    expect(chapter.status, JSON.stringify(chapter.body)).toBe(201);
+    chapterId = chapter.body.modules
+      .find((m: any) => m.id === moduleId)
+      .chapters.find((c: any) => c.title === "P162 Kapitel").id;
+
+    const quiz = await asAdmin("POST", `/admin/chapters/${chapterId}/contents`, {
+      kind: "quiz",
+      title: "P162 Lernerfolgskontrolle",
+    });
+    expect(quiz.status, JSON.stringify(quiz.body)).toBe(201);
+    quizId = quiz.body.modules
+      .flatMap((m: any) => m.chapters)
+      .flatMap((c: any) => c.contents)
+      .find((x: any) => x.title === "P162 Lernerfolgskontrolle").id;
+
+    const questions = await asAdmin("PUT", `/admin/contents/${quizId}/quiz`, {
+      questions: [
+        {
+          prompt: "P162?",
+          kind: "single",
+          options: [
+            { label: "A", isCorrect: true },
+            { label: "B", isCorrect: false },
+          ],
+        },
+      ],
+    });
+    expect(questions.status, JSON.stringify(questions.body)).toBe(200);
+  });
+
+  it("refuses a module that still holds a chapter, and names what is in the way", async () => {
+    const { status, body } = await asAdmin("DELETE", `/admin/modules/${moduleId}`);
+
+    expect(status, JSON.stringify(body)).toBe(409);
+    expect(body.detail).toContain("Kapitel");
+  });
+
+  it("refuses a chapter that still holds a content", async () => {
+    const { status, body } = await asAdmin("DELETE", `/admin/chapters/${chapterId}`);
+
+    expect(status, JSON.stringify(body)).toBe(409);
+    expect(body.detail).toContain("Inhalte");
+  });
+
+  it("refuses a Lernerfolgskontrolle that still holds questions", async () => {
+    const { status, body } = await asAdmin("DELETE", `/admin/contents/${quizId}`);
+
+    expect(status, JSON.stringify(body)).toBe(409);
+    expect(body.detail).toContain("Fragen");
+  });
+
+  it("deletes each of them once it is empty, innermost first", async () => {
+    const emptied = await asAdmin("PUT", `/admin/contents/${quizId}/quiz`, {
+      questions: [],
+    });
+    expect(emptied.status, JSON.stringify(emptied.body)).toBe(200);
+
+    expect((await asAdmin("DELETE", `/admin/contents/${quizId}`)).status).toBe(200);
+    expect((await asAdmin("DELETE", `/admin/chapters/${chapterId}`)).status).toBe(200);
+    expect((await asAdmin("DELETE", `/admin/modules/${moduleId}`)).status).toBe(200);
+  });
+});
+
 describe("an authored course is a course the learner API can serve", () => {
   it("serves the tree the author built, in the author's order", async () => {
     // The point of the whole feature. A console that produced a tree the widget

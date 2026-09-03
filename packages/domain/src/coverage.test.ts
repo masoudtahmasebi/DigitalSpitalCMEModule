@@ -239,3 +239,70 @@ describe("courseWatchCoverage weights by duration", () => {
     );
   });
 });
+
+/*
+ * P163-01. The third call site, and the one that decides the CME point.
+ *
+ * `fillSamplingGaps` was applied on the write path (the stored percentage) and
+ * on the read path (the segments the player draws), so the bar, the number and
+ * the gap list agree. The course-level coverage — the figure `isCourseComplete`
+ * compares against `requiredWatchPercent` — was fed the raw stored intervals.
+ *
+ * The consequence is a screen that contradicts itself: every content ticked,
+ * "100 % der Fortbildung absolviert" in the header, the Lernerfolgskontrolle
+ * passed, and "Für die CME-Punkte fehlen noch Abschnitte der Fortbildung"
+ * underneath — with no way to reach the EFN step. §4 invariant 6 exactly: two
+ * implementations of one rollup, disagreeing on a CME record.
+ */
+describe("the course figure credits the same seconds the player does", () => {
+  const oneVideo: CourseNode = {
+    modules: [
+      {
+        id: "m1",
+        chapters: [
+          {
+            id: "c1",
+            contents: [{ id: "v1", kind: "video", durationSec: 600 }],
+          },
+        ],
+      },
+    ],
+  } as unknown as CourseNode;
+
+  it("reaches 100 % for a video watched end to end through a sampling clock", () => {
+    /*
+     * A fifteen-second flush that missed a beat three times: 600 seconds of
+     * video reported as four runs with three one-second holes. The player
+     * credits this as complete, so the content is ticked and the rollup says
+     * 100 %. Raw, it is 597/600 = 99 %, and 99 does not complete a course whose
+     * requiredWatchPercent is 100.
+     */
+    const withHoles = [
+      { startSec: 0, endSec: 150 },
+      { startSec: 151, endSec: 300 },
+      { startSec: 301, endSec: 450 },
+      { startSec: 451, endSec: 600 },
+    ];
+
+    const coverage = courseWatchCoverage(oneVideo, [
+      { contentId: "v1", segments: withHoles },
+    ]);
+
+    expect(coverage.percent).toBe(100);
+  });
+
+  it("still refuses a hole too big to be a sampling artefact", () => {
+    // Ten minutes of video, four minutes skipped in the middle. Nothing about
+    // that is a missed flush, and crediting it would make the gate skippable.
+    const realGap = [
+      { startSec: 0, endSec: 120 },
+      { startSec: 360, endSec: 600 },
+    ];
+
+    const coverage = courseWatchCoverage(oneVideo, [
+      { contentId: "v1", segments: realGap },
+    ]);
+
+    expect(coverage.percent).toBe(60);
+  });
+});

@@ -632,6 +632,8 @@ export const en: DeepPartial<typeof german> = {
     posterCapturing: "Taking a preview image from the video …",
     durationDetectFailed:
       "The length could not be read from the file. That happens with servers without a CORS rule and with adaptive streams — please enter the length in seconds and compare it against the actual video length.",
+    durationUnreadable:
+      "This file could not be reached — the preview and the length measurement were refused by the platform, not by the storage. Please pick the file from the Mediathek again or upload it afresh; if it persists, that is a bug and not a setting.",
     captionsUrl: "Subtitle file (WebVTT or SRT)",
     captionsHint:
       "File or URL with German subtitles. SRT files are converted to the WebVTT format on upload, which is what browsers require for subtitle tracks. Subtitles are Level A of the accessibility guidelines (WCAG 1.2.2, EN 301 549): without them physicians with a hearing impairment cannot take the course — and progress will record it as not watched.",
@@ -646,6 +648,12 @@ export const en: DeepPartial<typeof german> = {
 
     lockedByRecords:
       "Cannot be deleted: participations have already been recorded. This data is the evidence for points already awarded.",
+    lockedByChildren: (count: number, what: string): string =>
+      `Cannot be deleted: it still contains ${String(count)} ${what}. Those have to be deleted first.`,
+    childChapters: (count: number): string => (count === 1 ? "chapter" : "chapters"),
+    childContents: (count: number): string =>
+      count === 1 ? "content item" : "content items",
+    childQuestions: (count: number): string => (count === 1 ? "question" : "questions"),
     locked: "In use",
     lockedRule:
       "Modules, chapters and contents with recorded participations can no longer be deleted — this data is the evidence for points already awarded.",

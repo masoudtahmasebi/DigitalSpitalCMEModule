@@ -90,6 +90,16 @@ export interface UploadRepositoryPort {
   listAssets(filter: LibraryFilter): Promise<readonly LibraryRow[]>;
   /** One entry, or undefined when this tenant cannot see it. */
   findAsset(id: string): Promise<LibraryRow | undefined>;
+  /**
+   * Is this stored object one of the customer's own files? (P161-01)
+   *
+   * By key rather than by id, because the caller that asks is holding an
+   * `s3://` reference out of a course's content — a poster, a video source, a
+   * material — and never an id. RLS on `media_assets` is what makes the answer
+   * an authorisation and not a lookup: a row from another tenant is invisible,
+   * so it answers undefined rather than false.
+   */
+  findAssetByKey(storageKey: string): Promise<LibraryRow | undefined>;
   /** Set the human title and the alt text. Answers false if it is not ours. */
   describeAsset(
     id: string,
@@ -305,6 +315,24 @@ export class UploadRepository implements UploadRepositoryPort {
     return row;
   }
 
+  async findAssetByKey(storageKey: string): Promise<LibraryRow | undefined> {
+    const [row] = await this.db
+      .select({
+        id: mediaAssets.id,
+        storageKey: mediaAssets.storageKey,
+        fileName: mediaAssets.fileName,
+        mimeType: mediaAssets.mimeType,
+        byteSize: mediaAssets.byteSize,
+        title: mediaAssets.title,
+        altText: mediaAssets.altText,
+        createdAt: mediaAssets.createdAt,
+      })
+      .from(mediaAssets)
+      .where(eq(mediaAssets.storageKey, storageKey))
+      .limit(1);
+    return row;
+  }
+
   async describeAsset(
     id: string,
     title: string | null,
@@ -443,6 +471,10 @@ export class RunnerUploadRepository implements UploadRepositoryPort {
 
   findAsset(id: string): Promise<LibraryRow | undefined> {
     return this.run((db) => new UploadRepository(db).findAsset(id));
+  }
+
+  findAssetByKey(storageKey: string): Promise<LibraryRow | undefined> {
+    return this.run((db) => new UploadRepository(db).findAssetByKey(storageKey));
   }
 
   describeAsset(

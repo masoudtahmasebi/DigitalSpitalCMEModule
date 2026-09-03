@@ -686,6 +686,50 @@ describe("the list of missing spans", () => {
 
     expect(screen.queryByText(/Diese Stellen fehlen noch/u)).toBeNull();
   });
+
+  it("says nothing about the part ahead of where the learner has got to", () => {
+    /*
+     * P163-02, and the same contradiction P102-01 removed one step along.
+     *
+     * Watching linearly, everything ahead of you is uncovered. The client, at
+     * 2:06 of a 24:46 video, was told "Diese Stellen fehlen noch: 2:06–24:46.
+     * Spulen Sie dorthin" over a player that refuses to spool forward — an
+     * instruction the system will not carry out (§9.2), in place of the one
+     * thing worth saying, which is that nothing is wrong.
+     *
+     * P102-01 guarded `covered.length === 0` and stopped there, so a learner
+     * who had watched a single second got the sentence back.
+     */
+    renderPlayer({
+      lesson: lesson({
+        durationSec: 15,
+        watchedPercent: 20,
+        watchedSegments: [{ startSec: 0, endSec: 3 }],
+      }),
+    });
+
+    expect(screen.queryByText(/Diese Stellen fehlen noch/u)).toBeNull();
+  });
+
+  it("still names an interior hole while the tail is also unwatched", () => {
+    /*
+     * The guard on the case above: the message must not disappear altogether.
+     * 0:00–0:02 is behind the furthest point reached, so seeking back to it is
+     * permitted and naming it is actionable; 0:08 onwards is the rest of the
+     * video and is not mentioned.
+     */
+    renderPlayer({
+      lesson: lesson({
+        durationSec: 15,
+        watchedPercent: 40,
+        watchedSegments: [{ startSec: 2, endSec: 8 }],
+      }),
+    });
+
+    const message = screen.getByText(/Diese Stellen fehlen noch/u);
+    expect(message.textContent).toContain("0:00–0:02");
+    expect(message.textContent).not.toContain("0:08");
+  });
 });
 
 describe("how often the player talks to the server (P156-01)", () => {

@@ -40,6 +40,7 @@ function harness(
     rememberAsset?: (entry: LibraryEntry) => Promise<void>;
     listAssets?: UploadRepositoryPort["listAssets"];
     findAsset?: UploadRepositoryPort["findAsset"];
+    findAssetByKey?: UploadRepositoryPort["findAssetByKey"];
     describeAsset?: UploadRepositoryPort["describeAsset"];
     countAssetUses?: UploadRepositoryPort["countAssetUses"];
     countUsesFor?: UploadRepositoryPort["countUsesFor"];
@@ -56,6 +57,7 @@ function harness(
     // whole rather than cast away, which is what keeps a new method from
     // silently going untested everywhere at once.
     findAsset: overrides.findAsset ?? (async () => undefined),
+    findAssetByKey: overrides.findAssetByKey ?? (async () => undefined),
     describeAsset: overrides.describeAsset ?? (async () => false),
     countAssetUses: overrides.countAssetUses ?? (async () => 0),
     // The page-wide count behind `usedByCount` (P88-01). Empty by default,

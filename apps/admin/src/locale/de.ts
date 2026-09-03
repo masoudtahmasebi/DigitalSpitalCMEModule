@@ -850,6 +850,17 @@ export const german = {
     durationDetectFailed:
       "Die Länge konnte nicht aus der Datei gelesen werden. Das kommt bei Servern ohne CORS-Freigabe und bei adaptiven Streams vor — bitte die Länge in Sekunden eintragen und mit der tatsächlichen Videolänge vergleichen.",
     /**
+     * The other cause, which used to be reported as the one above (P161-03).
+     *
+     * The message above is for a file the browser reached and could not read.
+     * This one is for a reference the API would not sign at all — the browser
+     * never saw the file. Naming CORS for that sends an author to a bucket
+     * policy that is not the problem, which is the mistake §11 is about and
+     * P70-01 is the price of.
+     */
+    durationUnreadable:
+      "Auf diese Datei konnte nicht zugegriffen werden — die Vorschau und die Längenmessung wurden von der Plattform abgelehnt, nicht vom Speicher. Bitte die Datei erneut aus der Mediathek wählen oder neu hochladen; wenn das bleibt, ist es ein Fehler und kein Einstellungsproblem.",
+    /**
      * Why the button is not there at all (P68-02).
      *
      * The message above is for a probe that ran and failed. This one is for the
@@ -883,6 +894,24 @@ export const german = {
       count === 1 ? "1 Teilnahme erfasst" : `${count} Teilnahmen erfasst`,
     lockedByRecords:
       "Kann nicht gelöscht werden: es sind bereits Teilnahmen erfasst. Diese Daten sind der Nachweis für bereits vergebene Punkte.",
+    /**
+     * Still has something inside it (P162-02).
+     *
+     * The API has always refused this — `chapters.module_id` and
+     * `contents.chapter_id` are `ON DELETE RESTRICT` — but until P162-01 the
+     * refusal was a foreign-key violation and reached the operator as
+     * „Internal server error“. Now it is a 409 with a sentence, and the button
+     * that produces it is disabled before it is pressed, which is the half that
+     * makes it an answer rather than an error (§9.2).
+     *
+     * It names the count, because "delete the things inside first" is only
+     * actionable if you know how many and of what.
+     */
+    lockedByChildren: (count: number, what: string): string =>
+      `Kann nicht gelöscht werden: enthält noch ${String(count)} ${what}. Diese müssen zuerst gelöscht werden.`,
+    childChapters: (count: number): string => (count === 1 ? "Kapitel" : "Kapitel"),
+    childContents: (count: number): string => (count === 1 ? "Inhalt" : "Inhalte"),
+    childQuestions: (count: number): string => (count === 1 ? "Frage" : "Fragen"),
     /**
      * The two words on the row; `lockedByRecords` stays as its title and
      * accessible name (P100-01).
