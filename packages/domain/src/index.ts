@@ -48,8 +48,10 @@ export type {
  * from the other direction — it reported both as exported and uncalled.
  */
 export {
+  fillSamplingGaps,
   isSeekAllowed,
   MAX_PLAYBACK_RATE,
+  SAMPLING_GAP_MAX_SEC,
   maxWatchedPosition,
   SEEK_CEILING_TOLERANCE_SEC,
   mergeWatchedSegments,

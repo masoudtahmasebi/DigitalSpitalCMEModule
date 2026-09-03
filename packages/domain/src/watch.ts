@@ -140,6 +140,79 @@ export const MAX_PLAYBACK_RATE = 2;
 export const SEEK_CEILING_TOLERANCE_SEC = 0.5;
 
 /**
+ * The widest hole that can be a sampling artefact rather than content
+ * (P158-02).
+ *
+ * Bounded twice, because one bound is wrong at one end of the range. A minute
+ * is generous for a forty-minute Fortbildung and absurd for a ten-second one —
+ * the client asked exactly that: *"what happens if a video is only 10 seconds
+ * long?"* So it is also capped at a tenth of the video, which keeps the rule
+ * about jitter rather than about content whatever the length.
+ */
+export const SAMPLING_GAP_MAX_SEC = 60;
+const SAMPLING_GAP_FRACTION = 0.1;
+
+/**
+ * Close the holes a sampling clock leaves, and nothing else.
+ *
+ * ## What the holes are
+ *
+ * `timeupdate` fires about four times a second and browsers throttle it freely.
+ * A real forty-minute session arrived with **thirteen** interior gaps totalling
+ * 37.52 s — the largest exactly 5.000 s — after the learner had watched the
+ * video from end to end. The screen said 98 % and named three of them, and the
+ * learner was asked to go back and re-watch seconds they had already seen.
+ *
+ * ## Why this is not the rule that had to be reverted
+ *
+ * S32's first form credited every whole minute below the furthest point
+ * reached, and an existing test caught it immediately: a learner drags to 09:55
+ * of a ten-minute video, the client posts one five-second fragment, and nine
+ * unwatched minutes are credited. The lesson was that the seek ceiling
+ * constrains the *player*, not the API — anything that can post a segment can
+ * put one anywhere.
+ *
+ * This bridges only **between two watched regions**. A single fragment has no
+ * neighbour, so nothing is bridged and the drag case is refused structurally
+ * rather than by a threshold. Nothing is ever added before the first segment or
+ * after the last, so an unwatched beginning stays unwatched and an unwatched end
+ * stays unwatched — which is what the completion gate actually reads.
+ *
+ * A gap wide enough to be content is left alone. To have it bridged, a client
+ * would have to post coverage on *both* sides of every hole, at most a minute
+ * apart, all the way through — which is watching the video with extra steps.
+ *
+ * Derived, never stored: the reported union stays the evidence.
+ */
+export function fillSamplingGaps(
+  segments: readonly WatchedSegment[],
+  durationSec: number,
+): readonly WatchedSegment[] {
+  const merged = mergeWatchedSegments(segments);
+  if (merged.length < 2) return merged;
+
+  const limit = Math.min(
+    SAMPLING_GAP_MAX_SEC,
+    Number.isFinite(durationSec) && durationSec > 0
+      ? durationSec * SAMPLING_GAP_FRACTION
+      : SAMPLING_GAP_MAX_SEC,
+  );
+
+  const out: WatchedSegment[] = [];
+  let open = merged[0]!;
+  for (const next of merged.slice(1)) {
+    if (next.startSec - open.endSec <= limit) {
+      open = { startSec: open.startSec, endSec: next.endSec };
+      continue;
+    }
+    out.push(open);
+    open = next;
+  }
+  out.push(open);
+  return out;
+}
+
+/**
  * Merge overlapping and adjacent intervals into a minimal disjoint set.
  *
  * Adjacent intervals touching at a point (`[0,10]` and `[10,20]`) are merged —
@@ -462,13 +535,37 @@ export function validateSegments(
 
   let claimed = 0;
 
-  for (const segment of segments) {
-    const reason = rejectionReason(segment, options.durationSec);
+  for (const reported of segments) {
+    const reason = rejectionReason(reported, options.durationSec);
 
     if (reason !== undefined) {
-      rejected.push({ segment, reason });
+      rejected.push({ segment: reported, reason });
       continue;
     }
+
+    /*
+     * A tail that runs past the stored duration is clamped, not discarded
+     * (P158-01).
+     *
+     * Browsers do not stop `currentTime` exactly at `duration`: at `ended` it
+     * can be a fraction beyond, and the stored length is an authored number
+     * that need not match the file to the millisecond either. Rejecting the
+     * whole segment for that overshoot threw away every second of the run-up
+     * with it — a real session lost 6.369 s because its last sample was
+     * 0.282667 s past the end, and `accepted` came back **0** after somebody
+     * had watched the video to the finish.
+     *
+     * Every video's final segment meets this, which is why "I watched the whole
+     * thing" and a percentage short of a hundred kept arriving together.
+     *
+     * Clamping credits only seconds that exist. A segment lying *entirely* past
+     * the end is still refused by `rejectionReason` above — there is nothing in
+     * it to keep.
+     */
+    const segment =
+      reported.endSec > options.durationSec
+        ? { startSec: reported.startSec, endSec: options.durationSec }
+        : reported;
 
     const length = segment.endSec - segment.startSec;
 
@@ -493,7 +590,20 @@ function rejectionReason(
   }
   if (segment.startSec < 0 || segment.endSec < 0) return "negative";
   if (segment.endSec <= segment.startSec) return "zero_or_reversed";
-  if (segment.endSec > durationSec) return "beyond_duration";
+  /*
+   * Past the end by more than jitter, or past it entirely (P158-01).
+   *
+   * A tail that overshoots by a fraction of a second is a browser reporting
+   * `currentTime` at `ended`, and the caller clamps it. An overshoot of five
+   * hundred seconds on a fifteen-hundred-second video is not jitter, it is a
+   * claim, and the pre-existing test that pins it is right: `[0, 2000]` on a
+   * 1500 s video stays refused.
+   *
+   * `TAIL_GRACE_SEC` is the boundary because it is already this file's answer
+   * to "how close to the end counts as the end".
+   */
+  if (segment.startSec >= durationSec) return "beyond_duration";
+  if (segment.endSec > durationSec + TAIL_GRACE_SEC) return "beyond_duration";
   return undefined;
 }
 
