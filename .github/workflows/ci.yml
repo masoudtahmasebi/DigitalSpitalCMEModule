@@ -123,6 +123,13 @@ jobs:
           # a11y floor sat last in the file — so all four components that
           # styled their own focus state were drawn over, silently.
           node scripts/check-focus-ring.mjs
+          # A ticket number means one file. Two sessions filed under P158 on
+          # the same day, git concatenated both documents into one path on the
+          # merge, and only Prettier's missing blank line said anything — the
+          # two tickets sharing one number were invisible. It also found P107,
+          # P108, P98 and P99, which had lived inside other files since they
+          # were written and could not be reached by their own numbers.
+          node scripts/check-backlog-numbers.mjs
 
       - name: Build
         run: pnpm build
