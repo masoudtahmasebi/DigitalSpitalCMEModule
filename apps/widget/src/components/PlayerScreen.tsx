@@ -65,6 +65,7 @@ import {
   locateContent,
   nextAvailableContent,
   playbackDuration,
+  recordedQuizScore,
 } from "../player.js";
 import { useReportPlayerStatus } from "../player-status.js";
 import { LessonScreen, type PlaybackState } from "./LessonScreen.js";
@@ -118,6 +119,17 @@ export function PlayerScreen(props: {
   // every module must offer *this* module's, and a module without one must
   // offer none.
   const quiz = findQuizContent(course, state, lesson.id);
+  /*
+   * Whether that exam is already behind them (P176-01).
+   *
+   * `scorePercent` is recorded by `upsertQuizProgress` only when an attempt has
+   * been graded, and the row carries the best of them — so its presence is the
+   * server's own answer to "has this been sat", and the *pass* is decided by
+   * comparing it to the course's threshold, which is the one `EnrolmentState`
+   * carries and the gate uses.
+   */
+  const quizScore = quiz === undefined ? undefined : recordedQuizScore(state, quiz.id);
+  const quizPassed = quizScore !== undefined && quizScore >= state.passThresholdPercent;
   /*
    * Where the learner goes after this section (P78-02).
    *
@@ -192,7 +204,22 @@ export function PlayerScreen(props: {
           ? []
           : [
               {
-                label: de.player.quizBegin,
+                /*
+                 * "beginnen" only while there is something to begin (P176-01).
+                 *
+                 * P170-01 closed the sitting once an exam is passed and took
+                 * the button off the exam's own intro. This one is drawn by a
+                 * different component, under the module list, and went on
+                 * offering to *start* an exam whose screen then says it cannot
+                 * be sat again — which is what the client met, both sentences
+                 * on screen at once.
+                 *
+                 * The control is kept rather than hidden: the screen behind it
+                 * carries the score and the way on to the Punktemeldung or the
+                 * next section, and a physician who has just passed has every
+                 * reason to open it. It is the verb that was wrong.
+                 */
+                label: quizPassed ? de.player.quizReview : de.player.quizBegin,
                 variant: "cta" as const,
                 disabled: false,
                 run: quizOpen,

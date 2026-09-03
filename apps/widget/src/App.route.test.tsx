@@ -261,7 +261,7 @@ function renderCatalogue() {
   );
 }
 
-function renderApp(openAt?: "start" | "resume" | "certify") {
+function renderApp(openAt?: "start" | "resume" | "certify" | "certificate") {
   return render(
     <App
       apiBase="https://api.test"
@@ -633,5 +633,49 @@ describe("returning to the catalogue", () => {
       expect(screen.queryByRole("tab", { name: "Zertifizierung" })).toBeNull();
     });
     expect(screen.getAllByRole("tab", { name: /On Demand/u }).length).toBeGreaterThan(0);
+  });
+});
+
+/*
+ * P176-02. `open-at="certificate"` — the catalogue's finished card.
+ *
+ * The card says "Abgeschlossen – Teilnahmebescheinigung verfügbar", and the
+ * client asked where the document actually is. It is on the Zertifizierung tab,
+ * so that is where the intent lands — and, like `certify`, it is a request the
+ * server's own answer grants or refuses.
+ */
+describe("opening a course on its Teilnahmebescheinigung", () => {
+  it("lands on the Zertifizierung tab when the course is certified", async () => {
+    stubEnrolment(
+      finishedUncertified({
+        complete: true,
+        completedAt: "2026-09-01T10:00:00Z",
+        outstanding: [],
+      } as Partial<EnrolmentState>),
+    );
+
+    renderApp("certificate");
+
+    await waitFor(() => {
+      expect(selectedTab()).toBe("Zertifizierung");
+    });
+    expect(window.location.hash).toBe("#ds/zertifizierung");
+  });
+
+  it("ignores the intent when there is no certificate yet", async () => {
+    /*
+     * A finished-but-unclaimed course has no Bescheid, and the tab would draw
+     * "noch nicht verfügbar" under a promise the card had just made. The
+     * settle signal is the progress card's own line, for the reason spelled
+     * out in the `certify` case above: a `waitFor` on the tab passes on the
+     * first tick, before the enrolment has arrived.
+     */
+    stubEnrolment(finishedUncertified());
+
+    renderApp("certificate");
+
+    await screen.findByText(/Sie haben \d+ von \d+ Modul/u);
+
+    expect(selectedTab()).toBe("Übersicht");
   });
 });

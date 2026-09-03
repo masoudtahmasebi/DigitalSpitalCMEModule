@@ -809,6 +809,80 @@ describe("a level that still has something inside it refuses, rather than failin
     expect(body.detail).toContain("Fragen");
   });
 
+  it("refuses a content whose only trace is a quiz attempt (P176-03)", async () => {
+    /*
+     * The third foreign key. `contents` is referenced with ON DELETE RESTRICT
+     * by `content_progress`, `quiz_questions` **and** `quiz_attempts`; P162-01
+     * guarded the first two, and the only reason the third was not a 500 is an
+     * invariant nothing enforces — `submit` writes an attempt and a progress row
+     * together, so the progress row was always there to be counted.
+     *
+     * Written directly in SQL because the API cannot produce this state, which
+     * is the point: the guard must hold on the schema's terms, not on the happy
+     * path's. Without the fix this DELETE reaches Postgres and comes back a 500.
+     */
+    // Its own module: a module may hold one Lernerfolgskontrolle (P87-06), and
+    // this describe's fixture has already used the one on `moduleId`.
+    const ownModule = await asAdmin("POST", `/admin/courses/${courseSlug}/modules`, {
+      title: "P176 Modul",
+    });
+    expect(ownModule.status, JSON.stringify(ownModule.body)).toBe(201);
+    const ownModuleId = ownModule.body.modules.find(
+      (m: any) => m.title === "P176 Modul",
+    ).id;
+
+    const ownChapter = await asAdmin("POST", `/admin/modules/${ownModuleId}/chapters`, {
+      title: "P176 Kapitel",
+    });
+    expect(ownChapter.status, JSON.stringify(ownChapter.body)).toBe(201);
+    const ownChapterId = ownChapter.body.modules
+      .find((m: any) => m.id === ownModuleId)
+      .chapters.find((c: any) => c.title === "P176 Kapitel").id;
+
+    const attemptQuiz = await asAdmin(
+      "POST",
+      `/admin/chapters/${ownChapterId}/contents`,
+      {
+        kind: "quiz",
+        title: "P176 Lernerfolgskontrolle",
+      },
+    );
+    expect(attemptQuiz.status, JSON.stringify(attemptQuiz.body)).toBe(201);
+    const attemptQuizId = attemptQuiz.body.modules
+      .flatMap((m: any) => m.chapters)
+      .flatMap((c: any) => c.contents)
+      .find((x: any) => x.title === "P176 Lernerfolgskontrolle").id;
+
+    const { rows } = await seedPool.query<{ id: string }>(
+      `SELECT id, customer_id FROM enrolments LIMIT 1`,
+    );
+    const enrolmentId = rows[0]?.id;
+    expect(
+      enrolmentId,
+      "the fixture needs one enrolment to hang an attempt on",
+    ).toBeDefined();
+
+    await seedPool.query(
+      `INSERT INTO quiz_attempts
+         (customer_id, enrolment_id, content_id, attempt_number,
+          correct_count, total_count, score_percent, passed)
+       SELECT e.customer_id, e.id, $2, 1, 1, 1, 100, true
+         FROM enrolments e WHERE e.id = $1`,
+      [enrolmentId, attemptQuizId],
+    );
+
+    const { status, body } = await asAdmin("DELETE", `/admin/contents/${attemptQuizId}`);
+
+    expect(status, JSON.stringify(body)).toBe(409);
+
+    await seedPool.query(`DELETE FROM quiz_attempts WHERE content_id = $1`, [
+      attemptQuizId,
+    ]);
+    expect((await asAdmin("DELETE", `/admin/contents/${attemptQuizId}`)).status).toBe(
+      200,
+    );
+  });
+
   it("deletes each of them once it is empty, innermost first", async () => {
     const emptied = await asAdmin("PUT", `/admin/contents/${quizId}/quiz`, {
       questions: [],

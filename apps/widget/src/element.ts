@@ -100,6 +100,8 @@ function readOpenAt(value: string | null): OpenIntent {
       return "resume";
     case "certify":
       return "certify";
+    case "certificate":
+      return "certificate";
     default:
       return "start";
   }

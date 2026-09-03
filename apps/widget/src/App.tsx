@@ -602,6 +602,33 @@ function Loaded(props: {
   }, [props.openAt, enrolment.data]);
 
   /*
+   * `open-at="certificate"` — the catalogue's finished card (P176-02).
+   *
+   * P168-04 gave a certified course its own line on the card,
+   * "Abgeschlossen – Teilnahmebescheinigung verfügbar", and then left the
+   * physician to find the document themselves: *"where can one download it?"*
+   * The Teilnahmebescheinigung is on the Zertifizierung tab, so that is where
+   * this lands — the tab, not a download, because the tab is what holds the
+   * accreditation, the conditions and the button, and a file that arrives with
+   * no page around it is a file nobody can check.
+   *
+   * Once, like the two intents above, and granted only on the server's own
+   * `completedAt`: before a completion is recorded there is no certificate to
+   * fetch, and the tab would draw "noch nicht verfügbar" under a promise the
+   * card had just made.
+   */
+  const certificateOpened = useRef(false);
+  useEffect(() => {
+    if (props.openAt !== "certificate" || certificateOpened.current) return;
+    const state = enrolment.data;
+    if (state === undefined) return;
+    certificateOpened.current = true;
+    if (state.completedAt === null) return;
+    setScreen({ kind: "outline" });
+    setTab("certification");
+  }, [props.openAt, enrolment.data]);
+
+  /*
    * The spinner is for the **first** load only.
    *
    * `refresh()` sets `loading` again, and this used to be a bare

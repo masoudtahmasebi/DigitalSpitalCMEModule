@@ -449,4 +449,58 @@ describe("the call to action comes from the server, not from the card", () => {
       screen.queryByRole("button", { name: "CME-Punkte geltend machen" }),
     ).toBeNull();
   });
+
+  /*
+   * P176-02. The line said the document was available and nothing on the card
+   * went there — *"where can one download it?"*
+   */
+  it("offers the way to the Teilnahmebescheinigung it just named", async () => {
+    const onOpen = vi.fn();
+    const listCourses = vi.fn(async () => ({
+      items: [course("k1", { enrolment: { courseComplete: true, complete: true } })],
+      total: 1,
+      page: 1,
+      perPage: 10,
+      facets: { thema: [], altersgruppe: [] },
+    }));
+
+    render(
+      <CourseList
+        client={{ listCourses } as unknown as ApiClient}
+        branding={{}}
+        onOpen={onOpen}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Zur Teilnahmebescheinigung" }),
+    );
+
+    expect(onOpen).toHaveBeenCalledWith("k1", "certificate");
+  });
+
+  it("does not offer it on a course that is not certified", async () => {
+    // The guard: a finished-but-unclaimed course has no Bescheid yet, and the
+    // card already offers the Punktemeldung instead.
+    const listCourses = vi.fn(async () => ({
+      items: [course("k1", { enrolment: finishedNotCertified })],
+      total: 1,
+      page: 1,
+      perPage: 10,
+      facets: { thema: [], altersgruppe: [] },
+    }));
+
+    render(
+      <CourseList
+        client={{ listCourses } as unknown as ApiClient}
+        branding={{}}
+        onOpen={() => {}}
+      />,
+    );
+
+    await screen.findByRole("button", { name: "CME-Punkte geltend machen" });
+    expect(
+      screen.queryByRole("button", { name: "Zur Teilnahmebescheinigung" }),
+    ).toBeNull();
+  });
 });

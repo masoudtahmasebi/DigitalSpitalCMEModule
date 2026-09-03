@@ -434,6 +434,67 @@ describe("the Lernerfolgskontrolle in the module outline", () => {
     expect(onOpen).toHaveBeenCalledWith("quiz3");
   });
 
+  /*
+   * P176-01. The verb has to agree with what the exam screen will say.
+   *
+   * The client, with both sentences on screen at once: *"i have `Sie haben
+   * diese Lernerfolgskontrolle bereits mit 100 % bestanden. Sie kann nicht
+   * erneut abgelegt werden` but i still have the button to
+   * `Lernerfolgskontrolle beginnen`."*
+   *
+   * P170-01 closed the sitting and took the button off the exam's own intro.
+   * This control is drawn by `PlayerScreen`, under the module list, and kept
+   * offering to start it — §9.2 in the softest form it takes, a control that
+   * does not error, it just promises the wrong thing.
+   */
+  function passedQuiz(base: EnrolmentState, module: number, score: number) {
+    const id = quizId(module);
+    return {
+      ...withQuizOpen(base, module),
+      modules: withQuizOpen(base, module).modules.map((entry) => ({
+        ...entry,
+        chapters: entry.chapters.map((chapter) => ({
+          ...chapter,
+          contents: chapter.contents.map((content) =>
+            content.id === id
+              ? { ...content, progress: { ...content.progress, scorePercent: score } }
+              : content,
+          ),
+        })),
+      })),
+    };
+  }
+
+  it("offers to begin an exam nobody has passed", () => {
+    renderPlayer({ state: withQuizOpen(state(), 3) });
+
+    expect(screen.getByRole("button", { name: de.player.quizBegin })).toBeTruthy();
+  });
+
+  it("offers to review one that is already passed, not to begin it", () => {
+    renderPlayer({ state: passedQuiz(state(), 3, 100) });
+
+    expect(screen.queryByRole("button", { name: de.player.quizBegin })).toBeNull();
+    expect(screen.getByRole("button", { name: de.player.quizReview })).toBeTruthy();
+  });
+
+  it("still says begin when the recorded score is below the pass mark", () => {
+    // A failed attempt leaves a score behind. The exam is still open, and
+    // P170-01 still lets it be sat, so the verb is right.
+    renderPlayer({ state: passedQuiz(state(), 3, 40) });
+
+    expect(screen.getByRole("button", { name: de.player.quizBegin })).toBeTruthy();
+  });
+
+  it("keeps opening the exam either way", () => {
+    // The destination is unchanged: this is a label fix, not a navigation one.
+    const onOpen = vi.fn();
+    renderPlayer({ onOpen, state: passedQuiz(state(), 3, 100) });
+
+    fireEvent.click(screen.getByRole("button", { name: de.player.quizReview }));
+    expect(onOpen).toHaveBeenCalledWith("quiz3");
+  });
+
   it("tells several exams apart by the module they sit in", () => {
     /*
      * The fixture's two exams are **both** titled "Lernerfolgskontrolle",
