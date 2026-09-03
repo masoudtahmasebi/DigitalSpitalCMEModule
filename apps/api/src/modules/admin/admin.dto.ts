@@ -248,6 +248,43 @@ export const eivStateSchema = z.enum([
   "withdrawn",
 ]);
 
+/**
+ * A certificate's delivery, as the participant list needs it (P179-01).
+ *
+ * Every field has been in the database since P8-03 or P118-02 and returned by
+ * nothing. That is §9.3 one layer out: not a rule nobody calls, but a
+ * *diagnosis nobody can read*, on the one screen where somebody is trying to
+ * help a physician who has not received their Teilnahmebescheinigung.
+ */
+export const certificateDeliverySchema = z.object({
+  /** Keys the resend, regenerate, revoke and download routes. */
+  id: z.uuid(),
+  /**
+   * Why delivery was given up on (P118-02), or null while it has not been.
+   * Decides whether resending could possibly land: `no_recipient` and
+   * `permanent_rejection` cannot, and offering the button for them is §9.2.
+   */
+  abandonedReason: z
+    .enum(["no_recipient", "permanent_rejection", "attempts_exhausted"])
+    .nullable(),
+  /**
+   * The channel's own words for the last failure — `SMTP 550`,
+   * `ECONNREFUSED`, `no SMTP host configured`, `unknown transport error`.
+   *
+   * A fixed vocabulary, not the far end's prose. `DeliveryChannel` in
+   * `@ds/plugin-api` forbids a reason that carries the recipient or the
+   * transport credentials; `classify` in `@ds/mail` produces only the strings
+   * above; and `smtp.test.ts` asserts an address never reaches the outcome. So
+   * this is safe to show an operator who can already see the participant's
+   * address one column to the left (§9.5).
+   */
+  lastError: z.string().nullable(),
+  attemptCount: z.number().int().nonnegative(),
+  firstAttemptAt: z.iso.datetime().nullable(),
+  /** When the sweep will try again, or null if it will not. */
+  nextAttemptAt: z.iso.datetime().nullable(),
+});
+
 export const participantRowSchema = z.object({
   enrolmentId: z.uuid(),
   /**
@@ -277,7 +314,57 @@ export const participantRowSchema = z.object({
   eivState: eivStateSchema,
   eivAttempts: z.number().int().nonnegative(),
   eivReportDueAt: z.iso.datetime().nullable(),
-  certificateState: z.enum(["none", "pending", "issued", "delivered", "bounced"]),
+  /**
+   * The document's state. `revoked` was missing until P179-01 — `certificates`
+   * has carried it since migration 0023, `certificate?.status` passes it
+   * straight through, and the console then rendered an empty cell for a
+   * certificate somebody had deliberately withdrawn.
+   */
+  certificateState: z.enum([
+    "none",
+    "pending",
+    "issued",
+    "delivered",
+    "bounced",
+    "revoked",
+  ]),
+  /**
+   * Why it is in that state, and what can be done about it (P179-01).
+   *
+   * Separate from `certificateState` rather than folded into it: the state is
+   * one value with one home, and this is the diagnosis. Null when no
+   * certificate exists — which `certificateState: "none"` already says, so
+   * nothing here has to be read to know that.
+   *
+   * The client asked for exactly this, having been shown a single word:
+   *
+   *   > what does `undeliverable` mean, i need a retry button, i need error
+   *   > handling, i need debugging
+   */
+  certificate: certificateDeliverySchema.nullable(),
+  /**
+   * The last four digits of the physician's EFN, or null (P179-03).
+   *
+   * `docs/gdpr.md` §2 said the admin surface carries `efnPresent` and never the
+   * number; it is amended with this ticket, and the amendment is narrow. Two
+   * admin screens have masked EFNs already — Lernende since P12-05,
+   * Punktemeldungen since P31 — and a support operator asked to sort out a
+   * wrong EFN on *this* screen was the one person who could not see enough to
+   * confirm which number was wrong.
+   *
+   * Eleven dots and four digits, from `maskEfn`. It confirms a number somebody
+   * is reading aloud and discloses nothing to anybody who does not already
+   * have it.
+   */
+  efnMasked: z.string().nullable(),
+  /**
+   * Whether the queued Punktemeldung will send a different EFN from the one on
+   * the physician's profile (P179-03). Null when there is nothing to compare.
+   *
+   * A boolean rather than the two values, for the reason `efnMasked` is
+   * masked: the operator needs the fact, not the identifiers.
+   */
+  efnDivergesFromReport: z.boolean().nullable(),
 });
 
 export const participantListSchema = z.object({
@@ -291,6 +378,7 @@ export type AdminCourseUpdate = z.infer<typeof adminCourseUpdateSchema>;
 export type CertificateAssetUpload = z.infer<typeof certificateAssetSchema>;
 export type FontUpload = z.infer<typeof fontUploadSchema>;
 export type FontState = z.infer<typeof fontStateSchema>;
+export type CertificateDelivery = z.infer<typeof certificateDeliverySchema>;
 export type ParticipantRow = z.infer<typeof participantRowSchema>;
 export type ParticipantList = z.infer<typeof participantListSchema>;
 export type EivState = z.infer<typeof eivStateSchema>;

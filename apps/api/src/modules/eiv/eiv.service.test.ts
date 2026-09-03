@@ -74,22 +74,40 @@ function build(
       ...submitter,
     },
     audit,
-    {
-      baseUrl: options.baseUrl ?? "http://127.0.0.1:4010",
-      batchSize: 25,
-      allowLive: options.allowLive ?? false,
-      leaseSeconds: 120,
-    },
+    { batchSize: 25, leaseSeconds: 120 },
   );
 
-  return { service, successes, retries, failures, audits };
+  /*
+   * The register and the consent are a **sweep** argument now (P180-01), not a
+   * constructor option: they come from `platform_settings`, which an operator
+   * edits while the process is running, so capturing them at construction
+   * would have kept the old behaviour behind a new screen.
+   *
+   * `sweep` here closes over the fixture's values so the cases below read as
+   * they did, and the property that matters — that the target reaches
+   * `processOne` on every call — is what the wiring test in the scheduler
+   * covers.
+   */
+  const target = {
+    baseUrl: options.baseUrl ?? "http://127.0.0.1:4010",
+    allowLive: options.allowLive ?? false,
+  };
+
+  return {
+    service,
+    sweep: (now: Date) => service.sweep(now, target),
+    successes,
+    retries,
+    failures,
+    audits,
+  };
 }
 
 describe("a successful submission", () => {
   it("records the reference and marks it submitted", async () => {
-    const { service, successes } = build([base]);
+    const { sweep, successes } = build([base]);
 
-    const result = await service.sweep(NOW);
+    const result = await sweep(NOW);
 
     expect(result.submitted).toBe(1);
     expect(successes[0]?.["reference"]).toBe("EIV-REF-1");
@@ -108,9 +126,9 @@ describe("a successful submission", () => {
      * Seven days from the submission, to the end of that day in Berlin, which
      * is the rule `eivDeadlines` states and the Bescheid's correction window.
      */
-    const { service, successes } = build([base]);
+    const { sweep, successes } = build([base]);
 
-    await service.sweep(NOW);
+    await sweep(NOW);
 
     expect(successes[0]?.["firstSubmittedAt"]).toEqual(NOW);
     expect(successes[0]?.["correctionWindowEndsAt"]).toEqual(
@@ -123,9 +141,9 @@ describe("a successful submission", () => {
     // window opens when the *first* Meldung lands, and a row that resubmitted
     // on day three does not get ten days to correct.
     const firstSubmittedAt = new Date("2026-06-28T09:00:00Z");
-    const { service, successes } = build([{ ...base, firstSubmittedAt }]);
+    const { sweep, successes } = build([{ ...base, firstSubmittedAt }]);
 
-    await service.sweep(NOW);
+    await sweep(NOW);
 
     expect(successes[0]?.["firstSubmittedAt"]).toEqual(firstSubmittedAt);
     expect(successes[0]?.["correctionWindowEndsAt"]).toEqual(
@@ -136,9 +154,9 @@ describe("a successful submission", () => {
   it("audits the submission without the EFN or the password", async () => {
     // CLAUDE.md §4 invariants 7 and 8: every attempt is audited, and neither
     // the EFN nor the VNR password may appear in that trail.
-    const { service, audits } = build([base]);
+    const { sweep, audits } = build([base]);
 
-    await service.sweep(NOW);
+    await sweep(NOW);
 
     const entry = audits.find((a) => a.entry.action === "eiv.submitted");
     expect(entry).toBeDefined();
@@ -156,7 +174,7 @@ describe("a successful submission", () => {
      * but the audit log is the only place the difference survives. Without it,
      * "why does this physician have two entries" has no answer at all.
      */
-    const { service, audits } = build([base], {
+    const { sweep, audits } = build([base], {
       report: async () => ({
         accepted: true,
         reference: "EIV-REF-1",
@@ -164,7 +182,7 @@ describe("a successful submission", () => {
       }),
     });
 
-    await service.sweep(NOW);
+    await sweep(NOW);
 
     const entry = audits.find((a) => a.entry.action === "eiv.submitted");
     expect(entry?.entry.detail?.["status"]).toBe("BEREITS_GEMELDET");
@@ -173,9 +191,9 @@ describe("a successful submission", () => {
   it("records a null status when the authority sent none", async () => {
     // Absent is not the same as unknown-but-present, and a reporter for a
     // second Ärztekammer may not answer with one at all.
-    const { service, audits } = build([base]);
+    const { sweep, audits } = build([base]);
 
-    await service.sweep(NOW);
+    await sweep(NOW);
 
     const entry = audits.find((a) => a.entry.action === "eiv.submitted");
     expect(entry?.entry.detail?.["status"]).toBeNull();
@@ -183,14 +201,14 @@ describe("a successful submission", () => {
 
   it("passes the credentials to the reporter but never returns them", async () => {
     let seen: ParticipationReport | undefined;
-    const { service } = build([base], {
+    const { sweep } = build([base], {
       report: async (input) => {
         seen = input;
         return { accepted: true };
       },
     });
 
-    const result = await service.sweep(NOW);
+    const result = await sweep(NOW);
 
     expect(seen?.efn).toBe(EFN);
     // Under `credentials`, opaque to the platform and named by the reporter —
@@ -211,9 +229,9 @@ describe("a retryable failure", () => {
   };
 
   it("schedules the next attempt 10 minutes out", async () => {
-    const { service, retries } = build([base], transportFailure);
+    const { sweep, retries } = build([base], transportFailure);
 
-    const result = await service.sweep(NOW);
+    const result = await sweep(NOW);
 
     expect(result.retrying).toBe(1);
     expect(retries[0]?.["attemptCount"]).toBe(1);
@@ -221,21 +239,21 @@ describe("a retryable failure", () => {
   });
 
   it("stores the failure kind, never the exchange body", async () => {
-    const { service, retries } = build([base], transportFailure);
+    const { sweep, retries } = build([base], transportFailure);
 
-    await service.sweep(NOW);
+    await sweep(NOW);
 
     expect(retries[0]?.["failure"]).toBe("transport");
     expect(JSON.stringify(retries[0])).not.toContain(EFN);
   });
 
   it("gives up after the fourth attempt and alerts", async () => {
-    const { service, failures, audits } = build(
+    const { sweep, failures, audits } = build(
       [{ ...base, attemptCount: 3, lastError: "transport" }],
       transportFailure,
     );
 
-    const result = await service.sweep(NOW);
+    const result = await sweep(NOW);
 
     expect(result.abandoned).toBe(1);
     expect(failures[0]?.["reason"]).toBe("attempts_exhausted");
@@ -247,13 +265,13 @@ describe("a permanent rejection is not retried", () => {
   it("abandons a validation rejection on the first failure", async () => {
     // Retrying an EFN the Ärztekammer does not recognise spends the statutory
     // window to no purpose and hides the problem until it has closed.
-    const { service, failures, retries } = build([base], {
+    const { sweep, failures, retries } = build([base], {
       report: async () => {
         throw new EivError("validation", "unknown EFN");
       },
     });
 
-    const result = await service.sweep(NOW);
+    const result = await sweep(NOW);
 
     expect(result.abandoned).toBe(1);
     expect(retries).toEqual([]);
@@ -262,13 +280,13 @@ describe("a permanent rejection is not retried", () => {
   });
 
   it("abandons an auth rejection — the credentials need a human", async () => {
-    const { service, failures } = build([base], {
+    const { sweep, failures } = build([base], {
       report: async () => {
         throw new EivError("auth", "VNR credentials rejected");
       },
     });
 
-    await service.sweep(NOW);
+    await sweep(NOW);
 
     expect(failures[0]?.["reason"]).toBe("permanent_rejection");
   });
@@ -278,11 +296,11 @@ describe("the statutory windows", () => {
   it("marks a missed reporting window distinctly from a permanent failure", async () => {
     // The admin needs to tell these apart: one means the paper route is now
     // the only option, the other means someone can fix and resend.
-    const { service, failures, audits } = build([
+    const { sweep, failures, audits } = build([
       { ...base, eventEndAt: new Date("2026-06-01T12:00:00Z") },
     ]);
 
-    const result = await service.sweep(NOW);
+    const result = await sweep(NOW);
 
     expect(result.abandoned).toBe(1);
     expect(failures[0]?.["reason"]).toBe("reporting_window_missed");
@@ -294,17 +312,14 @@ describe("the statutory windows", () => {
 
   it("does not submit at all once the window has closed", async () => {
     let called = false;
-    const { service } = build(
-      [{ ...base, eventEndAt: new Date("2026-06-01T12:00:00Z") }],
-      {
-        report: async () => {
-          called = true;
-          return { accepted: true };
-        },
+    const { sweep } = build([{ ...base, eventEndAt: new Date("2026-06-01T12:00:00Z") }], {
+      report: async () => {
+        called = true;
+        return { accepted: true };
       },
-    );
+    });
 
-    await service.sweep(NOW);
+    await sweep(NOW);
 
     expect(called).toBe(false);
   });
@@ -316,11 +331,11 @@ describe("scheduling is the claim query's job, not the service's", () => {
     // leases what it returns, so a row reaching the service is due by
     // definition. Keeping the interval check here as well would be a second
     // implementation of the same rule, and the two would drift.
-    const { service, successes } = build([
+    const { sweep, successes } = build([
       { ...base, attemptCount: 1, lastError: "transport" },
     ]);
 
-    const result = await service.sweep(NOW);
+    const result = await sweep(NOW);
 
     expect(result.submitted).toBe(1);
     expect(successes[0]?.["attemptCount"]).toBe(2);
@@ -332,7 +347,7 @@ describe("configuration guards", () => {
     // Submitting test data to the real Ärztekammer is not an error you can
     // take back, so the default is refusal.
     let called = false;
-    const { service, failures } = build(
+    const { sweep, failures } = build(
       [base],
       {
         report: async () => {
@@ -343,28 +358,28 @@ describe("configuration guards", () => {
       { baseUrl: "https://punktemeldung.eiv-fobi.de/", allowLive: false },
     );
 
-    await service.sweep(NOW);
+    await sweep(NOW);
 
     expect(called).toBe(false);
     expect(failures[0]?.["reason"]).toBe("live_submission_not_allowed");
   });
 
   it("submits to a live endpoint when explicitly allowed", async () => {
-    const { service, successes } = build(
+    const { sweep, successes } = build(
       [base],
       {},
       { baseUrl: "https://punktemeldung.eiv-fobi.de/", allowLive: true },
     );
 
-    await service.sweep(NOW);
+    await sweep(NOW);
 
     expect(successes).toHaveLength(1);
   });
 
   it("abandons rather than burning the budget when the VNR password is missing", async () => {
-    const { service, failures } = build([{ ...base, vnrPassword: null }]);
+    const { sweep, failures } = build([{ ...base, vnrPassword: null }]);
 
-    await service.sweep(NOW);
+    await sweep(NOW);
 
     expect(failures[0]?.["reason"]).toBe("missing_vnr_password");
     // Not a closed window — an admin can fix this and it will go through.
@@ -375,7 +390,7 @@ describe("configuration guards", () => {
 describe("sweeping a batch", () => {
   it("reports a tally across mixed outcomes", async () => {
     let call = 0;
-    const { service } = build(
+    const { sweep } = build(
       [
         { ...base, id: "a" },
         { ...base, id: "b" },
@@ -390,7 +405,7 @@ describe("sweeping a batch", () => {
       },
     );
 
-    const result = await service.sweep(NOW);
+    const result = await sweep(NOW);
 
     expect(result).toEqual({
       considered: 3,
@@ -402,7 +417,7 @@ describe("sweeping a batch", () => {
   });
 
   it("does not let one row's failure stop the rest of the sweep", async () => {
-    const { service, successes } = build(
+    const { sweep, successes } = build(
       [
         { ...base, id: "a" },
         { ...base, id: "b" },
@@ -417,7 +432,7 @@ describe("sweeping a batch", () => {
       },
     );
 
-    const result = await service.sweep(NOW);
+    const result = await sweep(NOW);
 
     expect(result.considered).toBe(2);
     expect(result.submitted + result.retrying).toBe(2);

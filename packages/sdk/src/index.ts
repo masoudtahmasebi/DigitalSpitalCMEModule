@@ -105,6 +105,13 @@ export type ProjectCreate = components["schemas"]["ProjectCreate"];
 export type ProjectUpdate = components["schemas"]["ProjectUpdate"];
 export type CourseCreate = components["schemas"]["CourseCreate"];
 export type CourseClone = components["schemas"]["CourseClone"];
+export type EivPlatformSettings = components["schemas"]["EivPlatformSettings"];
+/** The PATCH body: every field optional, an absent field left alone. */
+export type EivPlatformSettingsUpdate = {
+  readonly workerEnabled?: boolean;
+  readonly endpoint?: "mock" | "test" | "live";
+  readonly confirmLive?: true;
+};
 export type CourseStructure = components["schemas"]["CourseStructure"];
 export type AuthoringModule = components["schemas"]["AuthoringModule"];
 export type AuthoringChapter = components["schemas"]["AuthoringChapter"];
@@ -713,6 +720,17 @@ export function createClient(options: ClientOptions) {
       request(`/admin/learners/${seg(enrolmentId)}/eiv`, { method: "POST" }),
 
     /**
+     * Correct the EFN a queued Punktemeldung will send (P179-03).
+     *
+     * Edits **our outbound report**, never the physician's profile — that is
+     * theirs to write and only they may (`PUT /profile/efn`). Refused once the
+     * Ärztekammer has accepted the Meldung, and refused for a value that is
+     * already the one stored.
+     */
+    adminCorrectSubmissionEfn: (enrolmentId: string, efn: string): Promise<void> =>
+      request(`/admin/learners/${seg(enrolmentId)}/eiv/efn`, json({ efn }, "PATCH")),
+
+    /**
      * Withdraw a Punktemeldung. Not a deletion — EIV keeps the record with the
      * points zeroed, and refuses this outside the correction window.
      */
@@ -728,6 +746,40 @@ export function createClient(options: ClientOptions) {
 
     adminResendCertificate: (id: string): Promise<void> =>
       request(`/admin/certificates/${seg(id)}/resend`, { method: "POST" }),
+
+    /**
+     * The PDF, for an operator supporting the physician who did not get it
+     * (P179-02).
+     *
+     * Sends nothing and re-issues nothing — see the contract. The filename is
+     * the server's, so a forwarded document is named the same way the
+     * physician's own download is.
+     */
+    /**
+     * A sample Teilnahmebescheinigung for the course (P180-02).
+     *
+     * The event's real values, a synthetic participant, and the page says so.
+     * Issues nothing.
+     */
+    adminSampleCertificate: async (
+      slug: string,
+    ): Promise<{ blob: Blob; filename: string }> => {
+      const response = await requestBlob(`${adminCourse(slug)}/certificate/sample`);
+      return {
+        blob: await response.blob(),
+        filename: filenameFromDisposition(response.headers.get("content-disposition")),
+      };
+    },
+
+    adminDownloadCertificate: async (
+      id: string,
+    ): Promise<{ blob: Blob; filename: string }> => {
+      const response = await requestBlob(`/admin/certificates/${seg(id)}/pdf`);
+      return {
+        blob: await response.blob(),
+        filename: filenameFromDisposition(response.headers.get("content-disposition")),
+      };
+    },
 
     /** Withdraws the document and keeps the record. */
     adminRevokeCertificate: (id: string): Promise<void> =>
@@ -800,6 +852,27 @@ export function createClient(options: ClientOptions) {
       request("/admin/auth/second-factor", { method: "DELETE" }),
 
     adminListCustomers: (): Promise<CustomerSummary[]> => request("/admin/customers"),
+
+    /**
+     * The installation's Punktemeldung posture (P180-01).
+     *
+     * Platform-scoped like the customer registry — no `X-DS-Project` — so the
+     * console calls it through its platform client. `super_admin` only.
+     */
+    adminGetEivPlatformSettings: (): Promise<EivPlatformSettings> =>
+      request("/admin/platform/eiv"),
+
+    /**
+     * Arm or pause the worker, and choose the register.
+     *
+     * `endpoint` is one of three words and never a URL: the platform owns what
+     * each resolves to, so a browser cannot name the register a statutory
+     * report goes to. `live` needs `confirmLive: true` in the same request.
+     */
+    adminUpdateEivPlatformSettings: (
+      update: EivPlatformSettingsUpdate,
+    ): Promise<EivPlatformSettings> =>
+      request("/admin/platform/eiv", json(update, "PATCH")),
 
     adminGetCustomer: (slug: string): Promise<CustomerSummary> =>
       request(`/admin/customers/${seg(slug)}`),

@@ -163,10 +163,18 @@ beforeAll(async () => {
     32,
     "ds-journey-kms-key-not-a-secret",
   ).toString("base64");
-  // The two background workers stay off. This suite is about the request path,
-  // and a worker that submitted a Punktemeldung mid-run would make the last
-  // assertions depend on timing.
-  process.env["EIV_WORKER_ENABLED"] = "no";
+  /*
+   * The two background workers stay off. This suite is about the request path,
+   * and a worker that submitted a Punktemeldung mid-run would make the last
+   * assertions depend on timing.
+   *
+   * Only one of them is an environment variable now (P180-01): the EIV worker
+   * asks `platform_settings`, whose defaults are the worker **off** and the
+   * endpoint on `mock`. So a suite that sets nothing files nothing, which is a
+   * stronger guarantee than the line that used to be here — every new
+   * integration file had to remember to copy it, and the one that forgot would
+   * have been green anyway until the day it was not.
+   */
   process.env["CERTIFICATE_DELIVERY_ENABLED"] = "no";
 
   const { AppModule } = await import("../../src/app.module.js");
@@ -1261,9 +1269,14 @@ describe("7 · the Punktemeldung reaches the Ärztekammer", () => {
         ),
         new EivAccreditationReporter(),
         new AuditService(pool),
-        { baseUrl: kammer.url, batchSize: 25, allowLive: false, leaseSeconds: 120 },
+        { batchSize: 25, leaseSeconds: 120 },
       );
-      return await service.sweep(new Date());
+      // The register is a sweep argument since P180-01 — the worker reads it
+      // from `platform_settings` on every tick, so nothing captures it.
+      return await service.sweep(new Date(), {
+        baseUrl: kammer.url,
+        allowLive: false,
+      });
     } finally {
       await pool.end();
     }

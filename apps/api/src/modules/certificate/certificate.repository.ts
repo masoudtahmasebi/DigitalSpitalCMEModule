@@ -64,6 +64,15 @@ export interface CertificateRepositoryPort {
   ): Promise<CertificateSourceRow | undefined>;
   /** The same row for a caller that knows the enrolment and not the learner. */
   findSourceByEnrolment(enrolmentId: string): Promise<CertificateSourceRow | undefined>;
+  /**
+   * A course's own certificate fields, with no enrolment (P180-02).
+   *
+   * For the sample an operator renders while configuring a stamp, a signature
+   * or a VNR. Everything about the *event* is real — that is the point, the
+   * whole question being "will the document I issue look right" — and
+   * everything about the *person* is supplied synthetically by the caller.
+   */
+  findCourseForSample(courseSlug: string): Promise<CertificateSourceRow | undefined>;
   findCertificate(enrolmentId: string): Promise<CertificateRow | undefined>;
   /** The enrolment a certificate row belongs to — the delivery sweep's way in. */
   findEnrolmentIdByCertificate(certificateId: string): Promise<string | undefined>;
@@ -209,6 +218,54 @@ export class CertificateRepository implements CertificateRepositoryPort {
     return row as CertificateSourceRow | undefined;
   }
 
+  /**
+   * The course's own certificate fields, with no enrolment and no person
+   * (P180-02).
+   *
+   * Selected from `courses` alone. Every enrolment-shaped column comes back
+   * null and the service supplies obviously synthetic values for them — which
+   * is the safety property: there is no join here through which a **real**
+   * physician's name, address or EFN could reach a sample document.
+   */
+  async findCourseForSample(
+    courseSlug: string,
+  ): Promise<CertificateSourceRow | undefined> {
+    const [row] = await this.db
+      .select({
+        courseId: courses.id,
+        vnr: courses.vnr,
+        cmePoints: courses.cmePoints,
+        cmeCategory: courses.cmeCategory,
+        courseTitle: courses.title,
+        eventLocation: courses.eventLocation,
+        organizer: courses.organizer,
+        accreditationBody: courses.accreditationBody,
+        scientificLeadName: courses.scientificLeadName,
+        scientificLeadTitle: courses.scientificLeadTitle,
+        certificateIssuePlace: courses.certificateIssuePlace,
+        stampImage: courses.stampImage,
+        stampImageMime: courses.stampImageMime,
+        signatureImage: courses.signatureImage,
+        signatureImageMime: courses.signatureImageMime,
+      })
+      .from(courses)
+      .where(eq(courses.slug, courseSlug))
+      .limit(1);
+
+    if (row === undefined) return undefined;
+
+    return {
+      ...row,
+      enrolmentId: "",
+      completedAt: null,
+      attestedName: null,
+      attestedAddress: null,
+      firstName: null,
+      lastName: null,
+      efn: null,
+    } as unknown as CertificateSourceRow;
+  }
+
   async findEnrolmentIdByCertificate(certificateId: string): Promise<string | undefined> {
     const [row] = await this.db
       .select({ enrolmentId: certificates.enrolmentId })
@@ -340,6 +397,12 @@ export class RunnerCertificateRepository implements CertificateRepositoryPort {
     userId: string,
   ): Promise<CertificateSourceRow | undefined> {
     return this.run((db) => new CertificateRepository(db).findSource(courseSlug, userId));
+  }
+
+  findCourseForSample(courseSlug: string): Promise<CertificateSourceRow | undefined> {
+    return this.run((db) =>
+      new CertificateRepository(db).findCourseForSample(courseSlug),
+    );
   }
 
   findSourceByEnrolment(enrolmentId: string): Promise<CertificateSourceRow | undefined> {

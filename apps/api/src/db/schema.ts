@@ -593,6 +593,24 @@ export const platformSmtp = pgTable("platform_smtp", {
 });
 
 /**
+ * Installation-wide settings an operator changes at runtime (P180-01).
+ *
+ * One row, no tenant scope, `super_admin` only. See migration 0051 for why the
+ * endpoint is a word rather than a URL, and why the row is created by the
+ * migration rather than on first write.
+ */
+export const platformSettings = pgTable("platform_settings", {
+  singleton: boolean("singleton").primaryKey().default(true),
+  eivWorkerEnabled: boolean("eiv_worker_enabled").notNull().default(false),
+  /** `mock`, `test` or `live` — `EivEndpointChoice` in `@ds/eiv-client`. */
+  eivEndpoint: text("eiv_endpoint").notNull().default("mock"),
+  eivLiveConfirmedAt: timestamp("eiv_live_confirmed_at", { withTimezone: true }),
+  eivLiveConfirmedBy: uuid("eiv_live_confirmed_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: uuid("updated_by"),
+});
+
+/**
  * A local participant's password-reset token (P40-03).
  *
  * Keyed on the identity rather than the person, like `learner_credentials`:
@@ -706,6 +724,7 @@ export const schema = {
   eivSubmissions,
   certificates,
   platformSmtp,
+  platformSettings,
   learnerCredentialTokens,
   auditLog,
   storageAuditLog,

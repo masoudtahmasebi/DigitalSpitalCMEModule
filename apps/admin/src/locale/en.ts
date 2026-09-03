@@ -1052,6 +1052,52 @@ export const en: DeepPartial<typeof german> = {
     },
   },
 
+  platform: {
+    nav: "Punktemeldung",
+    title: "Reporting to the \u00c4rztekammer",
+    intro:
+      "These settings apply to the whole installation, not to one customer or course. They decide whether completed participations are reported to the \u00c4rztekammer, and to which system.",
+
+    workerLegend: "Reporting",
+    workerLabel: "Report Punktemeldungen automatically",
+    workerHintOn:
+      "The service checks about once a minute for completed participations to report, and sends them to the system chosen below.",
+    workerHintOff:
+      "Nothing is being reported. Completed participations stay queued and are reported as soon as you switch reporting on \u2014 including the ones already waiting.",
+    workerBacklogWarning:
+      "Careful: switching this on also reports everything already queued, not only new participations.",
+
+    endpointLegend: "Target system",
+    endpointHint:
+      "Where the reports go. The address for each is fixed and cannot be typed in here.",
+    endpoints: {
+      mock: "Test double on this server",
+      test: "EIV test system (backend-test.eiv-fobi.de)",
+      live: "\u00c4rztekammer production system (backend.eiv-fobi.de)",
+    },
+    endpointHints: {
+      mock: "Nothing leaves this server. For development and for checking the flow.",
+      test: "The system EIV explicitly provide for integrations. Credentials and test events come from EIV support, not from your real VNR.",
+      live: "Real Punktemeldungen on real physicians' CME records.",
+    },
+    endpointUrl: "Address",
+
+    liveLegend: "Confirmation for the production system",
+    liveWarning:
+      "A submitted Punktemeldung cannot be taken back. It can only be withdrawn, and the withdrawal stays visible on the person's CME record. Please confirm explicitly that this installation may report to the production system.",
+    liveConfirm:
+      "I confirm that this installation may submit real Punktemeldungen to the \u00c4rztekammer.",
+    liveConfirmed: (at: string): string =>
+      `Confirmed on ${at}. Changing the target system clears this confirmation.`,
+    liveMissing:
+      "The production system needs a confirmation and has none. Nothing is reported while it is missing.",
+
+    save: "Save settings",
+    saving: "Saving \u2026",
+    saved: "The settings were saved.",
+    updatedAt: (at: string): string => `Last changed on ${at}.`,
+  },
+
   contentLock: {
     legend: "Content lock",
     label: "Lock this course's contents",
@@ -1071,6 +1117,14 @@ export const en: DeepPartial<typeof german> = {
     cloning: "Creating the copy \u2026",
     cloneDone: "The copy was created.",
     cloneOpen: "Open the copy",
+
+    sampleLegend: "Sample certificate",
+    sampleHint:
+      "Renders a Teilnahmebescheinigung with this course's real details \u2014 VNR, points, stamp, signature \u2014 and an invented person. You see the finished document before the first participant does. Nothing is issued and nothing is stored.",
+    sampleAction: "Render a sample",
+    sampleBusy: "Rendering \u2026",
+    sampleMarked:
+      "The page says \u201eMUSTER \u2014 keine g\u00fcltige Bescheinigung\u201c. It is recognisable as a sample and must not be passed on.",
   },
 
   courses: {
@@ -1301,6 +1355,71 @@ export const en: DeepPartial<typeof german> = {
       issued: "issued",
       delivered: "delivered",
       bounced: "undeliverable",
+      revoked: "revoked",
+    },
+
+    support: {
+      open: "Details and support",
+      close: "Close",
+      openAria: (name: string): string => `Open support details for ${name}`,
+
+      certificateHeading: "Teilnahmebescheinigung",
+      bouncedExplained:
+        "\u201eUndeliverable\u201c means the e-mail could not be delivered. The certificate itself is valid and the participant can still download it from their own course area.",
+      reasonLabel: "Cause",
+      reasons: {
+        no_recipient:
+          "No e-mail address is on file for this person. Resending cannot succeed \u2014 download the certificate and send it another way.",
+        permanent_rejection:
+          "The receiving server rejected the address permanently. Resending to the same address cannot succeed \u2014 the address has to be corrected.",
+        attempts_exhausted:
+          "Every automatic attempt failed without the address being rejected. Resending is the right thing here.",
+      },
+      reasonUnknown:
+        "Delivery was given up on; this version does not name the cause more precisely.",
+      lastErrorLabel: "The mail server's last response",
+      lastErrorHint:
+        "The transport's own message \u2014 for example \u201eSMTP 550\u201c for a rejected address, or \u201eno SMTP host configured\u201c when no mail server is stored for this project.",
+      attemptsLabel: "Delivery attempts",
+      firstAttemptLabel: "First attempt",
+      nextAttemptLabel: "Next attempt",
+      nextAttemptNone: "no further automatic attempt",
+
+      download: "Download the certificate",
+      downloadHint:
+        "Downloads the PDF so you can send it to the participant another way. Nothing is sent and nothing is re-issued.",
+      resend: "Send again",
+      resendBlocked: "Resending here would necessarily fail again \u2014 see the cause.",
+      regenerate: "Re-create",
+      regenerateHint:
+        "Renders the document again, for example after a name correction. Nothing is reported to the \u00c4rztekammer.",
+      noCertificate:
+        "No certificate has been issued for this participation yet. It appears once the person completes the course.",
+      pendingCertificate:
+        "The certificate is queued but not yet issued. \u201eRe-create\u201c starts the issue again.",
+      revokedCertificate:
+        "This certificate was revoked. It can neither be downloaded nor sent again.",
+      resent: "The certificate was put back into delivery.",
+      regenerated: "The certificate is being re-created.",
+
+      efnHeading: "EFN and Punktemeldung",
+      efnStored: "Stored EFN",
+      efnNone: "No EFN is on file for this person.",
+      efnMaskHint:
+        "Only the last four digits are shown \u2014 enough to check the number against the person on the telephone.",
+      efnDiverges:
+        "Careful: the queued Punktemeldung would report a different EFN from the one the participant has stored. Correct the Meldung before it is sent.",
+      efnAgrees: "The queued Punktemeldung reports exactly this EFN.",
+      efnCorrectLegend: "Correct the Punktemeldung's EFN",
+      efnCorrectHint:
+        "Corrects the EFN on this Punktemeldung \u2014 what we report to the \u00c4rztekammer. The participant's profile is not changed: the EFN is theirs, and only they can change it, in their own course area. This does not send the Meldung.",
+      efnCorrectField: "New EFN (15 digits)",
+      efnCorrectAction: "Correct the Punktemeldung",
+      efnCorrected: "The Punktemeldung's EFN was corrected.",
+      efnCorrectUnavailable:
+        "There is no Punktemeldung for this participation to correct.",
+      efnCorrectLocked:
+        "This participation has already been reported to the \u00c4rztekammer. It can no longer be corrected here \u2014 that has to happen at the \u00c4rztekammer within the correction window.",
     },
   },
 };

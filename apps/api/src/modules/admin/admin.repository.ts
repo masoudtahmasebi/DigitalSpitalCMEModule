@@ -104,13 +104,58 @@ export interface SubmissionStateRow {
     | "failed_permanent"
     | "window_closed"
     | "withdrawn";
+  /**
+   * The EFN this Meldung will actually send (P179-03).
+   *
+   * Read so the participant list can say whether it still agrees with the
+   * physician's profile. Never returned: `admin.service.ts` compares the two
+   * and reports a boolean, because an operator needs to know that the numbers
+   * diverge and is not entitled to either of them (ADR-0004).
+   */
+  efn: string;
   attemptCount: number;
   reportDueAt: Date;
 }
 
+/**
+ * A certificate as the participant list needs it (P179-01).
+ *
+ * `status` alone was the whole row until the client asked what `unzustellbar`
+ * meant and there was nowhere on the screen the answer could come from:
+ *
+ *   > what does `undeliverable` mean, i need a retry button, i need error
+ *   > handling, i need debugging
+ *
+ * Every field below has been stored since P8-03 or P118-02 and returned by
+ * nothing — §9.3 in a repository rather than a domain module. `id` is the one
+ * that turns the row from a report into a control: the resend, regenerate and
+ * download routes are all keyed by the certificate, and without it the console
+ * could describe a problem it could not act on.
+ */
 export interface CertificateStateRow {
   enrolmentId: string;
-  status: "pending" | "issued" | "delivered" | "bounced";
+  id: string;
+  status: "pending" | "issued" | "delivered" | "bounced" | "revoked";
+  /**
+   * Why delivery was given up on (P118-02). Decides whether resending could
+   * possibly land — see `resendable` in the console.
+   */
+  abandonedReason: string | null;
+  /**
+   * The channel's own words for the last failure: `SMTP 550`, `ECONNREFUSED`,
+   * `no SMTP host configured`, `unknown transport error`.
+   *
+   * Safe to return to an operator of this tenant, and that is a property of
+   * the channel contract rather than an assumption: `DeliveryChannel` in
+   * `@ds/plugin-api` forbids a reason carrying the recipient or the transport
+   * credentials, `SmtpDeliveryChannel.classify` produces only the fixed
+   * vocabulary above, and `smtp.test.ts` asserts the address does not appear
+   * in the outcome.
+   */
+  lastError: string | null;
+  attemptCount: number;
+  firstAttemptAt: Date | null;
+  nextAttemptAt: Date | null;
 }
 
 /**
@@ -162,7 +207,15 @@ export interface AdminRepositoryPort {
     enrolmentIds: readonly string[],
   ): Promise<Map<string, ProgressRow[]>>;
   findEvaluationSubmitted(enrolmentIds: readonly string[]): Promise<Set<string>>;
-  findEfnPresent(userIds: readonly string[]): Promise<Set<string>>;
+  /**
+   * The EFN each of these learners holds on their profile (P179-03).
+   *
+   * Read for two derived answers and returned by neither path: the masked form
+   * an operator sees, and whether it still matches the queued Meldung. RLS on
+   * `efn_profiles` already bounds this to subjects with an enrolment in the
+   * caller's customer, so there is nothing here to widen.
+   */
+  findEfnByUser(userIds: readonly string[]): Promise<Map<string, string>>;
   findSubmissions(
     enrolmentIds: readonly string[],
   ): Promise<Map<string, SubmissionStateRow>>;
@@ -464,15 +517,15 @@ export class AdminRepository implements AdminRepositoryPort {
    * so this is the one query here that must filter explicitly: RLS is not
    * doing it, and reading it by user id is what keeps that safe.
    */
-  async findEfnPresent(userIds: readonly string[]): Promise<Set<string>> {
-    if (userIds.length === 0) return new Set();
+  async findEfnByUser(userIds: readonly string[]): Promise<Map<string, string>> {
+    if (userIds.length === 0) return new Map();
 
     const rows = await this.db
-      .select({ userId: efnProfiles.userId })
+      .select({ userId: efnProfiles.userId, efn: efnProfiles.efn })
       .from(efnProfiles)
       .where(inArray(efnProfiles.userId, [...userIds]));
 
-    return new Set(rows.map((row) => row.userId));
+    return new Map(rows.map((row) => [row.userId, row.efn]));
   }
 
   async findSubmissions(
@@ -484,6 +537,7 @@ export class AdminRepository implements AdminRepositoryPort {
       .select({
         enrolmentId: eivSubmissions.enrolmentId,
         status: eivSubmissions.status,
+        efn: eivSubmissions.efn,
         attemptCount: eivSubmissions.attemptCount,
         reportDueAt: eivSubmissions.reportDueAt,
       })
@@ -501,7 +555,13 @@ export class AdminRepository implements AdminRepositoryPort {
     const rows = await this.db
       .select({
         enrolmentId: certificates.enrolmentId,
+        id: certificates.id,
         status: certificates.status,
+        abandonedReason: certificates.deliveryAbandonedReason,
+        lastError: certificates.deliveryError,
+        attemptCount: certificates.deliveryAttemptCount,
+        firstAttemptAt: certificates.deliveryFirstAttemptAt,
+        nextAttemptAt: certificates.deliveryNextAttemptAt,
       })
       .from(certificates)
       .where(inArray(certificates.enrolmentId, [...enrolmentIds]));

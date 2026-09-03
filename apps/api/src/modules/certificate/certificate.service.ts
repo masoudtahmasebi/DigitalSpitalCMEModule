@@ -296,6 +296,104 @@ export class CertificateService {
     return this.assemble(source, source.completedAt);
   }
 
+  /**
+   * A sample Teilnahmebescheinigung for the course, with nobody's data on it
+   * (P180-02).
+   *
+   * ## What this is for
+   *
+   *   > also with sample certificate generation, if we use test server, i
+   *   > should easily test this
+   *
+   * Configuring a certificate means uploading a stamp and a signature, typing a
+   * VNR, a Veranstalter and a wissenschaftliche Leitung, and then having no way
+   * to see the result until a physician finishes the course. The first person
+   * to see whether the stamp is the right way up was a doctor holding their own
+   * CME record.
+   *
+   * ## Why it cannot be mistaken for a real one
+   *
+   * Everything about the **event** is real — that is the whole point, since the
+   * question is whether *this course's* document comes out right. Everything
+   * about the **person** is synthetic and says so on the page: the name is the
+   * words "MUSTER — keine gültige Bescheinigung", and the address line repeats
+   * it. There is no join in `findCourseForSample` through which a real
+   * participant's name, address or EFN could reach this document.
+   *
+   * No EFN is printed at all. A plausible-looking one would be the single field
+   * most likely to make a sample pass for real, and there is no participant to
+   * have one.
+   *
+   * ## Why it issues nothing
+   *
+   * It writes no `certificates` row, mints no download token and archives
+   * nothing. A sample is a rendering, not a document the platform stands
+   * behind, and an archived sample would sit in the evidence store beside real
+   * certificates.
+   */
+  async renderSample(courseSlug: string, now: Date): Promise<RenderedCertificate> {
+    const source = await this.repository.findCourseForSample(courseSlug);
+    if (source === undefined) {
+      throw AppError.notFound(`course=${courseSlug} not visible in this tenant`);
+    }
+
+    const data = buildCertificateData({
+      vnr: source.vnr ?? "",
+      courseTitle: source.courseTitle,
+      completedAt: now,
+      eventLocation: source.eventLocation ?? "",
+      organizer: source.organizer ?? "",
+      cmePoints: source.cmePoints ?? 0,
+      cmeCategory: source.cmeCategory ?? "",
+      accreditationBody: source.accreditationBody ?? "",
+      participantName: SAMPLE_PARTICIPANT_NAME,
+      participantAddress: SAMPLE_PARTICIPANT_ADDRESS,
+      scientificLeadName: leadWithTitle(source),
+    });
+
+    /*
+     * The same completeness check the real document gets, and the same
+     * message.
+     *
+     * A sample that rendered happily over a missing VNR would answer the wrong
+     * question: an operator is here precisely to find out whether the course is
+     * ready to issue. Refusing with the list of what is missing is the answer
+     * they came for.
+     */
+    const missing = missingCertificateFields(data);
+    if (missing.length > 0) {
+      throw new AppError(
+        "conflict",
+        `sample refused for course=${courseSlug}: ${missing.join(", ")}`,
+        "Für diese Fortbildung fehlen noch Angaben, ohne die keine Teilnahmebescheinigung erzeugt werden kann. Auf diesem Reiter steht, welche.",
+      );
+    }
+
+    const assets: CertificateAssets = {
+      stampImage: source.stampImage,
+      stampImageMime: source.stampImageMime,
+      signatureImage: source.signatureImage,
+      signatureImageMime: source.signatureImageMime,
+      issuePlace: source.certificateIssuePlace,
+    };
+
+    let bytes: Uint8Array;
+    try {
+      bytes = await this.render(data, assets);
+    } catch (error) {
+      if (error instanceof CertificateAssetsMissingError) {
+        throw new AppError(
+          "conflict",
+          `sample refused for course=${courseSlug}: ${error.missing.join(", ")}`,
+          "Für diese Fortbildung fehlen Stempel oder Unterschrift der wissenschaftlichen Leitung.",
+        );
+      }
+      throw error;
+    }
+
+    return { filename: `Muster_Teilnahmebescheinigung_${courseSlug}.pdf`, bytes };
+  }
+
   private assemble(source: CertificateSourceRow, completedAt: Date): CertificateData {
     return buildCertificateData({
       vnr: source.vnr ?? "",
@@ -323,6 +421,16 @@ export class CertificateService {
     });
   }
 }
+
+/**
+ * The name on a sample, which is a sentence rather than a name (P180-02).
+ *
+ * On the document itself, not only in the filename: a PDF gets renamed,
+ * forwarded and printed, and the page has to carry its own warning by the time
+ * somebody is holding it.
+ */
+const SAMPLE_PARTICIPANT_NAME = "MUSTER — keine gültige Bescheinigung";
+const SAMPLE_PARTICIPANT_ADDRESS = "Beispieladresse — Musterdokument zur Ansicht";
 
 function fullName(source: CertificateSourceRow): string {
   return [source.firstName, source.lastName].filter(Boolean).join(" ").trim();

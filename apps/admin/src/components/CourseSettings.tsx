@@ -204,6 +204,13 @@ export function CourseSettings(props: {
       </section>
 
       <section className="space-y-4">
+        <h3 className="text-base font-semibold text-gray-900">
+          {de.contentLock.sampleLegend}
+        </h3>
+        <SampleCertificate client={props.client} courseSlug={course.slug} />
+      </section>
+
+      <section className="space-y-4">
         <h3 className="text-base font-semibold text-gray-900">{de.course.compliance}</h3>
 
         <Notice tone="warning">{de.course.thresholdReach}</Notice>
@@ -625,6 +632,61 @@ function CloneCourse(props: { client: ApiClient; course: AdminCourseDetail }) {
       <Button variant="secondary" disabled={busy || !ready} onClick={() => void clone()}>
         {busy ? de.contentLock.cloning : de.contentLock.cloneAction}
       </Button>
+    </div>
+  );
+}
+
+/**
+ * Render this course's certificate before a physician does (P180-02).
+ *
+ * ## Why it lives on this screen
+ *
+ * Everything a Teilnahmebescheinigung needs is set here — the VNR, the points,
+ * the Veranstalter, the wissenschaftliche Leitung, the stamp and the signature
+ * below. Until this button the first person to find out whether the stamp was
+ * the right way up was a doctor holding their own CME record.
+ *
+ * ## Why the warning is beside the button and not only on the page
+ *
+ * The PDF says "MUSTER — keine gültige Bescheinigung" on itself, which is what
+ * protects a file that has been forwarded. This sentence protects the person
+ * about to download it, who should know before they click that what they get is
+ * not something to send anybody.
+ */
+function SampleCertificate(props: { client: ApiClient; courseSlug: string }) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | undefined>();
+
+  async function render(): Promise<void> {
+    setBusy(true);
+    setProblem(undefined);
+    try {
+      const { blob, filename } = await props.client.adminSampleCertificate(
+        props.courseSlug,
+      );
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      // The API's own sentence, which lists what the course is still missing —
+      // that is the answer somebody pressing this button came for.
+      setProblem(describeError(error, de.error.generic));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="max-w-3xl text-sm text-gray-600">{de.contentLock.sampleHint}</p>
+      {problem === undefined ? null : <Notice tone="error">{problem}</Notice>}
+      <Button variant="secondary" disabled={busy} onClick={() => void render()}>
+        {busy ? de.contentLock.sampleBusy : de.contentLock.sampleAction}
+      </Button>
+      <p className="text-xs text-gray-600">{de.contentLock.sampleMarked}</p>
     </div>
   );
 }

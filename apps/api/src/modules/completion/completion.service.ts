@@ -20,7 +20,13 @@
  * is a one-line change at this call site.
  */
 
-import { composeAttestedName, eivDeadlines, isValidEfn } from "@ds/domain";
+import {
+  composeAttestedName,
+  efnRefresh,
+  eivDeadlines,
+  isValidEfn,
+  submissionStage,
+} from "@ds/domain";
 import { AppError } from "../../shared/problem-details.js";
 import type { Db } from "../../db/tenant-db.js";
 import {
@@ -175,6 +181,71 @@ export class CompletionService {
     }
 
     await this.repository.saveEfn(learner.userId, efn);
+    await this.refreshOwnSubmissions(learner.userId, learner.customerId, efn);
+  }
+
+  /**
+   * Carry a corrected EFN onto the Punktemeldungen that have not gone yet
+   * (P179-03).
+   *
+   * ## The gap this closes
+   *
+   * `efn_profiles.efn` and `eiv_submissions.efn` are two copies of one value.
+   * P118 taught the *requeue* path to reconcile them and left the moment the
+   * correction is actually made untouched — so a physician who fixed a typo at
+   * 10:00 had the old number sent at 10:05 unless an operator happened to
+   * requeue the row in between. The correction looked like it worked, and the
+   * screen that would have shown otherwise does not exist.
+   *
+   * That is §9.10b exactly, on the one field that decides *which* physician is
+   * credited, so it is fixed at the write rather than left to a later repair.
+   *
+   * ## Why the refusal is silent here, and where it is not
+   *
+   * `efnRefresh` refuses a submission the Kammer has already accepted (S30),
+   * and this does not turn that into an error for the physician: their profile
+   * *is* corrected, their certificate will carry the new number, and the
+   * accepted Meldung is a matter between the operator and the Ärztekammer that
+   * the person typing into a form can do nothing about. Making them fail here
+   * would leave them unable to fix their own record because of a report they
+   * cannot see.
+   *
+   * The divergence is not swallowed, though: it is exactly what the
+   * participant list's `efnDivergesFromReport` reports to the operator, who is
+   * the party that can act on it.
+   */
+  private async refreshOwnSubmissions(
+    userId: string,
+    customerId: string,
+    efn: string,
+  ): Promise<void> {
+    const submissions = await this.repository.findOwnSubmissions(userId);
+
+    for (const submission of submissions) {
+      const verdict = efnRefresh({
+        onSubmission: submission.efn,
+        onProfile: efn,
+        stage: submissionStage(submission.status),
+      });
+      if (verdict.kind !== "refresh") continue;
+
+      /*
+       * The write and its audit row in one call, inside the request's
+       * transaction. If the correction rolls back so does the record of it,
+       * which is the property that matters here — unlike a moderation action,
+       * where the audit row deliberately outlives the rollback of what it
+       * audits because *the attempt* is the accountable fact.
+       *
+       * That the identifier moved is what is recorded. What it moved to is the
+       * physician's and never the log's (§9.5, ADR-0004).
+       */
+      await this.repository.updateSubmissionEfn(submission.id, verdict.efn, {
+        customerId,
+        userId,
+        enrolmentId: submission.enrolmentId,
+        fromStatus: submission.status,
+      });
+    }
   }
 
   /**

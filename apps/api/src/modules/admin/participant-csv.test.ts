@@ -20,6 +20,9 @@ function row(overrides: Partial<ParticipantRow> = {}): ParticipantRow {
     eivAttempts: 1,
     eivReportDueAt: "2026-08-05T21:59:59.000Z",
     certificateState: "issued",
+    certificate: null,
+    efnMasked: null,
+    efnDivergesFromReport: null,
     ...overrides,
   };
 }

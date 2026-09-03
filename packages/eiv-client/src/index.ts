@@ -43,9 +43,12 @@ export {
 
 export {
   eivEndpointTier,
+  eivEndpointUrl,
   eivEnvironmentUrl,
   requiresLiveConsent,
+  EIV_LIVE_HOST,
   EIV_TEST_HOST,
+  type EivEndpointChoice,
   type EivEndpointTier,
   type EivEnvironment,
 } from "./endpoint.js";

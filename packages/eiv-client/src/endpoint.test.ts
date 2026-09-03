@@ -10,8 +10,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  EIV_LIVE_HOST,
   EIV_TEST_HOST,
   eivEndpointTier,
+  eivEndpointUrl,
   eivEnvironmentUrl,
   requiresLiveConsent,
 } from "./endpoint.js";
@@ -113,5 +115,38 @@ describe("choosing which register a diagnostic talks to (P157-01)", () => {
     expect(eivEnvironmentUrl("test", "https://attacker.example/eiv")).toBe(
       `https://${EIV_TEST_HOST}`,
     );
+  });
+});
+
+describe("eivEndpointUrl", () => {
+  it("resolves each choice to the address this module owns", () => {
+    expect(eivEndpointUrl("mock", "http://eiv-mock:4010")).toBe("http://eiv-mock:4010");
+    expect(eivEndpointUrl("test", "http://eiv-mock:4010")).toBe(
+      `https://${EIV_TEST_HOST}`,
+    );
+    expect(eivEndpointUrl("live", "http://eiv-mock:4010")).toBe(
+      `https://${EIV_LIVE_HOST}`,
+    );
+  });
+
+  it("never returns a caller's address except for the mock", () => {
+    /*
+     * The property the whole type exists for (P180-01). `EIV_BASE_URL` moved
+     * into a table an operator edits from a browser; if any branch here echoed
+     * an input, that browser would be choosing which register receives a
+     * statutory Punktemeldung.
+     */
+    const hostile = "https://attacker.example/collect";
+    expect(eivEndpointUrl("test", hostile)).not.toContain("attacker");
+    expect(eivEndpointUrl("live", hostile)).not.toContain("attacker");
+  });
+
+  it("classifies its own live address as needing consent", () => {
+    // The two functions have to agree, and they are written separately. If
+    // `EIV_LIVE_HOST` ever drifted off `.eiv-fobi.de`, the tier would call it
+    // `unknown` — which still requires consent, so this fails safe either way.
+    expect(eivEndpointTier(eivEndpointUrl("live", ""))).toBe("live");
+    expect(requiresLiveConsent(eivEndpointUrl("live", ""))).toBe(true);
+    expect(requiresLiveConsent(eivEndpointUrl("test", ""))).toBe(false);
   });
 });

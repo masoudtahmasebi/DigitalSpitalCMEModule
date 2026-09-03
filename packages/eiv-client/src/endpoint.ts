@@ -118,6 +118,47 @@ export function requiresLiveConsent(baseUrl: string): boolean {
  */
 export type EivEnvironment = "configured" | "test";
 
+/**
+ * The three endpoints an operator may choose, as a closed set (P180-01).
+ *
+ * ## Why the console picks a word and never a URL
+ *
+ * `EIV_BASE_URL` moved out of `config.env` and into `platform_settings` so an
+ * operator can switch register without a deploy. A text field would have moved
+ * the *address* into the console with it — and an address a person can type is
+ * an address that can be the production register by accident, or somebody
+ * else's host on purpose.
+ *
+ * So the console sends one of three words and this module owns what each means.
+ * There is no branch here that returns its input. It is the same argument
+ * P157-01 made about the diagnostic's `EivEnvironment`, applied to the setting
+ * that decides where *real* Punktemeldungen go.
+ *
+ * ## `mock` takes an address, and that is not a hole
+ *
+ * The mock is a container on the deployment's own network — `eiv-mock:4010` in
+ * compose, `127.0.0.1:4010` when a developer runs it by hand — so its address
+ * is a fact about the local machine rather than a choice about who receives
+ * statutory reports. It stays an environment variable for that reason, and
+ * `eivEndpointTier` classifies whatever it resolves to: a mock URL pointed
+ * somewhere real is `live` or `unknown`, and needs consent like anything else.
+ */
+export type EivEndpointChoice = "mock" | "test" | "live";
+
+/** EIV's production register. Read off the live web app's own traffic — S26. */
+export const EIV_LIVE_HOST = "backend.eiv-fobi.de";
+
+export function eivEndpointUrl(choice: EivEndpointChoice, mockUrl: string): string {
+  switch (choice) {
+    case "mock":
+      return mockUrl;
+    case "test":
+      return `https://${EIV_TEST_HOST}`;
+    case "live":
+      return `https://${EIV_LIVE_HOST}`;
+  }
+}
+
 export function eivEnvironmentUrl(
   environment: EivEnvironment,
   configuredBaseUrl: string,

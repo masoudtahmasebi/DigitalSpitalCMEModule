@@ -115,6 +115,8 @@ export interface EivAdminRepositoryPort {
   loadForAction(enrolmentId: string): Promise<SubmissionForAction | undefined>;
   listSubmissions(query: SubmissionQuery): Promise<SubmissionPage>;
   requeue(submissionId: string, now: Date, efn?: string): Promise<void>;
+  /** Correct the EFN on an un-sent Punktemeldung, without requeuing (P179-03). */
+  correctEfn(submissionId: string, efn: string): Promise<void>;
   markWithdrawn(submissionId: string, now: Date): Promise<void>;
 }
 
@@ -307,6 +309,26 @@ export class EivAdminRepository implements EivAdminRepositoryPort {
         // the row and releases it.
         nextAttemptAt: now,
       })
+      .where(eq(eivSubmissions.id, submissionId));
+  }
+
+  /**
+   * Correct the EFN and nothing else (P179-03).
+   *
+   * Separate from `requeue` because the two are different acts: requeuing says
+   * "try this again", and a `failed_permanent` row that an operator corrects
+   * should not silently become `queued` as a side effect of fixing a typo. The
+   * operator decides whether to send it, with the deadline check `requeue`
+   * makes and this one deliberately does not.
+   *
+   * The stage rule is `efnCorrection`'s in `@ds/domain`, applied by the
+   * service. A repository that decided which stages may be corrected would be
+   * a second copy of a compliance rule (§4 invariant 6).
+   */
+  async correctEfn(submissionId: string, efn: string): Promise<void> {
+    await this.db
+      .update(eivSubmissions)
+      .set({ efn, updatedAt: new Date() })
       .where(eq(eivSubmissions.id, submissionId));
   }
 

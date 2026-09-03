@@ -150,6 +150,13 @@ jobs:
           # fails here rather than by re-denominating a physician who had
           # already finished (P178-01).
           node scripts/check-content-lock.mjs
+          # Whether Punktemeldungen leave this installation, and to which
+          # register, moved out of config.env and into the database (P180-01).
+          # A value that came back in a config file would be a second home for
+          # the setting the console shows, and the console would win silently —
+          # so the three names are refused everywhere but the prose explaining
+          # where they went.
+          node scripts/check-eiv-settings.mjs
 
       - name: Build
         run: pnpm build

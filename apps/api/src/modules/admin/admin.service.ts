@@ -31,6 +31,7 @@
 import {
   describePublishBlockers,
   invalidAvailabilityWindow,
+  maskEfn,
   missingCertificateFields,
   publishBlockers,
   sniffFontFormat,
@@ -530,13 +531,27 @@ export class AdminService {
     const [progress, evaluated, efns, submissions, certificates] = await Promise.all([
       this.repository.findProgressByEnrolment(enrolmentIds),
       this.repository.findEvaluationSubmitted(enrolmentIds),
-      this.repository.findEfnPresent(userIds),
+      /*
+       * One read, and `findEfnPresent` is gone (P179-03).
+       *
+       * It answered a Set of user ids; this needs the value as well — for the
+       * mask an operator sees and for the comparison against the queued
+       * Meldung. Keeping both would have been two queries over one table where
+       * the second is the first plus a column, which is §9.10b's shape:
+       * presence and value read at different moments eventually disagree, and
+       * the one that decides a screen is the one nobody is looking at.
+       *
+       * `efnPresent` is derived below rather than read, so the two answers
+       * cannot drift.
+       */
+      this.repository.findEfnByUser(userIds),
       this.repository.findSubmissions(enrolmentIds),
       this.repository.findCertificates(enrolmentIds),
     ]);
 
     const rows: ParticipantRow[] = enrolments.map((enrolment) => {
-      const efnPresent = efns.has(enrolment.userId);
+      const profileEfn = efns.get(enrolment.userId);
+      const efnPresent = profileEfn !== undefined;
       const evaluationSubmitted = evaluated.has(enrolment.enrolmentId);
 
       const figures = summariseEnrolment({
@@ -572,7 +587,53 @@ export class AdminService {
         eivState: eivState(submission, now),
         eivAttempts: submission?.attemptCount ?? 0,
         eivReportDueAt: submission?.reportDueAt.toISOString() ?? null,
+        /*
+         * The last four digits, and only those (P179-03).
+         *
+         * `maskEfn` in `@ds/domain` — the same function the Lernende and
+         * Punktemeldungen screens use, so one physician's EFN does not appear
+         * in two different shapes on two admin screens. Enough for an operator
+         * on the telephone to confirm they are looking at the number the
+         * physician is reading off their card; useless to anybody who does not
+         * already have it (ADR-0004).
+         */
+        efnMasked: maskEfn(profileEfn ?? null),
+        /*
+         * Whether the queued Punktemeldung still agrees with the profile
+         * (P179-03).
+         *
+         * A boolean, not the two values: an operator needs to know that they
+         * diverge and is entitled to neither number. It is the one fact that
+         * separates "the physician corrected their EFN and we are about to
+         * report the old one" from "everything is consistent" — and until this
+         * ticket, no screen anywhere could tell those apart.
+         *
+         * Null when there is nothing to compare: no Meldung, or no profile.
+         */
+        efnDivergesFromReport:
+          submission === undefined || profileEfn === undefined
+            ? null
+            : submission.efn.trim() !== profileEfn.trim(),
         certificateState: certificate?.status ?? "none",
+        /*
+         * The diagnosis, so the screen can say more than one word (P179-01).
+         *
+         * `abandonedReason` is narrowed rather than passed through: the column
+         * is `text`, so a value the DTO does not know would otherwise reach
+         * the console as a string nothing has a label for — the same silent
+         * gap `revoked` had one field up.
+         */
+        certificate:
+          certificate === undefined
+            ? null
+            : {
+                id: certificate.id,
+                abandonedReason: abandonedReason(certificate.abandonedReason),
+                lastError: certificate.lastError,
+                attemptCount: certificate.attemptCount,
+                firstAttemptAt: certificate.firstAttemptAt?.toISOString() ?? null,
+                nextAttemptAt: certificate.nextAttemptAt?.toISOString() ?? null,
+              },
       };
     });
 
@@ -677,6 +738,27 @@ function eivState(
     default:
       return "failed";
   }
+}
+
+/**
+ * `certificates.delivery_abandoned_reason` narrowed to the three the product
+ * knows (P179-01).
+ *
+ * The column is `text` with no CHECK, written by `recordAbandoned` from a
+ * string the sweep chooses. A fourth value added there and not here reaches
+ * the console as a label nobody wrote, and the cell renders empty — which is
+ * how `revoked` hid on `certificateState` for eight phases. `null` is the
+ * honest answer for "given up for a reason this version does not name", and
+ * the console falls back to the generic sentence rather than to nothing.
+ */
+function abandonedReason(
+  value: string | null,
+): "no_recipient" | "permanent_rejection" | "attempts_exhausted" | null {
+  return value === "no_recipient" ||
+    value === "permanent_rejection" ||
+    value === "attempts_exhausted"
+    ? value
+    : null;
 }
 
 function participantName(row: {

@@ -175,8 +175,10 @@ function build(
       new Map([[ENROLMENT_ID, options.progress ?? []]]),
     findEvaluationSubmitted: async () =>
       options.evaluationSubmitted === true ? new Set([ENROLMENT_ID]) : new Set(),
-    findEfnPresent: async () =>
-      options.efnPresent === true ? new Set([USER_ID]) : new Set(),
+    findEfnByUser: async () =>
+      options.efnPresent === true
+        ? new Map([[USER_ID, "802760699000001"]])
+        : new Map<string, string>(),
     findSubmissions: async () =>
       options.submission === undefined
         ? new Map()

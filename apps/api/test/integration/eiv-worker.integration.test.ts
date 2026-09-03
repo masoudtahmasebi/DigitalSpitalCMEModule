@@ -154,13 +154,26 @@ async function freshUser(): Promise<void> {
   ).id;
 }
 
-function buildService(allowLive = false): EivService {
+/**
+ * The service, plus the sweep target it is driven with (P180-01).
+ *
+ * `baseUrl` and `allowLive` are a **sweep** argument now, not constructor
+ * options: they come from `platform_settings`, which an operator edits while
+ * the process runs, so the worker asks for them on every tick. `buildService`
+ * still returns the service for the two cases that call `sweep` themselves; the
+ * rest go through `sweepWith`.
+ */
+function buildService(): EivService {
   return new EivService(
     new EivRepository(appPool, new PlaintextSecretCipher("test")),
     new EivAccreditationReporter(),
     new AuditService(appPool),
-    { baseUrl: mock.url, batchSize: 25, allowLive, leaseSeconds: 120 },
+    { batchSize: 25, leaseSeconds: 120 },
   );
+}
+
+function target(allowLive = false, baseUrl = mock.url) {
+  return { baseUrl, allowLive };
 }
 
 async function readSubmission(id: string) {
@@ -219,7 +232,7 @@ describe("the worker submits a queued participation", () => {
 
     const now = new Date();
     const due = await countDue(now);
-    const result = await buildService().sweep(now);
+    const result = await buildService().sweep(now, target());
 
     // The sweep claimed exactly the rows that were claimable, and reported at
     // least one submission. What was submitted is asserted on the row below,
@@ -258,7 +271,7 @@ describe("the worker submits a queued participation", () => {
   it("does not pick up an already-submitted row on the next sweep", async () => {
     const before = mock.submissions.length;
 
-    await buildService().sweep(new Date());
+    await buildService().sweep(new Date(), target());
 
     expect(mock.submissions.length).toBe(before);
   });
@@ -284,7 +297,7 @@ describe("the worker respects the statutory window", () => {
     });
     const before = mock.submissions.length;
 
-    await buildService().sweep(new Date());
+    await buildService().sweep(new Date(), target());
 
     const row = await readSubmission(submissionId);
     expect(row.status).toBe("window_closed");
@@ -303,15 +316,10 @@ describe("the worker refuses a live endpoint by default", () => {
       new EivRepository(appPool, new PlaintextSecretCipher("test")),
       new EivAccreditationReporter(),
       new AuditService(appPool),
-      {
-        baseUrl: "https://punktemeldung.eiv-fobi.de/",
-        batchSize: 25,
-        allowLive: false,
-        leaseSeconds: 120,
-      },
+      { batchSize: 25, leaseSeconds: 120 },
     );
 
-    await service.sweep(new Date());
+    await service.sweep(new Date(), target(false, "https://punktemeldung.eiv-fobi.de/"));
 
     const row = await readSubmission(submissionId);
     expect(row.status).toBe("failed_permanent");
@@ -522,15 +530,10 @@ describe("a failed attempt is audited too (QA §7.9, CLAUDE.md §4 invariant 8)"
       new EivRepository(appPool, new PlaintextSecretCipher("test")),
       new EivAccreditationReporter(),
       new AuditService(appPool),
-      {
-        baseUrl: "http://127.0.0.1:1",
-        batchSize: 25,
-        allowLive: false,
-        leaseSeconds: 120,
-      },
+      { batchSize: 25, leaseSeconds: 120 },
     );
 
-    await unreachable.sweep(new Date());
+    await unreachable.sweep(new Date(), target(false, "http://127.0.0.1:1"));
 
     const row = await readSubmission(submissionId);
     expect(row.status).not.toBe("submitted");

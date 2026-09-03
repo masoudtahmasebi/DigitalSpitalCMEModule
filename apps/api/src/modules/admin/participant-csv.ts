@@ -55,6 +55,18 @@ const COLUMNS = [
   "Meldeversuche",
   "Meldefrist",
   "Teilnahmebescheinigung",
+  /*
+   * Why it did not arrive, and how often we tried (P179-01).
+   *
+   * The export is what a support person opens when several people report a
+   * missing Bescheinigung at once, and "unzustellbar" fifteen times in a column
+   * does not say whether the cause is fifteen wrong addresses or one
+   * unconfigured SMTP host. `lastError` is a fixed vocabulary — see
+   * `certificateDeliverySchema` — so it carries no address into the
+   * spreadsheet.
+   */
+  "Zustellungsproblem",
+  "Zustellversuche",
 ] as const;
 
 /** German labels, so the file needs no legend. */
@@ -74,7 +86,38 @@ const CERTIFICATE_LABELS: Record<ParticipantRow["certificateState"], string> = {
   issued: "ausgestellt",
   delivered: "zugestellt",
   bounced: "unzustellbar",
+  // Missing until P179-01, and the `Record` is why this is a compile error
+  // rather than an empty cell: `certificates` has had the state since
+  // migration 0023.
+  revoked: "widerrufen",
 };
+
+/**
+ * Why delivery was given up on, in the words of somebody who has to fix it.
+ *
+ * Each names the action rather than the condition — a support person reading a
+ * spreadsheet at 22:00 needs to know which of the three piles a row is in, and
+ * "permanent_rejection" is a state where "Adresse wurde abgelehnt" is a task.
+ */
+const ABANDONED_LABELS: Record<string, string> = {
+  no_recipient: "keine E-Mail-Adresse hinterlegt",
+  permanent_rejection: "Adresse wurde dauerhaft abgelehnt",
+  attempts_exhausted: "Zustellversuche erschöpft",
+};
+
+/** The delivery problem as one cell: the cause, and the channel's own words. */
+function deliveryProblem(row: ParticipantRow): string {
+  const certificate = row.certificate;
+  if (certificate === null) return "";
+
+  const cause =
+    certificate.abandonedReason === null
+      ? undefined
+      : (ABANDONED_LABELS[certificate.abandonedReason] ?? certificate.abandonedReason);
+  const detail = certificate.lastError ?? undefined;
+
+  return [cause, detail].filter((part) => part !== undefined).join(" — ");
+}
 
 export function participantsToCsv(rows: readonly ParticipantRow[]): string {
   const lines = [
@@ -101,6 +144,8 @@ export function participantsToCsv(rows: readonly ParticipantRow[]): string {
         String(row.eivAttempts),
         germanDateTime(row.eivReportDueAt),
         CERTIFICATE_LABELS[row.certificateState],
+        deliveryProblem(row),
+        String(row.certificate?.attemptCount ?? 0),
       ]
         .map(cell)
         .join(SEPARATOR),

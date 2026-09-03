@@ -96,22 +96,44 @@ const schema = z
     // ---------------------------------------------------------------------
     // EIV-FOBI submission worker (P7-06)
     // ---------------------------------------------------------------------
-    EIV_BASE_URL: z.string().url().default("http://127.0.0.1:4010"),
-    // Pointing EIV_BASE_URL at anything non-local additionally requires this to
-    // be exactly "yes". The configured VNR belongs to a real accreditation
-    // record, and a submission cannot be taken back (ADR-0005).
-    EIV_ALLOW_LIVE: z
-      .string()
-      .default("")
-      .transform((value) => value === "yes"),
+    /*
+     * `EIV_BASE_URL`, `EIV_ALLOW_LIVE` and `EIV_WORKER_ENABLED` are **gone**
+     * (P180-01), at the client's instruction:
+     *
+     *   > i don't want to have eiv-worker enabled or disable in config.env i
+     *   > want to be able to sweitch that from the admin panel, and i want to
+     *   > be able to change the sending to domain
+     *
+     * They decided whether statutory Punktemeldungen leave this installation
+     * and which register receives them, and both took a deploy to change — so
+     * switching to EIV's test system to try something meant editing a file on
+     * the host, and switching back meant editing it again. In practice nobody
+     * switched.
+     *
+     * They now live in `platform_settings`, one row, edited by a super
+     * administrator in the console and read by the worker on every tick. The
+     * *safety* did not move with them: the live register still needs explicit
+     * consent, and now the consent has a name and a timestamp instead of being
+     * the string `yes` in a file nobody signed.
+     *
+     * `scripts/env-audit.mjs` will fail if any of the three reappears in a
+     * config file, and `check-eiv-settings.mjs` fails if application code
+     * starts reading them again.
+     */
+
+    /**
+     * Where the EIV mock container listens.
+     *
+     * The one address still in the environment, and it is not the setting that
+     * moved: this is a fact about the local network — `eiv-mock:4010` under
+     * compose, `127.0.0.1:4010` for a developer running it by hand — rather
+     * than a choice about who receives statutory reports. `eivEndpointTier`
+     * classifies whatever it resolves to, so a "mock" pointed at something real
+     * is `live` or `unknown` and needs consent like anything else.
+     */
+    EIV_MOCK_BASE_URL: z.string().url().default("http://127.0.0.1:4010"),
     EIV_SWEEP_INTERVAL_SEC: z.coerce.number().int().positive().default(60),
     EIV_SWEEP_BATCH_SIZE: z.coerce.number().int().positive().max(500).default(25),
-    // Lets a deployment run the API without the worker — useful when scaling
-    // web instances horizontally but wanting exactly one submitter.
-    EIV_WORKER_ENABLED: z
-      .string()
-      .default("yes")
-      .transform((value) => value !== "no"),
 
     // Certificate delivery (P8-03). Slower than the EIV sweep on purpose: a
     // Punktemeldung races an 8-day statutory window, a certificate has no

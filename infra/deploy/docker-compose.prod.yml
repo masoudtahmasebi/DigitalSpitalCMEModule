@@ -219,15 +219,14 @@ services:
       # alert has nowhere to go.
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
 
-      EIV_BASE_URL: ${EIV_BASE_URL:-http://127.0.0.1:4010}
-      # `:-` because empty is the *correct* value until ÄKWL has answered — and
-      # a bare `${EIV_ALLOW_LIVE}` makes compose warn about it on every deploy,
-      # which teaches everybody to skim compose's warnings.
-      EIV_ALLOW_LIVE: ${EIV_ALLOW_LIVE:-}
-      # Exactly one submitter, whatever the API scales to. Two workers racing
-      # for the same submission is a duplicate Punktemeldung, which cannot be
-      # withdrawn after the correction window closes.
-      EIV_WORKER_ENABLED: ${EIV_WORKER_ENABLED:-yes}
+      # Which register receives Punktemeldungen, and whether the worker files
+      # at all, are in `platform_settings` and set in the console (P180-01).
+      # `EIV_BASE_URL`, `EIV_ALLOW_LIVE` and `EIV_WORKER_ENABLED` were here and
+      # are gone; `scripts/check-eiv-settings.mjs` fails if any comes back.
+      #
+      # This is the mock's address — a fact about this host's own network, not
+      # a choice about who receives statutory reports.
+      EIV_MOCK_BASE_URL: ${EIV_MOCK_BASE_URL:-http://eiv-mock:4010}
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-}
       S3_BUCKET: ${S3_BUCKET:-}

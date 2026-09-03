@@ -43,6 +43,23 @@ export interface ObjectErasurePort {
   drain(): Promise<ObjectErasureResult>;
 }
 
+/**
+ * Rendering a certificate, as this service needs it (P179-02).
+ *
+ * A port with the two methods `CertificateAttachments` already uses, for the
+ * same reason it uses them: there is one place that assembles a certificate's
+ * fields and renders them, and a second assembly is how a support person ends
+ * up e-mailing a document that differs from the one on the physician's screen.
+ */
+export interface StaffCertificateRenderPort {
+  enrolmentIdFor(certificateId: string): Promise<string | undefined>;
+  issueForEnrolment(
+    enrolmentId: string,
+    customerId: string,
+    now: Date,
+  ): Promise<{ filename: string; bytes: Uint8Array } | undefined>;
+}
+
 export class ModerationService {
   constructor(
     private readonly repository: ModerationRepositoryPort,
@@ -57,6 +74,13 @@ export class ModerationService {
      * which is the honest state and is queryable.
      */
     private readonly objectErasure?: ObjectErasurePort,
+    /**
+     * Renders the PDF a support operator downloads (P179-02). Optional so the
+     * service's existing tests need no renderer; the download route refuses
+     * with a 501-shaped conflict rather than pretending when it is absent,
+     * which cannot happen in the wired application.
+     */
+    private readonly certificates?: StaffCertificateRenderPort,
   ) {}
 
   listLearners(courseSlug: string | undefined): Promise<readonly LearnerSummary[]> {
@@ -228,6 +252,93 @@ export class ModerationService {
       // usually changes and exactly the field that must not be logged.
       detail: { previousStatus: certificate.status },
     });
+  }
+
+  /**
+   * The PDF, for an operator supporting the physician who did not get it
+   * (P179-02).
+   *
+   * ## Refusals, and why each is a sentence rather than a silence
+   *
+   * `issueForEnrolment` answers `undefined` for every reason a certificate
+   * cannot be produced, because its two existing callers have no screen — the
+   * completion must stand either way, and the delivery sweep must not drop a
+   * batch. This caller *is* a screen, so each case gets a sentence naming what
+   * to do:
+   *
+   * - **revoked** — refused before rendering. Handing out a withdrawn document
+   *   is the one outcome revocation exists to prevent.
+   * - **not yet issued** — there is nothing to support with, and the reason is
+   *   almost always that the physician has not finished.
+   * - **`undefined`** — the course's certificate configuration is incomplete
+   *   (a missing stamp, signature, VNR or name). The Zertifizierung tab
+   *   already lists exactly which, so the message sends them there rather
+   *   than repeating a list that would then have two homes.
+   *
+   * ## Audited as a disclosure, not as a change
+   *
+   * Nothing about the record moves — the token is minted only if there is
+   * none, and `archiveOnce` keeps the first render. What happened is that a
+   * named physician's participation record left the platform in an operator's
+   * hands, and that is what the audit row says. No name, no filename: the id
+   * of the certificate and who asked for it (ADR-0004).
+   */
+  async renderCertificateForStaff(
+    id: string,
+    actor: ModeratorContext,
+    now: Date,
+  ): Promise<{ filename: string; bytes: Uint8Array }> {
+    const certificate = await this.repository.findCertificate(id);
+    if (certificate === undefined) {
+      throw AppError.notFound(`certificate=${id} not visible in this tenant`);
+    }
+
+    if (certificate.status === "revoked") {
+      throw new AppError(
+        "conflict",
+        `refused: certificate=${id} is revoked`,
+        "Diese Bescheinigung wurde widerrufen und kann nicht heruntergeladen werden.",
+      );
+    }
+    if (certificate.status === "pending") {
+      throw new AppError(
+        "conflict",
+        `refused: certificate=${id} is pending`,
+        "Diese Bescheinigung wurde noch nicht ausgestellt. Sie entsteht, sobald die Person die Fortbildung abgeschlossen hat.",
+      );
+    }
+
+    const renderer = this.certificates;
+    if (renderer === undefined) {
+      throw new AppError(
+        "conflict",
+        `certificate rendering is not configured on this deployment`,
+        "Der Bescheinigungsdruck ist auf dieser Installation nicht eingerichtet.",
+      );
+    }
+
+    const enrolmentId = await renderer.enrolmentIdFor(id);
+    if (enrolmentId === undefined) {
+      throw AppError.notFound(`certificate=${id} has no enrolment in this tenant`);
+    }
+
+    const file = await renderer.issueForEnrolment(enrolmentId, actor.customerId, now);
+    if (file === undefined) {
+      throw new AppError(
+        "conflict",
+        `certificate=${id} could not be rendered: incomplete certificate data`,
+        "Diese Bescheinigung lässt sich derzeit nicht erzeugen. Auf dem Reiter „Zertifizierung“ dieser Fortbildung steht, welche Angaben dafür noch fehlen — meist Stempel, Unterschrift oder VNR.",
+      );
+    }
+
+    await this.audit.recordForCustomer(actor.customerId, {
+      actor: { identity: "staff", id: actor.staffUserId },
+      action: "certificate.downloaded_by_staff",
+      subject: id,
+      detail: { status: certificate.status },
+    });
+
+    return file;
   }
 
   private apply(id: string, action: CertificateAction): Promise<boolean> {

@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   certificateAction,
   efnRefresh,
+  efnCorrection,
   maskEfn,
   nameCorrection,
   subjectErasure,
@@ -258,5 +259,86 @@ describe("submissionStage", () => {
         nameCorrection({ proposed: "Dr. A", stage: submissionStage(status) }).ok,
       ).toBe(false);
     }
+  });
+});
+
+describe("efnCorrection", () => {
+  const CURRENT = "802760699000001";
+  const PROPOSED = "802760699000002";
+
+  it("accepts a correction while nothing has been reported", () => {
+    for (const stage of ["none", "pending", "abandoned"] as const) {
+      expect(
+        efnCorrection({ proposed: PROPOSED, current: CURRENT, stage }),
+        `stage=${stage}`,
+      ).toEqual({ ok: true, efn: PROPOSED });
+    }
+  });
+
+  it("refuses once the Punktemeldung has been accepted", () => {
+    /*
+     * The rule S30 leaves open and `efnRefresh` already applies: correcting a
+     * name changes how one physician is described, correcting an EFN changes
+     * *which* physician was credited. The points are on somebody's record and
+     * re-filing under a new number credits a second person rather than moving
+     * the first.
+     */
+    for (const stage of ["submitted", "withdrawn"] as const) {
+      expect(
+        efnCorrection({ proposed: PROPOSED, current: CURRENT, stage }),
+        `stage=${stage}`,
+      ).toEqual({ ok: false, reason: "already_submitted" });
+    }
+  });
+
+  it("names a malformed value as malformed, at every stage", () => {
+    // Before the stage check on purpose: an operator told "already reported"
+    // about a value that is not an EFN would go and ask the Ärztekammer about
+    // a typo they could have fixed by looking at the field.
+    for (const stage of ["none", "pending", "submitted", "withdrawn"] as const) {
+      expect(
+        efnCorrection({ proposed: "12345", current: CURRENT, stage }),
+        `stage=${stage}`,
+      ).toEqual({ ok: false, reason: "malformed" });
+    }
+  });
+
+  it("refuses fourteen and sixteen digits, and anything not a digit", () => {
+    for (const bad of [
+      "80276069900000",
+      "8027606990000012",
+      "80276069900000a",
+      " 80276069900000",
+      "",
+    ]) {
+      expect(
+        efnCorrection({ proposed: bad, current: CURRENT, stage: "pending" }),
+        bad,
+      ).toEqual({ ok: false, reason: "malformed" });
+    }
+  });
+
+  it("accepts a value padded with spaces, because a pasted EFN carries them", () => {
+    expect(
+      efnCorrection({ proposed: `  ${PROPOSED} `, current: CURRENT, stage: "pending" }),
+    ).toEqual({ ok: true, efn: PROPOSED });
+  });
+
+  it("reports retyping the same number as unchanged, not as a correction", () => {
+    // A false correction is worse than a refused one: it produces an audit row
+    // saying the identifier moved, and an operator who believes the problem is
+    // solved.
+    expect(
+      efnCorrection({ proposed: CURRENT, current: CURRENT, stage: "pending" }),
+    ).toEqual({ ok: false, reason: "unchanged" });
+    expect(
+      efnCorrection({ proposed: ` ${CURRENT}`, current: `${CURRENT} `, stage: "none" }),
+    ).toEqual({ ok: false, reason: "unchanged" });
+  });
+
+  it("prefers unchanged over already_submitted, so a no-op is never a scare", () => {
+    expect(
+      efnCorrection({ proposed: CURRENT, current: CURRENT, stage: "submitted" }),
+    ).toEqual({ ok: false, reason: "unchanged" });
   });
 });

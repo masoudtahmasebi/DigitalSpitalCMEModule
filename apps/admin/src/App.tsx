@@ -47,6 +47,7 @@ import { Badge, Button, ConfirmButton, Notice, Spinner, Table } from "./componen
 import { EmptyState, Page, type Crumb } from "./components/page.js";
 import { CopySettings } from "./components/CopySettings.js";
 import { MediaLibrary } from "./components/MediaLibrary.js";
+import { PlatformEiv } from "./components/PlatformEiv.js";
 import { BrandingSettings } from "./components/BrandingSettings.js";
 import { CourseSettings } from "./components/CourseSettings.js";
 import { CoursePresentation } from "./components/CoursePresentation.js";
@@ -394,6 +395,7 @@ type View =
   | { kind: "media" }
   | { kind: "punktemeldungen" }
   | { kind: "customers" }
+  | { kind: "platform-eiv" }
   | { kind: "participants" }
   | { kind: "learners" }
   | { kind: "certificates" }
@@ -467,6 +469,25 @@ const NAV: readonly NavGroup[] = [
         title: de.customers.title,
         description: de.customers.intro,
         capability: "customer",
+      },
+      /*
+       * Plattform → Punktemeldung (P180-01).
+       *
+       * `platform`, which only `super_admin` holds. There is one EIV worker per
+       * installation and one register it talks to; a customer administrator's
+       * authority is over their own courses and participants, and pointing the
+       * platform at the live Ärztekammer endpoint would file statutory reports
+       * for every tenant at once — including ones they have never heard of.
+       *
+       * Beside Kunden because both are about the installation rather than about
+       * a course, and both are drawn for exactly one role.
+       */
+      {
+        kind: "platform-eiv",
+        label: de.platform.nav,
+        title: de.platform.title,
+        description: de.platform.intro,
+        capability: "platform",
       },
       /*
        * `project`, which a course editor does not hold (P38-01).
@@ -849,12 +870,15 @@ export function Console(props: {
    * reason to be here, so a screen added tomorrow is tenant-scoped by default
    * and fails into "choose a customer" rather than into a red box.
    *
-   * The three are exactly the screens rendered with `platformClient`: the
-   * customer registry spans customers, and operator accounts and sign-in rules
-   * sit above any one of them.
+   * These are exactly the screens rendered with `platformClient`: the customer
+   * registry spans customers, operator accounts and sign-in rules sit above any
+   * one of them, and the EIV posture (P180-01) belongs to the installation
+   * rather than to a tenant — there is one worker and one register, whatever
+   * customer the operator happens to have selected.
    */
   const PLATFORM_VIEWS: ReadonlySet<View["kind"]> = new Set([
     "customers",
+    "platform-eiv",
     "staff",
     "security",
   ]);
@@ -1304,6 +1328,15 @@ export function Console(props: {
   if (view.kind === "copy") {
     // Like branding: the screen renders and the API is the gate on the write.
     return headed(<CopySettings client={client} />);
+  }
+
+  if (view.kind === "platform-eiv") {
+    /*
+     * The **platform** client, not the tenant one: this setting has no
+     * customer and the route sends no `X-DS-Project` (P180-01). Handed the
+     * same way `Customers` is, for the same reason.
+     */
+    return headed(<PlatformEiv client={platformClient} />);
   }
 
   if (view.kind === "media") {

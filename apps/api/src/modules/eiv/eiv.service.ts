@@ -54,16 +54,29 @@ export interface EivSweepResult {
  */
 export type EivSubmitterPort = AccreditationReporter;
 
-export interface EivServiceOptions {
+/**
+ * Where this sweep is allowed to file, decided **per sweep** (P180-01).
+ *
+ * `baseUrl` and `allowLive` used to be constructor options, read from the
+ * environment once at boot. They now come from `platform_settings`, which an
+ * operator edits in the console — so they are passed in on each `sweep` rather
+ * than captured, and a switch takes effect on the next tick instead of on the
+ * next deploy. That is the whole point of the move; capturing them here would
+ * have kept the old behaviour behind a new screen.
+ */
+export interface EivSweepTarget {
   readonly baseUrl: string;
-  /** Rows per sweep. Bounded so one sweep cannot run unboundedly long. */
-  readonly batchSize: number;
   /**
-   * Refuses to talk to anything but a mock unless explicitly allowed. A
-   * mis-set base URL that reaches the real Ärztekammer with test data is not
-   * an error you can take back.
+   * Refuses to talk to anything but a mock or EIV's test system unless
+   * explicitly consented to. A mis-set endpoint that reaches the real
+   * Ärztekammer with test data is not an error you can take back.
    */
   readonly allowLive: boolean;
+}
+
+export interface EivServiceOptions {
+  /** Rows per sweep. Bounded so one sweep cannot run unboundedly long. */
+  readonly batchSize: number;
   /**
    * How long a claimed row stays leased before another sweep may take it.
    * Must comfortably exceed one submission round trip; a crashed worker's rows
@@ -80,7 +93,7 @@ export class EivService {
     private readonly options: EivServiceOptions,
   ) {}
 
-  async sweep(now: Date): Promise<EivSweepResult> {
+  async sweep(now: Date, target: EivSweepTarget): Promise<EivSweepResult> {
     const claims = await this.repository.claimDue(
       this.options.batchSize,
       now,
@@ -101,7 +114,7 @@ export class EivService {
       const row = await this.repository.load(claim);
       if (row === undefined) continue;
 
-      const outcome = await this.processOne(claim, row, now);
+      const outcome = await this.processOne(claim, row, now, target);
       result[outcome] += 1;
     }
 
@@ -112,6 +125,7 @@ export class EivService {
     claim: ClaimedSubmission,
     row: DueSubmission,
     now: Date,
+    target: EivSweepTarget,
   ): Promise<"submitted" | "retrying" | "abandoned" | "waiting"> {
     const plan = planEivAttempt({
       eventEndAt: row.eventEndAt,
@@ -147,7 +161,7 @@ export class EivService {
       return "abandoned";
     }
 
-    if (!this.options.allowLive && requiresLiveConsent(this.options.baseUrl)) {
+    if (!target.allowLive && requiresLiveConsent(target.baseUrl)) {
       // Refusing loudly beats submitting real data to the Ärztekammer from a
       // misconfigured environment.
       await this.abandon(claim, row, "live_submission_not_allowed");
@@ -174,7 +188,7 @@ export class EivService {
          * what makes that knowable in advance.
          */
         completedAt: row.eventEndAt,
-        endpoint: this.options.baseUrl,
+        endpoint: target.baseUrl,
         // Decrypted by the repository for this one call and handed straight
         // on. It is never logged, never audited and never returned — the audit
         // record below carries the attempt count and the reference, nothing

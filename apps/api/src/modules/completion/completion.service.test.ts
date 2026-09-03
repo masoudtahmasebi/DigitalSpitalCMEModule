@@ -153,9 +153,17 @@ function build(
     onFindEfn?: (userId: string) => void;
     /** Whether any enrolment awards CME points (P57-01). */
     pointBearing?: boolean;
+    /** Un-sent Punktemeldungen a corrected EFN should reach (P179-03). */
+    ownSubmissions?: readonly {
+      id: string;
+      enrolmentId: string;
+      efn: string;
+      status: string;
+    }[];
   } = {},
 ) {
   const queued: Array<Record<string, unknown>> = [];
+  const refreshed: Array<{ id: string; efn: string }> = [];
   const savedEfn: string[] = [];
   const savedResponses: Array<Record<string, unknown>> = [];
   const completedCalls: Array<{ id: string; at: Date; attested: AttestedCompletion }> =
@@ -199,6 +207,17 @@ function build(
     },
     hasPointBearingEnrolment: async () => options.pointBearing ?? true,
     hasEivSubmission: async () => options.hasEiv ?? false,
+    /*
+     * Nothing to refresh (P179-03). The rule that carries a corrected EFN onto
+     * an un-sent Punktemeldung is exercised over HTTP against a real submission
+     * in `completion-flow.integration.test.ts`, because what has to be true is
+     * that a **real** correction reaches a **real** queued row — a stub here
+     * would assert my stub (§9.7).
+     */
+    findOwnSubmissions: async () => options.ownSubmissions ?? [],
+    updateSubmissionEfn: async (id, efn) => {
+      refreshed.push({ id, efn });
+    },
     queueEivSubmission: async (input) => {
       queued.push({ ...input });
     },

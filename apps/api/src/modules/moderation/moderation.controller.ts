@@ -33,12 +33,14 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   Inject,
   Param,
   Patch,
   Post,
   Query,
+  StreamableFile,
 } from "@nestjs/common";
 import { z } from "zod";
 import { Roles } from "../../auth/roles.decorator.js";
@@ -56,6 +58,11 @@ import {
   objectErasureFor,
   ObjectErasureService,
 } from "../certificate/object-erasure.service.js";
+import {
+  certificateArchiveFor,
+  type CertificateArchivePort,
+} from "../certificate/certificate.archive.js";
+import { CertificateService } from "../certificate/certificate.service.js";
 import {
   ModerationRepository,
   SubjectErasureRepository,
@@ -107,6 +114,15 @@ export class ModerationController {
    */
   private readonly objectErasure: ObjectErasureService | undefined;
 
+  /**
+   * The certificate archive, for the staff download (P179-02).
+   *
+   * Built once from configuration exactly as `CertificateController` does, and
+   * `undefined` on a deployment with no bucket, which is supported: the render
+   * happens either way and only the archiving step is skipped.
+   */
+  private readonly archive: CertificateArchivePort | undefined;
+
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
     /**
@@ -141,6 +157,7 @@ export class ModerationController {
      * exactly this: correct-looking behaviour with the work not done (§9.1).
      */
     this.objectErasure = objectErasureFor(sidePool, config, new JsonLogger("info"));
+    this.archive = certificateArchiveFor(config, new JsonLogger("warn"));
   }
 
   @Get("learners")
@@ -211,6 +228,69 @@ export class ModerationController {
     await this.service(db).actOnCertificate(id, "resend", context(principal));
   }
 
+  /**
+   * The certificate itself, for the operator supporting the physician who did
+   * not receive it (P179-02).
+   *
+   * ## Why this did not exist, and why it must
+   *
+   * `GET /courses/{slug}/certificate/pdf` reads `principal.userId`: the only
+   * document it can produce is the caller's own. That is right for a learner
+   * route and it left a support person with nothing —
+   *
+   *   > how can an admin download the certificate of a person to send it to
+   *   > them as a support person, this part is quite weak!
+   *
+   * — on the exact screen where a row says `unzustellbar`. The platform's
+   * answer to a failed delivery was "the physician can download it", which is
+   * true and useless to somebody who has just been telephoned about it.
+   *
+   * ## What it does not do
+   *
+   * **It does not send anything.** Resending is `resend` above, and keeping
+   * them apart matters: this hands one PDF to one operator who then decides
+   * what to do with it, and leaves no impression that the participant has been
+   * contacted.
+   *
+   * **It does not re-issue.** `issueForEnrolment` is idempotent — it mints the
+   * download token only if there is none, and `archiveOnce` keeps the *first*
+   * render as the evidence. A support download therefore cannot replace what
+   * was issued, which is the property that lets this be a read.
+   *
+   * **It refuses a revoked certificate**, before rendering. A withdrawn
+   * document handed out by support is the one outcome revocation exists to
+   * prevent, and the console does not draw the button for one either (§9.2).
+   *
+   * `MODERATOR_ROLES`, not `RECORD_READERS`. A `department_admin` may read that
+   * a certificate exists and what state it is in; the document names a
+   * physician, states what they earned, and is the thing that gets forwarded —
+   * so producing a copy of it sits with the roles that already correct names
+   * and withdraw certificates.
+   */
+  @Get("certificates/:id/pdf")
+  @Roles(...MODERATOR_ROLES)
+  @RateLimit("certificatePdf")
+  // The same header the learner's route carries, for the same reason: this is a
+  // named physician's participation record and a shared proxy holding a copy is
+  // a disclosure nobody agreed to.
+  @Header("cache-control", "no-store, private")
+  async downloadCertificate(
+    @Param("id") id: string,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ): Promise<StreamableFile> {
+    const file = await this.service(db).renderCertificateForStaff(
+      id,
+      context(principal),
+      new Date(),
+    );
+
+    return new StreamableFile(Buffer.from(file.bytes), {
+      type: "application/pdf",
+      disposition: `attachment; filename="${file.filename}"`,
+    });
+  }
+
   @Post("certificates/:id/revoke")
   @Roles(...MODERATOR_ROLES)
   @HttpCode(204)
@@ -234,6 +314,10 @@ export class ModerationController {
       new SubjectErasureRepository(this.sidePool),
       new AuditService(this.sidePool),
       this.objectErasure,
+      // The same `Db` the rest of this service uses, so the render happens
+      // inside the request's tenant transaction and a certificate belonging to
+      // another customer is simply not there to find.
+      CertificateService.fromDb(db, this.archive),
     );
   }
 }

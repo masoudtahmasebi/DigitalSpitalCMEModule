@@ -1080,6 +1080,31 @@ export const de = {
     },
   },
 
+  /**
+   * The physician's own EFN, on the Zertifizierung tab (P179-03).
+   *
+   * The wording says what a correction *reaches*, because the one thing a
+   * physician cannot see from here is whether the number they fixed will
+   * actually be the number reported — and P54-02 exists because that gap is how
+   * points end up on somebody else's record while everything looks fine.
+   */
+  efnPanel: {
+    title: "Ihre EFN",
+    stored: "Für Sie ist hinterlegt:",
+    none: "Für Sie ist noch keine EFN hinterlegt.",
+    reach:
+      "Diese Nummer wird für die Meldung Ihrer Punkte an die Ärztekammer verwendet. Eine Korrektur wirkt sich auf Ihre Teilnahmebescheinigung und auf alle noch nicht übermittelten Punktemeldungen aus. Bereits übermittelte Meldungen können hier nicht mehr geändert werden — wenden Sie sich dafür an den Veranstalter.",
+    correct: "EFN korrigieren",
+    add: "EFN hinterlegen",
+    field: "EFN (15 Ziffern)",
+    hint: "Die 15-stellige Einheitliche Fortbildungsnummer Ihrer Ärztekammer.",
+    save: "Speichern",
+    saving: "Wird gespeichert …",
+    cancel: "Abbrechen",
+    saved: "Ihre EFN wurde gespeichert.",
+    failed: "Die EFN konnte nicht gespeichert werden.",
+  },
+
   certificate: {
     title: "Teilnahmebescheinigung",
     download: "Teilnahmebescheinigung herunterladen",

@@ -27,7 +27,7 @@
  * there is exactly one.
  */
 
-import { efnRefresh, eivDeadlines, submissionStage } from "@ds/domain";
+import { efnCorrection, efnRefresh, eivDeadlines, submissionStage } from "@ds/domain";
 import {
   EivError,
   EIV_PASSWORD_KEY,
@@ -541,6 +541,99 @@ export class EivAdminService {
       // identifier moved is the auditable fact, and what it moved to is the
       // physician's, not the log's.
       detail: { from: row.status, efnRefreshed: efn.kind === "refresh" },
+    });
+  }
+
+  /**
+   * Correct the EFN a queued Punktemeldung will send (P179-03).
+   *
+   * ## What the client asked for, and what this is
+   *
+   *   > i need to be able to change efn if it is incorrect from the user side
+   *   > or from panel side
+   *
+   * The user side is `PUT /profile/efn`, which writes the physician's profile
+   * and now carries the correction onto their un-sent Meldungen by the same
+   * rule this uses. This is the panel side, and it is deliberately **not** a
+   * write to `efn_profiles`:
+   *
+   * - `efn_profiles` is the physician's identifier at their Ärztekammer, and
+   *   its RLS `WITH CHECK` admits only `user_id = app.user_id`. The subject and
+   *   nobody else may write it. That is a guarantee rather than an oversight —
+   *   a platform on which a customer's administrator can assert a doctor's
+   *   national identifier is one that can credit points to anybody — and
+   *   changing it is a decision for the client and an amendment to ADR-0004,
+   *   not something to absorb while fixing a support flow (§7, CLAUDE.md §3).
+   * - `eiv_submissions.efn` is **our own outbound report**. A typo in it is
+   *   this organisation's report being wrong, and correcting a report before
+   *   it is filed is exactly the operator's job.
+   *
+   * So this stops a wrong number reaching the Kammer without letting anybody
+   * rewrite whose number it is. The physician's profile still says what the
+   * physician said; the certificate still reads the profile live.
+   *
+   * ## What it does not do
+   *
+   * It does not send. `requeue` is the control that says "try again", with the
+   * deadline check that belongs to sending. Folding them together would mean a
+   * `failed_permanent` row silently re-entering the queue because somebody
+   * fixed a digit.
+   */
+  async correctEfn(
+    enrolmentId: string,
+    proposed: string,
+    actor: EivOperatorContext,
+  ): Promise<void> {
+    const row = await this.repository.loadForAction(enrolmentId);
+    if (row === undefined) {
+      throw new AppError("not_found", "no eiv submission for enrolment");
+    }
+
+    const verdict = efnCorrection({
+      proposed,
+      current: row.efn,
+      stage: submissionStage(row.status),
+    });
+
+    if (!verdict.ok) {
+      /*
+       * Three refusals, three sentences, and none of them names an EFN — not
+       * the old one, not the proposed one. An operator is not entitled to the
+       * physician's identifier (ADR-0004) and an error string reaches a log
+       * (§9.5).
+       */
+      if (verdict.reason === "malformed") {
+        throw new AppError(
+          "validation",
+          `rejected EFN for enrolment=${enrolmentId}: failed domain validation`,
+          "Die EFN muss aus genau 15 Ziffern bestehen.",
+        );
+      }
+      if (verdict.reason === "unchanged") {
+        throw new AppError(
+          "conflict",
+          `refused: efn unchanged on enrolment=${enrolmentId}`,
+          "Diese Punktemeldung trägt bereits genau diese EFN. Es wurde nichts geändert.",
+        );
+      }
+      throw new AppError(
+        "conflict",
+        `refused: efn correction on an accepted submission enrolment=${enrolmentId}`,
+        "Diese Teilnahme wurde bereits an die Ärztekammer gemeldet. Eine Meldung " +
+          "unter einer anderen EFN würde die Punkte einer zweiten Person " +
+          "gutschreiben. Bitte widerrufen Sie zuerst die bestehende Punktemeldung " +
+          "oder wenden Sie sich an die Ärztekammer.",
+      );
+    }
+
+    await this.repository.correctEfn(row.submissionId, verdict.efn);
+
+    await this.audit.recordForCustomer(actor.customerId, {
+      actor: { identity: "staff", id: actor.staffUserId },
+      action: "eiv.efn_corrected",
+      subject: row.enrolmentId,
+      // The status it was corrected in, never either number (§9.5).
+      detail: { from: row.status },
     });
   }
 

@@ -484,13 +484,37 @@ jobs:
           #
           # Asked the same way as the hostnames above, and for the same reason:
           # the host's own `ds_eiv_worker_will_file_live`, over the host's own
-          # EIV_BASE_URL and EIV_WORKER_ENABLED, so the smoke cannot disagree
-          # with the server about what the server does.
+          # settings, so the smoke cannot disagree with the server about what
+          # the server does.
+          #
+          # Those settings moved from config.env into `platform_settings`
+          # (P180-01), so this reads them with psql instead of sourcing a file.
+          # The query is `ds_eiv_settings_sql` — one definition, used by the
+          # deploy script and by this, because two readings of "is the worker
+          # armed" is exactly the shape that lets a smoke run against a host
+          # that files for real.
+          #
+          # Fails **closed**: an unreadable answer is `yes`, which stops the
+          # journey. A missing table on the deploy that introduces it, a psql
+          # that is not there, a container still starting — none of those is
+          # evidence that nothing will be filed, and the old version's habit of
+          # concluding "not live" from an empty variable is the defect this
+          # comment block was written for.
           eiv_reports_live=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "cd ${REPO_DIR}/infra/deploy && . ./eiv-endpoint.sh && \
              set -a && . \$HOME/ds-education/config.env && set +a && \
-             if ds_eiv_worker_will_file_live \"\${EIV_BASE_URL:-}\" \"\${EIV_WORKER_ENABLED:-}\"; then
+             settings=\$(docker compose -f docker-compose.prod.yml exec -T \
+               -e PGPASSWORD=\"\${POSTGRES_SUPERUSER_PASSWORD}\" postgres \
+               psql -tAX -U \"\${POSTGRES_SUPERUSER}\" -d \"\${POSTGRES_DB}\" \
+               -c \"\$(ds_eiv_settings_sql)\" 2>/dev/null | tr -d '\n' || true) && \
+             if [ -z \"\$settings\" ]; then
+               printf 'yes'
+             elif ds_eiv_worker_will_file_live \
+               \"\${settings%%|*}\" \
+               \"\$(printf '%s' \"\$settings\" | cut -d'|' -f2)\" \
+               \"\${settings##*|}\" \
+               \"\${EIV_MOCK_BASE_URL:-}\"; then
                printf 'yes'
              else
                printf 'no'
