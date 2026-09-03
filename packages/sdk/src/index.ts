@@ -104,6 +104,7 @@ export type ProjectSummary = components["schemas"]["ProjectSummary"];
 export type ProjectCreate = components["schemas"]["ProjectCreate"];
 export type ProjectUpdate = components["schemas"]["ProjectUpdate"];
 export type CourseCreate = components["schemas"]["CourseCreate"];
+export type CourseClone = components["schemas"]["CourseClone"];
 export type CourseStructure = components["schemas"]["CourseStructure"];
 export type AuthoringModule = components["schemas"]["AuthoringModule"];
 export type AuthoringChapter = components["schemas"]["AuthoringChapter"];
@@ -858,6 +859,16 @@ export function createClient(options: ClientOptions) {
 
     adminCreateCourse: (input: CourseCreate): Promise<CourseStructure> =>
       request("/admin/courses", json(input)),
+
+    /**
+     * Copy a course and its whole tree into a new unlocked draft (P178-02).
+     *
+     * The source is read, never written, so a content-locked course can be
+     * cloned — that is what the feature is for. No enrolment, attempt or
+     * certificate is copied, and the VNR is not carried over.
+     */
+    adminCloneCourse: (slug: string, input: CourseClone): Promise<CourseStructure> =>
+      request(`${adminCourse(slug)}/clone`, json(input)),
 
     /**
      * Refused with 409 while it still contains modules, and permanently once

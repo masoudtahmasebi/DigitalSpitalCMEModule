@@ -219,6 +219,7 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
       projectSlug: "p",
       deliveryType: "on_demand",
     }),
+  adminCloneCourse: (c) => c.adminCloneCourse("adhs", { slug: "adhs-2", title: "T" }),
   adminGetStructure: (c) => c.adminGetStructure("adhs"),
   adminBeginUpload: (c) =>
     c.adminBeginUpload("adhs", {

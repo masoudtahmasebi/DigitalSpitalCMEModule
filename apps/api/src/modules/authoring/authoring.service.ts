@@ -62,6 +62,7 @@ import type {
   AuthoringQuiz,
   ChapterWrite,
   ContentWrite,
+  CourseClone,
   CourseCreate,
   CourseStructure,
   DepartmentCreate,
@@ -341,9 +342,46 @@ export class AuthoringService {
       title: input.title,
       description: input.description ?? null,
       deliveryType: input.deliveryType,
+      contentLocked: input.contentLocked,
     });
     await this.audit(actor, "admin.course.create", input.slug, {
       project: input.projectSlug,
+      contentLocked: input.contentLocked,
+    });
+  }
+
+  /**
+   * Clone a course into a new unlocked draft (P178-02).
+   *
+   * The source is read but not written, so a **locked** course can be cloned —
+   * that is the point of the feature. It is the way to carry a Fortbildung
+   * somebody has completed into a new one with different videos, without
+   * editing material a physician was graded against.
+   *
+   * Runs inside the request's transaction like every other authoring write, so
+   * a failure part-way leaves no half-built course. The audit entry names both
+   * slugs: "where did this course come from" is the question somebody asks a
+   * year later, and neither slug is personal data.
+   */
+  async cloneCourse(
+    sourceSlug: string,
+    input: CourseClone,
+    actor: AuthorContext,
+  ): Promise<void> {
+    const sourceId = await this.requireCourse(sourceSlug);
+
+    await this.guardUnique(
+      () => this.repository.findCourseId(input.slug),
+      `Eine Fortbildung mit dem Kürzel „${input.slug}“ existiert bereits.`,
+    );
+
+    await this.repository.cloneCourse({
+      sourceCourseId: sourceId,
+      slug: input.slug,
+      title: input.title,
+    });
+    await this.audit(actor, "admin.course.clone", input.slug, {
+      source: sourceSlug,
     });
   }
 
@@ -390,6 +428,7 @@ export class AuthoringService {
     actor: AuthorContext,
   ): Promise<CourseStructure> {
     const courseId = await this.requireCourse(courseSlug);
+    await this.assertUnlocked(courseSlug);
     await this.repository.createModule(courseId, {
       title: input.title,
       subtitle: input.subtitle ?? null,
@@ -403,7 +442,7 @@ export class AuthoringService {
     input: ModuleWrite,
     actor: AuthorContext,
   ): Promise<CourseStructure> {
-    const courseSlug = await this.slugOwning(
+    const courseSlug = await this.slugForEdit(
       await this.repository.courseIdOfModule(id),
       id,
     );
@@ -416,7 +455,7 @@ export class AuthoringService {
   }
 
   async deleteModule(id: string, actor: AuthorContext): Promise<CourseStructure> {
-    const courseSlug = await this.slugOwning(
+    const courseSlug = await this.slugForEdit(
       await this.repository.courseIdOfModule(id),
       id,
     );
@@ -436,7 +475,7 @@ export class AuthoringService {
     input: ChapterWrite,
     actor: AuthorContext,
   ): Promise<CourseStructure> {
-    const courseSlug = await this.slugOwning(
+    const courseSlug = await this.slugForEdit(
       await this.repository.courseIdOfModule(moduleId),
       moduleId,
     );
@@ -453,7 +492,7 @@ export class AuthoringService {
     input: ChapterWrite,
     actor: AuthorContext,
   ): Promise<CourseStructure> {
-    const courseSlug = await this.slugOwning(
+    const courseSlug = await this.slugForEdit(
       await this.repository.courseIdOfChapter(id),
       id,
     );
@@ -466,7 +505,7 @@ export class AuthoringService {
   }
 
   async deleteChapter(id: string, actor: AuthorContext): Promise<CourseStructure> {
-    const courseSlug = await this.slugOwning(
+    const courseSlug = await this.slugForEdit(
       await this.repository.courseIdOfChapter(id),
       id,
     );
@@ -486,7 +525,7 @@ export class AuthoringService {
     input: ContentWrite,
     actor: AuthorContext,
   ): Promise<CourseStructure> {
-    const courseSlug = await this.slugOwning(
+    const courseSlug = await this.slugForEdit(
       await this.repository.courseIdOfChapter(chapterId),
       chapterId,
     );
@@ -503,7 +542,7 @@ export class AuthoringService {
     input: ContentWrite,
     actor: AuthorContext,
   ): Promise<CourseStructure> {
-    const courseSlug = await this.slugOwning(
+    const courseSlug = await this.slugForEdit(
       await this.repository.courseIdOfContent(id),
       id,
     );
@@ -577,7 +616,7 @@ export class AuthoringService {
   }
 
   async deleteContent(id: string, actor: AuthorContext): Promise<CourseStructure> {
-    const courseSlug = await this.slugOwning(
+    const courseSlug = await this.slugForEdit(
       await this.repository.courseIdOfContent(id),
       id,
     );
@@ -603,6 +642,7 @@ export class AuthoringService {
     actor: AuthorContext,
   ): Promise<CourseStructure> {
     const courseId = await this.requireCourse(courseSlug);
+    await this.assertUnlocked(courseSlug);
     const current = await this.repository.loadStructure(courseId);
 
     this.checkPermutation(
@@ -662,7 +702,7 @@ export class AuthoringService {
   // -------------------------------------------------------------------------
 
   async getQuiz(contentId: string): Promise<AuthoringQuiz> {
-    await this.slugOwning(await this.repository.courseIdOfContent(contentId), contentId);
+    await this.slugForEdit(await this.repository.courseIdOfContent(contentId), contentId);
     const rows = await this.repository.loadQuiz(contentId);
     return { contentId, questions: rows.questions, retiredCount: rows.retiredCount };
   }
@@ -701,7 +741,7 @@ export class AuthoringService {
     input: QuizWrite,
     actor: AuthorContext,
   ): Promise<AuthoringQuiz> {
-    await this.slugOwning(await this.repository.courseIdOfContent(contentId), contentId);
+    await this.slugForEdit(await this.repository.courseIdOfContent(contentId), contentId);
 
     // The rules themselves live in `@ds/domain` and are shared with the admin
     // console, which marks the offending question in the form. Two copies of
@@ -801,6 +841,7 @@ export class AuthoringService {
     actor: AuthorContext,
   ): Promise<AuthoringEvaluation> {
     const courseId = await this.requireCourse(courseSlug);
+    await this.assertUnlocked(courseSlug);
     const existing = await this.repository.loadEvaluation(courseId);
 
     const kept = new Set(
@@ -1070,6 +1111,48 @@ export class AuthoringService {
    * RLS already makes another tenant's row invisible, so a missing row here is
    * a 404 rather than a 403 — existence is never confirmed (ADR-0007).
    */
+  /**
+   * Resolve the owning course **and** refuse if its content is locked
+   * (P178-01).
+   *
+   * Every structural mutation already had to answer "which course is this
+   * module in, and may this tenant see it" before doing anything, so the lock
+   * is asked in the same breath. One helper rather than a line in each of ten
+   * methods: `slugOwning` stays for the read that shares the question
+   * (`getQuiz`), and `scripts/check-content-lock.mjs` asserts that every
+   * authoring method which reaches a structural write goes through this one —
+   * because a rule with ten call sites is a rule the eleventh forgets (§9.3).
+   */
+  private async slugForEdit(courseId: string | undefined, id: string): Promise<string> {
+    const slug = await this.slugOwning(courseId, id);
+    await this.assertUnlocked(slug);
+    return slug;
+  }
+
+  /**
+   * The refusal itself.
+   *
+   * `conflict`, not `forbidden`: the caller has every right to edit this
+   * course, and the course is in a state that refuses. The German says which
+   * of the two it is and what to do about it — an operator who meets "gesperrt"
+   * with no way forward will unlock the wrong thing or give up, and the clone
+   * (P178-02) is usually what they actually want.
+   */
+  private async assertUnlocked(courseSlug: string): Promise<void> {
+    if (!(await this.repository.isContentLocked(courseSlug))) return;
+
+    throw new AppError(
+      "conflict",
+      `course slug=${courseSlug} is content-locked`,
+      "Diese Fortbildung ist für Inhaltsänderungen gesperrt. Die Sperre wird " +
+        "gesetzt, sobald jemand die Fortbildung abgeschlossen hat, damit sich " +
+        "die Grundlage einer bereits erbrachten Leistung nicht nachträglich " +
+        "ändert. Entsperren Sie die Fortbildung in den Einstellungen, um sie " +
+        "trotzdem zu ändern — oder erstellen Sie eine Kopie, wenn Sie eine " +
+        "neue Fassung mit anderen Inhalten aufbauen möchten.",
+    );
+  }
+
   private async slugOwning(courseId: string | undefined, id: string): Promise<string> {
     if (courseId === undefined) {
       throw AppError.notFound(`id=${id} not visible in this tenant`);

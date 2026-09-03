@@ -590,9 +590,38 @@ export class LearningRepository implements LearningRepositoryPort {
    * also makes this safe to call unconditionally.
    */
   async markCourseCompleted(enrolmentId: string, at: Date): Promise<void> {
-    await this.db
+    const [row] = await this.db
       .update(enrolments)
       .set({ courseCompletedAt: at, updatedAt: new Date() })
-      .where(and(eq(enrolments.id, enrolmentId), isNull(enrolments.courseCompletedAt)));
+      .where(and(eq(enrolments.id, enrolmentId), isNull(enrolments.courseCompletedAt)))
+      .returning({ courseId: enrolments.courseId });
+
+    /*
+     * The first completion closes the course to content changes (P178-01).
+     *
+     * The client's rule, from the report that earned it: a physician had
+     * finished the videos and passed the exam of "DS Test Course", a second
+     * video was added to module 1, and their 100 % became 75 % — because
+     * `courseWatchCoverage` weights across the videos the course *currently*
+     * holds. Nobody was told; they were simply short of the gate again, one
+     * form away from a CME point.
+     *
+     * Here rather than in the service because this is the moment, and it is
+     * already the moment: the `WHERE … IS NULL` above makes the update a no-op
+     * after the first, so `row` is present exactly once per enrolment, and the
+     * lock is written in the same transaction as the completion it follows
+     * from. A course locked by a completion that then rolled back would be a
+     * course locked for nothing.
+     *
+     * `content_locked` is left alone once true — this must not un-lock a course
+     * an operator locked deliberately, and `false` is not a state a completion
+     * can produce.
+     */
+    if (row === undefined) return;
+
+    await this.db
+      .update(courses)
+      .set({ contentLocked: true, updatedAt: new Date() })
+      .where(and(eq(courses.id, row.courseId), eq(courses.contentLocked, false)));
   }
 }

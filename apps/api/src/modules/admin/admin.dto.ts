@@ -27,6 +27,8 @@ export const adminCourseSummarySchema = z.object({
    * not listed, 404 on the detail route, refused by enrol.
    */
   status: z.enum(["draft", "published"]),
+  /** Whether the course refuses content changes (P178-01). */
+  contentLocked: z.boolean(),
   title: z.string(),
   description: z.string().nullable(),
   deliveryType: z.enum(["on_demand", "live", "praesenz"]),
@@ -112,6 +114,18 @@ export const adminCourseUpdateSchema = z.object({
    * validity window behaves (P51-02).
    */
   status: z.enum(["draft", "published"]).optional(),
+  /**
+   * The content lock (P178-01).
+   *
+   * Settable on create and on update, because the client asked for both: *"we
+   * need to provide a locked mode that can be set when a course is created"*
+   * and *"a course in lock mode can be unlocked"*. The server sets it too, the
+   * first time an enrolment completes.
+   *
+   * It governs structure, never the course's own fields — see the column
+   * comment in migration 0050.
+   */
+  contentLocked: z.boolean().optional(),
   title: z.string().trim().min(1).max(300).optional(),
   description: z.string().max(5000).nullable().optional(),
   /** Which catalogue tab the course appears under. */

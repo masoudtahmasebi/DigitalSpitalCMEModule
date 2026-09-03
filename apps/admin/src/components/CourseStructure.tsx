@@ -24,6 +24,29 @@
  * nothing but a reorder shifts everything, and a console that guessed would
  * eventually hold a shape the server does not.
  *
+ * ## A locked course is not offered controls it will refuse
+ *
+ * `contentLocked` (P178-01) closes the whole tree: modules, chapters, contents
+ * and a Lernerfolgskontrolle's questions. The API is the gate, as always — but
+ * a screen that drew "Löschen" and "Inhalt hinzufügen" on a locked course would
+ * be offering a decision the system cannot honour, which is CLAUDE.md §9.2 and
+ * the reason `course_editor` and the self-reset button are in it.
+ *
+ * So on a locked course the mutation controls are **absent** rather than
+ * disabled, and one Notice at the top says what is locked, why, and the two
+ * ways out. An absent field reads as an unfinished feature (§9.4), which is
+ * exactly what the Notice is there to prevent.
+ *
+ * The lock reaches the blocks through context rather than a prop threaded
+ * through `ModuleBlock` → `ChapterBlock` → `ContentRow` → `AddForm`. It is the
+ * same value at every level, and a prop passed through four components for one
+ * boolean is four places to forget it.
+ *
+ * Reading the exam's questions stays available. Looking is not an edit, the
+ * quiz editor refuses its own save on a locked course, and taking the view away
+ * would hide the material an author needs in order to decide whether they want
+ * a copy.
+ *
  * ## Deletion says why before the click
  *
  * `learnerRecords` comes back on every content item. A module whose descendants
@@ -32,7 +55,15 @@
  * should not have to click to discover a rule.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   ApiClient,
   AuthoringChapter,
@@ -79,6 +110,19 @@ import { MediaPreview, UploadField } from "./UploadField.js";
 
 type ContentKind = AuthoringContent["kind"];
 
+/**
+ * Whether this course's structure is closed to edits (P178-01).
+ *
+ * Defaults to `false` so a block rendered outside the provider — a test, a
+ * future screen — behaves as it always has. The API is the gate either way;
+ * this only decides what is offered.
+ */
+const ContentLockContext = createContext(false);
+
+function useContentLocked(): boolean {
+  return useContext(ContentLockContext);
+}
+
 const CONTENT_KINDS: ReadonlyArray<readonly [ContentKind, string]> = [
   ["video", de.structure.kinds.video],
   ["text", de.structure.kinds.text],
@@ -90,9 +134,11 @@ const CONTENT_KINDS: ReadonlyArray<readonly [ContentKind, string]> = [
 export function CourseStructureEditor(props: {
   client: ApiClient;
   courseSlug: string;
+  /** From the course row — see the header. */
+  contentLocked: boolean;
   onEditQuiz: (contentId: string, title: string) => void;
 }) {
-  const { client, courseSlug } = props;
+  const { client, courseSlug, contentLocked } = props;
 
   const load = useCallback(
     () => client.adminGetStructure(courseSlug),
@@ -132,8 +178,16 @@ export function CourseStructureEditor(props: {
   const modules = structure.modules;
 
   return (
-    <section className="space-y-4">
-      {/*
+    <ContentLockContext.Provider value={contentLocked}>
+      <section className="space-y-4">
+        {contentLocked ? (
+          <Notice tone="warning" title={de.structure.contentLockTitle}>
+            <p>{de.structure.contentLockBody}</p>
+            <p className="mt-2">{de.structure.contentLockWays}</p>
+          </Notice>
+        ) : null}
+
+        {/*
         Both rules, once, in prose measure (P100-01).
 
         The second one used to be repeated verbatim beside every locked row —
@@ -141,54 +195,59 @@ export function CourseStructureEditor(props: {
         and it is 118 characters. A rule that is the same on every row belongs
         where the screen is explained; what the row needs is the marker.
       */}
-      <div className="max-w-3xl space-y-1.5 text-sm text-gray-600">
-        <p>{de.structure.intro}</p>
-        <p>{de.structure.lockedRule}</p>
-      </div>
+        <div className="max-w-3xl space-y-1.5 text-sm text-gray-600">
+          <p>{de.structure.intro}</p>
+          <p>{de.structure.lockedRule}</p>
+        </div>
 
-      <SaveProblem title={de.error.title} problem={saver.problem} />
-      {saver.state === "saving" ? (
-        <p className="text-xs text-gray-500" role="status">
-          {de.structure.reordering}
-        </p>
-      ) : null}
+        <SaveProblem title={de.error.title} problem={saver.problem} />
+        {saver.state === "saving" ? (
+          <p className="text-xs text-gray-500" role="status">
+            {de.structure.reordering}
+          </p>
+        ) : null}
 
-      {modules.length === 0 ? (
-        <p className="text-sm text-gray-600">{de.structure.empty}</p>
-      ) : (
-        <RowList ordered>
-          {modules.map((module, index) => (
-            <li key={module.id}>
-              <ModuleBlock
-                client={client}
-                courseSlug={courseSlug}
-                module={module}
-                modules={modules}
-                index={index}
-                onMutate={mutate}
-                onReorder={reorder}
-                onEditQuiz={props.onEditQuiz}
-              />
-            </li>
-          ))}
-        </RowList>
-      )}
+        {modules.length === 0 ? (
+          <p className="text-sm text-gray-600">{de.structure.empty}</p>
+        ) : (
+          <RowList ordered>
+            {modules.map((module, index) => (
+              <li key={module.id}>
+                <ModuleBlock
+                  client={client}
+                  courseSlug={courseSlug}
+                  module={module}
+                  modules={modules}
+                  index={index}
+                  onMutate={mutate}
+                  onReorder={reorder}
+                  onEditQuiz={props.onEditQuiz}
+                />
+              </li>
+            ))}
+          </RowList>
+        )}
 
-      <AddForm
-        label={de.structure.newModule}
-        fields={[{ key: "title", label: de.common.title, maxLength: 300 }]}
-        onSubmit={(values) =>
-          client.adminCreateModule(courseSlug, { title: values.title ?? "" })
-        }
-        onDone={setStructure}
-      />
+        <AddForm
+          label={de.structure.newModule}
+          fields={[{ key: "title", label: de.common.title, maxLength: 300 }]}
+          onSubmit={(values) =>
+            client.adminCreateModule(courseSlug, { title: values.title ?? "" })
+          }
+          onDone={setStructure}
+        />
 
-      {/*
-       * Here rather than on the settings screen, because this is where the
-       * source URLs are typed and it is the URLs the check is about (P63-04).
-       */}
-      <MediaCheckPanel client={client} courseSlug={courseSlug} />
-    </section>
+        {/*
+         * Here rather than on the settings screen, because this is where the
+         * source URLs are typed and it is the URLs the check is about (P63-04).
+         *
+         * Offered on a locked course too: it reads, changes nothing, and a
+         * locked course is exactly the one somebody most wants to be sure a
+         * browser can still play.
+         */}
+        <MediaCheckPanel client={client} courseSlug={courseSlug} />
+      </section>
+    </ContentLockContext.Provider>
   );
 }
 
@@ -208,6 +267,7 @@ function ModuleBlock(props: {
 }) {
   const { client, module, modules, index } = props;
   const [editing, setEditing] = useState(false);
+  const locked = useContentLocked();
 
   const blockedBy = recordsUnderModule(module);
 
@@ -217,40 +277,42 @@ function ModuleBlock(props: {
       title={module.title}
       meta={module.subtitle}
       actions={
-        <>
-          <IconButton
-            label={de.common.moveUp}
-            glyph="↑"
-            disabled={index === 0}
-            onClick={() => props.onReorder(swap(modules, index, index - 1))}
-          />
-          <IconButton
-            label={de.common.moveDown}
-            glyph="↓"
-            disabled={index === modules.length - 1}
-            onClick={() => props.onReorder(swap(modules, index, index + 1))}
-          />
-          <Button variant="secondary" onClick={() => setEditing(!editing)}>
-            {editing ? de.common.cancel : de.common.edit}
-          </Button>
-          <ConfirmButton
-            label={de.common.delete}
-            confirmLabel={de.common.confirmDelete}
-            cancelLabel={de.common.cancel}
-            disabledReason={
-              blockedBy > 0
-                ? de.structure.lockedByRecords
-                : module.chapters.length > 0
-                  ? de.structure.lockedByChildren(
-                      module.chapters.length,
-                      de.structure.childChapters(module.chapters.length),
-                    )
-                  : undefined
-            }
-            lockedLabel={de.structure.locked}
-            onConfirm={() => props.onMutate(() => client.adminDeleteModule(module.id))}
-          />
-        </>
+        locked ? null : (
+          <>
+            <IconButton
+              label={de.common.moveUp}
+              glyph="↑"
+              disabled={index === 0}
+              onClick={() => props.onReorder(swap(modules, index, index - 1))}
+            />
+            <IconButton
+              label={de.common.moveDown}
+              glyph="↓"
+              disabled={index === modules.length - 1}
+              onClick={() => props.onReorder(swap(modules, index, index + 1))}
+            />
+            <Button variant="secondary" onClick={() => setEditing(!editing)}>
+              {editing ? de.common.cancel : de.common.edit}
+            </Button>
+            <ConfirmButton
+              label={de.common.delete}
+              confirmLabel={de.common.confirmDelete}
+              cancelLabel={de.common.cancel}
+              disabledReason={
+                blockedBy > 0
+                  ? de.structure.lockedByRecords
+                  : module.chapters.length > 0
+                    ? de.structure.lockedByChildren(
+                        module.chapters.length,
+                        de.structure.childChapters(module.chapters.length),
+                      )
+                    : undefined
+              }
+              lockedLabel={de.structure.locked}
+              onConfirm={() => props.onMutate(() => client.adminDeleteModule(module.id))}
+            />
+          </>
+        )
       }
     >
       {editing ? (
@@ -332,6 +394,7 @@ function ChapterBlock(props: {
 }) {
   const { client, chapter, module, modules, index } = props;
   const [editing, setEditing] = useState(false);
+  const locked = useContentLocked();
 
   const blocked = chapter.contents.some((content) => content.learnerRecords > 0);
   const moduleOptions = useMemo(
@@ -344,67 +407,81 @@ function ChapterBlock(props: {
       eyebrow={`${de.structure.chapter} ${index + 1}`}
       title={chapter.title}
       actions={
-        <>
-          <IconButton
-            label={de.common.moveUp}
-            glyph="↑"
-            disabled={index === 0}
-            onClick={() =>
-              props.onReorder(
-                withChapters(modules, module.id, swap(module.chapters, index, index - 1)),
-              )
-            }
-          />
-          <IconButton
-            label={de.common.moveDown}
-            glyph="↓"
-            disabled={index === module.chapters.length - 1}
-            onClick={() =>
-              props.onReorder(
-                withChapters(modules, module.id, swap(module.chapters, index, index + 1)),
-              )
-            }
-          />
-          {modules.length > 1 ? (
-            <label className="flex items-center gap-1 text-xs text-gray-600">
-              <span className="sr-only sm:not-sr-only">{de.structure.moveToModule}</span>
-              <select
-                aria-label={de.structure.moveToModule}
-                value={module.id}
-                onChange={(event) =>
-                  props.onReorder(moveChapter(modules, chapter.id, event.target.value))
-                }
-                className="rounded border border-gray-300 px-2 py-1 text-xs"
-              >
-                {moduleOptions.map(([id, title]) => (
-                  <option key={id} value={id}>
-                    {title}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <Button variant="secondary" onClick={() => setEditing(!editing)}>
-            {editing ? de.common.cancel : de.common.edit}
-          </Button>
-          <ConfirmButton
-            label={de.common.delete}
-            confirmLabel={de.common.confirmDelete}
-            cancelLabel={de.common.cancel}
-            disabledReason={
-              blocked
-                ? de.structure.lockedByRecords
-                : chapter.contents.length > 0
-                  ? de.structure.lockedByChildren(
-                      chapter.contents.length,
-                      de.structure.childContents(chapter.contents.length),
-                    )
-                  : undefined
-            }
-            lockedLabel={de.structure.locked}
-            onConfirm={() => props.onMutate(() => client.adminDeleteChapter(chapter.id))}
-          />
-        </>
+        locked ? null : (
+          <>
+            <IconButton
+              label={de.common.moveUp}
+              glyph="↑"
+              disabled={index === 0}
+              onClick={() =>
+                props.onReorder(
+                  withChapters(
+                    modules,
+                    module.id,
+                    swap(module.chapters, index, index - 1),
+                  ),
+                )
+              }
+            />
+            <IconButton
+              label={de.common.moveDown}
+              glyph="↓"
+              disabled={index === module.chapters.length - 1}
+              onClick={() =>
+                props.onReorder(
+                  withChapters(
+                    modules,
+                    module.id,
+                    swap(module.chapters, index, index + 1),
+                  ),
+                )
+              }
+            />
+            {modules.length > 1 ? (
+              <label className="flex items-center gap-1 text-xs text-gray-600">
+                <span className="sr-only sm:not-sr-only">
+                  {de.structure.moveToModule}
+                </span>
+                <select
+                  aria-label={de.structure.moveToModule}
+                  value={module.id}
+                  onChange={(event) =>
+                    props.onReorder(moveChapter(modules, chapter.id, event.target.value))
+                  }
+                  className="rounded border border-gray-300 px-2 py-1 text-xs"
+                >
+                  {moduleOptions.map(([id, title]) => (
+                    <option key={id} value={id}>
+                      {title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <Button variant="secondary" onClick={() => setEditing(!editing)}>
+              {editing ? de.common.cancel : de.common.edit}
+            </Button>
+            <ConfirmButton
+              label={de.common.delete}
+              confirmLabel={de.common.confirmDelete}
+              cancelLabel={de.common.cancel}
+              disabledReason={
+                blocked
+                  ? de.structure.lockedByRecords
+                  : chapter.contents.length > 0
+                    ? de.structure.lockedByChildren(
+                        chapter.contents.length,
+                        de.structure.childContents(chapter.contents.length),
+                      )
+                    : undefined
+              }
+              lockedLabel={de.structure.locked}
+              onConfirm={() =>
+                props.onMutate(() => client.adminDeleteChapter(chapter.id))
+              }
+            />
+          </>
+        )
       }
     >
       {editing ? (
@@ -490,6 +567,7 @@ function ContentRow(props: {
 }) {
   const { client, content, chapter, modules, index } = props;
   const [editing, setEditing] = useState(false);
+  const locked = useContentLocked();
 
   const move = (to: number) =>
     props.onReorder(withContents(modules, chapter.id, swap(chapter.contents, index, to)));
@@ -516,46 +594,58 @@ function ContentRow(props: {
       meta={meta}
       actions={
         <>
-          <IconButton
-            label={de.common.moveUp}
-            glyph="↑"
-            disabled={index === 0}
-            onClick={() => move(index - 1)}
-          />
-          <IconButton
-            label={de.common.moveDown}
-            glyph="↓"
-            disabled={index === chapter.contents.length - 1}
-            onClick={() => move(index + 1)}
-          />
+          {/*
+           * The exam stays readable on a locked course — the quiz editor
+           * refuses its own save there, and hiding the questions would take
+           * away what an author needs in order to decide whether they want a
+           * copy. Everything below this changes the tree and is withheld.
+           */}
           {content.kind === "quiz" ? (
             <Button
               variant="secondary"
               onClick={() => props.onEditQuiz(content.id, content.title)}
             >
-              {de.structure.editQuiz}
+              {locked ? de.structure.viewQuiz : de.structure.editQuiz}
             </Button>
           ) : null}
-          <Button variant="secondary" onClick={() => setEditing(!editing)}>
-            {editing ? de.common.cancel : de.common.edit}
-          </Button>
-          <ConfirmButton
-            label={de.common.delete}
-            confirmLabel={de.common.confirmDelete}
-            cancelLabel={de.common.cancel}
-            disabledReason={
-              content.learnerRecords > 0
-                ? de.structure.lockedByRecords
-                : (content.questionCount ?? 0) > 0
-                  ? de.structure.lockedByChildren(
-                      content.questionCount ?? 0,
-                      de.structure.childQuestions(content.questionCount ?? 0),
-                    )
-                  : undefined
-            }
-            lockedLabel={de.structure.locked}
-            onConfirm={() => props.onMutate(() => client.adminDeleteContent(content.id))}
-          />
+          {locked ? null : (
+            <>
+              <IconButton
+                label={de.common.moveUp}
+                glyph="↑"
+                disabled={index === 0}
+                onClick={() => move(index - 1)}
+              />
+              <IconButton
+                label={de.common.moveDown}
+                glyph="↓"
+                disabled={index === chapter.contents.length - 1}
+                onClick={() => move(index + 1)}
+              />
+              <Button variant="secondary" onClick={() => setEditing(!editing)}>
+                {editing ? de.common.cancel : de.common.edit}
+              </Button>
+              <ConfirmButton
+                label={de.common.delete}
+                confirmLabel={de.common.confirmDelete}
+                cancelLabel={de.common.cancel}
+                disabledReason={
+                  content.learnerRecords > 0
+                    ? de.structure.lockedByRecords
+                    : (content.questionCount ?? 0) > 0
+                      ? de.structure.lockedByChildren(
+                          content.questionCount ?? 0,
+                          de.structure.childQuestions(content.questionCount ?? 0),
+                        )
+                      : undefined
+                }
+                lockedLabel={de.structure.locked}
+                onConfirm={() =>
+                  props.onMutate(() => client.adminDeleteContent(content.id))
+                }
+              />
+            </>
+          )}
         </>
       }
     >
@@ -584,6 +674,11 @@ function NewContent(props: {
   onDone: (next: Structure) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const locked = useContentLocked();
+
+  // Nothing to offer: the API refuses every create on a locked course, and the
+  // Notice at the top of the screen has already said so (§9.2).
+  if (locked) return null;
 
   if (!open) {
     return (
@@ -866,6 +961,11 @@ function AddForm(props: {
   onDone: (next: Structure) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const locked = useContentLocked();
+
+  // Nothing to offer: the API refuses every create on a locked course, and the
+  // Notice at the top of the screen has already said so (§9.2).
+  if (locked) return null;
 
   if (!open) {
     return (

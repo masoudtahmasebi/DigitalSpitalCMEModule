@@ -648,6 +648,51 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+  /admin/courses/{slug}/clone:
+    post:
+      tags: [admin]
+      operationId: adminCloneCourse
+      summary: Copy a course into a new unlocked draft
+      description: |
+        Copies the presentation and the whole tree — modules, chapters,
+        contents with their media references, the Lernerfolgskontrolle's
+        questions, the Referenten, the Evaluationsbogen. It copies **no
+        people**: the clone has no enrolments, no progress, no attempts and no
+        certificates, which is what makes it safe to edit.
+
+        Reset on the copy, each for its own reason: `status` to `draft`, so a
+        copy never appears on a catalogue because somebody clicked once;
+        `contentLocked` to false, which is the point of the feature; the VNR
+        and its password to null, because a VNR identifies one accredited event
+        and a Punktemeldung filed against a clone would credit the original's
+        registration; and the validity window, which belongs to a Bescheid this
+        course does not have yet. CME points and category are kept as a
+        starting value — the publish precondition still refuses a published,
+        point-bearing course with no VNR.
+
+        A **locked** source may be cloned. That is the way to carry a
+        Fortbildung somebody has completed into a new one with different
+        videos, without editing material a physician was graded against.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CourseClone" }
+      responses:
+        "201":
+          description: The new course's structure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseStructure" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
   /admin/courses/{slug}:
     get:
       tags: [admin]
@@ -5078,6 +5123,7 @@ components:
           completedCount,
           certificateReady,
           missingCertificateFields,
+          contentLocked,
         ]
       properties:
         slug: { type: string }
@@ -5147,6 +5193,12 @@ components:
         missingCertificateFields:
           type: array
           items: { type: string }
+        contentLocked:
+          type: boolean
+          description: |
+            Whether the course refuses structural edits (P178-01). The console
+            reads this to disable the controls that would 409, and to say why
+            at the point somebody looks for them.
 
     EivCheckStep:
       type: object
@@ -5525,6 +5577,20 @@ components:
         heroImageUrl: { type: [string, "null"], format: uri, maxLength: 2000 }
         cmePoints: { type: [integer, "null"], minimum: 1, maximum: 100 }
         cmeCategory: { type: [string, "null"], maxLength: 50 }
+        contentLocked:
+          type: boolean
+          description: |
+            Close the course's structure to further edits, or reopen it
+            (P178-01). Governs modules, chapters, contents and a
+            Lernerfolgskontrolle's questions — never the course's own fields, so
+            a VNR arriving from the Bescheid can still be recorded on a locked
+            course.
+
+            Set automatically the first time an enrolment on the course
+            completes, because a Fortbildung somebody has been graded against
+            must not grow under them. Unlocking is allowed and is the operator's
+            decision; cloning (`adminCloneCourse`) is the alternative that
+            leaves the completed course alone.
         eivPunkteBasis: { type: boolean }
         eivPunkteLernerfolg: { type: boolean }
         vnr:
@@ -6204,6 +6270,25 @@ components:
         title: { type: string, minLength: 1, maxLength: 300 }
         description: { type: [string, "null"], maxLength: 20000 }
         deliveryType: { $ref: "#/components/schemas/DeliveryType" }
+        contentLocked:
+          type: boolean
+          description: |
+            Start the course with its structure closed (P178-01). Absent means
+            false — a course is open unless somebody says otherwise. An operator
+            building a course against a fixed Anerkennungsbescheid can say so
+            once, rather than remembering to lock it after the first physician
+            finishes.
+
+    CourseClone:
+      type: object
+      required: [slug, title]
+      description: |
+        The two fields a copy must not share with its source (P178-02). A
+        course's slug is unique per customer, and its title is what tells two
+        near-identical copies apart in a list.
+      properties:
+        slug: { $ref: "#/components/schemas/Slug" }
+        title: { type: string, minLength: 1, maxLength: 300 }
 
     AuthoringContent:
       type: object

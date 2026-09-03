@@ -55,6 +55,7 @@ import { AuthoringService } from "./authoring.service.js";
 import {
   chapterWriteSchema,
   contentWriteSchema,
+  courseCloneSchema,
   courseCreateSchema,
   departmentCreateSchema,
   departmentUpdateSchema,
@@ -231,6 +232,30 @@ export class AuthoringController {
   ) {
     const input = parse(courseCreateSchema, body, "course");
     await this.service(db).createCourse(input, context(principal));
+    return this.service(db).getStructure(input.slug);
+  }
+
+  /**
+   * Clone a course into a new unlocked draft (P178-02).
+   *
+   * A **POST on the source** rather than a flag on `POST /admin/courses`: the
+   * thing being acted on is the course being copied, and it is the course whose
+   * existence and visibility have to be checked. It answers with the new
+   * course's structure, the same shape `createCourse` answers with, so the
+   * console can navigate straight into the copy.
+   *
+   * Deliberately reachable for a locked source — see the service.
+   */
+  @Post("courses/:slug/clone")
+  @Roles(...COURSE_AUTHOR_ROLES)
+  async cloneCourse(
+    @Param("slug") slug: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    const input = parse(courseCloneSchema, body, "course");
+    await this.service(db).cloneCourse(slug, input, context(principal));
     return this.service(db).getStructure(input.slug);
   }
 

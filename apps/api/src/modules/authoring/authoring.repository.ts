@@ -74,6 +74,13 @@ export interface AuthoringRepositoryPort {
     title: string;
     description: string | null;
     deliveryType: "on_demand" | "live" | "praesenz";
+    contentLocked: boolean;
+  }): Promise<void>;
+  /** Copy a course and its whole tree into a new unlocked draft (P178-02). */
+  cloneCourse(input: {
+    sourceCourseId: string;
+    slug: string;
+    title: string;
   }): Promise<void>;
 
   loadStructure(courseId: string): Promise<StructureRows>;
@@ -112,6 +119,8 @@ export interface AuthoringRepositoryPort {
   censusOfChapter(id: string): Promise<ChildCensus>;
   /** A Lernerfolgskontrolle's questions — children, but not a level (P162-01). */
   countContentQuestions(id: string): Promise<number>;
+  /** Whether the course refuses content changes (P178-01). */
+  isContentLocked(courseSlug: string): Promise<boolean>;
   countDepartmentRecords(id: string): Promise<number>;
   countProjectRecords(id: string): Promise<number>;
   countCourseRecords(id: string): Promise<number>;
@@ -474,14 +483,212 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
     title: string;
     description: string | null;
     deliveryType: "on_demand" | "live" | "praesenz";
+    contentLocked: boolean;
   }): Promise<void> {
     await this.db.execute(sql`
-      INSERT INTO courses (customer_id, project_id, slug, title, description, delivery_type)
+      INSERT INTO courses (
+        customer_id, project_id, slug, title, description, delivery_type,
+        content_locked
+      )
       VALUES (
         current_setting('app.customer_id')::uuid,
         ${input.projectId}, ${input.slug}, ${input.title},
-        ${input.description}, ${input.deliveryType}::course_delivery_type
+        ${input.description}, ${input.deliveryType}::course_delivery_type,
+        ${input.contentLocked}
       )
+    `);
+  }
+
+  /**
+   * Copy a course and everything under it, except the people (P178-02).
+   *
+   * The client: *"if the user wants to clone one of the published course, which
+   * has similar content but different videos, the course creator should be able
+   * to clone an existing course to change, and the cloned course is not in lock
+   * mode."* It is the way out of the lock that does not involve editing a
+   * Fortbildung somebody has already completed.
+   *
+   * ## What is copied, and what is deliberately reset
+   *
+   * Copied: the presentation and the whole tree — modules, chapters, contents
+   * with their media references, the Lernerfolgskontrolle's questions and
+   * options, the Referenten, the Evaluationsbogen.
+   *
+   * Reset, and each for its own reason:
+   *
+   * | Field                  | Why                                                                |
+   * | ---------------------- | ------------------------------------------------------------------ |
+   * | `status` → draft       | a copy must not appear on a catalogue because somebody clicked once |
+   * | `content_locked` → f   | the client's requirement, and the point of cloning                 |
+   * | `vnr` → NULL           | **two courses may not share one.** A VNR identifies one accredited  |
+   * |                        | event; a Punktemeldung filed against a clone would credit the       |
+   * |                        | original's registration                                            |
+   * | `fortbildungsnummer`   | the same argument one field over — an accreditation identifier the  |
+   * |                        | Zertifizierung tab prints, belonging to one registered event        |
+   * | `vnr_password_enc`     | a credential belongs to the registration it opens, and copying      |
+   * |                        | secrets sideways is how they end up somewhere nobody expects        |
+   * | `valid_from`/`to`      | the accreditation window is the Bescheid's, and there is not one    |
+   *
+   * The column lists below are explicit and therefore rot: a column added to
+   * `courses` or `contents` next year is silently not copied, and the copy is
+   * subtly poorer than its source with nothing saying so. That is what
+   * `every column of a cloned table is either copied or deliberately reset` in
+   * the authoring integration suite is for — it reads `information_schema` and
+   * fails on a column this method has never heard of.
+   *
+   * Points and category are **kept**: an operator cloning a course to re-run it
+   * next year is applying for a comparable Bescheid, and a starting value they
+   * confirm beats an empty field they must reconstruct. It cannot be published
+   * on them — `courses_published_cme_is_complete` refuses a published,
+   * point-bearing course with no VNR, which is exactly the right gate.
+   *
+   * Not copied: `enrolments` and everything under them. A clone has no
+   * participants, no progress, no attempts and no certificates, which is what
+   * makes it safe to edit.
+   *
+   * ## Why the id remapping is in TypeScript
+   *
+   * Each level's new ids are needed to insert the next, and the alternative —
+   * one recursive CTE over five tables — is a query nobody could change safely
+   * a year from now. The whole thing runs inside the request's transaction, so
+   * a failure anywhere leaves no half-built course behind.
+   */
+  async cloneCourse(input: {
+    sourceCourseId: string;
+    slug: string;
+    title: string;
+  }): Promise<void> {
+    const { rows: courseRows } = await this.db.execute<{ id: string }>(sql`
+      INSERT INTO courses (
+        customer_id, project_id, slug, title, description, delivery_type,
+        thema, altersgruppe, accreditation_body, cme_points, cme_category,
+        event_location, organizer, required_watch_percent, pass_threshold_percent,
+        max_quiz_attempts, reveal_correct_answers, hero_image_url,
+        learning_objectives, target_audience, prerequisites,
+        scientific_lead_name, scientific_lead_title, stamp_image,
+        stamp_image_mime, signature_image, signature_image_mime,
+        certificate_issue_place, eiv_punkte_basis, eiv_punkte_lernerfolg,
+        status, content_locked
+      )
+      SELECT customer_id, project_id, ${input.slug}, ${input.title}, description,
+             delivery_type, thema, altersgruppe, accreditation_body, cme_points,
+             cme_category, event_location, organizer, required_watch_percent,
+             pass_threshold_percent, max_quiz_attempts, reveal_correct_answers,
+             hero_image_url, learning_objectives, target_audience, prerequisites,
+             scientific_lead_name, scientific_lead_title, stamp_image,
+             stamp_image_mime, signature_image, signature_image_mime,
+             certificate_issue_place, eiv_punkte_basis, eiv_punkte_lernerfolg,
+             'draft', false
+        FROM courses WHERE id = ${input.sourceCourseId}
+      RETURNING id
+    `);
+
+    const course = courseRows[0];
+    if (course === undefined) {
+      throw new Error(`cloneCourse: source course=${input.sourceCourseId} vanished`);
+    }
+
+    const { rows: moduleRows } = await this.db.execute<{ id: string }>(sql`
+      SELECT id FROM modules
+       WHERE course_id = ${input.sourceCourseId} ORDER BY ordinal
+    `);
+
+    for (const module of moduleRows) {
+      const { rows: moduleCopyRows } = await this.db.execute<{ id: string }>(sql`
+        INSERT INTO modules (customer_id, course_id, ordinal, title, subtitle)
+        SELECT customer_id, ${course.id}, ordinal, title, subtitle
+          FROM modules WHERE id = ${module.id}
+        RETURNING id
+      `);
+      const copy = moduleCopyRows[0];
+      if (copy === undefined) continue;
+
+      const { rows: chapterRows } = await this.db.execute<{ id: string }>(sql`
+        SELECT id FROM chapters WHERE module_id = ${module.id} ORDER BY ordinal
+      `);
+
+      for (const chapter of chapterRows) {
+        const { rows: chapterCopyRows } = await this.db.execute<{ id: string }>(sql`
+          INSERT INTO chapters (customer_id, module_id, ordinal, title, body)
+          SELECT customer_id, ${copy.id}, ordinal, title, body
+            FROM chapters WHERE id = ${chapter.id}
+          RETURNING id
+        `);
+        const chapterCopy = chapterCopyRows[0];
+        if (chapterCopy === undefined) continue;
+
+        const { rows: contentRows } = await this.db.execute<{ id: string }>(sql`
+          SELECT id FROM contents WHERE chapter_id = ${chapter.id} ORDER BY ordinal
+        `);
+
+        for (const content of contentRows) {
+          const { rows: contentCopyRows } = await this.db.execute<{ id: string }>(sql`
+            INSERT INTO contents (
+              customer_id, chapter_id, ordinal, kind, title, body, description,
+              duration_sec, media_sources, poster_url, thumbnail_url,
+              captions_url, file_url, mime_type, file_size
+            )
+            SELECT customer_id, ${chapterCopy.id}, ordinal, kind, title, body,
+                   description, duration_sec, media_sources, poster_url,
+                   thumbnail_url, captions_url, file_url, mime_type, file_size
+              FROM contents WHERE id = ${content.id}
+            RETURNING id
+          `);
+          const contentCopy = contentCopyRows[0];
+          if (contentCopy === undefined) continue;
+
+          /*
+           * Retired questions are deliberately not copied.
+           *
+           * `retired_at` exists because an answered question cannot be deleted
+           * — `quiz_answers` references it, and the record of what somebody was
+           * asked is what a Punktemeldung stands on (P138-01). A clone has no
+           * attempts and therefore nothing to preserve, so copying them would
+           * resurrect a question an author had already replaced.
+           */
+          const { rows: questionRows } = await this.db.execute<{ id: string }>(sql`
+            SELECT id FROM quiz_questions
+             WHERE content_id = ${content.id} AND retired_at IS NULL
+             ORDER BY ordinal
+          `);
+
+          for (const question of questionRows) {
+            const { rows: questionCopyRows } = await this.db.execute<{ id: string }>(sql`
+              INSERT INTO quiz_questions (customer_id, content_id, ordinal, kind, prompt)
+              SELECT customer_id, ${contentCopy.id}, ordinal, kind, prompt
+                FROM quiz_questions WHERE id = ${question.id}
+              RETURNING id
+            `);
+            const questionCopy = questionCopyRows[0];
+            if (questionCopy === undefined) continue;
+
+            await this.db.execute(sql`
+              INSERT INTO quiz_options (customer_id, question_id, ordinal, label, is_correct)
+              SELECT customer_id, ${questionCopy.id}, ordinal, label, is_correct
+                FROM quiz_options WHERE question_id = ${question.id}
+               ORDER BY ordinal
+            `);
+          }
+        }
+      }
+    }
+
+    await this.db.execute(sql`
+      INSERT INTO course_experts (
+        customer_id, course_id, ordinal, role_label, name, institution,
+        biography, photo_url
+      )
+      SELECT customer_id, ${course.id}, ordinal, role_label, name, institution,
+             biography, photo_url
+        FROM course_experts WHERE course_id = ${input.sourceCourseId}
+       ORDER BY ordinal
+    `);
+
+    await this.db.execute(sql`
+      INSERT INTO evaluations (customer_id, course_id, ordinal, kind, prompt, required, options)
+      SELECT customer_id, ${course.id}, ordinal, kind, prompt, required, options
+        FROM evaluations WHERE course_id = ${input.sourceCourseId}
+       ORDER BY ordinal
     `);
   }
 
@@ -749,6 +956,23 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
    * that has nothing to do with quizzes. Counted separately, refused with its
    * own sentence.
    */
+  /**
+   * Is this course closed to content changes? (P178-01)
+   *
+   * By slug rather than id, because every caller has just resolved one and the
+   * two would otherwise be a second lookup. Read through the tenant connection
+   * like everything else — a course another customer locked is not visible
+   * here, and `slugOwning` has already refused that case by the time this runs.
+   */
+  async isContentLocked(courseSlug: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ locked: courses.contentLocked })
+      .from(courses)
+      .where(eq(courses.slug, courseSlug))
+      .limit(1);
+    return row?.locked ?? false;
+  }
+
   async countContentQuestions(id: string): Promise<number> {
     const [row] = await this.db
       .select({ count: sql<number>`count(*)::int` })

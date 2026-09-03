@@ -215,6 +215,19 @@ export const courses = pgTable("courses", {
    * is finished being written.
    */
   status: courseStatus("status").notNull().default("draft"),
+  /**
+   * The content lock (P178-01).
+   *
+   * `status` answers "is this on the catalogue"; this answers "may its material
+   * still change". They are independent: a course can be draft and locked while
+   * an operator prepares it, or published and open.
+   *
+   * Governs structure only — modules, chapters, contents, quiz questions. The
+   * course's own fields stay editable, because a VNR arriving from the Bescheid
+   * or a corrected accreditation window has to reach every certificate
+   * (P171-01).
+   */
+  contentLocked: boolean("content_locked").notNull().default(false),
   validFrom: timestamp("valid_from", { withTimezone: true }),
   validTo: timestamp("valid_to", { withTimezone: true }),
   requiredWatchPercent: integer("required_watch_percent").notNull().default(100),

@@ -32,7 +32,7 @@
  * not a silently recorded call that passes.
  */
 
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import type {
   ApiClient,
@@ -90,7 +90,7 @@ function structure(modules: readonly AuthoringModule[]): CourseStructure {
   };
 }
 
-function mount(tree: CourseStructure) {
+function mount(tree: CourseStructure, contentLocked = false) {
   const client = {
     adminGetStructure: vi.fn().mockResolvedValue(tree),
   } as unknown as ApiClient;
@@ -99,6 +99,7 @@ function mount(tree: CourseStructure) {
     <CourseStructureEditor
       client={client}
       courseSlug="adhs-akademie-adult"
+      contentLocked={contentLocked}
       onEditQuiz={vi.fn()}
     />,
   );
@@ -252,6 +253,7 @@ it("reports a failed load rather than an empty tree", async () => {
     <CourseStructureEditor
       client={client}
       courseSlug="adhs-akademie-adult"
+      contentLocked={false}
       onEditQuiz={vi.fn()}
     />,
   );
@@ -351,4 +353,91 @@ it("still names the file when the browser reached it and could not read it", asy
   renderProbe("failed");
   expect(screen.getByText(de.structure.durationDetectFailed)).toBeTruthy();
   expect(screen.queryByText(de.structure.durationUnreadable)).toBeNull();
+});
+
+/*
+ * The content lock, on the screen (P178-01).
+ *
+ * The API refuses every structural write on a locked course, and there is an
+ * integration test per route for that. These are the other half, and it is the
+ * half §9.13 exists for: an API test cannot assert that a screen stops
+ * *offering* the write. The console that drew "Löschen" beside a course the
+ * server would 409 is exactly the shape of `course_editor` (P38-02) and the
+ * self-reset button (P38-07).
+ */
+describe("a content-locked course", () => {
+  it("says what is locked and both ways out of it", async () => {
+    mount(structure([module()]), true);
+
+    expect(await screen.findByText(de.structure.contentLockTitle)).toBeTruthy();
+    expect(screen.getByText(de.structure.contentLockBody)).toBeTruthy();
+    // §9.4: a refusal that names no remedy sends the reader looking for a
+    // switch that is on another screen.
+    expect(screen.getByText(de.structure.contentLockWays)).toBeTruthy();
+  });
+
+  it("offers no control the API would refuse", async () => {
+    mount(structure([module()]), true);
+    await screen.findByText("ADHS erkennen");
+
+    expect(screen.queryByText(de.structure.newModule)).toBeNull();
+    expect(screen.queryByText(de.structure.newChapter)).toBeNull();
+    expect(screen.queryByText(de.structure.newContent)).toBeNull();
+    expect(screen.queryByText(de.common.delete)).toBeNull();
+    expect(screen.queryByText(de.common.edit)).toBeNull();
+    expect(screen.queryByLabelText(de.common.moveUp)).toBeNull();
+    expect(screen.queryByLabelText(de.common.moveDown)).toBeNull();
+  });
+
+  it("still draws all of them when the course is open", async () => {
+    /*
+     * The other half of the previous case, and the reason it is a separate
+     * test: `queryByText(...)` returning null is also what a screen that
+     * failed to render looks like (§9.1). This one would fail if the tree
+     * stopped drawing, and the one above would not.
+     */
+    mount(structure([module()]));
+    await screen.findByText("ADHS erkennen");
+
+    expect(screen.getByText(de.structure.newModule)).toBeTruthy();
+    expect(screen.getByText(de.structure.newChapter)).toBeTruthy();
+    expect(screen.getAllByText(de.common.delete).length).toBeGreaterThan(0);
+    expect(screen.queryByText(de.structure.contentLockTitle)).toBeNull();
+  });
+
+  it("keeps the exam readable, and says so in the verb", async () => {
+    /*
+     * Looking is not an edit. The quiz editor refuses its own save on a locked
+     * course, and taking the view away would hide the material an author needs
+     * in order to decide whether they want a copy — which is the decision the
+     * lock exists to push them towards.
+     */
+    const withExam = structure([
+      module({
+        chapters: [
+          chapter({
+            contents: [
+              content({
+                id: "c-quiz",
+                kind: "quiz",
+                title: "Abschlussprüfung Modul 1",
+                questionCount: 4,
+              }),
+            ],
+          }),
+        ],
+      }),
+    ]);
+
+    mount(withExam, true);
+    await screen.findByText("Abschlussprüfung Modul 1");
+
+    expect(screen.getByText(de.structure.viewQuiz)).toBeTruthy();
+    expect(screen.queryByText(de.structure.editQuiz)).toBeNull();
+
+    cleanup();
+    mount(withExam);
+    await screen.findByText("Abschlussprüfung Modul 1");
+    expect(screen.getByText(de.structure.editQuiz)).toBeTruthy();
+  });
 });

@@ -1529,3 +1529,570 @@ describe("media-check against a host that does not answer (P146-02)", () => {
     }
   }, 40_000);
 });
+
+describe("a content-locked course refuses structural edits (P178-01)", () => {
+  /*
+   * The defect this block exists for, in the client's words:
+   *
+   *   > I have viewed the course, done with first video and done with the exam.
+   *   > […] Now I have opened the course in verwaltung and I have added a new
+   *   > video content for module 1 — Earlier the video percentage was 100%, now
+   *   > it shows 75% completion only.
+   *
+   * Nothing was broken. `courseWatchCoverage` weights by duration across the
+   * videos a course *currently* holds, so a course that grows re-denominates
+   * everybody in it, including somebody who had finished.
+   *
+   * The lock is the refusal, and it has to be the **API's**, not a disabled
+   * button: the console is a renderer (§4 invariant 1) and a direct POST must
+   * get the same answer as the screen. Every structural route is exercised
+   * here rather than a representative one, because `assertUnlocked` is called
+   * per method and one missing call is a hole with no other detector — the
+   * exact shape of §9.3.
+   *
+   * This block builds its **own** course. Locking the shared `courseSlug`
+   * would break every describe below it, and a fixture reaching across tests
+   * is P177's lesson (§9.6).
+   */
+  const lockSlug = `sperre-${RUN}`;
+  let lockModuleId = "";
+  let lockChapterId = "";
+  let lockContentId = "";
+  let lockQuizId = "";
+
+  beforeAll(async () => {
+    const course = await asAdmin("POST", "/admin/courses", {
+      projectSlug,
+      slug: lockSlug,
+      title: "Zu sperrende Fortbildung",
+    });
+    expect(course.status, JSON.stringify(course.body)).toBe(201);
+
+    const module = await asAdmin("POST", `/admin/courses/${lockSlug}/modules`, {
+      title: "Modul 1",
+      subtitle: null,
+    });
+    expect(module.status, JSON.stringify(module.body)).toBe(201);
+    lockModuleId = module.body.modules[0].id;
+
+    const chapter = await asAdmin("POST", `/admin/modules/${lockModuleId}/chapters`, {
+      title: "Kapitel 1",
+      body: null,
+    });
+    expect(chapter.status, JSON.stringify(chapter.body)).toBe(201);
+    lockChapterId = chapter.body.modules[0].chapters[0].id;
+
+    const video = await asAdmin("POST", `/admin/chapters/${lockChapterId}/contents`, {
+      kind: "video",
+      title: "Video",
+      sources: [{ url: "https://cdn.example/v.mp4", mimeType: "video/mp4" }],
+      durationSec: 600,
+    });
+    expect(video.status, JSON.stringify(video.body)).toBe(201);
+    lockContentId = video.body.modules[0].chapters[0].contents[0].id;
+
+    const quiz = await asAdmin("POST", `/admin/chapters/${lockChapterId}/contents`, {
+      kind: "quiz",
+      title: "Lernerfolgskontrolle",
+    });
+    expect(quiz.status, JSON.stringify(quiz.body)).toBe(201);
+    lockQuizId = quiz.body.modules[0].chapters[0].contents[1].id;
+
+    const questions = await asAdmin("PUT", `/admin/contents/${lockQuizId}/quiz`, {
+      questions: [
+        {
+          kind: "single",
+          prompt: "Welche Aussage trifft zu?",
+          options: [
+            { label: "Diese", isCorrect: true },
+            { label: "Jene", isCorrect: false },
+          ],
+        },
+      ],
+    });
+    expect(questions.status, JSON.stringify(questions.body)).toBe(200);
+
+    const evaluation = await asAdmin("PUT", `/admin/courses/${lockSlug}/evaluation`, {
+      questions: [{ kind: "scale", prompt: "Wie war es?", required: true, options: [] }],
+    });
+    expect(evaluation.status, JSON.stringify(evaluation.body)).toBe(200);
+  }, 30_000);
+
+  it("is created unlocked unless the operator asks for a lock", async () => {
+    const { body } = await asAdmin("GET", "/admin/courses");
+    const row = body.find((c: { slug: string }) => c.slug === lockSlug);
+    expect(row.contentLocked).toBe(false);
+  });
+
+  it("can be created locked, because the client asked for it at creation", async () => {
+    const slug = `gesperrt-ab-werk-${RUN}`;
+    const created = await asAdmin("POST", "/admin/courses", {
+      projectSlug,
+      slug,
+      title: "Ab Werk gesperrt",
+      contentLocked: true,
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+
+    const { body } = await asAdmin("GET", "/admin/courses");
+    expect(body.find((c: { slug: string }) => c.slug === slug).contentLocked).toBe(true);
+
+    // And it means it: the first module is refused, not merely reported.
+    const module = await asAdmin("POST", `/admin/courses/${slug}/modules`, {
+      title: "Modul",
+      subtitle: null,
+    });
+    expect(module.status).toBe(409);
+  });
+
+  it("locks on request, and says so on the summary", async () => {
+    const patched = await asAdmin("PATCH", `/admin/courses/${lockSlug}`, {
+      contentLocked: true,
+    });
+    expect(patched.status, JSON.stringify(patched.body)).toBe(200);
+
+    const { body } = await asAdmin("GET", "/admin/courses");
+    const row = body.find((c: { slug: string }) => c.slug === lockSlug);
+    expect(row.contentLocked).toBe(true);
+  });
+
+  /*
+   * Every write that changes the shape of the tree, one per route. A table
+   * rather than seven `it`s so that adding a structural route and forgetting
+   * `slugForEdit` fails here with the route's own name in the message.
+   */
+  const REFUSED: readonly [string, string, () => string, unknown][] = [
+    [
+      "POST",
+      "a second module",
+      () => `/admin/courses/${lockSlug}/modules`,
+      {
+        title: "Modul 2",
+        subtitle: null,
+      },
+    ],
+    [
+      "PATCH",
+      "the module's title",
+      () => `/admin/modules/${lockModuleId}`,
+      {
+        title: "Anders",
+        subtitle: null,
+      },
+    ],
+    ["DELETE", "the module", () => `/admin/modules/${lockModuleId}`, undefined],
+    [
+      "POST",
+      "a chapter",
+      () => `/admin/modules/${lockModuleId}/chapters`,
+      {
+        title: "Kapitel 2",
+        body: null,
+      },
+    ],
+    [
+      "PATCH",
+      "the chapter",
+      () => `/admin/chapters/${lockChapterId}`,
+      {
+        title: "Anders",
+        body: null,
+      },
+    ],
+    ["DELETE", "the chapter", () => `/admin/chapters/${lockChapterId}`, undefined],
+    [
+      "POST",
+      "the video the client added",
+      () => `/admin/chapters/${lockChapterId}/contents`,
+      {
+        kind: "video",
+        title: "Noch ein Video",
+        sources: [{ url: "https://cdn.example/w.mp4", mimeType: "video/mp4" }],
+        durationSec: 300,
+      },
+    ],
+    [
+      "PATCH",
+      "the video",
+      () => `/admin/contents/${lockContentId}`,
+      {
+        kind: "video",
+        title: "Anders",
+        sources: [{ url: "https://cdn.example/v.mp4", mimeType: "video/mp4" }],
+        durationSec: 600,
+      },
+    ],
+    ["DELETE", "the video", () => `/admin/contents/${lockContentId}`, undefined],
+    [
+      "PUT",
+      "the exam's questions",
+      () => `/admin/contents/${lockQuizId}/quiz`,
+      {
+        questions: [
+          {
+            kind: "single",
+            prompt: "Eine andere Frage?",
+            options: [
+              { label: "Ja", isCorrect: true },
+              { label: "Nein", isCorrect: false },
+            ],
+          },
+        ],
+      },
+    ],
+    [
+      "PUT",
+      "the Evaluationsbogen",
+      () => `/admin/courses/${lockSlug}/evaluation`,
+      {
+        questions: [{ kind: "scale", prompt: "Und jetzt?", required: true, options: [] }],
+      },
+    ],
+  ];
+
+  for (const [method, what, path, body] of REFUSED) {
+    it(`refuses ${method} ${what}`, async () => {
+      const { status, body: answer } = await asAdmin(method, path(), body);
+
+      expect(status, `${method} ${path()} → ${JSON.stringify(answer)}`).toBe(409);
+      // §9.4: the sentence has to say what happened and what to do about it.
+      expect(answer.detail).toContain("gesperrt");
+      expect(answer.detail).toContain("Kopie");
+      // §9.5: the *sentence* names no identifier. `instance` is the request
+      // path, which the caller wrote, so an id there is not a disclosure.
+      expect(answer.detail).not.toContain(lockModuleId);
+      expect(answer.detail).not.toContain(lockSlug);
+    });
+  }
+
+  it("refuses a reorder, which is a structural edit wearing a different verb", async () => {
+    const { status } = await asAdmin(
+      "PUT",
+      `/admin/courses/${lockSlug}/structure/order`,
+      {
+        modules: [{ id: lockModuleId, chapters: [{ id: lockChapterId, contents: [] }] }],
+      },
+    );
+    expect(status).toBe(409);
+  });
+
+  it("still allows the course's own fields, because a VNR arrives after the lock", async () => {
+    /*
+     * The half of this that would be easy to get wrong. An Anerkennungsbescheid
+     * turns up weeks after a course is built and carries the VNR that every
+     * certificate has to print; a lock that refused it would make the platform
+     * unable to record the one number the Ärztekammer identifies the event by.
+     * The lock is about **material**, never about the event's identity.
+     */
+    const { status, body } = await asAdmin("PATCH", `/admin/courses/${lockSlug}`, {
+      title: "Zu sperrende Fortbildung (korrigiert)",
+      vnr: "2760909004711220012",
+    });
+    expect(status, JSON.stringify(body)).toBe(200);
+    expect(body.vnr).toBe("2760909004711220012");
+  });
+
+  it("reads the tree out unchanged — a refusal that half-applied would be worse", async () => {
+    const { body } = await asAdmin("GET", `/admin/courses/${lockSlug}/structure`);
+    expect(body.modules).toHaveLength(1);
+    expect(body.modules[0].chapters).toHaveLength(1);
+    expect(body.modules[0].chapters[0].contents).toHaveLength(2);
+  });
+
+  it("reopens on request, and the refused edit then goes through", async () => {
+    const unlocked = await asAdmin("PATCH", `/admin/courses/${lockSlug}`, {
+      contentLocked: false,
+    });
+    expect(unlocked.status, JSON.stringify(unlocked.body)).toBe(200);
+
+    const module = await asAdmin("POST", `/admin/courses/${lockSlug}/modules`, {
+      title: "Modul 2",
+      subtitle: null,
+    });
+    expect(module.status, JSON.stringify(module.body)).toBe(201);
+    expect(module.body.modules).toHaveLength(2);
+
+    // Put it back, so the clone block below starts from a locked source.
+    const relocked = await asAdmin("PATCH", `/admin/courses/${lockSlug}`, {
+      contentLocked: true,
+    });
+    expect(relocked.status).toBe(200);
+  });
+
+  describe("cloning is the way past a lock that does not disturb the original (P178-02)", () => {
+    const cloneSlug = `sperre-kopie-${RUN}`;
+
+    it("copies a locked course into a new, unlocked draft", async () => {
+      const { status, body } = await asAdmin("POST", `/admin/courses/${lockSlug}/clone`, {
+        slug: cloneSlug,
+        title: "Kopie der Fortbildung",
+      });
+
+      expect(status, JSON.stringify(body)).toBe(201);
+      expect(body.modules).toHaveLength(2);
+      expect(body.modules[0].chapters[0].contents).toHaveLength(2);
+
+      const list = await asAdmin("GET", "/admin/courses");
+      const copy = list.body.find((c: { slug: string }) => c.slug === cloneSlug);
+      expect(copy.contentLocked).toBe(false);
+      expect(copy.status).toBe("draft");
+      expect(copy.title).toBe("Kopie der Fortbildung");
+    });
+
+    it("carries no VNR, because two courses may not report against one", async () => {
+      /*
+       * The compliance half, and the reason this is not a generic "duplicate
+       * row" feature. A VNR identifies one accredited event at the Ärztekammer.
+       * A Punktemeldung filed from a clone that inherited it would credit the
+       * original's registration — a wrong statutory report against a real
+       * physician's EFN, which is §7 territory rather than a bug.
+       */
+      const { rows } = await seedPool.query<{
+        vnr: string | null;
+        vnr_password_enc: Buffer | null;
+        valid_from: Date | null;
+        valid_to: Date | null;
+        cme_points: number | null;
+      }>(
+        `SELECT vnr, vnr_password_enc, valid_from, valid_to, cme_points
+           FROM courses WHERE slug = $1 AND customer_id = $2`,
+        [cloneSlug, customerId],
+      );
+
+      expect(rows[0]!.vnr).toBeNull();
+      expect(rows[0]!.vnr_password_enc).toBeNull();
+      expect(rows[0]!.valid_from).toBeNull();
+      expect(rows[0]!.valid_to).toBeNull();
+    });
+
+    it("copies the exam's questions and their options, not just the shell", async () => {
+      const structure = await asAdmin("GET", `/admin/courses/${cloneSlug}/structure`);
+      const quiz = structure.body.modules[0].chapters[0].contents.find(
+        (c: { kind: string }) => c.kind === "quiz",
+      );
+
+      const { body } = await asAdmin("GET", `/admin/contents/${quiz.id}/quiz`);
+      expect(body.questions).toHaveLength(1);
+      expect(body.questions[0].prompt).toBe("Welche Aussage trifft zu?");
+      expect(body.questions[0].options).toHaveLength(2);
+      /*
+       * The answer key survives. An exam copied without `isCorrect` would be
+       * unpassable — every attempt scores zero — and it would look fine on
+       * every screen an author opens, because the console draws the prompts.
+       * This is the admin quiz route, the one route allowed to carry a
+       * correctness marker at all.
+       */
+      expect(
+        body.questions[0].options.filter((o: { isCorrect: boolean }) => o.isCorrect),
+      ).toHaveLength(1);
+    });
+
+    it("copies the Evaluationsbogen", async () => {
+      const { body } = await asAdmin("GET", `/admin/courses/${cloneSlug}/evaluation`);
+      expect(body.questions).toHaveLength(1);
+      expect(body.questions[0].prompt).toBe("Wie war es?");
+    });
+
+    it("leaves the source untouched, locked and with its own rows", async () => {
+      const source = await asAdmin("GET", `/admin/courses/${lockSlug}/structure`);
+      expect(source.body.modules).toHaveLength(2);
+
+      const list = await asAdmin("GET", "/admin/courses");
+      expect(
+        list.body.find((c: { slug: string }) => c.slug === lockSlug).contentLocked,
+      ).toBe(true);
+
+      // No row of the copy belongs to the source's tree, and vice versa.
+      const { rows } = await seedPool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM modules m
+           JOIN courses c ON c.id = m.course_id
+          WHERE c.slug = $1 AND c.customer_id = $2`,
+        [cloneSlug, customerId],
+      );
+      expect(rows[0]!.n).toBe(2);
+    });
+
+    it("is editable straight away — that is what it is for", async () => {
+      const { status, body } = await asAdmin(
+        "POST",
+        `/admin/courses/${cloneSlug}/modules`,
+        {
+          title: "Ein Modul, das im Original nicht geht",
+          subtitle: null,
+        },
+      );
+      expect(status, JSON.stringify(body)).toBe(201);
+      expect(body.modules).toHaveLength(3);
+    });
+
+    it("refuses a slug that is already taken, rather than shadowing a course", async () => {
+      const { status, body } = await asAdmin("POST", `/admin/courses/${lockSlug}/clone`, {
+        slug: cloneSlug,
+        title: "Noch eine Kopie",
+      });
+      expect(status).toBe(409);
+      expect(body.detail).toContain("existiert bereits");
+    });
+
+    it("copies every column of every cloned table, or deliberately resets it", async () => {
+      /*
+       * The class fix (§9.11) for the defect that made this block red on its
+       * first run: `cloneCourse`'s INSERT named `course_experts (name, title,
+       * bio, photo_url)`, and the table's columns are `role_label, name,
+       * institution, biography, photo_url`. It failed loudly because the names
+       * did not exist — the version that would not have is a column **added
+       * next year** and silently left out, producing a copy quietly poorer
+       * than its source.
+       *
+       * So the lists are checked against `information_schema` rather than
+       * against my memory of the schema. Every column is in exactly one of two
+       * sets: copied, or reset with a reason. A new column is in neither, and
+       * this goes red until somebody decides which.
+       */
+      const COPIED: Record<string, readonly string[]> = {
+        courses: [
+          "customer_id",
+          "project_id",
+          "description",
+          "delivery_type",
+          "thema",
+          "altersgruppe",
+          "accreditation_body",
+          "cme_points",
+          "cme_category",
+          "event_location",
+          "organizer",
+          "required_watch_percent",
+          "pass_threshold_percent",
+          "max_quiz_attempts",
+          "reveal_correct_answers",
+          "hero_image_url",
+          "learning_objectives",
+          "target_audience",
+          "prerequisites",
+          "scientific_lead_name",
+          "scientific_lead_title",
+          "stamp_image",
+          "stamp_image_mime",
+          "signature_image",
+          "signature_image_mime",
+          "certificate_issue_place",
+          "eiv_punkte_basis",
+          "eiv_punkte_lernerfolg",
+        ],
+        modules: ["customer_id", "course_id", "ordinal", "title", "subtitle"],
+        chapters: ["customer_id", "module_id", "ordinal", "title", "body"],
+        contents: [
+          "customer_id",
+          "chapter_id",
+          "ordinal",
+          "kind",
+          "title",
+          "body",
+          "description",
+          "duration_sec",
+          "media_sources",
+          "poster_url",
+          "thumbnail_url",
+          "captions_url",
+          "file_url",
+          "mime_type",
+          "file_size",
+        ],
+        quiz_questions: ["customer_id", "content_id", "ordinal", "kind", "prompt"],
+        quiz_options: ["customer_id", "question_id", "ordinal", "label", "is_correct"],
+        course_experts: [
+          "customer_id",
+          "course_id",
+          "ordinal",
+          "role_label",
+          "name",
+          "institution",
+          "biography",
+          "photo_url",
+        ],
+        evaluations: [
+          "customer_id",
+          "course_id",
+          "ordinal",
+          "kind",
+          "prompt",
+          "required",
+          "options",
+        ],
+      };
+
+      /** Not copied, each with the reason. */
+      const RESET: Record<string, readonly string[]> = {
+        courses: [
+          "id",
+          "created_at",
+          "updated_at",
+          // The caller supplies both — a copy sharing either is not a copy.
+          "slug",
+          "title",
+          // Accreditation identity: one registered event, one number.
+          "vnr",
+          "vnr_password_enc",
+          "fortbildungsnummer",
+          // The Bescheid's window, which this course does not have yet.
+          "valid_from",
+          "valid_to",
+          // A copy must not appear on a catalogue because somebody clicked once.
+          "status",
+          // The point of the feature.
+          "content_locked",
+        ],
+        modules: ["id", "created_at", "updated_at"],
+        chapters: ["id", "created_at", "updated_at"],
+        contents: ["id", "created_at", "updated_at"],
+        // A clone has no attempts, so a replaced question has nothing to
+        // preserve and is not resurrected.
+        quiz_questions: ["id", "created_at", "retired_at"],
+        quiz_options: ["id"],
+        course_experts: ["id", "created_at"],
+        evaluations: ["id"],
+      };
+
+      for (const [table, copied] of Object.entries(COPIED)) {
+        const { rows } = await seedPool.query<{ column_name: string }>(
+          `SELECT column_name FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = $1`,
+          [table],
+        );
+        expect(
+          rows.length,
+          `${table} has no columns — wrong table name?`,
+        ).toBeGreaterThan(0);
+
+        const accounted = new Set([...copied, ...(RESET[table] ?? [])]);
+        const unaccounted = rows
+          .map((row) => row.column_name)
+          .filter((column) => !accounted.has(column));
+
+        expect(
+          unaccounted,
+          `${table}.${unaccounted.join(", ")} is neither copied by cloneCourse ` +
+            `nor listed as deliberately reset. Decide which, in the repository ` +
+            `and here (P178-02).`,
+        ).toEqual([]);
+      }
+    });
+
+    it("is closed to a learner, like every other authoring route", async () => {
+      const { status } = await asLearner("POST", `/admin/courses/${lockSlug}/clone`, {
+        slug: `kopie-lernender-${RUN}`,
+        title: "Nicht erlaubt",
+      });
+      expect(status).toBe(403);
+    });
+
+    it("does not clone a course from another customer", async () => {
+      const { status } = await asAdmin("POST", "/admin/courses/gibt-es-nicht/clone", {
+        slug: `kopie-fremd-${RUN}`,
+        title: "Nicht erlaubt",
+      });
+      expect(status).toBe(404);
+    });
+  });
+});
