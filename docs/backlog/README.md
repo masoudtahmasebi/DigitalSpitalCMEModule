@@ -1,7 +1,31 @@
-# Backlog — work orders P0–P42
+# Backlog — the work orders
 
 One file per phase. Each file is an **Epic**; each entry inside it is a **Task**
 written so it can be handed to Claude Code verbatim.
+
+**The table below stops at P42, and the directory does not.** There are 153
+ticket files here and the table has 40 rows. That is deliberate rather than
+neglected, and saying so is the point — an index that silently covers a quarter
+of what it names is the shape CLAUDE.md §9.1 keeps recording, and a reader who
+does not know where it ends will read "P42 is the last one".
+
+Two reasons it stopped:
+
+- **Its third column is hours**, and the 140 h budget was withdrawn by the
+  client on 26.08.2026 (CLAUDE.md §3). Every row after that would carry a number
+  that means nothing, and a column of meaningless numbers is worse than no
+  column.
+- **After P42 a ticket is a defect or a request, not a phase.** P0–P10 were a
+  plan with weeks against them; P11–P42 were named departures from it; what
+  follows is the day-to-day, usually one report and its fix. A table adds
+  nothing a filename does not already say.
+
+So from P43 on: **the file is the index.** `docs/backlog/P<N>.md`, one per
+ticket, heading and all — `pnpm check:backlog` enforces that a file's number and
+its heading agree, so a number always means one file. `git log --oneline
+docs/backlog/` reads them in the order they happened, and a commit carries its
+`P`-number, so `git log --grep P172` finds the work from the ticket and the
+ticket from the work.
 
 | Phase                                            | File             | Budget    | Weeks |
 | ------------------------------------------------ | ---------------- | --------- | ----- |
