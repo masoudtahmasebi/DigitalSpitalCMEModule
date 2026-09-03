@@ -183,7 +183,7 @@ jobs:
       # that `release-guards.test.sh` can drive it, which a line of YAML cannot
       # be made to do.
       - name: Fetch the deploy guards
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           sparse-checkout: infra/deploy
           sparse-checkout-cone-mode: false
@@ -263,7 +263,7 @@ jobs:
       # a deploy runner has no business anywhere but this one machine.
       - name: Join the tailnet
         if: env.TS_CLIENT_ID != ''
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
@@ -582,13 +582,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
@@ -622,7 +622,7 @@ jobs:
 
       - name: Keep the trace when it fails
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: journey-trace
           path: apps/e2e/test-results/
