@@ -2084,10 +2084,29 @@ back-filled by anything.
 
 ---
 
-## S33 — Does a text section have to be read before CME points are awarded?
+## S33 — Does a text section have to be read? — **CLOSED 03.09.2026: yes**
 
-**Raised 03.09.2026 (P166-03). Owner: MEDICE / ÄKWL. Blocks: the completion rule
-for any course containing a text or details section.**
+**Raised 03.09.2026 (P166-03). Closed the same day by the client. Implemented in
+P167-01.**
+
+### The answer
+
+> _"maybe one course is just texts, we should have a frontend checkbox that says
+> i have read the text, and then the next button which is disabled becomes
+> enabled and that counts as that part as done."_
+
+Reading (1) below: a text section is part of the accredited content. The client
+gave the mechanism as well as the rule, and the mechanism is the honest one —
+there is nothing to measure about prose, so the learner attests to it and the
+platform does not pretend the evidence is stronger than it is.
+
+`reading` is a completion condition beside `watch` and `quiz`;
+`POST /courses/{slug}/contents/{contentId}/acknowledgement` is the event; the
+checkbox disables **Weiter** until it is ticked. An enrolment that already had a
+completion recorded keeps it — a condition added afterwards must not reopen a
+Teilnahmebescheinigung already issued.
+
+The question below is kept as it was asked.
 
 ### What is true today
 

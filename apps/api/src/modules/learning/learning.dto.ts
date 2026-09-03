@@ -152,7 +152,13 @@ export const moduleStateSchema = z.object({
   chapters: z.array(chapterStateSchema),
 });
 
-export const completionConditionSchema = z.enum(["watch", "quiz", "evaluation", "efn"]);
+export const completionConditionSchema = z.enum([
+  "watch",
+  "quiz",
+  "reading",
+  "evaluation",
+  "efn",
+]);
 
 export const enrolmentStateSchema = z.object({
   enrolmentId: z.uuid(),

@@ -324,18 +324,32 @@ export function nextAvailableContent(
  * the best attempt the server stored. A second source would be a second answer
  * to "what did they get" (§4 invariant 6).
  */
-export function recordedQuizScore(
+/**
+ * One content's stored progress, from the enrolment state (P167-01).
+ *
+ * The same walk `recordedQuizScore` does, generalised, because the acknowledged
+ * flag and the score are two fields of one row and two walks over one tree
+ * would be two answers to "what does the server say about this content".
+ */
+export function contentProgressOf(
   state: Pick<EnrolmentState, "modules">,
   contentId: string,
-): number | undefined {
+): ProgressSummary | undefined {
   for (const module of state.modules) {
     for (const chapter of module.chapters) {
       for (const content of chapter.contents) {
-        if (content.id === contentId) return content.progress.scorePercent;
+        if (content.id === contentId) return content.progress;
       }
     }
   }
   return undefined;
+}
+
+export function recordedQuizScore(
+  state: Pick<EnrolmentState, "modules">,
+  contentId: string,
+): number | undefined {
+  return contentProgressOf(state, contentId)?.scorePercent;
 }
 
 export function playbackDuration(authoredSec: number | null, elementSec: number): number {

@@ -209,6 +209,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/courses/{slug}/contents/{contentId}/acknowledgement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark a text or details section as read
+         * @description The completion event a section of prose did not have (P167-01).
+         *
+         *     A video reports intervals and the server derives coverage; there is no
+         *     equivalent signal for text — nothing happens when somebody reads a
+         *     paragraph. So the learner states it: the screen shows a checkbox and
+         *     the button onward stays disabled until it is ticked, which is the
+         *     mechanism the client specified in `docs/show-stoppers.md` §S33.
+         *
+         *     It is an attestation, not a measurement, and the platform does not
+         *     pretend otherwise. What it buys is that a physician cannot be issued
+         *     CME points for a section they never opened — before this, a course of
+         *     nothing but text completed the moment somebody enrolled.
+         *
+         *     Idempotent: acknowledging twice is the same as once, because a
+         *     double-clicked checkbox is not a different fact.
+         *
+         *     Refused with 422 for a video or a quiz, which have completion events of
+         *     their own, and with 403 while the section is still gated — the same
+         *     rule the player obeys, enforced here rather than trusted.
+         */
+        post: operations["acknowledgeReading"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/courses/{slug}/contents/{contentId}/progress": {
         parameters: {
             query?: never;
@@ -2652,11 +2690,27 @@ export interface components {
             progress: components["schemas"]["ProgressSummary"];
             chapters: components["schemas"]["ChapterState"][];
         };
+        /** @description What the server recorded for a section marked read. */
+        ReadingAcknowledgement: {
+            /** Format: uuid */
+            contentId: string;
+            /**
+             * @description Always `completed` — the acknowledgement is the event.
+             * @enum {string}
+             */
+            status: "completed";
+        };
         /**
          * @description A condition still standing between the learner and the points.
+         *
+         *     `reading` is every text and details section acknowledged (P167-01).
+         *     Before it existed, `courseWatchCoverage` counted videos only, so a
+         *     section of prose sat in the denominator of the percentage a physician
+         *     reads and in neither side of the gate — a course of nothing but text
+         *     completed on enrolment.
          * @enum {string}
          */
-        CompletionCondition: "watch" | "quiz" | "evaluation" | "efn";
+        CompletionCondition: "watch" | "quiz" | "reading" | "evaluation" | "efn";
         /**
          * @description Everything the player screen renders: the progress ring, the module
          *     tree with its lock states, the resume target, and what remains.
@@ -5264,6 +5318,78 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    acknowledgeReading: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+                contentId: components["parameters"]["ContentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The section is recorded as read. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingAcknowledgement"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description The content is locked — everything before it is not yet complete. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The content is not a section that can be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     recordProgress: {

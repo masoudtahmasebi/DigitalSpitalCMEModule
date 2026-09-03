@@ -78,6 +78,13 @@ export function LessonScreen(props: {
   /** Set true by the chrome's **Fortbildung pausieren**. */
   paused: boolean;
   onPlayback: (state: PlaybackState) => void;
+  /**
+   * Whether this section is already recorded as read (P167-01).
+   *
+   * From the enrolment state rather than local — the box has to survive a
+   * reload, and the server's answer is the one the gate uses.
+   */
+  acknowledged: boolean;
 }) {
   const { client, courseSlug, lesson, onProgress } = props;
 
@@ -92,7 +99,13 @@ export function LessonScreen(props: {
       onPlayback={props.onPlayback}
     />
   ) : (
-    <TextLesson lesson={lesson} />
+    <TextLesson
+      client={client}
+      courseSlug={courseSlug}
+      lesson={lesson}
+      acknowledged={props.acknowledged}
+      onAcknowledged={onProgress}
+    />
   );
 }
 
@@ -420,8 +433,16 @@ function VideoLesson(props: {
  * asks for rich text here (rich WYSIWYG authoring is explicitly deferred,
  * CLAUDE.md §3). Paragraph breaks are preserved; nothing else is interpreted.
  */
-function TextLesson(props: { lesson: LessonContent }) {
+function TextLesson(props: {
+  client: ApiClient;
+  courseSlug: string;
+  lesson: LessonContent;
+  acknowledged: boolean;
+  onAcknowledged: () => void;
+}) {
   const paragraphs = (props.lesson.body ?? "").split(/\n{2,}/).filter((p) => p !== "");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   return (
     <>
@@ -431,6 +452,62 @@ function TextLesson(props: { lesson: LessonContent }) {
           // Paragraphs have no id and never reorder, so the index is stable.
           <p key={index}>{paragraph}</p>
         ))}
+      </div>
+
+      {/*
+        The completion event prose does not otherwise have (P167-01, §S33).
+
+        A video is measured; a section of text can only be attested to, and the
+        client chose the mechanism: a checkbox, and the button onward disabled
+        until it is ticked. Before this there was no way to finish a text
+        section at all — a course of nothing but text completed on enrolment,
+        because `isCourseComplete` never asked.
+
+        One-way on purpose. Un-ticking would have to mean "I have unread this",
+        which is not a thing, and it would let a learner remove a condition they
+        have already satisfied. Once it is on file the box says so and stops
+        being a control, which is §9.2 — an input that cannot change anything is
+        not an input.
+
+        The refresh is the parent's `onProgress`, the same one the player uses,
+        so the tick in the sidebar and this box come from one server answer.
+      */}
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <label className="flex items-start gap-3 text-sm text-gray-900">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 shrink-0"
+            checked={props.acknowledged}
+            disabled={props.acknowledged || busy}
+            onChange={() => {
+              setFailed(false);
+              setBusy(true);
+              void props.client
+                .acknowledgeReading(props.courseSlug, props.lesson.id)
+                .then(() => {
+                  props.onAcknowledged();
+                })
+                .catch(() => {
+                  setFailed(true);
+                })
+                .finally(() => {
+                  setBusy(false);
+                });
+            }}
+          />
+          <span>
+            {de.reading.confirm}
+            <span className="mt-1 block text-xs text-gray-600">
+              {props.acknowledged ? de.reading.done : de.reading.hint}
+            </span>
+          </span>
+        </label>
+
+        {failed ? (
+          <p className="mt-2 text-sm text-status-inProgress" role="status">
+            {de.reading.failed}
+          </p>
+        ) : null}
       </div>
     </>
   );

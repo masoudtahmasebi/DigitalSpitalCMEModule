@@ -528,6 +528,9 @@ export class AdminService {
       const figures = summariseEnrolment({
         tree,
         stored: progress.get(enrolment.enrolmentId) ?? [],
+        // The same rule the learner's own view applies (P167-01), so the
+        // console and the widget cannot disagree about who has finished.
+        alreadyCompleted: enrolment.completedAt !== null,
         requiredWatchPercent: enrolment.requiredWatchPercent,
         passThresholdPercent: enrolment.passThresholdPercent,
         efnPresent,

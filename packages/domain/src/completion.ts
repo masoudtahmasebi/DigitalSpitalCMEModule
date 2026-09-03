@@ -45,7 +45,7 @@
  * accredited course or otherwise.
  */
 
-export type CompletionCondition = "watch" | "quiz" | "evaluation" | "efn";
+export type CompletionCondition = "watch" | "quiz" | "reading" | "evaluation" | "efn";
 
 /**
  * The conditions that decide whether the **course** is finished.
@@ -58,7 +58,7 @@ export type CompletionCondition = "watch" | "quiz" | "evaluation" | "efn";
  * only for symmetry and was called by nothing — which is the P41-01 shape and
  * is what `scripts/unused-rules.mjs` is for.
  */
-const COURSE_CONDITIONS: readonly CompletionCondition[] = ["watch", "quiz"];
+const COURSE_CONDITIONS: readonly CompletionCondition[] = ["watch", "quiz", "reading"];
 
 export interface CompletionInput {
   /** From the enrolment snapshot, not the live course record. */
@@ -66,8 +66,41 @@ export interface CompletionInput {
   /** Server-computed union coverage across the course's video content. */
   readonly achievedWatchPercent: number;
   readonly quizPassed: boolean;
+  /**
+   * Every text and details section acknowledged as read (P167-01).
+   *
+   * `courseWatchCoverage` counts videos, so before this a section of prose was
+   * in the denominator of the percentage a physician reads and in neither side
+   * of the gate: a course of two texts, one video and one exam completed with
+   * both texts never opened, and a course of nothing but text completed on
+   * enrolment.
+   *
+   * §S33 put the question to the client rather than guessing it, because it
+   * decides whether CME points can be awarded to somebody who did not open a
+   * section the Anerkennungsbescheid lists. Their answer was the rule *and* its
+   * mechanism: a checkbox saying the text has been read, which enables the
+   * button onward.
+   */
+  readonly readingAcknowledged: boolean;
   readonly evaluationSubmitted: boolean;
   readonly efnPresent: boolean;
+  /**
+   * This enrolment already has a completion recorded (P167-01).
+   *
+   * When it does, the course stays complete whatever the conditions now say.
+   * A physician who finished under an earlier gate holds a
+   * Teilnahmebescheinigung and may have a Punktemeldung filed against their
+   * EFN; a condition added afterwards must not reopen that. It is the same
+   * principle as the enrolment's snapshot columns, for a condition that has no
+   * snapshot because it did not exist when they enrolled — and it covers the
+   * ordinary case too, of an author adding a section to a published course
+   * somebody has already finished.
+   *
+   * Deliberately only the *course* conditions: the evaluation and the EFN are
+   * things the learner supplies at the end, and an enrolment that reached
+   * `completedAt` supplied them already.
+   */
+  readonly alreadyCompleted?: boolean;
   /**
    * Whether this course awards CME points, and therefore whether an EFN is
    * needed at all.
@@ -109,15 +142,17 @@ export function isCourseComplete(input: CompletionInput): CompletionResult {
 
   if (input.achievedWatchPercent < input.requiredWatchPercent) outstanding.push("watch");
   if (!input.quizPassed) outstanding.push("quiz");
+  if (!input.readingAcknowledged) outstanding.push("reading");
   if (!input.evaluationSubmitted) outstanding.push("evaluation");
 
   // The one conditional condition — see the module header.
   const needsEfn = input.awardsCmePoints ?? true;
   if (needsEfn && !input.efnPresent) outstanding.push("efn");
 
-  const outstandingForCourse = outstanding.filter((condition) =>
-    COURSE_CONDITIONS.includes(condition),
-  );
+  const outstandingForCourse =
+    input.alreadyCompleted === true
+      ? []
+      : outstanding.filter((condition) => COURSE_CONDITIONS.includes(condition));
 
   return {
     courseComplete: outstandingForCourse.length === 0,

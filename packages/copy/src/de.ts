@@ -679,6 +679,26 @@ export const de = {
     ],
   },
 
+  reading: {
+    /**
+     * The completion event a section of prose does not have (P167-01, §S33).
+     *
+     * The client's own words: *"we should have a frontend checkbox that says i
+     * have read the text, and then the next button which is disabled becomes
+     * enabled and that counts as that part as done."*
+     *
+     * It says what ticking it *does*, not merely that it happened — §9.4. A box
+     * labelled only "Gelesen" leaves a physician guessing whether it is a note
+     * to themselves or part of the accreditation, and this one decides whether
+     * the section counts towards their CME points.
+     */
+    confirm: "Ich habe diesen Abschnitt gelesen.",
+    hint: "Erst dann zählt der Abschnitt als abgeschlossen und es geht weiter.",
+    /** Once it is on file — the box is disabled and says why it cannot change. */
+    done: "Als gelesen erfasst.",
+    failed:
+      "Der Abschnitt konnte nicht als gelesen erfasst werden. Bitte erneut versuchen.",
+  },
   quiz: {
     /**
      * What the intro says to somebody who has already passed (P164-04).
@@ -969,6 +989,7 @@ export const de = {
     outstandingHint:
       "Sobald das erledigt ist, können Sie Ihre Daten hier übermitteln. Über „Zurück zur Übersicht“ gelangen Sie zurück zur Fortbildung.",
     conditions: {
+      reading: "die noch nicht gelesenen Abschnitte",
       watch: "die vollständige Videowiedergabe",
       quiz: "die Lernerfolgskontrolle",
       evaluation: "die Evaluation",

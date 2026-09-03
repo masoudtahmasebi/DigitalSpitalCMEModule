@@ -31,6 +31,7 @@ import type {
   ProgressSummary,
 } from "@ds/sdk";
 import { CourseShell } from "./CourseShell.js";
+import { de } from "../locale/de.js";
 import { PlayerScreen } from "./PlayerScreen.js";
 
 afterEach(cleanup);
@@ -760,6 +761,92 @@ describe("the list of missing spans", () => {
     const message = screen.getByText(/Diese Stellen fehlen noch/u);
     expect(message.textContent).toContain("0:00–0:02");
     expect(message.textContent).not.toContain("0:08");
+  });
+});
+
+/*
+ * P167-01. A text section says it has been read, and the way onward waits.
+ *
+ * `docs/show-stoppers.md` §S33, answered by the client with the rule and its
+ * mechanism: *"we should have a frontend checkbox that says i have read the
+ * text, and then the next button which is disabled becomes enabled and that
+ * counts as that part as done."*
+ *
+ * Before this a section of prose had no completion event at all — `POST
+ * /progress` takes videos — so it could not be ticked and it could not hold a
+ * course back. A course of nothing but text completed on enrolment.
+ */
+describe("a text section that has to be acknowledged", () => {
+  function textLesson() {
+    return lesson({ kind: "text", sources: [], durationSec: null, body: "Ein Absatz." });
+  }
+
+  /**
+   * A state whose next content is an ordinary lesson.
+   *
+   * The shared fixture locks module 4 and module 3's own exam, so
+   * `nextAvailableContent` finds nothing and the Weiter control is correctly
+   * absent — which is the right default and no use for asserting that the
+   * control is *disabled*. Opening module 4 gives it something to point at.
+   */
+  function withNextLessonOpen(read: boolean): EnrolmentState {
+    const base = state();
+    for (const module of base.modules) {
+      if (module.id !== "m4") continue;
+      module.gate = "available";
+      for (const chapter of module.chapters) {
+        chapter.gate = "available";
+        for (const content of chapter.contents) content.gate = "available";
+      }
+    }
+    if (read) {
+      for (const module of base.modules) {
+        for (const chapter of module.chapters) {
+          for (const content of chapter.contents) {
+            if (content.id !== "v3") continue;
+            content.progress = { ...content.progress, status: "completed" };
+          }
+        }
+      }
+    }
+    return base;
+  }
+
+  it("offers the checkbox and holds Weiter until it is ticked", () => {
+    renderPlayer({ lesson: textLesson(), state: withNextLessonOpen(false) });
+
+    expect(screen.getByLabelText(/Ich habe diesen Abschnitt gelesen/u)).toBeTruthy();
+    const next = screen.getByRole("button", { name: /Weiter:/u });
+    expect(next.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("tells the reader what ticking it does, not merely that it happened", () => {
+    // §9.4. A box labelled only "Gelesen" leaves a physician guessing whether
+    // it is a note to themselves or part of their accreditation.
+    renderPlayer({ lesson: textLesson() });
+
+    expect(screen.getByText(de.reading.hint)).toBeTruthy();
+  });
+
+  it("releases Weiter once the server has recorded it", () => {
+    renderPlayer({ lesson: textLesson(), state: withNextLessonOpen(true) });
+
+    const next = screen.getByRole("button", { name: /Weiter:/u });
+    expect(next.hasAttribute("disabled")).toBe(false);
+    expect(screen.getByText(de.reading.done)).toBeTruthy();
+  });
+
+  it("leaves a video's Weiter alone", () => {
+    /*
+     * The guard. A video's way onward is its own completion; a disabled Weiter
+     * there would be a second gate contradicting the watch percentage beside
+     * it.
+     */
+    renderPlayer({ state: withNextLessonOpen(false) });
+
+    const next = screen.getByRole("button", { name: /Weiter:/u });
+    expect(next.hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByLabelText(/Ich habe diesen Abschnitt gelesen/u)).toBeNull();
   });
 });
 

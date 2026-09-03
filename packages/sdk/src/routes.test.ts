@@ -104,6 +104,7 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
   getEnrolment: (c) => c.getEnrolment("adhs"),
   getLesson: (c) => c.getLesson("adhs", ID),
   recordProgress: (c) => c.recordProgress("adhs", ID, { segments: [] }),
+  acknowledgeReading: (c) => c.acknowledgeReading("adhs", ID),
   getQuiz: (c) => c.getQuiz("adhs", ID),
   submitQuiz: (c) => c.submitQuiz("adhs", ID, { answers: [] }),
   getMaterials: (c) => c.getMaterials("adhs"),
