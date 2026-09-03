@@ -333,7 +333,7 @@ async function backdateProgress(seconds: number): Promise<void> {
 }
 
 describe("the learner journey", () => {
-  it("enrols idempotently, snapshotting the course's settings", async () => {
+  it("enrols idempotently, and reports the course's settings", async () => {
     const first = await call("PUT", `/courses/${courseSlug}/enrolment`);
     expect(first.status).toBe(200);
     expect(first.body.requiredWatchPercent).toBe(100);
@@ -342,6 +342,48 @@ describe("the learner journey", () => {
     const second = await call("PUT", `/courses/${courseSlug}/enrolment`);
     expect(second.status).toBe(200);
     expect(second.body.enrolmentId).toBe(first.body.enrolmentId);
+  });
+
+  it("follows the course's thresholds when an operator changes them", async () => {
+    /*
+     * P174-01. The client's decision: *"the three gating thresholds —
+     * required_watch_percent, pass_threshold_percent, max_quiz_attempts should
+     * come from the course."*
+     *
+     * Before it, the enrolment's copy decided, and the Zertifizierung tab —
+     * which renders the course's numbers — disagreed with the progress card
+     * beside it the moment a published course was edited. Two rules on one
+     * screen for the one thing a physician is being held to.
+     *
+     * The snapshot columns are deliberately left untouched and asserted so: the
+     * enrolment still records what was in force when this learner enrolled,
+     * which is the evidence. It is simply no longer the rule.
+     */
+    await seedPool.query(
+      `UPDATE courses SET required_watch_percent = 60, pass_threshold_percent = 90
+        WHERE slug = $1`,
+      [courseSlug],
+    );
+
+    const { body } = await call("GET", `/courses/${courseSlug}/enrolment`);
+
+    expect(body.requiredWatchPercent).toBe(60);
+    expect(body.passThresholdPercent).toBe(90);
+
+    const { rows } = await seedPool.query<{ watch: number; pass: number }>(
+      `SELECT e.required_watch_percent AS watch, e.pass_threshold_percent AS pass
+         FROM enrolments e JOIN courses c ON c.id = e.course_id
+        WHERE c.slug = $1`,
+      [courseSlug],
+    );
+    expect(rows[0]?.watch).toBe(100);
+    expect(rows[0]?.pass).toBe(70);
+
+    await seedPool.query(
+      `UPDATE courses SET required_watch_percent = 100, pass_threshold_percent = 70
+        WHERE slug = $1`,
+      [courseSlug],
+    );
   });
 
   it("starts with module 2 locked and everything outstanding", async () => {

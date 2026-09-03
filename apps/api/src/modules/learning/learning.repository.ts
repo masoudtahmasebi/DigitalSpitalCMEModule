@@ -231,9 +231,36 @@ export class LearningRepository implements LearningRepositoryPort {
         id: enrolments.id,
         courseId: enrolments.courseId,
         userId: enrolments.userId,
-        requiredWatchPercent: enrolments.requiredWatchPercent,
-        passThresholdPercent: enrolments.passThresholdPercent,
-        maxQuizAttempts: enrolments.maxQuizAttempts,
+        /*
+         * The rules the **course** states today, not the copy taken when this
+         * physician enrolled (P174-01).
+         *
+         * The client's decision, after P171 put it to them: *"the three gating
+         * thresholds — required_watch_percent, pass_threshold_percent,
+         * max_quiz_attempts should come from the course."*
+         *
+         * What it fixes is a screen that disagreed with itself. The
+         * Zertifizierung tab renders the course's numbers — "Mindestens 100 %
+         * aller Videomodule", "Mindestens 70 % der Fragen" — and the progress
+         * card rendered the enrolment's, so the moment an operator edited a
+         * published course a learner was shown two different rules for the one
+         * they were studying under, and the gate obeyed the one that was not on
+         * the accreditation panel.
+         *
+         * **What it costs, and what stops it costing more.** These decide
+         * whether somebody may proceed, so reading them live is retroactive by
+         * construction: raising the watch requirement puts an in-progress
+         * learner back below the line, and raising the pass threshold un-passes
+         * a score that cleared the old one. That is the operator's decision to
+         * make about work still in progress. What it must never do is *take
+         * something away that is already finished* — and it cannot, because
+         * `alreadyCompleted` holds a completed enrolment complete (P167-01,
+         * widened in this ticket to cover a course finished but not yet
+         * certified).
+         */
+        requiredWatchPercent: courses.requiredWatchPercent,
+        passThresholdPercent: courses.passThresholdPercent,
+        maxQuizAttempts: courses.maxQuizAttempts,
         createdAt: enrolments.createdAt,
         completedAt: enrolments.completedAt,
         courseCompletedAt: enrolments.courseCompletedAt,

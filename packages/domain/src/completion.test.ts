@@ -340,6 +340,46 @@ describe("reading, as a condition of finishing the course", () => {
     expect(result.outstandingForCourse).toEqual([]);
   });
 
+  it("holds it complete when a raised threshold would otherwise reopen it", () => {
+    /*
+     * P174-01 gave this guard a second, larger job.
+     *
+     * The gate's thresholds are the course's now, live, on the client's
+     * decision — so an operator raising `required_watch_percent` from 80 to 100
+     * changes the rule under everybody at once. For work still in progress that
+     * is what was asked for. For a Fortbildung somebody finished last week it
+     * would be the platform withdrawing a completion it had already recorded,
+     * and this is the line that refuses to.
+     *
+     * Both directions in one case: 90 % achieved against a 100 % requirement is
+     * short, and the quiz is unpassed because the pass mark moved too.
+     */
+    const result = isCourseComplete({
+      ...base,
+      requiredWatchPercent: 100,
+      achievedWatchPercent: 90,
+      quizPassed: false,
+      alreadyCompleted: true,
+    });
+
+    expect(result.courseComplete).toBe(true);
+    expect(result.outstandingForCourse).toEqual([]);
+  });
+
+  it("applies the raised threshold to somebody still working", () => {
+    // The other half, and the reason the guard is narrow: an unfinished
+    // enrolment is held to what the course says today.
+    const result = isCourseComplete({
+      ...base,
+      requiredWatchPercent: 100,
+      achievedWatchPercent: 90,
+      alreadyCompleted: false,
+    });
+
+    expect(result.courseComplete).toBe(false);
+    expect(result.outstandingForCourse).toEqual(["watch"]);
+  });
+
   it("still reports what a half-finished course is waiting for, in order", () => {
     const result = isCourseComplete({
       ...base,
