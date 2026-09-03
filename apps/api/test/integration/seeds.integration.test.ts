@@ -150,7 +150,27 @@ describe("what the seeds leave behind", () => {
    * `seededVnrPassword` — so this asserts what somebody opening the portal
    * actually gets.
    */
-  it("leaves every seeded course published and visible", async () => {
+  it("publishes the courses whose accreditation is ours, and drafts MEDICE's", async () => {
+    /*
+     * P165-01, migrating what this asserted rather than deleting it.
+     *
+     * It used to expect all three published, which was true while the seed
+     * carried a default VNR for MEDICE. The client drew the line: *"seed can do
+     * it, but seed should be only on ds tenant, not medice."*
+     *
+     * So the two DS courses are unchanged — `ds-demo`'s VNR is
+     * `9999999999999999999`, deliberately not a valid registration, and
+     * `ds-ohne-punkte` awards no points and needs none. MEDICE's is a number an
+     * Ärztekammer issued to MEDICE, the seed no longer invents one, and a
+     * point-awarding course without one cannot be published
+     * (`courses_published_cme_is_complete`). Draft is the correct outcome, not
+     * a failure to finish the job: an operator enters the number from the
+     * Anerkennungsbescheid and publishes.
+     *
+     * The property the old assertion held — that a seed run leaves a catalogue
+     * somebody can actually use — is still here for the DS tenants, which are
+     * the ones a demo or a test run reads.
+     */
     const { rows } = await admin.query<{ slug: string; status: string }>(
       `SELECT slug, status FROM courses
         WHERE slug IN ('adhs-akademie-adult', 'ds-cme-demo', 'ds-ohne-punkte')
@@ -158,10 +178,19 @@ describe("what the seeds leave behind", () => {
     );
 
     expect(rows).toEqual([
-      { slug: "adhs-akademie-adult", status: "published" },
+      { slug: "adhs-akademie-adult", status: "draft" },
       { slug: "ds-cme-demo", status: "published" },
       { slug: "ds-ohne-punkte", status: "published" },
     ]);
+  });
+
+  it("leaves MEDICE's VNR empty rather than inventing one", async () => {
+    // The whole of P165-01 in one row. A number in this column would be a
+    // number this repository made up about somebody else's accreditation.
+    const { rows } = await admin.query<{ vnr: string | null }>(
+      "SELECT vnr FROM courses WHERE slug = 'adhs-akademie-adult'",
+    );
+    expect(rows[0]?.vnr).toBeNull();
   });
 
   it("stores the seeded VNR password as ciphertext, not as a column of plaintext", async () => {
@@ -321,25 +350,26 @@ describe("what the seeds leave behind", () => {
 
   it("corrects its own placeholder VNR, and only that (P109-01)", async () => {
     /*
-     * The client: *"vnr i want dynamic … the vnr i have already given you, you
-     * can set that for now."* Both halves, and they pull opposite ways.
+     * P165-01 narrowed this, and the narrowing is the point.
      *
      * P28-03 seeded a synthetic VNR so a seeded environment could not file test
-     * participations against MEDICE's real accreditation. It worked, and it
-     * also meant every installation started inert with a human told to fix it
-     * by hand — which none did (§9.9's corollary). The real number is the
-     * default now; the guards that actually prevent a filing are the VNR
-     * *password*, still a placeholder, and the NOT NULL 15-digit EFN a
-     * submission row requires.
+     * participations against MEDICE's real accreditation. That left every
+     * installation inert with a human told to fix it by hand, which none did
+     * (§9.9's corollary), so P109-01 made a real number the default — the
+     * client's own, at the time.
      *
-     * So the seed has to correct installations carrying the old placeholder
-     * without touching a VNR an operator typed — the P108-01 rule, for a
-     * NOT NULL column where COALESCE cannot express it. Both directions are
-     * asserted here, because a CASE that always fires and one that never fires
-     * are the two ways this silently stops working and neither shows up in a
-     * test of one direction.
+     * The seed no longer carries a default at all: *"seed can do it, but seed
+     * should be only on ds tenant, not medice."* So the repair still exists and
+     * now needs somebody to supply the number, which is `SEED_MEDICE_VNR`. That
+     * is the only circumstance in which this seed may write a VNR, and this
+     * test is the one place that exercises it.
+     *
+     * Both directions are still asserted, because a CASE that always fires and
+     * one that never fires are the two ways this silently stops working and
+     * neither shows up in a test of one direction.
      */
     const PLACEHOLDER = "0000000000000000000";
+    const SUPPLIED = "2760012024200354002";
 
     // An installation seeded before P109-01.
     await admin.query("UPDATE courses SET vnr = $1 WHERE slug = $2", [
@@ -347,6 +377,7 @@ describe("what the seeds leave behind", () => {
       "adhs-akademie-adult",
     ]);
 
+    process.env["SEED_MEDICE_VNR"] = SUPPLIED;
     let seeder = openSeeder();
     try {
       await seedMediceAdhs(seeder);
@@ -357,9 +388,8 @@ describe("what the seeds leave behind", () => {
     const corrected = await admin.query<{ vnr: string }>(
       "SELECT vnr FROM courses WHERE slug = 'adhs-akademie-adult'",
     );
-    expect(corrected.rows[0]?.vnr).not.toBe(PLACEHOLDER);
-    // From the Anerkennungsbescheid: 19 digits, and not the sentinel.
-    expect(corrected.rows[0]?.vnr).toMatch(/^\d{19}$/u);
+    // The number the operator supplied, and nothing the repository invented.
+    expect(corrected.rows[0]?.vnr).toBe(SUPPLIED);
 
     // And an operator's own number survives, which is the half that matters
     // once a second accredited course exists.
@@ -380,6 +410,20 @@ describe("what the seeds leave behind", () => {
       "SELECT vnr FROM courses WHERE slug = 'adhs-akademie-adult'",
     );
     expect(kept.rows[0]?.vnr).toBe(mine);
+
+    // And with nothing supplied the seed writes nothing at all, which is
+    // P165-01's default and the state every other case in this file runs in.
+    delete process.env["SEED_MEDICE_VNR"];
+    seeder = openSeeder();
+    try {
+      await seedMediceAdhs(seeder);
+    } finally {
+      await seeder.end();
+    }
+    const untouched = await admin.query<{ vnr: string }>(
+      "SELECT vnr FROM courses WHERE slug = 'adhs-akademie-adult'",
+    );
+    expect(untouched.rows[0]?.vnr).toBe(mine);
   }, 60_000);
 
   it("creates no demo participant unless one is asked for (P111-01)", async () => {
@@ -633,7 +677,19 @@ describe("what the seeds leave behind", () => {
 describe("a course carrying the seed's placeholder VNR", () => {
   const SLUG = "adhs-akademie-adult";
 
-  it("is repaired and re-published by the next seed run", async () => {
+  it("is repaired and re-published only when a number is supplied", async () => {
+    /*
+     * P165-01. The repair P117-01 wrote still works and now has a precondition,
+     * because the seed no longer knows MEDICE's VNR: *"seed can do it, but seed
+     * should be only on ds tenant, not medice."*
+     *
+     * Both halves are asserted in one case on purpose. With nothing supplied a
+     * demoted course stays demoted — which is the correct refusal, and would be
+     * a silent regression if only the supplied half were covered. The old
+     * assertion was the second half alone.
+     */
+    const supplied = "2760012024200354002";
+
     // The state migration 0047 leaves behind on an installation seeded before
     // P109-01. Written here rather than borrowed from a fixture so the case
     // does not depend on what a previous describe left.
@@ -642,11 +698,28 @@ describe("a course carrying the seed's placeholder VNR", () => {
       SLUG,
     ]);
 
-    const seeder = openSeeder();
+    delete process.env["SEED_MEDICE_VNR"];
+    let seeder = openSeeder();
     try {
       await seedMediceAdhs(seeder, { revealPassword: false });
     } finally {
       await seeder.end();
+    }
+
+    const held = await admin.query<{ vnr: string; status: string }>(
+      "SELECT vnr, status FROM courses WHERE slug = $1",
+      [SLUG],
+    );
+    expect(held.rows[0]?.vnr).toBe(PLACEHOLDER_VNR);
+    expect(held.rows[0]?.status).toBe("draft");
+
+    process.env["SEED_MEDICE_VNR"] = supplied;
+    seeder = openSeeder();
+    try {
+      await seedMediceAdhs(seeder, { revealPassword: false });
+    } finally {
+      await seeder.end();
+      delete process.env["SEED_MEDICE_VNR"];
     }
 
     const { rows } = await admin.query<{ vnr: string; status: string }>(
@@ -654,7 +727,7 @@ describe("a course carrying the seed's placeholder VNR", () => {
       [SLUG],
     );
 
-    expect(rows[0]?.vnr).not.toBe(PLACEHOLDER_VNR);
+    expect(rows[0]?.vnr).toBe(supplied);
     expect(rows[0]?.status).toBe("published");
   }, 60_000);
 
