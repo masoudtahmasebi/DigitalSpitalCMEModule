@@ -530,7 +530,8 @@ export class AdminService {
         stored: progress.get(enrolment.enrolmentId) ?? [],
         // The same rule the learner's own view applies (P167-01), so the
         // console and the widget cannot disagree about who has finished.
-        alreadyCompleted: enrolment.completedAt !== null,
+        alreadyCompleted:
+          enrolment.completedAt !== null || enrolment.courseCompletedAt !== null,
         requiredWatchPercent: enrolment.requiredWatchPercent,
         passThresholdPercent: enrolment.passThresholdPercent,
         efnPresent,

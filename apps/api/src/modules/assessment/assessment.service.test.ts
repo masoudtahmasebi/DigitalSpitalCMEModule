@@ -431,25 +431,38 @@ describe("submit", () => {
     expect(result.passed).toBe(true);
   });
 
-  it("measures against the enrolment's threshold, not the course's current one", async () => {
+  it("measures against the threshold the enrolment row carries", async () => {
     /*
-     * The enrolment snapshots `passThresholdPercent`. A course later tightened
-     * to 90 % must not reopen an exam somebody passed at 80 under the rule they
-     * enrolled on — that would be a retroactive change to a completed
-     * assessment, which is the thing enrolment snapshots exist to prevent.
+     * This case argued the opposite when it was written, ninety minutes before
+     * P174-01: *"a course later tightened to 90 % must not reopen an exam
+     * somebody passed at 80 under the rule they enrolled on."* The client
+     * decided otherwise — the three gating thresholds come from the course —
+     * and `findEnrolment` now fills `passThresholdPercent` from `courses`, so
+     * the two-different-values fixture below is a state production can no
+     * longer produce.
+     *
+     * What it still pins is the property this service is responsible for: it
+     * judges a pass against the threshold **it is given**, and takes it from
+     * the enrolment row rather than re-reading the course itself. One reader,
+     * one value (§4 invariant 6) — where that value comes from is the
+     * repository's decision and is asserted end to end in
+     * `learning-flow.integration.test.ts`.
+     *
+     * At 90 an 80 no longer passes, so the exam reopens rather than being
+     * refused. That is the retroactive edge of the client's decision, and it is
+     * bounded: a course already recorded as finished stays finished
+     * (`alreadyCompleted`, P167-01 widened in P174-01).
      */
     const { service } = build({
       attempts: 1,
       bestScore: 80,
       courseOverrides: { passThresholdPercent: 90 },
-      enrolmentOverrides: { passThresholdPercent: 70 },
+      enrolmentOverrides: { passThresholdPercent: 90 },
     });
 
-    const error = await service
-      .submit(course.slug, QUIZ, allCorrect, learner)
-      .catch((e) => e);
+    const result = await service.submit(course.slug, QUIZ, allCorrect, learner);
 
-    expect((error as AppError).kind).toBe("conflict");
+    expect(result.attemptNumber).toBe(2);
   });
 
   it("still allows a retry before certification", async () => {

@@ -111,9 +111,13 @@ export class LearningService {
   /**
    * Enrol, or return the existing enrolment unchanged.
    *
-   * The course's settings are copied onto the enrolment here and never read
-   * live again (P3-01): a learner who starts under a 70 % threshold finishes
-   * under it, even if an admin edits the course mid-course.
+   * The course's settings are copied onto the enrolment here, and since P174-01
+   * that copy is the **record** rather than the rule: the gate reads the
+   * course's thresholds live, on the client's decision, so a learner studying
+   * under a 70 % threshold that an operator raises to 90 is held to 90 — unless
+   * they have already finished, which `alreadyCompleted` protects. The snapshot
+   * columns are still written and still say what was in force when they
+   * enrolled.
    */
   async enrol(slug: string, learner: LearnerContext): Promise<EnrolmentState> {
     const course = await this.requireCourse(slug);
@@ -126,9 +130,8 @@ export class LearningService {
      * method without ever having gone through the list.
      *
      * **An existing enrolment is deliberately unaffected.** A physician who
-     * started while the course was open keeps their access and their progress:
-     * the compliance settings are already snapshotted onto the enrolment
-     * (P3-01), and revoking a half-finished course is a worse outcome than a
+     * started while the course was open keeps their access and their progress,
+     * and revoking a half-finished course is a worse outcome than a
      * late completion — which the Ärztekammer's own `beginn`/`ende` check
      * refuses at submission time anyway, loudly, inside the correction window.
      * If the accreditation rule turns out to require hard cut-off, this is the
@@ -854,8 +857,24 @@ export class LearningService {
     const figures = summariseEnrolment({
       tree,
       stored,
-      // A recorded completion keeps the course complete (P167-01).
-      alreadyCompleted: enrolment.completedAt !== null,
+      /*
+       * A recorded completion keeps the course complete (P167-01, widened
+       * P174-01).
+       *
+       * It was `completedAt !== null` — *certified*. Since P174-01 the gate's
+       * thresholds are the course's and change under a learner's feet when an
+       * operator edits a published course, so the narrower reading would
+       * un-finish a physician who completed the Fortbildung last week and has
+       * not yet claimed their point: `courseCompletedAt` set, `completedAt`
+       * still null, and a watch requirement raised from 80 to 100 while they
+       * were away.
+       *
+       * Either timestamp is the platform's own record that they finished. A
+       * later edit to the course decides what is still in progress; it does not
+       * reopen what is not.
+       */
+      alreadyCompleted:
+        enrolment.completedAt !== null || enrolment.courseCompletedAt !== null,
       requiredWatchPercent: enrolment.requiredWatchPercent,
       passThresholdPercent: enrolment.passThresholdPercent,
       efnPresent,

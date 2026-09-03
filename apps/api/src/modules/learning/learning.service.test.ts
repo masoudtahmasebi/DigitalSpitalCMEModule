@@ -371,6 +371,61 @@ describe("getState — the progress ring and the module tree", () => {
   });
 });
 
+/*
+ * P174-01. A finished course stays finished when the rules move under it.
+ *
+ * The client's decision made the gate read the course's thresholds live, so an
+ * operator raising `required_watch_percent` on a published course changes the
+ * bar for everyone at once. For work in progress that is the point. For a
+ * Fortbildung somebody has already finished it would be the platform
+ * withdrawing a completion it recorded — so `alreadyCompleted` is now fed by
+ * **either** timestamp, not only by certification.
+ *
+ * `completion.test.ts` covers the rule; these two cover the wiring, which is
+ * the half that would have been quietly wrong (§9.7). The service builds that
+ * boolean, and before this ticket it built it from `completedAt` alone.
+ */
+describe("a course finished before the thresholds changed", () => {
+  const watchedHalf: ProgressRow[] = [
+    {
+      contentId: VIDEO_1,
+      status: "completed",
+      watchedPercent: 50,
+      watchedSegments: [{ startSec: 0, endSec: 300 }],
+      lastPositionSec: 300,
+      scorePercent: null,
+      updatedAt: NOW,
+    },
+  ];
+
+  it("stays complete on the course record alone, uncertified", async () => {
+    const { repository } = fakeRepository({
+      enrolment: {
+        ...enrolment,
+        completedAt: null,
+        courseCompletedAt: new Date("2026-08-01T09:00:00Z"),
+      },
+      progress: watchedHalf,
+    });
+
+    const state = await new LearningService(repository).getState(course.slug, learner);
+
+    expect(state.courseComplete).toBe(true);
+    expect(state.outstandingForCourse).toEqual([]);
+  });
+
+  it("does not extend that to somebody who has not finished", async () => {
+    const { repository } = fakeRepository({
+      enrolment: { ...enrolment, completedAt: null, courseCompletedAt: null },
+      progress: watchedHalf,
+    });
+
+    const state = await new LearningService(repository).getState(course.slug, learner);
+
+    expect(state.courseComplete).toBe(false);
+  });
+});
+
 describe("getState — the completion verdict", () => {
   it("names every outstanding condition rather than a bare false", async () => {
     const state = await new LearningService(fakeRepository().repository).getState(

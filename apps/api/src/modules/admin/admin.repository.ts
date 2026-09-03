@@ -384,8 +384,11 @@ export class AdminRepository implements AdminRepositoryPort {
       .select({
         enrolmentId: enrolments.id,
         userId: enrolments.userId,
-        requiredWatchPercent: enrolments.requiredWatchPercent,
-        passThresholdPercent: enrolments.passThresholdPercent,
+        // The course's rules, live (P174-01) — the same source the learner's own
+        // screens read, so the console cannot show an operator a threshold the
+        // gate is not using.
+        requiredWatchPercent: courses.requiredWatchPercent,
+        passThresholdPercent: courses.passThresholdPercent,
         /*
          * The course's points, live (P171-01) — the same source the learner's
          * own screens and the certificate now read. On the enrolment's snapshot
