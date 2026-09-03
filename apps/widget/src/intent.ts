@@ -18,9 +18,18 @@
  *   the API refuses a completion without one and the refusal would otherwise
  *   arrive after the EFN had been typed.
  *
- * `certify` is a request, never a permission: `App` grants it only while the
- * server's own `courseComplete` holds and the completion is still open, so a
- * stale card or a hand-written `open-at="certify"` lands on the course page
- * rather than on a form that cannot be submitted (§9.2).
+ * - `certificate` — the Zertifizierung tab, where the Teilnahmebescheinigung is
+ *   downloaded. It exists because the catalogue card added in P168-04 says
+ *   "Abgeschlossen – Teilnahmebescheinigung verfügbar" and then offered no way
+ *   to it: the client asked the obvious question, *"we have `Abgeschlossen –
+ *   Teilnahmebescheinigung verfügbar` when course is done, where can one
+ *   download it?"* Naming a document without a route to it is the same §9.4
+ *   defect the sentence beside it was written to fix.
+ *
+ * `certify` and `certificate` are requests, never permissions: `App` grants
+ * each only while the server says so — `courseComplete` with the point still
+ * unclaimed for the first, a recorded completion for the second — so a stale
+ * card or a hand-written `open-at=` lands on the course page rather than on a
+ * form that cannot be submitted or a tab with nothing on it (§9.2).
  */
-export type OpenIntent = "start" | "resume" | "certify";
+export type OpenIntent = "start" | "resume" | "certify" | "certificate";

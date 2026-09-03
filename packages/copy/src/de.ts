@@ -77,6 +77,20 @@ export const de = {
      * Teilnahmebescheinigung, and the line's job is to say it is there.
      */
     certified: "Abgeschlossen – Teilnahmebescheinigung verfügbar",
+    /**
+     * The way to the document that line names (P176-02).
+     *
+     * The client asked the question the line invites: *"we have `Abgeschlossen
+     * – Teilnahmebescheinigung verfügbar` when course is done, where can one
+     * download it?"* Saying a document is available and leaving the reader to
+     * find it is §9.4 with the sentence already written — the half that was
+     * missing is the control beside it.
+     *
+     * "Zur" rather than "herunterladen": it opens the Zertifizierung tab, which
+     * is where the download lives along with the accreditation it belongs to. A
+     * label promising a file would be a second promise to keep.
+     */
+    toCertificate: "Zur Teilnahmebescheinigung",
     back: "Zurück zur Übersicht",
 
     /**
@@ -474,6 +488,23 @@ export const de = {
      * done the exam is the way forward rather than a pause.
      */
     quizBegin: "Lernerfolgskontrolle beginnen",
+    /**
+     * The same control once the exam is behind them (P176-01).
+     *
+     * The client, on a passed exam: *"i have `Sie haben diese
+     * Lernerfolgskontrolle bereits mit 100 % bestanden. Sie kann nicht erneut
+     * abgelegt werden` but i still have the button to `Lernerfolgskontrolle
+     * beginnen`."*
+     *
+     * Both were true at once because they are drawn by different components —
+     * P170-01 took the sitting off the exam's own screen and left this one,
+     * under the module list, promising to begin something that cannot be begun.
+     *
+     * The control stays, because the screen it opens is worth reaching: it
+     * carries the score, and the way on to the Punktemeldung or the next
+     * section. Only the promise changes.
+     */
+    quizReview: "Lernerfolgskontrolle ansehen",
     /**
      * The locked exam announcement between the video and the tabs (P93-03).
      *

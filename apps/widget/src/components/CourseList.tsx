@@ -674,9 +674,26 @@ function CourseCard(props: {
           course looked "normal" beside the one that still owed an EFN.
         */}
         {course.enrolment !== null && course.enrolment.complete ? (
-          <p className="mt-3 text-sm font-medium text-status-completed">
-            {de.catalog.certified}
-          </p>
+          <div className="mt-3">
+            <p className="text-sm font-medium text-status-completed">
+              {de.catalog.certified}
+            </p>
+            {/*
+              And the way to it (P176-02). The line above says the
+              Teilnahmebescheinigung is available; the client asked the question
+              that answer invites — *"where can one download it?"* — and the
+              honest fix is the control, not more prose.
+
+              `"certificate"` opens the course on its Zertifizierung tab, which
+              is a real address (§9.8) and carries the accreditation the document
+              belongs to rather than dropping a file on its own.
+            */}
+            <div className="mt-2">
+              <Button variant="cta" onClick={() => props.onOpen("certificate")}>
+                {de.catalog.toCertificate}
+              </Button>
+            </div>
+          </div>
         ) : null}
       </div>
     </article>

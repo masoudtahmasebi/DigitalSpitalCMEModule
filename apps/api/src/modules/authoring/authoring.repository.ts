@@ -32,7 +32,7 @@
  * written out in full.
  */
 
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import type { ChildCensus } from "@ds/domain";
 import type { Db } from "../../db/tenant-db.js";
 import {
@@ -47,6 +47,7 @@ import {
   evaluations,
   modules,
   projects,
+  quizAttempts,
   quizOptions,
   quizQuestions,
 } from "../../db/schema.js";
@@ -756,6 +757,26 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
     return row?.count ?? 0;
   }
 
+  /*
+   * "What a learner has touched" is **two** tables, not one (P176-03).
+   *
+   * `contents` is referenced with `ON DELETE RESTRICT` by exactly three tables:
+   * `content_progress`, `quiz_questions` and `quiz_attempts`. P162-01 closed
+   * the first two and left the third, and the only reason that was not a 500
+   * is an invariant nothing enforces: `submit` writes an attempt and a progress
+   * row in one transaction, so an attempt has always had a progress row beside
+   * it, and the progress row is what these counts saw.
+   *
+   * Nothing deletes either table — erasure anonymises rather than removes,
+   * because an assessment record behind an issued Bescheid has to stay — so the
+   * gap is not reachable today. It is closed anyway: a guard that matches two
+   * of three foreign keys is right by luck, and the next `RESTRICT` added to
+   * `contents` would be a 500 nobody predicted.
+   *
+   * `EXISTS … UNION ALL` rather than two round trips: the verdict only asks
+   * whether the number is zero, and one query cannot see a half-changed
+   * database the way two can.
+   */
   async countModuleRecords(id: string): Promise<number> {
     const [row] = await this.db
       .select({ count: sql<number>`count(*)::int` })
@@ -767,6 +788,20 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
            WHERE ch.module_id = ${id}
         )`,
       );
+    const attempts = await this.countAttemptsUnder(
+      sql`SELECT c.id FROM contents c
+            JOIN chapters ch ON ch.id = c.chapter_id
+           WHERE ch.module_id = ${id}`,
+    );
+    return (row?.count ?? 0) + attempts;
+  }
+
+  /** Quiz attempts against any content the subquery names (P176-03). */
+  private async countAttemptsUnder(contentIds: SQL): Promise<number> {
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(quizAttempts)
+      .where(sql`${quizAttempts.contentId} IN (${contentIds})`);
     return row?.count ?? 0;
   }
 
@@ -779,7 +814,10 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
           SELECT c.id FROM contents c WHERE c.chapter_id = ${id}
         )`,
       );
-    return row?.count ?? 0;
+    const attempts = await this.countAttemptsUnder(
+      sql`SELECT c.id FROM contents c WHERE c.chapter_id = ${id}`,
+    );
+    return (row?.count ?? 0) + attempts;
   }
 
   async countContentRecords(id: string): Promise<number> {
@@ -787,7 +825,11 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
       .select({ count: sql<number>`count(*)::int` })
       .from(contentProgress)
       .where(eq(contentProgress.contentId, id));
-    return row?.count ?? 0;
+    const [attempts] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(quizAttempts)
+      .where(eq(quizAttempts.contentId, id));
+    return (row?.count ?? 0) + (attempts?.count ?? 0);
   }
 
   // -------------------------------------------------------------------------
