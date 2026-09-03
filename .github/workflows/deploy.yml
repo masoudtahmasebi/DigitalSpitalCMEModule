@@ -3,9 +3,22 @@
 # ## When this runs, and why it may not have
 #
 # **Automatically:** after CI passes on `main`. `workflow_run` rather than
-# `push`, so a red build cannot deploy — and `branches: [main]`, so work on a
-# feature branch never touches production however green it is. If a deploy has
-# never happened, this is almost always why: nothing has been merged to `main`.
+# `push`, so a red build cannot deploy. If a deploy has never happened, this is
+# almost always why: nothing has been merged to `main`.
+#
+# The `branches: [main]` filter below does hold (P173). Every deploy on
+# 2026-09-03 was created three to five seconds after CI completed on `main`, and
+# no branch CI run has ever produced one. The list API reports a
+# `workflow_run`-triggered run's own `head_branch`/`head_sha` as the branch that
+# was merged, which reads like the opposite and is not — that misreading is
+# written up in `docs/backlog/P173.md`.
+#
+# This header used to say *"`branches: [main]`, so work on a feature branch
+# never touches production however green it is"*: right about the outcome, and
+# crediting a mechanism this repository does not own. The rule is now enforced
+# here too, in the "This ref may be deployed" step, against the **triggering
+# run's** `head_branch` — `github.ref` is the default branch on every
+# `workflow_run` event and cannot tell the two apart.
 #
 # **Manually:** Actions → Deploy → Run workflow, choosing any branch. That
 # deploys *that branch's* head, which is what you want while a first deployment
@@ -193,19 +206,30 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF: ${{ github.ref }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          # The branch CI actually ran on (P173-01).
+          #
+          # `github.ref` is the default branch on every `workflow_run` event,
+          # whatever the triggering run was on — which is why the guard passed
+          # three feature-branch deploys while reading it. This is the value
+          # that distinguishes them, and it is empty on a `workflow_dispatch`,
+          # where `REF` is the right question instead.
+          TRIGGERING_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -Eeuo pipefail
           # shellcheck source=../../infra/deploy/release-guards.sh
           source infra/deploy/release-guards.sh
 
-          if ds_release_dispatch_allowed "$EVENT_NAME" "$REF" "${DEFAULT_BRANCH:-main}"; then
-            echo "event=$EVENT_NAME ref=$REF — allowed"
+          if ds_release_ref_allowed \
+            "$EVENT_NAME" "$REF" "${DEFAULT_BRANCH:-main}" "${TRIGGERING_BRANCH:-}"; then
+            echo "event=$EVENT_NAME ref=$REF ci-branch=${TRIGGERING_BRANCH:-n/a} — allowed"
             exit 0
           fi
 
-          echo "::error::Refusing to deploy ${REF} to production. A manual run" \
-               "may only deploy the default branch (${DEFAULT_BRANCH:-main})." \
-               "Merge the change first; CI on the default branch deploys it."
+          echo "::error::Refusing to deploy to production." \
+               "event=${EVENT_NAME} ref=${REF} ci-branch=${TRIGGERING_BRANCH:-n/a}." \
+               "Only the default branch (${DEFAULT_BRANCH:-main}) reaches production:" \
+               "CI passing on it is what deploys, and a manual run may name it and" \
+               "nothing else. Merge the change first."
           exit 1
 
       - name: Required secrets are set

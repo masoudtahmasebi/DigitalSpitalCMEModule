@@ -36,27 +36,56 @@ check() {
 # ---------------------------------------------------------------------------
 
 check yes "CI on main deploys" \
-  ds_release_dispatch_allowed workflow_run refs/heads/main main
+  ds_release_ref_allowed workflow_run refs/heads/main main main
+
+# ---------------------------------------------------------------------------
+# The rows P173-01 earns: a `workflow_run` deploy is judged by the branch CI
+# actually ran on, never by this run's own ref.
+#
+# Deploy runs 103–105 on 2026-09-03 each fired from a push to
+# `claude/education-platform-roadmap-3vgrqh`, deploying a feature-branch commit
+# to production, while the workflow's `branches: [main]` filter and this file's
+# own comment both said that could not happen.
+# ---------------------------------------------------------------------------
+
+check no "CI on a feature branch does not deploy, whatever this run's ref says" \
+  ds_release_ref_allowed workflow_run refs/heads/main main \
+  claude/education-platform-roadmap-3vgrqh
+
+check no "nor does CI on a branch merely prefixed with the default branch" \
+  ds_release_ref_allowed workflow_run refs/heads/main main main-hotfix
+
+check no "nor does a triggering run whose branch is unknown" \
+  ds_release_ref_allowed workflow_run refs/heads/main main ""
+
+check yes "and the triggering branch may carry the refs/heads/ prefix" \
+  ds_release_ref_allowed workflow_run refs/heads/main main refs/heads/main
+
+check no "CI on main does not deploy to a repository whose default is trunk" \
+  ds_release_ref_allowed workflow_run refs/heads/trunk trunk main
+
+check no "an event nobody has thought about is refused, not waved through" \
+  ds_release_ref_allowed push refs/heads/main main main
 check yes "a manual run from main deploys — rollback needs this" \
-  ds_release_dispatch_allowed workflow_dispatch refs/heads/main main
+  ds_release_ref_allowed workflow_dispatch refs/heads/main main
 check yes "a manual run naming the branch without the ref prefix" \
-  ds_release_dispatch_allowed workflow_dispatch main main
+  ds_release_ref_allowed workflow_dispatch main main
 
 # The row this file exists for. Run 33615653131 did exactly this.
 check no "a manual run from a feature branch is refused" \
-  ds_release_dispatch_allowed workflow_dispatch \
+  ds_release_ref_allowed workflow_dispatch \
   refs/heads/claude/education-platform-roadmap-3vgrqh main
 check no "a manual run from a tag is refused" \
-  ds_release_dispatch_allowed workflow_dispatch refs/tags/v1.2.3 main
+  ds_release_ref_allowed workflow_dispatch refs/tags/v1.2.3 main
 check no "a branch merely starting with the default branch's name is refused" \
-  ds_release_dispatch_allowed workflow_dispatch refs/heads/main-hotfix main
+  ds_release_ref_allowed workflow_dispatch refs/heads/main-hotfix main
 
 # The default branch is a parameter, not a literal: a repository that renames
 # it must not silently lose the guard.
 check yes "honours a differently named default branch" \
-  ds_release_dispatch_allowed workflow_dispatch refs/heads/trunk trunk
+  ds_release_ref_allowed workflow_dispatch refs/heads/trunk trunk
 check no "and refuses main when the default branch is not main" \
-  ds_release_dispatch_allowed workflow_dispatch refs/heads/main trunk
+  ds_release_ref_allowed workflow_dispatch refs/heads/main trunk
 
 # ---------------------------------------------------------------------------
 # Did the host actually take the commit

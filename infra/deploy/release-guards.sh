@@ -45,22 +45,60 @@
 
 # May this event deploy to production?
 #
-#   ds_release_dispatch_allowed <event_name> <ref> <default_branch>
+#   ds_release_ref_allowed <event_name> <ref> <default_branch> <triggering_branch>
 #
 # Prints nothing. Returns 0 when the deploy may proceed.
-ds_release_dispatch_allowed() {
-  local event="$1" ref="$2" default_branch="${3:-main}"
+#
+# ## Why the `workflow_run` arm exists (P173)
+#
+# Not because a branch ever deployed. It did not: every deploy on 2026-09-03 was
+# created three to five seconds after CI completed on `main`, and no branch CI
+# run has produced one. I reported the opposite, from the list API's
+# `head_branch`/`head_sha` — which for a `workflow_run`-triggered run name the
+# branch that was merged, not the run that triggered it — and the correction is
+# written up in `docs/backlog/P173.md`.
+#
+# It exists because of what this file said instead: *"a `workflow_run` deploy
+# has already been gated by the workflow's own `branches:` filter … and needs
+# nothing further here."* That is a claim about GitHub's behaviour rather than a
+# rule this repository enforces, and P155-01 is what happens when the two are
+# confused — a `workflow_dispatch` put a feature branch on the host while the
+# same filter was in place.
+#
+# **`github.ref` cannot express the rule.** On a `workflow_run` event the ref is
+# the default branch whatever the triggering run was on, so the guard above,
+# reading `$ref`, would have allowed a branch-triggered deploy had the filter
+# ever let one reach it. The branch to check is the **triggering run's**
+# `head_branch`, and that is the fourth argument.
+#
+# **Unverified, and the reason this is not merged on its own judgement:** what
+# `github.event.workflow_run.head_branch` holds at job runtime has not been
+# observed. If it were to hold what the list API reports, this refuses every
+# deploy until the `workflow_run` arm is reverted.
+#
+# Fails closed: an event this function does not know about is refused rather
+# than allowed, so the next trigger somebody adds to `deploy.yml` has to come
+# here first.
+ds_release_ref_allowed() {
+  local event="$1" ref="$2" default_branch="${3:-main}" triggering_branch="${4:-}"
 
-  # A `workflow_run` deploy has already been gated by the workflow's own
-  # `branches:` filter and its `conclusion == 'success'` condition. It is the
-  # ordinary path and needs nothing further here.
-  [ "$event" != "workflow_dispatch" ] && return 0
-
-  # A manual run carries whatever ref the person picked in the dropdown.
-  [ "$ref" = "refs/heads/${default_branch}" ] && return 0
-  [ "$ref" = "$default_branch" ] && return 0
-
-  return 1
+  case "$event" in
+    workflow_dispatch)
+      # A manual run carries whatever ref the person picked in the dropdown.
+      [ "$ref" = "refs/heads/${default_branch}" ] && return 0
+      [ "$ref" = "$default_branch" ] && return 0
+      return 1
+      ;;
+    workflow_run)
+      # The branch CI actually ran on, never this run's own ref.
+      [ "$triggering_branch" = "$default_branch" ] && return 0
+      [ "$triggering_branch" = "refs/heads/${default_branch}" ] && return 0
+      return 1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 # Does the running API report the commit this deploy tried to install?
