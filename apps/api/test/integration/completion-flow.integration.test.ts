@@ -42,7 +42,13 @@ process.env["KEYCLOAK_JWKS_URI"] ??=
 process.env["NODE_ENV"] ??= "test";
 // The submission worker has its own suite; leaving it sweeping here would
 // mutate eiv_submissions rows underneath these assertions.
-process.env["EIV_WORKER_ENABLED"] = "no";
+/*
+ * The worker is off because `platform_settings` says so (P180-01), not
+ * because of an environment variable. A fresh database starts with
+ * `eiv_worker_enabled = false` and the endpoint on `mock`, so a suite that
+ * sets nothing files nothing — a stronger guarantee than the line that used
+ * to be here, which every new test file had to remember to copy.
+ */
 
 const KID = "completion-flow-key";
 const AUDIENCE = "ds-education-api";
@@ -296,18 +302,20 @@ async function call(
   return callAs(SUB, method, path, body);
 }
 
-/** The same request, as somebody else — used for the admin console's own calls. */
-async function callAs(
-  sub: string,
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: any }> {
+/**
+ * A bearer token for one subject.
+ *
+ * Extracted from `callAs` (P179) rather than copied: the certificate download
+ * answers a PDF, so its cases drive `fetch` directly instead of going through a
+ * helper that parses JSON — and a second token-minting function would be a
+ * second set of claims to keep in step with the erasure trigger below.
+ */
+async function tokenFor(sub: string): Promise<string> {
   // Profile claims on purpose: `provisionOrUpdate` writes them into `users` on
   // every request, which is what the erasure trigger has to hold against. A
   // token with no name would make that assertion pass whether the trigger
   // exists or not.
-  const jwt = await new SignJWT({
+  return new SignJWT({
     email: `${sub}@example.org`,
     given_name: "Anna",
     family_name: "Müller",
@@ -319,6 +327,16 @@ async function callAs(
     .setSubject(sub)
     .setExpirationTime("5m")
     .sign(privateKey);
+}
+
+/** The same request, as somebody else — used for the admin console's own calls. */
+async function callAs(
+  sub: string,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; body: any }> {
+  const jwt = await tokenFor(sub);
 
   const response = await fetch(`${baseUrl}${path}`, {
     method,
@@ -1587,6 +1605,403 @@ describe("the white-label font", () => {
  * This suite runs last on purpose — it pseudonymises the learner every earlier
  * assertion in this file depends on.
  */
+/*
+ * The P179 blocks sit **above** the erasure block on purpose.
+ *
+ * `erasure keeps the participation and removes the person` runs against this
+ * same learner and is destructive by design: it clears the attested name, drops
+ * the `efn_profiles` row and overwrites `eiv_submissions.efn`. Placed after it,
+ * these cases inherited an erased subject — the certificate could no longer be
+ * rendered (no participant name), the profile EFN was gone, and the submission
+ * carried the erasure's placeholder. Nine of them failed for that one reason,
+ * and every failure looked like a defect in P179.
+ *
+ * §9.6's lesson one layer out: a fixture that shares state with another block
+ * is a fixture whose result depends on ordering nobody wrote down. Stated here
+ * rather than left to be rediscovered by whoever next appends to this file.
+ */
+describe("supporting a participant whose certificate did not arrive (P179)", () => {
+  /*
+   * The client, on a participant row that said `unzustellbar` and nothing else:
+   *
+   *   > what does `undeliverable` mean, i need a retry button, i need error
+   *   > handling, i need debugging […] how can an admin download the
+   *   > certificate of a person to send it to them as a support person, this
+   *   > part is quite weak!
+   *
+   * Every fact this block asserts had been in `certificates` since P8-03 or
+   * P118-02 and was returned by nothing — §9.3 with the rule in a column
+   * instead of a function. The download did not exist at all.
+   *
+   * This learner has completed and been certified by the blocks above, so
+   * there is a real certificate row to work with rather than a fixture shaped
+   * like one.
+   */
+  async function participantRow(): Promise<{
+    certificateState: string;
+    certificate: {
+      id: string;
+      abandonedReason: string | null;
+      lastError: string | null;
+      attemptCount: number;
+      firstAttemptAt: string | null;
+      nextAttemptAt: string | null;
+    } | null;
+    efnMasked: string | null;
+    efnDivergesFromReport: boolean | null;
+  }> {
+    const { body } = await callAs(
+      ADMIN_SUB,
+      "GET",
+      `/admin/courses/${courseSlug}/participants`,
+    );
+    return body.rows.find(
+      (entry: { enrolmentId: string }) => entry.enrolmentId === enrolmentId,
+    );
+  }
+
+  it("carries the delivery diagnosis, not only the word", async () => {
+    // The state the sweep would have left behind. Written directly because
+    // this block is about what the *console* can read, and standing up an SMTP
+    // server that fails in a particular way is `certificate-delivery`'s job.
+    await seedPool.query(
+      `UPDATE certificates
+          SET status = 'bounced',
+              delivery_abandoned_reason = 'permanent_rejection',
+              delivery_error = 'SMTP 550',
+              delivery_attempt_count = 3,
+              delivery_first_attempt_at = now() - interval '2 hours',
+              delivery_next_attempt_at = NULL
+        WHERE enrolment_id = $1`,
+      [enrolmentId],
+    );
+
+    const row = await participantRow();
+
+    expect(row.certificateState).toBe("bounced");
+    expect(row.certificate).not.toBeNull();
+    expect(row.certificate?.abandonedReason).toBe("permanent_rejection");
+    expect(row.certificate?.lastError).toBe("SMTP 550");
+    expect(row.certificate?.attemptCount).toBe(3);
+    expect(row.certificate?.firstAttemptAt).not.toBeNull();
+    // Null is the answer, not a missing field: the sweep will not try again,
+    // and "no further attempt" is what the operator has to know.
+    expect(row.certificate?.nextAttemptAt).toBeNull();
+  });
+
+  it("names an abandoned reason it does not know as unknown rather than passing it on", async () => {
+    /*
+     * `delivery_abandoned_reason` is `text` with no CHECK. A fourth value
+     * added to the sweep and not to the DTO would otherwise reach the console
+     * as a label nobody wrote, and the cell would render blank — which is
+     * exactly how `revoked` hid on `certificateState` for eight phases.
+     */
+    await seedPool.query(
+      `UPDATE certificates SET delivery_abandoned_reason = 'greylisted_forever'
+        WHERE enrolment_id = $1`,
+      [enrolmentId],
+    );
+
+    expect((await participantRow()).certificate?.abandonedReason).toBeNull();
+
+    await seedPool.query(
+      `UPDATE certificates SET delivery_abandoned_reason = 'permanent_rejection'
+        WHERE enrolment_id = $1`,
+      [enrolmentId],
+    );
+  });
+
+  it("lets an operator download the certificate, without sending or re-issuing", async () => {
+    const row = await participantRow();
+    const id = row.certificate?.id ?? "";
+    expect(id).not.toBe("");
+
+    const before = await seedPool.query<{
+      download_token: string;
+      status: string;
+      delivery_next_attempt_at: Date | null;
+    }>(
+      `SELECT download_token, status::text AS status, delivery_next_attempt_at
+         FROM certificates WHERE id = $1`,
+      [id],
+    );
+
+    const response = await fetch(`${baseUrl}/admin/certificates/${id}/pdf`, {
+      headers: {
+        authorization: `Bearer ${await tokenFor(ADMIN_SUB)}`,
+        "x-ds-project": projectSlug,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/pdf");
+    // Asserted as bytes, not as a 200: a renderer that fails on a missing
+    // stamp produces an empty download and "the request worked" would be green
+    // for it.
+    const bytes = Buffer.from(await response.arrayBuffer());
+    expect(bytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    expect(bytes.length).toBeGreaterThan(2_000);
+
+    const after = await seedPool.query<{
+      download_token: string;
+      status: string;
+      delivery_next_attempt_at: Date | null;
+    }>(
+      `SELECT download_token, status::text AS status, delivery_next_attempt_at
+         FROM certificates WHERE id = $1`,
+      [id],
+    );
+
+    // The three properties that make this a read rather than an action: the
+    // capability to fetch the document is unchanged, the state is unchanged,
+    // and nothing was queued for delivery.
+    expect(after.rows[0]!.download_token).toBe(before.rows[0]!.download_token);
+    expect(after.rows[0]!.status).toBe(before.rows[0]!.status);
+    expect(after.rows[0]!.delivery_next_attempt_at).toEqual(
+      before.rows[0]!.delivery_next_attempt_at,
+    );
+  });
+
+  it("records the download as a disclosure, naming nobody", async () => {
+    const { rows } = await seedPool.query<{ detail: unknown }>(
+      `SELECT detail FROM audit_log
+        WHERE action = 'certificate.downloaded_by_staff'
+        ORDER BY created_at DESC LIMIT 1`,
+    );
+
+    expect(rows).toHaveLength(1);
+    // ADR-0004: what happened and in which state, never who it was about.
+    expect(JSON.stringify(rows[0]!.detail)).not.toContain(ATTESTED_NAME);
+    expect(JSON.stringify(rows[0]!.detail)).not.toContain(EFN);
+  });
+
+  it("refuses to hand out a revoked certificate", async () => {
+    const id = (await participantRow()).certificate?.id ?? "";
+
+    const revoked = await callAs(ADMIN_SUB, "POST", `/admin/certificates/${id}/revoke`);
+    expect(revoked.status).toBe(204);
+
+    const response = await fetch(`${baseUrl}/admin/certificates/${id}/pdf`, {
+      headers: {
+        authorization: `Bearer ${await tokenFor(ADMIN_SUB)}`,
+        "x-ds-project": projectSlug,
+      },
+    });
+
+    // The one outcome revocation exists to prevent. A support person forwarding
+    // a withdrawn Teilnahmebescheinigung is worse than one who cannot help.
+    expect(response.status).toBe(409);
+
+    // And the participant list says so rather than rendering an empty cell,
+    // which is what it did before `revoked` reached the enum (P179-01).
+    expect((await participantRow()).certificateState).toBe("revoked");
+
+    await seedPool.query(
+      `UPDATE certificates SET status = 'bounced' WHERE enrolment_id = $1`,
+      [enrolmentId],
+    );
+  });
+
+  it("is closed to a learner", async () => {
+    const id = (await participantRow()).certificate?.id ?? "";
+    const response = await fetch(`${baseUrl}/admin/certificates/${id}/pdf`, {
+      headers: {
+        authorization: `Bearer ${await tokenFor(SUB)}`,
+        "x-ds-project": projectSlug,
+      },
+    });
+    expect(response.status).toBe(403);
+  });
+});
+
+describe("correcting an EFN after completion (P179-03)", () => {
+  /*
+   * The client:
+   *
+   *   > i need to be able to change efn if it is incorrect from the user side
+   *   > or from panel side
+   *
+   * Two sides, and they write different things on purpose. The physician's own
+   * correction writes their profile and carries onto every un-sent Meldung; the
+   * operator's corrects the Meldung and never the profile, because
+   * `efn_profiles`'s RLS `WITH CHECK` admits only the subject and that is a
+   * guarantee rather than a gap.
+   *
+   * This learner's Punktemeldung was queued by the completion above, which is
+   * exactly the state the client's screenshot showed: `Punktemeldung: queued`.
+   */
+  const CORRECTED = "802760699000777";
+
+  async function submissionEfn(): Promise<string> {
+    const { rows } = await seedPool.query<{ efn: string }>(
+      "SELECT efn FROM eiv_submissions WHERE enrolment_id = $1",
+      [enrolmentId],
+    );
+    return rows[0]?.efn ?? "";
+  }
+
+  async function profileEfn(): Promise<string> {
+    const { rows } = await seedPool.query<{ efn: string }>(
+      `SELECT p.efn FROM efn_profiles p
+         JOIN enrolments e ON e.user_id = p.user_id
+        WHERE e.id = $1`,
+      [enrolmentId],
+    );
+    return rows[0]?.efn ?? "";
+  }
+
+  it("starts with the queued Meldung carrying the EFN the physician gave", async () => {
+    // The state the rest of this block is about, asserted rather than assumed —
+    // if the completion stopped queueing a submission these cases would pass
+    // for the wrong reason (§9.1).
+    expect(await submissionEfn()).toBe(EFN);
+    expect(await profileEfn()).toBe(EFN);
+  });
+
+  it("carries the physician's own correction onto the queued Meldung", async () => {
+    /*
+     * The defect this closes. `efn_profiles` and `eiv_submissions.efn` are two
+     * copies of one value; P118 taught the *requeue* path to reconcile them and
+     * left the moment of correction alone. So a physician who fixed a typo at
+     * 10:00 had the old number sent at 10:05 unless an operator happened to
+     * requeue in between — and the correction looked like it had worked.
+     */
+    const { status } = await call("PUT", "/profile/efn", { efn: CORRECTED });
+    expect(status).toBe(204);
+
+    expect(await profileEfn()).toBe(CORRECTED);
+    expect(await submissionEfn()).toBe(CORRECTED);
+  });
+
+  it("records that the identifier moved, and never what it moved to", async () => {
+    const { rows } = await seedPool.query<{ detail: unknown }>(
+      `SELECT detail FROM audit_log
+        WHERE action = 'eiv.efn_refreshed' ORDER BY created_at DESC LIMIT 1`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(JSON.stringify(rows[0]!.detail)).not.toContain(CORRECTED);
+    expect(JSON.stringify(rows[0]!.detail)).not.toContain(EFN);
+  });
+
+  it("shows the operator a masked EFN and that the two now agree", async () => {
+    const { body } = await callAs(
+      ADMIN_SUB,
+      "GET",
+      `/admin/courses/${courseSlug}/participants`,
+    );
+    const row = body.rows.find(
+      (entry: { enrolmentId: string }) => entry.enrolmentId === enrolmentId,
+    );
+
+    // Last four digits only, and the full number nowhere in the response.
+    expect(row.efnMasked).toBe(`${"•".repeat(11)}${CORRECTED.slice(-4)}`);
+    expect(JSON.stringify(body)).not.toContain(CORRECTED);
+    expect(row.efnDivergesFromReport).toBe(false);
+  });
+
+  it("reports a divergence when the Meldung and the profile disagree", async () => {
+    // Produced directly, because the product no longer creates this state — and
+    // that is the point: the console has to be able to *see* a row left over
+    // from before P179-03, or from a Meldung accepted under the old number.
+    await seedPool.query("UPDATE eiv_submissions SET efn = $2 WHERE enrolment_id = $1", [
+      enrolmentId,
+      EFN,
+    ]);
+
+    const { body } = await callAs(
+      ADMIN_SUB,
+      "GET",
+      `/admin/courses/${courseSlug}/participants`,
+    );
+    const row = body.rows.find(
+      (entry: { enrolmentId: string }) => entry.enrolmentId === enrolmentId,
+    );
+    expect(row.efnDivergesFromReport).toBe(true);
+  });
+
+  it("lets an operator correct the Meldung, and leaves the profile alone", async () => {
+    const { status } = await callAs(
+      ADMIN_SUB,
+      "PATCH",
+      `/admin/learners/${enrolmentId}/eiv/efn`,
+      { efn: CORRECTED },
+    );
+    expect(status).toBe(204);
+
+    expect(await submissionEfn()).toBe(CORRECTED);
+    // The half that is the whole design: an operator corrected our outbound
+    // report and did not touch the physician's identifier.
+    expect(await profileEfn()).toBe(CORRECTED);
+  });
+
+  it("refuses a value that is not fifteen digits, without echoing it", async () => {
+    const { status, body } = await callAs(
+      ADMIN_SUB,
+      "PATCH",
+      `/admin/learners/${enrolmentId}/eiv/efn`,
+      { efn: "12345" },
+    );
+    expect(status).toBe(422);
+    expect(JSON.stringify(body)).not.toContain("12345");
+  });
+
+  it("refuses a correction that changes nothing", async () => {
+    // A false correction is worse than a refused one: it writes an audit row
+    // saying the identifier moved and leaves an operator believing the problem
+    // is solved.
+    const { status, body } = await callAs(
+      ADMIN_SUB,
+      "PATCH",
+      `/admin/learners/${enrolmentId}/eiv/efn`,
+      { efn: CORRECTED },
+    );
+    expect(status).toBe(409);
+    expect(body.detail).toContain("bereits");
+  });
+
+  it("refuses once the Ärztekammer has accepted the Meldung", async () => {
+    await seedPool.query(
+      "UPDATE eiv_submissions SET status = 'submitted' WHERE enrolment_id = $1",
+      [enrolmentId],
+    );
+
+    const { status, body } = await callAs(
+      ADMIN_SUB,
+      "PATCH",
+      `/admin/learners/${enrolmentId}/eiv/efn`,
+      { efn: "802760699000888" },
+    );
+
+    // S30: the points are on somebody's record, and re-filing under a new
+    // number credits a second person rather than moving the first.
+    expect(status).toBe(409);
+    expect(body.detail).toContain("Ärztekammer");
+    expect(await submissionEfn()).toBe(CORRECTED);
+    // And no EFN in the refusal, old or proposed (§9.5).
+    expect(JSON.stringify(body)).not.toContain(CORRECTED);
+    expect(JSON.stringify(body)).not.toContain("802760699000888");
+  });
+
+  it("does not silently re-file an accepted Meldung when the physician corrects theirs", async () => {
+    // The learner's own path applies the same rule. Their profile is corrected
+    // — it is theirs — and the accepted Meldung keeps the number it was filed
+    // under, which is what leaves the divergence visible to the operator.
+    const { status } = await call("PUT", "/profile/efn", { efn: "802760699000999" });
+    expect(status).toBe(204);
+
+    expect(await profileEfn()).toBe("802760699000999");
+    expect(await submissionEfn()).toBe(CORRECTED);
+  });
+
+  it("is closed to a learner", async () => {
+    const { status } = await call("PATCH", `/admin/learners/${enrolmentId}/eiv/efn`, {
+      efn: "802760699000111",
+    });
+    expect(status).toBe(403);
+  });
+});
+
 describe("erasure keeps the participation and removes the person", () => {
   /**
    * Erasure runs as `ds_migrator`. The API's own role cannot execute the

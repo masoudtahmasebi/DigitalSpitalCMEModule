@@ -21,6 +21,7 @@ import type { ApiClient, ParticipantList, ParticipantRow } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
 import { Badge, Button, Notice, Table } from "./ui.js";
+import { ParticipantSupport } from "./ParticipantSupport.js";
 
 type Filter = "all" | "complete" | "awaiting" | "open" | "attention";
 
@@ -28,10 +29,25 @@ export function Participants(props: {
   client: ApiClient;
   courseSlug: string;
   list: ParticipantList;
+  /**
+   * Re-read the list after a support action (P179).
+   *
+   * The panel changes server state — a resend, a regeneration, a corrected EFN
+   * — and the row above it must then say what the server says rather than what
+   * the console assumed. Optional so the screen still renders in a test that
+   * only reads.
+   */
+  onChanged?: () => void;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | undefined>();
+  /**
+   * Which row's support panel is open (P179). One at a time: two open panels
+   * would put two EFN fields on one screen, and typing fifteen digits into the
+   * wrong physician's is the mistake this whole panel exists to prevent.
+   */
+  const [openRow, setOpenRow] = useState<string | undefined>();
 
   const attention = props.list.rows.filter(
     (row) => row.eivState === "needs_attention",
@@ -120,9 +136,10 @@ export function Participants(props: {
             de.participants.columnComplete,
             de.participants.columnEiv,
             de.participants.columnCertificate,
+            de.participants.support.open,
           ]}
         >
-          {rows.map((row) => (
+          {rows.flatMap((row) => [
             <tr key={row.enrolmentId} className="border-b border-gray-100">
               <td className="text-gray-900">{row.participantName}</td>
               <td className="text-gray-600">{row.email ?? "—"}</td>
@@ -146,8 +163,33 @@ export function Participants(props: {
                 </Badge>
               </td>
               <td>{de.participants.certificate[row.certificateState]}</td>
-            </tr>
-          ))}
+              <td>
+                <Button
+                  variant="secondary"
+                  ariaLabel={de.participants.support.openAria(row.participantName)}
+                  onClick={() =>
+                    setOpenRow(openRow === row.enrolmentId ? undefined : row.enrolmentId)
+                  }
+                >
+                  {openRow === row.enrolmentId
+                    ? de.participants.support.close
+                    : de.participants.support.open}
+                </Button>
+              </td>
+            </tr>,
+            openRow === row.enrolmentId ? (
+              <tr key={`${row.enrolmentId}-support`} className="border-b border-gray-100">
+                <td colSpan={12} className="p-3">
+                  <ParticipantSupport
+                    client={props.client}
+                    courseSlug={props.courseSlug}
+                    row={row}
+                    onChanged={() => props.onChanged?.()}
+                  />
+                </td>
+              </tr>
+            ) : null,
+          ])}
         </Table>
       )}
     </div>

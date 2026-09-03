@@ -224,6 +224,64 @@ export function maskEfn(efn: string | null | undefined): string | null {
   return "•".repeat(digits.length - 4) + digits.slice(-4);
 }
 
+export type EfnCorrectionVerdict =
+  | { readonly ok: true; readonly efn: string }
+  | { readonly ok: false; readonly reason: "already_submitted" }
+  | { readonly ok: false; readonly reason: "malformed" }
+  | { readonly ok: false; readonly reason: "unchanged" };
+
+/**
+ * Whether an operator may correct the EFN on a Punktemeldung (P179-03).
+ *
+ * ## What this corrects, and what it deliberately does not
+ *
+ * `eiv_submissions.efn` — **our own outbound report**, not the physician's
+ * profile. The distinction is the whole design and it is not a technicality:
+ *
+ * - `efn_profiles` is the physician's identifier at their Ärztekammer. Its RLS
+ *   `WITH CHECK` admits only `user_id = app.user_id`, so the subject and
+ *   nobody else may write it, and that is a deliberate guarantee: a platform
+ *   on which a pharmaceutical company's administrator can assert a doctor's
+ *   national identifier is a platform that can credit points to anyone.
+ * - `eiv_submissions.efn` is what *we* are about to tell the Kammer. A typo
+ *   there is our outgoing report being wrong, and correcting a report before
+ *   it is filed is squarely the operator's job.
+ *
+ * So this stops a wrong number reaching the Kammer without letting anybody
+ * rewrite whose number it is. The physician's own correction — which does
+ * update the profile — goes through `PUT /profile/efn` and reaches every
+ * un-sent Meldung by the same rule, `efnRefresh`.
+ *
+ * ## The stages, which are `nameCorrection`'s and `efnRefresh`'s
+ *
+ * `submitted` and `withdrawn` refuse. The points are on somebody's record and
+ * nothing here takes them back, so re-filing under a different number credits a
+ * second person rather than moving the first (S30). Everything up to and
+ * including `abandoned` is correctable because nothing was reported.
+ *
+ * `unchanged` is its own answer rather than a silent success: an operator who
+ * retypes the number they were already sending has not fixed anything, and
+ * telling them so is the difference between a correction and a false one.
+ */
+export function efnCorrection(input: {
+  readonly proposed: string;
+  readonly current: string;
+  readonly stage: SubmissionStage;
+}): EfnCorrectionVerdict {
+  const proposed = input.proposed.trim();
+  // The same fifteen digits `eiv_submissions_efn_check` enforces. Checked
+  // before the stage so a malformed value is named as malformed rather than
+  // refused for a reason that would still leave it malformed.
+  if (!/^[0-9]{15}$/u.test(proposed)) return { ok: false, reason: "malformed" };
+  if (proposed === input.current.trim()) return { ok: false, reason: "unchanged" };
+
+  if (input.stage === "submitted" || input.stage === "withdrawn") {
+    return { ok: false, reason: "already_submitted" };
+  }
+
+  return { ok: true, efn: proposed };
+}
+
 export type CertificateAction = "regenerate" | "resend" | "revoke";
 
 export type CertificateActionVerdict =

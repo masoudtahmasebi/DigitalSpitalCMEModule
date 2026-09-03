@@ -13,6 +13,7 @@
 import { and, asc, eq, gt } from "drizzle-orm";
 import type { Db } from "../../db/tenant-db.js";
 import {
+  auditLog,
   courses,
   efnProfiles,
   eivSubmissions,
@@ -43,6 +44,29 @@ export interface CompletionRepositoryPort {
   /** Whether any enrolment of this learner, in this tenant, awards CME points. */
   hasPointBearingEnrolment(userId: string): Promise<boolean>;
   hasEivSubmission(enrolmentId: string): Promise<boolean>;
+  /**
+   * This learner's Punktemeldungen in this tenant, with the EFN each will
+   * actually send (P179-03).
+   *
+   * Read so a correction can reach them — see `setEfn`. Only the rows whose
+   * stage still permits it are of interest, but the filtering is
+   * `efnRefresh`'s: a repository that decided which stages count would be a
+   * second copy of a compliance rule.
+   */
+  findOwnSubmissions(
+    userId: string,
+  ): Promise<readonly { id: string; enrolmentId: string; efn: string; status: string }[]>;
+  /** Point an un-sent Punktemeldung at a corrected EFN, and record it (P179-03). */
+  updateSubmissionEfn(
+    submissionId: string,
+    efn: string,
+    audit: {
+      customerId: string;
+      userId: string;
+      enrolmentId: string;
+      fromStatus: string;
+    },
+  ): Promise<void>;
   queueEivSubmission(input: {
     customerId: string;
     enrolmentId: string;
@@ -171,6 +195,59 @@ export class CompletionRepository implements CompletionRepositoryPort {
    * idempotent — the statutory deadlines are computed from the first
    * completion and must not be silently restarted by a second call.
    */
+  async findOwnSubmissions(
+    userId: string,
+  ): Promise<
+    readonly { id: string; enrolmentId: string; efn: string; status: string }[]
+  > {
+    /*
+     * Joined to `enrolments` rather than filtered on a customer column, and
+     * bounded by RLS on both tables — so this returns the caller's submissions
+     * **in the tenant of the request** and no others. A physician may hold
+     * enrolments at several customers (docs/gdpr.md §9); correcting their EFN
+     * while signed in to one does not reach into another's outbound reports,
+     * which is the same boundary `pendingSubmissionsFor` documents.
+     */
+    return this.db
+      .select({
+        id: eivSubmissions.id,
+        enrolmentId: eivSubmissions.enrolmentId,
+        efn: eivSubmissions.efn,
+        status: eivSubmissions.status,
+      })
+      .from(eivSubmissions)
+      .innerJoin(enrolments, eq(enrolments.id, eivSubmissions.enrolmentId))
+      .where(eq(enrolments.userId, userId));
+  }
+
+  async updateSubmissionEfn(
+    submissionId: string,
+    efn: string,
+    audit: {
+      customerId: string;
+      userId: string;
+      enrolmentId: string;
+      fromStatus: string;
+    },
+  ): Promise<void> {
+    await this.db
+      .update(eivSubmissions)
+      .set({ efn, updatedAt: new Date() })
+      .where(eq(eivSubmissions.id, submissionId));
+
+    // The tenant `Db`, so the row commits and rolls back with the correction
+    // it describes. `detail` carries the status it moved from and never the
+    // number it moved to (ADR-0004, CLAUDE.md §4 invariant 7).
+    await this.db.insert(auditLog).values({
+      customerId: audit.customerId,
+      actorId: audit.userId,
+      actorIdentity: "learner",
+      action: "eiv.efn_refreshed",
+      subject: audit.enrolmentId,
+      detail: { from: audit.fromStatus },
+    });
+  }
+
   async queueEivSubmission(input: {
     customerId: string;
     enrolmentId: string;

@@ -142,11 +142,13 @@ services:
       DS_COMMIT: ${DS_COMMIT:-}
       DS_VERSION: ${DS_VERSION:-}
 
-      # The mock EIV endpoint, never the real one. `EIV_ALLOW_LIVE` is unset,
-      # so `apps/eiv-harness`' mock is the only thing reachable and a stray
-      # Punktemeldung cannot leave this machine (ADR-0005).
-      EIV_BASE_URL: ${EIV_BASE_URL:-http://127.0.0.1:4010}
-      EIV_WORKER_ENABLED: ${EIV_WORKER_ENABLED:-no}
+      # The mock's address, and nothing else about EIV (P180-01). Which
+      # register receives Punktemeldungen, and whether the worker files at all,
+      # live in `platform_settings` — a fresh database has the worker **off**
+      # and the endpoint on `mock`, so a stray Punktemeldung cannot leave this
+      # machine (ADR-0005) without somebody deliberately saying otherwise in
+      # the console.
+      EIV_MOCK_BASE_URL: ${EIV_MOCK_BASE_URL:-http://127.0.0.1:4010}
 
       LOG_LEVEL: ${LOG_LEVEL:-debug}
     ports:

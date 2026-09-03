@@ -482,9 +482,42 @@ done
 # shellcheck source=./eiv-endpoint.sh
 source "$(dirname "${BASH_SOURCE[0]}")/eiv-endpoint.sh"
 
-if ds_eiv_requires_live_consent "${EIV_BASE_URL:-}" && [[ "${EIV_ALLOW_LIVE:-}" != "yes" ]]; then
-  die "EIV_BASE_URL is the live register (or an unrecognised host) but EIV_ALLOW_LIVE is not 'yes'"
-fi
+#
+# The pre-flight refusal is gone with the variables (P180-01): there is nothing
+# in `config.env` left to be inconsistent, and the consistency it enforced is
+# now a database CHECK — `platform_settings_live_needs_consent` — which holds
+# against a migration, a `psql` session and every future code path, not only
+# against this script. What the deploy still does is *report* the posture it
+# finds, below, after the database is reachable.
+#
+# Refusing the three names outright, so a well-meant edit cannot bring one back
+# and quietly become a second home for the setting the console shows. The same
+# rule `scripts/check-eiv-settings.mjs` enforces in the repository; this is the
+# half that covers a file on a host, which no script in the repository can see.
+for moved in EIV_BASE_URL EIV_WORKER_ENABLED EIV_ALLOW_LIVE; do
+  [[ -z "${!moved:-}" ]] || die \
+    "${moved} is set in ${CONFIG_FILE}, where nothing reads it any more.
+
+   Whether the worker files Punktemeldungen, and to which register, moved into
+   the database in P180-01 and is set in the admin console under
+   Plattform → Punktemeldung. A value here would be a second answer to a
+   question the console already answers, and the console would win silently.
+
+   ** If this installation was reporting, it is not reporting now. **
+
+   The database starts with the worker OFF and the register on 'mock'. A
+   migration cannot read this file, so nothing carried your old setting over —
+   and this refusal exists so that you find that out here, at a red deploy,
+   rather than from a physician whose points were never filed.
+
+   So: open the console as a super administrator, go to
+   Plattform → Punktemeldung, set the register and switch reporting on. Queued
+   Meldungen are not lost — they are filed on the first sweep after you do.
+
+   Then, on the host, as the deploy user:
+
+       sed -i '/^${moved}=/d' ${CONFIG_FILE}"
+done
 
 # The API never reads a VNR or its password from the environment, and an
 # operator who believes otherwise has a worker that cannot authenticate.
@@ -529,10 +562,12 @@ done
 # still fires and is still written to the audit log, but it reaches a log file
 # nobody is watching — and the thing it is warning about has an 8-day statutory
 # limit. A warning, not a refusal: it degrades to logging by design.
-if [[ "${EIV_ALLOW_LIVE:-}" == "yes" && "${EIV_WORKER_ENABLED:-yes}" != "no" &&
-      -z "${ALERT_WEBHOOK_URL:-}" ]]; then
-  log "WARNING: the EIV worker may submit to ${EIV_BASE_URL:-?} and"
-  log "         ALERT_WEBHOOK_URL is empty — deadline alarms are log-only."
+#
+# Moved below the database is reachable (P180-01): the posture is a row now, so
+# this warning is raised beside the queue check that reads the same row, rather
+# than here where there is nothing left to read.
+if [[ -z "${ALERT_WEBHOOK_URL:-}" ]]; then
+  log "ALERT_WEBHOOK_URL is empty — EIV deadline alarms will be log-only."
 fi
 
 if [[ -n "$ROLLBACK_TAG" ]]; then
@@ -869,22 +904,46 @@ DS_LOOPBACK_ISSUER_RE='^https?://(127\.[0-9.]+|localhost|\[::1\]|[^/]*\.localhos
 #
 # A warning, not a refusal: a backlog is a legitimate state (the worker may
 # simply have been off for an hour), and only the operator knows which it is.
-if [[ "$RUN_MIGRATIONS" == "1" ]] &&
-  ds_eiv_worker_will_file_live "${EIV_BASE_URL:-}" "${EIV_WORKER_ENABLED:-}"; then
-  queued="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
+#
+# The three settings come from `platform_settings` now, not from config.env
+# (P180-01), so this reads them the way everything else on the host does — with
+# `psql`, over the one query `ds_eiv_settings_sql` owns. The deploy no longer
+# has any opinion about the register: it reports what the operator set in the
+# console.
+if [[ "$RUN_MIGRATIONS" == "1" ]]; then
+  eiv_settings="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
     psql -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
-    -c "SELECT count(*) FROM eiv_submissions
-         WHERE status IN ('queued', 'failed_retryable')
-           AND (next_attempt_at IS NULL OR next_attempt_at <= now())" \
-    2>/dev/null | tr -d '\n' || true)"
+    -c "$(ds_eiv_settings_sql)" 2>/dev/null | tr -d '\n' || true)"
 
-  if [[ -n "$queued" && "$queued" != "0" ]]; then
-    printf '\033[1;33m!!\033[0m %s\n' \
-      "${queued} Punktemeldung(en) are due and the worker is armed against ${EIV_BASE_URL:-?}." >&2
-    printf '\033[1;33m!!\033[0m %s\n' \
-      "The first sweep after this deploy files them at the Ärztekammer. Set EIV_WORKER_ENABLED=no and re-deploy if that is not intended." >&2
+  eiv_choice="${eiv_settings%%|*}"
+  eiv_rest="${eiv_settings#*|}"
+  eiv_armed="${eiv_rest%%|*}"
+  eiv_consent="${eiv_rest##*|}"
+
+  if [[ -z "$eiv_settings" ]]; then
+    # An empty answer means the table is not there yet — this deploy is the one
+    # introducing it. Said out loud rather than treated as "nothing to warn
+    # about": silence here would be indistinguishable from a healthy install.
+    log "platform_settings not readable yet (first deploy of P180-01) — EIV posture not checked"
+  elif ds_eiv_worker_will_file_live \
+    "$eiv_choice" "$eiv_armed" "$eiv_consent" "${EIV_MOCK_BASE_URL:-}"; then
+    queued="$(compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
+      psql -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
+      -c "SELECT count(*) FROM eiv_submissions
+           WHERE status IN ('queued', 'failed_retryable')
+             AND (next_attempt_at IS NULL OR next_attempt_at <= now())" \
+      2>/dev/null | tr -d '\n' || true)"
+
+    if [[ -n "$queued" && "$queued" != "0" ]]; then
+      printf '\033[1;33m!!\033[0m %s\n' \
+        "${queued} Punktemeldung(en) are due and the worker is armed against the LIVE register." >&2
+      printf '\033[1;33m!!\033[0m %s\n' \
+        "The first sweep after this deploy files them at the Ärztekammer. Switch the worker off in the console (Plattform → Punktemeldung) if that is not intended." >&2
+    else
+      log "EIV queue empty — arming the worker files nothing that already exists"
+    fi
   else
-    log "EIV queue empty — arming the worker files nothing that already exists"
+    log "EIV posture: endpoint=${eiv_choice:-?} armed=${eiv_armed:-?} live-consent=${eiv_consent:-?}"
   fi
 fi
 

@@ -60,6 +60,10 @@ const SCREEN_LOADS = {
   // caller's customer — the queue is per installation, not per course.
   punktemeldungen: ["GET /admin/eiv/submissions"],
   security: ["GET /admin/auth/second-factor/policy"],
+  // Plattform → Punktemeldung (P180-01). One read at mount, and the screen has
+  // no tenant at all: whether the worker files, and to which register, is one
+  // row for the whole installation.
+  "platform-eiv": ["GET /admin/platform/eiv"],
 };
 
 const ROLES = ["super_admin", "customer_admin", "department_admin", "course_editor"];

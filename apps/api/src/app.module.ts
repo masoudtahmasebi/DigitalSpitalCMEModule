@@ -19,6 +19,7 @@ import { UploadModule } from "./modules/uploads/upload.module.js";
 import { ParticipantAuthModule } from "./modules/participant-auth/participant-auth.module.js";
 import { ParticipantModule } from "./modules/participants/participant.module.js";
 import { CustomerModule } from "./modules/customers/customer.module.js";
+import { PlatformModule } from "./modules/platform/platform.module.js";
 import { ModerationModule } from "./modules/moderation/moderation.module.js";
 import { ProjectsModule } from "./modules/projects/projects.module.js";
 
@@ -40,6 +41,7 @@ import { ProjectsModule } from "./modules/projects/projects.module.js";
     ParticipantAuthModule,
     ParticipantModule,
     CustomerModule,
+    PlatformModule,
     ModerationModule,
     ProjectsModule,
   ],

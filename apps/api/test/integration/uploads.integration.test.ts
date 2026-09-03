@@ -41,7 +41,13 @@ import { requireEnv } from "./support/env.js";
 const SUPERUSER_URL = requireEnv("POSTGRES_SUPERUSER_URL");
 
 process.env["NODE_ENV"] ??= "test";
-process.env["EIV_WORKER_ENABLED"] = "no";
+/*
+ * The worker is off because `platform_settings` says so (P180-01), not
+ * because of an environment variable. A fresh database starts with
+ * `eiv_worker_enabled = false` and the endpoint on `mock`, so a suite that
+ * sets nothing files nothing — a stronger guarantee than the line that used
+ * to be here, which every new test file had to remember to copy.
+ */
 
 const KID = "uploads-key";
 const AUDIENCE = "ds-education-api";

@@ -1497,6 +1497,63 @@ export const german = {
     },
   },
 
+  /**
+   * Plattform → Punktemeldung (P180-01).
+   *
+   * The screen that replaces three lines in `config.env`. Every sentence is
+   * written for somebody about to change what leaves this installation, and the
+   * one that matters most is `liveWarning`: a Punktemeldung cannot be unfiled.
+   */
+  platform: {
+    nav: "Punktemeldung",
+    title: "Punktemeldung an die Ärztekammer",
+    intro:
+      "Diese Einstellungen gelten für die gesamte Installation, nicht für einzelne Kunden oder Fortbildungen. Sie entscheiden, ob abgeschlossene Teilnahmen an die Ärztekammer gemeldet werden und an welches System.",
+
+    workerLegend: "Übermittlung",
+    workerLabel: "Punktemeldungen automatisch übermitteln",
+    workerHintOn:
+      "Der Dienst prüft etwa jede Minute, ob abgeschlossene Teilnahmen zu melden sind, und übermittelt sie an das unten gewählte System.",
+    workerHintOff:
+      "Es wird derzeit nichts übermittelt. Abgeschlossene Teilnahmen bleiben in der Warteschlange und werden gemeldet, sobald Sie die Übermittlung einschalten — auch rückwirkend.",
+    /*
+     * The sentence that is easy to leave out and expensive to leave out: the
+     * queue does not start at the moment somebody flips the switch.
+     */
+    workerBacklogWarning:
+      "Achtung: Beim Einschalten werden auch alle bereits wartenden Meldungen übermittelt, nicht nur neue.",
+
+    endpointLegend: "Zielsystem",
+    endpointHint:
+      "An welches System die Meldungen gehen. Die Adresse dazu ist fest hinterlegt und lässt sich hier nicht frei eingeben.",
+    endpoints: {
+      mock: "Testattrappe auf diesem Server",
+      test: "Testsystem der EIV (backend-test.eiv-fobi.de)",
+      live: "Echtsystem der Ärztekammer (backend.eiv-fobi.de)",
+    },
+    endpointHints: {
+      mock: "Nichts verlässt diesen Server. Für Entwicklung und für die Prüfung des Ablaufs.",
+      test: "Das System, das die EIV ausdrücklich für Integrationen vorsieht. Zugangsdaten und Testveranstaltungen kommen vom EIV-Support, nicht von Ihrer echten VNR.",
+      live: "Echte Punktemeldungen auf den Fortbildungskonten echter Ärztinnen und Ärzte.",
+    },
+    endpointUrl: "Adresse",
+
+    liveLegend: "Bestätigung für das Echtsystem",
+    liveWarning:
+      "Eine übermittelte Punktemeldung lässt sich nicht zurücknehmen. Sie kann nur widerrufen werden, und der Widerruf bleibt im Fortbildungskonto der betroffenen Person sichtbar. Bitte bestätigen Sie ausdrücklich, dass an das Echtsystem gemeldet werden darf.",
+    liveConfirm:
+      "Ich bestätige, dass diese Installation echte Punktemeldungen an die Ärztekammer übermitteln darf.",
+    liveConfirmed: (at: string): string =>
+      `Bestätigt am ${at}. Wenn Sie das Zielsystem wechseln, erlischt diese Bestätigung.`,
+    liveMissing:
+      "Für das Echtsystem fehlt die Bestätigung. Solange sie fehlt, wird nichts übermittelt.",
+
+    save: "Einstellungen speichern",
+    saving: "Wird gespeichert …",
+    saved: "Die Einstellungen wurden gespeichert.",
+    updatedAt: (at: string): string => `Zuletzt geändert am ${at}.`,
+  },
+
   contentLock: {
     legend: "Inhaltssperre",
     label: "Inhalte dieser Fortbildung sperren",
@@ -1520,6 +1577,18 @@ export const german = {
     cloning: "Kopie wird erstellt …",
     cloneDone: "Die Kopie wurde erstellt.",
     cloneOpen: "Kopie öffnen",
+
+    /*
+     * The sample (P180-02). The client: *"also with sample certificate
+     * generation, if we use test server, i should easily test this"*.
+     */
+    sampleLegend: "Musterbescheinigung",
+    sampleHint:
+      "Erzeugt eine Teilnahmebescheinigung mit den echten Angaben dieser Fortbildung — VNR, Punkte, Stempel, Unterschrift — und einer erfundenen Person. So sehen Sie das fertige Dokument, bevor die erste Teilnehmerin es bekommt. Es wird dabei nichts ausgestellt und nichts gespeichert.",
+    sampleAction: "Musterbescheinigung erzeugen",
+    sampleBusy: "Wird erzeugt …",
+    sampleMarked:
+      "Auf dem Dokument steht „MUSTER — keine gültige Bescheinigung“. Es ist als Muster erkennbar und darf nicht weitergegeben werden.",
   },
 
   courses: {
@@ -1851,6 +1920,104 @@ export const german = {
       issued: "ausgestellt",
       delivered: "zugestellt",
       bounced: "unzustellbar",
+      // Missing until P179-01. `certificates` has had the state since
+      // migration 0023 and the cell rendered blank for it.
+      revoked: "widerrufen",
+    },
+
+    /*
+     * The support panel (P179).
+     *
+     * The client, on a row reading "unzustellbar" with nothing beside it:
+     *
+     *   > what does `undeliverable` mean, i need a retry button, i need error
+     *   > handling, i need debugging […] how can an admin download the
+     *   > certificate of a person to send it to them as a support person, this
+     *   > part is quite weak!
+     *
+     * Every sentence below answers one of those, in the words of somebody
+     * holding a telephone rather than a database.
+     */
+    support: {
+      open: "Details und Support",
+      close: "Schließen",
+      openAria: (name: string): string => `Support-Details für ${name} öffnen`,
+
+      certificateHeading: "Teilnahmebescheinigung",
+      /*
+       * The sentence the whole ticket exists for. `bounced` is about the
+       * e-mail and about nothing else — `delivery.service.ts` is explicit that
+       * a failed delivery must never affect the entitlement — and an operator
+       * who does not know that will tell a physician they have lost their
+       * certificate.
+       */
+      bouncedExplained:
+        "„Unzustellbar“ bedeutet: die E-Mail konnte nicht zugestellt werden. Die Bescheinigung selbst ist gültig und steht der teilnehmenden Person in ihrem Kursbereich weiterhin zum Download bereit.",
+      reasonLabel: "Ursache",
+      reasons: {
+        no_recipient:
+          "Für diese Person ist keine E-Mail-Adresse hinterlegt. Erneutes Senden kann nicht gelingen — laden Sie die Bescheinigung herunter und senden Sie sie auf einem anderen Weg.",
+        permanent_rejection:
+          "Der empfangende Server hat die Adresse dauerhaft abgelehnt. Erneutes Senden an dieselbe Adresse kann nicht gelingen — die Adresse muss korrigiert werden.",
+        attempts_exhausted:
+          "Alle automatischen Zustellversuche sind fehlgeschlagen, ohne dass die Adresse abgelehnt wurde. Erneutes Senden ist hier sinnvoll.",
+      },
+      /** When `delivery_abandoned_reason` holds something this version does not know. */
+      reasonUnknown:
+        "Die Zustellung wurde abgebrochen; die Ursache ist in dieser Version nicht näher benannt.",
+      lastErrorLabel: "Letzte Rückmeldung des Mailservers",
+      lastErrorHint:
+        "Die technische Meldung des Versandwegs — z. B. „SMTP 550“ für eine abgelehnte Adresse oder „no SMTP host configured“, wenn für dieses Projekt kein Mailserver hinterlegt ist.",
+      attemptsLabel: "Zustellversuche",
+      firstAttemptLabel: "Erster Versuch",
+      nextAttemptLabel: "Nächster Versuch",
+      nextAttemptNone: "kein weiterer automatischer Versuch",
+
+      download: "Bescheinigung herunterladen",
+      downloadHint:
+        "Lädt die PDF-Datei herunter, damit Sie sie der teilnehmenden Person auf einem anderen Weg zusenden können. Es wird dabei nichts verschickt und nichts neu ausgestellt.",
+      resend: "Erneut senden",
+      resendBlocked:
+        "Erneutes Senden würde hier zwangsläufig wieder fehlschlagen — siehe Ursache.",
+      regenerate: "Neu erstellen",
+      regenerateHint:
+        "Erzeugt das Dokument neu, z. B. nach einer Namenskorrektur. An die Ärztekammer wird dabei nichts gemeldet.",
+      noCertificate:
+        "Für diese Teilnahme wurde noch keine Bescheinigung ausgestellt. Sie entsteht, sobald die Person die Fortbildung abgeschlossen hat.",
+      pendingCertificate:
+        "Die Bescheinigung ist vorgemerkt, aber noch nicht ausgestellt. „Neu erstellen“ stößt die Ausstellung erneut an.",
+      revokedCertificate:
+        "Diese Bescheinigung wurde widerrufen. Sie kann weder heruntergeladen noch erneut versendet werden.",
+      resent: "Die Bescheinigung wurde erneut in die Zustellung gegeben.",
+      regenerated: "Die Bescheinigung wird neu erstellt.",
+
+      efnHeading: "EFN und Punktemeldung",
+      efnStored: "Hinterlegte EFN",
+      efnNone: "Für diese Person ist keine EFN hinterlegt.",
+      efnMaskHint:
+        "Aus Datenschutzgründen werden nur die letzten vier Ziffern angezeigt — genug, um die Nummer mit der Person am Telefon abzugleichen.",
+      /*
+       * The finding this panel exists to surface. Two copies of one number,
+       * and until P179-03 no screen could tell you they had drifted apart.
+       */
+      efnDiverges:
+        "Achtung: Die vorgemerkte Punktemeldung würde eine andere EFN übermitteln als die, die die teilnehmende Person hinterlegt hat. Korrigieren Sie die Meldung, bevor sie übermittelt wird.",
+      efnAgrees: "Die vorgemerkte Punktemeldung übermittelt genau diese EFN.",
+      efnCorrectLegend: "EFN der Punktemeldung korrigieren",
+      /*
+       * §9.4, and the sentence that keeps the client from asking for something
+       * the database will refuse: say at the control what it does and what it
+       * does not.
+       */
+      efnCorrectHint:
+        "Korrigiert die EFN dieser Punktemeldung — also das, was wir an die Ärztekammer übermitteln. Das Profil der teilnehmenden Person wird dabei nicht verändert: die EFN gehört ihr, und nur sie selbst kann sie in ihrem Kursbereich ändern. Die Meldung wird dadurch nicht abgeschickt.",
+      efnCorrectField: "Neue EFN (15 Ziffern)",
+      efnCorrectAction: "Punktemeldung korrigieren",
+      efnCorrected: "Die EFN der Punktemeldung wurde korrigiert.",
+      efnCorrectUnavailable:
+        "Für diese Teilnahme liegt keine Punktemeldung vor, die korrigiert werden könnte.",
+      efnCorrectLocked:
+        "Diese Teilnahme wurde bereits an die Ärztekammer gemeldet. Eine Korrektur ist hier nicht mehr möglich — sie muss innerhalb der Korrekturfrist bei der Ärztekammer erfolgen.",
     },
   },
 } as const;

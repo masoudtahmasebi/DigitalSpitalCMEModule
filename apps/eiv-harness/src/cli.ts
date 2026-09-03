@@ -19,11 +19,25 @@
  *
  * Configuration is entirely environmental — no credential is ever committed:
  *
- *   EIV_BASE_URL        default http://127.0.0.1:4010 (the local mock)
- *                       test system: https://backend-test.eiv-fobi.de
- *   EIV_VNR             Veranstaltungsnummer
- *   EIV_VNR_PASSWORD    password issued with the VNR
- *   EIV_ALLOW_LIVE      must be "yes" to target a non-local host
+ *   EIV_HARNESS_BASE_URL   default http://127.0.0.1:4010 (the local mock)
+ *                          test system: https://backend-test.eiv-fobi.de
+ *   EIV_VNR                Veranstaltungsnummer
+ *   EIV_VNR_PASSWORD       password issued with the VNR
+ *   EIV_HARNESS_ALLOW_LIVE must be "yes" to target a non-local host
+ *
+ * ## Why these are `EIV_HARNESS_*` since P180-01
+ *
+ * They used to be `EIV_BASE_URL` and `EIV_ALLOW_LIVE` — the same names the API
+ * read. That was fine while both meant "where this process talks to EIV", and
+ * it stopped being fine when the API's moved into the database: the platform's
+ * register is now a row an operator sets in the console, and a developer
+ * exporting `EIV_BASE_URL` for this CLI would be exporting a name that looks
+ * like it configures the running platform and does not.
+ *
+ * One name, one meaning. This tool is a developer's terminal, run by hand
+ * against EIV's test system with credentials EIV support issued for it; the
+ * platform is a server filing statutory reports. They were never the same
+ * setting and now they do not share a spelling.
  */
 
 import { EivClient, EivError, redact, type EivExchange } from "@ds/eiv-client";
@@ -47,7 +61,7 @@ const BEHAVIOURS = [
 
 async function main(): Promise<number> {
   const command = process.argv[2];
-  const baseUrl = process.env["EIV_BASE_URL"] ?? DEFAULT_BASE_URL;
+  const baseUrl = process.env["EIV_HARNESS_BASE_URL"] ?? DEFAULT_BASE_URL;
 
   const guard = checkLiveGuard(baseUrl);
   if (guard !== undefined) {
@@ -232,7 +246,7 @@ async function main(): Promise<number> {
  * Whether this base URL is the local mock.
  *
  * One definition, two callers: the live guard that refuses to contact a real
- * host without `EIV_ALLOW_LIVE`, and `--behaviour`, which is meaningless
+ * host without `EIV_HARNESS_ALLOW_LIVE`, and `--behaviour`, which is meaningless
  * anywhere else. Two copies of "is this local" is how one of them eventually
  * says yes where the other says no.
  */
@@ -252,13 +266,14 @@ function checkLiveGuard(baseUrl: string): string | undefined {
   try {
     host = new URL(baseUrl).hostname;
   } catch {
-    return `EIV_BASE_URL is not a valid URL: ${baseUrl}`;
+    return `EIV_HARNESS_BASE_URL is not a valid URL: ${baseUrl}`;
   }
 
-  if (isLocal(baseUrl) || process.env["EIV_ALLOW_LIVE"] === "yes") return undefined;
+  if (isLocal(baseUrl) || process.env["EIV_HARNESS_ALLOW_LIVE"] === "yes")
+    return undefined;
 
   return [
-    `Refusing to contact ${host} without EIV_ALLOW_LIVE=yes.`,
+    `Refusing to contact ${host} without EIV_HARNESS_ALLOW_LIVE=yes.`,
     "",
     "The configured VNR belongs to a real accredited event. A submission there",
     "creates a real CME record for a real physician and cannot be withdrawn",

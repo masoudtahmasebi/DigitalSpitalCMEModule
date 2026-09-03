@@ -109,7 +109,7 @@ const READ_WITHOUT_DOCUMENTATION = new Set([
    * Whether the installation files Punktemeldungen for real (P113-01).
    *
    * Computed by `deploy.yml`'s `derive` step from the **host's** own
-   * `EIV_BASE_URL` and `EIV_WORKER_ENABLED`, through the host's own
+   * `platform_settings` row (P180-01), through the host's own
    * `ds_eiv_worker_will_file_live`, and handed to the smoke job as a job
    * output. It is an answer *about* a machine, not a setting *of* one.
    *

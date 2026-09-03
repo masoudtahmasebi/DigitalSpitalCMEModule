@@ -138,6 +138,42 @@ export async function resetDatabase(url: string): Promise<void> {
               updated_by = NULL
         WHERE id = true`,
     );
+
+    /*
+     * The installation's EIV posture, back to how migration 0051 leaves it
+     * (P180-01).
+     *
+     * `platform_settings` is a singleton with no `customer_id`, so it is
+     * deliberately not in `TENANT_TABLES` — and being out of the list is **not
+     * enough**, for exactly the reason this file's header gives about
+     * `admin_2fa_policy`: `eiv_live_confirmed_by` and `updated_by` reference
+     * `users`, and `TRUNCATE users CASCADE` empties the whole referencing
+     * table, row and all. Re-running the migrations does not put it back
+     * either, because the ledger says 0051 has applied.
+     *
+     * So it is restored here, with the migration's own defaults: the worker
+     * **off** and the endpoint on `mock`. That is the state a suite that sets
+     * nothing must find — an integration run that inherited an armed worker
+     * pointed at EIV's test system from an earlier file would be the exact
+     * "assertion silently encoding whatever the last run happened to do" this
+     * function exists to prevent, on the one setting that files statutory
+     * reports.
+     *
+     * `ON CONFLICT DO NOTHING` rather than a plain INSERT: whether CASCADE
+     * reached it depends on which tables a caller truncated, and a reset that
+     * threw on the second call would be a worse failure than an idempotent
+     * one.
+     */
+    await pool.query(
+      `INSERT INTO platform_settings (singleton, eiv_worker_enabled, eiv_endpoint)
+            VALUES (true, false, 'mock')
+       ON CONFLICT (singleton) DO UPDATE
+          SET eiv_worker_enabled    = false,
+              eiv_endpoint          = 'mock',
+              eiv_live_confirmed_at = NULL,
+              eiv_live_confirmed_by = NULL,
+              updated_by            = NULL`,
+    );
   } finally {
     await pool.end();
   }

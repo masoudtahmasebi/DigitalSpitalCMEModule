@@ -164,10 +164,13 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
   adminListEivSubmissions: (c) =>
     c.adminListEivSubmissions({ status: "failed_permanent", page: 2 }),
   adminRequeueEivSubmission: (c) => c.adminRequeueEivSubmission(ID),
+  adminCorrectSubmissionEfn: (c) => c.adminCorrectSubmissionEfn(ID, "802760699000001"),
   adminWithdrawEivSubmission: (c) => c.adminWithdrawEivSubmission(ID, "Widerruf"),
   adminListCertificates: (c) => c.adminListCertificates(),
   adminRegenerateCertificate: (c) => c.adminRegenerateCertificate(ID),
   adminResendCertificate: (c) => c.adminResendCertificate(ID),
+  adminDownloadCertificate: (c) => c.adminDownloadCertificate(ID),
+  adminSampleCertificate: (c) => c.adminSampleCertificate("adhs"),
   adminRevokeCertificate: (c) => c.adminRevokeCertificate(ID),
   adminListStaff: (c) => c.adminListStaff(),
   adminInviteStaff: (c) =>
@@ -193,6 +196,9 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
     c.adminSetSecondFactorPolicy({ customerId: null, policy: "required" }),
   adminRemoveOwnSecondFactor: (c) => c.adminRemoveOwnSecondFactor(),
   adminListCustomers: (c) => c.adminListCustomers(),
+  adminGetEivPlatformSettings: (c) => c.adminGetEivPlatformSettings(),
+  adminUpdateEivPlatformSettings: (c) =>
+    c.adminUpdateEivPlatformSettings({ workerEnabled: false }),
   adminGetCustomer: (c) => c.adminGetCustomer("medice"),
   adminCreateCustomer: (c) => c.adminCreateCustomer({ slug: "medice", name: "MEDICE" }),
   adminUpdateCustomer: (c) => c.adminUpdateCustomer("medice", { name: "MEDICE" }),

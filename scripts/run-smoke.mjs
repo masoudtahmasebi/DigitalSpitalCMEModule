@@ -92,8 +92,12 @@ if (missing.length > 0) {
  * the configuration this workflow no longer holds."* The EIV posture is the
  * one thing that was never asked. Now it is: `deploy.yml` runs the host's own
  * `ds_eiv_worker_will_file_live` — the same function `deploy.sh` uses — over
- * the host's own `EIV_BASE_URL` and `EIV_WORKER_ENABLED`, and passes the answer
- * in as `EIV_REPORTS_LIVE`.
+ * the host's own settings, and passes the answer in as `EIV_REPORTS_LIVE`.
+ *
+ * Since P180-01 those settings are rows in `platform_settings` rather than
+ * lines in `config.env`, which changes where the workflow reads them and
+ * changes nothing here: this end still refuses to start without a definite
+ * answer from the server.
  *
  * ## Why absence is refused rather than assumed safe
  *
@@ -126,8 +130,9 @@ if (reportsLive === "yes") {
       "a Punktemeldung. Its VNR is reserved and belongs to no Veranstaltung, so every\n" +
       "such submission would be refused by the Ärztekammer and would raise an alert a\n" +
       "person then has to dismiss — once per deploy, for ever.\n\n" +
-      "Set EIV_WORKER_ENABLED=no on the host to run the smoke, or see\n" +
-      "docs/backlog/P68.md for what to build if this run has to happen anyway.",
+      "Switch the worker off in the console (Plattform → Punktemeldung) to run the\n" +
+      "smoke, or see docs/backlog/P68.md for what to build if this run has to happen\n" +
+      "anyway. Since P180-01 that is a switch in a browser rather than a redeploy.",
   );
   process.exit(2);
 }

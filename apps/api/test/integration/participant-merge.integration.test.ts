@@ -46,7 +46,13 @@ process.env["KEYCLOAK_AUDIENCE"] ??= "unused";
 process.env["KEYCLOAK_JWKS_URI"] ??=
   "http://127.0.0.1:1/realms/unused/protocol/openid-connect/certs";
 process.env["NODE_ENV"] ??= "test";
-process.env["EIV_WORKER_ENABLED"] = "no";
+/*
+ * The worker is off because `platform_settings` says so (P180-01), not
+ * because of an environment variable. A fresh database starts with
+ * `eiv_worker_enabled = false` and the endpoint on `mock`, so a suite that
+ * sets nothing files nothing — a stronger guarantee than the line that used
+ * to be here, which every new test file had to remember to copy.
+ */
 process.env["CERTIFICATE_DELIVERY_ENABLED"] = "no";
 
 const PASSWORD = `pw-${randomUUID()}`;

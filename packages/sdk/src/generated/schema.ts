@@ -1157,6 +1157,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/learners/{enrolmentId}/eiv/efn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Correct the EFN a queued Punktemeldung will send
+         * @description The panel-side EFN correction (P179-03), and what it edits is worth
+         *     being precise about, because there are two EFNs and they belong to
+         *     different parties.
+         *
+         *     **This edits `eiv_submissions.efn` — our own outbound report.** A typo
+         *     in it is this organisation's report being wrong, and correcting a
+         *     report before it is filed is the operator's job.
+         *
+         *     **It does not edit the physician's profile.** `efn_profiles` is their
+         *     identifier at their Ärztekammer, and its row-level `WITH CHECK` admits
+         *     only the subject. That is a guarantee rather than a gap: a platform on
+         *     which a customer's administrator can assert a doctor's national
+         *     identifier is one that can credit points to anybody. The physician
+         *     corrects their own through `PUT /profile/efn`, which since P179-03
+         *     carries the correction onto every un-sent Meldung of theirs by the same
+         *     rule this uses.
+         *
+         *     So this stops a wrong number reaching the Kammer without letting
+         *     anybody rewrite whose number it is.
+         *
+         *     **It does not send.** `adminRequeueEivSubmission` is the control that
+         *     says "try again", with the deadline check that belongs to sending.
+         *     Folding them together would mean a permanently-failed row silently
+         *     re-entering the queue because somebody fixed a digit.
+         *
+         *     Refused with 409 once the Meldung has been accepted or withdrawn: the
+         *     points are on somebody's record, and re-filing under a different number
+         *     credits a second person rather than moving the first (S30). Refused
+         *     with 409 when the value is the one already stored, so a no-op cannot be
+         *     mistaken for a fix.
+         *
+         *     No response, and no error, ever names an EFN.
+         */
+        patch: operations["adminCorrectSubmissionEfn"];
+        trace?: never;
+    };
     "/admin/learners/{enrolmentId}/eiv": {
         parameters: {
             query?: never;
@@ -1280,6 +1331,147 @@ export interface paths {
          *     code path, so a regeneration cannot trigger one.
          */
         post: operations["adminRegenerateCertificate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/platform/eiv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether the Punktemeldung worker files, and to which register
+         * @description The settings that used to be `EIV_WORKER_ENABLED`, `EIV_BASE_URL` and
+         *     `EIV_ALLOW_LIVE` in `config.env` (P180-01).
+         *
+         *     They decided whether statutory Punktemeldungen leave this installation
+         *     and who receives them, and both took a deploy to change — so switching
+         *     to EIV's test system to try something meant editing a file on the host,
+         *     and switching back meant editing it again. In practice nobody switched.
+         *
+         *     `super_admin` only. There is one EIV worker per installation; a customer
+         *     administrator's authority is over their own courses and participants,
+         *     and pointing the platform at the live Ärztekammer endpoint would file
+         *     statutory reports for every tenant at once.
+         *
+         *     No `X-DS-Project` header: this setting has no tenant.
+         */
+        get: operations["adminGetEivPlatformSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Arm or pause the worker, and choose the register
+         * @description Every field optional; an absent field is left alone.
+         *
+         *     **`endpoint` is a word, never a URL.** The platform owns the address
+         *     each of the three resolves to. A URL field would be a text box in which
+         *     somebody types the production register — or somebody else's host — and
+         *     the browser would then be choosing where a statutory report goes.
+         *
+         *     **`live` requires `confirmLive: true`**, and the consent is recorded
+         *     with the operator's id and the moment. That is `EIV_ALLOW_LIVE`'s job
+         *     moved, and improved in one way: the old flag was the string `yes` in a
+         *     file with nobody's name on it. A Punktemeldung cannot be unfiled — only
+         *     withdrawn, and the withdrawal stays visible on the physician's record.
+         *
+         *     **Changing the endpoint clears the consent.** Consent is to one
+         *     register, not to the idea of registers: an operator who confirms live,
+         *     switches to the test system to try something and switches back would
+         *     otherwise still be armed against production from a decision they made
+         *     before the detour.
+         *
+         *     Offering `confirmLive` for an endpoint that does not need it is refused
+         *     with 422, so consenting to nothing cannot become a habit.
+         */
+        patch: operations["adminUpdateEivPlatformSettings"];
+        trace?: never;
+    };
+    "/admin/courses/{slug}/certificate/sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A sample Teilnahmebescheinigung for this course
+         * @description The document this course would issue, rendered now (P180-02).
+         *
+         *     Configuring a certificate means uploading a stamp and a signature,
+         *     typing a VNR, a Veranstalter and a wissenschaftliche Leitung — and then
+         *     having no way to see the result until a physician finishes the course.
+         *     Until this route the first person to find out whether the stamp was the
+         *     right way up was a doctor holding their own CME record.
+         *
+         *     **Everything about the event is real; everything about the person is
+         *     synthetic and says so.** The name printed on the page is "MUSTER —
+         *     keine gültige Bescheinigung" and no EFN is printed at all. There is no
+         *     join through which a real participant's data could reach it.
+         *
+         *     **It issues nothing**: no `certificates` row, no download token, nothing
+         *     archived. A sample is a rendering, not a document the platform stands
+         *     behind.
+         *
+         *     Refused with 409 when the course is missing something a certificate
+         *     needs — which is the answer an operator came for.
+         */
+        get: operations["adminSampleCertificate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/certificates/{id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The certificate itself, for an operator supporting the participant
+         * @description The document a support operator forwards to a physician who did not
+         *     receive it (P179-02).
+         *
+         *     `GET /courses/{slug}/certificate/pdf` reads the caller's own
+         *     `principal.userId`: the only certificate it can produce is the
+         *     caller's. That is right for a learner route and left support with
+         *     nothing to do about a row saying `unzustellbar` — the platform's answer
+         *     was "the physician can download it", which is true and useless to
+         *     somebody who has just been telephoned about it.
+         *
+         *     **It sends nothing.** Resending is `adminResendCertificate`, and
+         *     keeping them apart matters: this hands one PDF to one operator, and
+         *     leaves no impression that the participant has been contacted.
+         *
+         *     **It does not re-issue.** The render is idempotent — the download token
+         *     is minted only if there is none, and the archived PDF is the *first*
+         *     render. A support download therefore cannot replace what was issued,
+         *     which is the property that lets it be a read.
+         *
+         *     Refused for a revoked certificate, before rendering: handing out a
+         *     withdrawn document is the outcome revocation exists to prevent. Refused
+         *     for a pending one, because there is nothing to support with yet.
+         *
+         *     `customer_admin` and `super_admin` only. A `department_admin` may read
+         *     that a certificate exists; producing a copy of a named physician's
+         *     participation record sits with the roles that already correct names and
+         *     withdraw certificates.
+         */
+        get: operations["adminDownloadCertificate"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3893,8 +4085,125 @@ export interface components {
             eivAttempts: number;
             /** Format: date-time */
             eivReportDueAt: string | null;
-            /** @enum {string} */
-            certificateState: "none" | "pending" | "issued" | "delivered" | "bounced";
+            /**
+             * @description The document's state. `revoked` was missing until P179-01 —
+             *     `certificates` has carried it since migration 0023 and the value
+             *     passed straight through, so the console rendered an empty cell for
+             *     a certificate somebody had deliberately withdrawn.
+             * @enum {string}
+             */
+            certificateState: "none" | "pending" | "issued" | "delivered" | "bounced" | "revoked";
+            /**
+             * @description Why the certificate is in that state, and what can be done about it
+             *     (P179-01). Null when there is none — which `certificateState`
+             *     already says.
+             */
+            certificate: components["schemas"]["CertificateDelivery"] | null;
+            /**
+             * @description The last four digits of the physician's EFN, masked (P179-03).
+             *
+             *     Enough for an operator on the telephone to confirm the number a
+             *     physician is reading off their card; useless to anybody who does
+             *     not already have it (ADR-0004). The same `maskEfn` the Lernende and
+             *     Punktemeldungen screens use.
+             */
+            efnMasked: string | null;
+            /**
+             * @description Whether the queued Punktemeldung will send a **different** EFN from
+             *     the one on the physician's profile (P179-03). Null when there is
+             *     nothing to compare — no Meldung, or no profile.
+             *
+             *     A boolean rather than the two numbers, for the same reason
+             *     `efnMasked` is masked. It is the fact that separates "the physician
+             *     corrected their EFN and we are about to report the old one" from
+             *     "everything agrees", and no screen could tell those apart before.
+             */
+            efnDivergesFromReport: boolean | null;
+        };
+        /** @description The installation's Punktemeldung posture (P180-01). One row, no tenant. */
+        EivPlatformSettings: {
+            /**
+             * @description Whether the worker files Punktemeldungen at all. Read by the worker
+             *     on **every tick**, not at boot — so switching it takes effect within
+             *     a sweep interval rather than at the next deploy, which is the whole
+             *     reason it moved out of `config.env`.
+             */
+            workerEnabled: boolean;
+            /**
+             * @description Which register receives them. A word: the platform owns the address
+             *     each resolves to.
+             * @enum {string}
+             */
+            endpoint: "mock" | "test" | "live";
+            /**
+             * @description The address the choice resolves to, so the screen can show which
+             *     domain it is about to talk to. Derived, never stored, never
+             *     accepted from a caller.
+             */
+            endpointUrl: string;
+            /**
+             * @description Whether this endpoint needs explicit consent before a submission may
+             *     go to it. True for the live register and for any host this platform
+             *     does not recognise.
+             */
+            requiresConsent: boolean;
+            /**
+             * Format: date-time
+             * @description When consent to file against the live register was given, or null.
+             *     The operator who gave it is recorded beside it and is deliberately
+             *     not returned — the screen needs to know that consent exists, not
+             *     who to blame in a browser.
+             */
+            liveConfirmedAt: string | null;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /**
+         * @description A certificate's delivery, as the participant list needs it (P179-01).
+         *
+         *     Every field has been stored since P8-03 or P118-02 and returned by
+         *     nothing, which is why the screen could say only `unzustellbar` and
+         *     offer no way forward.
+         *
+         *     **`bounced` describes the e-mail, never the entitlement.** The document
+         *     exists, is valid, and the physician can still download it — see
+         *     `delivery.service.ts`. What failed is our attempt to send it.
+         */
+        CertificateDelivery: {
+            /**
+             * Format: uuid
+             * @description Keys the resend, regenerate, revoke and download routes, so a row
+             *     that reports a problem can also act on it.
+             */
+            id: string;
+            /**
+             * @description Why delivery was given up on, or null while it has not been.
+             *
+             *     Decides whether resending could possibly land: `no_recipient` and
+             *     `permanent_rejection` cannot, and offering the button for them is a
+             *     control that can only produce the same error.
+             * @enum {string|null}
+             */
+            abandonedReason: "no_recipient" | "permanent_rejection" | "attempts_exhausted" | null;
+            /**
+             * @description The channel's own words for the last failure — `SMTP 550`,
+             *     `ECONNREFUSED`, `no SMTP host configured`, `unknown transport
+             *     error`.
+             *
+             *     A fixed vocabulary, not the far end's prose. `DeliveryChannel`
+             *     forbids a reason carrying the recipient or the transport
+             *     credentials, `classify` in `@ds/mail` produces only those strings,
+             *     and `smtp.test.ts` asserts an address never reaches the outcome.
+             */
+            lastError: string | null;
+            attemptCount: number;
+            /** Format: date-time */
+            firstAttemptAt: string | null;
+            /**
+             * Format: date-time
+             * @description When the sweep will try again, or null if it will not.
+             */
+            nextAttemptAt: string | null;
         };
         ParticipantList: {
             courseSlug: string;
@@ -7561,6 +7870,71 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
         };
     };
+    adminCorrectSubmissionEfn: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                enrolmentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description Fifteen digits. Trimmed before validation — an EFN is
+                     *     copied off a card or out of an e-mail and arrives with
+                     *     whitespace more often than not.
+                     */
+                    efn: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Corrected. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
     adminRequeueEivSubmission: {
         parameters: {
             query?: never;
@@ -7913,6 +8287,180 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    adminGetEivPlatformSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The installation's current EIV posture. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EivPlatformSettings"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminUpdateEivPlatformSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    workerEnabled?: boolean;
+                    /** @enum {string} */
+                    endpoint?: "mock" | "test" | "live";
+                    /**
+                     * @description Ticked in this request, never remembered as a preference.
+                     *     Consent is withdrawn by changing the endpoint, which is the
+                     *     act that makes it meaningless.
+                     * @enum {boolean}
+                     */
+                    confirmLive?: true;
+                };
+            };
+        };
+        responses: {
+            /** @description The settings as they now stand. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EivPlatformSettings"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    adminSampleCertificate: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: components["parameters"]["CourseSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The sample PDF. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    adminDownloadCertificate: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                /** @description The certificate's id. */
+                id: components["parameters"]["CertificateId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The PDF. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     adminResendCertificate: {

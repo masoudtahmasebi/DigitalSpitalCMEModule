@@ -49,6 +49,21 @@ const ROLE_RANK: readonly StaffRole[] = [
  */
 export type ManagedEntity =
   | "customer"
+  /**
+   * The installation itself (P180-01).
+   *
+   * Whether the EIV worker files Punktemeldungen, and to which register. Its
+   * own capability rather than folded into `customer`, because the two are
+   * different authorities that happen to be held by one role today: `customer`
+   * is "may bring a tenant into existence", and this is "may decide what leaves
+   * this installation on behalf of every tenant at once".
+   *
+   * A customer administrator holds neither, and that is the point. Their
+   * authority is over their own courses and participants; pointing the platform
+   * at the live Ärztekammer endpoint would file statutory reports for
+   * everybody, including customers they have never heard of.
+   */
+  | "platform"
   | "department"
   | "project"
   | "course"
@@ -63,6 +78,7 @@ const CAPABILITIES: Readonly<Record<StaffRole, readonly ManagedEntity[]>> = {
   // another.
   super_admin: [
     "customer",
+    "platform",
     "department",
     "project",
     "course",

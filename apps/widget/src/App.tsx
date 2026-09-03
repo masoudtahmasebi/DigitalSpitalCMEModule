@@ -54,6 +54,7 @@ import { PlayerScreen } from "./components/PlayerScreen.js";
 import { QuizScreen } from "./components/QuizScreen.js";
 import { EvaluationScreen } from "./components/EvaluationScreen.js";
 import { CompletionScreen } from "./components/CompletionScreen.js";
+import { EfnPanel } from "./components/EfnPanel.js";
 import { CertificatePanel } from "./components/CertificatePanel.js";
 import { MediathekPanel } from "./components/MediathekPanel.js";
 import {
@@ -1025,13 +1026,30 @@ function Loaded(props: {
               <CertificationTab
                 course={detail}
                 certificate={
-                  state.completedAt === null ? (
-                    <p className="mt-6 text-sm text-gray-500">{de.certificate.notYet}</p>
-                  ) : (
-                    <div className="mt-6">
-                      <CertificateGate client={client} courseSlug={courseSlug} />
-                    </div>
-                  )
+                  <>
+                    {state.completedAt === null ? (
+                      <p className="mt-6 text-sm text-gray-500">
+                        {de.certificate.notYet}
+                      </p>
+                    ) : (
+                      <div className="mt-6">
+                        <CertificateGate client={client} courseSlug={courseSlug} />
+                      </div>
+                    )}
+                    {/*
+                     * The physician's own EFN (P179-03), drawn whether or not
+                     * they have finished.
+                     *
+                     * P54-02 put the correction on the Punktemeldung form, and
+                     * the widget stops showing that form the moment a
+                     * completion is recorded — so from exactly the point the
+                     * number starts to matter, its owner could no longer see
+                     * or fix it. The panel decides for itself whether this
+                     * course reports anything at all, so a Fortbildung without
+                     * points draws nothing.
+                     */}
+                    <EfnPanel client={client} />
+                  </>
                 }
               />
             )}

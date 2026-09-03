@@ -41,7 +41,13 @@ process.env["KEYCLOAK_AUDIENCE"] ??= "unused";
 process.env["KEYCLOAK_JWKS_URI"] ??=
   "http://127.0.0.1:1/realms/unused/protocol/openid-connect/certs";
 process.env["NODE_ENV"] ??= "test";
-process.env["EIV_WORKER_ENABLED"] = "no";
+/*
+ * The worker is off because `platform_settings` says so (P180-01), not
+ * because of an environment variable. A fresh database starts with
+ * `eiv_worker_enabled = false` and the endpoint on `mock`, so a suite that
+ * sets nothing files nothing — a stronger guarantee than the line that used
+ * to be here, which every new test file had to remember to copy.
+ */
 /*
  * A real key, so `createSecretCipher` builds AES-GCM rather than falling back
  * to `PlaintextSecretCipher` (P40-01).
@@ -2238,5 +2244,209 @@ describe("a department administrator's screens actually load (P41-02)", () => {
       name: "Verboten",
     });
     expect(result.status).toBe(403);
+  });
+});
+
+describe("the installation's EIV posture (P180-01)", () => {
+  /*
+   * The three settings that used to be lines in `config.env`, at the client's
+   * instruction:
+   *
+   *   > i don't want to have eiv-worker enabled or disable in config.env i want
+   *   > to be able to sweitch that from the admin panel, and i want to be able
+   *   > to change the sending to domain
+   *
+   * They decide whether statutory Punktemeldungen leave this installation and
+   * who receives them, so the tests below are as much about what the route
+   * **refuses** as about what it stores.
+   *
+   * This suite already holds both kinds of operator, which is what these cases
+   * need: a super administrator, and a fully legitimate customer administrator
+   * who must not be able to point the platform at the Ärztekammer.
+   */
+
+  async function settings(): Promise<{
+    workerEnabled: boolean;
+    endpoint: string;
+    endpointUrl: string;
+    requiresConsent: boolean;
+    liveConfirmedAt: string | null;
+  }> {
+    const { body } = await asStaff(superSession, "GET", "/admin/platform/eiv");
+    return body;
+  }
+
+  it("starts with the worker off and nothing pointed at a real register", async () => {
+    /*
+     * The default the migration establishes, asserted rather than assumed.
+     *
+     * It is the one that matters most: an installation that gained this table
+     * must not begin filing because a column defaulted the friendly way, and a
+     * fresh database must file nothing until somebody says otherwise.
+     */
+    const current = await settings();
+
+    expect(current.workerEnabled).toBe(false);
+    expect(current.endpoint).toBe("mock");
+    expect(current.requiresConsent).toBe(false);
+    expect(current.liveConfirmedAt).toBeNull();
+  });
+
+  it("is closed to a customer administrator, who holds every other capability", async () => {
+    // The sharp case, as with the registry above. This operator runs their own
+    // courses and participants legitimately; pointing the platform at the live
+    // Ärztekammer endpoint would file statutory reports for every tenant on the
+    // installation, including customers they have never heard of.
+    expect((await asStaff(tenantSession, "GET", "/admin/platform/eiv")).status).toBe(403);
+    expect(
+      (
+        await asStaff(tenantSession, "PATCH", "/admin/platform/eiv", {
+          workerEnabled: true,
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  it("arms the worker against the test register without any consent", async () => {
+    /*
+     * The whole point of P104-01, and the reason this is a separate case: the
+     * system EIV *instruct* integrators to use must be reachable without
+     * ticking a box about the production register. A safety flag that has to be
+     * switched off to do the ordinary safe thing is a flag that is always off.
+     */
+    const { status, body } = await asStaff(superSession, "PATCH", "/admin/platform/eiv", {
+      workerEnabled: true,
+      endpoint: "test",
+    });
+
+    expect(status).toBe(200);
+    expect(body.workerEnabled).toBe(true);
+    expect(body.endpoint).toBe("test");
+    expect(body.endpointUrl).toBe("https://backend-test.eiv-fobi.de");
+    expect(body.requiresConsent).toBe(false);
+  });
+
+  it("refuses to arm the worker against the live register without consent", async () => {
+    const { status, body } = await asStaff(superSession, "PATCH", "/admin/platform/eiv", {
+      workerEnabled: true,
+      endpoint: "live",
+    });
+
+    expect(status).toBe(409);
+    // §9.4: the message says what cannot be undone, not merely that it refused.
+    expect(body.detail).toContain("nicht zurücknehmen");
+
+    // And nothing moved. A refusal that had already written the endpoint would
+    // leave the installation one click from filing.
+    const current = await settings();
+    expect(current.endpoint).toBe("test");
+  });
+
+  it("accepts it with the consent, and records who and when", async () => {
+    const { status, body } = await asStaff(superSession, "PATCH", "/admin/platform/eiv", {
+      workerEnabled: true,
+      endpoint: "live",
+      confirmLive: true,
+    });
+
+    expect(status).toBe(200);
+    expect(body.endpoint).toBe("live");
+    expect(body.endpointUrl).toBe("https://backend.eiv-fobi.de");
+    expect(body.requiresConsent).toBe(true);
+    expect(body.liveConfirmedAt).not.toBeNull();
+
+    // The operator is stored and deliberately not returned: the screen needs to
+    // know consent exists, not who to blame in a browser.
+    const { rows } = await seedPool.query<{ by: string | null }>(
+      "SELECT eiv_live_confirmed_by AS by FROM platform_settings WHERE singleton",
+    );
+    expect(rows[0]!.by).not.toBeNull();
+    expect(JSON.stringify(body)).not.toContain(rows[0]!.by);
+  });
+
+  it("clears the consent when the register changes", async () => {
+    /*
+     * Consent is to one register, not to the idea of registers. An operator who
+     * confirms live, detours through the test system to try something, and
+     * comes back would otherwise still be armed against production on a
+     * decision they took before the detour.
+     */
+    const away = await asStaff(superSession, "PATCH", "/admin/platform/eiv", {
+      endpoint: "test",
+    });
+    expect(away.status).toBe(200);
+    expect(away.body.liveConfirmedAt).toBeNull();
+
+    // Coming back needs it again — asserted, because "the consent was cleared"
+    // and "the consent no longer applies" are different claims and only the
+    // second one protects anybody.
+    const back = await asStaff(superSession, "PATCH", "/admin/platform/eiv", {
+      workerEnabled: true,
+      endpoint: "live",
+    });
+    expect(back.status).toBe(409);
+  });
+
+  it("refuses consent offered for a register that does not need it", async () => {
+    // Consenting to nothing is how consenting becomes a habit, and a habit is
+    // not consent.
+    const { status, body } = await asStaff(superSession, "PATCH", "/admin/platform/eiv", {
+      endpoint: "test",
+      confirmLive: true,
+    });
+
+    expect(status).toBe(422);
+    expect(body.detail).toContain("keine ausdrückliche Bestätigung");
+  });
+
+  it("refuses a URL where a choice belongs", async () => {
+    /*
+     * The property the whole design rests on. If this field accepted an
+     * address, the browser would be choosing which register receives a
+     * statutory report — and an operator with a compromised session, or a
+     * mistyped host, would be choosing it for every physician on the platform.
+     */
+    for (const endpoint of ["https://attacker.example", "http://127.0.0.1:4010", ""]) {
+      const { status } = await asStaff(superSession, "PATCH", "/admin/platform/eiv", {
+        endpoint,
+      });
+      expect(status, endpoint).toBe(422);
+    }
+  });
+
+  it("records the change on the platform, naming the operator and no tenant", async () => {
+    const { rows } = await seedPool.query<{
+      customer_id: string | null;
+      actor_identity: string;
+      actor_id: string | null;
+      detail: Record<string, unknown>;
+    }>(
+      `SELECT customer_id, actor_identity, actor_id, detail FROM audit_log
+        WHERE action = 'platform.eiv_settings_changed'
+        ORDER BY created_at DESC LIMIT 1`,
+    );
+
+    expect(rows).toHaveLength(1);
+    // Customer-less, because the setting belongs to no tenant — filing it under
+    // whichever customer was in the header would put the most consequential
+    // switch on the installation in one arbitrary customer's log and no other.
+    expect(rows[0]!.customer_id).toBeNull();
+    // And still attributed to the person, not to "the system".
+    expect(rows[0]!.actor_identity).toBe("staff");
+    expect(rows[0]!.actor_id).not.toBeNull();
+  });
+
+  it("leaves the installation where a test run should leave it", async () => {
+    // Put back, so a later file in this run does not inherit an armed worker.
+    // The per-file reset does this too; doing it here as well means the state
+    // is right even for the rest of *this* file.
+    const { status, body } = await asStaff(superSession, "PATCH", "/admin/platform/eiv", {
+      workerEnabled: false,
+      endpoint: "mock",
+    });
+
+    expect(status).toBe(200);
+    expect(body.workerEnabled).toBe(false);
+    expect(body.endpoint).toBe("mock");
   });
 });

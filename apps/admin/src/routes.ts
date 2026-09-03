@@ -50,6 +50,7 @@ export type Route =
   | { kind: "media" }
   | { kind: "punktemeldungen" }
   | { kind: "customers" }
+  | { kind: "platform-eiv" }
   | { kind: "participants" }
   | { kind: "learners" }
   | { kind: "certificates" }
@@ -91,6 +92,9 @@ const SEGMENTS: Readonly<Record<Exclude<Route["kind"], "course">, string>> = {
   copy: "texte",
   media: "mediathek",
   customers: "kunden",
+  // The installation's own EIV posture (P180-01) — one level up from the
+  // queue below it, which is one tenant's.
+  "platform-eiv": "plattform/punktemeldung",
   participants: "zugaenge",
   learners: "teilnehmende",
   certificates: "bescheinigungen",

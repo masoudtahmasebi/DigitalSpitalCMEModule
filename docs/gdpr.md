@@ -136,7 +136,23 @@ the watch intervals the accreditation requires.
 - The catalogue does not return material file URLs; media is resolved per
   request behind the gate, so nothing about a course leaks to a learner who has
   not reached it.
-- The admin console reports `efnPresent: boolean`, never the EFN.
+- The admin console reports `efnPresent: boolean` and, since **P179-03**, a
+  **masked** EFN — the last four digits — on the participant list, alongside a
+  boolean saying whether the queued Punktemeldung still agrees with it. Never
+  the full number, and never on any learner-facing route.
+
+  The amendment is narrow and it is the narrowest one that answers the
+  question. Two admin screens have carried a masked EFN since P12-05 and P31;
+  the participant list is where somebody actually supports a physician whose
+  EFN is wrong, and they were the one operator who could not see enough to
+  confirm which number was wrong. Four digits confirm a number being read aloud
+  and disclose nothing to anybody who does not already have it.
+
+  **Writing** an EFN remains the subject's alone: `efn_profiles`'s RLS
+  `WITH CHECK` admits only `user_id = app.user_id`. An operator may correct the
+  EFN on a queued **Punktemeldung** — our own outbound report — and cannot
+  touch the profile (P179-03).
+
 - Certificate images are reported by presence, never by bytes.
 - Log lines carry the request **path** and never the query string
   (`problem-details.filter.ts`), so a capability token in a URL cannot end up in

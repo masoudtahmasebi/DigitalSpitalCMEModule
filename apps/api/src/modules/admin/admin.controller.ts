@@ -66,6 +66,12 @@ import {
   type TenantRunner,
 } from "../../db/tenant-runner.js";
 import { allSeekable, MediaCheckService } from "./media-check.service.js";
+import { CertificateService } from "../certificate/certificate.service.js";
+import {
+  certificateArchiveFor,
+  type CertificateArchivePort,
+} from "../certificate/certificate.archive.js";
+import { JsonLogger } from "../../observability/logger.js";
 import { participantsToCsv } from "./participant-csv.js";
 import {
   adminCourseUpdateSchema,
@@ -102,7 +108,20 @@ export class AdminController {
    */
   private readonly mediaCheck = new MediaCheckService();
 
-  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
+  /**
+   * The certificate archive, for the sample renderer (P180-02).
+   *
+   * Built once from configuration exactly as `CertificateController` does, and
+   * `undefined` on a deployment with no bucket. The sample archives nothing —
+   * it is a rendering, not a document the platform stands behind — so this is
+   * passed only because `CertificateService` takes it, and a second way of
+   * constructing that service would be a second set of defaults.
+   */
+  private readonly archive: CertificateArchivePort | undefined;
+
+  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {
+    this.archive = certificateArchiveFor(config, new JsonLogger("warn"));
+  }
 
   @Get("courses")
   @Roles(...COURSE_ROLES)
@@ -192,6 +211,52 @@ export class AdminController {
     const urls = await run((db) => this.service(db).courseMediaUrls(slug));
     const sources = await this.mediaCheck.check(urls);
     return { seekable: allSeekable(sources), sources };
+  }
+
+  /**
+   * A sample Teilnahmebescheinigung for this course (P180-02).
+   *
+   *   > also with sample certificate generation, if we use test server, i
+   *   > should easily test this
+   *
+   * Configuring a certificate means uploading a stamp and a signature, typing a
+   * VNR and a Veranstalter, and then having no way to see the result until a
+   * physician finishes the course. Until this route, the first person to find
+   * out whether the stamp was the right way up was a doctor holding their own
+   * CME record.
+   *
+   * Everything about the event is real and everything about the person is
+   * synthetic — the name on the page reads "MUSTER — keine gültige
+   * Bescheinigung". It issues nothing: no `certificates` row, no download
+   * token, nothing archived.
+   *
+   * Same roles as `certificate-assets` below, because it answers the question
+   * that screen exists to ask.
+   */
+  @Get("courses/:slug/certificate/sample")
+  @RateLimit("certificatePdf")
+  @Header("cache-control", "no-store, private")
+  @Roles("customer_admin", "super_admin")
+  @NoAmbientTransaction()
+  async certificateSample(
+    @Param("slug") slug: string,
+    @TenantRun() run: TenantRunner,
+  ): Promise<StreamableFile> {
+    /*
+     * No ambient transaction, for the reason the learner's download has none
+     * (P146-02): rendering a PDF and archiving it are slow next to a pooled
+     * connection. This one archives nothing, but it renders the same way and
+     * holding a connection across it has the same cost.
+     */
+    const sample = await CertificateService.fromRunner(run, this.archive).renderSample(
+      slug,
+      new Date(),
+    );
+
+    return new StreamableFile(Buffer.from(sample.bytes), {
+      type: "application/pdf",
+      disposition: `attachment; filename="${sample.filename}"`,
+    });
   }
 
   @Put("courses/:slug/certificate-assets")

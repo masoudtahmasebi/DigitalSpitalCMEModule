@@ -34,7 +34,9 @@ import { pluginRegistry } from "../../plugins.js";
 import { EivRepository } from "./eiv.repository.js";
 import { EivAlertRepository } from "./eiv-alert.repository.js";
 import { EivAlertService, WebhookAlertSink } from "./eiv-alert.service.js";
-import { EivService } from "./eiv.service.js";
+import { EivService, type EivSweepTarget } from "./eiv.service.js";
+import { eivEndpointUrl } from "@ds/eiv-client";
+import { PlatformSettingsRepository } from "../platform/platform-settings.repository.js";
 
 @Injectable()
 export class EivScheduler implements OnModuleInit, OnModuleDestroy {
@@ -43,6 +45,7 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
   private running = false;
   private readonly service: EivService;
   private readonly alerts: EivAlertService;
+  private readonly settings: PlatformSettingsRepository;
 
   constructor(
     @Inject(PG_POOL) pool: Pool,
@@ -66,21 +69,57 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
       pluginRegistry().require("accreditationReporter"),
       new AuditService(sidePool),
       {
-        baseUrl: config.EIV_BASE_URL,
         batchSize: config.EIV_SWEEP_BATCH_SIZE,
-        allowLive: config.EIV_ALLOW_LIVE,
         // Two sweeps of headroom, so a slow submission is never double-claimed.
         leaseSeconds: config.EIV_SWEEP_INTERVAL_SEC * 2,
       },
     );
+
+    this.settings = new PlatformSettingsRepository(sidePool);
+  }
+
+  /**
+   * What the operator has switched on, right now (P180-01).
+   *
+   * Read on **every tick**, not at boot. That is the difference the client
+   * asked for: `EIV_WORKER_ENABLED` and `EIV_BASE_URL` took a deploy to change,
+   * so pausing submissions or moving to EIV's test system meant editing a file
+   * on the host — and in practice nobody did. A worker that reads its own
+   * switch once, hours before it is flipped, would have moved that problem
+   * behind a screen rather than solving it.
+   *
+   * A failed read stops the sweep rather than defaulting. "Off" would be the
+   * safe-looking default and it is the one that hides a broken installation: a
+   * Punktemeldung approaching its statutory deadline would sit there with a
+   * console reporting a worker that is on.
+   */
+  private async target(): Promise<
+    { enabled: false } | ({ enabled: true } & EivSweepTarget)
+  > {
+    const row = await this.settings.read();
+    if (!row.eivWorkerEnabled) return { enabled: false };
+
+    const baseUrl = eivEndpointUrl(row.eivEndpoint, this.config.EIV_MOCK_BASE_URL);
+    return {
+      enabled: true,
+      baseUrl,
+      // Consent is a fact on the row, not a flag in a file — and it is the
+      // service that still enforces it against the resolved address, so the two
+      // halves cannot drift.
+      allowLive: row.eivLiveConfirmedAt !== null,
+    };
   }
 
   onModuleInit(): void {
-    if (!this.config.EIV_WORKER_ENABLED) {
-      this.logger.log("EIV worker disabled (EIV_WORKER_ENABLED=no)");
-      return;
-    }
-
+    /*
+     * The timer always starts (P180-01).
+     *
+     * Whether a sweep *does* anything is asked of `platform_settings` on each
+     * tick — so an operator arming the worker in the console has it running
+     * within a minute, rather than after the next deploy. The old shape
+     * returned here and left a process that could not be switched on without a
+     * restart, which is precisely what the client objected to.
+     */
     const intervalMs = this.config.EIV_SWEEP_INTERVAL_SEC * 1000;
     this.timer = setInterval(() => void this.tick(), intervalMs);
     // Does not hold the process open on its own; shutdown should not wait for
@@ -88,9 +127,9 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
     this.timer.unref();
 
     this.logger.log(
-      `EIV worker sweeping every ${this.config.EIV_SWEEP_INTERVAL_SEC}s ` +
-        `against ${this.config.EIV_BASE_URL}` +
-        (this.config.EIV_ALLOW_LIVE ? " (LIVE submissions allowed)" : ""),
+      `EIV worker armed: checking platform_settings every ` +
+        `${this.config.EIV_SWEEP_INTERVAL_SEC}s. Whether it submits, and to ` +
+        `which register, is set in the console (Plattform → Punktemeldung).`,
     );
 
     /*
@@ -155,7 +194,10 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
       // being reachable.
       await this.sweepAlerts(now);
 
-      const result = await this.service.sweep(now);
+      const target = await this.target();
+      if (!target.enabled) return;
+
+      const result = await this.service.sweep(now, target);
       if (result.considered > 0) {
         // Counts only. Nothing identifying a physician reaches a log line.
         this.logger.log(

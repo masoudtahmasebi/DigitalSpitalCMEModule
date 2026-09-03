@@ -349,6 +349,7 @@ export type {
 
 export {
   certificateAction,
+  efnCorrection,
   efnRefresh,
   maskEfn,
   nameCorrection,
@@ -359,6 +360,7 @@ export type {
   CertificateAction,
   CertificateActionVerdict,
   CertificateStatus,
+  EfnCorrectionVerdict,
   EfnRefreshVerdict,
   ErasureVerdict,
   NameCorrectionVerdict,

@@ -35,6 +35,7 @@ import {
   HttpCode,
   Inject,
   Param,
+  Patch,
   Post,
   Query,
 } from "@nestjs/common";
@@ -55,8 +56,29 @@ import { pluginRegistry } from "../../plugins.js";
 import { EivAdminRepository } from "./eiv-admin.repository.js";
 import { listEivSubmissionsQuerySchema } from "./eiv-admin.dto.js";
 import { EivAdminService, type EivOperatorContext } from "./eiv-admin.service.js";
+import { PlatformSettingsRepository } from "../platform/platform-settings.repository.js";
+import { PlatformSettingsService } from "../platform/platform-settings.service.js";
 
 const MODERATOR_ROLES = ["customer_admin", "super_admin"] as const;
+
+/**
+ * A corrected EFN for one Punktemeldung (P179-03).
+ *
+ * Fifteen digits, checked here as well as by `efnCorrection` and by
+ * `eiv_submissions_efn_check`: the schema is what turns a typo into a
+ * validation problem naming the field, the domain rule is the authority, and
+ * the constraint is what makes it true of every row however written.
+ *
+ * Trimmed, because an EFN is copied off a card or out of an e-mail and arrives
+ * with whitespace more often than not — unlike a password, where trimming would
+ * silently change a credential.
+ */
+const EfnCorrection = z.object({
+  efn: z
+    .string()
+    .trim()
+    .regex(/^[0-9]{15}$/u, "must be exactly 15 digits"),
+});
 
 const Withdrawal = z.object({
   /**
@@ -135,7 +157,9 @@ export class EivAdminController {
     }
     const query = parsed.data;
 
-    const page = await this.service(db).listSubmissions({
+    const page = await (
+      await this.service(db)
+    ).listSubmissions({
       ...(query.status === undefined ? {} : { status: query.status }),
       page: query.page,
       perPage: query.perPage,
@@ -173,7 +197,7 @@ export class EivAdminController {
   @Get("courses/:slug/eiv/event")
   @Roles(...MODERATOR_ROLES)
   async describeEvent(@Param("slug") slug: string, @TenantDb() db: Db) {
-    const event = await this.service(db).describeEvent(slug);
+    const event = await (await this.service(db)).describeEvent(slug);
 
     // Explicit nulls rather than absent keys: the console renders "—" for a
     // field the authority did not send, and `undefined` would disappear
@@ -225,17 +249,15 @@ export class EivAdminController {
       );
     }
 
-    return this.service(db, parsed.data.environment ?? "configured").checkConnection(
-      slug,
-      parsed.data.vnrPassword,
-      context(principal),
-    );
+    return (
+      await this.service(db, parsed.data.environment ?? "configured")
+    ).checkConnection(slug, parsed.data.vnrPassword, context(principal));
   }
 
   @Get("courses/:slug/eiv/reported")
   @Roles(...MODERATOR_ROLES)
   async reconcile(@Param("slug") slug: string, @TenantDb() db: Db) {
-    return this.service(db).reconcile(slug);
+    return (await this.service(db)).reconcile(slug);
   }
 
   @Post("learners/:enrolmentId/eiv")
@@ -246,7 +268,28 @@ export class EivAdminController {
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ): Promise<void> {
-    await this.service(db).requeue(enrolmentId, context(principal), new Date());
+    await (await this.service(db)).requeue(enrolmentId, context(principal), new Date());
+  }
+
+  /**
+   * Correct the EFN this Punktemeldung will send (P179-03).
+   *
+   * `PATCH` on the submission rather than on the person: what is being edited
+   * is one outbound report, and the physician's own EFN is theirs to write
+   * (`PUT /profile/efn`) — see the service for why that boundary is where it
+   * is. Refused once the Kammer has accepted the Meldung.
+   */
+  @Patch("learners/:enrolmentId/eiv/efn")
+  @Roles(...MODERATOR_ROLES)
+  @HttpCode(204)
+  async correctEfn(
+    @Param("enrolmentId") enrolmentId: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ): Promise<void> {
+    const input = EfnCorrection.parse(body);
+    await (await this.service(db)).correctEfn(enrolmentId, input.efn, context(principal));
   }
 
   /**
@@ -264,19 +307,39 @@ export class EivAdminController {
     @TenantDb() db: Db,
   ): Promise<void> {
     const input = Withdrawal.parse(body);
-    await this.service(db).withdraw(
-      enrolmentId,
-      input.reason,
-      context(principal),
-      new Date(),
-    );
+    await (
+      await this.service(db)
+    ).withdraw(enrolmentId, input.reason, context(principal), new Date());
   }
 
   /**
    * Built per request from the tenant `Db`, which only exists once the
    * interceptor has opened the RLS transaction — see CONTRIBUTING.md.
    */
-  private service(db: Db, environment: EivEnvironment = "configured"): EivAdminService {
+  private async service(
+    db: Db,
+    environment: EivEnvironment = "configured",
+  ): Promise<EivAdminService> {
+    /*
+     * The installation's own switch and register, read per request (P180-01).
+     *
+     * These were `config.EIV_BASE_URL` and `config.EIV_WORKER_ENABLED` — values
+     * fixed when the process started. They now live in `platform_settings`, so
+     * a screen that reports "submissions are enabled" reports what is true now
+     * rather than what was true at the last deploy. That is what makes the
+     * console's Punktemeldung panel trustworthy while somebody is switching
+     * between the test and live registers to try something out.
+     *
+     * The side pool, not the request's `db`: `platform_settings` has no tenant
+     * and this read must not take a second checkout from the pool the request
+     * is already holding (P142-01).
+     */
+    const installation = await new PlatformSettingsService(
+      new PlatformSettingsRepository(this.sidePool),
+      new AuditService(this.sidePool),
+      this.config.EIV_MOCK_BASE_URL,
+    ).read();
+
     return new EivAdminService(
       new EivAdminRepository(
         db,
@@ -289,10 +352,15 @@ export class EivAdminController {
       {
         // Resolved here, from the enum the caller may send — never from a URL
         // the caller sends (P157-01).
-        baseUrl: eivEnvironmentUrl(environment, this.config.EIV_BASE_URL),
-        // The worker's own flag, so the screen reports the installation the
+        //
+        // `configured` now means "whatever `platform_settings` says", which is
+        // supplied by the caller of this helper: the settings live in a row an
+        // operator edits (P180-01) rather than in the process's environment, so
+        // this cannot read them synchronously from `config` any more.
+        baseUrl: eivEnvironmentUrl(environment, installation.endpointUrl),
+        // The worker's own switch, so the screen reports the installation the
         // operator actually has rather than the one the code could support.
-        submissionsEnabled: this.config.EIV_WORKER_ENABLED,
+        submissionsEnabled: installation.workerEnabled,
       },
     );
   }
