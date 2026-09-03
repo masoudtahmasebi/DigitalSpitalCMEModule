@@ -126,13 +126,11 @@ function unconditionalAssignments(file) {
     .replaceAll(/\/\*[\s\S]*?\*\//gu, " ")
     .replaceAll(/--[^\n]*/gu, " ");
   const found = [];
-  let clauses = 0;
 
   for (const clause of source.matchAll(
     /ON CONFLICT[^;`]*?DO UPDATE SET([\s\S]*?)(?:RETURNING|`)/giu,
   )) {
     const body = clause[1];
-    clauses += 1;
 
     /*
      * Split on the commas that separate assignments — the ones outside any
@@ -189,7 +187,6 @@ function unconditionalAssignments(file) {
 const editable = editableColumns();
 const problems = [];
 let checked = 0;
-let guarded = 0;
 
 for (const file of SEED_FILES) {
   if (FIXTURE_SEEDS.has(file)) continue;
@@ -197,8 +194,6 @@ for (const file of SEED_FILES) {
     checked += 1;
     if (editable.has(column)) {
       problems.push(`  ${relative(REPO, file)}: ${column} = ${value}`);
-    } else {
-      guarded += 1;
     }
   }
 }
