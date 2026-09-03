@@ -237,9 +237,27 @@ export class LearningRepository implements LearningRepositoryPort {
         createdAt: enrolments.createdAt,
         completedAt: enrolments.completedAt,
         courseCompletedAt: enrolments.courseCompletedAt,
-        cmePoints: enrolments.cmePoints,
+        /*
+         * What the **course** is worth, not what it was worth at enrolment
+         * (P171-01).
+         *
+         * This figure decides one thing here: whether an EFN is required, via
+         * `awardsCmePoints`. On the snapshot, a course an operator later
+         * accredits never asks its existing learners for one — so no
+         * Punktemeldung is ever filed for them, silently, which is the
+         * expensive direction of that mistake. And in the other direction a
+         * course whose accreditation was withdrawn kept collecting a
+         * Fortbildungsnummer it had no purpose for, which is personal data with
+         * no basis (`docs/gdpr.md`).
+         *
+         * The join is why this reads `courses` at all: the enrolment's own copy
+         * stays in the table as the record of what was in force, and is no
+         * longer what any decision is made on.
+         */
+        cmePoints: courses.cmePoints,
       })
       .from(enrolments)
+      .innerJoin(courses, eq(courses.id, enrolments.courseId))
       .where(and(eq(enrolments.courseId, courseId), eq(enrolments.userId, userId)))
       .limit(1);
 
@@ -300,6 +318,8 @@ export class LearningRepository implements LearningRepositoryPort {
         createdAt: enrolments.createdAt,
         completedAt: enrolments.completedAt,
         courseCompletedAt: enrolments.courseCompletedAt,
+        // The row was just written from `input.course`, so this is the course's
+        // own value either way. `findEnrolment` above is where it matters.
         cmePoints: enrolments.cmePoints,
       });
 

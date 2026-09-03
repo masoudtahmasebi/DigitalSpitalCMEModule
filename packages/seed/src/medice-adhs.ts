@@ -800,9 +800,33 @@ export async function seedMediceAdhs(
         * failed; the PDF would simply have come out wrong.
         */
        ON CONFLICT (project_id, slug) DO UPDATE SET
-         title = EXCLUDED.title,
-         cme_points = EXCLUDED.cme_points,
-         cme_category = EXCLUDED.cme_category,
+         /*
+          * The course's identity is the **operator's**, not the seed's
+          * (P171-02).
+          *
+          * These three were unconditional: every run of the seed — which is
+          * every deploy — wrote the title, the points and the category back to
+          * what is compiled in here. An operator who set the MEDICE course to
+          * 10 CME-Punkte through the console got 4 back on the next deploy,
+          * with nothing in any log to say so, because an UPDATE that changes a
+          * value to a different valid value is not an error anywhere.
+          *
+          * The comment immediately below has always read *"the seed supplies a
+          * starting value … never a replacement for what an operator put in
+          * through the console"*, and it sat directly under three lines doing
+          * exactly that (CLAUDE.md §11.9 — a comment is a claim, and this one
+          * was false about the lines above it).
+          *
+          * COALESCE, so the rule is the one the comment already stated: a
+          * starting value where there is nothing, and never a replacement.
+          * P165-01 did this for the VNR and stopped there; this is the rest of
+          * the same fix.
+          */
+         -- title is NOT NULL, so there is no empty state to fall back from:
+         -- an existing row simply keeps the title it has.
+         title = courses.title,
+         cme_points = COALESCE(courses.cme_points, EXCLUDED.cme_points),
+         cme_category = COALESCE(courses.cme_category, EXCLUDED.cme_category),
          -- Only when there is nothing there: the seed supplies a starting value
          -- and a placeholder asset, never a replacement for what an operator
          -- put in through the console.

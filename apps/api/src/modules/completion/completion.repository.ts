@@ -13,6 +13,7 @@
 import { and, asc, eq, gt } from "drizzle-orm";
 import type { Db } from "../../db/tenant-db.js";
 import {
+  courses,
   efnProfiles,
   eivSubmissions,
   enrolments,
@@ -129,16 +130,24 @@ export class CompletionRepository implements CompletionRepositoryPort {
    * answers, rather than one answer assembled from data this request may not
    * see (ADR-0002).
    *
-   * `cme_points` is read off the **enrolment**, not the course: the enrolment
-   * snapshots what the course was worth when it was taken (P3-01), so
-   * re-pricing a course later cannot retroactively change whether somebody was
-   * asked for their EFN.
+   * `cme_points` is read off the **course**, live (P171-01).
+   *
+   * It used to be the enrolment's snapshot, reasoned as *"re-pricing a course
+   * later cannot retroactively change whether somebody was asked for their
+   * EFN"*. That is the wrong way round on both sides. A course an operator
+   * accredits after somebody enrolled would never ask them for an EFN, so no
+   * Punktemeldung is filed and a physician who finished an accredited
+   * Fortbildung is credited nothing — silently, because nothing on any screen
+   * would say a question had been skipped. And a course whose accreditation
+   * lapsed would go on collecting a Fortbildungsnummer with nothing left to
+   * report it to, which is personal data with no purpose (`docs/gdpr.md` §2).
    */
   async hasPointBearingEnrolment(userId: string): Promise<boolean> {
     const [row] = await this.db
       .select({ id: enrolments.id })
       .from(enrolments)
-      .where(and(eq(enrolments.userId, userId), gt(enrolments.cmePoints, 0)))
+      .innerJoin(courses, eq(courses.id, enrolments.courseId))
+      .where(and(eq(enrolments.userId, userId), gt(courses.cmePoints, 0)))
       .limit(1);
 
     return row !== undefined;

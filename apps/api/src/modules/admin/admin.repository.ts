@@ -386,7 +386,15 @@ export class AdminRepository implements AdminRepositoryPort {
         userId: enrolments.userId,
         requiredWatchPercent: enrolments.requiredWatchPercent,
         passThresholdPercent: enrolments.passThresholdPercent,
-        cmePoints: enrolments.cmePoints,
+        /*
+         * The course's points, live (P171-01) — the same source the learner's
+         * own screens and the certificate now read. On the enrolment's snapshot
+         * this list answered "does this participant need an EFN" from a figure
+         * that could be years out of date, and the console would have shown an
+         * operator a different number from the one on the course they were
+         * looking at.
+         */
+        cmePoints: courses.cmePoints,
         completedAt: enrolments.completedAt,
         courseCompletedAt: enrolments.courseCompletedAt,
         attestedName: enrolments.attestedName,
@@ -396,6 +404,7 @@ export class AdminRepository implements AdminRepositoryPort {
       })
       .from(enrolments)
       .innerJoin(users, eq(users.id, enrolments.userId))
+      .innerJoin(courses, eq(courses.id, enrolments.courseId))
       .where(eq(enrolments.courseId, courseId))
       .orderBy(enrolments.createdAt);
   }

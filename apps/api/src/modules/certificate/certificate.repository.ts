@@ -95,36 +95,43 @@ const certificateSourceColumns = {
   courseId: courses.id,
   completedAt: enrolments.completedAt,
   /*
-   * The VNR is read **live**, and the three below are not (P164-01).
+   * The accreditation is the **course's**, read live: VNR (P164-01), and the
+   * points and category with it (P171-01).
    *
-   * It used to be `enrolments.vnr`, on the same reasoning as the rest of this
-   * block: snapshot what was in force at enrolment so a later change cannot
-   * rewrite what somebody earned. That reasoning is right for the three below
-   * and wrong for this one, and the difference is what the field *is*.
+   * All three used to be `enrolments.*`, snapshotted at enrolment so a later
+   * change could not rewrite what somebody earned. P164-01 moved the VNR and
+   * argued the other two were different in kind — *"`cmePoints`, `cmeCategory`
+   * and the attested identity are things the learner earned or stated"*. That
+   * sentence was wrong about two of the three, and the client's screenshot is
+   * the proof: one Zertifizierung tab, three lines apart,
    *
-   * `cmePoints`, `cmeCategory` and the attested identity are things the learner
-   * earned or stated. The VNR is not: it is the Ärztekammer's identifier for
-   * the accredited event, and the certificate's two barcodes are it. If an
-   * operator replaces a placeholder with the number off the Anerkennungsbescheid,
-   * every certificate for that event must carry the corrected number, or the
-   * platform is issuing documents naming an event the register does not hold.
+   *   > Diese Fortbildung ist … mit **10** CME-Punkten akkreditiert.
+   *   > … im Rahmen der Zertifizierung … mit **4** Punkten (Kategorie D)
+   *     anrechenbar.
    *
-   * Found in production: a course configured with its real VNR issued a
-   * Teilnahmebescheinigung carrying the seed's, because this column was the
-   * snapshot while `eiv-admin.service.ts` files the Punktemeldung from
-   * `courses.vnr` live. One participation, two different VNRs, and the barcode
-   * a Kammer scans would not match what EIV-FOBI was told — §4 invariant 6 on a
-   * legal document.
+   * because the accreditation text renders `courses.cme_points` and the
+   * Teilnahmebescheinigung rendered the enrolment's copy. §4 invariant 6 on a
+   * legal document, and the identical shape the VNR had.
    *
-   * Which of the two wins is an accreditation question and not an engineering
-   * one, so it was put to the client rather than guessed (§7). Their answer:
-   * *"the certificate should be generated with the real number from the
-   * course."* The snapshot column is left in place and still written — it is
-   * the record of what was in force, and nothing here destroys it.
+   * A physician does not *earn* a number of points; the **event** is worth a
+   * number of points, the Ärztekammer decided it, the VNR identifies it, and
+   * the Bescheid states it. Points and category are attributes of that event in
+   * exactly the way the VNR is — so when an operator corrects what the course
+   * is worth, every certificate for it must say so, or the platform issues
+   * documents that disagree with the register they name.
+   *
+   * The client, twice and in the same words both times: *"it should just print
+   * what has been given"*, and *"how can you set these hard coded when there
+   * are values in course!"*
+   *
+   * What stays snapshotted is what the *learner* did or stated: `attestedName`,
+   * `attestedAddress`, the completion date. Those are theirs, not the event's.
+   * The snapshot columns are still written and nothing here destroys them —
+   * they remain the record of what was in force at enrolment.
    */
   vnr: courses.vnr,
-  cmePoints: enrolments.cmePoints,
-  cmeCategory: enrolments.cmeCategory,
+  cmePoints: courses.cmePoints,
+  cmeCategory: courses.cmeCategory,
   attestedName: enrolments.attestedName,
   attestedAddress: enrolments.attestedAddress,
   courseTitle: courses.title,

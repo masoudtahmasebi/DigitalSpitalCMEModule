@@ -137,6 +137,12 @@ jobs:
           # because a CSP refusal happens inside the browser and leaves the
           # server log clean.
           node scripts/check-csp-directives.mjs
+          # A seed runs on every deploy, so an unconditional `= EXCLUDED.x` in
+          # its ON CONFLICT clause silently replaces what an operator typed in
+          # Verwaltung. Three fields did exactly that for four months — the
+          # MEDICE course's title, its CME points and its category — under a
+          # test comment claiming every editable field was covered (P171-02).
+          node scripts/check-seed-overwrites.mjs
 
       - name: Build
         run: pnpm build
