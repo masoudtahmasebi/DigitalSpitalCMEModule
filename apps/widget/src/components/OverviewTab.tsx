@@ -80,31 +80,47 @@ export function OverviewTab(props: { course: CourseDetail; state: EnrolmentState
       */}
       <Section title={de.overviewTab.contents} className={DIVIDED}>
         <ol className="divide-y divide-gray-200">
+          {/*
+            One row, two arrangements (DEP-31).
+
+            Above `sm` the layout runs title and duration on one line with the
+            duration hard right, and that is what `sm:flex-row` restores. Below
+            it, the mobile export stacks them — title, then topics, then the
+            duration on its own line — because at 430 px a right-aligned
+            duration squeezes a German compound title into three wrapped lines
+            to save one.
+
+            `max-sm:` on the arrow's own row rather than a second tree: the
+            arrow stays beside the title in both, so it is the *content column*
+            that changes direction, not the row.
+          */}
           {course.modules.map((module, index) => (
             <li key={module.id} className="flex items-start gap-3 py-4">
               <span aria-hidden="true" className="mt-0.5 text-brand-600">
                 →
               </span>
 
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-gray-900">
-                  {moduleHeading(index + 1, module.title)}
-                </p>
-                {chapterTopics(module) === "" ? null : (
-                  <p className="mt-1 text-xs text-gray-600">{chapterTopics(module)}</p>
-                )}
-              </div>
+              <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-gray-900">
+                    {moduleHeading(index + 1, module.title)}
+                  </p>
+                  {chapterTopics(module) === "" ? null : (
+                    <p className="mt-1 text-xs text-gray-600">{chapterTopics(module)}</p>
+                  )}
+                </div>
 
-              {/*
-                The duration and nothing else. This used to read
-                "25:24 Min. · 1 Kapitel", and the chapter count is not on this
-                row in the layout — on the MEDICE course, where every module has
-                exactly one chapter, it printed "· 1 Kapitel" three times and
-                told a learner nothing they could act on.
-              */}
-              <p className="shrink-0 whitespace-nowrap text-sm font-bold text-gray-900">
-                {de.overviewTab.moduleDuration(moduleDurationSec(module))}
-              </p>
+                {/*
+                  The duration and nothing else. This used to read
+                  "25:24 Min. · 1 Kapitel", and the chapter count is not on this
+                  row in the layout — on the MEDICE course, where every module
+                  has exactly one chapter, it printed "· 1 Kapitel" three times
+                  and told a learner nothing they could act on.
+                */}
+                <p className="shrink-0 whitespace-nowrap text-sm font-bold text-gray-900">
+                  {de.overviewTab.moduleDuration(moduleDurationSec(module))}
+                </p>
+              </div>
             </li>
           ))}
         </ol>

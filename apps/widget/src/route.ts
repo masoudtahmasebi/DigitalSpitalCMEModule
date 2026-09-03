@@ -203,6 +203,51 @@ export function decodeCourseSlug(hash: string): string | undefined {
 }
 
 /**
+ * Leave the catalogue's address behind when the learner does (DEP-33).
+ *
+ * ## The defect
+ *
+ * **Zurück zur Übersicht** unmounted the course and rendered the catalogue, and
+ * left the fragment naming the tab the learner had been on. The URL was stale
+ * immediately, and a reload put them back inside the course — because the
+ * fragment is what decides which course mounts at all (`decodeCourseSlug`).
+ * Reported as: *"the browser loads the old tab URL (/referenten) instead of the
+ * course overview."*
+ *
+ * That is §9.8's third symptom, and it arrives with the other two: the address
+ * bar disagrees with the screen, and "look at this list" links into a course.
+ *
+ * ## Why removing the fragment rather than writing one
+ *
+ * The catalogue **is** the page. There is no `WidgetRoute` for it and there
+ * should not be: this router addresses positions *within* a course, and the
+ * absence of a course fragment already means "the catalogue", which is what a
+ * first visit looks like. Writing `#ds` instead would invent a second spelling
+ * of the same state.
+ *
+ * ## Why only our own fragment
+ *
+ * `<ds-lms>` does not own its page (see this file's header). A learner may have
+ * arrived at `…/fortbildungen#kontakt` from the theme's own menu, and clearing
+ * that would move a WordPress page under them. So this removes the fragment
+ * only when it is one this router wrote, and reports whether it did.
+ *
+ * `replaceState`, like every other write here: the catalogue is where the
+ * course page was, not a step forward from it, and pushing would make Back a
+ * no-op that redraws the same screen.
+ */
+export function clearCourseFragment(): boolean {
+  if (typeof window === "undefined") return false;
+  if (fragmentSegments(window.location.hash) === undefined) return false;
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${window.location.search}`,
+  );
+  return true;
+}
+
+/**
  * A fragment split into segments, or `undefined` when it is not ours.
  *
  * Shared by `decode` and `decodeCourseSlug` so the two cannot disagree about

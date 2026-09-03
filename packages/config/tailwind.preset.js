@@ -46,12 +46,27 @@ export const dsPreset = {
          * rather than a token, and the first customer whose brand colour is
          * itself orange would have collapsed the two.
          */
+        /*
+         * The ramp is Material's orange, since DEP-30.
+         *
+         * The client gave one value — *"Color used: #f0912e / Color to use:
+         * #ff9800"* — and #ff9800 is Material orange 500 exactly. The other
+         * four steps were mixed from the old hue and would have left a button
+         * that hovers from the new orange to the old one, so they are the same
+         * ramp's own neighbours rather than four numbers invented here:
+         * 50 #fff3e0, 100 #ffe0b2, 600 #fb8c00, 700 #f57c00.
+         *
+         * Only the **fallbacks** change. `--ds-cta-*` is what a customer's
+         * branding sets, and no branding sets it today — `grep -rn "ds-cta-500"`
+         * over the API, the migrations and `@ds/domain` returns nothing — so
+         * these values are what every installation actually renders.
+         */
         cta: {
-          50: "var(--ds-cta-50, #fef4e7)",
-          100: "var(--ds-cta-100, #fbe3c2)",
-          500: "var(--ds-cta-500, #f0912e)",
-          600: "var(--ds-cta-600, #e0821b)",
-          700: "var(--ds-cta-700, #bc6d14)",
+          50: "var(--ds-cta-50, #fff3e0)",
+          100: "var(--ds-cta-100, #ffe0b2)",
+          500: "var(--ds-cta-500, #ff9800)",
+          600: "var(--ds-cta-600, #fb8c00)",
+          700: "var(--ds-cta-700, #f57c00)",
           contrast: "var(--ds-cta-contrast, #ffffff)",
         },
 

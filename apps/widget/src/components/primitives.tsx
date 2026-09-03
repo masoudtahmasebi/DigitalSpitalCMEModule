@@ -203,7 +203,15 @@ export function TabbedPanel<T extends string>(props: {
                     // the layout's shape for every teal block (see the file
                     // header). It was `rounded-t-xl`, which squares off the two
                     // bottom corners the drawing sweeps.
-                    "rounded-full rounded-tr-none bg-brand-600 text-brand-contrast hover:bg-brand-700 max-sm:rounded-full max-sm:py-3.5 max-sm:text-base")
+                    //
+                    // Below `sm` the radius is moderate rather than a pill
+                    // (DEP-31). At full width a `rounded-full` button is a
+                    // 24 px sweep on a 430 px bar, which reads as a chip rather
+                    // than as the stacked navigation the mobile export draws;
+                    // the design has the same 1.25rem family as every other
+                    // teal block here. The top-right stays square in both, so
+                    // the shape is still recognisably one family.
+                    "rounded-full rounded-tr-none bg-brand-600 text-brand-contrast hover:bg-brand-700 max-sm:rounded-[1.25rem] max-sm:rounded-tr-none max-sm:py-3.5 max-sm:text-base")
               }
             >
               {tab.label}
