@@ -26,6 +26,7 @@ export type DeliveryType = components["schemas"]["DeliveryType"];
 export type HealthStatus = components["schemas"]["HealthStatus"];
 
 export type EnrolmentState = components["schemas"]["EnrolmentState"];
+export type ReadingAcknowledgement = components["schemas"]["ReadingAcknowledgement"];
 export type ModuleState = components["schemas"]["ModuleState"];
 export type ChapterState = components["schemas"]["ChapterState"];
 export type ContentState = components["schemas"]["ContentState"];
@@ -408,6 +409,21 @@ export function createClient(options: ClientOptions) {
       request(
         `${course(slug)}/contents/${encodeURIComponent(contentId)}/progress`,
         json(report),
+      ),
+
+    /**
+     * Mark a text or details section as read (P167-01).
+     *
+     * No body: the act is the whole message. The server refuses this for a
+     * video or a quiz, which have completion events of their own.
+     */
+    acknowledgeReading: (
+      slug: string,
+      contentId: string,
+    ): Promise<ReadingAcknowledgement> =>
+      request(
+        `${course(slug)}/contents/${encodeURIComponent(contentId)}/acknowledgement`,
+        { method: "POST" },
       ),
 
     getQuiz: (slug: string, contentId: string): Promise<Quiz> =>

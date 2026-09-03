@@ -15,7 +15,13 @@
  * one layer out, even though this file is allowed to import SDK types.
  */
 
-import type { ContentKind, CourseDetail, GateStatus, ProgressSummary } from "@ds/sdk";
+import type {
+  ContentKind,
+  CourseDetail,
+  EnrolmentState,
+  GateStatus,
+  ProgressSummary,
+} from "@ds/sdk";
 
 /**
  * The five states the sidebar draws.
@@ -304,6 +310,48 @@ export function nextAvailableContent(
  * The element's duration is the fallback only, for content authored before
  * lengths were required. `NaN` before metadata loads is handled by `clockTime`.
  */
+/**
+ * The best score already recorded against one quiz, if there is one (P164-04).
+ *
+ * A physician who has finished the course and holds the certificate still meets
+ * a bare **Lernerfolgskontrolle beginnen**, which reads as an outstanding task
+ * on a course that has none. The intro needs to know the exam is already passed
+ * in order to say so — and the figure, because "you passed" without the score
+ * invites the retake it is trying to explain away.
+ *
+ * Read from the enrolment state rather than the quiz payload: `Quiz` carries
+ * `attemptsUsed` and no score, and `ProgressSummary.scorePercent` is already
+ * the best attempt the server stored. A second source would be a second answer
+ * to "what did they get" (§4 invariant 6).
+ */
+/**
+ * One content's stored progress, from the enrolment state (P167-01).
+ *
+ * The same walk `recordedQuizScore` does, generalised, because the acknowledged
+ * flag and the score are two fields of one row and two walks over one tree
+ * would be two answers to "what does the server say about this content".
+ */
+export function contentProgressOf(
+  state: Pick<EnrolmentState, "modules">,
+  contentId: string,
+): ProgressSummary | undefined {
+  for (const module of state.modules) {
+    for (const chapter of module.chapters) {
+      for (const content of chapter.contents) {
+        if (content.id === contentId) return content.progress;
+      }
+    }
+  }
+  return undefined;
+}
+
+export function recordedQuizScore(
+  state: Pick<EnrolmentState, "modules">,
+  contentId: string,
+): number | undefined {
+  return contentProgressOf(state, contentId)?.scorePercent;
+}
+
 export function playbackDuration(authoredSec: number | null, elementSec: number): number {
   if (authoredSec !== null && authoredSec > 0) return authoredSec;
   return Number.isFinite(elementSec) ? elementSec : 0;

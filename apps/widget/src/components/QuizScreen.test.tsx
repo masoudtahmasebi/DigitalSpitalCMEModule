@@ -18,6 +18,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient, Quiz, QuizAttemptResult } from "@ds/sdk";
 import { QuizScreen } from "./QuizScreen.js";
+import { de } from "../locale/de.js";
 
 afterEach(cleanup);
 
@@ -75,6 +76,8 @@ function renderQuiz(
     onClaimPoints: (() => void) | null;
     onBack: () => void;
     onNext: { title: string; open: () => void };
+    /** The best score already on file — `undefined` is a first sitting. */
+    passedScorePercent: number;
   }> = {},
 ) {
   const { client, submitQuiz } = clientReturning(result);
@@ -88,6 +91,7 @@ function renderQuiz(
       courseSlug="adhs-akademie-adult"
       quiz={QUIZ}
       examTitle={EXAM_TITLE}
+      passedScorePercent={handlers.passedScorePercent}
       onPassed={() => undefined}
       onBack={handlers.onBack ?? (() => undefined)}
       onClaimPoints={claim}
@@ -125,6 +129,49 @@ describe("before starting (page 08)", () => {
     renderQuiz(attempt({}));
 
     expect(screen.queryByText("Frage Nummer 1?")).toBeNull();
+  });
+});
+
+describe("an exam the learner has already passed (P164-04)", () => {
+  /*
+   * The client, from the running system: *"when the doctor finished the course,
+   * cleared the exam and got the certificate — I can still see the option to
+   * take the exam again."*
+   *
+   * The intro offered a bare **Lernerfolgskontrolle beginnen** whatever had
+   * happened before, which on a finished course reads as an outstanding task.
+   * Nothing was broken underneath — `upsertQuizProgress` stores the best score
+   * across attempts, so a repeat cannot undo a pass — and nothing said so
+   * either, which is the whole defect (§9.4).
+   */
+  it("says the exam is already passed, and with what score", () => {
+    renderQuiz(attempt({}), { passedScorePercent: 81 });
+
+    expect(screen.getByText(/bereits mit 81 % bestanden/u)).toBeTruthy();
+  });
+
+  it("promises what the stored rule actually does — the best attempt counts", () => {
+    // Not a reassurance invented for the screen: it is `Math.max` over the
+    // attempts, in assessment.repository.ts.
+    renderQuiz(attempt({}), { passedScorePercent: 81 });
+
+    expect(screen.getByText(/bestes Ergebnis/u)).toBeTruthy();
+    expect(screen.getByText(/kann Ihr Bestehen also nicht aufheben/u)).toBeTruthy();
+  });
+
+  it("offers a repeat rather than a start, and stops shouting about it", () => {
+    renderQuiz(attempt({}), { passedScorePercent: 81 });
+
+    expect(screen.getByRole("button", { name: de.quiz.repeat })).toBeTruthy();
+    expect(screen.queryByText(de.quiz.start(EXAM_TITLE))).toBeNull();
+  });
+
+  it("is the ordinary start screen on a first sitting", () => {
+    // The guard: this must not turn every intro into a congratulation.
+    renderQuiz(attempt({}));
+
+    expect(screen.queryByText(/bereits mit/u)).toBeNull();
+    expect(screen.getByRole("button", { name: de.quiz.start(EXAM_TITLE) })).toBeTruthy();
   });
 });
 

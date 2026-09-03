@@ -2081,3 +2081,75 @@ hole in a ten-second video is not filled by a rule meant for artefacts.
 **Until that is decided** the union stands unchanged, and a learner with a real
 gap is asked to re-watch it. Historical gaps recorded before P154 are not
 back-filled by anything.
+
+---
+
+## S33 — Does a text section have to be read? — **CLOSED 03.09.2026: yes**
+
+**Raised 03.09.2026 (P166-03). Closed the same day by the client. Implemented in
+P167-01.**
+
+### The answer
+
+> _"maybe one course is just texts, we should have a frontend checkbox that says
+> i have read the text, and then the next button which is disabled becomes
+> enabled and that counts as that part as done."_
+
+Reading (1) below: a text section is part of the accredited content. The client
+gave the mechanism as well as the rule, and the mechanism is the honest one —
+there is nothing to measure about prose, so the learner attests to it and the
+platform does not pretend the evidence is stronger than it is.
+
+`reading` is a completion condition beside `watch` and `quiz`;
+`POST /courses/{slug}/contents/{contentId}/acknowledgement` is the event; the
+checkbox disables **Weiter** until it is ticked. An enrolment that already had a
+completion recorded keeps it — a condition added afterwards must not reopen a
+Teilnahmebescheinigung already issued.
+
+The question below is kept as it was asked.
+
+### What is true today
+
+`isCourseComplete` tests watch coverage and quizzes. `courseWatchCoverage` counts
+`kind === "video"` and nothing else. So a module of two text sections, one video
+and one exam completes when the video is watched and the exam passed — **with
+both text sections never opened**.
+
+The percentage on screen disagrees, because `isComplianceContent` excludes only
+`material`: text is in the denominator of the number the physician reads and in
+neither side of the gate. The client met this as _"the progress is 50 percent"_
+next to _"Sie haben die Fortbildung abgeschlossen"_, and reasonably read it as
+the platform failing to check.
+
+There is also no mechanism: `POST /contents/:id/progress` accepts video only, so
+a text section cannot be marked read even if the rule said it must be.
+
+### The question
+
+Is a text section part of the accredited content a physician must work through,
+or is it supporting material?
+
+1. **Part of it.** The section must be opened before the course completes. Needs
+   a completion event, an `outstanding` condition, a screen that says so — and a
+   decision about enrolments already completed under today's rule, including any
+   certificate already issued and any Punktemeldung already filed.
+2. **Supporting material.** The gate is right as it stands and the _display_ is
+   wrong: text leaves the rollup, and a course of one video and one exam reads
+   100 % when both are done.
+
+### Why it is not ours to answer
+
+It decides whether CME points can be awarded to somebody who did not open a
+section the Anerkennungsbescheid lists as part of the Fortbildung. Reading (2)
+into the code is the cheaper change and would be an invented accreditation rule
+if it is wrong — CLAUDE.md §7.
+
+### What is safe to do meanwhile
+
+Nothing has been changed. The inconsistency is visible rather than silent, which
+is the better of the two states to wait in: a physician sees a percentage that
+does not match the verdict, rather than a verdict nobody can check.
+
+**MEDICE's own course is unaffected either way** — it has no text content today,
+so both readings give the same answer for it. The client met this on a course
+they built for testing.

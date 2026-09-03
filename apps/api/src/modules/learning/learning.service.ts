@@ -164,6 +164,68 @@ export class LearningService {
   }
 
   /**
+   * Record that a text or details section has been read (P167-01).
+   *
+   * ## Why this exists at all
+   *
+   * A video reports intervals and the server derives coverage from them. Prose
+   * has no equivalent — nothing happens when somebody reads a paragraph that a
+   * server could observe — so before this there was no way to mark a section
+   * done, and `isCourseComplete` simply did not ask about it. A course of two
+   * texts, one video and one exam completed with both texts never opened; a
+   * course of nothing but text completed on enrolment.
+   *
+   * ## What it is, honestly
+   *
+   * An attestation, not a measurement. The learner ticks a box saying they have
+   * read it. That is weaker evidence than a watched union and the platform does
+   * not pretend otherwise — what it buys is that a physician cannot be issued
+   * CME points for a section they never opened, which is what §S33 asked for
+   * and what the client specified the mechanism of.
+   *
+   * ## What is still checked
+   *
+   * `requireReachableContent` with the readable kinds: a video or a quiz is
+   * refused, because both have completion events of their own and accepting an
+   * attestation for a video would be a way past the watch gate. The gate on the
+   * section itself is enforced here too — the screen obeys it, and a screen is
+   * not where a compliance rule lives.
+   *
+   * Idempotent, because a double-clicked checkbox is not a different fact.
+   */
+  async acknowledgeReading(
+    slug: string,
+    contentId: string,
+    learner: LearnerContext,
+  ): Promise<{ contentId: string; status: "completed" }> {
+    const { course, enrolment } = await this.requireReachableContent(
+      slug,
+      contentId,
+      learner,
+      ["text", "details"],
+    );
+
+    // The same refusal a video report gets: an expired course accepts nothing
+    // further, however far through it the learner is (P51-02).
+    this.requireCourseStillOffered(course, slug);
+
+    await this.repository.upsertProgress({
+      customerId: learner.customerId,
+      enrolmentId: enrolment.id,
+      contentId,
+      status: "completed",
+      // A section of prose has no playback. Zero here is the truth rather than
+      // a placeholder, and `courseWatchCoverage` never reads it — it counts
+      // videos, which is why this condition had to be its own.
+      watchedPercent: 0,
+      watchedSegments: [],
+      lastPositionSec: 0,
+    });
+
+    return { contentId, status: "completed" };
+  }
+
+  /**
    * Record which intervals of a video were actually played.
    *
    * Three things happen in order, and the order matters:
@@ -787,6 +849,8 @@ export class LearningService {
     const figures = summariseEnrolment({
       tree,
       stored,
+      // A recorded completion keeps the course complete (P167-01).
+      alreadyCompleted: enrolment.completedAt !== null,
       requiredWatchPercent: enrolment.requiredWatchPercent,
       passThresholdPercent: enrolment.passThresholdPercent,
       efnPresent,
@@ -852,6 +916,8 @@ export class LearningService {
       requiredWatchPercent: enrolment.requiredWatchPercent,
       passThresholdPercent: enrolment.passThresholdPercent,
       achievedWatchPercent: figures.achievedWatchPercent,
+      watchedSec: figures.watchedSec,
+      totalSec: figures.totalSec,
       quizPassed: figures.quizPassed,
       evaluationSubmitted,
       efnPresent,
@@ -901,6 +967,14 @@ export function summariseEnrolment(input: {
   efnPresent: boolean;
   evaluationSubmitted: boolean;
   /**
+   * This enrolment already has a completion recorded (P167-01).
+   *
+   * Passed through to `isCourseComplete`, which uses it to keep a finished
+   * course finished. See the field's own comment there for why a new condition
+   * must not reopen a Teilnahmebescheinigung already issued.
+   */
+  alreadyCompleted: boolean;
+  /**
    * The enrolment's snapshot of the course's points, not the live course
    * record — a course re-accredited after somebody enrolled must not change
    * what was asked of them mid-way, which is the same reason
@@ -909,6 +983,8 @@ export function summariseEnrolment(input: {
   cmePoints: number | null;
 }): {
   achievedWatchPercent: number;
+  watchedSec: number;
+  totalSec: number;
   quizPassed: boolean;
   progress: CourseRollup["course"];
   moduleCompletion: CourseRollup["moduleCompletion"];
@@ -923,11 +999,14 @@ export function summariseEnrolment(input: {
 
   const coverage = courseWatchCoverage(courseNode, toContentSegments(input.stored));
   const quizPassed = hasPassedQuiz(records, input.tree, input.passThresholdPercent);
+  const readingAcknowledged = hasAcknowledgedReading(records, input.tree);
 
   const completion = isCourseComplete({
     requiredWatchPercent: input.requiredWatchPercent,
     achievedWatchPercent: coverage.percent,
     quizPassed,
+    readingAcknowledged,
+    alreadyCompleted: input.alreadyCompleted,
     evaluationSubmitted: input.evaluationSubmitted,
     efnPresent: input.efnPresent,
     // No points, no Punktemeldung, and therefore no reason to hold a
@@ -937,6 +1016,16 @@ export function summariseEnrolment(input: {
 
   return {
     achievedWatchPercent: coverage.percent,
+    /*
+     * The seconds behind the percentage (P164-03).
+     *
+     * Rounded here rather than in the widget so every consumer sees one value.
+     * They are the numerator and denominator `coverage.percent` is floored
+     * from, which is what makes the card and the gate two readings of one
+     * number rather than two opinions (§4 invariant 6).
+     */
+    watchedSec: Math.round(coverage.watchedSec),
+    totalSec: Math.round(coverage.totalSec),
     quizPassed,
     progress: rollup.course,
     moduleCompletion: rollup.moduleCompletion,
@@ -1076,6 +1165,31 @@ function completedContentIds(rollup: CourseRollup): ReadonlySet<string> {
 }
 
 /** A course is quiz-passed when every quiz content has a passing best score. */
+/**
+ * Every text and details section marked read (P167-01).
+ *
+ * The mirror of `hasPassedQuiz`, and deliberately built the same way — from the
+ * stored `content_progress` rows against the course tree, so the two conditions
+ * cannot develop different ideas of what a course contains.
+ *
+ * A course with no prose is vacuously acknowledged, exactly as a course with no
+ * exam is vacuously passed. That is not a loophole: it is the only answer that
+ * does not make a video-only Fortbildung permanently unfinishable.
+ */
+function hasAcknowledgedReading(
+  records: readonly ContentProgressRecord[],
+  tree: CourseTree,
+): boolean {
+  const readable = tree.contents
+    .filter((content) => content.kind === "text" || content.kind === "details")
+    .map((content) => content.id);
+
+  if (readable.length === 0) return true;
+
+  const byContent = new Map(records.map((record) => [record.contentId, record]));
+  return readable.every((id) => byContent.get(id)?.status === "completed");
+}
+
 function hasPassedQuiz(
   records: readonly ContentProgressRecord[],
   tree: CourseTree,

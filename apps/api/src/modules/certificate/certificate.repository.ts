@@ -94,10 +94,35 @@ const certificateSourceColumns = {
   /** For the archive key, which is per customer and per course (P60-01). */
   courseId: courses.id,
   completedAt: enrolments.completedAt,
-  // From the enrolment, not the course: these were snapshotted when the
-  // learner enrolled, and the certificate must state what was in force
-  // then rather than whatever the course says today.
-  vnr: enrolments.vnr,
+  /*
+   * The VNR is read **live**, and the three below are not (P164-01).
+   *
+   * It used to be `enrolments.vnr`, on the same reasoning as the rest of this
+   * block: snapshot what was in force at enrolment so a later change cannot
+   * rewrite what somebody earned. That reasoning is right for the three below
+   * and wrong for this one, and the difference is what the field *is*.
+   *
+   * `cmePoints`, `cmeCategory` and the attested identity are things the learner
+   * earned or stated. The VNR is not: it is the Ärztekammer's identifier for
+   * the accredited event, and the certificate's two barcodes are it. If an
+   * operator replaces a placeholder with the number off the Anerkennungsbescheid,
+   * every certificate for that event must carry the corrected number, or the
+   * platform is issuing documents naming an event the register does not hold.
+   *
+   * Found in production: a course configured with its real VNR issued a
+   * Teilnahmebescheinigung carrying the seed's, because this column was the
+   * snapshot while `eiv-admin.service.ts` files the Punktemeldung from
+   * `courses.vnr` live. One participation, two different VNRs, and the barcode
+   * a Kammer scans would not match what EIV-FOBI was told — §4 invariant 6 on a
+   * legal document.
+   *
+   * Which of the two wins is an accreditation question and not an engineering
+   * one, so it was put to the client rather than guessed (§7). Their answer:
+   * *"the certificate should be generated with the real number from the
+   * course."* The snapshot column is left in place and still written — it is
+   * the record of what was in force, and nothing here destroys it.
+   */
+  vnr: courses.vnr,
   cmePoints: enrolments.cmePoints,
   cmeCategory: enrolments.cmeCategory,
   attestedName: enrolments.attestedName,

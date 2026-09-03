@@ -93,44 +93,67 @@ const PORTAL_PROJECT_SLUG = CUSTOMER_SLUG;
 const PARTICIPANT_EMAIL = "demo@medice.example";
 
 /**
- * The Veranstaltungsnummer.
+ * The Veranstaltungsnummer, which this seed no longer supplies (P165-01).
  *
- * ## Why the real one is the default again (P109-01)
+ * ## The history, because it is not a fabricated number
  *
- * P28-03 replaced it with a synthetic placeholder, for a reason that was sound:
+ * P28-03 replaced the real one with a synthetic placeholder for a sound reason:
  * a completion queues a Punktemeldung against whatever VNR the course carries,
- * so a seeded environment plus `EIV_ALLOW_LIVE=yes` was a path to filing **test
- * participations against MEDICE's real accreditation**. A placeholder fails
- * loudly at the Ärztekammer instead of succeeding quietly somewhere real.
+ * so a seeded environment plus `EIV_ALLOW_LIVE=yes` was a path to filing test
+ * participations against MEDICE's real accreditation. That left every
+ * installation inert with somebody needing to know to fix it, which nobody did
+ * — §9.9's corollary — so P109-01 put a real number back as the default, on the
+ * client's own instruction at the time: *"the vnr i have already given you, you
+ * can set that for now."*
  *
- * It also meant every installation started inert and somebody had to know to
- * fix it — which nobody did, on any installation, until the deploy printed the
- * warning and the client read it. That is §9.9's corollary: a value a human is
- * told to set by hand is a value that is not set.
+ * `2760552025919300018` was therefore **theirs**, not invented here. It has
+ * since gone stale: the course's number is now `2760012024200354002`, and the
+ * old one reached a Teilnahmebescheinigung on the running system for the
+ * separate reason P164-01 fixed — the certificate was reading the enrolment's
+ * snapshot rather than the course.
  *
- * The client's instruction is explicit — *"vnr i want dynamic … the vnr i have
- * already given you, you can set that for now"* — so the default is the real
- * number from the Anerkennungsbescheid (ÄKWL, 18.06.2026), and the two guards
- * that actually stop an accidental filing stay where they are:
+ * ## Why there is no default now
  *
- * 1. **A Punktemeldung needs the VNR password too**, and that is still a
- *    placeholder until an operator sets the real one through the console's
- *    write-only field. A VNR alone authenticates nothing.
- * 2. **A submission row needs an EFN** — `eiv_submissions.efn` is NOT NULL and
- *    `CHECK (efn ~ '^[0-9]{15}$')`. The seeded demo participant has none, so no
- *    completion of theirs can produce one. A real filing takes a real physician
- *    deliberately entering their own EFN, which is the intended flow rather
- *    than an accident of seeding.
+ * Asked where a seeded VNR may live at all, the client drew the line:
  *
- * The VNR is not a secret in any case: it is printed on the
- * Teilnahmebescheinigung and encoded on it twice, as Code 39 and as Datamatrix
- * (S13). The **password** is the secret, and it is not in this file or any
- * other.
+ * > _"seed can do it, but seed should be only on ds tenant, not medice."_
  *
- * `SEED_MEDICE_VNR` still overrides, which is what makes it dynamic for a
- * second customer or a rehearsal against a different accreditation.
+ * That is the right line and this file was on the wrong side of it. `ds-demo`
+ * seeds `9999999999999999999` and says in its own comment that it is
+ * deliberately not a valid registration; `ds-default` seeds no points and no VNR
+ * at all. Both are ours to make up. MEDICE's is a number an Ärztekammer issued
+ * to MEDICE, it changes when they are re-accredited, and a constant in this
+ * repository can only ever be right by accident and stale by default — which is
+ * exactly what happened.
+ *
+ * So the seed writes nothing and the course it creates is a **draft**. A
+ * point-awarding course with no VNR cannot be published — migration 0042's
+ * `courses_published_cme_is_complete` — and that refusal is the correct outcome
+ * rather than an obstacle: nobody should be able to enrol in an accredited
+ * course whose accreditation number the platform made up. An operator enters
+ * the number from the Anerkennungsbescheid in Verwaltung and publishes, which is
+ * P108-01's rule — the seed creates, the console owns.
+ *
+ * `SEED_MEDICE_VNR` still overrides, and when it is set the course is published
+ * exactly as before. That is what a rehearsal against a real accreditation uses.
+ *
+ * The two guards against an accidental live filing are unchanged and still the
+ * things that actually stop one: `EIV_ALLOW_LIVE` (ADR-0005) and the VNR
+ * password, which is not in this file or any other.
  */
-const VNR = process.env["SEED_MEDICE_VNR"] ?? "2760552025919300018";
+function seededVnr(): string | null {
+  /*
+   * Read per call, not at module load.
+   *
+   * `const VNR = process.env[…] ?? null` at the top level binds whatever the
+   * environment held when this module was first imported, which makes the
+   * value depend on import order — and made the supplied-number test
+   * unreachable, because a test that sets the variable has already imported the
+   * seed. The same shape as P151-02's import-time `resolveMigrationsDir()`.
+   */
+  const supplied = process.env["SEED_MEDICE_VNR"]?.trim();
+  return supplied === undefined || supplied === "" ? null : supplied;
+}
 
 /**
  * What P28-03 used to seed.
@@ -730,7 +753,11 @@ export async function seedMediceAdhs(
          stamp_image, stamp_image_mime, signature_image, signature_image_mime,
          vnr_password_enc
        ) VALUES (
-         $1,$2,$3,$4,$5,'on_demand','published',
+         -- Draft unless SEED_MEDICE_VNR supplied one (P165-01).
+         -- courses_published_cme_is_complete refuses a published,
+         -- point-awarding course with no VNR, and that refusal is the point.
+         $1,$2,$3,$4,$5,'on_demand',
+         CASE WHEN $6::text IS NULL THEN 'draft' ELSE 'published' END::course_status,
          ARRAY['ADHS'], ARRAY['Erwachsene'], $6, $7, 4, 'D',
          'online', $8, $9, $10,
          100, 70, NULL,
@@ -785,7 +812,18 @@ export async function seedMediceAdhs(
          -- old placeholder itself. An installation seeded before P109-01 gets
          -- the real number on the next deploy; a course whose VNR an operator
          -- typed in the console keeps it, which is P108-01's rule holding.
-         vnr = CASE WHEN courses.vnr = $18 THEN EXCLUDED.vnr ELSE courses.vnr END,
+         -- Never our own value over theirs, and since P165-01 there is
+         -- usually no value of ours at all: EXCLUDED.vnr is NULL unless
+         -- SEED_MEDICE_VNR was set, and COALESCE then leaves the row alone.
+         -- The sentinel branch stays for the installations P109-01 and P117-01
+         -- were written for — a row still carrying the zero placeholder, which
+         -- migration 0047 demoted and only a seed run with SEED_MEDICE_VNR can
+         -- now repair.
+         vnr = CASE
+                 WHEN EXCLUDED.vnr IS NULL THEN courses.vnr
+                 WHEN courses.vnr = $18 THEN EXCLUDED.vnr
+                 ELSE courses.vnr
+               END,
          /*
           * The other half of that repair (P117-01).
           *
@@ -807,7 +845,11 @@ export async function seedMediceAdhs(
           * courses.status on both sides of the CASE reads the pre-UPDATE row,
           * so this and the vnr line above see the same sentinel.
           */
-         status = CASE WHEN courses.vnr = $18 THEN 'published' ELSE courses.status END,
+         status = CASE
+                     WHEN EXCLUDED.vnr IS NOT NULL AND courses.vnr = $18
+                       THEN 'published'
+                     ELSE courses.status
+                   END,
          vnr_password_enc = COALESCE(courses.vnr_password_enc, EXCLUDED.vnr_password_enc),
          stamp_image = COALESCE(courses.stamp_image, EXCLUDED.stamp_image),
          stamp_image_mime = COALESCE(courses.stamp_image_mime, EXCLUDED.stamp_image_mime),
@@ -840,7 +882,7 @@ export async function seedMediceAdhs(
           "und aktuellen Therapieansätze kennen und profitieren Sie von " +
           "wertvollen Erfahrungen aus dem klinischen Alltag. Flexibel, jederzeit " +
           "abrufbar und direkt für Ihre tägliche Arbeit nutzbar.",
-        VNR,
+        seededVnr(),
         "Ärztekammer Westfalen-Lippe",
         "Medice Arzneimittel Pütter GmbH & Co. KG, Iserlohn",
         new Date("2025-10-13T00:00:00Z"),
@@ -1126,11 +1168,38 @@ export async function seedMediceAdhs(
       "100 follows MEDICE-292, which is the compliance record. The layout",
       "says 80 and was overridden deliberately (S7, decided 24.08).",
       "",
-      "ADHS Akademie adult is PUBLISHED and visible to participants now.",
-      "",
-      `The VNR is ${VNR}, from the Anerkennungsbescheid (P109-01). Change it`,
-      "per course under Verwaltung -> Fortbildungen; a re-run will not",
-      "overwrite one you set there.",
+      /*
+       * What the operator has to do next, and it is the deploy's own output
+       * that has to say it (P165-01, §9.9's corollary).
+       *
+       * This block used to read "ADHS Akademie adult is PUBLISHED and visible
+       * to participants now" and name the VNR the seed had written. Both are
+       * now false by default: the seed does not know MEDICE's Veranstaltungs-
+       * nummer and no longer invents one, so the course is a draft until
+       * somebody enters it. An operator who is not told that has a tenant whose
+       * catalogue is empty and no idea why — which is exactly the report P64-02
+       * was written to prevent, in the other direction.
+       */
+      ...(seededVnr() === null
+        ? [
+            "ADHS Akademie adult is a DRAFT and is NOT visible to participants.",
+            "",
+            "It has no VNR. The seed does not set one: the Veranstaltungsnummer",
+            "is issued to MEDICE by the Aerztekammer and is not this",
+            "repository's to invent (P165-01). A course awarding CME points",
+            "cannot be published without it.",
+            "",
+            "To finish: Verwaltung -> Fortbildungen -> ADHS Akademie adult,",
+            "enter the VNR from the Anerkennungsbescheid, then publish. A",
+            "re-run of this seed will not overwrite what you set.",
+          ]
+        : [
+            "ADHS Akademie adult is PUBLISHED and visible to participants now.",
+            "",
+            `The VNR is ${seededVnr() ?? ""}, from SEED_MEDICE_VNR. Change it`,
+            "per course under Verwaltung -> Fortbildungen; a re-run will not",
+            "overwrite one you set there.",
+          ]),
       "",
       "The VNR PASSWORD is still a placeholder and authenticates nothing. Set",
       "the real one from EIV-FOBI on the same screen — it is write-only and",

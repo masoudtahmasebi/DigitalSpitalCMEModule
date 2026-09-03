@@ -317,6 +317,55 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+  /courses/{slug}/contents/{contentId}/acknowledgement:
+    post:
+      tags: [learning]
+      operationId: acknowledgeReading
+      summary: Mark a text or details section as read
+      description: |
+        The completion event a section of prose did not have (P167-01).
+
+        A video reports intervals and the server derives coverage; there is no
+        equivalent signal for text — nothing happens when somebody reads a
+        paragraph. So the learner states it: the screen shows a checkbox and
+        the button onward stays disabled until it is ticked, which is the
+        mechanism the client specified in `docs/show-stoppers.md` §S33.
+
+        It is an attestation, not a measurement, and the platform does not
+        pretend otherwise. What it buys is that a physician cannot be issued
+        CME points for a section they never opened — before this, a course of
+        nothing but text completed the moment somebody enrolled.
+
+        Idempotent: acknowledging twice is the same as once, because a
+        double-clicked checkbox is not a different fact.
+
+        Refused with 422 for a video or a quiz, which have completion events of
+        their own, and with 403 while the section is still gated — the same
+        rule the player obeys, enforced here rather than trusted.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+        - $ref: "#/components/parameters/ContentId"
+      responses:
+        "200":
+          description: The section is recorded as read.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReadingAcknowledgement" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403":
+          description: |
+            The content is locked — everything before it is not yet complete.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: The content is not a section that can be read.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
   /courses/{slug}/contents/{contentId}/progress:
     post:
       tags: [learning]
@@ -4030,10 +4079,28 @@ components:
           type: array
           items: { $ref: "#/components/schemas/ChapterState" }
 
+    ReadingAcknowledgement:
+      type: object
+      description: What the server recorded for a section marked read.
+      required: [contentId, status]
+      properties:
+        contentId: { type: string, format: uuid }
+        status:
+          type: string
+          description: Always `completed` — the acknowledgement is the event.
+          enum: [completed]
+
     CompletionCondition:
       type: string
-      description: A condition still standing between the learner and the points.
-      enum: [watch, quiz, evaluation, efn]
+      description: |
+        A condition still standing between the learner and the points.
+
+        `reading` is every text and details section acknowledged (P167-01).
+        Before it existed, `courseWatchCoverage` counted videos only, so a
+        section of prose sat in the denominator of the percentage a physician
+        reads and in neither side of the gate — a course of nothing but text
+        completed on enrolment.
+      enum: [watch, quiz, reading, evaluation, efn]
 
     EnrolmentState:
       type: object
@@ -4046,6 +4113,8 @@ components:
         - requiredWatchPercent
         - passThresholdPercent
         - achievedWatchPercent
+        - watchedSec
+        - totalSec
         - quizPassed
         - evaluationSubmitted
         - efnPresent
@@ -4075,6 +4144,24 @@ components:
           minimum: 0
           maximum: 100
           description: Union coverage across all video content in the course.
+        watchedSec:
+          type: integer
+          minimum: 0
+          description: |
+            Seconds of video credited across the whole course — the numerator of
+            `achievedWatchPercent`, and the same union the completion gate reads
+            (P164-03). The player's progress card shows this against `totalSec`;
+            before it existed the card showed the *current video's* head position
+            against that video's own length, beside a course-wide percentage, so
+            one card carried two different scopes and said which for neither.
+        totalSec:
+          type: integer
+          minimum: 0
+          description: |
+            Seconds of video the course contains, over every module. Videos with
+            no stored duration are excluded from both this and `watchedSec`,
+            because a video that cannot be scored must not silently inflate or
+            deflate the fraction.
         quizPassed: { type: boolean }
         evaluationSubmitted: { type: boolean }
         efnPresent:

@@ -59,6 +59,7 @@ import type { ApiClient, CourseDetail, EnrolmentState, LessonContent } from "@ds
 import { de } from "../locale/de.js";
 import { moduleHeading } from "../module-title.js";
 import {
+  contentProgressOf,
   findQuizContent,
   indexTitles,
   locateContent,
@@ -82,6 +83,16 @@ export function PlayerScreen(props: {
   onReporting: () => void;
 }) {
   const { course, state, lesson } = props;
+
+  /**
+   * This lesson is prose that has not been marked read yet (P167-01).
+   *
+   * Read from the enrolment state, which is where the server's answer lives, so
+   * the disabled button and the sidebar's tick cannot disagree.
+   */
+  const readingAcknowledged = contentProgressOf(state, lesson.id)?.status === "completed";
+  const readingPending =
+    (lesson.kind === "text" || lesson.kind === "details") && !readingAcknowledged;
 
   const [playback, setPlayback] = useState<PlaybackState>({
     positionSec: lesson.lastPositionSec,
@@ -250,6 +261,7 @@ export function PlayerScreen(props: {
         courseSlug={props.courseSlug}
         lesson={lesson}
         onProgress={props.onProgress}
+        acknowledged={readingAcknowledged}
         paused={paused}
         // The learner pressing the video's own play control clears the
         // chrome's pause, so the two never contradict each other.
@@ -280,8 +292,26 @@ export function PlayerScreen(props: {
           Lernerfolgskontrolle they had not been told they were starting
           (§9.4). One exam, one control, and it is the orange one.
         */}
+        {/*
+          Disabled until a text section is acknowledged (P167-01, §S33).
+
+          The client's own specification: *"the next button which is disabled
+          becomes enabled and that counts as that part as done."* It is not a
+          second rule — the server refuses to complete the course while a
+          section is unread either way — it is the screen agreeing with the
+          server at the point the person acts, rather than letting them walk
+          past a condition and meet it at the end.
+
+          Only for prose. A video's way onward is its own completion, and a
+          disabled Weiter on a video would be a second, contradictory gate
+          beside the watch percentage.
+        */}
         {next === undefined || next.id === quiz?.id ? null : (
-          <Button variant="secondary" onClick={() => props.onOpen(next.id)}>
+          <Button
+            variant="secondary"
+            disabled={readingPending}
+            onClick={() => props.onOpen(next.id)}
+          >
             {de.player.nextSection(next.title)}
           </Button>
         )}

@@ -105,6 +105,28 @@ export class LearningController {
     );
   }
 
+  /**
+   * The completion event a section of prose did not have (P167-01).
+   *
+   * No body: the act is the whole message. 200 rather than 201 for the same
+   * reason as `progress` — nothing is created at a new URL.
+   */
+  @Post("contents/:contentId/acknowledgement")
+  @HttpCode(200)
+  @RateLimit("progress")
+  @Roles("learner", "department_admin", "customer_admin", "super_admin")
+  async acknowledgeReading(
+    @Param("slug") slug: string,
+    @Param("contentId") contentId: string,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ) {
+    return LearningService.fromDb(db, this.media).acknowledgeReading(slug, contentId, {
+      customerId: principal.customerId,
+      userId: principal.userId,
+    });
+  }
+
   // 200, not Nest's default 201: reporting progress does not create a resource
   // at a new URL, and `contracts/openapi.yaml` is the authority on the status.
   @Post("contents/:contentId/progress")

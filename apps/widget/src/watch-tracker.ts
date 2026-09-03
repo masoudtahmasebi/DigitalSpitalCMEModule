@@ -88,7 +88,15 @@ export class WatchTracker {
    * rather than where the sample landed — see `#startFor`. It is what lets the
    * noise filter below tell a stray event from the tail of a real view.
    */
-  #open: { start: number; end: number; continued: boolean } | undefined;
+  #open:
+    | {
+        start: number;
+        end: number;
+        continued: boolean;
+        /** When the last sample landed, for the wall-clock test in `observe`. */
+        observedAtMs: number;
+      }
+    | undefined;
   #pending: Segment[] = [];
 
   /**
@@ -124,7 +132,17 @@ export class WatchTracker {
    * decides what counts — a paused element still fires `timeupdate` while
    * seeking, and that is not watching.
    */
-  observe(positionSec: number, playing: boolean, rate = 1): void {
+  observe(
+    positionSec: number,
+    playing: boolean,
+    rate = 1,
+    /**
+     * The wall clock, injectable so the throttling case above is testable —
+     * the whole property is about elapsed real time, and a test that could not
+     * control it could only assert the position arithmetic it already had.
+     */
+    nowMs: number = Date.now(),
+  ): void {
     if (!Number.isFinite(positionSec) || positionSec < 0) return;
 
     if (!playing) {
@@ -137,23 +155,76 @@ export class WatchTracker {
     const open = this.#open;
     if (open === undefined) {
       const start = this.#startFor(positionSec, tolerance);
-      this.#open = { start, end: positionSec, continued: start !== positionSec };
+      this.#open = {
+        start,
+        end: positionSec,
+        continued: start !== positionSec,
+        observedAtMs: nowMs,
+      };
       return;
     }
 
     const delta = positionSec - open.end;
     if (delta >= 0 && delta <= tolerance) {
       open.end = positionSec;
+      open.observedAtMs = nowMs;
       return;
     }
 
-    // A seek: bank what was genuinely played, then start fresh **at the new
-    // position**. Not `#startFor` — a jump is precisely the case continuity
-    // must not bridge, and `closeOpen` has just moved `#resumeFrom` to the old
-    // end which is now somewhere else entirely.
+    /*
+     * Throttled playback and a forward scrub look identical in position, and
+     * differ completely in **wall-clock time** (P166-01).
+     *
+     * The client reported holes four times; the last was ninety seconds missing
+     * from the middle of a video that had played end to end, while they *"let
+     * the video be played and did my own stuff"* — a backgrounded tab.
+     * `timeupdate` fires about four times a second in front; backgrounded, the
+     * browser throttles that timer hard **while the media element keeps
+     * playing** — audio does not stop — so the next sample lands tens of
+     * seconds later, tens of seconds on. Read as a seek, that banks the
+     * interval and opens a new one past a hole `fillSamplingGaps` cannot close:
+     * its limit is `min(60, duration × 0.1)`.
+     *
+     * The first attempt at this simply credited every forward jump, and three
+     * existing tests refused it — correctly. A scrub from 0:05 to 5:00 is a
+     * forward jump too, and crediting it would hand a learner 295 seconds they
+     * did not watch. One of those tests is explicitly an abuse case. The delta
+     * rule is a second line of defence behind `VideoPlayer`'s `seeking` event
+     * and it is not mine to remove.
+     *
+     * What tells the two apart is time. A media element cannot advance
+     * `currentTime` faster than wall-clock × rate, so **N media seconds of real
+     * playback take at least N/rate seconds of real time** — throttled or not.
+     * A scrub covers N media seconds in approximately none. So the jump is
+     * bridged only when the clock agrees it could have been played, at the
+     * fastest rate the player offers, with one sampling step of slack.
+     *
+     * This is the same shape as the server's `faster_than_wallclock` budget
+     * (P153-01), and deliberately not a replacement for it: this side decides
+     * what to *report*, the server decides what to *credit*, and the server
+     * re-derives it from its own clock. A client that lies here still cannot
+     * get past that.
+     */
+    const elapsedSec = (nowMs - open.observedAtMs) / 1000;
+    const playableSec = elapsedSec * MAX_PLAYBACK_RATE + tolerance;
+    if (delta > 0 && delta <= playableSec) {
+      open.end = positionSec;
+      open.observedAtMs = nowMs;
+      return;
+    }
+
+    // A backward jump: bank what was genuinely played, then start fresh **at
+    // the new position**. Not `#startFor` — a rewind is precisely the case
+    // continuity must not bridge, and `closeOpen` has just moved `#resumeFrom`
+    // to the old end which is now somewhere else entirely.
     this.closeOpen();
     this.#resumeFrom = undefined;
-    this.#open = { start: positionSec, end: positionSec, continued: false };
+    this.#open = {
+      start: positionSec,
+      end: positionSec,
+      continued: false,
+      observedAtMs: nowMs,
+    };
   }
 
   /**

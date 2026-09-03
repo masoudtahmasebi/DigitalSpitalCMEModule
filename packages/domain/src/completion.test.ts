@@ -5,6 +5,10 @@ const complete: CompletionInput = {
   requiredWatchPercent: 100,
   achievedWatchPercent: 100,
   quizPassed: true,
+  // P167-01 added this condition. These cases predate it and are about the
+  // others, so it holds — the state they were written in, said out loud now
+  // that it has a name.
+  readingAcknowledged: true,
   evaluationSubmitted: true,
   efnPresent: true,
 };
@@ -41,6 +45,7 @@ describe("isCourseComplete", () => {
       requiredWatchPercent: 100,
       achievedWatchPercent: 0,
       quizPassed: false,
+      readingAcknowledged: true,
       evaluationSubmitted: false,
       efnPresent: false,
     });
@@ -61,6 +66,7 @@ describe("isCourseComplete", () => {
               requiredWatchPercent: 100,
               achievedWatchPercent: watch ? 100 : 50,
               quizPassed: quiz,
+              readingAcknowledged: true,
               evaluationSubmitted: evaluation,
               efnPresent: efn,
             });
@@ -106,6 +112,7 @@ describe("course completion, separately from certification", () => {
     requiredWatchPercent: 100,
     achievedWatchPercent: 100,
     quizPassed: true,
+    readingAcknowledged: true,
     evaluationSubmitted: false,
     efnPresent: false,
   };
@@ -153,6 +160,7 @@ describe("course completion, separately from certification", () => {
               requiredWatchPercent: 100,
               achievedWatchPercent: watch ? 100 : 50,
               quizPassed: quiz,
+              readingAcknowledged: true,
               evaluationSubmitted: evaluation,
               efnPresent: efn,
             });
@@ -175,6 +183,7 @@ describe("course completion, separately from certification", () => {
               requiredWatchPercent: 100,
               achievedWatchPercent: watch ? 100 : 50,
               quizPassed: quiz,
+              readingAcknowledged: true,
               evaluationSubmitted: evaluation,
               efnPresent: efn,
             });
@@ -191,6 +200,7 @@ describe("course completion, separately from certification", () => {
       requiredWatchPercent: 100,
       achievedWatchPercent: 0,
       quizPassed: false,
+      readingAcknowledged: true,
       evaluationSubmitted: false,
       efnPresent: false,
     });
@@ -213,6 +223,7 @@ describe("a course with no CME points", () => {
     requiredWatchPercent: 100,
     achievedWatchPercent: 100,
     quizPassed: true,
+    readingAcknowledged: true,
     evaluationSubmitted: true,
     efnPresent: false,
   };
@@ -233,6 +244,7 @@ describe("a course with no CME points", () => {
         requiredWatchPercent: 100,
         achievedWatchPercent: 40,
         quizPassed: false,
+        readingAcknowledged: true,
         evaluationSubmitted: false,
         efnPresent: false,
         awardsCmePoints: false,
@@ -264,5 +276,78 @@ describe("a course with no CME points", () => {
       outstanding: ["efn"],
       outstandingForCourse: [],
     });
+  });
+});
+
+/*
+ * P167-01. A text section is part of the Fortbildung.
+ *
+ * `docs/show-stoppers.md` §S33, answered by the client: *"maybe one course is
+ * just texts, we should have a frontend checkbox that says i have read the
+ * text, and then the next button which is disabled becomes enabled and that
+ * counts as that part as done."*
+ *
+ * Until now the gate was watch coverage plus quizzes, and `courseWatchCoverage`
+ * counts videos only — so a course of two text sections, one video and one exam
+ * completed with both texts never opened, while the rollup beside it read 50 %.
+ * A course of nothing but text completed the moment somebody enrolled.
+ */
+describe("reading, as a condition of finishing the course", () => {
+  const base = {
+    requiredWatchPercent: 100,
+    achievedWatchPercent: 100,
+    quizPassed: true,
+    readingAcknowledged: true,
+    evaluationSubmitted: true,
+    efnPresent: true,
+    alreadyCompleted: false,
+  };
+
+  it("holds the course back until every text section is acknowledged", () => {
+    const result = isCourseComplete({ ...base, readingAcknowledged: false });
+
+    expect(result.courseComplete).toBe(false);
+    expect(result.outstandingForCourse).toContain("reading");
+  });
+
+  it("completes a course made only of text once it is acknowledged", () => {
+    // No video at all: `courseWatchCoverage` calls that vacuously 100 %, which
+    // is right, and used to mean such a course was complete on enrolment.
+    const result = isCourseComplete({ ...base, achievedWatchPercent: 100 });
+
+    expect(result.courseComplete).toBe(true);
+    expect(result.complete).toBe(true);
+  });
+
+  it("never un-finishes an enrolment that was already completed", () => {
+    /*
+     * The half that stops this being a retroactive rule change. A physician who
+     * finished under the old gate holds a Teilnahmebescheinigung and may have a
+     * Punktemeldung filed; a new condition must not reopen that. Same principle
+     * as the enrolment's snapshot columns, for a condition that has no snapshot
+     * because it did not exist when they enrolled.
+     *
+     * It also covers the ordinary case of an author adding a text section to a
+     * published course after somebody has finished it.
+     */
+    const result = isCourseComplete({
+      ...base,
+      readingAcknowledged: false,
+      alreadyCompleted: true,
+    });
+
+    expect(result.courseComplete).toBe(true);
+    expect(result.outstandingForCourse).toEqual([]);
+  });
+
+  it("still reports what a half-finished course is waiting for, in order", () => {
+    const result = isCourseComplete({
+      ...base,
+      achievedWatchPercent: 40,
+      quizPassed: false,
+      readingAcknowledged: false,
+    });
+
+    expect(result.outstandingForCourse).toEqual(["watch", "quiz", "reading"]);
   });
 });

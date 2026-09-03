@@ -385,3 +385,111 @@ describe("intervals survive a failed request (P154-02)", () => {
     expect(tracker.hasPending).toBe(false);
   });
 });
+
+/*
+ * P166-01. A backgrounded tab is not a seek.
+ *
+ * The client, for the fourth time in this project: *"i also let the video be
+ * played and i did my own stuff, and then i get this again: Diese Stellen
+ * fehlen noch: 6:20–7:50."* Ninety seconds, in the middle of a video that had
+ * played from end to end.
+ *
+ * `timeupdate` fires about four times a second while the tab is in front.
+ * Backgrounded, Chrome throttles the timer hard while the media element keeps
+ * playing — audio does not stop — so the next sample can arrive tens of seconds
+ * later at a position tens of seconds further on. The delta rule read that as a
+ * seek, banked the interval, and opened a new one after the hole.
+ *
+ * `fillSamplingGaps` then could not close it: its limit is
+ * `min(60, duration × 0.1)`, and this hole was ninety seconds.
+ *
+ * The delta rule is **redundant for a real seek**: `VideoPlayer` fires
+ * `onStop("seek")` from the element's own `seeking` event, which calls
+ * `closeOpen()` before any large-delta tick can arrive. So a forward jump on an
+ * interval that is still open is not a seek — it is the browser not having
+ * scheduled us, across material that genuinely played.
+ *
+ * Crediting it is sound rather than generous: a media element cannot advance
+ * `currentTime` faster than wall-clock × rate, so a jump of N media seconds
+ * took at least N/rate seconds of real playback. The server's
+ * `faster_than_wallclock` budget bounds the total independently (P153-01).
+ */
+describe("a sample that arrives late because the tab was in the background", () => {
+  it("credits the span it played through instead of cutting a hole in it", () => {
+    const tracker = new WatchTracker();
+    let now = 1_000_000;
+
+    // Foreground: `timeupdate` about four times a second, and the clock keeps
+    // pace with the media because that is what playing means.
+    for (let t = 370; t <= 380; t += 0.25) {
+      tracker.observe(t, true, 1, now);
+      now += 250;
+    }
+
+    // Backgrounded. The next sample lands ninety media seconds on — and ninety
+    // seconds of real time later, because the audio was playing the whole time.
+    // No `seeking` event fired, so `closeOpen` was never called.
+    now += 90_000;
+    for (let t = 470; t <= 475; t += 0.25) {
+      tracker.observe(t, true, 1, now);
+      now += 250;
+    }
+
+    expect(tracker.drain()).toEqual([{ startSec: 370, endSec: 475 }]);
+  });
+
+  it("refuses the same jump when no time passed, because that is a scrub", () => {
+    /*
+     * The half that makes the case above safe, and the reason the first attempt
+     * at this was wrong: position alone cannot tell throttled playback from a
+     * drag of the scrub bar. Ninety media seconds in a quarter of a second of
+     * real time is not something a media element can do.
+     */
+    const tracker = new WatchTracker();
+    let now = 1_000_000;
+
+    for (let t = 370; t <= 380; t += 0.25) {
+      tracker.observe(t, true, 1, now);
+      now += 250;
+    }
+    now += 250;
+    for (let t = 470; t <= 475; t += 0.25) {
+      tracker.observe(t, true, 1, now);
+      now += 250;
+    }
+
+    expect(tracker.drain()).toEqual([
+      { startSec: 370, endSec: 380 },
+      { startSec: 470, endSec: 475 },
+    ]);
+  });
+
+  it("still refuses to bridge a backward jump", () => {
+    // The guard. A rewind is the one direction that could manufacture coverage
+    // out of nothing, and it stays a break.
+    const tracker = new WatchTracker();
+
+    for (let t = 370; t <= 380; t += 0.25) tracker.observe(t, true);
+    for (let t = 100; t <= 105; t += 0.25) tracker.observe(t, true);
+
+    expect(tracker.drain()).toEqual([
+      { startSec: 370, endSec: 380 },
+      { startSec: 100, endSec: 105 },
+    ]);
+  });
+
+  it("still breaks at a seek the player told it about", () => {
+    // The path that actually detects a seek, and the reason the delta rule is
+    // not needed for one: `VideoPlayer` calls this from the `seeking` event.
+    const tracker = new WatchTracker();
+
+    for (let t = 370; t <= 380; t += 0.25) tracker.observe(t, true);
+    tracker.closeOpen();
+    for (let t = 470; t <= 475; t += 0.25) tracker.observe(t, true);
+
+    expect(tracker.drain()).toEqual([
+      { startSec: 370, endSec: 380 },
+      { startSec: 470, endSec: 475 },
+    ]);
+  });
+});

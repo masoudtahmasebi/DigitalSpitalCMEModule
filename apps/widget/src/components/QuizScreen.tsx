@@ -64,6 +64,11 @@ export function QuizScreen(props: {
    * an empty heading.
    */
   examTitle: string;
+  /**
+   * The best score already recorded against this exam, when there is one
+   * (P164-04). `undefined` on a first sitting.
+   */
+  passedScorePercent: number | undefined;
   onPassed: () => void;
   onBack: () => void;
   /**
@@ -137,6 +142,7 @@ export function QuizScreen(props: {
       <QuizIntro
         quiz={quiz}
         examTitle={props.examTitle}
+        passedScorePercent={props.passedScorePercent}
         onStart={() => setPhase({ kind: "question", index: 0 })}
         onBack={props.onBack}
       />
@@ -272,6 +278,7 @@ export function QuizScreen(props: {
 function QuizIntro(props: {
   quiz: Quiz;
   examTitle: string;
+  passedScorePercent: number | undefined;
   onStart: () => void;
   onBack: () => void;
 }) {
@@ -327,9 +334,39 @@ function QuizIntro(props: {
           : de.quiz.attemptsUsed(quiz.attemptsUsed)}
       </p>
 
+      {/*
+        Somebody who has already passed is not looking at an outstanding task
+        (P164-04).
+
+        The banner says so and names the score, and the button stops being the
+        primary call to action — a physician holding the certificate should not
+        meet a teal **beginnen** on a course they have finished. Nothing is
+        taken away: the exam is still sittable, because reviewing it is a
+        legitimate thing to want and the stored result is the best of all
+        attempts, so a repeat cannot cost them anything.
+      */}
+      {props.passedScorePercent === undefined ? null : (
+        <div className="flex gap-4 rounded-xl border border-status-passed bg-status-passedSoft p-4">
+          <span
+            aria-hidden="true"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-status-passed text-sm font-bold text-white"
+          >
+            ✓
+          </span>
+          <p className="text-sm leading-relaxed text-gray-800">
+            {de.quiz.alreadyPassed(props.passedScorePercent)}
+          </p>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-3">
-        <Button variant="cta" onClick={props.onStart}>
-          {de.quiz.start(props.examTitle)}
+        <Button
+          variant={props.passedScorePercent === undefined ? "cta" : "secondary"}
+          onClick={props.onStart}
+        >
+          {props.passedScorePercent === undefined
+            ? de.quiz.start(props.examTitle)
+            : de.quiz.repeat}
         </Button>
         <Button variant="secondary" onClick={props.onBack}>
           {de.player.back}

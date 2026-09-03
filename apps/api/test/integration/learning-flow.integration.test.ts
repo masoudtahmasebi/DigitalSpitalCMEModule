@@ -65,6 +65,10 @@ let seedPool: Pool;
 
 let projectSlug: string;
 let courseSlug: string;
+/* Hoisted for the P167-01 block below, which builds a course of its own. */
+let customerId: string;
+let projectId: string;
+let suffixForTests: string;
 /** A course awarding no CME points — see the suite at the end of this file. */
 let freeCourseSlug: string;
 let freeVideoId: string;
@@ -85,7 +89,8 @@ beforeAll(async () => {
   projectSlug = `lf-project-${suffix}`;
   courseSlug = `lf-course-${suffix}`;
 
-  const customerId = await insert(
+  suffixForTests = suffix;
+  customerId = await insert(
     "INSERT INTO customers (slug, name) VALUES ($1,$2) RETURNING id",
     [`lf-customer-${suffix}`, "Learning Flow GmbH"],
   );
@@ -93,7 +98,7 @@ beforeAll(async () => {
     "INSERT INTO departments (customer_id, slug, name) VALUES ($1,$2,$3) RETURNING id",
     [customerId, "default", "Default"],
   );
-  const projectId = await insert(
+  projectId = await insert(
     `INSERT INTO projects (customer_id, department_id, slug, name, keycloak_issuer, keycloak_audience)
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
     [customerId, departmentId, projectSlug, "LF project", issuer, AUDIENCE],
@@ -1051,6 +1056,115 @@ describe("a course outside its validity window (P50-01)", () => {
  * is one writer of it, and a course whose status came from a seed or a support
  * script has to behave identically.
  */
+/*
+ * P167-01. A section of prose is part of the Fortbildung.
+ *
+ * `docs/show-stoppers.md` §S33, answered by the client: a checkbox saying the
+ * text has been read, which enables the button onward and counts that part as
+ * done. Before it, `POST /progress` accepted videos only and
+ * `isCourseComplete` never asked — so a course of nothing but text completed on
+ * enrolment, and a mixed course completed with its prose never opened.
+ *
+ * Its own course, so nothing here can be satisfied by the shared fixture's
+ * videos, and the completion is genuinely decided by the acknowledgement.
+ */
+describe("a text section a learner has to say they have read", () => {
+  let slug = "";
+  let textId = "";
+  let otherTextId = "";
+
+  beforeAll(async () => {
+    slug = `text-course-${suffixForTests}`;
+    const courseId = await insert(
+      `INSERT INTO courses (customer_id, project_id, slug, title, delivery_type, status,
+                            required_watch_percent, pass_threshold_percent)
+       VALUES ($1,$2,$3,$4,'on_demand','published',100,70) RETURNING id`,
+      [customerId, projectId, slug, "Nur Text"],
+    );
+    const moduleId = await insert(
+      "INSERT INTO modules (customer_id, course_id, ordinal, title) VALUES ($1,$2,0,$3) RETURNING id",
+      [customerId, courseId, "Modul 1"],
+    );
+    const chapterId = await insert(
+      "INSERT INTO chapters (customer_id, module_id, ordinal, title) VALUES ($1,$2,0,$3) RETURNING id",
+      [customerId, moduleId, "Kapitel 1"],
+    );
+    textId = await insert(
+      `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, body)
+       VALUES ($1,$2,0,'text',$3,$4) RETURNING id`,
+      [customerId, chapterId, "Grundlagen als Text", "Ein Absatz."],
+    );
+    otherTextId = await insert(
+      `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, body)
+       VALUES ($1,$2,1,'text',$3,$4) RETURNING id`,
+      [customerId, chapterId, "Vertiefung", "Noch ein Absatz."],
+    );
+
+    expect((await call("PUT", `/courses/${slug}/enrolment`)).status).toBe(200);
+  });
+
+  it("does not complete a course of nothing but text on enrolment", () =>
+    call("GET", `/courses/${slug}/enrolment`).then(({ body }) => {
+      expect(body.courseComplete).toBe(false);
+      expect(body.outstanding).toContain("reading");
+    }));
+
+  it("refuses the completion while a section is unread, naming it", async () => {
+    const { status, body } = await call("POST", `/courses/${slug}/completion`);
+
+    expect(status).toBe(409);
+    expect(body.detail).toBeTypeOf("string");
+  });
+
+  it("records the acknowledgement, and is not satisfied by only one of two", async () => {
+    const first = await call(
+      "POST",
+      `/courses/${slug}/contents/${textId}/acknowledgement`,
+    );
+    expect(first.status, JSON.stringify(first.body)).toBe(200);
+    expect(first.body).toEqual({ contentId: textId, status: "completed" });
+
+    const { body } = await call("GET", `/courses/${slug}/enrolment`);
+    expect(body.courseComplete).toBe(false);
+    expect(body.outstanding).toContain("reading");
+  });
+
+  it("completes the course once every section is acknowledged", async () => {
+    expect(
+      (await call("POST", `/courses/${slug}/contents/${otherTextId}/acknowledgement`))
+        .status,
+    ).toBe(200);
+
+    const { body } = await call("GET", `/courses/${slug}/enrolment`);
+    expect(body.courseComplete).toBe(true);
+    expect(body.outstanding).not.toContain("reading");
+  });
+
+  it("is idempotent, because a double-clicked checkbox is not a new fact", async () => {
+    const again = await call(
+      "POST",
+      `/courses/${slug}/contents/${textId}/acknowledgement`,
+    );
+    expect(again.status).toBe(200);
+
+    const { body } = await call("GET", `/courses/${slug}/enrolment`);
+    expect(body.courseComplete).toBe(true);
+  });
+
+  it("refuses to accept an attestation for a video", async () => {
+    /*
+     * The guard that keeps this from becoming a way past the watch gate. A
+     * video has a completion event of its own and it is measured, not stated.
+     */
+    const { status } = await call(
+      "POST",
+      `/courses/${courseSlug}/contents/${video1Id}/acknowledgement`,
+    );
+
+    expect(status).toBe(422);
+  });
+});
+
 describe("a course that is still a draft (P53-01)", () => {
   async function setStatus(status: "draft" | "published"): Promise<void> {
     await seedPool.query("UPDATE courses SET status = $2 WHERE slug = $1", [
