@@ -571,7 +571,25 @@ jobs:
       - name: Will this installation file Punktemeldungen for real?
         id: eiv
         run: |
-          # `bash -lc`, and the error kept (P189-01).
+          # `bash -lc`, and the error kept — the **tail** of it, without compose's
+          # own noise (P189-01, corrected by its first run).
+          #
+          # P189's first version kept the first 300 characters, and deploy 115
+          # spent all 300 of them on this:
+          #
+          #     The "DS_ADMIN_API_BASE" variable is not set. Defaulting to a
+          #     blank string. The "DS_COMMIT" variable is not set. …
+          #
+          # `docker compose` warns on stderr about every unset variable the
+          # compose file interpolates. `deploy.sh` exports `DS_COMMIT` and the
+          # rest before it runs, so it never sees them; a bare read does. They
+          # are noise — `name: ds-education` is a literal, so `exec postgres`
+          # resolves without any of them — and they crowded out the message that
+          # actually says what went wrong.
+          #
+          # Keeping the head of an error stream is the wrong default in general:
+          # warnings come first and the failure comes last. So: drop the
+          # warnings, keep the tail.
           #
           # This read answered `unreadable` on the first deploy it ever ran on,
           # so the journey was skipped by a guard failing closed — and
@@ -603,7 +621,7 @@ jobs:
                -c \"\$(ds_eiv_settings_sql)\" 2>&1 >/tmp/ds-eiv-posture || true) && \
              settings=\$(tr -d \"\\n\" </tmp/ds-eiv-posture) && \
              if [ -z \"\$settings\" ]; then \
-               printf \"yes unreadable:%s\" \"\$(printf %s \"\$err\" | tr -d \"\\n\" | cut -c1-300)\"; \
+               printf \"yes unreadable:%s\" \"\$(printf %s \"\$err\" | grep -v level=warning | tr -d \"\\n\" | tail -c 300)\"; \
              elif ds_eiv_worker_will_file_live \
                \"\${settings%%|*}\" \
                \"\$(printf %s \"\$settings\" | cut -d\"|\" -f2)\" \
@@ -637,7 +655,8 @@ jobs:
 
           case "${detail}" in
             unreadable*)
-              echo "::warning::platform_settings could not be read on the host — psql said: ${detail#unreadable:}. This run fails closed and treats the installation as reporting live, so the journey will not run. That is NOT evidence that it is reporting — it is evidence that the question could not be answered."
+              said="${detail#unreadable:}"
+              echo "::warning::platform_settings could not be read on the host — the read said: ${said:-nothing beyond compose's own warnings}. This run fails closed and treats the installation as reporting live, so the journey will not run. That is NOT evidence that it is reporting — it is evidence that the question could not be answered."
               ;;
           esac
 
@@ -694,7 +713,7 @@ jobs:
                psql -tAX -U \"\${POSTGRES_SUPERUSER}\" -d \"\${POSTGRES_DB}\" \
                -c \"\$(ds_mail_posture_sql)\" 2>&1 >/tmp/ds-mail-posture || true) && \
              printf \"%s@@%s\" \"\$(tr -d \"\\n\" </tmp/ds-mail-posture)\" \
-                               \"\$(printf %s \"\$err\" | tr -d \"\\n\" | cut -c1-300)\"'")
+                               \"\$(printf %s \"\$err\" | grep -v level=warning | tr -d \"\\n\" | tail -c 300)\"'")
 
           # `<three fields>@@<stderr>`. `@@` and not `|`, which the answer's own
           # fields use — a separator that can appear in the payload is how a
@@ -703,9 +722,10 @@ jobs:
           answer="${answer%%@@*}"
 
           if [ -z "${answer}" ]; then
-            echo "::warning::The host's mail posture could not be read — psql said:" \
-                 "${reason:-nothing}. That is not evidence that mail is" \
-                 "unconfigured; it is evidence that the question could not be answered."
+            echo "::warning::The host's mail posture could not be read — the read said:" \
+                 "${reason:-nothing beyond compose's own warnings}. That is not evidence" \
+                 "that mail is unconfigured; it is evidence that the question could not" \
+                 "be answered."
             exit 0
           fi
 
