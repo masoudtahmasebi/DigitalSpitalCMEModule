@@ -219,9 +219,51 @@ the organiser has the period corrected at the Ärztekammer, or nothing is
 reported for this VNR (CLAUDE.md §7).
 
 **Still not verified: a `push_teilnahme` against the real test server.** Every
-read succeeded; nothing has been written. That step is what the accredited
-period currently prevents, and it is the last one between here and a proven
-chain.
+read succeeded; nothing has been written.
+
+### Testing the push with a date inside the period (P184-01)
+
+The accredited period stops a _completion today_ from being reported. It does
+not stop the push being **exercised** — `--datum` names the Teilnahmedatum
+explicitly, and a date inside 15.–20.01.2024 is accepted:
+
+```bash
+# From a machine with a checkout, node and egress to eiv-fobi.de.
+# Deliberately NOT the server: a tool that can file a Punktemeldung is not one
+# to leave lying on a production host, which is why `./dsc eiv` cannot push.
+export EIV_HARNESS_BASE_URL=https://backend-test.eiv-fobi.de
+export EIV_HARNESS_ALLOW_LIVE=yes          # required for any non-local host
+export EIV_VNR=2760012024200354002
+export EIV_VNR_PASSWORD=…                  # never from a file in this repository
+
+pnpm --filter @ds/eiv-harness push -- --efn 802760020090329 --datum 2024-01-17
+```
+
+Three things it now does for you, each of which was a way to get a confusing
+refusal:
+
+- **It claims the credits the event carries, read from `veranstaltung` first.**
+  The default used to be "both", and this event carries `punkte_lernerfolg: 0` —
+  so the first push anybody typed claimed a credit the accreditation does not
+  hold, and the refusal read like a broken platform rather than a wrong flag.
+  `--lernerfolg` forces it back on when refusing it is the thing being tested.
+- **It checks the date against the period before sending**, and says which side
+  it falls on, using the same `reportableOn` the console applies to the queue.
+- **`--retract` withdraws it.** The record stays at EIV with the points zeroed —
+  that is what a withdrawal is; nothing is deleted.
+
+_Verified 04.09.2026 against the local mock configured with this event's own
+period and `punkte_lernerfolg: 0`_ — a push dated today refused 406, one dated
+`2024-01-17` accepted with `affectedRows: 1`, `gemeldetepunkte` then holding it
+with the EFN masked to `***********0329`, and `--retract` zeroing the flags and
+answering `messages: ["aktualisiert"]`. Against the real test server it is
+untried.
+
+**This proves the interface, not the product.** The worker derives
+`teilnahmedatum` from the learner's own completion instant and has no override —
+deliberately, because backdating a real attestation is not a thing a platform
+should do quietly. So a green harness push and a working Punktemeldung queue are
+still two different claims, and the second one waits on the period.
 
 _The development sandbox cannot reach it._ Its egress is an allowlist and
 `eiv-fobi.de` is not on it — `backend-test.eiv-fobi.de:443` answers `403` at the

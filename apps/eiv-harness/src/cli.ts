@@ -9,6 +9,7 @@
  *   pnpm --filter @ds/eiv-harness veranstaltung
  *   pnpm --filter @ds/eiv-harness gemeldetepunkte
  *   pnpm --filter @ds/eiv-harness push -- --efn 123456789012345
+ *   pnpm --filter @ds/eiv-harness push -- --efn … --datum 2024-01-17
  *   pnpm --filter @ds/eiv-harness push -- --efn … --retract
  *
  * **`veranstaltung` is the one to run first against the test system.** It
@@ -41,7 +42,7 @@
  */
 
 import { EivClient, EivError, redact, type EivExchange } from "@ds/eiv-client";
-import { formatBerlinIsoDate } from "@ds/domain";
+import { formatBerlinIsoDate, reportableOn } from "@ds/domain";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:4010";
 
@@ -187,13 +188,67 @@ async function main(): Promise<number> {
         const auth = await client.authenticate();
         report("authenticate", auth.exchange);
 
+        /*
+         * Which credits to claim, read from the **event** rather than defaulted
+         * to "both" (P184-01).
+         *
+         * The defaults were `punkteBasis: true, punkteLernerfolg: true`, and
+         * the client's own test event carries `punkte_lernerfolg: 0`. So the
+         * first real push anybody types is refused for claiming a credit the
+         * accreditation does not hold — and the refusal reads like a broken
+         * platform rather than a wrong flag. §9.2: do not offer what the system
+         * will refuse, when the system has already told you what it holds.
+         *
+         * `veranstaltung` is one extra read against an endpoint this command
+         * already authenticates for, and the flags still win where they are
+         * given — `--no-basis`, `--no-lernerfolg` and `--lernerfolg` are
+         * explicit intent, including the deliberate "claim something the event
+         * does not carry and watch it be refused", which is a test somebody
+         * legitimately wants to run.
+         */
+        const { info: event } = await client.getVeranstaltung(auth.token);
+        const carriesBasis = (event.punkteBasis ?? 0) > 0;
+        const carriesLernerfolg = (event.punkteLernerfolg ?? 0) > 0;
+
+        const punkteBasis = process.argv.includes("--no-basis") ? false : carriesBasis;
+        const punkteLernerfolg = process.argv.includes("--no-lernerfolg")
+          ? false
+          : process.argv.includes("--lernerfolg")
+            ? true
+            : carriesLernerfolg;
+
+        console.warn(
+          `Claiming:     basis=${String(punkteBasis)} lernerfolg=${String(punkteLernerfolg)} ` +
+            `(event carries basis=${event.punkteBasis ?? "?"} lernerfolg=${event.punkteLernerfolg ?? "?"})`,
+        );
+
+        /*
+         * The date against the accredited period, said before sending rather
+         * than discovered as a 406. `reportableOn` is the same rule the console
+         * applies to the whole queue — one definition, so the harness cannot
+         * develop a second opinion about which day a completion falls on.
+         */
+        const verdict = reportableOn({
+          completedAt: new Date(`${teilnahmedatum}T12:00:00Z`),
+          beginn: event.beginn === undefined ? undefined : new Date(event.beginn),
+          ende: event.ende === undefined ? undefined : new Date(event.ende),
+        });
+        if (!verdict.ok && verdict.reason !== "period_unknown") {
+          console.warn(
+            `\n!! ${teilnahmedatum} is ${verdict.reason === "before_period" ? "before" : "after"} ` +
+              `the accredited period (${event.beginn ?? "?"} → ${event.ende ?? "?"}).\n` +
+              `   EIV refuses a teilnahmedatum outside it with a 406. Pass --datum with a\n` +
+              `   date inside the period to exercise the push itself.\n`,
+          );
+        }
+
         const push = retract
           ? await client.retractTeilnahme(efn, teilnahmedatum, auth.token)
           : await client.pushTeilnahme(
               {
                 efn,
-                punkteBasis: !process.argv.includes("--no-basis"),
-                punkteLernerfolg: !process.argv.includes("--no-lernerfolg"),
+                punkteBasis,
+                punkteLernerfolg,
                 punkteReferent: Number(readFlag("--referent") ?? "0"),
                 teilnahmedatum,
               },
@@ -218,7 +273,10 @@ async function main(): Promise<number> {
 
       default:
         console.error(
-          "Usage: cli.ts <authenticate|veranstaltung|gemeldetepunkte|push --efn NNNNNNNNNNNNNNN [--datum YYYY-MM-DD] [--retract]>",
+          "Usage: cli.ts <authenticate|veranstaltung|gemeldetepunkte|push --efn NNNNNNNNNNNNNNN\n" +
+            "  [--datum YYYY-MM-DD] [--retract] [--no-basis] [--no-lernerfolg] [--lernerfolg]>\n\n" +
+            "  push claims whichever credits the event carries, read from veranstaltung.\n" +
+            "  --datum defaults to today in Berlin; the accredited period is checked first.",
         );
         return 2;
     }
