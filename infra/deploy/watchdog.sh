@@ -41,12 +41,32 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=/dev/null
-[[ -f "${DS_STATE_DIR:-$HOME/ds-education}/config.env" ]] &&
-  source "${DS_STATE_DIR:-$HOME/ds-education}/config.env"
 
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.prod.yml"
 compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
+
+# Both files, not just `config.env` (P194-01).
+#
+# This used to source `config.env` alone, and every `compose` call below then
+# died at interpolation — `${SECRETS_KMS_KEY:?…}` aborts the parse of the whole
+# file before compose looks at which service was asked for. Check 1 swallows
+# that into `|| true` and iterates over nothing, so a host with every container
+# down produced an empty census and no problem from it. Check 2 turned the same
+# failure into "API readiness: 000 could not run the check", which is an alert
+# about the API for a fault in the watchdog.
+#
+# Refused rather than skipped, and refused *here*, because a watchdog that
+# cannot see the stack must say so instead of reporting on it. `problems` is
+# not yet declared at this point, which is why this is its own exit rather than
+# an entry in it.
+# shellcheck source=./host-env.sh
+source "${SCRIPT_DIR}/host-env.sh"
+if ! ds_load_host_env; then
+  echo "xx the watchdog cannot read the host configuration, so it cannot see" \
+       "the stack. This is a fault in the watchdog, not a verdict about the" \
+       "platform." >&2
+  exit 1
+fi
 
 # shellcheck source=./backup-state.sh
 source "${SCRIPT_DIR}/backup-state.sh"
@@ -66,6 +86,15 @@ while IFS=$'\t' read -r name state health; do
     problems+=("${name} is running but unhealthy")
   fi
 done < <(compose ps --format '{{.Service}}\t{{.State}}\t{{.Health}}' 2>/dev/null || true)
+
+# An empty census is not a healthy one. `compose ps` answers with at least the
+# services it is asked about on any host that has ever deployed, so nothing at
+# all means the command failed — and the `|| true` above, which is there so a
+# transient docker error does not kill the run, is exactly what makes that
+# indistinguishable from "everything is fine" (§9.6). Say it instead.
+if [[ ${#problems[@]} -eq 0 ]] && ! compose ps --format '{{.Service}}' 2>/dev/null | grep -q .; then
+  problems+=("docker compose reported no containers at all — the census could not run")
+fi
 
 # --- 2. The API answers readiness, and says which dependency if not ---------
 #

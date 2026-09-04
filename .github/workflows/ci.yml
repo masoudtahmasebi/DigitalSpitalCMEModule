@@ -91,6 +91,10 @@ jobs:
           # deploy this platform live in YAML. P189-01 shipped an unbalanced
           # quote through every gate and broke two deploys (P193-01).
           pnpm check:workflow-shell
+          # And that every one of those callers can actually reach the stack.
+          # A shell that parses and then dies at compose interpolation is the
+          # defect P194 is named for; neither check above can see it.
+          pnpm check:compose-env
 
       - name: Build
         run: pnpm build
