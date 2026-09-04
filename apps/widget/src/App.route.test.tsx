@@ -34,6 +34,7 @@ import type { CourseDetail, EnrolmentState } from "@ds/sdk";
 
 const COURSE_SLUG = "adhs-akademie-adult";
 const VIDEO_ID = "aaaaaaaa-0000-4000-8000-000000000001";
+const QUIZ_ID = "aaaaaaaa-0000-4000-8000-000000000002";
 
 function course(): CourseDetail {
   return {
@@ -720,5 +721,179 @@ describe("opening a course on its Teilnahmebescheinigung", () => {
     await screen.findByText(/Sie haben \d+ von \d+ Modul/u);
 
     expect(selectedTab()).toBe("Übersicht");
+  });
+});
+
+/**
+ * A failed exam is still open (P190-01).
+ *
+ * ## The report, at its own numbers
+ *
+ * A course with `pass_threshold_percent = 85`. The learner scored **60 %** and
+ * the exam screen answered
+ *
+ * > Sie haben diese Lernerfolgskontrolle bereits mit 60 % bestanden. Sie kann
+ * > nicht erneut abgelegt werden.
+ *
+ * three lines under its own panel reading **Bestehen 85 %** — and took away the
+ * retry the API would have accepted, because `POST attempts` refuses only a
+ * score that actually cleared the threshold.
+ *
+ * ## Why the test is here and not beside `passedQuizScore`
+ *
+ * `player.test.ts` covers the rule and would have stayed green through all of
+ * this: the rule was not wrong, it was **not called**. `App.tsx` handed the raw
+ * recorded score to a prop named `passedScorePercent`, so the presence of a
+ * score was the pass. That is §9.7 exactly — a pure function tested in
+ * isolation proves nothing about the screen unless something names the caller.
+ *
+ * So this drives `App` and asserts what a learner sees.
+ */
+describe("an exam that was sat and not passed", () => {
+  /** The course, with the Lernerfolgskontrolle beside the video. */
+  function courseWithExam(): CourseDetail {
+    const base = course() as unknown as Record<string, unknown>;
+    return {
+      ...base,
+      passThresholdPercent: 85,
+      modules: [
+        {
+          id: "m1",
+          ordinal: 0,
+          title: "Modul 1",
+          subtitle: null,
+          chapters: [
+            {
+              id: "c1",
+              ordinal: 0,
+              title: "Kapitel 1",
+              contents: [
+                {
+                  id: VIDEO_ID,
+                  ordinal: 0,
+                  kind: "video",
+                  title: "Grundlagen",
+                  durationSec: 600,
+                  mimeType: null,
+                },
+                {
+                  id: QUIZ_ID,
+                  ordinal: 1,
+                  kind: "quiz",
+                  title: "Long Video question",
+                  durationSec: null,
+                  mimeType: null,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as CourseDetail;
+  }
+
+  /** Sat, graded, and twenty-five points short of the course's 85. */
+  function scoredSixty(): EnrolmentState {
+    const progress = {
+      status: "in_progress",
+      completedCount: 0,
+      totalCount: 1,
+      percent: 0,
+    };
+    return enrolmentState({
+      passThresholdPercent: 85,
+      achievedWatchPercent: 100,
+      modules: [
+        {
+          id: "m1",
+          gate: "available",
+          progress,
+          chapters: [
+            {
+              id: "c1",
+              gate: "available",
+              progress,
+              contents: [
+                {
+                  id: VIDEO_ID,
+                  gate: "available",
+                  progress: { ...progress, status: "completed" },
+                },
+                {
+                  id: QUIZ_ID,
+                  gate: "available",
+                  progress: { ...progress, scorePercent: 60 },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as Partial<EnrolmentState>);
+  }
+
+  function stubExam(state: EnrolmentState): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        const body = url.includes("/quiz")
+          ? {
+              contentId: QUIZ_ID,
+              passThresholdPercent: 85,
+              attemptsUsed: 1,
+              maxAttempts: null,
+              questions: [],
+            }
+          : url.includes("/materials")
+            ? { groups: [] }
+            : url.includes("/evaluation")
+              ? { questions: [] }
+              : url.includes("/certificate")
+                ? certificate()
+                : url.includes("/contents/")
+                  ? lesson()
+                  : url.includes("/enrolment")
+                    ? state
+                    : courseWithExam();
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+  }
+
+  /*
+   * The claim that must not appear, matched on the German the screenshot
+   * carried rather than on a test id: it is the sentence a physician read,
+   * three lines under a panel saying **Bestehen 85 %**.
+   */
+  it("does not tell the learner they passed it", async () => {
+    stubExam(scoredSixty());
+    window.history.replaceState(null, "", `#ds/inhalt/${QUIZ_ID}`);
+    renderApp();
+
+    // The exam screen is actually mounted — without this the case would pass on
+    // any screen that simply does not contain the sentence, which is every
+    // other screen in the product (§9.1).
+    await screen.findByText(/Bestehen/u);
+
+    expect(screen.queryByText(/bereits.*bestanden/u)).toBeNull();
+  });
+
+  it("still offers the exam", async () => {
+    stubExam(scoredSixty());
+    window.history.replaceState(null, "", `#ds/inhalt/${QUIZ_ID}`);
+    renderApp();
+
+    await screen.findByText(/Bestehen/u);
+
+    // The half the learner actually needed: a way back in. The API would have
+    // accepted the attempt — 60 < 85 — and only the screen refused.
+    expect(
+      screen.queryAllByRole("button", { name: /Lernerfolgskontrolle|starten|beginnen/u })
+        .length,
+    ).toBeGreaterThan(0);
   });
 });

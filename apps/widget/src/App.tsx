@@ -33,7 +33,7 @@ import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
 import type { TokenProvider } from "./token.js";
 import type { OpenIntent } from "./intent.js";
-import { indexTitles, nextAvailableContent, recordedQuizScore } from "./player.js";
+import { indexTitles, nextAvailableContent, passedQuizScore } from "./player.js";
 import {
   clearCourseFragment,
   decode,
@@ -845,7 +845,7 @@ function Loaded(props: {
           examTitle={
             indexTitles(detail).contents.get(screen.contentId)?.title ?? de.quiz.exam
           }
-          passedScorePercent={recordedQuizScore(state, screen.contentId)}
+          passedScorePercent={passedQuizScore(state, screen.contentId)}
           /*
            * Certified, from the server (P169-01). `submit` refuses an attempt
            * on such an enrolment, so the screen must not offer one — the same

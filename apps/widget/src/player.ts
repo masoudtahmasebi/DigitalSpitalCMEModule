@@ -327,9 +327,9 @@ export function nextAvailableContent(
 /**
  * One content's stored progress, from the enrolment state (P167-01).
  *
- * The same walk `recordedQuizScore` does, generalised, because the acknowledged
- * flag and the score are two fields of one row and two walks over one tree
- * would be two answers to "what does the server say about this content".
+ * One walk, because the acknowledged flag and the score are two fields of one
+ * row and two walks over one tree would be two answers to "what does the server
+ * say about this content". `passedQuizScore` below is its only other reader.
  */
 export function contentProgressOf(
   state: Pick<EnrolmentState, "modules">,
@@ -345,11 +345,53 @@ export function contentProgressOf(
   return undefined;
 }
 
-export function recordedQuizScore(
-  state: Pick<EnrolmentState, "modules">,
+/**
+ * The score, **only if it passed** (P190-01).
+ *
+ * ## Why this exists rather than two call sites comparing
+ *
+ * It is what the report was. A course set to 85 %, a learner who scored 60 %,
+ * and the exam screen answering *"Sie haben diese Lernerfolgskontrolle bereits
+ * mit 60 % bestanden. Sie kann nicht erneut abgelegt werden."* — three lines
+ * under its own panel reading **Bestehen 85 %**. The screen contradicted itself
+ * on one page and removed a retry the API would have accepted.
+ *
+ * `PlayerScreen` had the comparison and `App.tsx` did not: it handed the raw
+ * recorded score straight to a prop called `passedScorePercent`, so the
+ * *presence* of a score was the pass. Two readers of one rule, which is
+ * CLAUDE.md §4 invariant 6 — and the quiet half of §9.10b, because the reader
+ * that skipped the comparison is the one a learner meets.
+ *
+ * The accessor it replaced was never wrong — `recordedQuizScore` said exactly
+ * what it returned. The prop it fed claimed more than the value carried, and a
+ * name that overclaims is how the two came apart. This function's name is the
+ * claim, so there is nothing left to drift; it is deleted rather than kept
+ * beside this one, because an honest accessor sitting next to the safe one is
+ * an invitation to reach for it again (§9.3).
+ *
+ * ## Why the threshold and not `status === "completed"`
+ *
+ * Both are available and the server writes them from the same comparison
+ * (`upsertQuizProgress` sets `completed` exactly when the attempt passed). The
+ * threshold is used because `state.passThresholdPercent` is **the course's live
+ * value** since P174-01, so a course whose threshold an operator raises tells
+ * an in-progress learner the truth on the next load, rather than showing a pass
+ * that a stored status still remembers.
+ *
+ * This is rendering, not gating. The API refuses or accepts a further attempt
+ * on its own reading (§4 invariant 1); what this decides is whether the screen
+ * offers one.
+ */
+export function passedQuizScore(
+  state: Pick<EnrolmentState, "modules" | "passThresholdPercent">,
   contentId: string,
 ): number | undefined {
-  return contentProgressOf(state, contentId)?.scorePercent;
+  const score = contentProgressOf(state, contentId)?.scorePercent;
+  // `undefined` and not `!score`: zero is a score. On a course with a threshold
+  // of 0 the difference is a learner told they passed and a learner told
+  // nothing at all.
+  if (score === undefined) return undefined;
+  return score >= state.passThresholdPercent ? score : undefined;
 }
 
 export function playbackDuration(authoredSec: number | null, elementSec: number): number {

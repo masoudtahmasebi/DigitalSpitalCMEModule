@@ -142,9 +142,25 @@ export class AssessmentService {
      * Read from the **stored attempts**, not from the progress row's `passed`
      * flag: `upsertQuizProgress` writes that flag from exactly this comparison,
      * so re-deriving it here keeps one rule rather than two that could drift
-     * (§4 invariant 6). `passThresholdPercent` is the enrolment's snapshot, so
-     * re-tightening a published course cannot retroactively reopen an exam
-     * somebody has already passed.
+     * (§4 invariant 6).
+     *
+     * `passThresholdPercent` is **the course's live value**, not the enrolment's
+     * snapshot. This comment said the opposite until P190-01 — it was written
+     * before P174-01 moved the three gating thresholds onto the course, and it
+     * had been describing the wrong source ever since (§11 rule 9: a comment is
+     * a claim).
+     *
+     * The consequence is the reverse of what it claimed, and it is deliberate:
+     * re-tightening a published course **does** reopen an exam cleared under
+     * the old threshold, because the client's decision in P174-01 was that the
+     * course wins for work still in progress. What it cannot do is take away
+     * something finished — `alreadyCompleted` holds a completed enrolment
+     * complete (P167-01), and the branch above refuses any attempt on a
+     * certified one.
+     *
+     * The widget derives the same verdict from the same live value
+     * (`passedQuizScore`), so the screen and this refusal agree by
+     * construction rather than by coincidence.
      */
     const bestSoFar = await this.repository.bestScorePercent(enrolment.id, contentId);
     if (bestSoFar !== null && bestSoFar >= enrolment.passThresholdPercent) {
