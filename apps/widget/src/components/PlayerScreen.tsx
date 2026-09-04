@@ -65,7 +65,7 @@ import {
   locateContent,
   nextAvailableContent,
   playbackDuration,
-  recordedQuizScore,
+  passedQuizScore,
 } from "../player.js";
 import { useReportPlayerStatus } from "../player-status.js";
 import { LessonScreen, type PlaybackState } from "./LessonScreen.js";
@@ -124,12 +124,14 @@ export function PlayerScreen(props: {
    *
    * `scorePercent` is recorded by `upsertQuizProgress` only when an attempt has
    * been graded, and the row carries the best of them — so its presence is the
-   * server's own answer to "has this been sat", and the *pass* is decided by
-   * comparing it to the course's threshold, which is the one `EnrolmentState`
-   * carries and the gate uses.
+   * server's own answer to "has this been sat". The *pass* is a comparison
+   * against the course's threshold, and it lives in `passedQuizScore` rather
+   * than here (P191-01): this screen had the comparison and the exam screen did
+   * not, which is how a 60 % on an 85 % course came to read "bereits
+   * bestanden".
    */
-  const quizScore = quiz === undefined ? undefined : recordedQuizScore(state, quiz.id);
-  const quizPassed = quizScore !== undefined && quizScore >= state.passThresholdPercent;
+  const passedScore = quiz === undefined ? undefined : passedQuizScore(state, quiz.id);
+  const quizPassed = passedScore !== undefined;
   /*
    * Where the learner goes after this section (P78-02).
    *
@@ -308,7 +310,7 @@ export function PlayerScreen(props: {
 
           The pause and the exam CTA left this row for the sidebar in P93-03,
           which is where the layout draws the primary action; **Zurück zur
-          Übersicht** left it in P190-01, because `CourseShell` draws that
+          Übersicht** left it in P191-01, because `CourseShell` draws that
           button in orange at the top of every one of these screens and the
           drawing has exactly one of it. Two identical back buttons forty
           pixels apart is not a second way out, it is the same way out twice.

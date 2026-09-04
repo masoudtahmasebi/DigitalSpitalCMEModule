@@ -29,6 +29,7 @@
  */
 
 import {
+  MAX_ATTEMPTS,
   describePublishBlockers,
   invalidAvailabilityWindow,
   maskEfn,
@@ -733,7 +734,20 @@ function eivState(
       // Queued is healthy — unless it has been queued past its deadline, or has
       // burned through the fast retries without landing.
       if (submission.reportDueAt.getTime() <= now.getTime()) return "needs_attention";
-      if (submission.attemptCount >= 3) return "needs_attention";
+      /*
+       * One attempt short of the budget, not a hardcoded 3 (P192-01).
+       *
+       * The number was `3` and the budget is `MAX_ATTEMPTS = 4` in
+       * `@ds/domain`, with nothing tying them together. It happened to mean
+       * "one retry left", which is what an early warning should mean — and it
+       * would have gone on saying `3` if the budget moved. At a budget of 3 it
+       * would fire only once the queue had already given up, turning the
+       * warning into a duplicate of `attempts_exhausted`; at 10 it would fire
+       * on almost every row.
+       *
+       * A value with one home (§9.10b), expressed against it.
+       */
+      if (submission.attemptCount >= MAX_ATTEMPTS - 1) return "needs_attention";
       return "queued";
     default:
       return "failed";

@@ -15,6 +15,7 @@ import {
   locateContent,
   moduleNumber,
   nextAvailableContent,
+  passedQuizScore,
   playbackDuration,
 } from "./player.js";
 
@@ -343,5 +344,105 @@ describe("nextAvailableContent", () => {
     expect(
       nextAvailableContent(course(), state({}), "not-in-this-course"),
     ).toBeUndefined();
+  });
+});
+
+/**
+ * A score is not a pass (P191-01).
+ *
+ * ## The report
+ *
+ * A course with `pass_threshold_percent = 85`. The learner scored **60 %**, and
+ * the exam screen answered:
+ *
+ * > Sie haben diese Lernerfolgskontrolle bereits mit 60 % bestanden. Sie kann
+ * > nicht erneut abgelegt werden.
+ *
+ * — three lines under its own panel reading **Bestehen 85 %**. The screen
+ * contradicted itself on one page, and it took away the retry the API would
+ * have accepted.
+ *
+ * ## The cause, which is §4 invariant 6
+ *
+ * Two readers of "has this been passed", and they disagreed.
+ * `PlayerScreen` compared the recorded score against
+ * `state.passThresholdPercent`; `App.tsx` passed `recordedQuizScore` straight
+ * into a prop named `passedScorePercent` and compared nothing at all. The
+ * presence of a score *was* the pass.
+ *
+ * The accessor was honest about what it returned — the best score, graded or
+ * not. The prop it fed was not, and a name that claims more than its value is
+ * how the two came apart.
+ *
+ * So the comparison lives in one function now, and both screens call it.
+ */
+describe("passedQuizScore", () => {
+  function withScore(scorePercent: number | undefined) {
+    return {
+      passThresholdPercent: 85,
+      modules: [
+        {
+          chapters: [
+            {
+              contents: [
+                {
+                  id: "exam",
+                  progress:
+                    scorePercent === undefined
+                      ? { status: "in_progress" }
+                      : { scorePercent },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as Parameters<typeof passedQuizScore>[0];
+  }
+
+  // The reported case, at the exact numbers it was reported with.
+  it("is undefined for a score below the course's threshold", () => {
+    expect(passedQuizScore(withScore(60), "exam")).toBeUndefined();
+  });
+
+  it("is the score when it reaches the threshold", () => {
+    expect(passedQuizScore(withScore(85), "exam")).toBe(85);
+  });
+
+  it("is the score when it clears the threshold", () => {
+    expect(passedQuizScore(withScore(100), "exam")).toBe(100);
+  });
+
+  // The boundary, named: `>=`, not `>`. 84 fails and 85 passes, and a course
+  // set to 85 that refused an 85 would be the off-by-one nobody reports because
+  // it looks like a strict examiner.
+  it("treats the threshold as inclusive", () => {
+    expect(passedQuizScore(withScore(84), "exam")).toBeUndefined();
+    expect(passedQuizScore(withScore(85), "exam")).toBe(85);
+  });
+
+  it("is undefined for an exam nobody has sat", () => {
+    expect(passedQuizScore(withScore(undefined), "exam")).toBeUndefined();
+  });
+
+  it("is undefined for content that is not there", () => {
+    expect(passedQuizScore(withScore(90), "missing")).toBeUndefined();
+  });
+
+  /*
+   * Zero is a score, not an absence. `scorePercent ?? undefined` would be right
+   * and `scorePercent || undefined` would not — and with a threshold of 0 the
+   * difference is a learner told they passed versus told nothing.
+   */
+  it("handles a zero score without confusing it for an unsat exam", () => {
+    expect(passedQuizScore(withScore(0), "exam")).toBeUndefined();
+
+    const everyonePasses = {
+      passThresholdPercent: 0,
+      modules: [
+        { chapters: [{ contents: [{ id: "exam", progress: { scorePercent: 0 } }] }] },
+      ],
+    } as unknown as Parameters<typeof passedQuizScore>[0];
+    expect(passedQuizScore(everyonePasses, "exam")).toBe(0);
   });
 });

@@ -2250,3 +2250,91 @@ One of:
    client and the copy, and it needs the ÄKWL's own statement of the format
    rather than a screenshot, because the reporting interface is what will
    reject it.
+
+---
+
+## S35 — Does the Anerkennungsbescheid actually require an Evaluation? — **raised 04.09.2026**
+
+- **Owner:** MEDICE / ÄKWL · **Blocks:** nothing technically; blocks a claim we
+  are making in writing · **Raised:** 04.09 by the client's PM
+
+> could you provide the information for the evaluation form and why you think
+> that this is a mandatory requirement. because I have never read something like
+> this. I would like to check the information myself.
+
+They are right to ask, and **we cannot answer with a source.**
+
+### What the platform says today
+
+`EvaluationEditor` renders, when a course has no evaluation questions:
+
+> Der Anerkennungsbescheid verlangt eine Evaluation. Ohne Fragen kann die
+> Fortbildung nicht abgeschlossen werden.
+
+The second sentence is a true statement about **our** software: `evaluation` is
+an unconditional member of `CompletionCondition` in `packages/domain`, so a
+course with no questions has a gate nobody can pass. The first sentence is a
+claim about a **legal document**, and it is stated as established fact.
+
+`docs/gdpr.md` §2 repeats it as a lawful basis: _"Art. 6(1)(c) with the
+Fortbildungsordnung and the Anerkennungsbescheid — the Kammer's conditions are
+what make these mandatory rather than optional."_
+
+### Where it came from, traced
+
+| Searched                                              | Result                                                                                                     |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `docs/requirements/medice-adhs.md` (the client brief) | "Evaluationsbogen" appears **once**, in §6.1, listing it as in scope for P4 — never as a legal requirement |
+| `docs/adr/`                                           | no ADR records this decision                                                                               |
+| `docs/show-stoppers.md` before this entry             | never raised — nobody was ever asked                                                                       |
+| `git log -S` on the condition                         | `feb8d5e P0-02`, the initial scaffold. It arrived with the skeleton                                        |
+| `git log -S` on the German sentence                   | `c065d97 P9-02/04/05`, the authoring console                                                               |
+
+The code comment in `completion.ts` justifies the **design** — "the evaluation is
+not [conditional]: it is asked of every learner, accredited course or otherwise"
+— and cites nothing.
+
+### Why this is worse than an ordinary open question
+
+We hold a **partial record of what the Bescheid says**: S25 states it awards
+_4 Punkte, Kategorie D, with 70 % on the Lernerfolgskontrolle as a condition_.
+Those specifics came from somewhere. An evaluation is **not** among the
+conditions recorded anywhere in this repository.
+
+So this is not "we never looked at the Bescheid". It is "we looked at it, wrote
+down three of its conditions, and asserted a fourth that is not in our notes."
+That is precisely CLAUDE.md §7 — _an invented rule that ships is worse than a
+delay_ — and §11: a fluent sentence nobody checked.
+
+### What I can and cannot say about the underlying question
+
+I have **not** verified whether German Fortbildung accreditation requires an
+evaluation. My impression is that Kammer Fortbildungsordnungen commonly do
+require one for certified events, and that would make the sentence accidentally
+correct — **but an impression is not a citation, and it is not this Bescheid.**
+Being right by luck about a compliance rule is the failure mode §11 is about.
+
+The authority is the Anerkennungsbescheid for this Fortbildung's VNR, issued by
+the ÄKWL, plus §4 of the applicable Fortbildungsordnung. Neither is in this
+repository.
+
+### What has been changed: nothing
+
+The rule is untouched and the copy is untouched, pending the answer. Changing
+either now would be a second guess on top of the first:
+
+- If the Bescheid **does** require it, softening the sentence weakens a true
+  warning to an author about to publish an uncompletable course.
+- If it **does not**, the sentence is a false legal claim shown to every
+  customer's staff, and the gate is a product decision wearing a regulation's
+  clothes — in which case whether the evaluation stays mandatory is MEDICE's
+  call, not ours.
+
+### The decision needed
+
+1. Does the Anerkennungsbescheid for this VNR list an Evaluation among its
+   conditions? (Yes/no settles the sentence.)
+2. If no — should the evaluation remain a hard completion gate as a product
+   choice, become optional per course, or be dropped?
+
+Both answers are cheap to implement. Neither is ours to make.
