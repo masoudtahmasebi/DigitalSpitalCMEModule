@@ -149,6 +149,22 @@ export class EivService {
       return "abandoned";
     }
 
+    /*
+     * A course whose VNR has been cleared has no registration to file against
+     * (P186-01). Abandoned rather than falling back to the number queued at
+     * completion: an operator who removed the VNR has said this event is not
+     * the one they thought, and filing against it anyway is the mistake that
+     * cannot be undone (ADR-0005).
+     *
+     * `auth` for the same reason `missing_vnr_password` is: nothing was sent,
+     * and what has to be fixed is a course setting rather than anything the
+     * physician did.
+     */
+    if (row.vnr === null || row.vnr === "") {
+      await this.abandon(claim, row, "missing_vnr", row.attemptCount, "auth");
+      return "abandoned";
+    }
+
     // A course with no VNR password cannot authenticate. Held rather than
     // burned through the retry budget: it is an admin data problem, and the
     // window is better spent once someone fixes it.
@@ -239,6 +255,8 @@ export class EivService {
 
       await this.repository.recordSuccess({
         claim,
+        // What authenticated, which is what the register attributed it to.
+        vnr: row.vnr,
         reference: push.reference,
         attemptCount,
         firstSubmittedAt,

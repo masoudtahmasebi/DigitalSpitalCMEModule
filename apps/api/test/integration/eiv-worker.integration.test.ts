@@ -558,3 +558,121 @@ describe("a failed attempt is audited too (QA §7.9, CLAUDE.md §4 invariant 8)"
     expect(detail).toMatch(/failure/u);
   });
 });
+
+/*
+ * A corrected VNR, and the queued Punktemeldungen that still carry the old one
+ * (P186-01).
+ *
+ * `eiv_submissions.vnr` is a snapshot written at completion. `vnr_password_enc`,
+ * `eiv_punkte_basis` and `eiv_punkte_lernerfolg` in the same `load` query are
+ * read live from `courses`. So one row authenticates with **last week's VNR and
+ * this week's password**.
+ *
+ * That is CLAUDE.md §9.10b, the class the client already named twice:
+ *
+ *   > How can you set these hard coded when there are values in course!
+ *
+ * A VNR is not what the learner did. It is what the event *is* — the number the
+ * Ärztekammer accredited — and correcting a typo in Verwaltung has to correct
+ * every Punktemeldung not yet filed. The ones already filed are history and
+ * `alreadySubmitted` protects them (ADR-0005); a queued row is not history.
+ *
+ * The mock refuses authentication with a VNR other than `expectedVnr`, exactly
+ * as the real interface answers 401 — so this suite can tell which number the
+ * worker actually presented, rather than which one it stored.
+ */
+describe("a VNR corrected after somebody completed (P186-01)", () => {
+  const CORRECTED = "8888888888888888888";
+  let strict: MockServer;
+
+  beforeAll(async () => {
+    strict = await startMockServer(0, {
+      expectedVnr: CORRECTED,
+      expectedPassword: VNR_PASSWORD,
+    });
+  });
+
+  afterAll(async () => {
+    await strict?.close();
+  });
+
+  it("files the Meldung against the course's current VNR, not the queued copy", async () => {
+    await freshUser();
+    const { submissionId } = await queueSubmission();
+
+    // The operator fixes a mistyped VNR in Verwaltung. The password is
+    // unchanged: the correction is one digit, not a different registration.
+    await seedPool.query("UPDATE courses SET vnr = $1 WHERE id = $2", [
+      CORRECTED,
+      courseId,
+    ]);
+
+    await buildService().sweep(new Date(), { baseUrl: strict.url, allowLive: false });
+
+    const row = await readSubmission(submissionId);
+    expect(row.status).toBe("submitted");
+    // The record the register holds is attributed to the VNR that
+    // authenticated. Against the old number the mock answers 401 and this is
+    // `failed_retryable` with nothing filed.
+    expect(strict.submissions.at(-1)?.vnr).toBe(CORRECTED);
+  });
+
+  /*
+   * And the row says what was filed. Before P186-01 the stored copy was the
+   * only VNR anywhere, so leaving it at the completion-time value would have
+   * the console report a Punktemeldung against a registration that never
+   * received one — and a retraction has to name the number it was filed under
+   * (ADR-0005).
+   */
+  it("stores the number that actually authenticated", async () => {
+    await freshUser();
+    const { submissionId } = await queueSubmission();
+
+    await seedPool.query("UPDATE courses SET vnr = $1 WHERE id = $2", [
+      CORRECTED,
+      courseId,
+    ]);
+    await buildService().sweep(new Date(), { baseUrl: strict.url, allowLive: false });
+
+    const { rows } = await seedPool.query<{ vnr: string; status: string }>(
+      "SELECT vnr, status FROM eiv_submissions WHERE id = $1",
+      [submissionId],
+    );
+    expect(rows[0]?.status).toBe("submitted");
+    expect(rows[0]?.vnr).toBe(CORRECTED);
+  });
+
+  /*
+   * The other direction, and the one that must not fall back. An operator who
+   * clears the VNR has said this course is not the accredited event they
+   * thought it was. Filing against the number queued last week would be
+   * irreversible, so the row is abandoned with a reason naming the course
+   * setting to fix rather than anything the physician did.
+   */
+  it("abandons rather than filing against a VNR the operator removed", async () => {
+    await freshUser();
+    const { submissionId } = await queueSubmission();
+    const before = strict.submissions.length;
+
+    await seedPool.query("UPDATE courses SET vnr = NULL WHERE id = $1", [courseId]);
+    await buildService().sweep(new Date(), { baseUrl: strict.url, allowLive: false });
+    // Restore, so the ordering of cases in this describe cannot matter.
+    await seedPool.query("UPDATE courses SET vnr = $1 WHERE id = $2", [
+      CORRECTED,
+      courseId,
+    ]);
+
+    const { rows } = await seedPool.query<{
+      status: string;
+      last_error: string | null;
+      failure_kind: string | null;
+    }>("SELECT status, last_error, failure_kind FROM eiv_submissions WHERE id = $1", [
+      submissionId,
+    ]);
+    expect(rows[0]?.status).toBe("failed_permanent");
+    expect(rows[0]?.last_error).toBe("missing_vnr");
+    expect(rows[0]?.failure_kind).toBe("auth");
+    // Nothing reached the register.
+    expect(strict.submissions.length).toBe(before);
+  });
+});

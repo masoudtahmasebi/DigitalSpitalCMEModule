@@ -37,7 +37,13 @@ export interface DueSubmission {
   id: string;
   customerId: string;
   enrolmentId: string;
-  vnr: string;
+  /**
+   * The **course's** VNR — nullable, because a course can have had it cleared
+   * since somebody completed (P186-01). The service abandons on null rather
+   * than falling back to `queuedVnr`: a Meldung filed against a number the
+   * operator has removed is the irreversible mistake ADR-0005 is about.
+   */
+  vnr: string | null;
   efn: string;
   status: string;
   attemptCount: number;
@@ -57,6 +63,8 @@ export interface EivRepositoryPort {
   load(claim: ClaimedSubmission): Promise<DueSubmission | undefined>;
   recordSuccess(input: {
     claim: ClaimedSubmission;
+    /** The VNR that authenticated — what was actually filed (P186-01). */
+    vnr: string;
     reference: string | undefined;
     attemptCount: number;
     firstSubmittedAt: Date;
@@ -105,7 +113,29 @@ export class EivRepository implements EivRepositoryPort {
           id: eivSubmissions.id,
           customerId: eivSubmissions.customerId,
           enrolmentId: eivSubmissions.enrolmentId,
-          vnr: eivSubmissions.vnr,
+          /*
+           * **The course's VNR, not the queued row's copy of it** (P186-01).
+           *
+           * `eiv_submissions.vnr` is written at completion and never updated.
+           * `vnrPasswordEnc`, `punkteBasis` and `punkteLernerfolg` three lines
+           * down have always been read live from `courses`, so a row whose
+           * course had its VNR corrected authenticated with *last week's number
+           * and this week's password* — the register answers 401, the worker
+           * classifies that as an auth failure, and the Punktemeldung is
+           * abandoned. A physician loses their points to a one-digit typo fix.
+           *
+           * A VNR is not what the learner did; it is what the event **is**, the
+           * number the Ärztekammer accredited. Correcting it has to correct
+           * every Meldung not yet filed. CLAUDE.md §9.10b, and the class the
+           * client has now named three times.
+           *
+           * The stored column is not dead: for a row already `submitted` it is
+           * the historical record of what was actually filed, which must not
+           * move (ADR-0005). `recordSuccess` writes the number that
+           * authenticated onto it, so the history says what happened rather
+           * than what was intended.
+           */
+          vnr: courses.vnr,
           efn: eivSubmissions.efn,
           status: eivSubmissions.status,
           attemptCount: eivSubmissions.attemptCount,
@@ -133,6 +163,7 @@ export class EivRepository implements EivRepositoryPort {
 
   async recordSuccess(input: {
     claim: ClaimedSubmission;
+    vnr: string;
     reference: string | undefined;
     attemptCount: number;
     firstSubmittedAt: Date;
@@ -143,6 +174,16 @@ export class EivRepository implements EivRepositoryPort {
         .update(eivSubmissions)
         .set({
           status: "submitted",
+          /*
+           * What was filed, not what was queued (P186-01).
+           *
+           * Once this row is `submitted` its VNR is history — the number a
+           * physician's record at the Ärztekammer is now attributed to — and a
+           * retraction has to name it. Leaving the completion-time copy here
+           * would make the console report a Punktemeldung against a
+           * registration that never received one.
+           */
+          vnr: input.vnr,
           // COALESCE: a correction keeps the reference from the first
           // submission if EIV does not return a new one.
           externalReference: sql`COALESCE(${input.reference ?? null}, ${eivSubmissions.externalReference})`,

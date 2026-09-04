@@ -524,6 +524,7 @@ directions:
 | its CME points and category (P171-01)                              | the enrolment's copy | the course    |
 | whether an EFN is asked for at all (P171-01)                       | the enrolment's copy | the course    |
 | the watch and pass thresholds the gate applies (P174-01)           | the enrolment's copy | the course    |
+| the VNR a queued Punktemeldung authenticates with (P186-01)        | `eiv_submissions`    | the course    |
 | the MEDICE course's title, points and category on **every deploy** | the seed             | left alone    |
 
 The client found the first four by reading one screen: the Zertifizierung tab
