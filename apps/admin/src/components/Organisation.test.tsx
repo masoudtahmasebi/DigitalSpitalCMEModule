@@ -27,7 +27,42 @@ import type { ApiClient, DepartmentSummary, ProjectSummary } from "@ds/sdk";
 import { Organisation } from "./Organisation.js";
 import { de } from "../locale/de.js";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // §9.8's other half: ambient state that outlives a case gets blamed on the
+  // next one. `platformSender` is read through the global `fetch`, so it is
+  // reset here rather than only in the describe that sets it.
+  vi.unstubAllGlobals();
+});
+
+const API_BASE = "https://api.example.de";
+
+/**
+ * What `GET /admin/auth/platform-smtp` answers.
+ *
+ * A `fetch` stub and not an SDK mock, because that endpoint is a staff route
+ * on the session cookie rather than a tenant one — `readPlatformSender` calls
+ * it directly, and stubbing a layer the component does not use would be
+ * §9.7: green here and silent about the wiring.
+ *
+ * The default is "no platform sender", which is the state every case in this
+ * file was written under, and the three P185 cases stub their own.
+ */
+function stubPlatformSender(
+  sender: { fromAddress: string | null; canSend: boolean } | "unreachable",
+): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      sender === "unreachable"
+        ? new Response(null, { status: 403 })
+        : new Response(JSON.stringify(sender), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+    ),
+  );
+}
 
 const DEPARTMENT: DepartmentSummary = {
   slug: "default",
@@ -82,7 +117,7 @@ async function openNewProject(): Promise<void> {
 
 describe("creating a project", () => {
   it("offers both sign-in methods, and defaults to Keycloak", async () => {
-    render(<Organisation client={clientWith([project()])} />);
+    render(<Organisation apiBase={API_BASE} client={clientWith([project()])} />);
     await openNewProject();
 
     const select = screen.getByLabelText(
@@ -100,7 +135,7 @@ describe("creating a project", () => {
 
   it("sends `local` when the operator picks the portal", async () => {
     const client = clientWith([project()]);
-    render(<Organisation client={client} />);
+    render(<Organisation apiBase={API_BASE} client={client} />);
     await openNewProject();
 
     fireEvent.change(screen.getByLabelText(de.organisation.identityProvider), {
@@ -136,7 +171,10 @@ describe("editing a project", () => {
 
   it("shows the method the project actually has", async () => {
     render(
-      <Organisation client={clientWith([project({ identityProvider: "local" })])} />,
+      <Organisation
+        apiBase={API_BASE}
+        client={clientWith([project({ identityProvider: "local" })])}
+      />,
     );
     await openSettings();
 
@@ -148,7 +186,10 @@ describe("editing a project", () => {
 
   it("says the Keycloak fields are unused for a local project", async () => {
     render(
-      <Organisation client={clientWith([project({ identityProvider: "local" })])} />,
+      <Organisation
+        apiBase={API_BASE}
+        client={clientWith([project({ identityProvider: "local" })])}
+      />,
     );
     await openSettings();
 
@@ -160,7 +201,7 @@ describe("editing a project", () => {
   });
 
   it("warns about the realm for a Keycloak project", async () => {
-    render(<Organisation client={clientWith([project()])} />);
+    render(<Organisation apiBase={API_BASE} client={clientWith([project()])} />);
     await openSettings();
 
     expect(screen.getByText(de.organisation.keycloakWarning)).toBeTruthy();
@@ -169,7 +210,7 @@ describe("editing a project", () => {
 
   it("sends the switch, and keeps the Keycloak values it was given", async () => {
     const client = clientWith([project()]);
-    render(<Organisation client={client} />);
+    render(<Organisation apiBase={API_BASE} client={client} />);
     await openSettings();
 
     fireEvent.change(screen.getByLabelText(de.organisation.identityProvider), {
@@ -210,6 +251,7 @@ describe("branding and the consent pair", () => {
   it("shows what is stored", async () => {
     render(
       <Organisation
+        apiBase={API_BASE}
         client={clientWith([
           project({
             branding: {
@@ -234,7 +276,7 @@ describe("branding and the consent pair", () => {
 
   it("sends the consent pair, which is what makes the checkbox appear", async () => {
     const client = clientWith([project()]);
-    render(<Organisation client={client} />);
+    render(<Organisation apiBase={API_BASE} client={client} />);
     await openSettings();
 
     fireEvent.change(screen.getByLabelText(de.organisation.privacyPolicyUrl), {
@@ -260,7 +302,7 @@ describe("branding and the consent pair", () => {
 
   it("refuses to save half a consent pair", async () => {
     const client = clientWith([project()]);
-    render(<Organisation client={client} />);
+    render(<Organisation apiBase={API_BASE} client={client} />);
     await openSettings();
 
     fireEvent.change(screen.getByLabelText(de.organisation.privacyPolicyUrl), {
@@ -285,7 +327,7 @@ describe("branding and the consent pair", () => {
      * here on purpose: it is the entry somebody reaches for first, and the
      * refusal has to be visible rather than a save that fails.
      */
-    render(<Organisation client={clientWith([project()])} />);
+    render(<Organisation apiBase={API_BASE} client={clientWith([project()])} />);
     await openSettings();
 
     fireEvent.change(screen.getByLabelText(de.organisation.embedOrigins), {
@@ -314,7 +356,7 @@ describe("branding and the consent pair", () => {
   it("says nothing while every line is one the platform accepts", async () => {
     // The control: without it the assertion above would pass on a form that
     // complains about everything.
-    render(<Organisation client={clientWith([project()])} />);
+    render(<Organisation apiBase={API_BASE} client={clientWith([project()])} />);
     await openSettings();
 
     fireEvent.change(screen.getByLabelText(de.organisation.embedOrigins), {
@@ -326,7 +368,7 @@ describe("branding and the consent pair", () => {
 
   it("omits a blank field rather than storing an empty string", async () => {
     const client = clientWith([project()]);
-    render(<Organisation client={client} />);
+    render(<Organisation apiBase={API_BASE} client={client} />);
     await openSettings();
 
     fireEvent.change(screen.getByLabelText(de.organisation.catalogTitle), {
@@ -340,5 +382,83 @@ describe("branding and the consent pair", () => {
       ).mock.calls[0]?.[1] as { branding: Record<string, string> };
       expect(sent.branding).toEqual({ catalogTitle: "Nur dies" });
     });
+  });
+});
+
+describe("which sender a project will actually use (P185-01)", () => {
+  async function openSettings(): Promise<void> {
+    fireEvent.click(await screen.findByLabelText(de.common.editProject("MEDICE")));
+  }
+
+  function show(): void {
+    render(
+      <Organisation
+        apiBase={API_BASE}
+        client={clientWith([project({ smtpHost: null })])}
+      />,
+    );
+  }
+
+  it("says the platform sends nothing when neither is configured", async () => {
+    stubPlatformSender({ fromAddress: null, canSend: false });
+    show();
+    await openSettings();
+
+    expect(
+      await screen.findByText(/versendet die Plattform keine E-Mails/u),
+    ).toBeTruthy();
+  });
+
+  // The client's request, and the sentence they asked for.
+  it("names the platform's address when one is configured", async () => {
+    stubPlatformSender({ fromAddress: "no-reply@digitalspital.de", canSend: true });
+    show();
+    await openSettings();
+
+    expect(await screen.findByText(/no-reply@digitalspital\.de/u)).toBeTruthy();
+  });
+
+  // The part nobody would guess, and the reason the fallback is whole-identity:
+  // a customer's From address over our server fails SPF and is quarantined at
+  // the far end, after our own SMTP succeeded.
+  it("warns that their own address is not used over the platform's server", async () => {
+    stubPlatformSender({ fromAddress: "no-reply@digitalspital.de", canSend: true });
+    show();
+    await openSettings();
+
+    expect(await screen.findByText(/SPF\/DMARC/u)).toBeTruthy();
+  });
+
+  /*
+   * §9.2. `platform_smtp` can hold a From address beside no host — the table
+   * has no constraint pairing them, only `canSend` reporting the result — and
+   * that sender cannot send anything. Promising it here would offer an operator
+   * a fallback the worker will refuse, which is exactly the affordance that
+   * looks like a decision and never could have worked.
+   */
+  it("promises nothing from an address whose sender is incomplete", async () => {
+    stubPlatformSender({ fromAddress: "no-reply@digitalspital.de", canSend: false });
+    show();
+    await openSettings();
+
+    expect(
+      await screen.findByText(/versendet die Plattform keine E-Mails/u),
+    ).toBeTruthy();
+    expect(screen.queryByText(/no-reply@digitalspital\.de/u)).toBeNull();
+  });
+
+  /*
+   * A customer administrator may not read the platform's settings on some
+   * installations, and an API that is simply down looks the same. Neither is a
+   * reason to promise a fallback, and neither is a reason to break the screen.
+   */
+  it("says nothing about a fallback when the endpoint refuses", async () => {
+    stubPlatformSender("unreachable");
+    show();
+    await openSettings();
+
+    expect(
+      await screen.findByText(/versendet die Plattform keine E-Mails/u),
+    ).toBeTruthy();
   });
 });

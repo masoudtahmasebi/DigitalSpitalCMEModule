@@ -106,7 +106,14 @@ import { openCourseFromCatalogue } from "../support/catalogue.js";
 import { openWidgetShadowRoots } from "../support/shadow.js";
 import { buildBehind, currentTarget } from "../support/target.js";
 import { forgetSignInAttempts } from "../support/world.js";
+import {
+  configurePlatformSender,
+  sinkAddress,
+  waitForMail,
+  PLATFORM_FROM,
+} from "../support/platform-sender.js";
 
+const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const VIDEO = fileURLToPath(new URL("../fixtures/kurzvideo.webm", import.meta.url));
 const STAMP = fileURLToPath(new URL("../fixtures/stempel.png", import.meta.url));
 const SIGNATURE = fileURLToPath(new URL("../fixtures/unterschrift.png", import.meta.url));
@@ -256,6 +263,22 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
     });
 
     try {
+      // ===================================================================
+      // Act 0 · The platform's own mail sender (P187-01)
+      // ===================================================================
+      /*
+       * Before anything is built, because a certificate issued without a sender
+       * is abandoned "no SMTP host configured" and never claimed again.
+       *
+       * Local only. Against a deployment this would overwrite the client's real
+       * sender and post to real mailboxes; there is no safe version of it
+       * there, so Act 16 is skipped on that target too and says so.
+       */
+      const sink = target.kind === "local" ? sinkAddress(REPO) : undefined;
+      if (sink !== undefined) {
+        await configurePlatformSender(browser, sink);
+      }
+
       // ===================================================================
       // Act 1 · The operator signs in
       // ===================================================================
@@ -1146,6 +1169,46 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       // kilobytes. A few hundred bytes would be an error document with a
       // header on it.
       expect(bytes.length).toBeGreaterThan(2_000);
+
+      // ===================================================================
+      // Act 16 · and it arrives by e-mail, over a real socket (P187-01)
+      // ===================================================================
+      /*
+       * The link nothing has ever tested. Twenty-two integration tests end at a
+       * fake channel and assert what the service *handed* it; `delivered` on a
+       * row was a column nothing had earned. This is the first assertion in the
+       * repository that a byte reached a mail server.
+       *
+       * It also exercises P185's fallback end to end: the DS Test project has
+       * no SMTP of its own, so the only way this message exists is
+       * `deliverySender` choosing the platform's identity — the one configured
+       * in Act 0, through the console, by a person.
+       */
+      if (sink !== undefined) {
+        const message = await waitForMail(sink, LEARNER_EMAIL);
+
+        // The transport, as `SmtpDeliveryChannel` promises it: `requireTLS`
+        // means a server that does not offer STARTTLS gets an error rather than
+        // a plaintext send carrying a physician's name.
+        expect(message.secure, "the certificate was sent over a plain socket").toBe(true);
+        expect(message.authenticated, "the send did not authenticate").toBe(true);
+
+        /*
+         * The platform's identity, whole (P185-01). Not the project's address
+         * over the platform's server — that combination fails SPF and is
+         * quarantined by the recipient after our own SMTP transaction
+         * succeeded, which is the failure that looks exactly like success.
+         */
+        expect(message.from).toBe(PLATFORM_FROM);
+
+        // And the document itself. The copy has promised an attachment since
+        // P8-03 and carried none until P59-02; this is the assertion that can
+        // notice it going missing again.
+        expect(message.data, "the e-mail carried no PDF attachment").toContain(
+          "application/pdf",
+        );
+        expect(message.data).toContain("Teilnahmebescheinigung");
+      }
     } finally {
       await context.close();
     }

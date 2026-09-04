@@ -56,6 +56,16 @@ function row(over: Partial<DueDelivery> = {}): DueDelivery {
     smtpPort: 587,
     smtpUsername: "medice",
     smtpPassword: SMTP_PASSWORD,
+    // The platform's own sender (P185-01). Null throughout this file: these
+    // cases are about the delivery policy, and a fixture that configured a
+    // fallback would change which sender every one of them exercises.
+    platformFromAddress: null,
+    platformFromName: null,
+    platformSmtpHost: null,
+    platformSmtpPort: null,
+    platformSmtpUsername: null,
+    platformSmtpPassword: null,
+    platformSmtpSecure: false,
     ...over,
   };
 }

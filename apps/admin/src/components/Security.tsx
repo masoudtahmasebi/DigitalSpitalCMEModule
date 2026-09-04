@@ -27,7 +27,16 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { ApiClient, SecondFactorPolicies, SecondFactorPolicy } from "@ds/sdk";
 import { describeError } from "../api.js";
 import { de } from "../locale/de.js";
-import { Button, ConfirmButton, Field, Notice, Panel, Select, TextInput } from "./ui.js";
+import {
+  Button,
+  ConfirmButton,
+  Field,
+  Notice,
+  Panel,
+  Select,
+  Spinner,
+  TextInput,
+} from "./ui.js";
 import {
   readPlatformSender,
   sendPlatformTestMail,
@@ -352,6 +361,17 @@ export function Security(props: {
  */
 function PlatformSenderPanel(props: { apiBase: string }) {
   const [sender, setSender] = useState<PlatformSender | undefined>();
+  /*
+   * Whether the read has come back at all — which is a different question from
+   * whether it found a sender (P188-02).
+   *
+   * `sender === undefined` conflates three states: still loading, loaded and
+   * nothing configured, and loaded but the endpoint refused. The form is
+   * rendered on the first of those and not the other two, and the screen says
+   * something different for each — §9.6, on a screen rather than in a
+   * repository.
+   */
+  const [loaded, setLoaded] = useState(false);
   const [host, setHost] = useState("");
   const [port, setPort] = useState("");
   const [username, setUsername] = useState("");
@@ -381,6 +401,7 @@ function PlatformSenderPanel(props: { apiBase: string }) {
   useEffect(() => {
     void (async () => {
       const current = await readPlatformSender(props.apiBase);
+      setLoaded(true);
       if (current === undefined) return;
       setSender(current);
       setHost(current.host ?? "");
@@ -421,106 +442,137 @@ function PlatformSenderPanel(props: { apiBase: string }) {
 
   return (
     <Panel title={de.security.platformMail}>
-      <form className="max-w-xl space-y-3" onSubmit={submit}>
-        <p className="text-sm text-gray-600">{de.security.platformMailIntro}</p>
+      <p className="max-w-xl text-sm text-gray-600">{de.security.platformMailIntro}</p>
 
-        {/*
+      {/*
+        Nothing to type into until the stored settings are here (P188-02).
+
+        The mount effect writes **every** field from the response, so anything
+        typed before it lands was silently discarded — and the save then stored
+        the empty value and answered "Gespeichert." The journey found it by
+        filling the form the way a person does: `Server` came out blank and the
+        other five did not, because the response arrived between two
+        keystrokes.
+
+        Found in a browser and nowhere else. No API test can see it: the
+        endpoint was answering correctly the whole time (§9.13).
+
+        A `touched` flag would also have worked and would have left the second
+        defect standing — a blank form during the load reads as "no sender is
+        configured", which is the opposite of what a loaded blank form means.
+        A field that does not exist yet cannot be misread or clobbered.
+      */}
+      {!loaded ? (
+        <Spinner label={de.loading} />
+      ) : (
+        <form className="max-w-xl space-y-3" onSubmit={submit}>
+          {/*
+          Loaded, and the read did not answer. Said out loud rather than drawn
+          as an empty form: "we could not read the settings" and "there are no
+          settings" are different facts and only one of them is fixed by typing
+          into these boxes.
+        */}
+          {sender === undefined ? (
+            <Notice tone="warning">{de.security.platformMailUnreadable}</Notice>
+          ) : null}
+
+          {/*
           The one thing an operator actually wants to know, said before they
           scroll: is this configured enough to send anything. `canSend` is the
           server's own answer to that question, not a second implementation of
           it here.
         */}
-        {sender === undefined ? null : (
-          <Notice tone={sender.canSend ? "success" : "warning"}>
-            {sender.canSend
-              ? de.security.platformMailReady
-              : de.security.platformMailIncomplete}
-          </Notice>
-        )}
+          {sender === undefined ? null : (
+            <Notice tone={sender.canSend ? "success" : "warning"}>
+              {sender.canSend
+                ? de.security.platformMailReady
+                : de.security.platformMailIncomplete}
+            </Notice>
+          )}
 
-        {problem === undefined ? null : <Notice tone="error">{problem}</Notice>}
-        {saved ? <Notice tone="success">{de.security.saved}</Notice> : null}
+          {problem === undefined ? null : <Notice tone="error">{problem}</Notice>}
+          {saved ? <Notice tone="success">{de.security.saved}</Notice> : null}
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={de.organisation.smtpHost} htmlFor="platform-smtp-host">
-            <TextInput
-              id="platform-smtp-host"
-              value={host}
-              maxLength={300}
-              onChange={setHost}
-            />
-          </Field>
-          <Field label={de.organisation.smtpPort} htmlFor="platform-smtp-port">
-            <TextInput
-              id="platform-smtp-port"
-              value={port}
-              type="number"
-              onChange={setPort}
-            />
-          </Field>
-          <Field label={de.organisation.smtpUsername} htmlFor="platform-smtp-username">
-            <TextInput
-              id="platform-smtp-username"
-              value={username}
-              maxLength={300}
-              autoComplete="off"
-              onChange={setUsername}
-            />
-          </Field>
-          <Field
-            label={de.organisation.smtpPassword}
-            hint={de.organisation.smtpPasswordHint}
-            htmlFor="platform-smtp-password"
-          >
-            <TextInput
-              id="platform-smtp-password"
-              value={password}
-              type="password"
-              maxLength={300}
-              autoComplete="new-password"
-              onChange={setPassword}
-            />
-          </Field>
-          <Field label={de.organisation.smtpFromAddress} htmlFor="platform-smtp-from">
-            <TextInput
-              id="platform-smtp-from"
-              value={fromAddress}
-              type="email"
-              maxLength={320}
-              onChange={setFromAddress}
-            />
-          </Field>
-          <Field label={de.organisation.smtpFromName} htmlFor="platform-smtp-from-name">
-            <TextInput
-              id="platform-smtp-from-name"
-              value={fromName}
-              maxLength={200}
-              onChange={setFromName}
-            />
-          </Field>
-        </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label={de.organisation.smtpHost} htmlFor="platform-smtp-host">
+              <TextInput
+                id="platform-smtp-host"
+                value={host}
+                maxLength={300}
+                onChange={setHost}
+              />
+            </Field>
+            <Field label={de.organisation.smtpPort} htmlFor="platform-smtp-port">
+              <TextInput
+                id="platform-smtp-port"
+                value={port}
+                type="number"
+                onChange={setPort}
+              />
+            </Field>
+            <Field label={de.organisation.smtpUsername} htmlFor="platform-smtp-username">
+              <TextInput
+                id="platform-smtp-username"
+                value={username}
+                maxLength={300}
+                autoComplete="off"
+                onChange={setUsername}
+              />
+            </Field>
+            <Field
+              label={de.organisation.smtpPassword}
+              hint={de.organisation.smtpPasswordHint}
+              htmlFor="platform-smtp-password"
+            >
+              <TextInput
+                id="platform-smtp-password"
+                value={password}
+                type="password"
+                maxLength={300}
+                autoComplete="new-password"
+                onChange={setPassword}
+              />
+            </Field>
+            <Field label={de.organisation.smtpFromAddress} htmlFor="platform-smtp-from">
+              <TextInput
+                id="platform-smtp-from"
+                value={fromAddress}
+                type="email"
+                maxLength={320}
+                onChange={setFromAddress}
+              />
+            </Field>
+            <Field label={de.organisation.smtpFromName} htmlFor="platform-smtp-from-name">
+              <TextInput
+                id="platform-smtp-from-name"
+                value={fromName}
+                maxLength={200}
+                onChange={setFromName}
+              />
+            </Field>
+          </div>
 
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={secure}
-            onChange={(event) => setSecure(event.target.checked)}
-          />
-          <span>{de.security.platformMailSecure}</span>
-        </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={secure}
+              onChange={(event) => setSecure(event.target.checked)}
+            />
+            <span>{de.security.platformMailSecure}</span>
+          </label>
 
-        <p className="text-xs text-gray-600">
-          {sender?.hasPassword === true
-            ? de.organisation.smtpPasswordStored
-            : de.organisation.smtpPasswordMissing}
-        </p>
+          <p className="text-xs text-gray-600">
+            {sender?.hasPassword === true
+              ? de.organisation.smtpPasswordStored
+              : de.organisation.smtpPasswordMissing}
+          </p>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" disabled={busy}>
-            {busy ? de.common.saving : de.common.save}
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" disabled={busy}>
+              {busy ? de.common.saving : de.common.save}
+            </Button>
 
-          {/*
+            {/*
             The test, beside Speichern rather than under it (P77-01).
 
             No `type` needed: `Button` renders `type={props.type ?? "button"}`,
@@ -533,38 +585,41 @@ function PlatformSenderPanel(props: { apiBase: string }) {
             what it tests: offering it against an unconfigured sender is a
             control that can only produce an error, which is §9.2.
           */}
-          <Button
-            variant="secondary"
-            disabled={busy || testing || sender?.canSend !== true}
-            onClick={() => {
-              setTesting(true);
-              setTestResult(undefined);
-              void (async () => {
-                setTestResult(await sendPlatformTestMail(props.apiBase));
-                setTesting(false);
-              })();
-            }}
-          >
-            {testing ? de.security.platformMailTestSending : de.security.platformMailTest}
-          </Button>
-        </div>
+            <Button
+              variant="secondary"
+              disabled={busy || testing || sender?.canSend !== true}
+              onClick={() => {
+                setTesting(true);
+                setTestResult(undefined);
+                void (async () => {
+                  setTestResult(await sendPlatformTestMail(props.apiBase));
+                  setTesting(false);
+                })();
+              }}
+            >
+              {testing
+                ? de.security.platformMailTestSending
+                : de.security.platformMailTest}
+            </Button>
+          </div>
 
-        <p className="text-xs text-gray-600">{de.security.platformMailTestHint}</p>
+          <p className="text-xs text-gray-600">{de.security.platformMailTestHint}</p>
 
-        {testResult === undefined ? null : (
-          <Notice tone={testResult.status === "sent" ? "success" : "warning"}>
-            {testResult.status === "sent"
-              ? de.security.platformMailTestSent(testResult.sentTo ?? "")
-              : testResult.status === "not_configured"
-                ? de.security.platformMailTestNotConfigured
-                : testResult.status === "failed"
-                  ? de.security.platformMailTestFailed(testResult.reason ?? "")
-                  : testResult.status === "refused"
-                    ? de.security.platformMailTestRefused
-                    : de.security.platformMailTestUnreachable}
-          </Notice>
-        )}
-      </form>
+          {testResult === undefined ? null : (
+            <Notice tone={testResult.status === "sent" ? "success" : "warning"}>
+              {testResult.status === "sent"
+                ? de.security.platformMailTestSent(testResult.sentTo ?? "")
+                : testResult.status === "not_configured"
+                  ? de.security.platformMailTestNotConfigured
+                  : testResult.status === "failed"
+                    ? de.security.platformMailTestFailed(testResult.reason ?? "")
+                    : testResult.status === "refused"
+                      ? de.security.platformMailTestRefused
+                      : de.security.platformMailTestUnreachable}
+            </Notice>
+          )}
+        </form>
+      )}
     </Panel>
   );
 }

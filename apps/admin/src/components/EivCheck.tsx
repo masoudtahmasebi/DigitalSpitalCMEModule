@@ -296,6 +296,28 @@ function Report(props: { report: EivConnectionReport; claimsLernerfolg: boolean 
           {report.event.locked === true ? (
             <Notice tone="warning">{de.eivCheck.eventLocked}</Notice>
           ) : null}
+
+          {/*
+            The arithmetic, done here instead of by the person reading two
+            dates in two formats (P184-01).
+
+            The period above is the register's; the days below are our queue's.
+            EIV refuses a Teilnahmedatum outside the period with a 406, so a
+            non-zero count here is one refused Punktemeldung per physician —
+            and the client's own test event closed on 19.01.2024, which no
+            completion in 2026 can fall inside.
+          */}
+          {report.queue === undefined ||
+          report.queue.beforePeriod + report.queue.afterPeriod === 0 ? null : (
+            <Notice tone="warning">
+              {de.eivCheck.outsidePeriod(
+                report.queue.beforePeriod + report.queue.afterPeriod,
+                report.queue.pending,
+                report.queue.earliestDay ?? "—",
+                report.queue.latestDay ?? "—",
+              )}
+            </Notice>
+          )}
           {report.event.assessmentPoints === 0 && props.claimsLernerfolg ? (
             <Notice tone="warning">{de.eivCheck.lernerfolgMismatch}</Notice>
           ) : null}

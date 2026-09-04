@@ -272,6 +272,12 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
   adminReplaceExperts: (c) => c.adminReplaceExperts("adhs", { experts: [] }),
   adminGetQuiz: (c) => c.adminGetQuiz(ID),
   adminSetQuiz: (c) => c.adminSetQuiz(ID, { questions: [] }),
+  // P183: the two halves of the delivery address, learner and operator. Both
+  // verbs matter — a PUT sent as POST is the defect this whole file exists for.
+  deliveryEmail: (c) => c.deliveryEmail("adhs"),
+  setDeliveryEmail: (c) => c.setDeliveryEmail("adhs", "a@b.de"),
+  adminReadDeliveryEmail: (c) => c.adminReadDeliveryEmail("e1"),
+  adminSetDeliveryEmail: (c) => c.adminSetDeliveryEmail("e1", "a@b.de"),
   adminGetEvaluation: (c) => c.adminGetEvaluation("adhs"),
   adminSetEvaluation: (c) => c.adminSetEvaluation("adhs", { questions: [] }),
 };

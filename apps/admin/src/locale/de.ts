@@ -313,11 +313,13 @@ export const german = {
     // The platform's own mail sender (P40-01).
     platformMail: "E-Mail-Versand der Plattform",
     platformMailIntro:
-      "Von dieser Adresse verschickt die Plattform E-Mails zu Verwaltungskonten — etwa Links zum Zurücksetzen eines Passworts. Für Teilnehmende gelten stattdessen die SMTP-Angaben des jeweiligen Projekts.",
+      "Von dieser Adresse verschickt die Plattform E-Mails zu Verwaltungskonten — etwa Links zum Zurücksetzen eines Passworts. Sie ist außerdem der Ersatzversand für Teilnahmebescheinigungen: Projekte mit eigenen SMTP-Angaben versenden weiterhin selbst, alle anderen über diesen Zugang. Änderungen hier wirken sich also auch auf Teilnehmende aus.",
     platformMailReady:
       "Der Versand ist eingerichtet. „Passwort vergessen?“ funktioniert für Verwaltungskonten.",
     platformMailIncomplete:
-      "Server und Absenderadresse fehlen noch. Ohne sie kann kein Link verschickt werden — Betroffene brauchen dann eine Einladung durch eine andere Administration.",
+      "Server und Absenderadresse fehlen noch. Ohne sie kann kein Link verschickt werden — Betroffene brauchen dann eine Einladung durch eine andere Administration. Auch Teilnahmebescheinigungen aus Projekten ohne eigene SMTP-Angaben bleiben dann unversendet; sie stehen im Portal weiterhin zum Download bereit.",
+    platformMailUnreadable:
+      "Die Einstellungen für den Plattform-Versand konnten nicht gelesen werden. Bitte laden Sie die Seite neu — was hier steht, ist nicht der gespeicherte Stand.",
     platformMailSecure: "Verschlüsselt ab Verbindungsaufbau (Port 465)",
     /*
      * The test send, and the four things it can say (P77-01).
@@ -619,8 +621,11 @@ export const german = {
       "Bitte Link und Fassung gemeinsam angeben oder beide leer lassen.",
 
     smtp: "E-Mail-Versand (SMTP)",
-    smtpIntro:
-      "Wird für den Versand der Teilnahmebescheinigungen verwendet. Ohne Angaben versendet die Plattform keine E-Mails für dieses Projekt.",
+    smtpIntro: "Wird für den Versand der Teilnahmebescheinigungen verwendet.",
+    smtpFallback: (address: string) =>
+      `Ohne eigenen Server versendet die Plattform die Bescheinigungen über ihren eigenen Zugang, als ${address}. Ihre eigene Absenderadresse erscheint nur dann auf der E-Mail, wenn Sie hier auch einen eigenen Server hinterlegen — eine fremde Adresse über unseren Server wird von vielen Empfängern als Spam aussortiert (SPF/DMARC).`,
+    smtpNoFallback:
+      "Ohne Angaben versendet die Plattform keine E-Mails für dieses Projekt. Die Bescheinigung bleibt gültig und steht der teilnehmenden Person im Portal zum Download bereit. Der Versand über die Plattform wird unter Sicherheit → E-Mail-Versand der Plattform eingerichtet.",
     smtpHost: "Server",
     smtpPort: "Port",
     smtpUsername: "Benutzername",
@@ -1470,6 +1475,8 @@ export const german = {
       `Teilnahme ${attendance ?? "—"} · Lernerfolg ${assessment ?? "—"}`,
     lernerfolgMismatch:
       "Diese Fortbildung meldet den Lernerfolgspunkt, die Ärztekammer führt für diese VNR aber keinen. Eine Meldung mit Lernerfolg würde abgelehnt.",
+    outsidePeriod: (outside: number, pending: number, earliest: string, latest: string) =>
+      `${outside} von ${pending} noch nicht \u00fcbermittelten Punktemeldungen liegen au\u00dferhalb des akkreditierten Zeitraums (Teilnahmedatum ${earliest} bis ${latest}). Die \u00c4rztekammer weist diese mit 406 zur\u00fcck \u2014 pro Person eine Meldung, die jemand nachbearbeiten muss. Entweder l\u00e4sst der Veranstalter den Zeitraum bei der \u00c4rztekammer anpassen, oder es wird f\u00fcr diese VNR nichts gemeldet.`,
     eventLocked:
       "Diese Veranstaltung ist bei der Ärztekammer für Meldungen gesperrt. Es kann keine weitere Teilnahme gemeldet werden.",
 
@@ -1977,6 +1984,27 @@ export const german = {
       downloadHint:
         "Lädt die PDF-Datei herunter, damit Sie sie der teilnehmenden Person auf einem anderen Weg zusenden können. Es wird dabei nichts verschickt und nichts neu ausgestellt.",
       resend: "Erneut senden",
+      addressHeading: "Zustelladresse",
+      addressLoading: "Wird geladen \u2026",
+      addressOverridden: (email: string) =>
+        `Die Bescheinigung wird an ${email} gesendet \u2014 abweichend vom Konto.`,
+      addressAccount: (email: string) =>
+        `Die Bescheinigung wird an die Kontoadresse ${email} gesendet.`,
+      addressNone:
+        "F\u00fcr diese Person ist keine Adresse hinterlegt \u2014 weder im Konto noch hier. " +
+        "Ohne Adresse kann die Bescheinigung nicht versendet werden.",
+      addressLabel: "Abweichende Zustelladresse",
+      addressHint:
+        "Nur f\u00fcr den Versand dieser Bescheinigung. Die Kontoadresse und die Anmeldung " +
+        "der teilnehmenden Person bleiben unver\u00e4ndert. Leer lassen und speichern, um " +
+        "wieder die Kontoadresse zu verwenden.",
+      addressSave: "Adresse speichern",
+      addressSaved: "Zustelladresse gespeichert.",
+      addressClear: "Auf Kontoadresse zur\u00fccksetzen",
+      addressCleared: "Es wird wieder die Kontoadresse verwendet.",
+      addressUnblocks:
+        "Sobald eine Adresse hinterlegt ist, l\u00e4sst sich die Bescheinigung oben erneut " +
+        "senden. Das Speichern allein versendet nichts.",
       resendBlocked:
         "Erneutes Senden würde hier zwangsläufig wieder fehlschlagen — siehe Ursache.",
       regenerate: "Neu erstellen",

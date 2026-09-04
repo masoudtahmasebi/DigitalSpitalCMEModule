@@ -182,8 +182,90 @@ from the list above.
 So the client handles the real test identifiers correctly, and the failure-kind
 mapping the Punktemeldung panel depends on is exercised end to end.
 
-**Not verified: anything against the real EIV test server.** The development
-sandbox's egress is an allowlist and `eiv-fobi.de` is not on it — every host
-above answers `403` at the proxy, not at EIV. So the four questions only a real
-response can settle are still open, and `./dsc eiv` from the host is what settles
-them. That is the point of it existing.
+**Verified 04.09.2026, against the real EIV test server**, by the client running
+`./dsc eiv` from the production host. Every read answered:
+
+```
+--- authenticate ---   200   {"jwt":"[redacted]"}
+--- veranstaltung ---  200   {"vnr":"2760012024200354002","thema":"Test Title200354",
+                              "beginn":"2024-01-14T23:00:00.000Z",
+                              "ende":"2024-01-19T23:00:00.000Z",
+                              "kategorie":"D","punkte_basis":3,
+                              "punkte_lernerfolg":0,
+                              "gesperrt_fuer_veranstalter":false,"ort":"Cotbus"}
+--- gemeldetepunkte -- 200   []
+```
+
+**This settles S11 and S25 for the test VNR, with a real answer rather than an
+assumption:**
+
+| Question                                   | The register's answer                                        |
+| ------------------------------------------ | ------------------------------------------------------------ |
+| What is the accredited period? (**S11**)   | `2024-01-14T23:00Z` → `2024-01-19T23:00Z` — five days, past  |
+| Which credit may a completion claim? (S25) | `punkte_basis` **3**, `punkte_lernerfolg` **0**, Kategorie D |
+| Is the event open to reporting?            | `gesperrt_fuer_veranstalter: false`                          |
+| What has been reported so far?             | nothing                                                      |
+
+**And it produces a blocker that is nobody's bug.** `eiv.service.ts` sends the
+learner's completion instant as `teilnahmedatum`, and EIV refuses a date outside
+the accredited period with a 406. The period closed on **19.01.2024**. So every
+Punktemeldung this platform files for that VNR today is refused, whatever the
+EFN — one refusal per physician, each raising an alert somebody must dismiss.
+
+Since P184-01 the platform says so **before** sending: the EIV-Abgleich panel
+compares the register's period against the queue's own completion days and
+reports how many will be refused. The decision it cannot make is whose: either
+the organiser has the period corrected at the Ärztekammer, or nothing is
+reported for this VNR (CLAUDE.md §7).
+
+**Still not verified: a `push_teilnahme` against the real test server.** Every
+read succeeded; nothing has been written.
+
+### Testing the push with a date inside the period (P184-01)
+
+The accredited period stops a _completion today_ from being reported. It does
+not stop the push being **exercised** — `--datum` names the Teilnahmedatum
+explicitly, and a date inside 15.–20.01.2024 is accepted:
+
+```bash
+# From a machine with a checkout, node and egress to eiv-fobi.de.
+# Deliberately NOT the server: a tool that can file a Punktemeldung is not one
+# to leave lying on a production host, which is why `./dsc eiv` cannot push.
+export EIV_HARNESS_BASE_URL=https://backend-test.eiv-fobi.de
+export EIV_HARNESS_ALLOW_LIVE=yes          # required for any non-local host
+export EIV_VNR=2760012024200354002
+export EIV_VNR_PASSWORD=…                  # never from a file in this repository
+
+pnpm --filter @ds/eiv-harness push -- --efn 802760020090329 --datum 2024-01-17
+```
+
+Three things it now does for you, each of which was a way to get a confusing
+refusal:
+
+- **It claims the credits the event carries, read from `veranstaltung` first.**
+  The default used to be "both", and this event carries `punkte_lernerfolg: 0` —
+  so the first push anybody typed claimed a credit the accreditation does not
+  hold, and the refusal read like a broken platform rather than a wrong flag.
+  `--lernerfolg` forces it back on when refusing it is the thing being tested.
+- **It checks the date against the period before sending**, and says which side
+  it falls on, using the same `reportableOn` the console applies to the queue.
+- **`--retract` withdraws it.** The record stays at EIV with the points zeroed —
+  that is what a withdrawal is; nothing is deleted.
+
+_Verified 04.09.2026 against the local mock configured with this event's own
+period and `punkte_lernerfolg: 0`_ — a push dated today refused 406, one dated
+`2024-01-17` accepted with `affectedRows: 1`, `gemeldetepunkte` then holding it
+with the EFN masked to `***********0329`, and `--retract` zeroing the flags and
+answering `messages: ["aktualisiert"]`. Against the real test server it is
+untried.
+
+**This proves the interface, not the product.** The worker derives
+`teilnahmedatum` from the learner's own completion instant and has no override —
+deliberately, because backdating a real attestation is not a thing a platform
+should do quietly. So a green harness push and a working Punktemeldung queue are
+still two different claims, and the second one waits on the period.
+
+_The development sandbox cannot reach it._ Its egress is an allowlist and
+`eiv-fobi.de` is not on it — `backend-test.eiv-fobi.de:443` answers `403` at the
+proxy, not at EIV. `./dsc eiv` from the host is what settles these questions, and
+on 04.09.2026 it did.

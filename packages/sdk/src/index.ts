@@ -748,6 +748,41 @@ export function createClient(options: ClientOptions) {
       request(`/admin/certificates/${seg(id)}/resend`, { method: "POST" }),
 
     /**
+     * Where a participant's Teilnahmebescheinigung is sent (P183-04).
+     *
+     * Two addresses: the enrolment's own and the account's, because a screen
+     * showing only the first cannot say which one a send would use.
+     */
+    adminReadDeliveryEmail: (
+      enrolmentId: string,
+    ): Promise<{ email: string | null; accountEmail: string | null }> =>
+      request(`/admin/learners/${seg(enrolmentId)}/delivery-email`),
+
+    /** An empty string clears it; delivery falls back to the account address. */
+    adminSetDeliveryEmail: (
+      enrolmentId: string,
+      email: string,
+    ): Promise<{ email: string | null }> =>
+      request(
+        `/admin/learners/${seg(enrolmentId)}/delivery-email`,
+        json({ email }, "PATCH"),
+      ),
+
+    /**
+     * The caller's own delivery address for one course (P183-03).
+     *
+     * The learner's half of the same pair. Both addresses are theirs, so both
+     * come back — unlike the EFN, which ADR-0004 guards.
+     */
+    deliveryEmail: (
+      slug: string,
+    ): Promise<{ email: string | null; accountEmail: string | null }> =>
+      request(`/courses/${seg(slug)}/delivery-email`),
+
+    setDeliveryEmail: (slug: string, email: string): Promise<{ email: string | null }> =>
+      request(`/courses/${seg(slug)}/delivery-email`, json({ email }, "PUT")),
+
+    /**
      * The PDF, for an operator supporting the physician who did not get it
      * (P179-02).
      *

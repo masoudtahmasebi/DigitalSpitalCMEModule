@@ -146,6 +146,22 @@ check_worker no live t ''
 check_worker no live f t
 check_worker no live '' t
 
+# **The state a new installation now ships in** (P188-01). Migration 0053 moved
+# the endpoint default to `live`, so this exact triple is what the deploy asks
+# about on every fresh host.
+#
+# Honestly labelled: these two rows are **defence in depth, not independent
+# evidence.** Both the worker guard and the consent guard refuse this triple, so
+# neutering either one alone leaves them green — verified by doing it. They fail
+# only if both go, and they are kept because a reader asking "what does a new
+# installation answer?" should find that question asked by name.
+#
+# What can go red on its own is the database fact, and it is asserted where it
+# lives: `platform-settings.integration.test.ts` reads the shipped default off a
+# freshly migrated database.
+check_worker no live f f
+check_worker no live false ''
+
 # Armed and consented, but at somewhere that reaches no real record. Consent is
 # meaningless here and the application ignores it; so does this.
 check_worker no test t t

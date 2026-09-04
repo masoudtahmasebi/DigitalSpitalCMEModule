@@ -171,7 +171,7 @@ jobs:
       # Whether the host will file real Punktemeldungen (P113-01). The smoke
       # job refuses to run when this is "yes", and refuses just as loudly when
       # it is absent — see scripts/run-smoke.mjs.
-      eiv_reports_live: ${{ steps.derive.outputs.eiv_reports_live }}
+      eiv_reports_live: ${{ steps.eiv.outputs.eiv_reports_live }}
     env:
       REPO_DIR: ${{ vars.DEPLOY_REPO_DIR || '~/Repositories/DigitalSpitalCMEModule' }}
       SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -500,34 +500,11 @@ jobs:
           # evidence that nothing will be filed, and the old version's habit of
           # concluding "not live" from an empty variable is the defect this
           # comment block was written for.
-          eiv_reports_live=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
-            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "cd ${REPO_DIR}/infra/deploy && . ./eiv-endpoint.sh && \
-             set -a && . \$HOME/ds-education/config.env && set +a && \
-             settings=\$(docker compose -f docker-compose.prod.yml exec -T \
-               -e PGPASSWORD=\"\${POSTGRES_SUPERUSER_PASSWORD}\" postgres \
-               psql -tAX -U \"\${POSTGRES_SUPERUSER}\" -d \"\${POSTGRES_DB}\" \
-               -c \"\$(ds_eiv_settings_sql)\" 2>/dev/null | tr -d '\n' || true) && \
-             if [ -z \"\$settings\" ]; then
-               printf 'yes'
-             elif ds_eiv_worker_will_file_live \
-               \"\${settings%%|*}\" \
-               \"\$(printf '%s' \"\$settings\" | cut -d'|' -f2)\" \
-               \"\${settings##*|}\" \
-               \"\${EIV_MOCK_BASE_URL:-}\"; then
-               printf 'yes'
-             else
-               printf 'no'
-             fi")
-
-          case "${eiv_reports_live}" in
-            yes|no) ;;
-            *) echo "::error::the host gave no usable answer for EIV reporting posture"; exit 1 ;;
-          esac
-          echo "Files Punktemeldungen live: ${eiv_reports_live}"
+          # The EIV posture is read AFTER the deploy — see the step of its own
+          # below. It used to be read here, and here is before the stack is
+          # necessarily up (P182-09).
           echo "portal_domain=${portal_domain}" >> "$GITHUB_OUTPUT"
           echo "admin_domain=${admin_domain}" >> "$GITHUB_OUTPUT"
-          echo "eiv_reports_live=${eiv_reports_live}" >> "$GITHUB_OUTPUT"
 
       # Detached at an exact commit, not a branch tip. A `git pull` would
       # deploy whatever `main` had become in the twenty minutes since CI went
@@ -554,6 +531,199 @@ jobs:
           ssh -tt $SSH_OPTS -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "cd ${REPO_DIR}/infra/deploy && \
              ./deploy.sh ${{ inputs.rollback_tag && format('--rollback {0}', inputs.rollback_tag) || '' }}"
+
+      # ---------------------------------------------------------------------
+      # Will this installation file real Punktemeldungen? (P113-01, P182-09)
+      # ---------------------------------------------------------------------
+      #
+      # The post-deploy journey publishes an accredited Fortbildung and
+      # completes it, which queues a submission. Its VNR is reserved and belongs
+      # to no Veranstaltung, so on an installation that reports for real every
+      # such submission is refused by the Ärztekammer and raises an alert
+      # somebody has to dismiss — once per deploy, for ever. So the journey does
+      # not run when the answer is yes.
+      #
+      # Asked of the host's own `ds_eiv_worker_will_file_live` over the host's
+      # own `platform_settings`, through `ds_eiv_settings_sql` — one definition,
+      # shared with deploy.sh, because two readings of "is the worker armed" is
+      # what lets a smoke run against a host that files for real.
+      #
+      # ## Why after the deploy and not before (P182-09)
+      #
+      # It ran in `derive`, before `deploy.sh` had done anything — and `derive`
+      # is before the deploy brings postgres up. On run 113 the read came back
+      # empty, the guard failed closed to "yes", the journey was skipped, and
+      # the deploy's own reading of the same table sixty-four seconds later said
+      # `endpoint=mock armed=false live-consent=false`. Two opposite answers
+      # about one host, and the wrong one was the one that decided.
+      #
+      # Failing closed was right and stays. What was wrong was asking while the
+      # answer could not be given. Here the stack is up, the migrations have
+      # run, and the row read is the one the code now serving will act on.
+      #
+      # ## And it says which of the two "yes" answers this is
+      #
+      # An unreadable answer and an armed installation are not the same fact,
+      # and a guard that renders them identically is §9.6 in a workflow: the
+      # missing answer is indistinguishable from the real one. The raw settings
+      # string is printed — `endpoint|worker|consent`, no secret in it — so the
+      # log says which happened.
+      - name: Will this installation file Punktemeldungen for real?
+        id: eiv
+        run: |
+          answer=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd ${REPO_DIR}/infra/deploy && . ./eiv-endpoint.sh && \
+             set -a && . \$HOME/ds-education/config.env && set +a && \
+             settings=\$(docker compose -f docker-compose.prod.yml exec -T \
+               -e PGPASSWORD=\"\${POSTGRES_SUPERUSER_PASSWORD}\" postgres \
+               psql -tAX -U \"\${POSTGRES_SUPERUSER}\" -d \"\${POSTGRES_DB}\" \
+               -c \"\$(ds_eiv_settings_sql)\" 2>/dev/null | tr -d '\n' || true) && \
+             if [ -z \"\$settings\" ]; then
+               printf 'yes unreadable'
+             elif ds_eiv_worker_will_file_live \
+               \"\${settings%%|*}\" \
+               \"\$(printf '%s' \"\$settings\" | cut -d'|' -f2)\" \
+               \"\${settings##*|}\" \
+               \"\${EIV_MOCK_BASE_URL:-}\"; then
+               printf 'yes %s' \"\$settings\"
+             else
+               printf 'no %s' \"\$settings\"
+             fi")
+
+          verdict="${answer%% *}"
+          detail="${answer#* }"
+
+          # Never fails this job. It runs **after** the container swap, so an
+          # exit here would mark a successful deploy as failed — and the
+          # "Report failure" step below would then say "the previous version is
+          # still running", which would be false (§9.4: a message that is wrong
+          # about the state is worse than none).
+          #
+          # Its whole job is to decide whether the journey runs, so an
+          # unanswerable question fails closed to "yes" — the journey is
+          # skipped — and says so.
+          case "${verdict}" in
+            yes|no) ;;
+            *)
+              echo "::warning::the host gave no usable answer for EIV reporting posture ('${answer}'). Failing closed: the journey will not run. The deploy itself succeeded."
+              verdict=yes
+              detail=unreachable
+              ;;
+          esac
+
+          if [ "${detail}" = "unreadable" ]; then
+            echo "::warning::platform_settings could not be read on the host. This run fails closed and treats the installation as reporting live, so the journey will not run. That is NOT evidence that it is reporting — it is evidence that the question could not be answered."
+          fi
+
+          echo "Files Punktemeldungen live: ${verdict} (platform_settings: ${detail})"
+          echo "eiv_reports_live=${verdict}" >> "$GITHUB_OUTPUT"
+
+      # ---------------------------------------------------------------------
+      # Which sender will carry a Teilnahmebescheinigung? (P188-03)
+      # ---------------------------------------------------------------------
+      #
+      # "Which sender is this installation on?" was a question nobody could
+      # answer without opening a psql session, and it decides whether a
+      # physician who finishes a Fortbildung receives their certificate.
+      #
+      # A project sends as itself when it has both a host and a From address;
+      # otherwise the platform's, when that is complete; otherwise nothing at
+      # all — `deliverySender` in `@ds/domain`, and this reports the same three
+      # answers over the host's own rows.
+      #
+      # ## Why it is here rather than only in the console
+      #
+      # §9.9's corollary: the repository's state is not the installation's. Both
+      # halves of this can be true on one host and false on another, and both
+      # fail **silently** — a certificate abandoned "no SMTP host configured" is
+      # a row nobody reads. The deploy is where the operator already is.
+      #
+      # ## What it prints, and what it does not
+      #
+      # Counts and the platform's From address. No host, no username, and above
+      # all no password: an address a certificate arrives from is on every one
+      # of those certificates already, and the credential is not on this log.
+      #
+      # Never fails the job. It reports a fact about configuration, and a
+      # deployment whose customers have not set up mail is a working deployment
+      # with a gap somebody should know about — an exit here would mark a
+      # successful swap as failed, which §9.4 says is worse than saying nothing.
+      - name: Which sender will carry a Teilnahmebescheinigung?
+        continue-on-error: true
+        run: |
+          answer=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd ${REPO_DIR}/infra/deploy && \
+             set -a && . \$HOME/ds-education/config.env && set +a && \
+             docker compose -f docker-compose.prod.yml exec -T \
+               -e PGPASSWORD=\"\${POSTGRES_SUPERUSER_PASSWORD}\" postgres \
+               psql -tAX -U \"\${POSTGRES_SUPERUSER}\" -d \"\${POSTGRES_DB}\" -c \
+               \"SELECT (SELECT count(*) FROM projects
+                           WHERE btrim(coalesce(smtp_host,'')) <> ''
+                             AND btrim(coalesce(smtp_from_address,'')) <> '')
+                      || '|' || (SELECT count(*) FROM projects)
+                      || '|' || coalesce((SELECT from_address FROM platform_smtp
+                                           WHERE id = true
+                                             AND btrim(coalesce(host,'')) <> ''
+                                             AND btrim(coalesce(from_address,'')) <> ''), '');\" \
+             2>/dev/null | tr -d '\n' || true")
+
+          if [ -z "${answer}" ]; then
+            echo "::warning::The host's mail posture could not be read. That is" \
+                 "not evidence that mail is unconfigured — it is evidence that" \
+                 "the question could not be answered."
+            exit 0
+          fi
+
+          own="${answer%%|*}"
+          total="$(printf '%s' "${answer}" | cut -d'|' -f2)"
+          platform="${answer##*|}"
+
+          # Numeric before arithmetic. A psql that answered a notice, a partial
+          # line or a connection error would otherwise reach `$(( ))` and abort
+          # the step with a shell syntax error — which reads as "the deploy
+          # broke" rather than "the question could not be answered" (§9.6).
+          case "${own}${total}" in
+            *[!0-9]* | "")
+              echo "::warning::The host's mail posture came back unparseable" \
+                   "('${answer}'). Not evidence about the configuration."
+              exit 0
+              ;;
+          esac
+          fallback=$(( total - own ))
+
+          echo "Projects sending as themselves: ${own} of ${total}"
+          if [ -n "${platform}" ]; then
+            echo "Platform sender: ${platform} — carries the other ${fallback}"
+          else
+            echo "Platform sender: not configured"
+          fi
+
+          {
+            echo "### Teilnahmebescheinigungen"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Projects with their own SMTP | ${own} of ${total} |"
+            if [ -n "${platform}" ]; then
+              echo "| Platform sender | \`${platform}\` |"
+              echo "| Carried by the platform | ${fallback} |"
+            else
+              echo "| Platform sender | **not configured** |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # The one state where a certificate is issued and silently never sent.
+          # Said as a warning rather than left in a table, because it is the
+          # difference between a physician receiving their Bescheinigung and
+          # having to know to go and download it.
+          if [ -z "${platform}" ] && [ "${fallback}" -gt 0 ]; then
+            echo "::warning::${fallback} project(s) have no SMTP of their own and" \
+                 "the platform has no sender either. Their Teilnahmebescheinigungen" \
+                 "are issued and abandoned undelivered — they stay downloadable in" \
+                 "the portal. Configure Sicherheit -> E-Mail-Versand der Plattform."
+          fi
 
       - name: Smoke-test the deployment, and record what is now live
         run: |

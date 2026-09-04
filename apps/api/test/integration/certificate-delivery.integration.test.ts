@@ -17,7 +17,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import { createPool } from "@ds/postgres";
 import type { DeliveryChannel, DeliveryOutcome, OutboundMessage } from "@ds/plugin-api";
@@ -148,7 +148,7 @@ async function insert(sql: string, values: unknown[]): Promise<string> {
 /** An issued certificate waiting to be delivered. */
 async function queueCertificate(
   over: { email?: string | null; attemptCount?: number; bare?: boolean } = {},
-): Promise<{ certificateId: string; userId: string }> {
+): Promise<{ certificateId: string; enrolmentId: string; userId: string }> {
   const unique = randomUUID().slice(0, 8);
 
   const { id: userId } = await seedLearner(seedPool, {
@@ -180,7 +180,7 @@ async function queueCertificate(
     [customerId, enrolmentId, "Dr. med. Hans Mustermann", over.attemptCount ?? 0],
   );
 
-  return { certificateId, userId };
+  return { certificateId, enrolmentId, userId };
 }
 
 function build(outcome: DeliveryOutcome = { status: "delivered", reference: "<a@b>" }) {
@@ -385,6 +385,237 @@ describe("a learner whose address has been removed", () => {
     expect((await certificateRow(certificateId)).delivery_abandoned_reason).toBe(
       "no_recipient",
     );
+  });
+});
+
+describe("the delivery address on the enrolment (P183-01)", () => {
+  it("sends to it in preference to the account address", async () => {
+    const { certificateId, enrolmentId } = await queueCertificate({
+      email: "konto@example.de",
+    });
+    await seedPool.query("UPDATE enrolments SET delivery_email = $1 WHERE id = $2", [
+      "woanders@example.de",
+      enrolmentId,
+    ]);
+
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe("woanders@example.de");
+    expect((await certificateRow(certificateId)).status).toBe("delivered");
+  });
+
+  // The case the client reported: `users.email` is null because MEDICE's realm
+  // sends no `email` claim, so before P183 the certificate was abandoned and
+  // nothing on the platform could supply an address.
+  it("makes a certificate deliverable that had no account address at all", async () => {
+    const { certificateId, enrolmentId } = await queueCertificate({ email: null });
+    await seedPool.query("UPDATE enrolments SET delivery_email = $1 WHERE id = $2", [
+      "praxis@example.de",
+      enrolmentId,
+    ]);
+
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe("praxis@example.de");
+    const row = await certificateRow(certificateId);
+    expect(row.status).toBe("delivered");
+    expect(row.delivery_abandoned_reason).toBeNull();
+  });
+
+  // Clearing it is how somebody goes back to their account address, so null
+  // must mean "the account's" and not "none".
+  it("falls back to the account address when cleared", async () => {
+    const { enrolmentId } = await queueCertificate({ email: "konto@example.de" });
+    await seedPool.query("UPDATE enrolments SET delivery_email = NULL WHERE id = $1", [
+      enrolmentId,
+    ]);
+
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe("konto@example.de");
+  });
+
+  // Erasure nulls both columns (migration 0052). If it ever stopped nulling the
+  // delivery address, a subject's address would survive their erasure *and*
+  // their certificate would still be sent — which is why this asserts the send
+  // and not only the column.
+  it("is erased with the account address, and delivery stops", async () => {
+    const { certificateId, enrolmentId, userId } = await queueCertificate({
+      email: "konto@example.de",
+    });
+    await seedPool.query("UPDATE enrolments SET delivery_email = $1 WHERE id = $2", [
+      "woanders@example.de",
+      enrolmentId,
+    ]);
+
+    await seedPool.query("SELECT erase_subject($1, $2)", [userId, "P183 test"]);
+
+    const { rows } = await seedPool.query<{ delivery_email: string | null }>(
+      "SELECT delivery_email FROM enrolments WHERE id = $1",
+      [enrolmentId],
+    );
+    expect(rows[0]?.delivery_email).toBeNull();
+
+    const { service, sent } = build();
+    await service.sweep(new Date());
+    expect(sent).toHaveLength(0);
+    expect((await certificateRow(certificateId)).delivery_abandoned_reason).toBe(
+      "no_recipient",
+    );
+  });
+});
+
+describe("the platform's own sender, for a project with none (P185-01)", () => {
+  async function setProjectSmtp(over: {
+    host: string | null;
+    from: string | null;
+  }): Promise<void> {
+    await seedPool.query(
+      "UPDATE projects SET smtp_host = $1, smtp_from_address = $2, smtp_port = 587",
+      [over.host, over.from],
+    );
+  }
+
+  /*
+   * `platform_smtp` — the table Sicherheit → Plattform-Versand writes, the one
+   * invitations and password resets already send from. Writing anywhere else
+   * would make this suite green against a sender no operator can set (§9.10b).
+   */
+  async function setPlatformSmtp(over: {
+    host: string | null;
+    from: string | null;
+    secure?: boolean;
+  }): Promise<void> {
+    await seedPool.query(
+      `UPDATE platform_smtp
+          SET host = $1, from_address = $2, port = 587,
+              from_name = 'DigitalSpital', secure = $3
+        WHERE id = true`,
+      [over.host, over.from, over.secure ?? false],
+    );
+  }
+
+  afterEach(async () => {
+    await setPlatformSmtp({ host: null, from: null });
+  });
+
+  it("sends through the platform when the project has no server", async () => {
+    await setProjectSmtp({ host: null, from: null });
+    await setPlatformSmtp({
+      host: "mail.digitalspital.de",
+      from: "no-reply@digitalspital.de",
+    });
+
+    const { certificateId } = await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.transport["host"]).toBe("mail.digitalspital.de");
+    expect(sent[0]?.from).toContain("no-reply@digitalspital.de");
+    expect((await certificateRow(certificateId)).status).toBe("delivered");
+  });
+
+  it("leaves a project with its own server alone", async () => {
+    await setProjectSmtp({ host: "mail.medice.com", from: "fortbildung@medice.com" });
+    await setPlatformSmtp({
+      host: "mail.digitalspital.de",
+      from: "no-reply@digitalspital.de",
+    });
+
+    await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent[0]?.transport["host"]).toBe("mail.medice.com");
+    expect(sent[0]?.from).toContain("fortbildung@medice.com");
+  });
+
+  /*
+   * The case the whole design turns on. A project with a From address and no
+   * host is the likeliest half-configuration there is, and a per-column
+   * fallback would put `fortbildung@medice.com` on our server — which fails SPF
+   * and is quarantined by the recipient **after** our SMTP transaction
+   * succeeded. `delivered` on every row and nothing in any inbox.
+   */
+  it("never sends the customer's address through the platform's server", async () => {
+    await setProjectSmtp({ host: null, from: "fortbildung@medice.com" });
+    await setPlatformSmtp({
+      host: "mail.digitalspital.de",
+      from: "no-reply@digitalspital.de",
+    });
+
+    await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.transport["host"]).toBe("mail.digitalspital.de");
+    expect(sent[0]?.from).toContain("no-reply@digitalspital.de");
+    expect(sent[0]?.from).not.toContain("medice.com");
+  });
+
+  it("still hands an empty host on when neither is configured", async () => {
+    await setProjectSmtp({ host: null, from: null });
+    await setPlatformSmtp({ host: null, from: null });
+
+    await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    /*
+     * The fake channel accepts everything, so the assertion is on what it was
+     * handed. An empty host is what the real `SmtpDeliveryChannel` answers
+     * `{ status: "permanent", reason: "no SMTP host configured" }` to — the
+     * behaviour before P185-01, unchanged for an installation that has set up
+     * neither sender.
+     */
+    expect(sent[0]?.transport["host"]).toBe("");
+    expect(sent[0]?.transport["secure"]).toBeUndefined();
+  });
+
+  /*
+   * Implicit TLS travels with the identity. `platform_smtp.secure` has been
+   * honoured by the reset mail since P40-01; dropping it here would open a
+   * plain socket to a host expecting TLS on connect, fail, and read as "the
+   * platform's SMTP is broken" rather than as a field this path did not carry.
+   */
+  it("carries the platform sender's TLS setting", async () => {
+    await setProjectSmtp({ host: null, from: null });
+    await setPlatformSmtp({
+      host: "mail.digitalspital.de",
+      from: "no-reply@digitalspital.de",
+      secure: true,
+    });
+
+    await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent[0]?.transport["secure"]).toBe("true");
+  });
+
+  /*
+   * §9.2 at the other end of the same wire from `Organisation.test.tsx`: a From
+   * address stored beside no host is a sender that cannot send, so the whole
+   * identity falls through rather than half of it being borrowed.
+   */
+  it("does not use a platform From address that has no host behind it", async () => {
+    await setProjectSmtp({ host: null, from: null });
+    await setPlatformSmtp({ host: null, from: "no-reply@digitalspital.de" });
+
+    await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent[0]?.transport["host"]).toBe("");
+    expect(sent[0]?.from).not.toContain("digitalspital.de");
   });
 });
 

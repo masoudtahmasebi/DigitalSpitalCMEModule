@@ -415,6 +415,17 @@ export const enrolments = pgTable("enrolments", {
   attestedFamilyName: text("attested_family_name"),
   /** The postal address for the certificate's "Anschrift:" line (P60-03). */
   attestedAddress: text("attested_address"),
+  /**
+   * Where this enrolment's Teilnahmebescheinigung is sent, when that differs
+   * from `users.email` (P183-01). Null means "the account address", which is
+   * what every existing row means, so delivery resolves
+   * `coalesce(delivery_email, users.email)`.
+   *
+   * Personal data on a tenant-scoped row: `erase_subject` nulls it, and
+   * `docs/gdpr.md` records it. It is deliberately not `users.email` — for a
+   * `local` participant that column is also the sign-in credential.
+   */
+  deliveryEmail: text("delivery_email"),
   /** GDPR Art. 7(1): when the Punktemeldung consent was given, and to what. */
   consentGivenAt: timestamp("consent_given_at", { withTimezone: true }),
   consentDocument: text("consent_document"),

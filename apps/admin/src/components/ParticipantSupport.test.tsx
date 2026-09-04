@@ -56,9 +56,19 @@ function row(over: Partial<ParticipantRow> = {}): ParticipantRow {
 
 function mount(over: Partial<ParticipantRow> = {}, client: Partial<ApiClient> = {}) {
   const onChanged = vi.fn();
+  /*
+   * The panel reads the delivery address on mount (P183-04). Every case here
+   * would otherwise fail on `adminReadDeliveryEmail is not a function`, which
+   * says nothing about the case — so the default is a stub each test may
+   * override, and the address cases pass their own.
+   */
+  const withDefaults: Partial<ApiClient> = {
+    adminReadDeliveryEmail: async () => ({ email: null, accountEmail: null }),
+    ...client,
+  };
   render(
     <ParticipantSupport
-      client={client as ApiClient}
+      client={withDefaults as ApiClient}
       courseSlug="ds-test"
       row={row(over)}
       onChanged={onChanged}
@@ -220,5 +230,75 @@ describe("the EFN", () => {
   it("says there is nothing to correct when no Meldung exists", () => {
     mount({ eivState: "none" });
     expect(screen.getByText(de.participants.support.efnCorrectUnavailable)).toBeTruthy();
+  });
+});
+
+describe("the delivery address (P183-04)", () => {
+  it("names the account address a send would use", async () => {
+    mount({}, {
+      adminReadDeliveryEmail: async () => ({
+        email: null,
+        accountEmail: "konto@example.de",
+      }),
+    } as Partial<ApiClient>);
+
+    expect(await screen.findByText(/konto@example\.de/u)).toBeTruthy();
+  });
+
+  // The distinction the panel turns on: an override must be visibly an
+  // override, or an operator reads it as the person's own address.
+  it("says when the address is not the account's", async () => {
+    mount({}, {
+      adminReadDeliveryEmail: async () => ({
+        email: "praxis@example.de",
+        accountEmail: "konto@example.de",
+      }),
+    } as Partial<ApiClient>);
+
+    expect(await screen.findByText(/praxis@example\.de/u)).toBeTruthy();
+    expect(screen.getByText(/abweichend vom Konto/u)).toBeTruthy();
+  });
+
+  // The client's screenshot, in a test: neither address anywhere.
+  it("says plainly when there is no address at all", async () => {
+    mount({}, {} as Partial<ApiClient>);
+
+    expect(await screen.findByText(/weder im Konto noch hier/u)).toBeTruthy();
+  });
+
+  it("sends what was typed, and shows what the server accepted", async () => {
+    const adminSetDeliveryEmail = vi.fn(async () => ({ email: "neu@example.de" }));
+    mount({}, { adminSetDeliveryEmail } as unknown as Partial<ApiClient>);
+
+    const field = await screen.findByLabelText(/Abweichende Zustelladresse/u);
+    fireEvent.change(field, { target: { value: "  neu@example.de " } });
+    fireEvent.click(screen.getByRole("button", { name: /Adresse speichern/u }));
+
+    await waitFor(() => expect(adminSetDeliveryEmail).toHaveBeenCalledTimes(1));
+    // The enrolment id, not the certificate id — they are different columns and
+    // this route takes the enrolment (P179-02 recorded the same trap).
+    //
+    // The value arrives already trimmed, and that is the *browser*, not this
+    // component: an `<input type="email">` applies HTML's value sanitisation
+    // and strips surrounding whitespace before anything reads it. So the
+    // pasted-with-a-newline case cannot be exercised through this control at
+    // all — it is covered where it can actually happen, in
+    // `deliveryAddress`'s own tests, for a caller that reaches the API
+    // directly.
+    expect(adminSetDeliveryEmail).toHaveBeenCalledWith(
+      "22222222-2222-4222-8222-222222222222",
+      "neu@example.de",
+    );
+  });
+
+  it("says that saving an address does not itself send anything", async () => {
+    mount(
+      { certificate: { ...row().certificate!, abandonedReason: "no_recipient" } },
+      {} as Partial<ApiClient>,
+    );
+
+    expect(
+      await screen.findByText(/Das Speichern allein versendet nichts/u),
+    ).toBeTruthy();
   });
 });

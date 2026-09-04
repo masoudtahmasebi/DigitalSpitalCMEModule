@@ -14,7 +14,18 @@
  * the reporter and neither returns it upward (`CLAUDE.md` §4 invariant 7).
  */
 
-import { and, count, desc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { Db } from "../../db/tenant-db.js";
 import type { SecretCipher } from "../../shared/secret-cipher.js";
 import { courses, efnProfiles, eivSubmissions, enrolments } from "../../db/schema.js";
@@ -112,6 +123,15 @@ export type EivSubmissionStatus =
 export interface EivAdminRepositoryPort {
   accreditationForCourse(slug: string): Promise<CourseAccreditation | undefined>;
   recordedForCourse(slug: string): Promise<readonly RecordedSubmission[]>;
+  /**
+   * The completion instants of this course's un-sent Punktemeldungen (P184-01).
+   *
+   * What a sweep would attempt, so the check can say how many of them the
+   * register will refuse on the date alone. Only the instant: the EFN is not
+   * needed to compare a day against a period, and ADR-0004 means not selecting
+   * what is not needed.
+   */
+  pendingCompletionsForCourse(slug: string): Promise<readonly Date[]>;
   loadForAction(enrolmentId: string): Promise<SubmissionForAction | undefined>;
   listSubmissions(query: SubmissionQuery): Promise<SubmissionPage>;
   requeue(submissionId: string, now: Date, efn?: string): Promise<void>;
@@ -162,6 +182,27 @@ export class EivAdminRepository implements EivAdminRepositoryPort {
       .innerJoin(enrolments, eq(enrolments.id, eivSubmissions.enrolmentId))
       .innerJoin(courses, eq(courses.id, enrolments.courseId))
       .where(and(eq(courses.slug, slug), isNotNull(eivSubmissions.efn)));
+  }
+
+  async pendingCompletionsForCourse(slug: string): Promise<readonly Date[]> {
+    /*
+     * `queued` and `failed_retryable` — the two statuses a sweep picks up.
+     * Deliberately not `held`: those are waiting on a decision rather than on
+     * the clock, and counting them would report a problem an operator cannot
+     * act on from this screen.
+     */
+    const rows = await this.db
+      .select({ eventEndAt: eivSubmissions.eventEndAt })
+      .from(eivSubmissions)
+      .innerJoin(enrolments, eq(enrolments.id, eivSubmissions.enrolmentId))
+      .innerJoin(courses, eq(courses.id, enrolments.courseId))
+      .where(
+        and(
+          eq(courses.slug, slug),
+          inArray(eivSubmissions.status, ["queued", "failed_retryable"]),
+        ),
+      );
+    return rows.map((row) => row.eventEndAt);
   }
 
   /**

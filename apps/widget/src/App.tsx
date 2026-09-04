@@ -55,6 +55,7 @@ import { QuizScreen } from "./components/QuizScreen.js";
 import { EvaluationScreen } from "./components/EvaluationScreen.js";
 import { CompletionScreen } from "./components/CompletionScreen.js";
 import { EfnPanel } from "./components/EfnPanel.js";
+import { DeliveryAddressPanel } from "./components/DeliveryAddressPanel.js";
 import { CertificatePanel } from "./components/CertificatePanel.js";
 import { MediathekPanel } from "./components/MediathekPanel.js";
 import {
@@ -1049,6 +1050,9 @@ function Loaded(props: {
                      * points draws nothing.
                      */}
                     <EfnPanel client={client} />
+                    {/* Where that certificate is sent, beside the number it
+                        carries — P183-03. */}
+                    <DeliveryAddressPanel client={client} courseSlug={courseSlug} />
                   </>
                 }
               />

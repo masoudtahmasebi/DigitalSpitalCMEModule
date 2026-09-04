@@ -23,11 +23,12 @@
  * the sender name must not silently clear the credential.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ApiClient, DepartmentSummary, ProjectSummary } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { invalidEmbedOriginPatterns } from "@ds/domain";
 import { slugify } from "../drafts.js";
+import { readPlatformSender } from "../staff-auth.js";
 import { useLoaded, useSaver } from "../hooks.js";
 import {
   Button,
@@ -44,14 +45,47 @@ import {
   TextInput,
 } from "./ui.js";
 
-export function Organisation(props: { client: ApiClient }) {
-  const { client } = props;
+export function Organisation(props: { client: ApiClient; apiBase: string }) {
+  const { client, apiBase } = props;
 
   const loadDepartments = useCallback(() => client.adminListDepartments(), [client]);
   const loadProjects = useCallback(() => client.adminListProjects(), [client]);
 
   const [departments, setDepartments, departmentProblem] = useLoaded(loadDepartments);
   const [projects, setProjects, projectProblem] = useLoaded(loadProjects);
+
+  /*
+   * The platform's own sender address, for the sentence under each project's
+   * SMTP fields (P185-01).
+   *
+   * The **same** endpoint Sicherheit → Plattform-Versand reads and writes, so
+   * the address named here is the address that screen sets and the worker
+   * sends from — one value, one home (§9.10b). Asking a different source would
+   * be a second answer to "who sends this", and the two would disagree on the
+   * day somebody changed one.
+   *
+   * `canSend` is the server's own verdict on whether the sender is complete,
+   * not a rule restated in the browser; a From address stored beside no host
+   * sends nothing, and promising it here would be §9.2 — an affordance the
+   * system will refuse.
+   *
+   * `null` covers three different things — still loading, none configured, and
+   * an endpoint that answered anything but 200 — and all three mean the same
+   * thing on that sentence: do not promise a fallback. A screen that said "we
+   * will send it for you" because a request had not landed yet would be worse
+   * than one that says nothing.
+   */
+  const [platformSender, setPlatformSender] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void readPlatformSender(apiBase).then((sender) => {
+      if (!live || sender === undefined) return;
+      setPlatformSender(sender.canSend ? sender.fromAddress : null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [apiBase]);
 
   const problem = departmentProblem ?? projectProblem;
 
@@ -77,6 +111,7 @@ export function Organisation(props: { client: ApiClient }) {
       {projects === undefined || departments === undefined ? null : (
         <Projects
           client={client}
+          platformSender={platformSender}
           projects={projects}
           departments={departments}
           onChange={setProjects}
@@ -280,6 +315,8 @@ function RenameDepartment(props: {
 // ---------------------------------------------------------------------------
 
 function Projects(props: {
+  /** See `ProjectSettings`. */
+  platformSender: string | null;
   client: ApiClient;
   projects: readonly ProjectSummary[];
   departments: readonly DepartmentSummary[];
@@ -342,6 +379,7 @@ function Projects(props: {
                 <ProjectSettings
                   client={props.client}
                   project={project}
+                  platformSender={props.platformSender}
                   onDone={(next) => {
                     props.onChange(next);
                     setOpen(undefined);
@@ -500,6 +538,13 @@ function NewProject(props: {
 function ProjectSettings(props: {
   client: ApiClient;
   project: ProjectSummary;
+  /**
+   * The address the platform sends as when this project has no server of its
+   * own, or null when it has none either (P185-01). Read once by `Projects` and
+   * passed down rather than fetched per form, so opening three projects does
+   * not ask the same question three times.
+   */
+  platformSender: string | null;
   onDone: (next: ProjectSummary[]) => void;
 }) {
   const { project } = props;
@@ -685,6 +730,25 @@ function ProjectSettings(props: {
           {de.organisation.smtp}
         </legend>
         <p className="text-xs text-gray-600">{de.organisation.smtpIntro}</p>
+        {/*
+          Which sender this project will actually use (P185-01).
+
+          The client asked for exactly this — "we should make that clear in the
+          customer page" — and it is §9.4: the field above decides something
+          the operator cannot otherwise see, because the fallback lives on
+          another screen they may not have access to.
+
+          The sentence also carries the part nobody would guess: their own From
+          address does **not** get used over our server. A customer's address on
+          the platform's transport fails SPF and is quarantined at the far end,
+          after our own SMTP succeeded — so it is said here, where somebody is
+          deciding whether to fill these fields in.
+        */}
+        <p className="text-xs text-gray-600">
+          {props.platformSender === null
+            ? de.organisation.smtpNoFallback
+            : de.organisation.smtpFallback(props.platformSender)}
+        </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={de.organisation.smtpHost} htmlFor={id("smtp-host")}>
             <TextInput

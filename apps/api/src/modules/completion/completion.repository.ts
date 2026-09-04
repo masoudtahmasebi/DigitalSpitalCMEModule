@@ -20,6 +20,7 @@ import {
   enrolments,
   evaluationResponses,
   evaluations,
+  users,
 } from "../../db/schema.js";
 
 export interface EvaluationQuestionRow {
@@ -41,6 +42,22 @@ export interface CompletionRepositoryPort {
   }): Promise<void>;
   saveEfn(userId: string, efn: string): Promise<void>;
   findEfn(userId: string): Promise<string | undefined>;
+  /**
+   * This learner's own enrolment on a course, with the delivery address it
+   * currently carries and the account address it falls back to (P183-03).
+   *
+   * Keyed on `(slug, userId)` and read inside the tenant transaction, so RLS
+   * bounds it — a learner cannot name somebody else's enrolment, and the
+   * `userId` predicate is defence in depth rather than the defence (§4.3).
+   */
+  findEnrolmentForDelivery(
+    slug: string,
+    userId: string,
+  ): Promise<
+    { id: string; deliveryEmail: string | null; accountEmail: string | null } | undefined
+  >;
+  /** Set or clear the delivery address on one enrolment (P183-01). */
+  saveDeliveryEmail(enrolmentId: string, email: string | null): Promise<void>;
   /** Whether any enrolment of this learner, in this tenant, awards CME points. */
   hasPointBearingEnrolment(userId: string): Promise<boolean>;
   hasEivSubmission(enrolmentId: string): Promise<boolean>;
@@ -133,6 +150,33 @@ export class CompletionRepository implements CompletionRepositoryPort {
         target: efnProfiles.userId,
         set: { efn, updatedAt: new Date() },
       });
+  }
+
+  async findEnrolmentForDelivery(
+    slug: string,
+    userId: string,
+  ): Promise<
+    { id: string; deliveryEmail: string | null; accountEmail: string | null } | undefined
+  > {
+    const [row] = await this.db
+      .select({
+        id: enrolments.id,
+        deliveryEmail: enrolments.deliveryEmail,
+        accountEmail: users.email,
+      })
+      .from(enrolments)
+      .innerJoin(courses, eq(courses.id, enrolments.courseId))
+      .innerJoin(users, eq(users.id, enrolments.userId))
+      .where(and(eq(courses.slug, slug), eq(enrolments.userId, userId)))
+      .limit(1);
+    return row;
+  }
+
+  async saveDeliveryEmail(enrolmentId: string, email: string | null): Promise<void> {
+    await this.db
+      .update(enrolments)
+      .set({ deliveryEmail: email, updatedAt: new Date() })
+      .where(eq(enrolments.id, enrolmentId));
   }
 
   async findEfn(userId: string): Promise<string | undefined> {

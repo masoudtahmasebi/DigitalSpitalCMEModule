@@ -1105,6 +1105,24 @@ export const de = {
     failed: "Die EFN konnte nicht gespeichert werden.",
   },
 
+  addressPanel: {
+    title: "Zustelladresse Ihrer Teilnahmebescheinigung",
+    sentTo: "Ihre Teilnahmebescheinigung wird gesendet an:",
+    overridden: "(abweichend von Ihrer Kontoadresse)",
+    none: "Für Sie ist keine E-Mail-Adresse hinterlegt. Ihre Teilnahmebescheinigung können Sie hier jederzeit herunterladen; damit sie Ihnen auch zugeschickt werden kann, hinterlegen Sie bitte eine Adresse.",
+    reach:
+      "Diese Adresse wird nur für den Versand Ihrer Teilnahmebescheinigung verwendet. Ihre Anmeldung und Ihre Kontoadresse bleiben unverändert.",
+    add: "Adresse hinterlegen",
+    change: "Adresse ändern",
+    field: "E-Mail-Adresse",
+    hint: "An diese Adresse senden wir Ihre Teilnahmebescheinigung.",
+    save: "Speichern",
+    reset: "Wieder Kontoadresse verwenden",
+    cancel: "Abbrechen",
+    saved: "Ihre Zustelladresse wurde gespeichert.",
+    failed: "Die Adresse konnte nicht gespeichert werden.",
+  },
+
   certificate: {
     title: "Teilnahmebescheinigung",
     download: "Teilnahmebescheinigung herunterladen",

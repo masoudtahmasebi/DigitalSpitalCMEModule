@@ -275,11 +275,13 @@ export const en: DeepPartial<typeof german> = {
     ownFactorNone: "Not set up.",
     platformMail: "Platform email delivery",
     platformMailIntro:
-      "The platform sends email about administration accounts from this address — password reset links, for instance. For participants the SMTP settings of the respective project apply instead.",
+      "The platform sends email about administration accounts from this address — password reset links, for instance. It is also the fallback sender for Teilnahmebescheinigungen: projects with SMTP settings of their own keep sending themselves, every other project sends through this one. Changes here therefore reach participants too.",
     platformMailReady:
       "Delivery is configured. “Forgot your password?” works for administration accounts.",
     platformMailIncomplete:
-      "Server and sender address are still missing. Without them no link can be sent — the people affected then need an invitation from another administrator.",
+      "Server and sender address are still missing. Without them no link can be sent — the people affected then need an invitation from another administrator. Teilnahmebescheinigungen from projects without SMTP settings of their own also stay unsent; they remain downloadable in the portal.",
+    platformMailUnreadable:
+      "The platform delivery settings could not be read. Reload the page — what is shown here is not what is stored.",
     platformMailSecure: "Encrypted from connection start (port 465)",
     platformMailTest: "Send test email",
     platformMailTestHint:
@@ -461,8 +463,11 @@ export const en: DeepPartial<typeof german> = {
       "Please give link and version together, or leave both empty.",
 
     smtp: "Email delivery (SMTP)",
-    smtpIntro:
-      "Used to send the Teilnahmebescheinigungen. Without these settings the platform sends no email for this project.",
+    smtpIntro: "Used to send the Teilnahmebescheinigungen.",
+    smtpFallback: (address: string) =>
+      `Without a server of your own the platform sends the certificates through its own, as ${address}. Your own sender address appears on the e-mail only if you also configure your own server here — another party's address over our server is filed as spam by many recipients (SPF/DMARC).`,
+    smtpNoFallback:
+      "Without these, the platform sends no e-mail for this project. The certificate stays valid and the participant can download it in the portal. Delivery through the platform is configured under Security → Platform email delivery.",
     smtpHost: "Server",
     smtpPort: "Port",
     smtpUsername: "User name",
@@ -1028,6 +1033,8 @@ export const en: DeepPartial<typeof german> = {
       `Attendance ${attendance ?? "—"} · Lernerfolg ${assessment ?? "—"}`,
     lernerfolgMismatch:
       "This course reports the Lernerfolg point, but the Ärztekammer holds none for this VNR. A submission claiming it would be refused.",
+    outsidePeriod: (outside: number, pending: number, earliest: string, latest: string) =>
+      `${outside} of ${pending} un-sent Punktemeldungen fall outside the accredited period (participation dates ${earliest} to ${latest}). The Ärztekammer refuses these with a 406 — one per person, each needing someone to deal with it. Either the organiser has the period corrected at the Ärztekammer, or nothing is reported for this VNR.`,
     eventLocked:
       "This event is closed for reporting at the Ärztekammer. No further participation can be reported.",
 
@@ -1389,6 +1396,26 @@ export const en: DeepPartial<typeof german> = {
       downloadHint:
         "Downloads the PDF so you can send it to the participant another way. Nothing is sent and nothing is re-issued.",
       resend: "Send again",
+      addressHeading: "Delivery address",
+      addressLoading: "Loading \u2026",
+      addressOverridden: (email: string) =>
+        `The certificate is sent to ${email} \u2014 not the account address.`,
+      addressAccount: (email: string) =>
+        `The certificate is sent to the account address ${email}.`,
+      addressNone:
+        "No address is on file for this person \u2014 neither on the account nor here. " +
+        "Without one the certificate cannot be sent.",
+      addressLabel: "Different delivery address",
+      addressHint:
+        "For sending this certificate only. The participant's account address and their " +
+        "sign-in stay unchanged. Clear it and save to go back to the account address.",
+      addressSave: "Save address",
+      addressSaved: "Delivery address saved.",
+      addressClear: "Reset to the account address",
+      addressCleared: "The account address is used again.",
+      addressUnblocks:
+        "Once an address is on file the certificate can be resent above. Saving on its " +
+        "own sends nothing.",
       resendBlocked: "Resending here would necessarily fail again \u2014 see the cause.",
       regenerate: "Re-create",
       regenerateHint:

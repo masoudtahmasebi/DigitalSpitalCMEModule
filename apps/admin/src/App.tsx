@@ -1346,7 +1346,7 @@ export function Console(props: {
   }
 
   if (view.kind === "organisation") {
-    return headed(<Organisation client={client} />);
+    return headed(<Organisation client={client} apiBase={props.config.apiBase} />);
   }
 
   return headed(

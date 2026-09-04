@@ -35,6 +35,7 @@ import { JsonLogger } from "../../observability/logger.js";
 import {
   completionInputSchema,
   efnInputSchema,
+  deliveryEmailInputSchema,
   evaluationSubmissionSchema,
 } from "./completion.dto.js";
 
@@ -145,6 +146,56 @@ export class CompletionController {
     }
 
     await CompletionService.fromDb(db).setEfn(parsed.data.efn, context(principal));
+  }
+
+  /**
+   * Where this learner's Teilnahmebescheinigung is sent (P183-03).
+   *
+   * `GET` returns both addresses, because a field that shows an empty box while
+   * an address exists invites somebody to retype what is already right — and
+   * both are the caller's own, so returning them discloses nothing they cannot
+   * already see in their own inbox.
+   */
+  @Get("courses/:slug/delivery-email")
+  @RateLimit("efnRead")
+  @Roles(...LEARNER_ROLES)
+  async deliveryEmail(
+    @Param("slug") slug: string,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ): Promise<{ email: string | null; accountEmail: string | null }> {
+    return CompletionService.fromDb(db).readDeliveryEmail(slug, context(principal));
+  }
+
+  /**
+   * An empty string clears it, which is how somebody goes back to their account
+   * address — so the body is a plain string field rather than a nullable one,
+   * and `deliveryAddress` in `@ds/domain` decides what it means.
+   */
+  @Put("courses/:slug/delivery-email")
+  @HttpCode(200)
+  @RateLimit("efnWrite")
+  @Roles(...LEARNER_ROLES)
+  async setDeliveryEmail(
+    @Param("slug") slug: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ): Promise<{ email: string | null }> {
+    const parsed = deliveryEmailInputSchema.safeParse(body);
+    if (!parsed.success) {
+      // The field, never the value.
+      throw new AppError(
+        "validation",
+        "delivery address failed schema validation",
+        "Bitte geben Sie eine gültige E-Mail-Adresse ein.",
+      );
+    }
+    return CompletionService.fromDb(db).setDeliveryEmail(
+      slug,
+      parsed.data.email,
+      context(principal),
+    );
   }
 
   @Post("courses/:slug/completion")
