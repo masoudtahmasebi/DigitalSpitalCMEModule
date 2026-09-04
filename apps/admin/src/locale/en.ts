@@ -1028,6 +1028,8 @@ export const en: DeepPartial<typeof german> = {
       `Attendance ${attendance ?? "—"} · Lernerfolg ${assessment ?? "—"}`,
     lernerfolgMismatch:
       "This course reports the Lernerfolg point, but the Ärztekammer holds none for this VNR. A submission claiming it would be refused.",
+    outsidePeriod: (outside: number, pending: number, earliest: string, latest: string) =>
+      `${outside} of ${pending} un-sent Punktemeldungen fall outside the accredited period (participation dates ${earliest} to ${latest}). The Ärztekammer refuses these with a 406 — one per person, each needing someone to deal with it. Either the organiser has the period corrected at the Ärztekammer, or nothing is reported for this VNR.`,
     eventLocked:
       "This event is closed for reporting at the Ärztekammer. No further participation can be reported.",
 

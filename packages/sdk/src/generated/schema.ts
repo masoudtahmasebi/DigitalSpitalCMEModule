@@ -3815,6 +3815,46 @@ export interface components {
              *     when that read succeeded. A count, never the EFNs (ADR-0004).
              */
             reportedCount?: number;
+            /**
+             * @description Present only when the event read succeeded. Without the accredited
+             *     period there is nothing to compare against, and a zero would read
+             *     as "all fine" (§9.6).
+             */
+            queue?: components["schemas"]["EivQueueVerdict"];
+        };
+        /**
+         * @description How many of this course's un-sent Punktemeldungen the register will
+         *     refuse on the date alone (P184-01).
+         *
+         *     EIV refuses a `teilnahmedatum` outside the accredited period with a
+         *     406, and the platform has both numbers in its hands — the period from
+         *     `GET veranstaltung`, the completion from its own row — but never
+         *     compared them. The client's own test event is accredited **14–19
+         *     January 2024**, so every completion today is refused, and the only way
+         *     to know was to read two dates in two formats off one screen.
+         *
+         *     Counted over `queued` and `failed_retryable`: what a sweep would
+         *     attempt. `held` rows are excluded — they wait on a decision rather than
+         *     on the clock.
+         */
+        EivQueueVerdict: {
+            /** @description Un-sent Punktemeldungen for this course. */
+            pending: number;
+            /** @description Of those, how many are dated before the period opened. */
+            beforePeriod: number;
+            /**
+             * @description …and after it closed, which is the case that produces one refusal
+             *     per physician for ever.
+             */
+            afterPeriod: number;
+            /**
+             * @description The earliest pending completion, as a Berlin calendar day
+             *     (`YYYY-MM-DD`). Berlin's, not UTC's: a completion at 00:30 local is
+             *     the previous day in UTC, and a day either way is the difference
+             *     between a filing accepted and refused.
+             */
+            earliestDay?: string;
+            latestDay?: string;
         };
         /**
          * @description What the Ärztekammer holds about an accredited event. Every field

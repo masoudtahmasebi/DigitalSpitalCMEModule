@@ -182,8 +182,48 @@ from the list above.
 So the client handles the real test identifiers correctly, and the failure-kind
 mapping the Punktemeldung panel depends on is exercised end to end.
 
-**Not verified: anything against the real EIV test server.** The development
-sandbox's egress is an allowlist and `eiv-fobi.de` is not on it — every host
-above answers `403` at the proxy, not at EIV. So the four questions only a real
-response can settle are still open, and `./dsc eiv` from the host is what settles
-them. That is the point of it existing.
+**Verified 04.09.2026, against the real EIV test server**, by the client running
+`./dsc eiv` from the production host. Every read answered:
+
+```
+--- authenticate ---   200   {"jwt":"[redacted]"}
+--- veranstaltung ---  200   {"vnr":"2760012024200354002","thema":"Test Title200354",
+                              "beginn":"2024-01-14T23:00:00.000Z",
+                              "ende":"2024-01-19T23:00:00.000Z",
+                              "kategorie":"D","punkte_basis":3,
+                              "punkte_lernerfolg":0,
+                              "gesperrt_fuer_veranstalter":false,"ort":"Cotbus"}
+--- gemeldetepunkte -- 200   []
+```
+
+**This settles S11 and S25 for the test VNR, with a real answer rather than an
+assumption:**
+
+| Question                                   | The register's answer                                        |
+| ------------------------------------------ | ------------------------------------------------------------ |
+| What is the accredited period? (**S11**)   | `2024-01-14T23:00Z` → `2024-01-19T23:00Z` — five days, past  |
+| Which credit may a completion claim? (S25) | `punkte_basis` **3**, `punkte_lernerfolg` **0**, Kategorie D |
+| Is the event open to reporting?            | `gesperrt_fuer_veranstalter: false`                          |
+| What has been reported so far?             | nothing                                                      |
+
+**And it produces a blocker that is nobody's bug.** `eiv.service.ts` sends the
+learner's completion instant as `teilnahmedatum`, and EIV refuses a date outside
+the accredited period with a 406. The period closed on **19.01.2024**. So every
+Punktemeldung this platform files for that VNR today is refused, whatever the
+EFN — one refusal per physician, each raising an alert somebody must dismiss.
+
+Since P184-01 the platform says so **before** sending: the EIV-Abgleich panel
+compares the register's period against the queue's own completion days and
+reports how many will be refused. The decision it cannot make is whose: either
+the organiser has the period corrected at the Ärztekammer, or nothing is
+reported for this VNR (CLAUDE.md §7).
+
+**Still not verified: a `push_teilnahme` against the real test server.** Every
+read succeeded; nothing has been written. That step is what the accredited
+period currently prevents, and it is the last one between here and a proven
+chain.
+
+_The development sandbox cannot reach it._ Its egress is an allowlist and
+`eiv-fobi.de` is not on it — `backend-test.eiv-fobi.de:443` answers `403` at the
+proxy, not at EIV. `./dsc eiv` from the host is what settles these questions, and
+on 04.09.2026 it did.

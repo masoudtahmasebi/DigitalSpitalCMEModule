@@ -154,7 +154,15 @@ async function seedSubmission(input: {
 const ACTOR = { customerId: "", staffUserId: randomUUID() };
 
 /** The service, inside the tenant scope a request would have opened. */
-async function withService<T>(run: (service: EivAdminService) => Promise<T>): Promise<T> {
+async function withService<T>(
+  run: (service: EivAdminService) => Promise<T>,
+  /**
+   * A different register for one case (P184-01). The accredited period is the
+   * register's answer, so testing "the queue falls outside it" needs a second
+   * mock describing a different event rather than a different queue.
+   */
+  over: { baseUrl?: string } = {},
+): Promise<T> {
   return runInTenant(
     appPool,
     // The role a request would carry: these endpoints are customer_admin and
@@ -169,7 +177,7 @@ async function withService<T>(run: (service: EivAdminService) => Promise<T>): Pr
           // Armed, so the report's `submissionsEnabled` has a value that is
           // not the type's default — a fixture pinned to `false` could not tell
           // "reports the flag" from "reports nothing".
-          { baseUrl: mock.url, submissionsEnabled: true },
+          { baseUrl: over.baseUrl ?? mock.url, submissionsEnabled: true },
         ),
       ),
   );
@@ -229,6 +237,72 @@ describe("the connection check says which installation this is (P107-01)", () =>
     );
 
     expect(JSON.stringify(report)).not.toContain(VNR_PASSWORD);
+  });
+});
+
+describe("the queue against the accredited period (P184-01)", () => {
+  /*
+   * The client reached EIV's test system from the production host and the
+   * event it described is accredited **14–19 January 2024**. Every completion
+   * today is therefore refused with a 406 — one per physician, for ever — and
+   * the platform had both numbers in its hands without comparing them.
+   *
+   * `reportableOn` is exhaustively unit-tested in `@ds/domain`. These name its
+   * caller (§9.7): a rule nothing calls is what `inviteStatus` was, and a test
+   * of that rule would pass on a product that never consults it.
+   */
+  it("says nothing is outside a period that spans the queue", async () => {
+    // A queued row of this test's own — never one left by an earlier case,
+    // whose status a later one may have changed (§9.6's fixture half).
+    await seedSubmission({ status: "queued", eventEndAt: new Date("2026-09-04") });
+
+    // The fixture's mock event runs 2020→2099, so every row is inside it. The
+    // silent case matters as much as the loud one: a check that always warns
+    // is one an operator learns to skip.
+    const report = await withService((service) =>
+      service.checkConnection(courseSlug, undefined, actor()),
+    );
+
+    expect(report.queue?.pending).toBeGreaterThan(0);
+    expect(report.queue?.beforePeriod).toBe(0);
+    expect(report.queue?.afterPeriod).toBe(0);
+  });
+
+  it("counts the ones the register will refuse, and names the days", async () => {
+    // The client's situation, reproduced: a five-day event that closed in
+    // January 2024, and a completion long after it.
+    await seedSubmission({ status: "queued", eventEndAt: new Date("2026-09-04") });
+
+    const closed = await startMockServer(0, {
+      eventBeginn: "2024-01-15",
+      eventEnde: "2024-01-20",
+    });
+    try {
+      const report = await withService(
+        (service) => service.checkConnection(courseSlug, undefined, actor()),
+        { baseUrl: closed.url },
+      );
+
+      expect(report.queue?.pending).toBeGreaterThan(0);
+      expect(report.queue?.afterPeriod).toBe(report.queue?.pending);
+      expect(report.queue?.beforePeriod).toBe(0);
+      // Berlin's calendar day, which is what EIV compares against.
+      expect(report.queue?.latestDay).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
+    } finally {
+      await closed.close();
+    }
+  });
+
+  it("omits the verdict entirely when the event could not be read", async () => {
+    // No period means nothing to compare against, and a `0` would read as
+    // "all fine" — the §9.6 shape this whole field exists to avoid.
+    const report = await withService(
+      (service) => service.checkConnection(courseSlug, undefined, actor()),
+      { baseUrl: "http://127.0.0.1:1" },
+    );
+
+    expect(report.steps.find((step) => step.step === "event")?.ok).toBe(false);
+    expect(report.queue).toBeUndefined();
   });
 });
 

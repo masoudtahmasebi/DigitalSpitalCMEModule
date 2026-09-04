@@ -1470,6 +1470,8 @@ export const german = {
       `Teilnahme ${attendance ?? "—"} · Lernerfolg ${assessment ?? "—"}`,
     lernerfolgMismatch:
       "Diese Fortbildung meldet den Lernerfolgspunkt, die Ärztekammer führt für diese VNR aber keinen. Eine Meldung mit Lernerfolg würde abgelehnt.",
+    outsidePeriod: (outside: number, pending: number, earliest: string, latest: string) =>
+      `${outside} von ${pending} noch nicht \u00fcbermittelten Punktemeldungen liegen au\u00dferhalb des akkreditierten Zeitraums (Teilnahmedatum ${earliest} bis ${latest}). Die \u00c4rztekammer weist diese mit 406 zur\u00fcck \u2014 pro Person eine Meldung, die jemand nachbearbeiten muss. Entweder l\u00e4sst der Veranstalter den Zeitraum bei der \u00c4rztekammer anpassen, oder es wird f\u00fcr diese VNR nichts gemeldet.`,
     eventLocked:
       "Diese Veranstaltung ist bei der Ärztekammer für Meldungen gesperrt. Es kann keine weitere Teilnahme gemeldet werden.",
 

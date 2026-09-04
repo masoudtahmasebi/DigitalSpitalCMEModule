@@ -27,7 +27,14 @@
  * there is exactly one.
  */
 
-import { efnCorrection, efnRefresh, eivDeadlines, submissionStage } from "@ds/domain";
+import {
+  berlinDate,
+  efnCorrection,
+  efnRefresh,
+  eivDeadlines,
+  reportableOn,
+  submissionStage,
+} from "@ds/domain";
 import {
   EivError,
   EIV_PASSWORD_KEY,
@@ -129,6 +136,51 @@ export interface EivConnectionReport {
   readonly steps: readonly EivCheckStep[];
   readonly event?: AccreditedEvent;
   readonly reportedCount?: number;
+  /**
+   * How many Punktemeldungen still to be filed carry a Teilnahmedatum the
+   * register will refuse (P184-01).
+   *
+   * Present only when the event read succeeded, because without the accredited
+   * period there is nothing to compare against and a `0` would read as "all
+   * fine" — §9.6, the missing answer indistinguishable from the real one.
+   *
+   * The check exists because the platform had both numbers and never compared
+   * them: EIV refuses a `teilnahmedatum` outside the accredited period with a
+   * 406, and the client's own test event is accredited **14–19 January 2024**.
+   * Every completion today is therefore refused, and the operator's only way to
+   * know was to read two dates in two formats off one screen and do the
+   * arithmetic (§9.2).
+   */
+  readonly queue?: EivQueueVerdict;
+}
+
+export interface EivQueueVerdict {
+  /** Queued or retryable rows for this course — what a sweep would attempt. */
+  readonly pending: number;
+  /** Of those, how many fall before the accredited period opened. */
+  readonly beforePeriod: number;
+  /** …and after it closed, which is the client's case. */
+  readonly afterPeriod: number;
+  /**
+   * The earliest and latest completion day among the pending rows, in Berlin's
+   * calendar — so a screen can say "you are reporting 04.09.2026 into an event
+   * that closed on 19.01.2024" rather than only a count.
+   */
+  readonly earliestDay?: string;
+  readonly latestDay?: string;
+}
+
+/**
+ * An ISO instant the register sent, or undefined when it sent nothing usable.
+ *
+ * `new Date("nonsense")` is an Invalid Date, which compares false against
+ * everything and would silently make every verdict `ok` — the failure mode
+ * §9.6 keeps describing, here in three characters of date parsing.
+ */
+function parseInstant(value: string | undefined): Date | undefined {
+  if (value === undefined) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
 /** The two diagnostic fields, present only on a failure. */
@@ -293,6 +345,13 @@ export class EivAdminService {
       },
     });
 
+    /*
+     * Only when the register actually told us the period (P184-01). Computing
+     * a verdict from an absent `beginn` would be a confident answer about a
+     * question nobody asked the authority.
+     */
+    const queue = event === undefined ? undefined : await this.queueVerdict(slug, event);
+
     return {
       ...this.reportContext(),
       vnr: course.vnr,
@@ -300,6 +359,52 @@ export class EivAdminService {
       steps,
       ...(event === undefined ? {} : { event }),
       ...(reportedCount === undefined ? {} : { reportedCount }),
+      ...(queue === undefined ? {} : { queue }),
+    };
+  }
+
+  /**
+   * How many of this course's un-sent Punktemeldungen the register will refuse
+   * on the date alone (P184-01).
+   *
+   * `reportableOn` is the rule and it lives in `@ds/domain` because the worker
+   * will want the same verdict — a second comparison written here would be a
+   * second opinion about which day a completion happened on, and the answer
+   * turns on Berlin's calendar rather than UTC's.
+   */
+  private async queueVerdict(
+    slug: string,
+    event: AccreditedEvent,
+  ): Promise<EivQueueVerdict> {
+    const pending = await this.repository.pendingCompletionsForCourse(slug);
+
+    let beforePeriod = 0;
+    let afterPeriod = 0;
+    const days: string[] = [];
+
+    for (const completedAt of pending) {
+      days.push(berlinDate(completedAt));
+      const verdict = reportableOn({
+        completedAt,
+        // `AccreditedEvent` carries them as ISO strings — the register's own
+        // `beginn` / `ende`, mapped by the eiv-client. An unparseable one
+        // becomes `undefined` and `reportableOn` answers `period_unknown`
+        // rather than treating it as no limit.
+        beginn: parseInstant(event.validFrom),
+        ende: parseInstant(event.validUntil),
+      });
+      if (verdict.ok) continue;
+      if (verdict.reason === "before_period") beforePeriod += 1;
+      if (verdict.reason === "after_period") afterPeriod += 1;
+    }
+
+    days.sort();
+    return {
+      pending: pending.length,
+      beforePeriod,
+      afterPeriod,
+      ...(days[0] === undefined ? {} : { earliestDay: days[0] }),
+      ...(days.at(-1) === undefined ? {} : { latestDay: days.at(-1) as string }),
     };
   }
 
