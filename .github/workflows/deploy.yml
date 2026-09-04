@@ -171,7 +171,7 @@ jobs:
       # Whether the host will file real Punktemeldungen (P113-01). The smoke
       # job refuses to run when this is "yes", and refuses just as loudly when
       # it is absent — see scripts/run-smoke.mjs.
-      eiv_reports_live: ${{ steps.derive.outputs.eiv_reports_live }}
+      eiv_reports_live: ${{ steps.eiv.outputs.eiv_reports_live }}
     env:
       REPO_DIR: ${{ vars.DEPLOY_REPO_DIR || '~/Repositories/DigitalSpitalCMEModule' }}
       SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -500,34 +500,11 @@ jobs:
           # evidence that nothing will be filed, and the old version's habit of
           # concluding "not live" from an empty variable is the defect this
           # comment block was written for.
-          eiv_reports_live=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
-            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "cd ${REPO_DIR}/infra/deploy && . ./eiv-endpoint.sh && \
-             set -a && . \$HOME/ds-education/config.env && set +a && \
-             settings=\$(docker compose -f docker-compose.prod.yml exec -T \
-               -e PGPASSWORD=\"\${POSTGRES_SUPERUSER_PASSWORD}\" postgres \
-               psql -tAX -U \"\${POSTGRES_SUPERUSER}\" -d \"\${POSTGRES_DB}\" \
-               -c \"\$(ds_eiv_settings_sql)\" 2>/dev/null | tr -d '\n' || true) && \
-             if [ -z \"\$settings\" ]; then
-               printf 'yes'
-             elif ds_eiv_worker_will_file_live \
-               \"\${settings%%|*}\" \
-               \"\$(printf '%s' \"\$settings\" | cut -d'|' -f2)\" \
-               \"\${settings##*|}\" \
-               \"\${EIV_MOCK_BASE_URL:-}\"; then
-               printf 'yes'
-             else
-               printf 'no'
-             fi")
-
-          case "${eiv_reports_live}" in
-            yes|no) ;;
-            *) echo "::error::the host gave no usable answer for EIV reporting posture"; exit 1 ;;
-          esac
-          echo "Files Punktemeldungen live: ${eiv_reports_live}"
+          # The EIV posture is read AFTER the deploy — see the step of its own
+          # below. It used to be read here, and here is before the stack is
+          # necessarily up (P182-09).
           echo "portal_domain=${portal_domain}" >> "$GITHUB_OUTPUT"
           echo "admin_domain=${admin_domain}" >> "$GITHUB_OUTPUT"
-          echo "eiv_reports_live=${eiv_reports_live}" >> "$GITHUB_OUTPUT"
 
       # Detached at an exact commit, not a branch tip. A `git pull` would
       # deploy whatever `main` had become in the twenty minutes since CI went
@@ -554,6 +531,93 @@ jobs:
           ssh -tt $SSH_OPTS -i ~/.ssh/id_ed25519 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "cd ${REPO_DIR}/infra/deploy && \
              ./deploy.sh ${{ inputs.rollback_tag && format('--rollback {0}', inputs.rollback_tag) || '' }}"
+
+      # ---------------------------------------------------------------------
+      # Will this installation file real Punktemeldungen? (P113-01, P182-09)
+      # ---------------------------------------------------------------------
+      #
+      # The post-deploy journey publishes an accredited Fortbildung and
+      # completes it, which queues a submission. Its VNR is reserved and belongs
+      # to no Veranstaltung, so on an installation that reports for real every
+      # such submission is refused by the Ärztekammer and raises an alert
+      # somebody has to dismiss — once per deploy, for ever. So the journey does
+      # not run when the answer is yes.
+      #
+      # Asked of the host's own `ds_eiv_worker_will_file_live` over the host's
+      # own `platform_settings`, through `ds_eiv_settings_sql` — one definition,
+      # shared with deploy.sh, because two readings of "is the worker armed" is
+      # what lets a smoke run against a host that files for real.
+      #
+      # ## Why after the deploy and not before (P182-09)
+      #
+      # It ran in `derive`, before `deploy.sh` had done anything — and `derive`
+      # is before the deploy brings postgres up. On run 113 the read came back
+      # empty, the guard failed closed to "yes", the journey was skipped, and
+      # the deploy's own reading of the same table sixty-four seconds later said
+      # `endpoint=mock armed=false live-consent=false`. Two opposite answers
+      # about one host, and the wrong one was the one that decided.
+      #
+      # Failing closed was right and stays. What was wrong was asking while the
+      # answer could not be given. Here the stack is up, the migrations have
+      # run, and the row read is the one the code now serving will act on.
+      #
+      # ## And it says which of the two "yes" answers this is
+      #
+      # An unreadable answer and an armed installation are not the same fact,
+      # and a guard that renders them identically is §9.6 in a workflow: the
+      # missing answer is indistinguishable from the real one. The raw settings
+      # string is printed — `endpoint|worker|consent`, no secret in it — so the
+      # log says which happened.
+      - name: Will this installation file Punktemeldungen for real?
+        id: eiv
+        run: |
+          answer=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd ${REPO_DIR}/infra/deploy && . ./eiv-endpoint.sh && \
+             set -a && . \$HOME/ds-education/config.env && set +a && \
+             settings=\$(docker compose -f docker-compose.prod.yml exec -T \
+               -e PGPASSWORD=\"\${POSTGRES_SUPERUSER_PASSWORD}\" postgres \
+               psql -tAX -U \"\${POSTGRES_SUPERUSER}\" -d \"\${POSTGRES_DB}\" \
+               -c \"\$(ds_eiv_settings_sql)\" 2>/dev/null | tr -d '\n' || true) && \
+             if [ -z \"\$settings\" ]; then
+               printf 'yes unreadable'
+             elif ds_eiv_worker_will_file_live \
+               \"\${settings%%|*}\" \
+               \"\$(printf '%s' \"\$settings\" | cut -d'|' -f2)\" \
+               \"\${settings##*|}\" \
+               \"\${EIV_MOCK_BASE_URL:-}\"; then
+               printf 'yes %s' \"\$settings\"
+             else
+               printf 'no %s' \"\$settings\"
+             fi")
+
+          verdict="${answer%% *}"
+          detail="${answer#* }"
+
+          # Never fails this job. It runs **after** the container swap, so an
+          # exit here would mark a successful deploy as failed — and the
+          # "Report failure" step below would then say "the previous version is
+          # still running", which would be false (§9.4: a message that is wrong
+          # about the state is worse than none).
+          #
+          # Its whole job is to decide whether the journey runs, so an
+          # unanswerable question fails closed to "yes" — the journey is
+          # skipped — and says so.
+          case "${verdict}" in
+            yes|no) ;;
+            *)
+              echo "::warning::the host gave no usable answer for EIV reporting posture ('${answer}'). Failing closed: the journey will not run. The deploy itself succeeded."
+              verdict=yes
+              detail=unreachable
+              ;;
+          esac
+
+          if [ "${detail}" = "unreadable" ]; then
+            echo "::warning::platform_settings could not be read on the host. This run fails closed and treats the installation as reporting live, so the journey will not run. That is NOT evidence that it is reporting — it is evidence that the question could not be answered."
+          fi
+
+          echo "Files Punktemeldungen live: ${verdict} (platform_settings: ${detail})"
+          echo "eiv_reports_live=${verdict}" >> "$GITHUB_OUTPUT"
 
       - name: Smoke-test the deployment, and record what is now live
         run: |
