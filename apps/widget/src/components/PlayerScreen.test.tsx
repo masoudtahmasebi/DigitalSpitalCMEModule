@@ -271,6 +271,7 @@ function renderPlayer(
       onBack={onBack}
       onResume={undefined}
       progress={false}
+      onClaimPoints={undefined}
     >
       <PlayerScreen
         client={client}
@@ -388,7 +389,7 @@ describe("the progress panel", () => {
  * Anchored at the end, and both halves of that matter. The name is not the bare
  * title — `StateIcon` is inside the button and contributes its own label, so it
  * reads "Verfügbar Lernerfolgskontrolle". And once the gate opens the sidebar
- * also carries the primary action **Lernerfolgskontrolle beginnen**, which an
+ * also carries the primary action **Prüfung starten**, which an
  * unanchored match sweeps up — so "there are two of these" would fail for a
  * reason that has nothing to do with the row.
  */
@@ -396,7 +397,7 @@ const EXAM_ROW = /Lernerfolgskontrolle$/u;
 
 /** The sidebar, so a query can be scoped away from the player's own controls. */
 function outline(): HTMLElement {
-  return screen.getByRole("navigation", { name: "Modul Übersicht" });
+  return screen.getByRole("navigation", { name: "Fortbildungsfortschritt" });
 }
 
 describe("the Lernerfolgskontrolle in the module outline", () => {
@@ -590,7 +591,7 @@ describe("the controls", () => {
      */
     renderPlayer();
 
-    const outline = screen.getByRole("navigation", { name: "Modul Übersicht" });
+    const outline = screen.getByRole("navigation", { name: "Fortbildungsfortschritt" });
     const pause = screen.getByRole("button", { name: "Fortbildung pausieren" });
     expect(outline.contains(pause)).toBe(true);
   });
@@ -615,14 +616,12 @@ describe("the controls", () => {
      */
     renderPlayer({ state: withQuizOpen(state(), 3) });
 
-    const begin = screen.getByRole("button", { name: "Lernerfolgskontrolle beginnen" });
+    const begin = screen.getByRole("button", { name: "Prüfung starten" });
     expect(begin.className).toContain("bg-cta-500");
 
     // And nothing else on the screen offers the same exam.
     expect(screen.queryByText(/Weiter: .*Prüfung|Weiter: .*Lernerfolg/u)).toBeNull();
-    expect(
-      screen.getAllByRole("button", { name: /Lernerfolgskontrolle beginnen/ }),
-    ).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /Prüfung starten/ })).toHaveLength(1);
   });
 
   it("does not draw a second Weiter control pointing at the exam", () => {
@@ -644,7 +643,7 @@ describe("the controls", () => {
     /*
      * P95-02, and it reverses P94-02. That commit *swapped* pause for the exam,
      * from an older export where only one control is drawn. The complete
-     * desktop layout stacks both — orange **Lernerfolgskontrolle beginnen**
+     * desktop layout stacks both — orange **Prüfung starten**
      * above outlined **Fortbildung pausieren** — and they are different
      * actions: start the exam, and stop for today. A learner who wants the
      * second should not have to give up the first to reach it.
@@ -652,8 +651,8 @@ describe("the controls", () => {
     const onOpen = vi.fn();
     renderPlayer({ onOpen, state: withQuizOpen(state(), 3) });
 
-    const outline = screen.getByRole("navigation", { name: "Modul Übersicht" });
-    const begin = screen.getByRole("button", { name: "Lernerfolgskontrolle beginnen" });
+    const outline = screen.getByRole("navigation", { name: "Fortbildungsfortschritt" });
+    const begin = screen.getByRole("button", { name: "Prüfung starten" });
     const pause = screen.getByRole("button", { name: "Fortbildung pausieren" });
 
     expect(outline.contains(begin)).toBe(true);
@@ -992,6 +991,7 @@ describe("how often the player talks to the server (P156-01)", () => {
         onBack={vi.fn()}
         onResume={undefined}
         progress={false}
+        onClaimPoints={undefined}
       >
         <PlayerScreen
           client={client}
@@ -1032,6 +1032,7 @@ describe("how often the player talks to the server (P156-01)", () => {
           onBack={vi.fn()}
           onResume={undefined}
           progress={false}
+          onClaimPoints={undefined}
         >
           <PlayerScreen
             client={client}

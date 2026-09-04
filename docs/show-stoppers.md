@@ -2192,3 +2192,61 @@ does not match the verdict, rather than a verdict nobody can check.
 **MEDICE's own course is unaffected either way** — it has no text content today,
 so both readings give the same answer for it. The client met this on a course
 they built for testing.
+---
+
+## S34 · The 2026-09-01 layout draws an **18-digit** EFN; the platform takes 15
+
+Owner: MEDICE (layout) → ÄKWL / EIV-FOBI if it is not simply a drawing error.
+Blocks: nothing. The screen is built and takes 15 digits, as it always has.
+Raised: P190-01, while matching the Punktemeldung to the new layout.
+
+### What the drawing shows
+
+Page 13 of `260901 MEDICE CME Fortbildung layout.pdf` draws the empty
+**EFN-Nummer** field with a spaced specimen number in it:
+
+```
+0 8 0 2 2 3 4 1 1 9 4 0 3 0 2 4 8 3
+```
+
+That is **18 digits**. The hint under the field reads _"Die 18-stellige EFN
+finden Sie auf Ihrem Arztausweis"_.
+
+### What the platform does
+
+Fifteen, everywhere, and not in one place that could simply be edited:
+
+| Where                                | What it says                                   |
+| ------------------------------------ | ---------------------------------------------- |
+| `packages/domain` `isValidEfn`       | exactly 15 digits                              |
+| `apps/widget` `CompletionScreen`     | `maxLength={15}`                               |
+| `packages/copy` `completion.efnHint` | _"Die 15-stellige EFN …"_                      |
+| `packages/eiv-client`                | the field as the EIV-FOBI contract declares it |
+| `db/`                                | the column the API writes                      |
+
+### Why this is not ours to decide
+
+The number of digits in a Einheitliche Fortbildungsnummer is a rule of the
+Ärztekammern, not a layout decision, and it is the identifier a CME point is
+credited against. Widening the field to 18 on the strength of a PDF would let a
+physician type a number the EIV interface will reject — after they have finished
+the course — and narrowing the drawing to 15 silently would be the same guess in
+the other direction (CLAUDE.md §7).
+
+### What was implemented in the meantime
+
+The **shape** of the drawing, not its length: the field now shows a spaced
+specimen number as drawn, truncated to the 15 digits everything else accepts
+(`completion.efnPlaceholder`). The hint still says 15. Nothing about validation,
+storage or reporting changed.
+
+### What we need
+
+One of:
+
+1. _"18 is a mistake in the layout"_ — then the placeholder is already right and
+   this closes.
+2. _"18 is correct"_ — then it is a change to `@ds/domain`, the schema, the EIV
+   client and the copy, and it needs the ÄKWL's own statement of the format
+   rather than a screenshot, because the reporting interface is what will
+   reject it.

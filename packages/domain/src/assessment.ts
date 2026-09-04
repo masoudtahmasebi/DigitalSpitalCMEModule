@@ -138,7 +138,8 @@ export function mayRevealCorrectAnswers(course: {
 }
 
 /**
- * How many questions must be right — "Mind. 8 von 11 richtig" (layout page 08).
+ * How many questions must be right — "Mind. 8 von 11 Fragen müssen richtig
+ * beantwortet sein" (layout page 08).
  *
  * ## Why this is here and not in the widget
  *

@@ -428,7 +428,17 @@ export const de = {
     pause: "Fortbildung pausieren",
     back: "Zurück zur Übersicht",
 
-    outline: "Modul Übersicht",
+    /**
+     * The sidebar's heading (P190-01).
+     *
+     * It read "Modul Übersicht", which describes the list and not what the
+     * list is telling you. Every player and exam page of the layout heads this
+     * column **Fortbildungsfortschritt** — and that is the more accurate word
+     * for what is drawn: the rows carry state glyphs, the exam and the
+     * Punktemeldung are steps in it, and none of that is an "overview of
+     * modules". §5 makes the layout's copy authoritative.
+     */
+    outline: "Fortbildungsfortschritt",
     toggleModule: (title: string): string => `Modul „${title}“ ein- oder ausklappen`,
     /**
      * The same control's name with the count in it (P93-03).
@@ -487,7 +497,7 @@ export const de = {
      * action that belongs to the course in progress, and once the watching is
      * done the exam is the way forward rather than a pause.
      */
-    quizBegin: "Lernerfolgskontrolle beginnen",
+    quizBegin: "Prüfung starten",
     /**
      * The same control once the exam is behind them (P176-01).
      *
@@ -818,39 +828,75 @@ export const de = {
      */
     exam: "Abschlussprüfung",
 
-    /*
-     * The three stat cards on page 08.
+    /**
+     * The heading of the exam intro, when every module is behind the learner.
      *
-     * `Antwortformat` is derived from the questions rather than fixed: a course
-     * whose author wrote multiple-choice questions and whose screen promised
-     * "Eine Antwort pro Frage" would be lying to a physician about how to pass.
+     * Rendered only when the server's own module counts are equal — the same
+     * two numbers the progress card prints as a sentence — because a course
+     * may hold one Lernerfolgskontrolle per module (P87) and telling a
+     * physician they have finished all of them at the end of module two would
+     * be false.
+     */
+    allModulesDone:
+      "Herzlichen Glückwunsch, Sie haben alle Module erfolgreich absolviert.",
+    /** The line under it, inviting them into the exam. */
+    lead: "Nehmen Sie jetzt an der Lernerfolgskontrolle teil.",
+
+    /*
+     * The two stat cards on page 08.
+     *
+     * It was three. The drawing has **Anzahl Fragen** and
+     * **Bestehensvoraussetzung** side by side and nothing else, and the third —
+     * `Antwortformat` — is answered by the question screen itself, where every
+     * option carries a radio button. Its strings stay below because the
+     * distinction they draw is real and the caption still has a caller: a
+     * course whose author wrote multiple-choice questions and whose screen
+     * promised "Eine Antwort pro Frage" would be lying to a physician about how
+     * to pass, so the sentence moved under the question count rather than out
+     * of the product.
      */
     statQuestions: "Anzahl Fragen",
-    statQuestionsCaption: "Fragen gesamt",
-    statFormat: "Antwortformat",
-    formatSingle: "Single Choice",
-    formatMixed: "Single & Multiple Choice",
+    /*
+     * `statQuestionsCaption` ("Fragen gesamt"), `statFormat`, `formatSingle`
+     * and `formatMixed` were deleted with the third card. `check:copy` is what
+     * required it: a locale file that keeps entries no screen draws is one
+     * nobody can read to find out what the product says (P123-02), and four
+     * strings surviving the card they belonged to is exactly that.
+     *
+     * The two captions below did not go with them — they moved under the
+     * question count, because how many answers a question takes is something a
+     * physician about to sit a mixed exam has to know, and the card that said
+     * so is gone.
+     */
     formatSingleCaption: "Eine Antwort pro Frage",
     formatMixedCaption: "Teilweise mehrere Antworten pro Frage",
-    statPass: "Bestehen",
+    statPass: "Bestehensvoraussetzung",
     statPassValue: (percent: number): string => `${percent} %`,
-    /** "Mind. 8 von 11 richtig" — the same arithmetic the server scores with. */
+    /**
+     * "Mind. 8 von 11 Fragen müssen richtig beantwortet sein" — the drawing's
+     * own sentence, over the same arithmetic the server scores with.
+     */
     statPassCaption: (needed: number, total: number): string =>
-      `Mind. ${needed} von ${total} richtig`,
+      `Mind. ${needed} von ${total} Fragen müssen richtig beantwortet sein`,
 
     banner:
       "Beantworten Sie alle Fragen nacheinander. Das Ergebnis wird Ihnen am Ende der Prüfung angezeigt.",
     /**
-     * **The layout's button says "Teilprüfung starten"** directly under a
-     * heading that says Abschlussprüfung. When this was written no per-module
-     * assessment existed in the thirteen pages or in the budget (S20), so the
-     * button said what it actually started rather than naming a feature that
-     * did not exist.
+     * "Prüfung starten" — the verb, not the exam's name (P190-01).
      *
-     * Per-module assessment exists now (P87), and the button names **this**
-     * exam — which is what the layout was reaching for all along.
+     * P87-02 put the exam's own title in this button, and the problem it was
+     * solving was real: with one Lernerfolgskontrolle per module, a button
+     * saying "starten" under a heading saying "Abschlussprüfung" leaves a
+     * physician unable to tell which exam they are sitting (§9.4).
+     *
+     * The 2026-09-01 layout solves it a page higher instead, and better. The
+     * exam's name is the **eyebrow directly above the heading** on page 08 —
+     * "Fortbildungabschluss" — and it is the row the learner clicked in the
+     * sidebar, so it is on screen twice before the button is reached. With the
+     * question answered there, the button goes back to naming the act, which
+     * is what every one of the four exam pages draws.
      */
-    start: (exam: string): string => `${exam} starten`,
+    start: "Prüfung starten",
 
     /** "Frage 5 von 11" */
     questionOf: (current: number, total: number): string =>
@@ -882,7 +928,8 @@ export const de = {
       `Sie haben ${correct} von ${total} Fragen richtig beantwortet.`,
     failedSentence: (correct: number, total: number, needed: number): string =>
       `Sie haben ${correct} von ${total} Fragen richtig beantwortet. Zum Bestehen der Lernerfolgskontrolle sind mindestens ${needed} richtige Antworten erforderlich. Bitte wiederholen Sie die Prüfung.`,
-    retry: (exam: string): string => `${exam} wiederholen`,
+    /** "Prüfung wiederholen", for the same reason `start` is not named. */
+    retry: "Prüfung wiederholen",
     pause: "Fortbildung pausieren",
     pauseHint: "Prüfung zu einem späteren Zeitpunkt fortsetzen",
     claim: "CME-Punkte geltend machen",
@@ -920,7 +967,7 @@ export const de = {
   /** The Punktemeldung screen — layout page 13, copied from the render. */
   completion: {
     title: "Herzlichen Glückwunsch!",
-    subtitle: "Sie haben die Fortbildung abgeschlossen.",
+    subtitle: "Sie haben die Fortbildung erfolgreich abgeschlossen.",
     intro:
       "Um Ihre CME-Punkte zu melden und Ihr Zertifikat auszustellen, benötigen wir Ihre Angaben. Die Daten werden direkt und sicher an Ihre zuständige Ärztekammer übermittelt.",
     /** The grey box with the question-mark icon. */
@@ -974,6 +1021,21 @@ export const de = {
      * answered. See docs/show-stoppers.md.
      */
     efnHint: "Die 15-stellige EFN finden Sie auf Ihrem Arztausweis",
+    /**
+     * The specimen number in the empty EFN field (layout page 13).
+     *
+     * **Fifteen digits, not the drawing's eighteen.** The 2026-09-01 layout
+     * shows `0 8 0 2 2 3 4 1 1 9 4 0 3 0 2 4 8 3`, which is 18. Every other
+     * part of this platform — `maxLength` here, `isValidEfn` in
+     * `@ds/domain`, the EIV client and the column the API writes — takes the
+     * EFN as 15, and the number of digits in a Einheitliche Fortbildungsnummer
+     * is a rule of the Ärztekammern rather than a layout decision (CLAUDE.md
+     * §7). So the *shape* of the drawing is adopted and its length is not,
+     * and the difference is raised in `docs/show-stoppers.md` rather than
+     * guessed at here. A placeholder longer than the field accepts would be a
+     * screen teaching a physician to type a number it then refuses.
+     */
+    efnPlaceholder: "0 8 0 2 2 3 4 1 1 9 4 0 3 0 2",
     efnInvalid: "Die EFN muss aus genau 15 Ziffern bestehen.",
     efnSaved: "Ihre EFN ist hinterlegt.",
     /**

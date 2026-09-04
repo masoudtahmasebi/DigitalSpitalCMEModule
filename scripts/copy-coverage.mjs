@@ -150,10 +150,11 @@ const BASELINE = new Map([
     "layout — the sidebar nests exams under their module already (P95-01)",
   ],
   [
-    "player.reportingLocked",
-    "layout — the reporting row is reached from the passed screen",
+    "player.reportingOpen",
+    "layout — the Punktemeldung row is named 'CME-Punkte geltend machen' on " +
+      "every page of the 2026-09-01 drawing, so `quiz.claim` is what it says " +
+      "in both states and this second name has no screen (P190-01)",
   ],
-  ["player.reportingOpen", "layout — same row"],
   ["gate.lockedHint", "raise — a locked section says Gesperrt and not what opens it"],
   ["gate.available", "obsolete — an available section is drawn without a word"],
   ["media.quality", "obsolete — there is no quality selector"],

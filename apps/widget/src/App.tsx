@@ -42,6 +42,7 @@ import {
   type CourseTab,
   type WidgetRoute,
 } from "./route.js";
+import { CONTENT, MAIN_ASIDE } from "./layout.js";
 import { CourseList } from "./components/CourseList.js";
 import { CertificationTab } from "./components/CertificationTab.js";
 import { ProgressCard, StickyMetaBar } from "./components/CourseHeader.js";
@@ -777,8 +778,13 @@ function Loaded(props: {
    * chrome is constructed at all.
    */
   if (screen.kind !== "outline") {
+    /*
+     * Full width (P190-01). `CourseShell` bleeds its teal band to the edges of
+     * the page and applies the content column to the band's contents and to
+     * the white panel below it, so nothing here may centre first.
+     */
     const shell = (body: React.ReactNode, currentContentId: string, progress = false) => (
-      <div className="p-4">
+      <div className="py-4">
         <CourseShell
           apiBase={apiBase}
           projectSlug={projectSlug}
@@ -795,6 +801,15 @@ function Loaded(props: {
           }}
           onResume={resume}
           progress={progress}
+          /*
+            The sidebar's **CME-Punkte geltend machen** row (layout 05–12).
+
+            `claimPoints` and not a second reading of it: the course page's
+            progress card, the floating module and this row must agree about
+            whether there is a point left to claim, and P170-02 already
+            established what that condition is.
+          */
+          onClaimPoints={claimPoints}
         >
           {body}
         </CourseShell>
@@ -902,6 +917,15 @@ function Loaded(props: {
               : undefined
           }
           onNext={nextAfter(screen.contentId)}
+          /*
+            The drawing's congratulation on page 07, and only where it is true.
+            `moduleCompletion` is the server's — the same pair the progress card
+            renders as a sentence — so this is not a second reading of what is
+            finished, it is the one reading compared with itself.
+          */
+          allModulesDone={
+            state.moduleCompletion.completed === state.moduleCompletion.total
+          }
         />,
         screen.contentId,
       );
@@ -944,25 +968,37 @@ function Loaded(props: {
 
   return (
     /*
-      Capped at the width its own drawing has (DEP-24).
+      On the shared content column, not capped at its panel's width (P190-01,
+      correcting DEP-24).
 
-      `detailseite-uebersicht.png` is 1:1 for 1920 like the rest of them, and
-      its panel measures x 262…1329 — **1068 px**. This screen never declared a
-      width, so it took whatever the host column was; that was 1104 and near
-      enough, until the portal's column grew to 1430 for the player and this
-      screen would have stretched 362 px past its artwork with nothing to say
-      so.
+      DEP-24 measured `detailseite-uebersicht.png` and found the tab panel at
+      x 262…1329 — 1068 px — which is right, and the 01.09.2026 export agrees
+      to within two pixels (261…1331). What it then did was cap the **screen**
+      at that figure, via `max-w-6xl`. The screen is wider than its panel: the
+      *Ihr Fortschritt* card sits at x 1374…1656 on the same page, entirely to
+      the right of 1329. A cap at 1152 has to fit both, so the panel came out
+      at roughly 808 px and the card was squeezed beside it — 246 px narrower
+      than the drawing, in the shape of a correct measurement of the wrong box.
 
-      `max-w-6xl` is 1152 — the Tailwind step nearest that drawing, and, not by
-      accident, exactly the width this screen already had: it is what the
-      portal's own container used to impose before the player needed a wider
-      one. So this is not a new width for the detail page, it is the width it
-      has always been, written down where it belongs now that the container no
-      longer says it.
+      The screen is the content column: 261…1659, 1398 px, the same one the
+      catalogue's panel and the player's white panel are on. The panel's own
+      1070 px then falls out of `MAIN_ASIDE` rather than being imposed:
+      1398 − 40 (`gap-10`) − 288 (`18rem`) = 1070.
+
+      The hero inside `StickyMetaBar` bleeds past all of this, which is why the
+      column is applied part by part below rather than to this element.
     */
-    <div className="mx-auto w-full max-w-6xl space-y-6 p-4">
-      <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
+    <div className="space-y-6 py-4">
+      <div className={CONTENT}>
+        <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
+      </div>
 
+      {/*
+        Full width, and it insets its own parts: the hero bleeds to the edges
+        of the page and the meta strip under it sits on the column — see the
+        note in `CourseHeader`, and `layout.ts` for why a negative margin
+        cannot do this from inside a centred column.
+      */}
       <StickyMetaBar
         course={detail}
         state={state}
@@ -978,106 +1014,108 @@ function Loaded(props: {
         evaluation — each of those has a progress reading of its own, and two
         different accounts of the same course on one screen is one too many.
       */}
-      <TabbedPanel
-        tabs={TABS.map((entry) => ({ id: entry, label: de.tabs[entry] }))}
-        active={tab}
-        label={detail.title}
-        onSelect={(entry) => {
-          setTab(entry);
-          back();
-        }}
-      >
-        {/*
+      <div className={CONTENT}>
+        <TabbedPanel
+          tabs={TABS.map((entry) => ({ id: entry, label: de.tabs[entry] }))}
+          active={tab}
+          label={detail.title}
+          onSelect={(entry) => {
+            setTab(entry);
+            back();
+          }}
+        >
+          {/*
           Only the outline reaches here now: the player, the exam and the
           Punktemeldung render through `CourseShell` above, which is what the
-          layout draws for them — a teal masthead and the Modul Übersicht, with
+          layout draws for them — a teal masthead and the Fortbildungsfortschritt, with
           no tab row (#61).
         */}
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-          {/* `max-sm:` drops the top border and the top rounding: below `sm` the
+          <div className={MAIN_ASIDE}>
+            {/* `max-sm:` drops the top border and the top rounding: below `sm` the
             heading `TabbedPanel` renders supplies both, and two borders meeting
             draw a 2 px rule across what the layout has as one line. */}
-          {/* `border-brand-100`, not `border-gray-100` (DEP-28): the active tab
+            {/* `border-brand-100`, not `border-gray-100` (DEP-28): the active tab
             standing on this panel's top edge carries the same colour, and the
             whole point of the folder-tab shape is that the two are one outline.
             A teal tab meeting a grey panel draws the seam instead of hiding it. */}
-          <div className="min-w-0 rounded-2xl rounded-tl-none border border-brand-100 bg-white p-5 shadow-sm max-sm:rounded-t-none max-sm:border-t-0 max-sm:border-brand-500 sm:p-6">
-            {tab === "overview" ? (
-              <OverviewTab course={detail} state={state} />
-            ) : tab === "speakers" ? (
-              <ExpertsTab experts={detail.experts} />
-            ) : tab === "library" ? (
-              <Mediathek
-                client={client}
-                courseSlug={courseSlug}
-                key={state.progress.percent}
-              />
-            ) : (
-              /*
-               * The Zertifizierung tab, informational (layout page 04).
-               *
-               * It used to be the module outline plus the EFN form plus
-               * **Fortbildung abschließen**. The layout has none of that here
-               * and #60 moved it: the form is the `reporting` screen above,
-               * reached from the quiz-passed screen, and the outline is gone —
-               * the player's Modul Übersicht is the course's navigation, and a
-               * second one on the detail page was a way past the sequential
-               * gate that the layout deliberately does not offer.
-               */
-              <CertificationTab
-                course={detail}
-                certificate={
-                  <>
-                    {state.completedAt === null ? (
-                      <p className="mt-6 text-sm text-gray-500">
-                        {de.certificate.notYet}
-                      </p>
-                    ) : (
-                      <div className="mt-6">
-                        <CertificateGate client={client} courseSlug={courseSlug} />
-                      </div>
-                    )}
-                    {/*
-                     * The physician's own EFN (P179-03), drawn whether or not
-                     * they have finished.
-                     *
-                     * P54-02 put the correction on the Punktemeldung form, and
-                     * the widget stops showing that form the moment a
-                     * completion is recorded — so from exactly the point the
-                     * number starts to matter, its owner could no longer see
-                     * or fix it. The panel decides for itself whether this
-                     * course reports anything at all, so a Fortbildung without
-                     * points draws nothing.
-                     */}
-                    <EfnPanel client={client} />
-                    {/* Where that certificate is sent, beside the number it
+            <div className="min-w-0 rounded-2xl rounded-tl-none border border-brand-100 bg-white p-5 shadow-sm max-sm:rounded-t-none max-sm:border-t-0 max-sm:border-brand-500 sm:p-6">
+              {tab === "overview" ? (
+                <OverviewTab course={detail} state={state} />
+              ) : tab === "speakers" ? (
+                <ExpertsTab experts={detail.experts} />
+              ) : tab === "library" ? (
+                <Mediathek
+                  client={client}
+                  courseSlug={courseSlug}
+                  key={state.progress.percent}
+                />
+              ) : (
+                /*
+                 * The Zertifizierung tab, informational (layout page 04).
+                 *
+                 * It used to be the module outline plus the EFN form plus
+                 * **Fortbildung abschließen**. The layout has none of that here
+                 * and #60 moved it: the form is the `reporting` screen above,
+                 * reached from the quiz-passed screen, and the outline is gone —
+                 * the player's Fortbildungsfortschritt is the course's navigation, and a
+                 * second one on the detail page was a way past the sequential
+                 * gate that the layout deliberately does not offer.
+                 */
+                <CertificationTab
+                  course={detail}
+                  certificate={
+                    <>
+                      {state.completedAt === null ? (
+                        <p className="mt-6 text-sm text-gray-500">
+                          {de.certificate.notYet}
+                        </p>
+                      ) : (
+                        <div className="mt-6">
+                          <CertificateGate client={client} courseSlug={courseSlug} />
+                        </div>
+                      )}
+                      {/*
+                       * The physician's own EFN (P179-03), drawn whether or not
+                       * they have finished.
+                       *
+                       * P54-02 put the correction on the Punktemeldung form, and
+                       * the widget stops showing that form the moment a
+                       * completion is recorded — so from exactly the point the
+                       * number starts to matter, its owner could no longer see
+                       * or fix it. The panel decides for itself whether this
+                       * course reports anything at all, so a Fortbildung without
+                       * points draws nothing.
+                       */}
+                      <EfnPanel client={client} />
+                      {/* Where that certificate is sent, beside the number it
                         carries — P183-03. */}
-                    <DeliveryAddressPanel client={client} courseSlug={courseSlug} />
-                  </>
-                }
-              />
-            )}
-          </div>
+                      <DeliveryAddressPanel client={client} courseSlug={courseSlug} />
+                    </>
+                  }
+                />
+              )}
+            </div>
 
-          {/*
+            {/*
           The inline card is the wide layout's (P19-01). Below `sm` the
           floating module below replaces it — two progress panels on one
           430 px screen would be two places to read the same number, which is
           how they end up disagreeing.
         */}
-          <div className="max-sm:hidden">
-            <ProgressCard state={state} onResume={resume} onClaimPoints={claimPoints} />
-          </div>
+            <div className="max-sm:hidden">
+              <ProgressCard state={state} onResume={resume} onClaimPoints={claimPoints} />
+            </div>
 
-          {/*
+            {/*
           The same two numbers, floating, below `sm` (P19-01). Not restricted
           to the outline screen: its whole reason for existing is being the
           resume affordance *while a video is playing*, which is the one screen
           the inline card is not on.
         */}
-          <StickyProgress state={state} onResume={resume} onClaimPoints={claimPoints} />
-        </div>
-      </TabbedPanel>
+            <StickyProgress state={state} onResume={resume} onClaimPoints={claimPoints} />
+          </div>
+        </TabbedPanel>
+      </div>
     </div>
   );
 }
@@ -1192,6 +1230,8 @@ function QuizGate(props: {
   certified: boolean;
   onClaimPoints: (() => void) | undefined;
   onNext: { readonly title: string; readonly open: () => void } | undefined;
+  /** The server's own module counts, equal — see `QuizScreen` (P190-03). */
+  allModulesDone: boolean;
 }) {
   const quiz = useAsync(
     () => props.client.getQuiz(props.courseSlug, props.contentId),
@@ -1217,6 +1257,7 @@ function QuizGate(props: {
       onBack={props.onBack}
       onClaimPoints={props.onClaimPoints}
       onNext={props.onNext}
+      allModulesDone={props.allModulesDone}
     />
   );
 }

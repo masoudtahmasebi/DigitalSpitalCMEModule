@@ -520,151 +520,167 @@ export function VideoPlayer(props: VideoPlayerProps) {
   return (
     <div className="space-y-2">
       {/*
+        The video and its controls are **one object** (layout 6.2, P190-01).
+
+        They were two: a rounded black box, an 8 px gap, and a toolbar sitting
+        on the panel's white. The drawing has a single player — the control row
+        is inside the frame, on the video's own lower edge — and the gap is what
+        made ours read as a video with a toolbar parked under it rather than as
+        a player.
+
+        Attached rather than absolutely overlaid, which is the other way to
+        draw it: an overlay covers the bottom of the frame, and this player's
+        control row carries a scrub bar whose four layers are the visible
+        record of what the CME gate has credited (see `SeekBar`). Putting that
+        over moving video is where its contrast argument stops holding.
+      */}
+      <div className="overflow-hidden rounded-[var(--ds-radius)] bg-gray-100">
+        {/*
         `tabIndex` and the key handler go on the container, not the <video>:
         the video's own element is `controls={false}` and never focused, and
         the controls below are real buttons that must stay reachable. The
         container is focusable and named, so `jsx-a11y` is satisfied without a
         disable — every shortcut it handles also has a button below it.
       */}
-      <div
-        ref={containerRef}
-        tabIndex={0}
-        onKeyDown={handleKeyDown}
-        aria-label={props.title}
-        className="group relative overflow-hidden rounded-[var(--ds-radius)] bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
-      >
-        {/*
+        <div
+          ref={containerRef}
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          aria-label={props.title}
+          className="group relative overflow-hidden bg-black focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-600"
+        >
+          {/*
           `jsx-a11y/media-has-caption` only recognises a static <track> child
           and cannot see the conditional below, so it warns about markup that is
           in fact present. Narrow disable for exactly that: the day the <track>
           is deleted, the next reviewer finds a disable with no element.
         */}
-        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-        <video
-          ref={videoRef}
-          className="block max-h-[70vh] w-full bg-black"
-          // The browser picks: it takes the first <source> whose `type` it can
-          // play and skips the rest. `orderSources` on the server already put
-          // adaptive streams first, which is the whole of the negotiation.
-          poster={props.posterUrl ?? undefined}
-          preload="metadata"
-          playsInline
-          controls={false}
-          onLoadedMetadata={handleLoadedMetadata}
-          onTimeUpdate={handleTimeUpdate}
-          onProgress={handleProgress}
-          /*
-           * `play` and `pause`/`ended` bracket the interval; `timeupdate`
-           * alone cannot.
-           *
-           * `timeupdate` fires about four times a second, so an interval built
-           * only from it starts a quarter-second after playback did and ends a
-           * quarter-second before it stopped. Watching a video from end to end
-           * therefore credited ~97 %, and the watch gate defaults to 100 — so
-           * the gate was not strict but *unreachable*. Observing the element's
-           * own position at the two ends closes both slivers with the figure
-           * the element itself reports.
-           *
-           * Deliberately **not** on `seeking`: by the time it fires,
-           * `currentTime` is already the destination, and observing it would
-           * stretch the open interval across material nobody watched. A seek
-           * closes the interval and opens a new one where it lands.
-           */
-          onPlay={() => {
-            withVideo((video) => onTick(video.currentTime, true, video.playbackRate));
-          }}
-          onPlaying={() => withVideo(() => {})}
-          onWaiting={() => withVideo(() => {})}
-          onPause={() => {
-            withVideo((video) => onTick(video.currentTime, true, video.playbackRate));
-            onStop("pause");
-            withVideo(() => {});
-          }}
-          onSeeking={() => {
-            onStop("seek");
-            enforceSeekLimit();
-            withVideo(() => {});
-          }}
-          onSeeked={() => withVideo(() => {})}
-          onEnded={() => {
-            // `pause` fires first and has already observed this position; the
-            // repeat is idempotent — the tracker extends an interval to a
-            // position it already holds without widening it.
-            withVideo((video) => onTick(video.currentTime, true, video.playbackRate));
-            onStop("ended");
-            withVideo(() => {});
-          }}
-          onVolumeChange={() => withVideo(() => {})}
-          onRateChange={() => withVideo(() => {})}
-          onError={handleError}
-          key={reloads}
-        >
-          {props.sources.map((source) => (
-            <source
-              key={source.url}
-              src={source.url}
-              /*
-               * Omitted when we could not name the format (P79-01).
-               *
-               * `type=""` is not "no type": the browser compares it against
-               * what it can play, matches nothing, and skips the rendition —
-               * so a perfectly playable file would refuse to start with
-               * nothing in the console to explain it. Leaving the attribute
-               * off makes the browser sniff the container, which is what it
-               * does well and is why the console stopped asking authors to
-               * declare a type at all.
-               */
-              {...(source.mimeType.trim() === "" ? {} : { type: source.mimeType })}
-            />
-          ))}
-          {/*
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+          <video
+            ref={videoRef}
+            className="block max-h-[70vh] w-full bg-black"
+            // The browser picks: it takes the first <source> whose `type` it can
+            // play and skips the rest. `orderSources` on the server already put
+            // adaptive streams first, which is the whole of the negotiation.
+            poster={props.posterUrl ?? undefined}
+            preload="metadata"
+            playsInline
+            controls={false}
+            onLoadedMetadata={handleLoadedMetadata}
+            onTimeUpdate={handleTimeUpdate}
+            onProgress={handleProgress}
+            /*
+             * `play` and `pause`/`ended` bracket the interval; `timeupdate`
+             * alone cannot.
+             *
+             * `timeupdate` fires about four times a second, so an interval built
+             * only from it starts a quarter-second after playback did and ends a
+             * quarter-second before it stopped. Watching a video from end to end
+             * therefore credited ~97 %, and the watch gate defaults to 100 — so
+             * the gate was not strict but *unreachable*. Observing the element's
+             * own position at the two ends closes both slivers with the figure
+             * the element itself reports.
+             *
+             * Deliberately **not** on `seeking`: by the time it fires,
+             * `currentTime` is already the destination, and observing it would
+             * stretch the open interval across material nobody watched. A seek
+             * closes the interval and opens a new one where it lands.
+             */
+            onPlay={() => {
+              withVideo((video) => onTick(video.currentTime, true, video.playbackRate));
+            }}
+            onPlaying={() => withVideo(() => {})}
+            onWaiting={() => withVideo(() => {})}
+            onPause={() => {
+              withVideo((video) => onTick(video.currentTime, true, video.playbackRate));
+              onStop("pause");
+              withVideo(() => {});
+            }}
+            onSeeking={() => {
+              onStop("seek");
+              enforceSeekLimit();
+              withVideo(() => {});
+            }}
+            onSeeked={() => withVideo(() => {})}
+            onEnded={() => {
+              // `pause` fires first and has already observed this position; the
+              // repeat is idempotent — the tracker extends an interval to a
+              // position it already holds without widening it.
+              withVideo((video) => onTick(video.currentTime, true, video.playbackRate));
+              onStop("ended");
+              withVideo(() => {});
+            }}
+            onVolumeChange={() => withVideo(() => {})}
+            onRateChange={() => withVideo(() => {})}
+            onError={handleError}
+            key={reloads}
+          >
+            {props.sources.map((source) => (
+              <source
+                key={source.url}
+                src={source.url}
+                /*
+                 * Omitted when we could not name the format (P79-01).
+                 *
+                 * `type=""` is not "no type": the browser compares it against
+                 * what it can play, matches nothing, and skips the rendition —
+                 * so a perfectly playable file would refuse to start with
+                 * nothing in the console to explain it. Leaving the attribute
+                 * off makes the browser sniff the container, which is what it
+                 * does well and is why the console stopped asking authors to
+                 * declare a type at all.
+                 */
+                {...(source.mimeType.trim() === "" ? {} : { type: source.mimeType })}
+              />
+            ))}
+            {/*
             WCAG 1.2.2 (Captions, Prerecorded) is Level A and EN 301 549 makes
             it the reference standard in Germany. Rendered only when the author
             supplied a track: an empty <track> with no `src` offers a captions
             control that produces nothing, which reads as broken captions rather
             than absent ones.
           */}
-          {props.captionsUrl === null ? null : (
-            <track
-              kind="captions"
-              src={props.captionsUrl}
-              srcLang="de"
-              label={de.content.captions}
-              default
-            />
+            {props.captionsUrl === null ? null : (
+              <track
+                kind="captions"
+                src={props.captionsUrl}
+                srcLang="de"
+                label={de.content.captions}
+                default
+              />
+            )}
+            {de.media.error.unsupported}
+          </video>
+
+          {failure === undefined ? null : (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-4">
+              <Failure
+                message={de.media.error[failure]}
+                onRetry={
+                  failure === "network"
+                    ? () => {
+                        setFailure(undefined);
+                        // A new key remounts the element, which re-runs source
+                        // selection. `load()` alone keeps a source the browser has
+                        // already given up on.
+                        setReloads((n) => n + 1);
+                      }
+                    : undefined
+                }
+              />
+            </div>
           )}
-          {de.media.error.unsupported}
-        </video>
 
-        {failure === undefined ? null : (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-4">
-            <Failure
-              message={de.media.error[failure]}
-              onRetry={
-                failure === "network"
-                  ? () => {
-                      setFailure(undefined);
-                      // A new key remounts the element, which re-runs source
-                      // selection. `load()` alone keeps a source the browser has
-                      // already given up on.
-                      setReloads((n) => n + 1);
-                    }
-                  : undefined
-              }
-            />
-          </div>
-        )}
+          {state.buffering && failure === undefined ? (
+            <p
+              className="absolute inset-x-0 top-2 text-center text-xs text-white/90"
+              role="status"
+            >
+              {de.media.buffering}
+            </p>
+          ) : null}
 
-        {state.buffering && failure === undefined ? (
-          <p
-            className="absolute inset-x-0 top-2 text-center text-xs text-white/90"
-            role="status"
-          >
-            {de.media.buffering}
-          </p>
-        ) : null}
-
-        {/*
+          {/*
           The layout's centred play button over the poster — and, once playback
           starts, the same button with nothing drawn in it (P106-02).
 
@@ -685,18 +701,18 @@ export function VideoPlayer(props: VideoPlayerProps) {
           Hidden entirely on a failure, where the message underneath is the
           thing to click.
         */}
-        {failure === undefined ? (
-          <button
-            type="button"
-            onClick={togglePlay}
-            aria-label={
-              state.playing
-                ? de.media.pause
-                : state.ended
-                  ? de.media.replay
-                  : de.media.play
-            }
-            /*
+          {failure === undefined ? (
+            <button
+              type="button"
+              onClick={togglePlay}
+              aria-label={
+                state.playing
+                  ? de.media.pause
+                  : state.ended
+                    ? de.media.replay
+                    : de.media.play
+              }
+              /*
               Out of the tab order, and named so a test can address exactly
               this control.
 
@@ -708,57 +724,58 @@ export function VideoPlayer(props: VideoPlayerProps) {
               exploring the page rather than tabbing it — and every keyboard
               route to pausing (Space, K, the Controls button) is untouched.
             */
-            tabIndex={-1}
-            data-ds-control="surface"
-            className="absolute inset-0 flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-white"
-          >
-            {state.playing ? null : (
-              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 text-brand-700 shadow-lg">
-                <PlayIcon className="h-8 w-8" />
-              </span>
-            )}
-          </button>
-        ) : null}
-      </div>
+              tabIndex={-1}
+              data-ds-control="surface"
+              className="absolute inset-0 flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-white"
+            >
+              {state.playing ? null : (
+                <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 text-brand-700 shadow-lg">
+                  <PlayIcon className="h-8 w-8" />
+                </span>
+              )}
+            </button>
+          ) : null}
+        </div>
 
-      <Controls
-        state={state}
-        duration={duration}
-        buffered={buffered}
-        watchedSegments={props.watchedSegments}
-        seekLimitSec={seekLimit}
-        seekable={seekable}
-        captionsAvailable={props.captionsUrl !== null}
-        captionsOn={captionsOn}
-        fullscreen={fullscreen}
-        onTogglePlay={togglePlay}
-        onSeek={seekTo}
-        onToggleMute={() =>
-          withVideo((video) => {
-            video.muted = !video.muted;
-          })
-        }
-        onVolume={(volume) =>
-          withVideo((video) => {
-            video.volume = clampVolume(volume);
-            video.muted = volume === 0;
-          })
-        }
-        onCycleRate={() =>
-          withVideo((video) => {
-            video.playbackRate = nextPlaybackRate(video.playbackRate);
-          })
-        }
-        onToggleCaptions={() => setCaptionsOn((on) => !on)}
-        onToggleFullscreen={() => void toggleFullscreen()}
-        onPictureInPicture={() =>
-          withVideo((video) => {
-            void (document.pictureInPictureElement === null
-              ? video.requestPictureInPicture?.().catch(() => undefined)
-              : document.exitPictureInPicture?.().catch(() => undefined));
-          })
-        }
-      />
+        <Controls
+          state={state}
+          duration={duration}
+          buffered={buffered}
+          watchedSegments={props.watchedSegments}
+          seekLimitSec={seekLimit}
+          seekable={seekable}
+          captionsAvailable={props.captionsUrl !== null}
+          captionsOn={captionsOn}
+          fullscreen={fullscreen}
+          onTogglePlay={togglePlay}
+          onSeek={seekTo}
+          onToggleMute={() =>
+            withVideo((video) => {
+              video.muted = !video.muted;
+            })
+          }
+          onVolume={(volume) =>
+            withVideo((video) => {
+              video.volume = clampVolume(volume);
+              video.muted = volume === 0;
+            })
+          }
+          onCycleRate={() =>
+            withVideo((video) => {
+              video.playbackRate = nextPlaybackRate(video.playbackRate);
+            })
+          }
+          onToggleCaptions={() => setCaptionsOn((on) => !on)}
+          onToggleFullscreen={() => void toggleFullscreen()}
+          onPictureInPicture={() =>
+            withVideo((video) => {
+              void (document.pictureInPictureElement === null
+                ? video.requestPictureInPicture?.().catch(() => undefined)
+                : document.exitPictureInPicture?.().catch(() => undefined));
+            })
+          }
+        />
+      </div>
 
       <details className="text-xs text-gray-500">
         <summary className="cursor-pointer">{de.media.shortcuts}</summary>
@@ -800,7 +817,7 @@ function Controls(props: {
   const total = clockTime(duration);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 px-4 pb-3 pt-2.5">
       <SeekBar
         positionSec={state.positionSec}
         durationSec={duration}
