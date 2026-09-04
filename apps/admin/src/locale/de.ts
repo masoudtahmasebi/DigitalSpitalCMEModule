@@ -318,6 +318,8 @@ export const german = {
       "Der Versand ist eingerichtet. „Passwort vergessen?“ funktioniert für Verwaltungskonten.",
     platformMailIncomplete:
       "Server und Absenderadresse fehlen noch. Ohne sie kann kein Link verschickt werden — Betroffene brauchen dann eine Einladung durch eine andere Administration. Auch Teilnahmebescheinigungen aus Projekten ohne eigene SMTP-Angaben bleiben dann unversendet; sie stehen im Portal weiterhin zum Download bereit.",
+    platformMailUnreadable:
+      "Die Einstellungen für den Plattform-Versand konnten nicht gelesen werden. Bitte laden Sie die Seite neu — was hier steht, ist nicht der gespeicherte Stand.",
     platformMailSecure: "Verschlüsselt ab Verbindungsaufbau (Port 465)",
     /*
      * The test send, and the four things it can say (P77-01).

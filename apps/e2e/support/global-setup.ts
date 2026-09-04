@@ -52,10 +52,27 @@ export default async function globalSetup(): Promise<void> {
   process.env["E2E_STAFF_EMAIL"] = staff.email;
   process.env["E2E_STAFF_PASSWORD"] = staff.password;
 
-  globalThis.__dsStack = await startStack({
+  const stack = await startStack({
     repo: REPO,
     databaseUrl: prepared.databaseUrl,
     migrationUrl: prepared.migrationUrl,
     kmsKey: KMS_KEY,
   });
+  globalThis.__dsStack = stack;
+
+  /*
+   * The harness's mail server, handed to the workers the same way the operator
+   * credentials are (P187-01).
+   *
+   * Its port is chosen by the kernel, so it cannot be a constant, and the spec
+   * that configures the platform sender types these values into the Sicherheit
+   * screen — the product's own path to that row, not a SQL fixture. §9.13's
+   * second rule: the rig comes up in the state a real installation is created
+   * in, with **no** sender configured, and the product's own tooling is what
+   * configures it.
+   */
+  process.env["E2E_SMTP_HOST"] = stack.mail.host;
+  process.env["E2E_SMTP_PORT"] = String(stack.mail.port);
+  process.env["E2E_SMTP_USERNAME"] = stack.mail.username;
+  process.env["E2E_SMTP_PASSWORD"] = stack.mail.password;
 }

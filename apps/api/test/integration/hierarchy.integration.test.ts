@@ -2276,19 +2276,31 @@ describe("the installation's EIV posture (P180-01)", () => {
     return body;
   }
 
-  it("starts with the worker off and nothing pointed at a real register", async () => {
+  it("starts pointed at the production register, and armed at nothing", async () => {
     /*
-     * The default the migration establishes, asserted rather than assumed.
+     * The default the migrations establish, asserted rather than assumed, and
+     * rewritten at P188-01 on the client's instruction:
      *
-     * It is the one that matters most: an installation that gained this table
-     * must not begin filing because a column defaulted the friendly way, and a
-     * fresh database must file nothing until somebody says otherwise.
+     *   > by default for new customers everything should be set to prod, for
+     *   > testing now i will set it to test.
+     *
+     * The endpoint moved to `live`; **the property this case was written for
+     * did not move with it.** An installation that gained this table must not
+     * begin filing because a column defaulted the friendly way, and a fresh
+     * database must file nothing until somebody says otherwise. That is
+     * `workerEnabled` and `liveConfirmedAt`, not the endpoint — and the two
+     * were only ever conflated because the old default made them agree.
+     *
+     * `requiresConsent` is now **true**, which is the visible consequence: the
+     * console draws the confirmation beside the arming switch, because the
+     * register this installation points at is the one whose reports cannot be
+     * unfiled.
      */
     const current = await settings();
 
     expect(current.workerEnabled).toBe(false);
-    expect(current.endpoint).toBe("mock");
-    expect(current.requiresConsent).toBe(false);
+    expect(current.endpoint).toBe("live");
+    expect(current.requiresConsent).toBe(true);
     expect(current.liveConfirmedAt).toBeNull();
   });
 

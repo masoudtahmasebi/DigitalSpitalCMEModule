@@ -280,6 +280,8 @@ export const en: DeepPartial<typeof german> = {
       "Delivery is configured. “Forgot your password?” works for administration accounts.",
     platformMailIncomplete:
       "Server and sender address are still missing. Without them no link can be sent — the people affected then need an invitation from another administrator. Teilnahmebescheinigungen from projects without SMTP settings of their own also stay unsent; they remain downloadable in the portal.",
+    platformMailUnreadable:
+      "The platform delivery settings could not be read. Reload the page — what is shown here is not what is stored.",
     platformMailSecure: "Encrypted from connection start (port 465)",
     platformMailTest: "Send test email",
     platformMailTestHint:

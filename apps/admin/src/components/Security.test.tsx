@@ -283,3 +283,113 @@ describe("which rule governs the reader", () => {
     expect(screen.queryByLabelText(/Kunde: MEDICE — für Sie maßgeblich/u)).toBeNull();
   });
 });
+
+/**
+ * The platform sender's form does not throw away what you typed (P188-02).
+ *
+ * ## How this was found
+ *
+ * Not by reading the code. `journey.spec.ts` filled the six fields, clicked
+ * Speichern, and the screen answered **"Gespeichert."** with `Server` empty and
+ * every other field holding what had been typed. The save had stored a `NULL`
+ * host, `canSend` had gone false, and the screen said the operation succeeded.
+ *
+ * That is CLAUDE.md §9.13's fourth row — _"a form silently discarded: the order
+ * two controls are used in, on one screen"_ — and P41-01's shape on the answer:
+ * a save that dropped a field and replied "Gespeichert."
+ *
+ * ## The mechanism
+ *
+ * The mount effect reads the stored sender and writes **every** field from the
+ * response. Locally that lands in a few milliseconds; over the internet it is
+ * a few hundred, and the fields are on screen and focusable the whole time. An
+ * operator who clicks Sicherheit and types the server name immediately loses
+ * exactly the characters typed before the response arrived — and only those, so
+ * the form looks half-filled by a person who filled it completely.
+ *
+ * ## What the fix is, and why it is not a `touched` flag
+ *
+ * The form is not rendered until the read has finished. A field that is not
+ * there cannot be typed into and cannot be clobbered, and it closes a second
+ * defect in the same breath: an empty form during the load is indistinguishable
+ * from an installation with no sender configured (§9.6), which is the reading a
+ * person would take from a blank Server box.
+ */
+describe("the platform sender's form, while its own settings are still loading", () => {
+  /** A read that never settles until the test lets it. */
+  function suspendedRead(): { resolve: () => void } {
+    let release = (): void => undefined;
+    const gate = new Promise<void>((r) => {
+      release = () => r();
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        await gate;
+        return new Response(
+          JSON.stringify({
+            host: null,
+            port: null,
+            username: null,
+            hasPassword: false,
+            secure: false,
+            fromAddress: null,
+            fromName: null,
+            canSend: false,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+
+    return { resolve: release };
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("offers no field to type into before it knows what is stored", async () => {
+    const gate = suspendedRead();
+    await renderScreen({ platform: "optional", isSuperAdmin: true });
+
+    // The whole point: there is nothing here to lose what you typed into it.
+    expect(document.querySelector("#platform-smtp-host")).toBeNull();
+
+    await act(async () => {
+      gate.resolve();
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector("#platform-smtp-host")).not.toBeNull();
+    });
+  });
+
+  it("keeps what was typed once the fields are there", async () => {
+    const gate = suspendedRead();
+    await renderScreen({ platform: "optional", isSuperAdmin: true });
+    await act(async () => {
+      gate.resolve();
+    });
+
+    const host = await waitFor(() => {
+      const field = document.querySelector<HTMLInputElement>("#platform-smtp-host");
+      if (field === null) throw new Error("the sender form never appeared");
+      return field;
+    });
+
+    fireEvent.change(host, { target: { value: "mail.digitalspital.de" } });
+
+    // A second read landing late must not reach back into the form. There is
+    // only one in the component today; this asserts the value survives whatever
+    // else the screen does after mount.
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(document.querySelector<HTMLInputElement>("#platform-smtp-host")?.value).toBe(
+      "mail.digitalspital.de",
+    );
+  });
+});

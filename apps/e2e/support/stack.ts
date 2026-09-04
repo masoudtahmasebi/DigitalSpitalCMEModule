@@ -29,6 +29,7 @@ import { createServer, type Server } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { cspFromCaddyfile } from "./csp.js";
 import { startObjectStore, type ObjectStore } from "./object-store.js";
+import { startMailSink, mailLogPath, type MailSink } from "./mail-sink.js";
 
 /**
  * One reading of `REDIS_URL`, used both to configure the API and to check that
@@ -128,6 +129,8 @@ function serveSpa(
 export interface Stack {
   /** The harness's own bucket — see `object-store.ts`. */
   readonly storage: ObjectStore;
+  /** The harness's own mail server — see `mail-sink.ts`. */
+  readonly mail: MailSink;
   stop(): Promise<void>;
 }
 
@@ -226,6 +229,14 @@ export async function startStack(options: {
   kmsKey: string;
 }): Promise<Stack> {
   /*
+   * The mail server, before the API (P187-01).
+   *
+   * Unlike the bucket its address is not read at boot — the SMTP host is a
+   * database row, written through the console — but it is started here so the
+   * whole rig has one lifecycle and one place that stops it.
+   */
+  const mail = await startMailSink(mailLogPath(options.repo));
+  /*
    * The bucket comes up first, because the API reads its address at boot and a
    * partial S3 configuration is treated as no configuration at all
    * (`hasObjectStorage`) — which would silently disable every upload endpoint
@@ -305,7 +316,28 @@ export async function startStack(options: {
       // removed rather than left: an environment entry that no longer does
       // anything reads as the reason the suite is stable, and the next person
       // to make it flaky would have looked here first (P182-05).
-      CERTIFICATE_DELIVERY_ENABLED: "no",
+      /*
+       * The certificate delivery worker is **on** (P187-01).
+       *
+       * It was off, and the comment said why: a background sweep changing a row
+       * mid-assertion is the definition of a flaky test. That was true while
+       * there was no sender — rows churned through retry states — and it also
+       * meant the last link of the certificate chain had no browser coverage at
+       * all. Twenty-two integration tests end at a fake channel; not one of them
+       * opens a socket, so "delivered" was a column nothing had ever earned.
+       *
+       * With `zustellung.spec.ts` configuring a real sender through the console
+       * the state machine is monotonic — issued, then delivered — and no spec
+       * asserts on delivery state on the way past. A certificate issued before
+       * that spec runs is abandoned "no SMTP host configured", which is the
+       * product's correct answer for an unconfigured installation and what a
+       * fresh one really does.
+       *
+       * Two seconds, not the production five minutes: a browser test waiting
+       * out a sweep interval is a test nobody runs.
+       */
+      CERTIFICATE_DELIVERY_ENABLED: "yes",
+      CERTIFICATE_DELIVERY_INTERVAL_SEC: "2",
       LOG_LEVEL: "warn",
     },
   });
@@ -401,12 +433,14 @@ export async function startStack(options: {
 
   return {
     storage,
+    mail,
     async stop() {
       api.kill("SIGTERM");
       await Promise.all([
         new Promise<void>((resolve) => portal.close(() => resolve())),
         new Promise<void>((resolve) => admin.close(() => resolve())),
         storage.stop(),
+        mail.close(),
       ]);
     },
   };

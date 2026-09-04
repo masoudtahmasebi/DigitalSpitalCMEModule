@@ -1,5 +1,11 @@
 /**
- * A throwaway certificate for the harness's own bucket (P68-02).
+ * A throwaway certificate for the harness's own TLS services (P68-02).
+ *
+ * Two of them now: the bucket, and the SMTP server `mail-sink.ts` runs — whose
+ * STARTTLS upgrade is mandatory, because `SmtpDeliveryChannel` sets
+ * `requireTLS` and would refuse to send without it (P187-01). One certificate
+ * for both, so `NODE_EXTRA_CA_CERTS` on the API covers everything the rig
+ * serves over TLS.
  *
  * ## Why the harness needs one
  *
@@ -77,7 +83,7 @@ export function selfSignedLoopbackCertificate(): LoopbackCertificate {
 
   if (result.status !== 0) {
     throw new Error(
-      "the e2e harness could not generate a certificate for its object store.\n" +
+      "the e2e harness could not generate a certificate for its own TLS services.\n" +
         "It shells out to `openssl`, which this machine appears not to have.\n" +
         `openssl said: ${result.stderr ?? ""}`,
     );

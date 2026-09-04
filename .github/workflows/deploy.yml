@@ -619,6 +619,112 @@ jobs:
           echo "Files Punktemeldungen live: ${verdict} (platform_settings: ${detail})"
           echo "eiv_reports_live=${verdict}" >> "$GITHUB_OUTPUT"
 
+      # ---------------------------------------------------------------------
+      # Which sender will carry a Teilnahmebescheinigung? (P188-03)
+      # ---------------------------------------------------------------------
+      #
+      # "Which sender is this installation on?" was a question nobody could
+      # answer without opening a psql session, and it decides whether a
+      # physician who finishes a Fortbildung receives their certificate.
+      #
+      # A project sends as itself when it has both a host and a From address;
+      # otherwise the platform's, when that is complete; otherwise nothing at
+      # all — `deliverySender` in `@ds/domain`, and this reports the same three
+      # answers over the host's own rows.
+      #
+      # ## Why it is here rather than only in the console
+      #
+      # §9.9's corollary: the repository's state is not the installation's. Both
+      # halves of this can be true on one host and false on another, and both
+      # fail **silently** — a certificate abandoned "no SMTP host configured" is
+      # a row nobody reads. The deploy is where the operator already is.
+      #
+      # ## What it prints, and what it does not
+      #
+      # Counts and the platform's From address. No host, no username, and above
+      # all no password: an address a certificate arrives from is on every one
+      # of those certificates already, and the credential is not on this log.
+      #
+      # Never fails the job. It reports a fact about configuration, and a
+      # deployment whose customers have not set up mail is a working deployment
+      # with a gap somebody should know about — an exit here would mark a
+      # successful swap as failed, which §9.4 says is worse than saying nothing.
+      - name: Which sender will carry a Teilnahmebescheinigung?
+        continue-on-error: true
+        run: |
+          answer=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd ${REPO_DIR}/infra/deploy && \
+             set -a && . \$HOME/ds-education/config.env && set +a && \
+             docker compose -f docker-compose.prod.yml exec -T \
+               -e PGPASSWORD=\"\${POSTGRES_SUPERUSER_PASSWORD}\" postgres \
+               psql -tAX -U \"\${POSTGRES_SUPERUSER}\" -d \"\${POSTGRES_DB}\" -c \
+               \"SELECT (SELECT count(*) FROM projects
+                           WHERE btrim(coalesce(smtp_host,'')) <> ''
+                             AND btrim(coalesce(smtp_from_address,'')) <> '')
+                      || '|' || (SELECT count(*) FROM projects)
+                      || '|' || coalesce((SELECT from_address FROM platform_smtp
+                                           WHERE id = true
+                                             AND btrim(coalesce(host,'')) <> ''
+                                             AND btrim(coalesce(from_address,'')) <> ''), '');\" \
+             2>/dev/null | tr -d '\n' || true")
+
+          if [ -z "${answer}" ]; then
+            echo "::warning::The host's mail posture could not be read. That is" \
+                 "not evidence that mail is unconfigured — it is evidence that" \
+                 "the question could not be answered."
+            exit 0
+          fi
+
+          own="${answer%%|*}"
+          total="$(printf '%s' "${answer}" | cut -d'|' -f2)"
+          platform="${answer##*|}"
+
+          # Numeric before arithmetic. A psql that answered a notice, a partial
+          # line or a connection error would otherwise reach `$(( ))` and abort
+          # the step with a shell syntax error — which reads as "the deploy
+          # broke" rather than "the question could not be answered" (§9.6).
+          case "${own}${total}" in
+            *[!0-9]* | "")
+              echo "::warning::The host's mail posture came back unparseable" \
+                   "('${answer}'). Not evidence about the configuration."
+              exit 0
+              ;;
+          esac
+          fallback=$(( total - own ))
+
+          echo "Projects sending as themselves: ${own} of ${total}"
+          if [ -n "${platform}" ]; then
+            echo "Platform sender: ${platform} — carries the other ${fallback}"
+          else
+            echo "Platform sender: not configured"
+          fi
+
+          {
+            echo "### Teilnahmebescheinigungen"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Projects with their own SMTP | ${own} of ${total} |"
+            if [ -n "${platform}" ]; then
+              echo "| Platform sender | \`${platform}\` |"
+              echo "| Carried by the platform | ${fallback} |"
+            else
+              echo "| Platform sender | **not configured** |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # The one state where a certificate is issued and silently never sent.
+          # Said as a warning rather than left in a table, because it is the
+          # difference between a physician receiving their Bescheinigung and
+          # having to know to go and download it.
+          if [ -z "${platform}" ] && [ "${fallback}" -gt 0 ]; then
+            echo "::warning::${fallback} project(s) have no SMTP of their own and" \
+                 "the platform has no sender either. Their Teilnahmebescheinigungen" \
+                 "are issued and abandoned undelivered — they stay downloadable in" \
+                 "the portal. Configure Sicherheit -> E-Mail-Versand der Plattform."
+          fi
+
       - name: Smoke-test the deployment, and record what is now live
         run: |
           # From outside the host entirely, over public DNS and real TLS. The

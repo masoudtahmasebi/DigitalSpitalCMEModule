@@ -157,6 +157,17 @@ const READ_WITHOUT_DOCUMENTATION = new Set([
   // hand, and gone with the database that teardown drops.
   "E2E_STAFF_EMAIL",
   "E2E_STAFF_PASSWORD",
+  // The harness's own SMTP server, on the same channel and for the same reason
+  // (P187-01). Its port is chosen by the kernel at `startStack`, so it cannot
+  // be a constant and cannot be set by hand; the credentials are constants in
+  // `support/mail-sink.ts` that only that server ever checks. Nothing a
+  // deployment runs reads any of them — the installation's real sender lives in
+  // `platform_smtp`, written from the console, which is the point of the spec
+  // these carry.
+  "E2E_SMTP_HOST",
+  "E2E_SMTP_PORT",
+  "E2E_SMTP_USERNAME",
+  "E2E_SMTP_PASSWORD",
   // Developer-machine overrides for the test and development database scripts
   // (P32-01). Deliberately in neither template, for two reasons: nothing in a
   // deployment ever runs `scripts/testdb.mjs` or `scripts/devdb.mjs`, and
