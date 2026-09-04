@@ -176,6 +176,29 @@ function lesson(): unknown {
   };
 }
 
+/**
+ * What `/certificate` answers, for the `open-at="certificate"` case.
+ *
+ * The same reason `/evaluation` and `/materials` have shapes of their own: a
+ * `CourseDetail` falling through to `CertificatePanel` gives it an undefined
+ * `completedAt`, and `formatBerlinDate` throws on it inside render.
+ *
+ * Vitest reports that as an unhandled error **outside** any test, so the file
+ * says "387 passed" and the run still fails — which is exactly how it surfaced,
+ * one `waitFor` after the assertion that used to end the case before the panel
+ * had rendered at all.
+ */
+function certificate(): unknown {
+  return {
+    participantName: "Dr. med. Beispiel",
+    vnr: "2760000000000000000",
+    completedAt: "2026-09-01T10:00:00Z",
+    eventLocation: "Online",
+    organizer: "DigitalSpital",
+    creditSentence: "4 CME-Punkte, Kategorie D.",
+  };
+}
+
 /** Whether the course's own first screen is mounted. */
 function inOutline(): boolean {
   return screen.queryAllByText("ADHS Akademie adult").length > 0;
@@ -296,11 +319,13 @@ function stubEnrolment(state: EnrolmentState): void {
         ? { groups: [] }
         : url.includes("/evaluation")
           ? { questions: [] }
-          : url.includes("/contents/")
-            ? lesson()
-            : url.includes("/enrolment")
-              ? state
-              : course();
+          : url.includes("/certificate")
+            ? certificate()
+            : url.includes("/contents/")
+              ? lesson()
+              : url.includes("/enrolment")
+                ? state
+                : course();
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -659,7 +684,25 @@ describe("opening a course on its Teilnahmebescheinigung", () => {
     await waitFor(() => {
       expect(selectedTab()).toBe("Zertifizierung");
     });
-    expect(window.location.hash).toBe("#ds/zertifizierung");
+    /*
+     * Its own `waitFor`, as every other hash assertion in this file has.
+     *
+     * It used to be a bare `expect` after the wait above, and the two do not
+     * settle together: the tab is React state and the fragment is written by a
+     * following effect. On a loaded runner that effect had not run yet and the
+     * case failed with `''` — the initial hash — which reads as "routing is
+     * broken" rather than "the assertion was one tick early". It went red in CI
+     * on a commit that touches neither the widget nor routing, and was green on
+     * three consecutive local runs: §9.1's "two green runs is not proof".
+     *
+     * Deliberately **not** folded into the wait above. Asserting both in one
+     * callback makes each retry require them simultaneously, and that version
+     * failed here — the two are sequential states, and a wait that demands them
+     * together is a different, stricter claim than either one.
+     */
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#ds/zertifizierung");
+    });
   });
 
   it("ignores the intent when there is no certificate yet", async () => {
