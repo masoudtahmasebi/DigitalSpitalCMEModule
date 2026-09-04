@@ -78,7 +78,7 @@ POSTGRES_SUPERUSER=postgres
 ENV
 cat > "${work}/state/secrets.env" <<'ENV'
 POSTGRES_SUPERUSER_PASSWORD=pw
-SECRETS_KMS_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+SECRETS_KMS_KEY=kms-key-for-tests
 ENV
 
 out="$(PATH="${work}/bin:$PATH" DS_STATE_DIR="${work}/state" bash ./watchdog.sh 2>&1)"

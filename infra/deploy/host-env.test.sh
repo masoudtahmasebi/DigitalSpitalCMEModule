@@ -44,7 +44,7 @@ POSTGRES_SUPERUSER=postgres
 ENV
 cat > "${state}/secrets.env" <<'ENV'
 POSTGRES_SUPERUSER_PASSWORD=pw-from-secrets
-SECRETS_KMS_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+SECRETS_KMS_KEY=kms-key-for-tests
 ENV
 
 # --- the path has one home ---------------------------------------------------
@@ -62,7 +62,7 @@ check "ds_state_dir falls back to ~/ds-education" "/home/nobody/ds-education" "$
 # in `config.env` and neither ever will be — they are generated, mode 600.
 out="$(DS_STATE_DIR="$state" bash -c '. ./host-env.sh && ds_load_host_env && printf "%s" "${SECRETS_KMS_KEY:-MISSING}"')"
 check "SECRETS_KMS_KEY is loaded from secrets.env" \
-  "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=" "$out"
+  "kms-key-for-tests" "$out"
 
 out="$(DS_STATE_DIR="$state" bash -c '. ./host-env.sh && ds_load_host_env && printf "%s" "${POSTGRES_SUPERUSER_PASSWORD:-MISSING}"')"
 check "POSTGRES_SUPERUSER_PASSWORD is loaded from secrets.env" "pw-from-secrets" "$out"

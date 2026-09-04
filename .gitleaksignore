@@ -60,3 +60,13 @@ d8c7d85ea4f6167a7b3daabf5e856493084deff3:apps/api/src/modules/certificate/delive
 # A query-string value in a log-redaction test. Already fixed forward, with a
 # comment in the file saying gitleaks flagged the first version.
 621a9404af08cff4c8e1d6deecaa2ca99a557276:apps/api/src/shared/problem-details.filter.test.ts:generic-api-key:71
+
+# `SECRETS_KMS_KEY=` in two fixture `secrets.env` files the P194 tests write
+# into a temp dir and delete. Unlike `secrets.test.sh` above, neither needs a
+# well-formed key — they assert only that the value reaches the environment —
+# so both were **fixed forward** to `kms-key-for-tests` in the next commit,
+# which is what this file's own rule asks for. These two fingerprints cover the
+# single commit that introduced the high-entropy version and cannot be reached
+# by the fix.
+f3cdaf732281bc846f816f0f11c59256f4dd415d:infra/deploy/host-env.test.sh:generic-api-key:47
+f3cdaf732281bc846f816f0f11c59256f4dd415d:infra/deploy/watchdog.test.sh:generic-api-key:81
