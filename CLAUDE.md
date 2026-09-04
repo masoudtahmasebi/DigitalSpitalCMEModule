@@ -581,6 +581,15 @@ alert about the API for a fault in the watchdog.
 - `pnpm check:compose-env`. Every shell script and every workflow `run:` block
   that reaches `docker compose` for the prod stack must also load `secrets.env`.
   It names the three real defects on the commit that had them.
+- **And the one that actually ends the class:** `host-env.test.sh` runs
+  `ds_load_host_env && docker compose config --quiet` against a fixture state
+  directory. Compose interpolates **client-side**, so this needs no daemon, no
+  stack and no host — a second here instead of a production deploy. It catches
+  every variety at once: deploy 118's missing `SECRETS_KMS_KEY`, deploy 119's
+  empty `${DS_SITES_DIR}` bind mount, and whatever the next one is. The host's
+  environment has **three** sources — `config.env`, `secrets.env` and
+  `ds_derive_domains`, which is computed and stored nowhere — and the derived
+  one is easiest to miss because it is a function call rather than a file.
 - When a caller needs a service's environment, it does not assemble it —
   §9.10b at the level of a whole environment. `host-env.sh` is the one home;
   a second reader that reproduces half of what the deploy does is the shape.
