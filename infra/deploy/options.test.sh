@@ -73,6 +73,9 @@ offered_for_self() {
     grep -oE '\--[a-z][a-z0-9-]+' | sort -u
 }
 
+# shellcheck disable=SC2043 # one script today. The loop is the shape this
+# check has to keep: `dsc` and `run-on-local.sh` both document options too, and
+# adding either is a word here rather than a rewrite.
 for script in deploy.sh; do
   accepted="$(accepted_options "$script")"
 

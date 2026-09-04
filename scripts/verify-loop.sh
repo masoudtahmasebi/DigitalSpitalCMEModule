@@ -83,6 +83,8 @@ echo "==> Verifying claims against ${BASE}...HEAD ($(git diff --name-only "$BASE
 {
   cat docs/verifier-prompt.md
   printf '\n\n## The claims to check\n\n%s\n' "$BODY"
+  # shellcheck disable=SC2016 # a printf *format*: the backticks are markdown
+  # fence characters and must reach the prompt literally.
   printf '\n\n## The diff\n\n```diff\n%s\n```\n' "$DIFF"
 } | claude -p --output-format text > "$REPORT" 2>&1 || {
   echo "verify-loop: the verifier session failed. Its output:" >&2

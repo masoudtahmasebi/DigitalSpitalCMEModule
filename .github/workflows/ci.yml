@@ -70,98 +70,22 @@ jobs:
       # linted like anything else. `domains.sh` in particular decides the staff
       # cookie's scope and the CORS allow-list — a TypeScript reimplementation
       # tested in vitest would leave the version that actually runs untested.
+      # One command, the same one `pnpm verify` runs (P182-08).
+      #
+      # This step used to name fourteen files for shellcheck by hand and then
+      # run the tests, while `pnpm check:shell` ran only the tests. Two commands
+      # with one name, the local one covering less — §9.1's first form, and it
+      # is how an SC2006 in a `die` message reached CI. The hand-written list was
+      # the second form: the repository has 27 tracked `.sh` files plus `dsc`,
+      # so six scripts and six test files had never been linted, two of them
+      # written the same day.
+      #
+      # `check-shell.mjs` derives the list from `git ls-files`, refuses to run
+      # without shellcheck rather than skipping, and carries a floor.
       - name: Shell scripts
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
-          shellcheck infra/nginx/ds-runtime-config.sh
-          shellcheck -x run-on-local.sh
-          (cd infra/deploy && shellcheck -x deploy.sh domains.sh domains.test.sh \
-             deploy-vars.test.sh secrets.sh secrets.test.sh images.sh \
-             images.test.sh paths.test.sh version.sh version.test.sh \
-             config-check.sh config-check.test.sh dsc)
-          ./infra/deploy/domains.test.sh
-          # The URL encoder. A base64 password contains `/`, and an unencoded
-          # `/` in a connection string's userinfo is what killed the first
-          # deploy that reached the server.
-          ./infra/deploy/secrets.test.sh
-          # Every variable deploy.sh reads is one somebody guarantees. Static,
-          # because `--check` exits two thirds of the way down the script and
-          # `set -u` only complains at the line that reads the name — which,
-          # past that exit, is after the database has already been migrated.
-          ./infra/deploy/deploy-vars.test.sh
-          # Which image `./dsc seed` runs. It used to build one — a deploy's
-          # work from the wrapper that refuses to deploy, producing a container
-          # from a different commit than the API beside it.
-          ./infra/deploy/images.test.sh
-          # Every value a container refuses to start without is one the deploy
-          # supplies. DS_PROJECT_SLUG was required by ds-runtime-config.sh,
-          # provided by nothing, and crash-looped admin and portal — while the
-          # deploy blamed the API, because caddy depends on all three.
-          # No path in an operator-invoked script may resolve against $PWD.
-          # `deploy.sh` read ../postgres/init-roles.sql relative to the
-          # caller and died two thirds of the way through a deploy.
-          ./infra/deploy/paths.test.sh
-          # The release number. A shallow clone would make it the clone
-          # depth — a plausible number, lower than the last deploy's.
-          ./infra/deploy/version.test.sh
-          # Telling "the API refused this config" apart from "the check
-          # could not run". Reporting the first when it was the second sent
-          # an operator to edit a file that was correct.
-          ./infra/deploy/config-check.test.sh
-          node scripts/check-runtime-config.mjs
-          # A container that calls out is on a network with a gateway. The API
-          # was on `internal: true` alone, which isolates in *both* directions
-          # — so the object store, SMTP, a customer's Keycloak JWKS and EIV
-          # were all unreachable, each failing as a timeout inside a worker.
-          node scripts/check-egress.mjs
-          # The local stack's ports, and the browser-facing URLs that have
-          # to name published ports rather than service names — a mistake
-          # whose only symptom is CORS failing in a browser.
-          node scripts/check-local-ports.mjs
-          # Whose focus outline the browser actually paints. Two rules at
-          # (0,2,0) are separated by source order alone, and the widget's
-          # a11y floor sat last in the file — so all four components that
-          # styled their own focus state were drawn over, silently.
-          node scripts/check-focus-ring.mjs
-          # A ticket number means one file. Two sessions filed under P158 on
-          # the same day, git concatenated both documents into one path on the
-          # merge, and only Prettier's missing blank line said anything — the
-          # two tickets sharing one number were invisible. It also found P107,
-          # P108, P98 and P99, which had lived inside other files since they
-          # were written and could not be reached by their own numbers.
-          node scripts/check-backlog-numbers.mjs
-          # Every element the console points at the bucket against the
-          # directive that governs it. Three directives have been added one at
-          # a time — connect-src (P67-01), media-src (P74-03), object-src
-          # (P161-02) — each after a person clicked and found a blank frame,
-          # because a CSP refusal happens inside the browser and leaves the
-          # server log clean.
-          node scripts/check-csp-directives.mjs
-          # A seed runs on every deploy, so an unconditional `= EXCLUDED.x` in
-          # its ON CONFLICT clause silently replaces what an operator typed in
-          # Verwaltung. Three fields did exactly that for four months — the
-          # MEDICE course's title, its CME points and its category — under a
-          # test comment claiming every editable field was covered (P171-02).
-          node scripts/check-seed-overwrites.mjs
-          # The content lock is a rule with twelve call sites, and a guard that
-          # has to be remembered once per method is the shape §9.3 keeps
-          # catching. This derives the list of structural writes from the
-          # repository port, so a new one added to an unguarded service method
-          # fails here rather than by re-denominating a physician who had
-          # already finished (P178-01).
-          node scripts/check-content-lock.mjs
-          # Whether Punktemeldungen leave this installation, and to which
-          # register, moved out of config.env and into the database (P180-01).
-          # A value that came back in a config file would be a second home for
-          # the setting the console shows, and the console would win silently —
-          # so the three names are refused everywhere but the prose explaining
-          # where they went.
-          node scripts/check-eiv-settings.mjs
-          # Prose is not executed, so a command a document tells somebody to run
-          # is asserted by nothing but the sentence. `sudo deploy.sh
-          # --install-timers` was written that confidently and answered "unknown
-          # option" — CLAUDE.md §11's own example (P181-01).
-          node scripts/check-docs-commands.mjs
+          pnpm check:shell
 
       - name: Build
         run: pnpm build

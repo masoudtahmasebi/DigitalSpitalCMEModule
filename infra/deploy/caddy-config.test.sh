@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 #
+# shellcheck disable=SC2030,SC2031
+#   Every case here builds its input as `x=$( export A=…; export B=…; f … )`.
+#   The subshell is the mechanism, not an accident: each case must see exactly
+#   the variables it sets and none from the case above it, which is what makes
+#   "the policy without S3_ORIGIN" a case that can exist at all. shellcheck
+#   reads a `$(…)`-local export as a probable mistake, and here it is the point,
+#   so it is turned off for the file rather than argued with six times.
+#
 # Tests for the "is Caddy serving this checkout's Caddyfile" check (P74-07).
 #
 # Bash rather than vitest, for the same reason `domains.test.sh` is: the thing

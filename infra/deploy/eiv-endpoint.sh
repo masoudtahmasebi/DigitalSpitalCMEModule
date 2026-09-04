@@ -143,15 +143,36 @@ ds_eiv_worker_will_file_live() {
 #
 # Prints exactly one of:
 #
-#   none                     nothing left in config.env — the normal state
-#   refuse-endpoint <choice> `live`, or a host this file does not recognise
-#   refuse-consent  <choice> EIV_ALLOW_LIVE set; consent needs a named person
-#   carry <choice> <armed>   safe to apply: `mock` or `test`, worker true/false
+#   none                        nothing left in config.env — the normal state
+#   refuse-endpoint <choice>    `live`, or a host this file does not recognise
+#   carry <choice> <armed> <stale-allow>
+#                               safe to apply: `mock` or `test`, worker
+#                               true/false, and whether an EIV_ALLOW_LIVE was
+#                               found and dropped (`yes`/`no`)
 #
-# The order matters and is deliberate: the **endpoint** is judged before the
-# consent flag, so an installation pointed at the live register is told about
-# the register rather than about the flag. The register is the thing that
-# decides whose record is touched.
+# The **endpoint** is judged first, and that ordering is what makes the third
+# field right rather than a refusal (P182-05, corrected before its first
+# deploy).
+#
+# The first version refused when `EIV_ALLOW_LIVE` was set, on the reasoning that
+# a consent needs a named person. That reasoning is sound and the branch was
+# still wrong, because of where it sat: `live` and `unknown` have already
+# returned by the time it is reached, so it could **only ever fire at `mock` or
+# `test`** — the two registers that reach no real record. It was unreachable in
+# the case it was written for and reachable only in the case where it is wrong.
+#
+# And at a safe register the flag does not mean what its name says. Until
+# P104-01 the rule matched `*eiv-fobi.de*`, so **reaching EIV's own test system
+# required `EIV_ALLOW_LIVE=yes`** — that ticket exists because a safety flag you
+# must switch off to do ordinary work is a flag that is always off. An
+# installation configured before it therefore carries the flag meaning "I may
+# talk to a non-loopback host", not "I consent to the live register". Refusing a
+# deploy over it blocks on a flag that grants nothing, at a register that files
+# nothing.
+#
+# So it is **dropped**, loudly: the caller says so in the log, and the console
+# is where a live consent is given — to one register, cleared when the register
+# changes (P180-01). A consent to `test` is not a thing that exists.
 ds_eiv_carry_plan() {
   local worker="${1:-}" base="${2:-}" allow="${3:-}"
 
@@ -170,14 +191,10 @@ ds_eiv_carry_plan() {
       ;;
   esac
 
-  if ds_eiv_truthy "$allow"; then
-    printf 'refuse-consent %s' "$choice"
-    return 0
-  fi
-
-  local armed="false"
+  local armed="false" stale="no"
   if ds_eiv_truthy "$worker"; then armed="true"; fi
-  printf 'carry %s %s' "$choice" "$armed"
+  if ds_eiv_truthy "$allow"; then stale="yes"; fi
+  printf 'carry %s %s %s' "$choice" "$armed" "$stale"
 }
 
 # The one query that answers all three, so the deploy and the smoke cannot read

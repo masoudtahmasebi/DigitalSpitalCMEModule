@@ -524,17 +524,44 @@ source "$(dirname "${BASH_SOURCE[0]}")/eiv-endpoint.sh"
 # presence and ends by removing them from the file. A second deploy finds
 # nothing to carry and touches the table not at all.
 ds_eiv_carry_forward() {
-  local plan choice armed
+  local plan choice armed stale
   plan="$(ds_eiv_carry_plan "${EIV_WORKER_ENABLED:-}" "${EIV_BASE_URL:-}" "${EIV_ALLOW_LIVE:-}")"
   choice="$(printf '%s' "$plan" | cut -d' ' -f2)"
   armed="$(printf '%s' "$plan" | cut -d' ' -f3)"
+  stale="$(printf '%s' "$plan" | cut -d' ' -f4)"
 
   case "$plan" in
     none) return 0 ;;
 
     "refuse-endpoint "*)
+      # What this installation was doing, printed with the refusal.
+      #
+      # The first version named the register and stopped, and the question the
+      # operator immediately has — *was it filing, then?* — was answerable from
+      # two variables this script is holding and did not print. §9.10: a refusal
+      # that is correct and leaves the person with nothing to do is half a
+      # refusal.
+      local was_arming="no" had_flag="no"
+      if ds_eiv_truthy "${EIV_WORKER_ENABLED:-}"; then was_arming="yes"; fi
+      if ds_eiv_truthy "${EIV_ALLOW_LIVE:-}"; then had_flag="yes"; fi
+
+      local verdict
+      if [[ "$was_arming" == "yes" && "$had_flag" == "yes" ]]; then
+        verdict="** Under the previous build this installation WAS armed to file at the live
+   register: EIV_WORKER_ENABLED and EIV_ALLOW_LIVE were both set. Check
+   eiv_submissions for what has been sent before changing anything. **"
+      elif [[ "$was_arming" == "yes" ]]; then
+        verdict="Under the previous build the worker was ON but EIV_ALLOW_LIVE was not set, so
+   the application refused every live submission — nothing was filed."
+      else
+        verdict="Under the previous build EIV_WORKER_ENABLED was not set, so the worker filed
+   nothing regardless of this URL."
+      fi
+
       die "EIV_BASE_URL in ${CONFIG_FILE} names ${EIV_BASE_URL:-} — '${choice}' — which
    this deploy will not carry into the database by itself.
+
+   ${verdict}
 
    Since P180-01 the register is a setting in the admin console, and filing at
    the LIVE Ärztekammer register additionally needs a consent recording **who**
@@ -544,38 +571,60 @@ ds_eiv_carry_forward() {
    gets the same answer: it might be a proxy in front of the real register, and
    P104-01 is the record of what guessing costs.
 
-   ** This installation is not filing Punktemeldungen right now. ** Nothing is
-   lost: they queue, and are filed on the first sweep after the worker is armed.
+   Nothing is lost either way: completions queue, and are filed on the first
+   sweep after the worker is armed.
 
-   So, as a super administrator: Plattform → Punktemeldung, choose the register,
-   tick the live confirmation, and switch reporting on.
+   ## Where this deploy stopped, so you know what state the host is in
 
-   Then, on the host, as the deploy user:
+   The migrations have run: the platform_settings row exists, with the worker
+   OFF and the register on mock. The container swap has NOT happened, so the previous
+   build is still serving. Re-running this deploy after the steps below is safe
+   and picks up where it stopped; nothing is half-applied.
 
-       sed -i '/^EIV_BASE_URL=/d;/^EIV_WORKER_ENABLED=/d;/^EIV_ALLOW_LIVE=/d' ${CONFIG_FILE}"
+   ## To go on
+
+   1. As a super administrator: Plattform → Punktemeldung. Choose the register.
+      For the LIVE register, tick the confirmation — it records your name and
+      the moment, which is what a file could not do. Then switch reporting on.
+   2. On the host, as the deploy user:
+
+       sed -i '/^EIV_BASE_URL=/d;/^EIV_WORKER_ENABLED=/d;/^EIV_ALLOW_LIVE=/d' ${CONFIG_FILE}
+
+   3. Re-run the deploy.
+
+   If you are not sure yet, do step 2 alone: the console keeps the worker off,
+   so the deploy proceeds and this installation files nothing until somebody
+   decides it should."
       ;;
 
-    "refuse-consent "*)
-      die "EIV_ALLOW_LIVE is set in ${CONFIG_FILE}, and this deploy will not turn it
-   into a live-register consent.
-
-   P180-01 replaced the flag with a consent carrying the name of the person who
-   gave it and the moment they did. Rebuilding that from a string in a file
-   would give a real physician's Fortbildungskonto an author of 'a shell script
-   inferred it', which is the one thing the change was made to prevent.
-
-   The register you are pointed at is '${choice}', which files nothing at any
-   Ärztekammer, so nothing is at risk while this is sorted out.
-
-   Give the consent in the console under Plattform → Punktemeldung, then:
-
-       sed -i '/^EIV_ALLOW_LIVE=/d' ${CONFIG_FILE}"
-      ;;
   esac
 
   # Everything past here is `mock` or `test`: reversible, files nothing at a
   # real register, and safe for a script to decide.
   log "Carrying the pre-P180 EIV settings into platform_settings: endpoint=${choice} worker_enabled=${armed}"
+
+  # `EIV_ALLOW_LIVE` at a safe register is dropped, and dropping something
+  # silently is how somebody later believes it is still in force. It is said out
+  # loud with what replaced it — §9.4, say what the thing is at the point
+  # somebody looks for it.
+  if [[ "$stale" == "yes" ]]; then
+    printf '\033[1;33m!!\033[0m %s\n' \
+      "EIV_ALLOW_LIVE was set in ${CONFIG_FILE} and is being DROPPED, not carried." >&2
+    printf '   %s\n' \
+      "It grants nothing here: the register is '${choice}', which files nothing at any" >&2
+    printf '   %s\n' \
+      "Ärztekammer. Until P104-01 that flag was what reaching EIV's own test system" >&2
+    printf '   %s\n' \
+      "required, so on this installation it most likely means 'may contact a non-local" >&2
+    printf '   %s\n' \
+      "host' rather than 'consents to the live register'." >&2
+    printf '   %s\n' \
+      "Filing at the LIVE register now needs a consent given in the console under" >&2
+    printf '   %s\n' \
+      "Plattform → Punktemeldung, which records who gave it and when, and is cleared" >&2
+    printf '   %s\n' \
+      "whenever the register changes. Nothing this deploy does can grant it." >&2
+  fi
 
   compose exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
     psql -v ON_ERROR_STOP=1 -tAX -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
