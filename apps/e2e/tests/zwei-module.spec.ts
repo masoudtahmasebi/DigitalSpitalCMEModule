@@ -263,7 +263,7 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
       /*
        * P87-04, on screen. The exam sits in the same chapter as the video, and
        * until this ticket content simply inherited its chapter's gate — so the
-       * control under an untouched player said „Lernerfolgskontrolle beginnen"
+       * control under an untouched player said „Prüfung starten"
        * at nought per cent watched, and the outline drew the exam as reachable.
        *
        * Asserting the **control**, not a padlock somewhere: this is the button
@@ -274,9 +274,9 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
         learner.getByRole("button", { name: "Fortbildung pausieren" }).first(),
         "the Lernerfolgskontrolle was offered before its module's video was watched (P87-04)",
       ).toBeVisible({ timeout: 20_000 });
-      await expect(
-        learner.getByRole("button", { name: "Lernerfolgskontrolle beginnen" }),
-      ).toHaveCount(0);
+      await expect(learner.getByRole("button", { name: "Prüfung starten" })).toHaveCount(
+        0,
+      );
 
       // And module 2's video is not reachable either — the chapter sequence.
       await expect(
@@ -310,7 +310,7 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
        */
       try {
         await expect(
-          learner.getByRole("button", { name: "Lernerfolgskontrolle beginnen" }),
+          learner.getByRole("button", { name: "Prüfung starten" }),
         ).toBeVisible({ timeout: 60_000 });
       } catch (cause) {
         const credited = await learner
@@ -337,14 +337,21 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
        * would have offered module 1's exam and module 2's would have been
        * reachable by no route at all. The title is how the two are told apart.
        */
-      await learner
-        .getByRole("button", { name: "Lernerfolgskontrolle beginnen" })
-        .click();
+      await learner.getByRole("button", { name: "Prüfung starten" }).click();
+      /*
+       * Which exam opened, named (P87-02, kept through P190-03).
+       *
+       * The button used to carry the exam's title and now carries the verb —
+       * the 2026-09-01 layout puts the name in the eyebrow above the heading
+       * instead, which is where this reads it now. The property under test is
+       * unchanged: the player must open **this** module's exam, and the result
+       * heading below names it a second time.
+       */
       await expect(
-        learner.getByRole("button", { name: `${QUIZ_ONE} starten` }),
+        learner.getByText(QUIZ_ONE).first(),
         "the player offered an exam belonging to another module (P87-02)",
       ).toBeVisible({ timeout: 20_000 });
-      await learner.getByRole("button", { name: `${QUIZ_ONE} starten` }).click();
+      await learner.getByRole("button", { name: "Prüfung starten" }).click();
 
       await learner.getByRole("radio").first().check();
       await learner.getByRole("button", { name: "Antworten absenden" }).click();
@@ -390,14 +397,14 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
 
       await watchToTheEnd(learner);
 
-      await learner
-        .getByRole("button", { name: "Lernerfolgskontrolle beginnen" })
-        .click();
+      await learner.getByRole("button", { name: "Prüfung starten" }).click();
+      // The exam's name is in the intro's eyebrow now, not on the button —
+      // see the note on module 1's exam above.
       await expect(
-        learner.getByRole("button", { name: `${QUIZ_TWO} starten` }),
+        learner.getByText(QUIZ_TWO).first(),
         "module 2's own Lernerfolgskontrolle was not the one offered (P87-02)",
       ).toBeVisible({ timeout: 20_000 });
-      await learner.getByRole("button", { name: `${QUIZ_TWO} starten` }).click();
+      await learner.getByRole("button", { name: "Prüfung starten" }).click();
 
       await learner.getByRole("radio").first().check();
       await learner.getByRole("button", { name: "Antworten absenden" }).click();

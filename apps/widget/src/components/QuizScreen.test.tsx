@@ -80,6 +80,8 @@ function renderQuiz(
     passedScorePercent: number;
     /** The enrolment is certified (P169-01). Defaults to false, as it was. */
     certified: boolean;
+    /** Every module behind the learner (P190-03). Defaults to true. */
+    allModulesDone: boolean;
   }> = {},
 ) {
   const { client, submitQuiz } = clientReturning(result);
@@ -99,6 +101,7 @@ function renderQuiz(
       onBack={handlers.onBack ?? (() => undefined)}
       onClaimPoints={claim}
       onNext={handlers.onNext}
+      allModulesDone={handlers.allModulesDone ?? true}
     />,
   );
   return { submitQuiz };
@@ -106,7 +109,7 @@ function renderQuiz(
 
 /** Start, then answer every question with its first option. */
 async function answerEverything(): Promise<void> {
-  fireEvent.click(screen.getByRole("button", { name: `${EXAM_TITLE} starten` }));
+  fireEvent.click(screen.getByRole("button", { name: "Prüfung starten" }));
 
   for (let index = 0; index < QUIZ.questions.length; index += 1) {
     fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
@@ -124,8 +127,13 @@ describe("before starting (page 08)", () => {
     renderQuiz(attempt({}));
 
     expect(screen.getByText("Anzahl Fragen")).toBeTruthy();
-    expect(screen.getByText("Mind. 8 von 11 richtig")).toBeTruthy();
-    expect(screen.getByText("Single Choice")).toBeTruthy();
+    expect(
+      screen.getByText("Mind. 8 von 11 Fragen müssen richtig beantwortet sein"),
+    ).toBeTruthy();
+    // The answer format lost its own card to the 01.09.2026 layout, which draws
+    // two; the sentence it carried moved under the question count, because a
+    // physician about to sit a mixed exam still has to know it.
+    expect(screen.getByText("Eine Antwort pro Frage")).toBeTruthy();
   });
 
   it("asks no questions until the learner starts", () => {
@@ -170,7 +178,7 @@ describe("an exam the learner has already passed (P164-04)", () => {
   it("offers no sitting at all, because the API refuses one (P170-01)", () => {
     renderQuiz(attempt({}), { passedScorePercent: 81 });
 
-    expect(screen.queryByRole("button", { name: de.quiz.start(EXAM_TITLE) })).toBeNull();
+    expect(screen.queryByRole("button", { name: de.quiz.start })).toBeNull();
   });
 
   it("is the ordinary start screen on a first sitting", () => {
@@ -178,7 +186,7 @@ describe("an exam the learner has already passed (P164-04)", () => {
     renderQuiz(attempt({}));
 
     expect(screen.queryByText(/bereits mit/u)).toBeNull();
-    expect(screen.getByRole("button", { name: de.quiz.start(EXAM_TITLE) })).toBeTruthy();
+    expect(screen.getByRole("button", { name: de.quiz.start })).toBeTruthy();
   });
 });
 
@@ -252,7 +260,7 @@ describe("returning to a passed exam", () => {
     // past it.
     renderQuiz(attempt({}), { onClaimPoints: () => undefined });
 
-    expect(screen.getByRole("button", { name: de.quiz.start(EXAM_TITLE) })).toBeTruthy();
+    expect(screen.getByRole("button", { name: de.quiz.start })).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: /CME-Punkte geltend machen/u }),
     ).toBeNull();
@@ -263,7 +271,7 @@ describe("an exam behind an issued certificate", () => {
   it("offers no sitting at all", () => {
     renderQuiz(attempt({}), { passedScorePercent: 81, certified: true });
 
-    expect(screen.queryByRole("button", { name: de.quiz.start(EXAM_TITLE) })).toBeNull();
+    expect(screen.queryByRole("button", { name: de.quiz.start })).toBeNull();
   });
 
   it("says why, where the button was", () => {
@@ -293,7 +301,7 @@ describe("an exam behind an issued certificate", () => {
 describe("answering (pages 09–10)", () => {
   it("shows one question at a time", () => {
     renderQuiz(attempt({}));
-    fireEvent.click(screen.getByRole("button", { name: `${EXAM_TITLE} starten` }));
+    fireEvent.click(screen.getByRole("button", { name: "Prüfung starten" }));
 
     expect(screen.getByText("Frage Nummer 1?")).toBeTruthy();
     expect(screen.queryByText("Frage Nummer 2?")).toBeNull();
@@ -302,7 +310,7 @@ describe("answering (pages 09–10)", () => {
 
   it("refuses to move on until the question has an answer", () => {
     renderQuiz(attempt({}));
-    fireEvent.click(screen.getByRole("button", { name: `${EXAM_TITLE} starten` }));
+    fireEvent.click(screen.getByRole("button", { name: "Prüfung starten" }));
 
     const next = screen.getByRole("button", { name: /Weiter/ });
     expect(next.hasAttribute("disabled")).toBe(true);
@@ -316,7 +324,7 @@ describe("answering (pages 09–10)", () => {
 
   it("lets the learner go back and keeps the answer they gave", () => {
     renderQuiz(attempt({}));
-    fireEvent.click(screen.getByRole("button", { name: `${EXAM_TITLE} starten` }));
+    fireEvent.click(screen.getByRole("button", { name: "Prüfung starten" }));
     fireEvent.click(screen.getAllByRole("radio")[0] as HTMLElement);
     fireEvent.click(screen.getByRole("button", { name: /Weiter/ }));
 
@@ -424,7 +432,7 @@ describe("the result", () => {
     // began with the first one's selections would be scored against answers the
     // learner never re-confirmed.
     fireEvent.click(screen.getByRole("button", { name: /wiederholen/ }));
-    expect(screen.getByRole("button", { name: `${EXAM_TITLE} starten` })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Prüfung starten" })).toBeTruthy();
   });
 
   it("never claims to show which answers were wrong", async () => {

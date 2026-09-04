@@ -643,7 +643,7 @@ describe("the module's own gate", () => {
   /*
    * P87-04, at the endpoint rather than on the screen.
    *
-   * The widget stops drawing „Lernerfolgskontrolle beginnen" until the module's
+   * The widget stops drawing „Prüfung starten" until the module's
    * videos are watched, and that is a rendering decision. This is the rule: a
    * physician who posts straight to the quiz — or opens it from a stale tab, or
    * from a link a colleague sent — gets the same answer as the one who looked

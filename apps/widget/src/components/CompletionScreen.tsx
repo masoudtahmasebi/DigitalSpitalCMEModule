@@ -270,19 +270,44 @@ export function CompletionScreen(props: {
 
       <div className="max-w-xl space-y-5">
         <Field label={de.completion.titleLabel} htmlFor="ds-lms-title">
-          <select
-            id="ds-lms-title"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            className="w-full max-w-xs rounded-md border border-gray-300 bg-white px-3 py-2.5 text-sm"
-          >
-            <option value="">{de.completion.titlePlaceholder}</option>
-            {de.completion.titles.map((entry) => (
-              <option key={entry} value={entry}>
-                {entry}
-              </option>
-            ))}
-          </select>
+          {/*
+            The drawing gives this the same treatment as the catalogue's
+            filters: a bordered field with a chevron drawn in the brand colour,
+            not the platform's own arrow. `appearance-none` plus an absolutely
+            positioned glyph, and the control stays the native `<select>` the
+            OS knows how to open — the same trade `FacetSelect` records.
+          */}
+          <div className="relative w-full max-w-md">
+            <select
+              id="ds-lms-title"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              className="w-full appearance-none rounded-md border border-gray-300 bg-white py-2.5 pl-3 pr-10 text-sm"
+            >
+              <option value="">{de.completion.titlePlaceholder}</option>
+              {de.completion.titles.map((entry) => (
+                <option key={entry} value={entry}>
+                  {entry}
+                </option>
+              ))}
+            </select>
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-brand-600"
+            >
+              <svg
+                viewBox="0 0 20 20"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="m5.5 8 4.5 4.5L14.5 8" />
+              </svg>
+            </span>
+          </div>
         </Field>
 
         <div className="grid gap-5 sm:grid-cols-2">
@@ -341,6 +366,15 @@ export function CompletionScreen(props: {
               // Never offered back by a browser on another site.
               autoComplete="off"
               maxLength={15}
+              /*
+                The drawing shows a spaced specimen number in the empty field
+                (§9.4: say what the thing is, in the words of the person
+                holding it). It is a placeholder and never a value — the
+                letter-spacing below already sets the typed number in the same
+                rhythm, so the two do not disagree about what an EFN looks
+                like.
+              */
+              placeholder={de.completion.efnPlaceholder}
               aria-describedby="ds-lms-efn-hint"
               onChange={(event) => setEfn(event.target.value.replace(/\D/gu, ""))}
               className="w-full rounded-md border border-gray-300 px-3 py-2.5 text-sm tracking-[0.25em]"

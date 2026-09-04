@@ -52,7 +52,17 @@ export function Button(props: {
   onClick?: () => void;
   type?: "button" | "submit";
   variant?: "primary" | "cta" | "secondary" | "ghost";
-  size?: "md" | "sm";
+  /**
+   * The drawing has two pill heights and they mean different things.
+   *
+   * `md` is 44 px and is every ordinary action — the catalogue card's **Zur
+   * Fortbildung** (measured 170 × 44), the player's **Zurück zur Übersicht**
+   * (242 × 45), the exam's buttons. `lg` is the 58 px pill the course meta
+   * strip uses for **Fortbildung fortsetzen**, which is the one action on that
+   * screen and is drawn larger than everything around it. `sm` is the chip
+   * scale, unchanged.
+   */
+  size?: "lg" | "md" | "sm";
   disabled?: boolean;
   children: ReactNode;
 }) {
@@ -62,7 +72,11 @@ export function Button(props: {
   const base =
     "inline-flex items-center justify-center gap-2 rounded-full font-semibold transition-colors " +
     "disabled:cursor-not-allowed disabled:opacity-60";
-  const metrics = size === "sm" ? "px-4 py-1.5 text-xs" : "px-6 py-2.5 text-sm";
+  const metrics = {
+    sm: "px-4 py-1.5 text-xs",
+    md: "px-6 py-3 text-sm",
+    lg: "px-8 py-4 text-base",
+  }[size];
 
   const skin: Record<NonNullable<typeof props.variant>, string> = {
     primary: "bg-brand-600 text-brand-contrast hover:bg-brand-700",
@@ -169,7 +183,17 @@ export function TabbedPanel<T extends string>(props: {
                 props.onSelect(tab.id);
               }}
               className={
-                "px-6 py-2.5 text-sm font-semibold transition-colors " +
+                /* `sm:px-10` (P190-01). Measured on the 01.09.2026 export a
+                   "Weitere" tab is 154 px wide for a seven-character word —
+                   roughly 40 px of padding a side, which is what gives the row
+                   its folder-tab proportion. At `px-6` the tabs were two thirds
+                   the drawn width and read as small buttons resting on the
+                   panel rather than as tabs standing on it.
+
+                   Padding only. The rounding is per-state below and derived
+                   from this box's 40 px height (DEP-27a), which `py-2.5` keeps
+                   unchanged. */
+                "px-6 py-2.5 text-sm font-semibold transition-colors sm:px-10 " +
                 (selected
                   ? // The active tab is white and joins the panel below it,
                     // which is what makes the row read as tabs rather than as
@@ -227,9 +251,15 @@ export function TabbedPanel<T extends string>(props: {
  * The meta strip under the course hero: points, duration, module count, and the
  * resume action.
  *
- * It overlaps the hero by design (`-mt-7`), which is what ties the two together
- * in the layout. The CME points sit in an orange chip because that number is
- * the reason the learner is here.
+ * It overlaps the hero by design — measured, the 86 px strip sits 48 px above
+ * the hero's lower edge — which is what ties the two together in the layout.
+ * The CME points sit in an orange chip because that number is the reason the
+ * learner is here.
+ *
+ * No horizontal inset of its own from `sm` up: the drawing runs this strip to
+ * the content column's own edges (x = 261 … 1657 at 1920 px), so the caller's
+ * column is what positions it. `max-sm:mx-4` keeps the narrow arrangement,
+ * where the strip is a card inside a full-bleed hero rather than flush to it.
  */
 export function CourseMetaBar(props: {
   points: string | null;
@@ -254,8 +284,15 @@ export function CourseMetaBar(props: {
      * 12 px on all four corners the card reads as a plain rectangle beside a
      * hero whose own bottom-right sweeps, and the two stop looking like one
      * masthead. Both exports draw the sweep at roughly half the bar's height.
+     *
+     * `-mt-12` and `py-3.5` are the 01.09.2026 export's own figures (P190-01):
+     * the strip is 86 px tall and sits 48 px above the hero's lower edge. The
+     * horizontal inset went with them — from `sm` up the drawing runs this
+     * strip to the content column's own edges, which the caller's column now
+     * supplies, so `mx-4` survives only below `sm` where the strip is a card
+     * inside a full-bleed hero rather than flush to it.
      */
-    <div className="relative z-10 mx-4 -mt-7 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl rounded-br-[1.75rem] bg-white px-5 py-3 shadow-md max-sm:flex-col max-sm:gap-y-4 max-sm:px-5 max-sm:py-6">
+    <div className="relative z-10 -mt-12 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl rounded-br-[1.75rem] bg-white px-5 py-3.5 shadow-md max-sm:mx-4 max-sm:-mt-7 max-sm:flex-col max-sm:gap-y-4 max-sm:px-5 max-sm:py-6">
       {props.points === null ? null : (
         /*
          * **One orange pill with an internal hairline**, at every width — not
@@ -278,10 +315,10 @@ export function CourseMetaBar(props: {
          * the drawing can both be right about "this is not the shape".
          */
         <span className="flex items-center overflow-hidden rounded rounded-br-[1.125rem] bg-cta-500 text-cta-contrast">
-          <span className="px-4 py-1.5 text-base font-bold max-sm:py-2 max-sm:text-lg">
+          <span className="px-4 py-2.5 text-base font-bold max-sm:py-2 max-sm:text-lg">
             {props.points}
           </span>
-          <span className="border-l border-white/60 px-4 py-1.5 text-base font-semibold max-sm:py-2">
+          <span className="border-l border-white/60 px-4 py-2.5 text-base font-semibold max-sm:py-2">
             {props.pointsLabel}
           </span>
         </span>
@@ -598,7 +635,7 @@ export function LockIcon(props: { className?: string }) {
 }
 
 /**
- * The state glyphs of the player's Modul Übersicht (layout §4.3).
+ * The state glyphs of the player's Fortbildungsfortschritt (layout §4.3).
  *
  * `role="img"` with a name rather than `aria-hidden`, because in this sidebar
  * the icon is the *only* thing distinguishing a finished chapter from a locked

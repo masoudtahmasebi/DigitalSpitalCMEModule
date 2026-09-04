@@ -145,7 +145,7 @@ export class AssessmentService {
      * (§4 invariant 6).
      *
      * `passThresholdPercent` is **the course's live value**, not the enrolment's
-     * snapshot. This comment said the opposite until P190-01 — it was written
+     * snapshot. This comment said the opposite until P191-01 — it was written
      * before P174-01 moved the three gating thresholds onto the course, and it
      * had been describing the wrong source ever since (§11 rule 9: a comment is
      * a claim).

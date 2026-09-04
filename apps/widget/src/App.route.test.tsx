@@ -415,17 +415,17 @@ describe("the learner's address", () => {
     });
 
     /*
-     * Exactly the player's own button.
+     * The course shell's button, and now the only one.
      *
-     * The course shell draws a second one with the same accessible name — its
-     * arrow is `aria-hidden`, correctly, so a role-and-name query cannot tell
-     * them apart. The two go to different places, and clicking the wrong one
-     * would be testing a different control than this case is about.
+     * The player used to draw a second with the same accessible name, forty
+     * pixels below it and going to the same place; P191-01 removed it, because
+     * the layout draws exactly one. This case is about the address moving when
+     * the learner leaves the player, so any control that leaves it will do —
+     * but the assertion stays, so a future change that removes the *last* one
+     * fails here rather than leaving a player nobody can get out of.
      */
-    const back = screen
-      .getAllByRole("button", { name: "Zurück zur Übersicht" })
-      .find((button) => button.textContent === "Zurück zur Übersicht");
-    expect(back, "the player no longer draws its own back button").toBeDefined();
+    const [back] = screen.getAllByRole("button", { name: "Zurück zur Übersicht" });
+    expect(back, "nothing leaves the player any more").toBeDefined();
     fireEvent.click(back!);
 
     // The screen moved …
@@ -725,7 +725,7 @@ describe("opening a course on its Teilnahmebescheinigung", () => {
 });
 
 /**
- * A failed exam is still open (P190-01).
+ * A failed exam is still open (P191-01).
  *
  * ## The report, at its own numbers
  *

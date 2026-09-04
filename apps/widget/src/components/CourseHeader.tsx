@@ -37,6 +37,7 @@
 
 import type { CourseDetail, EnrolmentState } from "@ds/sdk";
 import { de } from "../locale/de.js";
+import { CONTENT } from "../layout.js";
 import { Button, CourseMetaBar, ProgressPanel } from "./primitives.js";
 
 export function StickyMetaBar(props: {
@@ -70,7 +71,8 @@ export function StickyMetaBar(props: {
     <div className="mb-4">
       {/* Two panels side by side: the teal title block and the course artwork.
           The image is not decorative framing — it is the Titelbild the customer
-          authored, and the layout gives it half the width.
+          authored, and the layout gives it exactly half the width — measured on
+          the 1920 px export, the teal ends at x = 959.
 
           Below `sm` they are **stacked in the other order**, edge to edge, and
           square (P19-03). The mobile export runs the artwork full-bleed under
@@ -78,15 +80,36 @@ export function StickyMetaBar(props: {
           same two panels, rotated a quarter turn and swapped, which is why
           this is `flex-col-reverse` on one element rather than a second tree.
 
-          `-mx-4` cancels the widget's own gutter so "full-bleed" is actually
-          full-bleed; without it the artwork sits in a 16 px frame the drawing
-          does not have. */}
-      <div className="overflow-hidden rounded-2xl max-sm:-mx-4 max-sm:rounded-none">
+          ## Full-bleed, and square (P190-01)
+
+          No inset and no rounding: the drawing runs both panels to the edges of
+          the page on all four course pages. It was a rounded card inside the
+          content column, which put a 16 px frame of page around artwork the
+          layout has touching the edge — and left the heading starting at the
+          card's inner padding rather than on the column's own left edge, where
+          the meta strip and the tab row beneath it begin.
+
+          This element is therefore **outside** the column: the caller renders
+          it full width and the two things that must line up — the heading and
+          the meta strip — each carry `CONTENT` of their own. A negative margin
+          would not do it. `-mx-4` cancels 16 px of padding, not 261 px of
+          centring, so inside a centred 1430 px column it bleeds by exactly the
+          gutter and stops. */}
+      <div className="overflow-hidden">
         <div className="grid max-sm:flex max-sm:flex-col-reverse sm:grid-cols-2">
-          <div className="flex items-center bg-brand-600 px-6 py-8 max-sm:px-4 sm:px-8 sm:py-12">
-            <h1 className="break-words text-2xl font-bold leading-snug text-brand-contrast sm:text-3xl">
-              {course.title}
-            </h1>
+          <div className="flex items-center bg-brand-600 py-8 max-sm:px-4 sm:py-24">
+            {/*
+              Half a content column, right-aligned in the hero's left half, so
+              the heading's left edge is the column's left edge. `ml-auto` and
+              a half-width max rather than `mx-auto` on a full one: this box
+              only occupies the left half of the page, and centring a 1430 px
+              column inside 960 px would put the text at the wrong edge.
+            */}
+            <div className="ml-auto w-full max-w-[715px] px-4 max-sm:px-0">
+              <h1 className="break-words text-2xl font-bold leading-snug text-brand-contrast sm:text-[2.35rem] sm:leading-[1.25]">
+                {course.title}
+              </h1>
+            </div>
           </div>
 
           {course.heroImageUrl === null ? (
@@ -104,30 +127,38 @@ export function StickyMetaBar(props: {
         </div>
       </div>
 
-      <CourseMetaBar
-        points={course.cmePoints === null ? null : String(course.cmePoints)}
-        pointsLabel={de.overview.cmePoints}
-        duration={
-          course.totalDurationSec === 0 ? null : de.duration(course.totalDurationSec)
-        }
-        modules={de.overview.moduleCount(course.moduleCount)}
-        action={
-          props.onResume === undefined ? null : (
-            <Button onClick={props.onResume}>{resumeLabel}</Button>
-          )
-        }
-      />
+      {/*
+        Back inside the column. The strip and the back link line up with the
+        tab row below them and with the heading above, all three on x = 261.
+      */}
+      <div className={CONTENT}>
+        <CourseMetaBar
+          points={course.cmePoints === null ? null : String(course.cmePoints)}
+          pointsLabel={de.overview.cmePoints}
+          duration={
+            course.totalDurationSec === 0 ? null : de.duration(course.totalDurationSec)
+          }
+          modules={de.overview.moduleCount(course.moduleCount)}
+          action={
+            props.onResume === undefined ? null : (
+              <Button size="lg" onClick={props.onResume}>
+                {resumeLabel}
+              </Button>
+            )
+          }
+        />
 
-      {props.onBack === undefined ? null : (
-        <button
-          type="button"
-          onClick={props.onBack}
-          className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-brand-700"
-        >
-          <span aria-hidden="true">←</span>
-          {de.catalog.back}
-        </button>
-      )}
+        {props.onBack === undefined ? null : (
+          <button
+            type="button"
+            onClick={props.onBack}
+            className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-brand-700"
+          >
+            <span aria-hidden="true">←</span>
+            {de.catalog.back}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

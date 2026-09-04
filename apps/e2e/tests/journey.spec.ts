@@ -1042,7 +1042,7 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * **The section's own control, not the screen's primary action** (P93-03).
        * This was `Fortbildung pausieren`, which is the player's action only
        * while there is still watching to do — and once the tail grace credits
-       * the video the sidebar correctly offers `Lernerfolgskontrolle beginnen`
+       * the video the sidebar correctly offers `Prüfung starten`
        * instead. Asserting a control that legitimately changes with the gate
        * makes the test about the gate rather than about the reload.
        */
@@ -1071,17 +1071,28 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * button that replaces "Fortbildung pausieren" once the server agrees.
        */
       await expect(
-        learner.getByRole("button", { name: "Lernerfolgskontrolle beginnen" }),
+        learner.getByRole("button", { name: "Prüfung starten" }),
         "the watch gate never opened, after the video played to its end",
       ).toBeVisible({ timeout: 60_000 });
 
       // ===================================================================
       // Act 13 · The Abschlussprüfung
       // ===================================================================
-      await learner
-        .getByRole("button", { name: "Lernerfolgskontrolle beginnen" })
-        .click();
-      await learner.getByRole("button", { name: "Abschlussprüfung starten" }).click();
+      /*
+       * Two controls, one name, in sequence (P190-03).
+       *
+       * The sidebar's action and the exam intro's own button both read
+       * "Prüfung starten" since the 2026-09-01 layout — they are never on
+       * screen together, because the intro reports no sidebar action, but the
+       * second click must not race the first. Waiting for the intro's own
+       * heading is what separates them: it exists only on the screen the first
+       * click opened.
+       */
+      await learner.getByRole("button", { name: "Prüfung starten" }).click();
+      await expect(learner.getByText("Anzahl Fragen")).toBeVisible({
+        timeout: 20_000,
+      });
+      await learner.getByRole("button", { name: "Prüfung starten" }).click();
 
       // One question, and the right answer is the first option — the one act 5
       // marked "richtig".

@@ -1,5 +1,5 @@
 /**
- * The player's **Modul Übersicht** sidebar (layout §4.3).
+ * The player's **Fortbildungsfortschritt** sidebar (layout §4.3).
  *
  * Modules expand to their chapters, each row carrying one of the four state
  * glyphs the layout specifies — completed, in progress, locked, paused.
@@ -32,7 +32,7 @@ import { de } from "../locale/de.js";
 import { moduleHeading } from "../module-title.js";
 import { indexTitles, itemIcon, locateContent, moduleNumber } from "../player.js";
 import type { PlayerAction } from "../player-status.js";
-import { Button, StateIcon } from "./primitives.js";
+import { Button, LockIcon, StateIcon } from "./primitives.js";
 
 export function ModuleSidebar(props: {
   course: CourseDetail;
@@ -43,7 +43,7 @@ export function ModuleSidebar(props: {
    * The controls the layout draws under this list, in order.
    *
    * A list rather than one (P95-02): the complete design shows **both** an
-   * orange *Lernerfolgskontrolle beginnen* and an outlined *Fortbildung
+   * orange *Prüfung starten* and an outlined *Fortbildung
    * pausieren* once the exam opens, and P94-02 swapped one for the other. They
    * are different actions — start the exam, and stop for today — and a learner
    * who wants the second should not have to give up the first to find it.
@@ -54,6 +54,30 @@ export function ModuleSidebar(props: {
    * layout draws for the exam pages.
    */
   actions: readonly PlayerAction[];
+  /**
+   * The Punktemeldung, as the last row of the list (layout pages 05–12).
+   *
+   * Every player and exam page draws **CME-Punkte geltend machen** under the
+   * modules, with a padlock while the exam is outstanding and an open one once
+   * it is passed — so the physician can see the step exists, and what opens it,
+   * from the moment they start watching (§9.4). Nothing rendered it, and the
+   * two sentences written for it in P95-01 had never reached a screen — §9.3
+   * one layer out.
+   *
+   * `undefined` where the row does not belong: the catalogue's outline has no
+   * sidebar, and a course that awards no points has nothing to claim.
+   *
+   * Whether it is open is **not** decided here. The caller passes the callback
+   * only when the server's own `courseComplete` is true, which is the pair
+   * `POST /completion` refuses on — so this cannot become a client-side gate.
+   */
+  claim?:
+    | {
+        readonly done: boolean;
+        /** Absent while the server would refuse the completion. */
+        readonly open: (() => void) | undefined;
+      }
+    | undefined;
   /**
    * The course's Lernerfolgskontrollen, as the layout draws them: rows under
    * the module list rather than a tab beside the video (P95-01).
@@ -86,14 +110,17 @@ export function ModuleSidebar(props: {
       <h2 className="text-sm font-semibold text-gray-900">{de.player.outline}</h2>
 
       {/*
-        Rows separated by a rule, not boxed (P94-02).
+        Rows separated by a rule, not boxed (P94-02, tightened in P190-01).
 
-        `Player-Ansicht-*` draws one panel with hairlines between the modules;
-        ours drew five bordered cards, which reads as five separate things
-        rather than one outline of one course. `first:border-t-0` so the list
-        does not open with a rule against the heading.
+        `Player-Ansicht-*` draws one column with a hairline **under** each
+        module and no outline around the list at all; ours drew five bordered
+        cards first, then one bordered panel. Measured on the 1920 px export
+        the rules run the full width of the column with nothing enclosing
+        them, so the box is gone and the separator moved to the bottom of each
+        row — which is also what lets the Punktemeldung row below sit in the
+        same rhythm instead of outside a border.
       */}
-      <ol className="overflow-hidden rounded-[var(--ds-radius)] border border-gray-200">
+      <ol>
         {props.state.modules.map((module) => {
           const title = titles.modules.get(module.id) ?? "";
           /*
@@ -139,7 +166,7 @@ export function ModuleSidebar(props: {
           const state = drawn === "playing" ? "inProgress" : drawn;
 
           return (
-            <li key={module.id} className="border-t border-gray-200 first:border-t-0">
+            <li key={module.id} className="border-b border-gray-200">
               <h3>
                 <button
                   type="button"
@@ -305,6 +332,18 @@ export function ModuleSidebar(props: {
       </ol>
 
       {/*
+        The Punktemeldung step (layout pages 05–12).
+
+        A row, not a button, while it is shut: §9.2 says never offer what the
+        system will refuse, and the API refuses a completion whose exam is
+        outstanding. It still has to be *visible* — the drawing shows it from
+        the first page of the player — so it renders as a padlocked line with
+        the sentence that says what opens it, and becomes a real control only
+        when the caller supplies `open`.
+      */}
+      {props.claim === undefined ? null : <ClaimRow claim={props.claim} />}
+
+      {/*
         The layout's primary action, under the list (P93-03).
 
         It was under the video, beside "Zurück zur Übersicht". Both places are
@@ -330,6 +369,69 @@ export function ModuleSidebar(props: {
         </div>
       )}
     </nav>
+  );
+}
+
+/**
+ * The last row of the list: the CME points, and whether they can be claimed.
+ *
+ * Three appearances for three server states, because they are three different
+ * pieces of news: shut (grey, padlocked, with the sentence naming what opens
+ * it), open (the accent colour and an open padlock, and it is a button), and
+ * done (the completed glyph, and no longer an invitation).
+ */
+function ClaimRow(props: {
+  claim: { readonly done: boolean; readonly open: (() => void) | undefined };
+}) {
+  const { done, open } = props.claim;
+  const label = de.quiz.claim;
+
+  if (done) {
+    return (
+      <p className="flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-brand-700">
+        <StateIcon state="completed" label={de.gate.completed} tone="item" />
+        {label}
+      </p>
+    );
+  }
+
+  if (open === undefined) {
+    return (
+      <p className="px-3 py-2.5 text-sm text-gray-400">
+        <span className="flex items-center gap-2 font-medium">
+          <LockIcon className="h-4 w-4 shrink-0" />
+          {label}
+        </span>
+        {/* §9.4: where an action is deliberately impossible, say why at the
+            point somebody looks for it. */}
+        <span className="mt-1 block pl-6 text-xs">{de.player.reportingLocked}</span>
+      </p>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={open}
+      className="flex w-full items-center gap-2 rounded px-3 py-2.5 text-left text-sm font-semibold text-cta-600 hover:bg-cta-50"
+    >
+      <OpenLockIcon />
+      {label}
+    </button>
+  );
+}
+
+/** The open padlock the layout draws once the Punktemeldung is reachable. */
+function OpenLockIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="h-4 w-4 shrink-0"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1H6V4.5a2 2 0 1 1 4 0V5h1.5v-.5A3.5 3.5 0 0 0 8 1Z" />
+    </svg>
   );
 }
 

@@ -735,7 +735,7 @@ function eivState(
       // burned through the fast retries without landing.
       if (submission.reportDueAt.getTime() <= now.getTime()) return "needs_attention";
       /*
-       * One attempt short of the budget, not a hardcoded 3 (P191-01).
+       * One attempt short of the budget, not a hardcoded 3 (P192-01).
        *
        * The number was `3` and the budget is `MAX_ATTEMPTS = 4` in
        * `@ds/domain`, with nothing tying them together. It happened to mean

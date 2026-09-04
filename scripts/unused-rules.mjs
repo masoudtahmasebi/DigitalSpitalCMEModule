@@ -113,7 +113,7 @@ for (const name of new Set(names)) {
 }
 
 /*
- * The second half: a **field** nothing reads (P191-01).
+ * The second half: a **field** nothing reads (P192-01).
  *
  * The first half sees exported names. It cannot see inside one, and that is
  * how `EivDeadlines` came to carry three judgements — `isOverdue`,

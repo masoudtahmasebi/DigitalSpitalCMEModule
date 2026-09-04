@@ -86,6 +86,11 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
           pnpm check:shell
+          # And the shell embedded in these workflows, which `check:shell` does
+          # not see — it scans `git ls-files '*.sh'`, and the scripts that
+          # deploy this platform live in YAML. P189-01 shipped an unbalanced
+          # quote through every gate and broke two deploys (P193-01).
+          pnpm check:workflow-shell
 
       - name: Build
         run: pnpm build

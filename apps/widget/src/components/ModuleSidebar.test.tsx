@@ -1,5 +1,5 @@
 /**
- * The **Modul Übersicht** sidebar (layout 6.5).
+ * The **Fortbildungsfortschritt** sidebar (layout 6.5).
  *
  * These assertions used to live in `PlayerScreen.test.tsx`, because the sidebar
  * used to live in `PlayerScreen`. It moved to `CourseShell` in #61 — the layout
@@ -154,6 +154,7 @@ function renderSidebar(
   overrides: {
     onOpen?: (id: string) => void;
     actions?: readonly PlayerAction[];
+    claim?: { done: boolean; open: (() => void) | undefined };
   } = {},
 ) {
   render(
@@ -163,6 +164,7 @@ function renderSidebar(
       currentContentId="v3"
       onOpen={overrides.onOpen ?? vi.fn()}
       actions={overrides.actions ?? []}
+      claim={overrides.claim}
     />,
   );
 }
@@ -268,7 +270,7 @@ describe("which chapter the learner is inside", () => {
   });
 });
 
-describe("the Modul Übersicht sidebar", () => {
+describe("the Fortbildungsfortschritt sidebar", () => {
   it("opens on the module being watched", () => {
     renderSidebar();
     const toggle = screen.getByRole("button", {
@@ -336,7 +338,7 @@ describe("the Modul Übersicht sidebar", () => {
       ],
     });
 
-    const outline = screen.getByRole("navigation", { name: "Modul Übersicht" });
+    const outline = screen.getByRole("navigation", { name: "Fortbildungsfortschritt" });
     const button = screen.getByRole("button", { name: "Fortbildung pausieren" });
     expect(outline.contains(button)).toBe(true);
 
@@ -347,9 +349,7 @@ describe("the Modul Übersicht sidebar", () => {
   it("draws nothing there on a screen with no action, which is every exam page", () => {
     renderSidebar();
     expect(screen.queryByRole("button", { name: "Fortbildung pausieren" })).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Lernerfolgskontrolle beginnen" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Prüfung starten" })).toBeNull();
   });
 
   it("calls the module under way *bearbeitet* and the chapter in it *angesehen*", () => {
@@ -376,5 +376,70 @@ describe("the Modul Übersicht sidebar", () => {
       0,
     );
     expect(screen.getAllByRole("img", { name: "Gesperrt" }).length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The Punktemeldung row (layout pages 05–12, P190-01).
+ *
+ * Three states and they are three different pieces of news, which is why each
+ * gets its own case rather than one parameterised over a flag: shut, open, and
+ * done. The one worth the most is *shut* — the drawing has this row on every
+ * page of the player, from the first minute of the first module, and what it
+ * has to do there is say **what opens it** (CLAUDE.md §9.4). A padlock alone
+ * is a closed door with no sign on it.
+ *
+ * It is also the case that could not previously exist. `player.reportingLocked`
+ * was written in P95-01, translated, covered by `check:i18n`, and rendered by
+ * nothing at all — §9.3, and `check:copy` had it baselined as known-dead.
+ */
+describe("the CME-Punkte geltend machen row", () => {
+  it("is not drawn at all when the caller passes no claim", () => {
+    renderSidebar();
+
+    expect(screen.queryByText("CME-Punkte geltend machen")).toBeNull();
+  });
+
+  it("says what opens it while the server would refuse the completion", () => {
+    renderSidebar({ claim: { done: false, open: undefined } });
+
+    expect(screen.getByText("CME-Punkte geltend machen")).toBeTruthy();
+    expect(
+      screen.getByText("Wird nach bestandener Lernerfolgskontrolle freigeschaltet."),
+    ).toBeTruthy();
+    /*
+      §9.2: never offer what the system will refuse. While it is shut this is a
+      line of text, not a control — a button here could only ever produce a 409,
+      and it would produce it *after* the learner had committed to the step.
+    */
+    expect(
+      screen.queryByRole("button", { name: /CME-Punkte geltend machen/u }),
+    ).toBeNull();
+  });
+
+  it("becomes a control once the caller supplies the way onward", () => {
+    const open = vi.fn();
+    renderSidebar({ claim: { done: false, open } });
+
+    const button = screen.getByRole("button", { name: /CME-Punkte geltend machen/u });
+    fireEvent.click(button);
+    expect(open).toHaveBeenCalledTimes(1);
+
+    // The explanation goes with the padlock: there is nothing left to explain.
+    expect(
+      screen.queryByText("Wird nach bestandener Lernerfolgskontrolle freigeschaltet."),
+    ).toBeNull();
+  });
+
+  it("stops inviting once the points have been reported", () => {
+    renderSidebar({ claim: { done: true, open: undefined } });
+
+    expect(screen.getByText("CME-Punkte geltend machen")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /CME-Punkte geltend machen/u }),
+    ).toBeNull();
+    expect(
+      screen.queryByText("Wird nach bestandener Lernerfolgskontrolle freigeschaltet."),
+    ).toBeNull();
   });
 });

@@ -6,7 +6,7 @@
  *
  * ## What moved out of here
  *
- * The **Modul Übersicht** sidebar and the teal masthead around it. They belong
+ * The **Fortbildungsfortschritt** sidebar and the teal masthead around it. They belong
  * to `CourseShell` in `App.tsx` now, because the layout draws them on five
  * screens — the player, the exam's four states and the Punktemeldung — and a
  * sidebar that lived here would have had to be rebuilt beside each of the
@@ -126,7 +126,7 @@ export function PlayerScreen(props: {
    * been graded, and the row carries the best of them — so its presence is the
    * server's own answer to "has this been sat". The *pass* is a comparison
    * against the course's threshold, and it lives in `passedQuizScore` rather
-   * than here (P190-01): this screen had the comparison and the exam screen did
+   * than here (P191-01): this screen had the comparison and the exam screen did
    * not, which is how a 60 % on an 85 % course came to read "bereits
    * bestanden".
    */
@@ -181,7 +181,7 @@ export function PlayerScreen(props: {
    * The controls the layout draws under the module list (P95-02).
    *
    * The complete desktop layout stacks **both** once the exam opens: orange
-   * *Lernerfolgskontrolle beginnen* above outlined *Fortbildung pausieren*.
+   * *Prüfung starten* above outlined *Fortbildung pausieren*.
    * P94-02 swapped one for the other, from an older export in which only one is
    * drawn — they are different actions, and a learner who wants to stop for
    * today should not have to give up the exam to find it.
@@ -309,8 +309,12 @@ export function PlayerScreen(props: {
           meant returning to the outline and finding the next item by hand.
 
           The pause and the exam CTA left this row for the sidebar in P93-03,
-          which is where the layout draws the primary action; this row is the
-          two ways *out* of the section.
+          which is where the layout draws the primary action; **Zurück zur
+          Übersicht** left it in P191-01, because `CourseShell` draws that
+          button in orange at the top of every one of these screens and the
+          drawing has exactly one of it. Two identical back buttons forty
+          pixels apart is not a second way out, it is the same way out twice.
+          What remains here is the way *onward*.
 
           **Never the exam** (P94-02). `nextAvailableContent` returns whatever
           the server has open, and once a module's video is done that is the
@@ -344,10 +348,6 @@ export function PlayerScreen(props: {
             {de.player.nextSection(next.title)}
           </Button>
         )}
-
-        <Button variant="secondary" onClick={props.onBack}>
-          {de.player.back}
-        </Button>
       </div>
 
       {/*
@@ -356,7 +356,7 @@ export function PlayerScreen(props: {
         It was a tab, beside **Lernerfolgskontrolle** and **CME Punktemeldung**.
         The complete desktop layout has no tab row at all: the module and
         chapter headings sit under the video with the text below them, the exam
-        is a row in the Modul Übersicht, and the Punktemeldung is where the
+        is a row in the Fortbildungsfortschritt, and the Punktemeldung is where the
         passed exam sends you. Three destinations, none of them a tab.
 
         That is the better shape for the reason P82-03 was about — the exam

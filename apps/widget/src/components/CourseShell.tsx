@@ -8,13 +8,14 @@ import { ModuleSidebar } from "./ModuleSidebar.js";
 import { PlayerProgressCard } from "./PlayerProgressCard.js";
 import { StickyProgress } from "./StickyProgress.js";
 import { Button } from "./primitives.js";
+import { CONTENT } from "../layout.js";
 
 /**
  * The chrome the layout draws on pages 06 to 13 (#61).
  *
  * A teal region carrying the logo, the course title and the way out, with one
  * white panel pulled up over its lower edge — the screen's content on the left,
- * **Modul Übersicht** on the right.
+ * **Fortbildungsfortschritt** on the right.
  *
  * ## Why five screens share it
  *
@@ -74,6 +75,15 @@ export function CourseShell(props: {
    * into halfway.
    */
   progress: boolean;
+  /**
+   * The Punktemeldung, for the sidebar's last row (layout pages 05–12).
+   *
+   * Threaded rather than derived here, and `undefined` whenever the server
+   * would refuse the completion — `Loaded` reads `courseComplete` off the
+   * enrolment for exactly the reason the quiz screen does (P82-01): offering
+   * the step early ends in a 409 *after* a physician has typed their EFN.
+   */
+  onClaimPoints: (() => void) | undefined;
   children: ReactNode;
 }) {
   /*
@@ -95,25 +105,35 @@ export function CourseShell(props: {
         of the page and rounds only its inner corner, which reads as the page
         *becoming* white rather than as a band sitting on it.
       */}
-      <div className="-mx-4 rounded-br-[5rem] bg-brand-600 px-6 pb-20 pt-6 sm:px-8">
+      <div className="rounded-br-[5rem] bg-brand-600 pb-20 pt-6">
         {/*
+          The content column, applied here rather than by the caller (P190-01).
+
+          This band bleeds to the edges of the page and the panel below it does
+          not, so the two cannot share one wrapper. It carried `-mx-4` and
+          relied on the screen's own padding — which was right while the screen
+          was full width, and bled by exactly 16 px once it became a centred
+          column. A negative margin cancels padding; it cannot cancel centring.
+        */}
+        <div className={CONTENT}>
+          {/*
           `ml-auto` on the button rather than `justify-between` on the row:
           `BrandLogo` renders nothing for a project with no logo configured,
           and with one child `justify-between` left-aligns it — so the back
           action drifted to the top *left* on exactly the deployments that have
           not finished branding yet.
         */}
-        <div className="flex flex-wrap items-start gap-4">
-          <BrandLogo apiBase={props.apiBase} projectSlug={props.projectSlug} />
-          <div className="ml-auto">
-            <Button variant="cta" onClick={props.onBack}>
-              <span aria-hidden="true">←</span>
-              {de.player.back}
-            </Button>
+          <div className="flex flex-wrap items-start gap-4">
+            <BrandLogo apiBase={props.apiBase} projectSlug={props.projectSlug} />
+            <div className="ml-auto">
+              <Button variant="cta" onClick={props.onBack}>
+                <span aria-hidden="true">←</span>
+                {de.player.back}
+              </Button>
+            </div>
           </div>
-        </div>
 
-        {/*
+          {/*
           The title and the progress card side by side, as
           `Player-Ansicht-*` draws them: the card is a white panel in the teal,
           right-aligned, with the title shrinking beside it. `lg:` because below
@@ -169,17 +189,18 @@ export function CourseShell(props: {
           no horizontal overflow at any of them. The numbers are in
           `docs/backlog/P158.md`.
         */}
-        <div className="mt-6 flex flex-wrap items-end justify-between gap-6">
-          <h1 className="min-w-0 grow basis-full text-2xl font-bold text-brand-contrast sm:text-3xl lg:basis-[18rem]">
-            {props.course.title}
-          </h1>
-          <div className="w-full max-w-full lg:w-[32rem] xl:w-[36rem]">
-            <PlayerProgressCard
-              state={props.state}
-              moduleIndex={here?.moduleIndex}
-              moduleCount={props.course.modules.length}
-              status={status}
-            />
+          <div className="mt-6 flex flex-wrap items-end justify-between gap-6">
+            <h1 className="min-w-0 grow basis-full text-2xl font-bold text-brand-contrast sm:text-3xl lg:basis-[18rem]">
+              {props.course.title}
+            </h1>
+            <div className="w-full max-w-full lg:w-[32rem] xl:w-[36rem]">
+              <PlayerProgressCard
+                state={props.state}
+                moduleIndex={here?.moduleIndex}
+                moduleCount={props.course.modules.length}
+                status={status}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -195,8 +216,9 @@ export function CourseShell(props: {
         guarantees the last of them can always be scrolled clear of it, at every
         scroll position rather than at most of them.
       */}
-      <div className="-mt-14 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm max-sm:pb-24 sm:p-6">
-        {/*
+      <div className={CONTENT}>
+        <div className="-mt-14 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm max-sm:pb-24 sm:p-6">
+          {/*
           The sidebar is `20rem`, the drawing's is 304 px (DEP-24).
 
           Scanned off `player-zusammenfassung-v1.png`, which is 1:1 for 1920:
@@ -216,20 +238,32 @@ export function CourseShell(props: {
           whatever that theme allows, and the grid degrades to one column below
           `lg` regardless.
         */}
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="min-w-0 space-y-4">
-            <PlayerStatusContext.Provider value={setStatus}>
-              {props.children}
-            </PlayerStatusContext.Provider>
-          </div>
+          <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="min-w-0 space-y-4">
+              <PlayerStatusContext.Provider value={setStatus}>
+                {props.children}
+              </PlayerStatusContext.Provider>
+            </div>
 
-          <ModuleSidebar
-            course={props.course}
-            state={props.state}
-            currentContentId={props.currentContentId}
-            onOpen={props.onOpen}
-            actions={status?.actions ?? []}
-          />
+            <ModuleSidebar
+              course={props.course}
+              state={props.state}
+              currentContentId={props.currentContentId}
+              onOpen={props.onOpen}
+              actions={status?.actions ?? []}
+              /*
+              Only where there is a point to claim. A course with no CME points
+              has no Punktemeldung, and drawing a padlocked step for one would
+              be §9.2's "a control that can only refuse" in its quietest form —
+              a row describing something that will never open.
+            */
+              claim={
+                props.course.cmePoints === null
+                  ? undefined
+                  : { done: props.state.complete, open: props.onClaimPoints }
+              }
+            />
+          </div>
         </div>
       </div>
 

@@ -43,6 +43,7 @@ import type { ApiClient, CourseSummary, DeliveryType } from "@ds/sdk";
 import type { OpenIntent } from "../intent.js";
 import { de } from "../locale/de.js";
 import { describeError, useAsync } from "../hooks.js";
+import { CONTENT } from "../layout.js";
 import {
   Button,
   ErrorNotice,
@@ -53,18 +54,6 @@ import {
 import { CatalogSeal } from "./CatalogSeal.js";
 
 const PER_PAGE = 10;
-
-/**
- * The content column.
- *
- * The layout centres everything below the hero in a column of roughly 1050 px
- * and lets the hero itself run to the edges of the page. Both halves of that
- * are here rather than left to the host theme: a theme container would clip
- * the hero, and a hero that bleeds while the panel is inset only reads as
- * deliberate if the two agree about where the left edge is.
- */
-const CONTENT_WIDTH = "w-full max-w-[1082px]";
-const CONTENT = `mx-auto ${CONTENT_WIDTH} px-4`;
 
 /**
  * One tab of the catalogue.
@@ -274,7 +263,7 @@ function CoursePanel(
 
   return (
     <div className={panel}>
-      <div className="border-b border-gray-200 p-5 sm:p-7">
+      <div className="border-b border-gray-200 p-5 sm:p-10">
         {/*
           What this section is, above the controls that narrow it (P106-01).
 
@@ -292,7 +281,7 @@ function CoursePanel(
         {props.description === undefined ? null : (
           <h2 className="mb-6 text-lg font-bold text-brand-600">{props.description}</h2>
         )}
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2 sm:gap-8">
           <FacetSelect
             id={`ds-thema-${props.deliveryTypes.join("-")}`}
             label={de.catalog.thema}
@@ -338,7 +327,7 @@ function CoursePanel(
          * list — a distinction worth keeping, because the card is the click
          * target and its edges are what say so.
          */
-        <ul className="space-y-6 p-5 sm:p-7">
+        <ul className="space-y-6 p-5 sm:p-10">
           {items.map((course) => (
             <li key={course.slug}>
               <CourseCard
@@ -459,29 +448,39 @@ function CatalogHero(props: { branding: Branding }) {
         */}
         <div className="pointer-events-none absolute bottom-10 left-4 sm:bottom-0 sm:left-0 sm:right-0 sm:top-0">
           {/*
-            The content column, repeated, so the seal is centred on *its* right
-            edge rather than on the viewport's — which is where the layout puts
+            The content column, repeated, so the seal is anchored to *its* right
+            edge rather than to the viewport's — which is where the layout puts
             it, and which stays true at every width without a magic percentage.
 
-            Written out rather than interpolated from `CONTENT_WIDTH`: Tailwind
-            scans this file as text, so a class name it never sees spelled in
-            full is a class name it never generates.
+            Written out rather than interpolated from `CONTENT_WIDTH`: the
+            variant prefixes differ (`sm:`), and a class name Tailwind never
+            sees spelled in full is a class name it never generates.
           */}
-          <div className="relative mx-auto h-full sm:w-full sm:max-w-[1082px]">
+          <div className="relative mx-auto h-full sm:w-full sm:max-w-[1430px] sm:px-4">
             {/*
-              Inside the hero, not centred on its edge (P91-01).
+              Centred **on** the column's right edge — but only once the gutter
+              can take it (P91-01, revisited in P190-01).
 
-              The drawing centres the seal **on** the content column's right
-              edge, which works there because the hero bleeds to the viewport.
-              This hero cannot: the widget is as wide as whatever container the
-              host gives it, so half a seal would fall outside and
-              `sm:overflow-hidden` would cut it — which is exactly what the
-              portal was showing.
+              The drawing puts the seal's centre exactly on x = 1659, the
+              column's right edge, with 261 px of hero to its right. That is
+              `translate-x-1/2` and it is what the 1920 px export shows.
+
+              It is not safe at every width. Below the column's own 1430 px the
+              column touches the viewport, so half a 176 px seal would fall
+              outside and `sm:overflow-hidden` would cut it — which is exactly
+              what the portal was showing before P91-01 pulled it inside.
+
+              1606 px is the width at which the gutter first exceeds the seal's
+              half-width: 1430 + 2 × 88. Below it the seal sits flush inside the
+              column edge; at and above it, it straddles the edge as drawn. The
+              number is derived rather than chosen, which is why it is written
+              as an arbitrary variant instead of a new breakpoint nothing else
+              would use.
             */}
-            <div className="sm:absolute sm:right-6 sm:top-1/2 sm:-translate-y-1/2">
+            <div className="sm:absolute sm:right-4 sm:top-1/2 sm:-translate-y-1/2 min-[1606px]:translate-x-1/2">
               <HeroSeal
                 branding={branding}
-                className="h-[11rem] w-[11rem] sm:h-[8.2rem] sm:w-[8.2rem]"
+                className="h-[11rem] w-[11rem] sm:h-44 sm:w-44"
               />
             </div>
           </div>
@@ -590,12 +589,29 @@ function CourseCard(props: {
     <article className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.08)] sm:flex-row">
       {/*
         Flush to the card's left edge and full height, as the layout draws it —
-        no padding around the image. `self-stretch` rather than a fixed height
-        so a card with a long description does not leave a strip of white under
-        its own picture.
+        no padding around the image.
+
+        `sm:h-full` and not `sm:h-auto` (P190-01). The widget's own reset
+        carries preflight's `img { height: auto }`, which beat `self-stretch`
+        and sized the picture to its intrinsic aspect ratio — so a card whose
+        description ran to four lines drew a strip of card-coloured nothing
+        under its own artwork, visible on the first card of the catalogue at
+        every width above `sm`. `h-full` plus `object-cover` is what the
+        drawing has: the picture fills the card and crops.
+
+        `w-[39.8%]` is the drawing's own proportion — a 525 px picture on a
+        1320 px card — rather than a fixed rem width, so the split survives the
+        column narrowing on a laptop instead of the text column taking all of
+        the loss.
       */}
       {course.heroImageUrl === null ? (
-        <ImagePlaceholder className="h-52 w-full shrink-0 sm:h-auto sm:w-[24.5rem] sm:self-stretch" />
+        /* `sm:h-auto` and not `sm:h-full` here: this is a `<div>`, so
+           `height: 100%` resolves against a flex container whose own height is
+           `auto` and collapses to the icon inside it — a 40 px grey strip where
+           the drawing has the card's full height. `self-stretch` is what sizes
+           it, and only the `<img>` below needs `h-full` to beat the reset's
+           `height: auto`. */
+        <ImagePlaceholder className="h-52 w-full shrink-0 sm:h-auto sm:w-[39.8%] sm:self-stretch" />
       ) : (
         <img
           src={course.heroImageUrl}
@@ -603,12 +619,16 @@ function CourseCard(props: {
           // beside it. An alt repeating the title makes a screen reader say
           // it twice.
           alt=""
-          className="h-52 w-full shrink-0 object-cover sm:h-auto sm:w-[24.5rem] sm:self-stretch"
+          className="h-52 w-full shrink-0 object-cover sm:h-full sm:w-[39.8%] sm:self-stretch"
           referrerPolicy="no-referrer"
         />
       )}
 
-      <div className="min-w-0 flex-1 p-5 sm:p-6">
+      {/* The drawing's gap between the picture and the first line of text is
+          55 px, wider than the padding on the card's other three sides — the
+          text column is inset from the artwork, not merely padded away from
+          it. */}
+      <div className="min-w-0 flex-1 p-5 sm:py-8 sm:pl-14 sm:pr-8">
         <p className="text-sm font-semibold text-brand-600">
           {de.catalog.cardMeta(course)}
         </p>
@@ -628,7 +648,7 @@ function CourseCard(props: {
 
         {/* The CTA is the server's answer, not a guess from the card's own
             fields: `enrolment` is the caller's row, or null. */}
-        <div className="mt-5 flex flex-wrap gap-3">
+        <div className="mt-6 flex flex-wrap gap-4">
           <Button onClick={() => props.onOpen("start")}>
             {course.enrolment !== null && course.enrolment.courseComplete
               ? de.catalog.review
@@ -731,7 +751,7 @@ function FacetSelect(props: {
             props.onChange(event.target.value === "" ? undefined : event.target.value)
           }
           // A full pill on a light grey fill with no border, per the layout.
-          className="w-full appearance-none rounded-full bg-gray-100 py-2.5 pl-5 pr-16 text-sm text-gray-800"
+          className="h-11 w-full appearance-none rounded-full bg-gray-100 pl-5 pr-16 text-sm text-gray-800"
         >
           <option value="">{props.placeholder}</option>
           {props.options.map((option) => (
@@ -754,7 +774,7 @@ function FacetSelect(props: {
             block squares off that end, which is the shape the layout has. */}
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 right-0 flex w-14 items-center justify-center rounded-br-2xl bg-cta-500 text-cta-contrast"
+          className="pointer-events-none absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-br-2xl bg-cta-500 text-cta-contrast"
         >
           {/* A stroked chevron, not a filled triangle — the layout draws
               the former and at this size the two do not look alike. */}

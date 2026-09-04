@@ -104,6 +104,15 @@ export function QuizScreen(props: {
    * five-module course by hand.
    */
   onNext: { readonly title: string; readonly open: () => void } | undefined;
+  /**
+   * The server's own module counts, equal (layout page 07).
+   *
+   * Passed in rather than read here because this screen holds a `Quiz` and not
+   * an `EnrolmentState` — and because the two numbers being compared are the
+   * same pair the progress card prints, so there is one answer to "has this
+   * physician finished every module" rather than two.
+   */
+  allModulesDone: boolean;
 }) {
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [phase, setPhase] = useState<Phase>({ kind: "intro" });
@@ -157,6 +166,7 @@ export function QuizScreen(props: {
         onBack={props.onBack}
         onClaimPoints={props.onClaimPoints}
         onNext={props.onNext}
+        allModulesDone={props.allModulesDone}
       />
     );
   }
@@ -304,6 +314,15 @@ function QuizIntro(props: {
   onClaimPoints: (() => void) | undefined;
   /** The next section, when it is not. */
   onNext: { readonly title: string; readonly open: () => void } | undefined;
+  /**
+   * Whether the server's module counts are equal (layout page 08).
+   *
+   * The drawing heads this screen "Herzlichen Glückwunsch, Sie haben alle
+   * Module erfolgreich absolviert." — true of the course's *final* exam, which
+   * is the only one the twelve pages know about. A course may hold one per
+   * module (P87), so the sentence is drawn only when it is true.
+   */
+  allModulesDone: boolean;
 }) {
   const { quiz } = props;
   const total = quiz.questions.length;
@@ -316,20 +335,44 @@ function QuizIntro(props: {
 
   return (
     <div className="space-y-6">
+      {/*
+        The exam's name as an **eyebrow**, with the invitation as the heading —
+        the 01.09.2026 drawing's arrangement, and the reason the buttons below
+        can go back to saying "Prüfung starten" (P87-02, revisited in P190-03):
+        which exam this is has already been said, in the line the eye reaches
+        first.
+      */}
       <div>
-        <p className="text-sm font-semibold text-brand-700">{de.quiz.title}</p>
-        <h2 className="text-2xl font-bold text-gray-900">{props.examTitle}</h2>
+        <p className="text-sm font-semibold text-brand-700">{props.examTitle}</p>
+        {props.allModulesDone ? (
+          <>
+            <h2 className="mt-1 text-2xl font-bold text-gray-900">
+              {de.quiz.allModulesDone}
+            </h2>
+            <p className="mt-1 text-base text-gray-800">{de.quiz.lead}</p>
+          </>
+        ) : (
+          <h2 className="mt-1 text-2xl font-bold text-gray-900">{de.quiz.lead}</h2>
+        )}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      {/*
+        Two cards, side by side and no wider than they need to be (page 07).
+        Measured on the export they are ~275 px each in a 1070 px column, so a
+        three-across grid stretched them to a third of the panel and made two
+        short numbers look like a dashboard. `sm:max-w-xl` holds them at the
+        drawn proportion while still collapsing to one column on a phone.
+
+        The third card was `Antwortformat`; the drawing has no such card, and
+        the question screen answers it — every option carries a radio button.
+        Its caption did not go with it: a physician about to sit a *mixed* exam
+        has to know that some questions take more than one answer, so it moved
+        under the question count.
+      */}
+      <div className="grid gap-4 sm:max-w-xl sm:grid-cols-2">
         <StatCard
           label={de.quiz.statQuestions}
           value={String(total)}
-          caption={de.quiz.statQuestionsCaption}
-        />
-        <StatCard
-          label={de.quiz.statFormat}
-          value={allSingle ? de.quiz.formatSingle : de.quiz.formatMixed}
           caption={allSingle ? de.quiz.formatSingleCaption : de.quiz.formatMixedCaption}
         />
         <StatCard
@@ -394,7 +437,7 @@ function QuizIntro(props: {
       <div className="flex flex-wrap gap-3">
         {props.passedScorePercent === undefined ? (
           <Button variant="cta" onClick={props.onStart}>
-            {de.quiz.start(props.examTitle)}
+            {de.quiz.start}
           </Button>
         ) : (
           /*
@@ -618,7 +661,7 @@ function QuizResult(props: {
         <div className="flex flex-wrap items-start justify-center gap-4">
           <Button variant="cta" onClick={props.onRetry}>
             <span aria-hidden="true">⟳</span>
-            {de.quiz.retry(props.examTitle)}
+            {de.quiz.retry}
           </Button>
           <div className="text-center">
             <Button variant="secondary" onClick={props.onBack}>

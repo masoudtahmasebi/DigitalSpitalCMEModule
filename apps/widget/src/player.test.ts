@@ -348,7 +348,7 @@ describe("nextAvailableContent", () => {
 });
 
 /**
- * A score is not a pass (P190-01).
+ * A score is not a pass (P191-01).
  *
  * ## The report
  *

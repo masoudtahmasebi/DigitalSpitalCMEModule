@@ -346,7 +346,7 @@ export function contentProgressOf(
 }
 
 /**
- * The score, **only if it passed** (P190-01).
+ * The score, **only if it passed** (P191-01).
  *
  * ## Why this exists rather than two call sites comparing
  *

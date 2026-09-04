@@ -655,8 +655,16 @@ jobs:
 
           case "${detail}" in
             unreadable*)
+              # Two statements, not `${said:-…}` (P193-01).
+              #
+              # The default word inside `${parameter:-word}` is its own quoting
+              # context, so an apostrophe in it opens a quote **even inside
+              # double quotes**. "compose's own warnings" did exactly that, and
+              # the step died with `unexpected EOF while looking for matching`
+              # — taking two deploys with it.
               said="${detail#unreadable:}"
-              echo "::warning::platform_settings could not be read on the host — the read said: ${said:-nothing beyond compose's own warnings}. This run fails closed and treats the installation as reporting live, so the journey will not run. That is NOT evidence that it is reporting — it is evidence that the question could not be answered."
+              if [ -z "${said}" ]; then said="nothing beyond the compose warnings"; fi
+              echo "::warning::platform_settings could not be read on the host — the read said: ${said}. This run fails closed and treats the installation as reporting live, so the journey will not run. That is NOT evidence that it is reporting — it is evidence that the question could not be answered."
               ;;
           esac
 
@@ -722,10 +730,11 @@ jobs:
           answer="${answer%%@@*}"
 
           if [ -z "${answer}" ]; then
+            # Assigned, not defaulted inline — see the EIV step (P193-01).
+            if [ -z "${reason}" ]; then reason="nothing beyond the compose warnings"; fi
             echo "::warning::The host's mail posture could not be read — the read said:" \
-                 "${reason:-nothing beyond compose's own warnings}. That is not evidence" \
-                 "that mail is unconfigured; it is evidence that the question could not" \
-                 "be answered."
+                 "${reason}. That is not evidence that mail is unconfigured; it is" \
+                 "evidence that the question could not be answered."
             exit 0
           fi
 
