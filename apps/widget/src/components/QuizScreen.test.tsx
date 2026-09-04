@@ -82,6 +82,9 @@ function renderQuiz(
     certified: boolean;
     /** Every module behind the learner (P190-03). Defaults to true. */
     allModulesDone: boolean;
+    /** The certificate already exists — `completedAt !== null` (P195-03). */
+    onDownloadCertificate: () => void;
+    certificateDownloading: boolean;
   }> = {},
 ) {
   const { client, submitQuiz } = clientReturning(result);
@@ -101,6 +104,8 @@ function renderQuiz(
       onBack={handlers.onBack ?? (() => undefined)}
       onClaimPoints={claim}
       onNext={handlers.onNext}
+      onDownloadCertificate={handlers.onDownloadCertificate}
+      certificateDownloading={handlers.certificateDownloading}
       allModulesDone={handlers.allModulesDone ?? true}
     />,
   );
@@ -365,6 +370,42 @@ describe("the result", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /CME-Punkte geltend machen/ }));
     expect(onClaimPoints).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+   * The third state (P195-03).
+   *
+   * `onClaimPoints === undefined` covers two opposite situations — the course
+   * is not finished yet, and it was finished long ago — and this screen told
+   * both of them the first one: "Für die CME-Punkte fehlen noch Abschnitte der
+   * Fortbildung", to a physician holding a certificate for the whole thing.
+   *
+   * Two assertions, and the second is the one that matters: it is not enough
+   * that the right sentence appears, the wrong one has to stop.
+   */
+  it("passed and already certified: the certificate, not a list of what is missing", async () => {
+    const onDownloadCertificate = vi.fn();
+    renderQuiz(attempt({ passed: true }), {
+      onClaimPoints: null,
+      onDownloadCertificate,
+    });
+
+    await answerEverything();
+
+    expect(
+      screen.getByText(
+        "Diese Fortbildung ist abgeschlossen. Ihre Teilnahmebescheinigung steht zum Download bereit.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(/Für die CME-Punkte fehlen noch Abschnitte/u),
+      "a finished physician was told sections of the course were still missing",
+    ).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Teilnahmebescheinigung herunterladen/u }),
+    );
+    expect(onDownloadCertificate).toHaveBeenCalledTimes(1);
   });
 
   it("passed but the course is not finished: no claim, the next section instead", async () => {

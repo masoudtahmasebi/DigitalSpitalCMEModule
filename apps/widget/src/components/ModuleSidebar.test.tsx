@@ -154,7 +154,12 @@ function renderSidebar(
   overrides: {
     onOpen?: (id: string) => void;
     actions?: readonly PlayerAction[];
-    claim?: { done: boolean; open: (() => void) | undefined };
+    claim?: {
+      done: boolean;
+      open: (() => void) | undefined;
+      download?: (() => void) | undefined;
+      downloading?: boolean | undefined;
+    };
   } = {},
 ) {
   render(
@@ -441,5 +446,60 @@ describe("the CME-Punkte geltend machen row", () => {
     expect(
       screen.queryByText("Wird nach bestandener Lernerfolgskontrolle freigeschaltet."),
     ).toBeNull();
+  });
+
+  /*
+   * The third state (P195-02), which is the client's own rule:
+   *
+   *   "CME-Punkte geltend machen button only appears when all of the steps in
+   *   one course are done and the efn entry and getting the certificate is
+   *   remaining, if that is done, the option should appear to only download the
+   *   created certificate"
+   *
+   * The done row used to be the imperative under a checkmark, and that is the
+   * end of the road: the Teilnahmebescheinigung existed and the screen the
+   * physician was on did not say where.
+   */
+  it("offers the certificate once the step is done", () => {
+    const download = vi.fn();
+    renderSidebar({ claim: { done: true, open: undefined, download } });
+
+    const button = screen.getByRole("button", {
+      name: /Teilnahmebescheinigung herunterladen/u,
+    });
+    fireEvent.click(button);
+    expect(download).toHaveBeenCalledTimes(1);
+
+    // And it stops saying the thing that is already finished.
+    expect(screen.queryByText("CME-Punkte geltend machen")).toBeNull();
+  });
+
+  it("says it is working while the PDF is being fetched", () => {
+    renderSidebar({
+      claim: { done: true, open: undefined, download: vi.fn(), downloading: true },
+    });
+
+    expect(screen.getByText("Wird erstellt …")).toBeTruthy();
+    /*
+      Disabled, not merely labelled. A second click while the first is in
+      flight saves two copies of the same certificate, which reads to the
+      physician as the button having misfired.
+    */
+    const button = screen.getByRole("button", { name: /Wird erstellt/u });
+    expect(button.hasAttribute("disabled")).toBe(true);
+  });
+
+  /*
+   * §9.2 at the far end: an enrolment marked complete for which no certificate
+   * can be fetched must not draw a button that could only refuse. The API does
+   * not produce that pair today, and the row falls back to the checkmark line
+   * rather than to a control — which is also what keeps the case above honest,
+   * since a `done` row that always drew a button would pass it for free.
+   */
+  it("keeps the plain completed line when there is no certificate to offer", () => {
+    renderSidebar({ claim: { done: true, open: undefined, download: undefined } });
+
+    expect(screen.queryByRole("button", { name: /Teilnahmebescheinigung/u })).toBeNull();
+    expect(screen.getByText("CME-Punkte geltend machen")).toBeTruthy();
   });
 });

@@ -96,6 +96,9 @@ export function QuizScreen(props: {
    * says the API would accept it (CLAUDE.md §9.2).
    */
   onClaimPoints: (() => void) | undefined;
+  /** The finished Punktemeldung's affordance (P195-03). */
+  onDownloadCertificate?: (() => void) | undefined;
+  certificateDownloading?: boolean | undefined;
   /**
    * The next section the server has open, when the course is not finished.
    *
@@ -165,6 +168,8 @@ export function QuizScreen(props: {
         onStart={() => setPhase({ kind: "question", index: 0 })}
         onBack={props.onBack}
         onClaimPoints={props.onClaimPoints}
+        onDownloadCertificate={props.onDownloadCertificate}
+        certificateDownloading={props.certificateDownloading}
         onNext={props.onNext}
         allModulesDone={props.allModulesDone}
       />
@@ -182,6 +187,8 @@ export function QuizScreen(props: {
         }}
         onBack={props.onBack}
         onClaimPoints={props.onClaimPoints}
+        onDownloadCertificate={props.onDownloadCertificate}
+        certificateDownloading={props.certificateDownloading}
         onNext={props.onNext}
       />
     );
@@ -312,6 +319,9 @@ function QuizIntro(props: {
   onBack: () => void;
   /** The way on, when the course is finished — see `QuizScreen` (P170-02). */
   onClaimPoints: (() => void) | undefined;
+  /** The finished Punktemeldung's affordance (P195-03). */
+  onDownloadCertificate?: (() => void) | undefined;
+  certificateDownloading?: boolean | undefined;
   /** The next section, when it is not. */
   onNext: { readonly title: string; readonly open: () => void } | undefined;
   /**
@@ -564,6 +574,9 @@ function QuizResult(props: {
   onRetry: () => void;
   onBack: () => void;
   onClaimPoints: (() => void) | undefined;
+  /** The finished Punktemeldung's affordance (P195-03). */
+  onDownloadCertificate?: (() => void) | undefined;
+  certificateDownloading?: boolean | undefined;
   onNext: { readonly title: string; readonly open: () => void } | undefined;
 }) {
   const { attempt } = props;
@@ -638,7 +651,32 @@ function QuizResult(props: {
          * stands and points at the next section instead.
          */
         <div className="flex flex-wrap items-center justify-center gap-4">
-          {props.onClaimPoints === undefined ? (
+          {props.onClaimPoints === undefined &&
+          props.onDownloadCertificate !== undefined ? (
+            /*
+             * Finished, and already certified (P195-03).
+             *
+             * This branch used to be `morePending` — "Für die CME-Punkte fehlen
+             * noch Abschnitte der Fortbildung" — said to somebody who had
+             * finished every one of them. `onClaimPoints === undefined` covers
+             * two opposite situations, not yet and long since, and the screen
+             * told both of them the earlier one.
+             */
+            <>
+              <p className="w-full text-sm text-gray-700">{de.quiz.alreadyClaimed}</p>
+              <Button
+                onClick={props.onDownloadCertificate}
+                disabled={props.certificateDownloading === true}
+              >
+                {props.certificateDownloading === true
+                  ? de.certificate.downloading
+                  : de.certificate.download}
+              </Button>
+              <Button variant="secondary" onClick={props.onBack}>
+                {de.player.back}
+              </Button>
+            </>
+          ) : props.onClaimPoints === undefined ? (
             <>
               <p className="w-full text-sm text-gray-700">{de.quiz.morePending}</p>
               {props.onNext === undefined ? null : (

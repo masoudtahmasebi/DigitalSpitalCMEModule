@@ -76,6 +76,13 @@ export function ModuleSidebar(props: {
         readonly done: boolean;
         /** Absent while the server would refuse the completion. */
         readonly open: (() => void) | undefined;
+        /**
+         * The finished step's affordance: the certificate the act produced
+         * (P195-02). Absent until `completedAt` is set, which is the same
+         * condition the Zertifizierung tab reads.
+         */
+        readonly download?: (() => void) | undefined;
+        readonly downloading?: boolean | undefined;
       }
     | undefined;
   /**
@@ -381,17 +388,46 @@ export function ModuleSidebar(props: {
  * done (the completed glyph, and no longer an invitation).
  */
 function ClaimRow(props: {
-  claim: { readonly done: boolean; readonly open: (() => void) | undefined };
+  claim: {
+    readonly done: boolean;
+    readonly open: (() => void) | undefined;
+    readonly download?: (() => void) | undefined;
+    readonly downloading?: boolean | undefined;
+  };
 }) {
-  const { done, open } = props.claim;
+  const { done, open, download, downloading } = props.claim;
   const label = de.quiz.claim;
 
   if (done) {
+    /*
+     * The finished state offers the certificate (P195-02). It used to render
+     * the imperative `CME-Punkte geltend machen` under a checkmark — true, and
+     * the end of the road: the Teilnahmebescheinigung existed, and the screen
+     * the physician was on did not say where.
+     *
+     * `download` is absent only where the enrolment says complete and no
+     * certificate is retrievable, which the API does not produce today. The
+     * checkmark line stays for that case rather than a button that would
+     * refuse (§9.2).
+     */
+    if (download === undefined) {
+      return (
+        <p className="flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-brand-700">
+          <StateIcon state="completed" label={de.gate.completed} tone="item" />
+          {label}
+        </p>
+      );
+    }
     return (
-      <p className="flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-brand-700">
+      <button
+        type="button"
+        onClick={download}
+        disabled={downloading === true}
+        className="flex w-full items-center gap-2 rounded px-3 py-2.5 text-left text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-60"
+      >
         <StateIcon state="completed" label={de.gate.completed} tone="item" />
-        {label}
-      </p>
+        {downloading === true ? de.certificate.downloading : de.certificate.download}
+      </button>
     );
   }
 

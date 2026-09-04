@@ -4,10 +4,9 @@
  * Shows the fields the Anerkennungsbescheid requires — so a learner can check
  * their own name and the VNR before downloading — and then fetches the PDF.
  *
- * The download goes through the SDK rather than a plain `<a href>` because the
- * endpoint needs a bearer token, which an anchor cannot carry. The blob URL is
- * revoked immediately after the click: a live `blob:` URL is a readable copy
- * of a named physician's participation record for as long as it exists.
+ * The fetch itself is `useCertificateDownload` (P195-01), shared with the
+ * Punktemeldung step's done state — one implementation, because the part that
+ * matters is that the blob URL is revoked immediately after the click.
  *
  * The creditability sentence is rendered from `creditSentence`, which the API
  * templated from the course's own points and category. Nothing here formats a
@@ -15,11 +14,10 @@
  * the wrong sentence the day a second course exists.
  */
 
-import { useState } from "react";
 import { formatBerlinDate, formatBerlinTime } from "@ds/domain";
 import type { ApiClient, Certificate } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { describeError } from "../hooks.js";
+import { useCertificateDownload } from "../certificate-download.js";
 import { Button, ErrorNotice } from "./primitives.js";
 
 export function CertificatePanel(props: {
@@ -27,32 +25,11 @@ export function CertificatePanel(props: {
   courseSlug: string;
   certificate: Certificate;
 }) {
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | undefined>();
-
-  async function download(): Promise<void> {
-    setBusy(true);
-    setProblem(undefined);
-    try {
-      const { blob, filename } = await props.client.downloadCertificate(props.courseSlug);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = filename;
-      anchor.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      setProblem(
-        describeError(error instanceof Error ? error : undefined, {
-          unauthenticated: de.error.unauthenticated,
-          generic: de.error.generic,
-          noCourse: de.error.noCourse,
-        }),
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
+  const {
+    start: download,
+    busy,
+    problem,
+  } = useCertificateDownload(props.client, props.courseSlug);
 
   const completedAt = new Date(props.certificate.completedAt);
 
@@ -80,7 +57,7 @@ export function CertificatePanel(props: {
         <ErrorNotice title={de.error.title} message={problem} />
       )}
 
-      <Button disabled={busy} onClick={() => void download()}>
+      <Button disabled={busy} onClick={download}>
         {busy ? de.certificate.downloading : de.certificate.download}
       </Button>
     </div>

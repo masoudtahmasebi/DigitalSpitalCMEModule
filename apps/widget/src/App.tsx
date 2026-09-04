@@ -58,6 +58,7 @@ import { CompletionScreen } from "./components/CompletionScreen.js";
 import { EfnPanel } from "./components/EfnPanel.js";
 import { DeliveryAddressPanel } from "./components/DeliveryAddressPanel.js";
 import { CertificatePanel } from "./components/CertificatePanel.js";
+import { useCertificateDownload } from "./certificate-download.js";
 import { MediathekPanel } from "./components/MediathekPanel.js";
 import {
   ErrorNotice,
@@ -620,6 +621,17 @@ function Loaded(props: {
    * fetch, and the tab would draw "noch nicht verfügbar" under a promise the
    * card had just made.
    */
+  /*
+   * Above every early return, because it is a hook (P195-01).
+   *
+   * It was first written beside `downloadCertificate` further down, which is
+   * after the loading spinner returns — so the first render made no `useState`
+   * call and the second made two, and React refused: "Rendered more hooks than
+   * during the previous render." The *decision* still lives beside the claim
+   * rule; only the hook has to be up here.
+   */
+  const certificate = useCertificateDownload(client, courseSlug);
+
   const certificateOpened = useRef(false);
   useEffect(() => {
     if (props.openAt !== "certificate" || certificateOpened.current) return;
@@ -764,6 +776,48 @@ function Loaded(props: {
       : undefined;
 
   /*
+   * The Punktemeldung step's **third** state (P195-02).
+   *
+   * `claimPoints` above is the open state. Once `completedAt` is set the act is
+   * finished, and every screen that drew the button drew nothing — except the
+   * sidebar, which drew the imperative *CME-Punkte geltend machen* under a
+   * checkmark. A completed step labelled with the act that completed it, and no
+   * route to what the act produced (§9.4).
+   *
+   * The condition is `completedAt !== null` and nothing else, because that is
+   * already what the Zertifizierung tab reads to choose between "noch nicht
+   * verfügbar" and the certificate itself. Two readings of "does a certificate
+   * exist" is §9.10b, and the quiet direction — a screen offering a download
+   * for a record that is not there — is the expensive one.
+   *
+   * It really downloads. A control labelled *herunterladen* that navigates to a
+   * tab holding a download button is the false promise §9.4 exists to prevent,
+   * so it calls the same hook `CertificatePanel` does.
+   */
+  const hasCertificate = state.completedAt !== null;
+  /*
+   * Two affordances, one rule (P195-02).
+   *
+   * Where the Zertifizierung tab is a click away — the course detail's progress
+   * card and its floating counterpart — the finished step **opens the tab**,
+   * which is P176-02's settled answer and, just as importantly, is what keeps
+   * this from re-creating the defect it fixes: both cards render *on* that tab,
+   * so a second "Teilnahmebescheinigung herunterladen" would sit beside
+   * `CertificatePanel`'s own. Two controls with one accessible name on one
+   * screen is what failed deploy 120's journey.
+   *
+   * On the player and exam screens there is no tab in reach, so those download
+   * for real.
+   */
+  const downloadCertificate = hasCertificate ? certificate.start : undefined;
+  const openCertificate = hasCertificate
+    ? () => {
+        setScreen({ kind: "outline" });
+        setTab("certification");
+      }
+    : undefined;
+
+  /*
    * The player is its own screen, not a fifth tab (layout §4.3).
    *
    * The layout draws it that way and the reason holds up: watching a module is
@@ -810,6 +864,8 @@ function Loaded(props: {
             established what that condition is.
           */
           onClaimPoints={claimPoints}
+          onDownloadCertificate={downloadCertificate}
+          certificateDownloading={certificate.busy}
         >
           {body}
         </CourseShell>
@@ -904,18 +960,16 @@ function Loaded(props: {
            * page's own button (P168-02), so the two cannot disagree about
            * whether there is a point left to claim.
            */
-          onClaimPoints={
-            state.courseComplete && state.completedAt === null
-              ? () => {
-                  refresh();
-                  setScreen(
-                    state.evaluationSubmitted
-                      ? { kind: "reporting" }
-                      : { kind: "evaluation", then: "reporting" },
-                  );
-                }
-              : undefined
-          }
+          /*
+           * `claimPoints` itself, not a second copy of its condition and body
+           * (P195-04). The comment above has always said the two "cannot
+           * disagree about whether there is a point left to claim" — and they
+           * were two expressions, kept in step by hand. §9.10b: a value with
+           * one home and a second reader that wrote its own.
+           */
+          onClaimPoints={claimPoints}
+          onDownloadCertificate={downloadCertificate}
+          certificateDownloading={certificate.busy}
           onNext={nextAfter(screen.contentId)}
           /*
             The drawing's congratulation on page 07, and only where it is true.
@@ -1103,7 +1157,12 @@ function Loaded(props: {
           how they end up disagreeing.
         */}
             <div className="max-sm:hidden">
-              <ProgressCard state={state} onResume={resume} onClaimPoints={claimPoints} />
+              <ProgressCard
+                state={state}
+                onResume={resume}
+                onClaimPoints={claimPoints}
+                onOpenCertificate={openCertificate}
+              />
             </div>
 
             {/*
@@ -1112,7 +1171,12 @@ function Loaded(props: {
           resume affordance *while a video is playing*, which is the one screen
           the inline card is not on.
         */}
-            <StickyProgress state={state} onResume={resume} onClaimPoints={claimPoints} />
+            <StickyProgress
+              state={state}
+              onResume={resume}
+              onClaimPoints={claimPoints}
+              onOpenCertificate={openCertificate}
+            />
           </div>
         </TabbedPanel>
       </div>
@@ -1229,6 +1293,9 @@ function QuizGate(props: {
   /** The enrolment is certified, so the API refuses another attempt (P169-01). */
   certified: boolean;
   onClaimPoints: (() => void) | undefined;
+  /** The finished Punktemeldung's affordance (P195-03). */
+  onDownloadCertificate: (() => void) | undefined;
+  certificateDownloading: boolean;
   onNext: { readonly title: string; readonly open: () => void } | undefined;
   /** The server's own module counts, equal — see `QuizScreen` (P190-03). */
   allModulesDone: boolean;
@@ -1256,6 +1323,8 @@ function QuizGate(props: {
       onPassed={props.onPassed}
       onBack={props.onBack}
       onClaimPoints={props.onClaimPoints}
+      onDownloadCertificate={props.onDownloadCertificate}
+      certificateDownloading={props.certificateDownloading}
       onNext={props.onNext}
       allModulesDone={props.allModulesDone}
     />
