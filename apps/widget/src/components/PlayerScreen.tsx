@@ -130,8 +130,8 @@ export function PlayerScreen(props: {
    * not, which is how a 60 % on an 85 % course came to read "bereits
    * bestanden".
    */
-  const quizScore = quiz === undefined ? undefined : passedQuizScore(state, quiz.id);
-  const quizPassed = quizScore !== undefined;
+  const passedScore = quiz === undefined ? undefined : passedQuizScore(state, quiz.id);
+  const quizPassed = passedScore !== undefined;
   /*
    * Where the learner goes after this section (P78-02).
    *

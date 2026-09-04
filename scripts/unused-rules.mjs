@@ -112,4 +112,61 @@ for (const name of new Set(names)) {
   if (!new RegExp(`\\b${name}\\b`, "u").test(corpus)) out.push(name);
 }
 
+/*
+ * The second half: a **field** nothing reads (P191-01).
+ *
+ * The first half sees exported names. It cannot see inside one, and that is
+ * how `EivDeadlines` came to carry three judgements — `isOverdue`,
+ * `shouldStopRetrying`, `needsAlert` — computed on every call, unit-tested,
+ * and read by nothing outside `packages/domain`. Each duplicates a decision
+ * something else already makes (`dueAlerts`, `planEivAttempt`,
+ * `admin.service`'s own inline comparison), so they were not a missing feature
+ * — they were a **second answer waiting for somebody to reach for it**, which
+ * is the shape P190-01 shipped as a defect.
+ *
+ * ## The rule, chosen to keep this quiet enough to read
+ *
+ * A field is reported only when its own interface is part of the domain's
+ * **public surface** — re-exported from `index.ts` — and the field is read
+ * nowhere outside. The type being *named* outside is the wrong test and was the
+ * first thing tried: nothing names `EivDeadlines`, because callers write
+ * `eivDeadlines(...).reportDueAt` and never hold the type. Being exported at all
+ * is the claim "somebody is meant to use this", which is what makes an unread
+ * field worth a look.
+ *
+ * Short names are skipped: `id`, `at`, `by` and their like appear in every file
+ * for unrelated reasons, so their absence is unprovable by a text scan. That is
+ * a stated limit, not an oversight — a check that claims more reach than it has
+ * is §9.1's second form.
+ */
+const MIN_FIELD_LENGTH = 5;
+
+const domainSource = callers("packages/domain/src")
+  .map((path) => readFileSync(path, "utf8"))
+  .join("\n");
+
+const unreadFields = [];
+for (const block of domainSource.matchAll(
+  /export interface ([A-Za-z][A-Za-z0-9_]*) \{([\s\S]*?)\n\}/gu,
+)) {
+  const [, typeName, body] = block;
+
+  // Only the public surface. An internal shape nobody was offered is not a
+  // rule with no caller, it is an implementation detail.
+  if (!typeNames.has(typeName)) continue;
+
+  for (const [, field] of body.matchAll(
+    /^\s+(?:readonly )?([a-z][A-Za-z0-9_]*)[?]?:/gmu,
+  )) {
+    if (field.length < MIN_FIELD_LENGTH) continue;
+    if (new RegExp(`\\b${field}\\b`, "u").test(corpus)) continue;
+    unreadFields.push(`${typeName}.${field}`);
+  }
+}
+
 console.log(out.length === 0 ? "none" : out.join("\n"));
+
+if (unreadFields.length > 0) {
+  console.log(`\nfields nobody outside packages/domain reads:`);
+  console.log(unreadFields.map((entry) => `  ${entry}`).join("\n"));
+}
