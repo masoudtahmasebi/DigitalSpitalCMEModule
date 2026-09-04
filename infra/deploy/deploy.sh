@@ -576,8 +576,8 @@ ds_eiv_carry_forward() {
 
    ## Where this deploy stopped, so you know what state the host is in
 
-   The migrations have run — `platform_settings` exists, with the worker OFF and
-   the register on 'mock'. The container swap has NOT happened, so the previous
+   The migrations have run: the platform_settings row exists, with the worker
+   OFF and the register on mock. The container swap has NOT happened, so the previous
    build is still serving. Re-running this deploy after the steps below is safe
    and picks up where it stopped; nothing is half-applied.
 
