@@ -84,6 +84,9 @@ export function CourseShell(props: {
    * the step early ends in a 409 *after* a physician has typed their EFN.
    */
   onClaimPoints: (() => void) | undefined;
+  /** The finished Punktemeldung's affordance (P195-02). */
+  onDownloadCertificate?: (() => void) | undefined;
+  certificateDownloading?: boolean | undefined;
   children: ReactNode;
 }) {
   /*
@@ -260,7 +263,12 @@ export function CourseShell(props: {
               claim={
                 props.course.cmePoints === null
                   ? undefined
-                  : { done: props.state.complete, open: props.onClaimPoints }
+                  : {
+                      done: props.state.complete,
+                      open: props.onClaimPoints,
+                      download: props.onDownloadCertificate,
+                      downloading: props.certificateDownloading,
+                    }
               }
             />
           </div>

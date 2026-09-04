@@ -670,6 +670,133 @@ describe("returning to the catalogue", () => {
  * so that is where the intent lands — and, like `certify`, it is a request the
  * server's own answer grants or refuses.
  */
+/*
+ * §9.7 — name the caller (P195-04).
+ *
+ * `ModuleSidebar`, `CourseHeader`, `StickyProgress` and `QuizScreen` each have
+ * their own tests for the three states, and every one of them would stay green
+ * on an `App` that never passed the prop. The rule that decides *when* the
+ * certificate is offered lives in `App`, so it needs a case that drives `App`.
+ *
+ * The pair is deliberate. Without the second, a component that offered the
+ * download unconditionally would pass the first.
+ */
+describe("the Punktemeldung step's third state, wired", () => {
+  it("offers the certificate on the course page once the enrolment is certified", async () => {
+    stubEnrolment(
+      finishedUncertified({
+        complete: true,
+        completedAt: "2026-09-01T10:00:00Z",
+        outstanding: [],
+      } as Partial<EnrolmentState>),
+    );
+
+    renderApp();
+
+    await waitFor(() => {
+      expect(
+        screen.queryAllByRole("button", { name: /Zur Teilnahmebescheinigung/u }).length,
+      ).toBeGreaterThan(0);
+    });
+
+    // And it has stopped inviting the act that is finished.
+    expect(
+      screen.queryAllByRole("button", { name: /CME-Punkte geltend machen/u }).length,
+    ).toBe(0);
+
+    /*
+     * "Zur", never "herunterladen", on this screen (P176-02) — and this
+     * assertion is load-bearing rather than stylistic. The card is a sibling of
+     * the tab panel, so it renders *on* Zertifizierung, where
+     * `CertificatePanel` draws a button with that exact name. A download here
+     * would be two controls with one accessible name on one screen, which is
+     * the collision that failed deploy 120's journey and the reason this ticket
+     * exists.
+     */
+    expect(
+      screen.queryAllByRole("button", {
+        name: /Teilnahmebescheinigung herunterladen/u,
+      }).length,
+      "the course page promises a file the Zertifizierung tab already offers",
+    ).toBe(0);
+  });
+
+  /*
+   * The collision, asserted where it would actually happen (P195-05).
+   *
+   * `renderApp("certificate")` lands on the Zertifizierung tab, which mounts
+   * `CertificatePanel` — and the progress card above the tab row is a sibling
+   * of the panel, not a child, so both are on screen at once. Exactly one
+   * control may carry the name.
+   *
+   * This is the case that would have failed deploy 120 in the browser, run
+   * here in a second. It is not a duplicate of the label assertion above: that
+   * one is about the course overview, this one is about the screen where the
+   * second control lives.
+   */
+  it("draws exactly one Teilnahmebescheinigung herunterladen on the Zertifizierung tab", async () => {
+    stubEnrolment(
+      finishedUncertified({
+        complete: true,
+        completedAt: "2026-09-01T10:00:00Z",
+        outstanding: [],
+      } as Partial<EnrolmentState>),
+    );
+
+    renderApp("certificate");
+
+    await waitFor(() => {
+      expect(selectedTab()).toBe("Zertifizierung");
+    });
+
+    /*
+     * Wait for the **panel**, then count — not `waitFor(count === 1)`, which is
+     * the version this was written as and which could not go red.
+     *
+     * `waitFor` succeeds the moment its callback stops throwing, and there is a
+     * window before `CertificateGate`'s fetch resolves where the card's control
+     * is the only one on the page. So a second control appearing afterwards was
+     * never observed: the assertion had already passed on the transient state.
+     * Restoring the collision on purpose left it green, which is how this was
+     * caught (§9.1 — a check that cannot go red is not a check).
+     *
+     * The VNR is the anchor because it is unique to the rendered certificate;
+     * the heading "Teilnahmebescheinigung" is a substring of the button label
+     * this case is counting.
+     */
+    await screen.findByText("2760000000000000000");
+
+    expect(
+      screen.queryAllByRole("button", {
+        name: /Teilnahmebescheinigung herunterladen/u,
+      }).length,
+      "Playwright's strict mode refuses to guess between two, and so should a physician",
+    ).toBe(1);
+  });
+
+  it("offers the claim, and no certificate, while the EFN is still outstanding", async () => {
+    stubEnrolment(finishedUncertified());
+
+    renderApp();
+
+    await waitFor(() => {
+      expect(
+        screen.queryAllByRole("button", { name: /CME-Punkte geltend machen/u }).length,
+      ).toBeGreaterThan(0);
+    });
+
+    /*
+     * The client's rule, in the direction that costs something if it is wrong:
+     * a download offered before the certificate exists is a control that can
+     * only refuse (§9.2), and it would refuse *after* a physician had gone
+     * looking for their document.
+     */
+    expect(
+      screen.queryAllByRole("button", { name: /Zur Teilnahmebescheinigung/u }).length,
+    ).toBe(0);
+  });
+});
+
 describe("opening a course on its Teilnahmebescheinigung", () => {
   it("lands on the Zertifizierung tab when the course is certified", async () => {
     stubEnrolment(

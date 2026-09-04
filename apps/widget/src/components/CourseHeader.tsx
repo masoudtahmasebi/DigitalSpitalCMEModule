@@ -176,6 +176,8 @@ export function ProgressCard(props: {
    * §9.2, never offer what the API would refuse.
    */
   onClaimPoints?: (() => void) | undefined;
+  /** The finished Punktemeldung's affordance (P195-02). */
+  onOpenCertificate?: (() => void) | undefined;
 }) {
   const { completed, total } = props.state.moduleCompletion;
   const sentence = de.overview.moduleProgress(completed, total);
@@ -264,6 +266,35 @@ export function ProgressCard(props: {
               )}
             </>
           ) : null}
+          {/*
+            And the step's third state (P195-02): once it is done, the card
+            offers what the act produced rather than falling silent.
+
+            It **navigates** rather than downloading, which is P176-02's own
+            settled answer for this screen: the Zertifizierung tab is one click
+            away, it already holds the download beside the accreditation the
+            document belongs to, and "a label promising a file would be a second
+            promise to keep". The player and exam screens, where no tab is in
+            reach, download for real instead.
+
+            That is also what stops this becoming the defect it fixes. This card
+            is a sibling of the tab panel, so it renders *on* Zertifizierung — a
+            second "Teilnahmebescheinigung herunterladen" beside
+            `CertificatePanel`'s own, which is exactly the two-controls-one-name
+            collision that failed deploy 120.
+
+            Gated on the prop alone. Re-reading `completedAt` here to decide
+            something `App` has already decided made the test that names the
+            caller (§9.7) untestable: breaking `App`'s rule left the card right
+            anyway, so nothing could go red.
+          */}
+          {props.onOpenCertificate === undefined ? null : (
+            <div className="mt-3 flex justify-center">
+              <Button onClick={props.onOpenCertificate}>
+                {de.catalog.toCertificate}
+              </Button>
+            </div>
+          )}
         </>
       ) : null}
     </>

@@ -1107,7 +1107,25 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       // ===================================================================
       // Act 14 · Evaluation, EFN, and the Punktemeldung form
       // ===================================================================
-      await learner.getByRole("button", { name: "CME-Punkte geltend machen" }).click();
+      /*
+       * `.first()`, because P190-01 draws this control twice on the passed-exam
+       * screen: the in-flow CTA and the sidebar's Punktemeldung row, which is
+       * the last row of the module list on every player and exam page. Both are
+       * legitimately open at this moment and both call the same handler, so
+       * Playwright's strict mode is right to refuse to guess — this is the one
+       * a physician meets first, in DOM order and on the page.
+       *
+       * That duplication is what failed deploy 120's journey, the first run
+       * that ever reached this line against production. It is raised in P195 as
+       * an accessibility question for the client rather than fixed here: two
+       * controls with one accessible name are heard twice by a screen reader
+       * with nothing to tell them apart, and which of the two should go is a
+       * decision about their layout.
+       */
+      await learner
+        .getByRole("button", { name: "CME-Punkte geltend machen" })
+        .first()
+        .click();
 
       // The Evaluationsbogen the Bescheid requires. One question, written in
       // act 6 — its scale is a radio group.

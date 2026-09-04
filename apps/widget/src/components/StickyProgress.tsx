@@ -49,6 +49,8 @@ export function StickyProgress(props: {
    * comment.
    */
   onClaimPoints?: (() => void) | undefined;
+  /** The finished Punktemeldung's affordance (P195-02). */
+  onOpenCertificate?: (() => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -208,6 +210,23 @@ export function StickyProgress(props: {
               </Button>
             </div>
           ) : null}
+          {/*
+            The step's done state (P195-02). It navigates to the Zertifizierung
+            tab rather than downloading, for the reason `CourseHeader` gives at
+            length: this panel is on the course detail too, where a second
+            "herunterladen" would collide with `CertificatePanel`'s own.
+
+            Gated on the prop alone — `App` decides when a certificate exists,
+            and a second reading of `completedAt` here is what made the same
+            block in `CourseHeader` impossible to test.
+          */}
+          {props.onOpenCertificate === undefined ? null : (
+            <div className="mt-3">
+              <Button onClick={props.onOpenCertificate}>
+                {de.catalog.toCertificate}
+              </Button>
+            </div>
+          )}
         </section>
       ) : (
         <button

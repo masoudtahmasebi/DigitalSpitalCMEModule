@@ -944,6 +944,17 @@ export const de = {
       "Diese Lernerfolgskontrolle ist bestanden. Für die CME-Punkte fehlen noch Abschnitte der Fortbildung.",
     /** No points to claim, so the passed screen offers the way onwards instead. */
     claimWithoutPoints: "Fortbildung abschließen",
+    /**
+     * Passed, and the whole Fortbildung is already finished (P195-03).
+     *
+     * This state used to render `morePending` — "Für die CME-Punkte fehlen noch
+     * Abschnitte der Fortbildung" — to somebody who had finished every one of
+     * them and already been issued a certificate. Both branches read the same
+     * `onClaimPoints === undefined`, and that one condition covers two opposite
+     * situations: not yet, and long since.
+     */
+    alreadyClaimed:
+      "Diese Fortbildung ist abgeschlossen. Ihre Teilnahmebescheinigung steht zum Download bereit.",
 
     /** A CME course never reveals the answer key — see docs/requirements §4. */
     noReveal:
