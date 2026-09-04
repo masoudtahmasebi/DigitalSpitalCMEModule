@@ -1977,6 +1977,27 @@ export const german = {
       downloadHint:
         "Lädt die PDF-Datei herunter, damit Sie sie der teilnehmenden Person auf einem anderen Weg zusenden können. Es wird dabei nichts verschickt und nichts neu ausgestellt.",
       resend: "Erneut senden",
+      addressHeading: "Zustelladresse",
+      addressLoading: "Wird geladen \u2026",
+      addressOverridden: (email: string) =>
+        `Die Bescheinigung wird an ${email} gesendet \u2014 abweichend vom Konto.`,
+      addressAccount: (email: string) =>
+        `Die Bescheinigung wird an die Kontoadresse ${email} gesendet.`,
+      addressNone:
+        "F\u00fcr diese Person ist keine Adresse hinterlegt \u2014 weder im Konto noch hier. " +
+        "Ohne Adresse kann die Bescheinigung nicht versendet werden.",
+      addressLabel: "Abweichende Zustelladresse",
+      addressHint:
+        "Nur f\u00fcr den Versand dieser Bescheinigung. Die Kontoadresse und die Anmeldung " +
+        "der teilnehmenden Person bleiben unver\u00e4ndert. Leer lassen und speichern, um " +
+        "wieder die Kontoadresse zu verwenden.",
+      addressSave: "Adresse speichern",
+      addressSaved: "Zustelladresse gespeichert.",
+      addressClear: "Auf Kontoadresse zur\u00fccksetzen",
+      addressCleared: "Es wird wieder die Kontoadresse verwendet.",
+      addressUnblocks:
+        "Sobald eine Adresse hinterlegt ist, l\u00e4sst sich die Bescheinigung oben erneut " +
+        "senden. Das Speichern allein versendet nichts.",
       resendBlocked:
         "Erneutes Senden würde hier zwangsläufig wieder fehlschlagen — siehe Ursache.",
       regenerate: "Neu erstellen",

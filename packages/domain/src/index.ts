@@ -398,3 +398,6 @@ export type { CopyOverrides, CopyRejection, RejectedCopy } from "./copy.js";
 
 export { lengthsAgree, mediaLengthVerdict } from "./gate-reachability.js";
 export type { MediaLengthInput, MediaLengthVerdict } from "./gate-reachability.js";
+
+export { deliveryAddress, DELIVERY_EMAIL_MAX } from "./delivery-address.js";
+export type { DeliveryAddressDecision } from "./delivery-address.js";

@@ -193,6 +193,11 @@ function build(
   };
 
   const completionRepo: CompletionRepositoryPort = {
+    // P183-03. Unused by the cases in this file, and present because the port
+    // is what the service is written against — a stub that lags the port is a
+    // test that stops compiling rather than one that silently covers less.
+    findEnrolmentForDelivery: async () => undefined,
+    saveDeliveryEmail: async () => undefined,
     findEvaluationQuestions: async () => questions,
     hasEvaluationResponse: async () => options.evaluationSubmitted ?? false,
     saveEvaluationResponses: async (input) => {

@@ -144,6 +144,24 @@ export const efnInputSchema = z.object({
   efn: z.string().regex(/^[0-9]{15}$/),
 });
 
+/**
+ * The delivery address, inbound (P183-03).
+ *
+ * Only a length bound and a type here. The shape, the trimming, the "same
+ * address again" case and the clear-by-empty-string are `deliveryAddress`'s in
+ * `@ds/domain`, because the operator's route applies the same rule and two
+ * validators drift — the permissive direction silently, into a certificate
+ * nobody receives.
+ *
+ * `max` is generous on purpose: the domain's 254 is the RFC 5321 forward path,
+ * and refusing at 255 here with a schema error rather than at 254 there with a
+ * sentence would report the wrong reason.
+ */
+export const deliveryEmailInputSchema = z.object({
+  email: z.string().max(512),
+});
+
+export type DeliveryEmailInput = z.infer<typeof deliveryEmailInputSchema>;
 export type Evaluation = z.infer<typeof evaluationSchema>;
 export type EvaluationSubmission = z.infer<typeof evaluationSubmissionSchema>;
 export type EfnInput = z.infer<typeof efnInputSchema>;

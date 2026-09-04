@@ -26,6 +26,7 @@ import {
   eivDeadlines,
   isValidEfn,
   submissionStage,
+  deliveryAddress,
 } from "@ds/domain";
 import { AppError } from "../../shared/problem-details.js";
 import type { Db } from "../../db/tenant-db.js";
@@ -182,6 +183,64 @@ export class CompletionService {
 
     await this.repository.saveEfn(learner.userId, efn);
     await this.refreshOwnSubmissions(learner.userId, learner.customerId, efn);
+  }
+
+  /**
+   * The address this learner's Teilnahmebescheinigung goes to (P183-03).
+   *
+   * Their own enrolment, their own address, and it does **not** touch
+   * `users.email`: for a portal participant that column is also the sign-in
+   * credential, and changing where a document is sent must not change how
+   * somebody signs in. Migration 0052 carries the whole argument.
+   *
+   * Shares `deliveryAddress` with the operator's route, which is the point of
+   * the rule living in `@ds/domain` — two validators would drift, and the
+   * permissive direction drifts silently into a certificate nobody receives.
+   */
+  /** Both addresses, so a screen can show which one will actually be used. */
+  async readDeliveryEmail(
+    slug: string,
+    learner: LearnerContext,
+  ): Promise<{ readonly email: string | null; readonly accountEmail: string | null }> {
+    const enrolment = await this.repository.findEnrolmentForDelivery(
+      slug,
+      learner.userId,
+    );
+    if (enrolment === undefined) {
+      throw AppError.notFound(`no enrolment for user=${learner.userId} on slug=${slug}`);
+    }
+    return { email: enrolment.deliveryEmail, accountEmail: enrolment.accountEmail };
+  }
+
+  async setDeliveryEmail(
+    slug: string,
+    proposed: string,
+    learner: LearnerContext,
+  ): Promise<{ readonly email: string | null }> {
+    const enrolment = await this.repository.findEnrolmentForDelivery(
+      slug,
+      learner.userId,
+    );
+    if (enrolment === undefined) {
+      throw AppError.notFound(`no enrolment for user=${learner.userId} on slug=${slug}`);
+    }
+
+    const decision = deliveryAddress({ proposed, current: enrolment.deliveryEmail });
+    if (!decision.ok) {
+      if (decision.reason === "unchanged") return { email: enrolment.deliveryEmail };
+      // The field, never the value: an address is personal data and the
+      // rejected one is the case that carries somebody's name.
+      throw new AppError(
+        "validation",
+        `rejected delivery address for user=${learner.userId}: ${decision.reason}`,
+        decision.reason === "too_long"
+          ? "Diese E-Mail-Adresse ist zu lang."
+          : "Bitte geben Sie eine gültige E-Mail-Adresse ein.",
+      );
+    }
+
+    await this.repository.saveDeliveryEmail(enrolment.id, decision.email);
+    return { email: decision.email };
   }
 
   /**

@@ -21,6 +21,7 @@ import {
   nameCorrection,
   subjectErasure,
   type CertificateAction,
+  deliveryAddress,
 } from "@ds/domain";
 import type { AuditServicePort } from "../../audit/audit.service.js";
 import { AppError } from "../../shared/problem-details.js";
@@ -99,6 +100,78 @@ export class ModerationService {
    * with nothing to show it had happened. The correction path after that point
    * is a written one, inside the seven-day window the Bescheid allows.
    */
+  /**
+   * Where this participant's Teilnahmebescheinigung is sent (P183-04).
+   *
+   * The client's case, in their words: _"it can be the case that they want to
+   * have the certificate in another email"_. So this sets a **delivery**
+   * address on the enrolment and deliberately not `users.email` — migration
+   * 0052 carries the argument, and the short form is that for a portal
+   * participant the account address is also the sign-in credential.
+   *
+   * It sends nothing. A `no_recipient` certificate becomes resendable because
+   * its cause is gone, and the operator then presses the resend P179 put beside
+   * this field — two deliberate acts rather than one that does both.
+   *
+   * Shares `deliveryAddress` with the learner's own route (§9.3: a rule with a
+   * caller, and here with both of them).
+   */
+  async setDeliveryEmail(
+    enrolmentId: string,
+    proposed: string,
+    actor: ModeratorContext,
+  ): Promise<{ readonly email: string | null }> {
+    const current = await this.repository.findDeliveryEmail(enrolmentId);
+    if (current === undefined) {
+      throw AppError.notFound(`enrolment=${enrolmentId} not visible in this tenant`);
+    }
+
+    const verdict = deliveryAddress({ proposed, current: current.deliveryEmail });
+    if (!verdict.ok) {
+      if (verdict.reason === "unchanged") {
+        throw new AppError(
+          "conflict",
+          `refused: delivery address unchanged on enrolment=${enrolmentId}`,
+          "Diese Adresse ist bereits hinterlegt. Es wurde nichts geändert.",
+        );
+      }
+      // The field, never the value: an address is personal data and an error
+      // string reaches a log (§9.5).
+      throw new AppError(
+        "validation",
+        `rejected delivery address for enrolment=${enrolmentId}: ${verdict.reason}`,
+        verdict.reason === "too_long"
+          ? "Diese E-Mail-Adresse ist zu lang."
+          : "Bitte geben Sie eine gültige E-Mail-Adresse ein.",
+      );
+    }
+
+    const changed = await this.repository.setDeliveryEmail(enrolmentId, verdict.email);
+    if (!changed) throw AppError.notFound(`enrolment=${enrolmentId} disappeared`);
+
+    await this.audit.recordForCustomer(actor.customerId, {
+      actor: { identity: "staff", id: actor.staffUserId },
+      action: "certificate.delivery_address_set",
+      subject: enrolmentId,
+      // Whether one is now set, never which. The address is the subject's
+      // personal data and an audit row is read by more people than the screen.
+      detail: { present: verdict.email !== null },
+    });
+
+    return { email: verdict.email };
+  }
+
+  /** Both addresses, so the panel can show which one a send would use. */
+  async readDeliveryEmail(
+    enrolmentId: string,
+  ): Promise<{ readonly email: string | null; readonly accountEmail: string | null }> {
+    const row = await this.repository.findDeliveryEmail(enrolmentId);
+    if (row === undefined) {
+      throw AppError.notFound(`enrolment=${enrolmentId} not visible in this tenant`);
+    }
+    return { email: row.deliveryEmail, accountEmail: row.accountEmail };
+  }
+
   async correctName(
     enrolmentId: string,
     proposed: string,

@@ -1389,6 +1389,26 @@ export const en: DeepPartial<typeof german> = {
       downloadHint:
         "Downloads the PDF so you can send it to the participant another way. Nothing is sent and nothing is re-issued.",
       resend: "Send again",
+      addressHeading: "Delivery address",
+      addressLoading: "Loading \u2026",
+      addressOverridden: (email: string) =>
+        `The certificate is sent to ${email} \u2014 not the account address.`,
+      addressAccount: (email: string) =>
+        `The certificate is sent to the account address ${email}.`,
+      addressNone:
+        "No address is on file for this person \u2014 neither on the account nor here. " +
+        "Without one the certificate cannot be sent.",
+      addressLabel: "Different delivery address",
+      addressHint:
+        "For sending this certificate only. The participant's account address and their " +
+        "sign-in stay unchanged. Clear it and save to go back to the account address.",
+      addressSave: "Save address",
+      addressSaved: "Delivery address saved.",
+      addressClear: "Reset to the account address",
+      addressCleared: "The account address is used again.",
+      addressUnblocks:
+        "Once an address is on file the certificate can be resent above. Saving on its " +
+        "own sends nothing.",
       resendBlocked: "Resending here would necessarily fail again \u2014 see the cause.",
       regenerate: "Re-create",
       regenerateHint:

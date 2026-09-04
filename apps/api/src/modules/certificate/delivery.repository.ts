@@ -129,7 +129,15 @@ export class DeliveryRepository implements DeliveryRepositoryPort {
           firstAttemptAt: certificates.deliveryFirstAttemptAt,
           nextAttemptAt: certificates.deliveryNextAttemptAt,
           lastError: certificates.deliveryError,
-          recipientEmail: users.email,
+          /*
+           * The effective address (P183-01): the enrolment's own where one is
+           * set, the account's otherwise. Null on both is what
+           * `planDeliveryAttempt` abandons as `no_recipient`, and the support
+           * panel now offers the field that fixes it rather than only saying so.
+           */
+          recipientEmail: sql<
+            string | null
+          >`coalesce(${enrolments.deliveryEmail}, ${users.email})`,
           fromAddress: projects.smtpFromAddress,
           fromName: projects.smtpFromName,
           smtpHost: projects.smtpHost,

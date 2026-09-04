@@ -43,7 +43,7 @@
  * who believes they have fixed the person's record has not fixed anything.
  */
 
-import { useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { formatBerlinDateTime } from "@ds/domain";
 import type { ApiClient, ParticipantRow } from "@ds/sdk";
 import { de } from "../locale/de.js";
@@ -82,6 +82,39 @@ export function ParticipantSupport(props: {
   const [problem, setProblem] = useState<string | undefined>();
   const [done, setDone] = useState<string | undefined>();
   const [efn, setEfn] = useState("");
+  /*
+   * The delivery address (P183-04). Held as a draft rather than saved per
+   * keystroke — P88-01 recorded what per-keystroke saving costs: one PATCH per
+   * character, each answering with the server's row and replacing the value
+   * under the cursor.
+   *
+   * `undefined` until the panel has read it, so an empty box cannot be mistaken
+   * for "no address is set" while the request is still in flight (§9.6, in a
+   * component: a missing answer must not render as a real one).
+   */
+  const [address, setAddress] = useState<
+    { email: string | null; accountEmail: string | null } | undefined
+  >();
+  const [addressDraft, setAddressDraft] = useState("");
+  const addressId = useId();
+
+  useEffect(() => {
+    let live = true;
+    void client
+      .adminReadDeliveryEmail(row.enrolmentId)
+      .then((result) => {
+        if (!live) return;
+        setAddress(result);
+        setAddressDraft(result.email ?? "");
+      })
+      .catch(() => {
+        // A panel that cannot read the address still offers everything else.
+        if (live) setAddress({ email: null, accountEmail: null });
+      });
+    return () => {
+      live = false;
+    };
+  }, [client, row.enrolmentId]);
 
   async function act(run: () => Promise<void>, success?: string): Promise<void> {
     setBusy(true);
@@ -224,6 +257,89 @@ export function ParticipantSupport(props: {
         {certificate === null || state === "revoked" || state === "pending" ? null : (
           <p className="text-xs text-gray-600">{de.participants.support.downloadHint}</p>
         )}
+      </section>
+
+      <section className="space-y-2 border-t border-gray-200 pt-4">
+        <h4 className="text-sm font-semibold text-gray-900">
+          {de.participants.support.addressHeading}
+        </h4>
+
+        <p className="text-sm text-gray-700">
+          {address === undefined
+            ? de.participants.support.addressLoading
+            : address.email !== null
+              ? de.participants.support.addressOverridden(address.email)
+              : address.accountEmail !== null
+                ? de.participants.support.addressAccount(address.accountEmail)
+                : de.participants.support.addressNone}
+        </p>
+
+        <label className="block text-sm font-medium text-gray-800" htmlFor={addressId}>
+          {de.participants.support.addressLabel}
+        </label>
+        <input
+          id={addressId}
+          type="email"
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          value={addressDraft}
+          disabled={busy || address === undefined}
+          aria-describedby={`${addressId}-hint`}
+          onChange={(event) => setAddressDraft(event.target.value)}
+        />
+        <p id={`${addressId}-hint`} className="text-xs text-gray-600">
+          {de.participants.support.addressHint}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            disabled={busy || address === undefined}
+            onClick={() =>
+              void act(async () => {
+                const result = await client.adminSetDeliveryEmail(
+                  row.enrolmentId,
+                  addressDraft,
+                );
+                setAddress((previous) => ({
+                  email: result.email,
+                  accountEmail: previous?.accountEmail ?? null,
+                }));
+                setAddressDraft(result.email ?? "");
+              }, de.participants.support.addressSaved)
+            }
+          >
+            {de.participants.support.addressSave}
+          </Button>
+          {address?.email === null || address === undefined ? null : (
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() =>
+                void act(async () => {
+                  const result = await client.adminSetDeliveryEmail(row.enrolmentId, "");
+                  setAddress((previous) => ({
+                    email: result.email,
+                    accountEmail: previous?.accountEmail ?? null,
+                  }));
+                  setAddressDraft("");
+                }, de.participants.support.addressCleared)
+              }
+            >
+              {de.participants.support.addressClear}
+            </Button>
+          )}
+        </div>
+
+        {/*
+          Setting an address does not send anything, and saying so is the point:
+          the operator's next act is the resend above, which the withheld gate
+          now allows because `no_recipient`'s cause is gone. Two deliberate acts
+          rather than one that quietly does both.
+        */}
+        {reason === "no_recipient" ? (
+          <p className="text-xs text-gray-700">
+            {de.participants.support.addressUnblocks}
+          </p>
+        ) : null}
       </section>
 
       <section className="space-y-2 border-t border-gray-200 pt-4">

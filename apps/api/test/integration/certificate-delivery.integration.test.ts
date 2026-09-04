@@ -148,7 +148,7 @@ async function insert(sql: string, values: unknown[]): Promise<string> {
 /** An issued certificate waiting to be delivered. */
 async function queueCertificate(
   over: { email?: string | null; attemptCount?: number; bare?: boolean } = {},
-): Promise<{ certificateId: string; userId: string }> {
+): Promise<{ certificateId: string; enrolmentId: string; userId: string }> {
   const unique = randomUUID().slice(0, 8);
 
   const { id: userId } = await seedLearner(seedPool, {
@@ -180,7 +180,7 @@ async function queueCertificate(
     [customerId, enrolmentId, "Dr. med. Hans Mustermann", over.attemptCount ?? 0],
   );
 
-  return { certificateId, userId };
+  return { certificateId, enrolmentId, userId };
 }
 
 function build(outcome: DeliveryOutcome = { status: "delivered", reference: "<a@b>" }) {
@@ -381,6 +381,89 @@ describe("a learner whose address has been removed", () => {
     const { service, sent } = build();
     await service.sweep(new Date());
 
+    expect(sent).toHaveLength(0);
+    expect((await certificateRow(certificateId)).delivery_abandoned_reason).toBe(
+      "no_recipient",
+    );
+  });
+});
+
+describe("the delivery address on the enrolment (P183-01)", () => {
+  it("sends to it in preference to the account address", async () => {
+    const { certificateId, enrolmentId } = await queueCertificate({
+      email: "konto@example.de",
+    });
+    await seedPool.query("UPDATE enrolments SET delivery_email = $1 WHERE id = $2", [
+      "woanders@example.de",
+      enrolmentId,
+    ]);
+
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe("woanders@example.de");
+    expect((await certificateRow(certificateId)).status).toBe("delivered");
+  });
+
+  // The case the client reported: `users.email` is null because MEDICE's realm
+  // sends no `email` claim, so before P183 the certificate was abandoned and
+  // nothing on the platform could supply an address.
+  it("makes a certificate deliverable that had no account address at all", async () => {
+    const { certificateId, enrolmentId } = await queueCertificate({ email: null });
+    await seedPool.query("UPDATE enrolments SET delivery_email = $1 WHERE id = $2", [
+      "praxis@example.de",
+      enrolmentId,
+    ]);
+
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe("praxis@example.de");
+    const row = await certificateRow(certificateId);
+    expect(row.status).toBe("delivered");
+    expect(row.delivery_abandoned_reason).toBeNull();
+  });
+
+  // Clearing it is how somebody goes back to their account address, so null
+  // must mean "the account's" and not "none".
+  it("falls back to the account address when cleared", async () => {
+    const { enrolmentId } = await queueCertificate({ email: "konto@example.de" });
+    await seedPool.query("UPDATE enrolments SET delivery_email = NULL WHERE id = $1", [
+      enrolmentId,
+    ]);
+
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe("konto@example.de");
+  });
+
+  // Erasure nulls both columns (migration 0052). If it ever stopped nulling the
+  // delivery address, a subject's address would survive their erasure *and*
+  // their certificate would still be sent — which is why this asserts the send
+  // and not only the column.
+  it("is erased with the account address, and delivery stops", async () => {
+    const { certificateId, enrolmentId, userId } = await queueCertificate({
+      email: "konto@example.de",
+    });
+    await seedPool.query("UPDATE enrolments SET delivery_email = $1 WHERE id = $2", [
+      "woanders@example.de",
+      enrolmentId,
+    ]);
+
+    await seedPool.query("SELECT erase_subject($1, $2)", [userId, "P183 test"]);
+
+    const { rows } = await seedPool.query<{ delivery_email: string | null }>(
+      "SELECT delivery_email FROM enrolments WHERE id = $1",
+      [enrolmentId],
+    );
+    expect(rows[0]?.delivery_email).toBeNull();
+
+    const { service, sent } = build();
+    await service.sweep(new Date());
     expect(sent).toHaveLength(0);
     expect((await certificateRow(certificateId)).delivery_abandoned_reason).toBe(
       "no_recipient",

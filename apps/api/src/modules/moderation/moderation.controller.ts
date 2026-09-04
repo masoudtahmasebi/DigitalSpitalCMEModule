@@ -97,6 +97,15 @@ const NameCorrection = z.object({
   name: z.string().trim().min(1).max(300),
 });
 
+/**
+ * The delivery address, inbound (P183-04). Length only: the shape, the trim,
+ * the clear-by-empty-string and the "already exactly this" case are
+ * `deliveryAddress`'s in `@ds/domain`, shared with the learner's own route.
+ */
+const DeliveryAddressInput = z.object({
+  email: z.string().max(512),
+});
+
 const Erasure = z.object({
   /**
    * Why, for the audit trail. Free text and deliberately short — it is written
@@ -184,6 +193,40 @@ export class ModerationController {
   ): Promise<void> {
     const input = NameCorrection.parse(body);
     await this.service(db).correctName(enrolmentId, input.name, context(principal));
+  }
+
+  /**
+   * Where this participant's Teilnahmebescheinigung is sent (P183-04).
+   *
+   * `GET` returns the account address alongside it so the panel can say which
+   * one a send would actually use. An operator already sees the participant
+   * list; this discloses nothing new to them, and the audit row records that a
+   * correction happened rather than what it was.
+   */
+  @Get("learners/:enrolmentId/delivery-email")
+  @Roles(...MODERATOR_ROLES)
+  async deliveryEmail(
+    @Param("enrolmentId") enrolmentId: string,
+    @TenantDb() db: Db,
+  ): Promise<{ email: string | null; accountEmail: string | null }> {
+    return this.service(db).readDeliveryEmail(enrolmentId);
+  }
+
+  /** An empty string clears it, and the address falls back to the account's. */
+  @Patch("learners/:enrolmentId/delivery-email")
+  @Roles(...MODERATOR_ROLES)
+  async setDeliveryEmail(
+    @Param("enrolmentId") enrolmentId: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ): Promise<{ email: string | null }> {
+    const input = DeliveryAddressInput.parse(body);
+    return this.service(db).setDeliveryEmail(
+      enrolmentId,
+      input.email,
+      context(principal),
+    );
   }
 
   /**

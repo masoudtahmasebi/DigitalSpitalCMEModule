@@ -1845,6 +1845,83 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+  /admin/learners/{enrolmentId}/delivery-email:
+    get:
+      tags: [admin]
+      operationId: adminReadDeliveryEmail
+      summary: Where this participant's Teilnahmebescheinigung is sent
+      description: |
+        Both the enrolment's own delivery address and the account address it
+        falls back to, so a screen can say which one a send would actually use.
+        Delivery resolves `COALESCE(delivery_email, users.email)`.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: enrolmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The addresses.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryEmail" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [admin]
+      operationId: adminSetDeliveryEmail
+      summary: Set where this participant's Teilnahmebescheinigung is sent
+      description: |
+        For the case the client named: _"it can be the case that they want to
+        have the certificate in another email"_.
+
+        Sets a **delivery** address on the enrolment and deliberately not
+        `users.email` — for a portal participant the account address is also
+        the sign-in credential, and where a document is sent must not change how
+        somebody signs in (migration 0052).
+
+        An empty string clears it and the address falls back to the account's.
+        Sends nothing: a `no_recipient` certificate becomes resendable because
+        its cause is gone, and the operator then presses resend.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - name: enrolmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  maxLength: 512
+                  description: |
+                    An address, or an empty string to clear it. The shape is
+                    decided by `deliveryAddress` in `@ds/domain`, shared with
+                    the learner's own route.
+      responses:
+        "200":
+          description: Set, or cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [email]
+                properties:
+                  email: { type: string, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
   /admin/learners/{enrolmentId}:
     delete:
       tags: [admin]
@@ -3686,6 +3763,66 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /courses/{slug}/delivery-email:
+    get:
+      tags: [completion]
+      operationId: getDeliveryEmail
+      summary: Where the caller's Teilnahmebescheinigung for this course is sent
+      description: |
+        Both the caller's own delivery address for this enrolment and the
+        account address it falls back to. Both are the caller's own, so
+        returning them discloses nothing they cannot see in their own inbox —
+        unlike the EFN, which `GET /profile/efn` guards for ADR-0004's reasons.
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      responses:
+        "200":
+          description: The addresses.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryEmail" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [completion]
+      operationId: setDeliveryEmail
+      summary: Set where the caller's Teilnahmebescheinigung is sent
+      description: |
+        The physician's own address, on their own enrolment. An empty string
+        clears it and delivery falls back to the account address.
+
+        Deliberately does **not** change `users.email`: for a portal account
+        that is also the sign-in credential, and changing where a document is
+        sent must not change how somebody signs in (migration 0052).
+      parameters:
+        - $ref: "#/components/parameters/ProjectHeader"
+        - $ref: "#/components/parameters/CourseSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: Set, or cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [email]
+                properties:
+                  email: { type: string, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
 
   /profile/efn:
     get:
@@ -6108,6 +6245,26 @@ components:
           description: |
             15 digits. Returned only by `GET /profile/efn`, and only to the
             physician it belongs to (ADR-0004, amended by P54-02).
+
+    DeliveryEmail:
+      type: object
+      required: [email, accountEmail]
+      properties:
+        email:
+          type: string
+          nullable: true
+          description: |
+            The delivery address on the enrolment, or null when none is set —
+            which means "use the account address" and is what every row means
+            until somebody sets one.
+        accountEmail:
+          type: string
+          nullable: true
+          description: |
+            `users.email`, which is what delivery falls back to. Null is the
+            case the client reported: MEDICE's realm sends no `email` claim, so
+            without a delivery address the certificate is abandoned
+            `no_recipient`.
 
     EfnState:
       type: object

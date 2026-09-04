@@ -76,6 +76,12 @@ export interface ModerationRepositoryPort {
     enrolmentId: string,
   ): Promise<{ userId: string; stage: SubmissionStage } | undefined>;
   correctName(enrolmentId: string, name: string): Promise<boolean>;
+  /** The enrolment's delivery address and the account address behind it (P183-04). */
+  findDeliveryEmail(
+    enrolmentId: string,
+  ): Promise<{ deliveryEmail: string | null; accountEmail: string | null } | undefined>;
+  /** Set or clear it; false when RLS hid the row, which is a 404. */
+  setDeliveryEmail(enrolmentId: string, email: string | null): Promise<boolean>;
   listCertificates(courseSlug: string | undefined): Promise<readonly CertificateRow[]>;
   findCertificate(id: string): Promise<CertificateRow | undefined>;
   markForRegeneration(id: string): Promise<boolean>;
@@ -209,6 +215,47 @@ export class ModerationRepository implements ModerationRepositoryPort {
          AND s.status::text IN ('queued', 'held', 'failed_retryable')
     `);
     return Number(result.rows[0]?.pending ?? 0);
+  }
+
+  /**
+   * The enrolment's delivery address and the account address behind it
+   * (P183-04).
+   *
+   * Read inside the tenant transaction, so RLS is what stops an operator of one
+   * customer reading another's participant — the enrolment id in the URL is a
+   * name, not an authorisation (§9.6). `users` carries no RLS, so the join is
+   * reached only through an `enrolments` row this tenant may already see.
+   */
+  async findDeliveryEmail(
+    enrolmentId: string,
+  ): Promise<{ deliveryEmail: string | null; accountEmail: string | null } | undefined> {
+    const result = await this.db.execute<{
+      delivery_email: string | null;
+      account_email: string | null;
+    }>(sql`
+      SELECT e.delivery_email, u.email AS account_email
+        FROM enrolments e
+        JOIN users u ON u.id = e.user_id
+       WHERE e.id = ${enrolmentId}
+       LIMIT 1
+    `);
+    const row = result.rows[0];
+    return row === undefined
+      ? undefined
+      : { deliveryEmail: row.delivery_email, accountEmail: row.account_email };
+  }
+
+  /**
+   * Set or clear it. Returns false when no row was updated, which under RLS is
+   * "not visible in this tenant" — a 404, never a silent success (§9.6).
+   */
+  async setDeliveryEmail(enrolmentId: string, email: string | null): Promise<boolean> {
+    const result = await this.db.execute(sql`
+      UPDATE enrolments
+         SET delivery_email = ${email}, updated_at = now()
+       WHERE id = ${enrolmentId}
+    `);
+    return (result.rowCount ?? 0) > 0;
   }
 
   async correctName(enrolmentId: string, name: string): Promise<boolean> {

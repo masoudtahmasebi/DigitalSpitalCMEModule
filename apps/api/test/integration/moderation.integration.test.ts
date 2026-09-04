@@ -158,6 +158,48 @@ afterAll(async () => {
   await seedPool.end();
 });
 
+/**
+ * An enrolment belonging to a **different** customer, built here so the
+ * cross-tenant case has something real to attempt (P183-04).
+ *
+ * Its own customer, project, course, person and enrolment. Nothing is shared
+ * with the suite's tenant, so a leak would be a genuine RLS failure rather than
+ * a fixture that happened to pick the wrong row.
+ */
+async function foreignEnrolment(): Promise<string> {
+  const tag = `fremd-${RUN}`;
+  const otherCustomer = await insert(
+    "INSERT INTO customers (slug, name) VALUES ($1,$2) RETURNING id",
+    [tag, "Fremde GmbH"],
+  );
+  const otherDepartment = await insert(
+    "INSERT INTO departments (customer_id, slug, name) VALUES ($1,$2,$3) RETURNING id",
+    [otherCustomer, tag, "Abteilung"],
+  );
+  const otherProject = await insert(
+    `INSERT INTO projects (customer_id, department_id, slug, name, keycloak_issuer,
+                           keycloak_audience)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [otherCustomer, otherDepartment, tag, "Projekt", `${issuer}-fremd`, AUDIENCE],
+  );
+  const otherCourse = await insert(
+    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
+                          pass_threshold_percent, status)
+     VALUES ($1,$2,$3,$4,90,70,'draft') RETURNING id`,
+    [otherCustomer, otherProject, tag, "Fremder Kurs"],
+  );
+  const { id: otherUser } = await seedLearner(seedPool, {
+    realm: `${issuer}-fremd`,
+    subject: `fremd-${RUN}`,
+  });
+  return insert(
+    `INSERT INTO enrolments (customer_id, course_id, user_id, required_watch_percent,
+                             pass_threshold_percent)
+     VALUES ($1,$2,$3,90,70) RETURNING id`,
+    [otherCustomer, otherCourse, otherUser],
+  );
+}
+
 /** A learner, an enrolment, an EFN, and optionally a Punktemeldung. */
 async function seedEnrolledLearner(
   courseId: string,
@@ -341,6 +383,120 @@ describe("correcting a learner's name", () => {
     // The console still authenticates on the learner plane in this suite; what
     // matters is that the population is recorded at all (ADR-0012).
     expect(["staff", "learner"]).toContain(rows[0]?.actor_identity);
+  });
+});
+
+describe("the delivery address an operator can set (P183-04)", () => {
+  it("reports the account address when nothing is overridden", async () => {
+    const { status, body } = await asAdmin(
+      "GET",
+      `/admin/learners/${openEnrolmentId}/delivery-email`,
+    );
+
+    expect(status).toBe(200);
+    expect(body.email).toBeNull();
+    // The account address is shown so the panel can say which one a send uses;
+    // null here would be indistinguishable from "no address anywhere", which is
+    // the distinction the whole panel turns on.
+    expect(typeof body.accountEmail === "string" || body.accountEmail === null).toBe(
+      true,
+    );
+  });
+
+  it("sets one, and stores exactly what was accepted", async () => {
+    const { status, body } = await asAdmin(
+      "PATCH",
+      `/admin/learners/${openEnrolmentId}/delivery-email`,
+      { email: "  praxis@example.de " },
+    );
+
+    expect(status).toBe(200);
+    // Trimmed by the domain rule, not by the route — the same trim the
+    // learner's own path applies.
+    expect(body.email).toBe("praxis@example.de");
+
+    const stored = await seedPool.query<{ delivery_email: string | null }>(
+      "SELECT delivery_email FROM enrolments WHERE id = $1",
+      [openEnrolmentId],
+    );
+    expect(stored.rows[0]?.delivery_email).toBe("praxis@example.de");
+  });
+
+  it("refuses the same address again rather than reporting a save", async () => {
+    const { status } = await asAdmin(
+      "PATCH",
+      `/admin/learners/${openEnrolmentId}/delivery-email`,
+      { email: "PRAXIS@example.de" },
+    );
+    // Case-insensitively unchanged. A screen saying "gespeichert" for a
+    // keystroke that changed nothing states something false about what the
+    // system holds (P41-01's shape).
+    expect(status).toBe(409);
+  });
+
+  it("refuses a display name wrapped around an address", async () => {
+    const { status, body } = await asAdmin(
+      "PATCH",
+      `/admin/learners/${openEnrolmentId}/delivery-email`,
+      { email: "Dr. Muster <m@example.de>" },
+    );
+    expect(status).toBe(422);
+    // The field, never the value: an address is personal data and a problem
+    // detail reaches a log (§9.5).
+    expect(JSON.stringify(body)).not.toContain("m@example.de");
+  });
+
+  it("clears it with an empty string, back to the account address", async () => {
+    const { status, body } = await asAdmin(
+      "PATCH",
+      `/admin/learners/${openEnrolmentId}/delivery-email`,
+      { email: "" },
+    );
+    expect(status).toBe(200);
+    expect(body.email).toBeNull();
+
+    const stored = await seedPool.query<{ delivery_email: string | null }>(
+      "SELECT delivery_email FROM enrolments WHERE id = $1",
+      [openEnrolmentId],
+    );
+    expect(stored.rows[0]?.delivery_email).toBeNull();
+  });
+
+  it("audits that an address was set, and never which", async () => {
+    const { rows } = await seedPool.query<{ detail: unknown }>(
+      "SELECT detail FROM audit_log WHERE action = 'certificate.delivery_address_set' AND subject = $1",
+      [openEnrolmentId],
+    );
+
+    expect(rows.length).toBeGreaterThan(0);
+    expect(JSON.stringify(rows)).not.toContain("praxis@example.de");
+  });
+
+  it("cannot reach an enrolment in another tenant", async () => {
+    // The enrolment id is a name, not an authorisation. RLS is what refuses
+    // this, and a 404 rather than a 403 is the right answer — a distinguishable
+    // "exists but not yours" is an oracle over another customer's participants
+    // (§9.5, §9.6).
+    //
+    // The row is **built**, not found. P177-01 is the record of what selecting
+    // a fixture with `LIMIT 1` over a shared table costs: locally it returned
+    // this tenant's row and the case passed, in CI it returned somebody else's,
+    // and RLS hid it from the very query that was supposed to count it.
+    const foreign = await foreignEnrolment();
+
+    const read = await asAdmin("GET", `/admin/learners/${foreign}/delivery-email`);
+    expect(read.status).toBe(404);
+
+    const write = await asAdmin("PATCH", `/admin/learners/${foreign}/delivery-email`, {
+      email: "fremd@example.de",
+    });
+    expect(write.status).toBe(404);
+
+    const stored = await seedPool.query<{ delivery_email: string | null }>(
+      "SELECT delivery_email FROM enrolments WHERE id = $1",
+      [foreign],
+    );
+    expect(stored.rows[0]?.delivery_email).toBeNull();
   });
 });
 
