@@ -571,25 +571,48 @@ jobs:
       - name: Will this installation file Punktemeldungen for real?
         id: eiv
         run: |
+          # `bash -lc`, and the error kept (P189-01).
+          #
+          # This read answered `unreadable` on the first deploy it ever ran on,
+          # so the journey was skipped by a guard failing closed — and
+          # `2>/dev/null` meant the log could not say why. That is §9.1's third
+          # form (green because of what it is not looking at) sitting on the one
+          # decision about whether the product gets driven at all, and §9.4 on
+          # top: the message named the symptom and nothing actionable.
+          #
+          # Two changes, and the second matters more than the first:
+          #
+          #   * a **login shell**. The step that reads this table successfully —
+          #     `deploy.sh`, over `ssh -tt` — gets one, and these reads did not.
+          #     That is the difference I can see; it is a candidate cause, not a
+          #     diagnosis, and it is not why this change is safe to make.
+          #   * the psql stderr is **captured and printed**. Whether or not the
+          #     login shell is the cause, the next run states it rather than
+          #     leaving the next person where this one left me.
+          #
+          # `-tt` itself would be the wrong fix: it allocates a TTY, whose
+          # carriage returns and login banner would land in the string parsed
+          # below.
           answer=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "cd ${REPO_DIR}/infra/deploy && . ./eiv-endpoint.sh && \
+            "bash -lc 'cd ${REPO_DIR}/infra/deploy && . ./eiv-endpoint.sh && \
              set -a && . \$HOME/ds-education/config.env && set +a && \
-             settings=\$(docker compose -f docker-compose.prod.yml exec -T \
+             err=\$(docker compose -f docker-compose.prod.yml exec -T \
                -e PGPASSWORD=\"\${POSTGRES_SUPERUSER_PASSWORD}\" postgres \
                psql -tAX -U \"\${POSTGRES_SUPERUSER}\" -d \"\${POSTGRES_DB}\" \
-               -c \"\$(ds_eiv_settings_sql)\" 2>/dev/null | tr -d '\n' || true) && \
-             if [ -z \"\$settings\" ]; then
-               printf 'yes unreadable'
+               -c \"\$(ds_eiv_settings_sql)\" 2>&1 >/tmp/ds-eiv-posture || true) && \
+             settings=\$(tr -d \"\\n\" </tmp/ds-eiv-posture) && \
+             if [ -z \"\$settings\" ]; then \
+               printf \"yes unreadable:%s\" \"\$(printf %s \"\$err\" | tr -d \"\\n\" | cut -c1-300)\"; \
              elif ds_eiv_worker_will_file_live \
                \"\${settings%%|*}\" \
-               \"\$(printf '%s' \"\$settings\" | cut -d'|' -f2)\" \
+               \"\$(printf %s \"\$settings\" | cut -d\"|\" -f2)\" \
                \"\${settings##*|}\" \
-               \"\${EIV_MOCK_BASE_URL:-}\"; then
-               printf 'yes %s' \"\$settings\"
-             else
-               printf 'no %s' \"\$settings\"
-             fi")
+               \"\${EIV_MOCK_BASE_URL:-}\"; then \
+               printf \"yes %s\" \"\$settings\"; \
+             else \
+               printf \"no %s\" \"\$settings\"; \
+             fi'")
 
           verdict="${answer%% *}"
           detail="${answer#* }"
@@ -612,9 +635,11 @@ jobs:
               ;;
           esac
 
-          if [ "${detail}" = "unreadable" ]; then
-            echo "::warning::platform_settings could not be read on the host. This run fails closed and treats the installation as reporting live, so the journey will not run. That is NOT evidence that it is reporting — it is evidence that the question could not be answered."
-          fi
+          case "${detail}" in
+            unreadable*)
+              echo "::warning::platform_settings could not be read on the host — psql said: ${detail#unreadable:}. This run fails closed and treats the installation as reporting live, so the journey will not run. That is NOT evidence that it is reporting — it is evidence that the question could not be answered."
+              ;;
+          esac
 
           echo "Files Punktemeldungen live: ${verdict} (platform_settings: ${detail})"
           echo "eiv_reports_live=${verdict}" >> "$GITHUB_OUTPUT"
@@ -652,27 +677,35 @@ jobs:
       - name: Which sender will carry a Teilnahmebescheinigung?
         continue-on-error: true
         run: |
+          # A login shell and the error kept, for the reason the EIV step above
+          # gives at length. The query lives in `mail-posture.sh` rather than
+          # here: an empty SQL string literal is `''`, which cannot appear
+          # inside the single-quoted `bash -lc '...'`, and the escape that
+          # avoids it is unreviewable. `eiv-endpoint.sh` already solved this for
+          # the EIV posture; `mail-posture.test.sh` drives the result.
+          source infra/deploy/mail-posture.sh
+
           answer=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "cd ${REPO_DIR}/infra/deploy && \
+            "bash -lc 'cd ${REPO_DIR}/infra/deploy && . ./mail-posture.sh && \
              set -a && . \$HOME/ds-education/config.env && set +a && \
-             docker compose -f docker-compose.prod.yml exec -T \
+             err=\$(docker compose -f docker-compose.prod.yml exec -T \
                -e PGPASSWORD=\"\${POSTGRES_SUPERUSER_PASSWORD}\" postgres \
-               psql -tAX -U \"\${POSTGRES_SUPERUSER}\" -d \"\${POSTGRES_DB}\" -c \
-               \"SELECT (SELECT count(*) FROM projects
-                           WHERE btrim(coalesce(smtp_host,'')) <> ''
-                             AND btrim(coalesce(smtp_from_address,'')) <> '')
-                      || '|' || (SELECT count(*) FROM projects)
-                      || '|' || coalesce((SELECT from_address FROM platform_smtp
-                                           WHERE id = true
-                                             AND btrim(coalesce(host,'')) <> ''
-                                             AND btrim(coalesce(from_address,'')) <> ''), '');\" \
-             2>/dev/null | tr -d '\n' || true")
+               psql -tAX -U \"\${POSTGRES_SUPERUSER}\" -d \"\${POSTGRES_DB}\" \
+               -c \"\$(ds_mail_posture_sql)\" 2>&1 >/tmp/ds-mail-posture || true) && \
+             printf \"%s@@%s\" \"\$(tr -d \"\\n\" </tmp/ds-mail-posture)\" \
+                               \"\$(printf %s \"\$err\" | tr -d \"\\n\" | cut -c1-300)\"'")
+
+          # `<three fields>@@<stderr>`. `@@` and not `|`, which the answer's own
+          # fields use — a separator that can appear in the payload is how a
+          # parse silently reads one field as another.
+          reason="${answer##*@@}"
+          answer="${answer%%@@*}"
 
           if [ -z "${answer}" ]; then
-            echo "::warning::The host's mail posture could not be read. That is" \
-                 "not evidence that mail is unconfigured — it is evidence that" \
-                 "the question could not be answered."
+            echo "::warning::The host's mail posture could not be read — psql said:" \
+                 "${reason:-nothing}. That is not evidence that mail is" \
+                 "unconfigured; it is evidence that the question could not be answered."
             exit 0
           fi
 
@@ -680,18 +713,11 @@ jobs:
           total="$(printf '%s' "${answer}" | cut -d'|' -f2)"
           platform="${answer##*|}"
 
-          # Numeric before arithmetic. A psql that answered a notice, a partial
-          # line or a connection error would otherwise reach `$(( ))` and abort
-          # the step with a shell syntax error — which reads as "the deploy
-          # broke" rather than "the question could not be answered" (§9.6).
-          case "${own}${total}" in
-            *[!0-9]* | "")
-              echo "::warning::The host's mail posture came back unparseable" \
-                   "('${answer}'). Not evidence about the configuration."
-              exit 0
-              ;;
-          esac
-          fallback=$(( total - own ))
+          if ! fallback="$(ds_mail_posture_fallback_count "${own}" "${total}")"; then
+            echo "::warning::The host's mail posture came back unparseable" \
+                 "('${answer}'). Not evidence about the configuration."
+            exit 0
+          fi
 
           echo "Projects sending as themselves: ${own} of ${total}"
           if [ -n "${platform}" ]; then
