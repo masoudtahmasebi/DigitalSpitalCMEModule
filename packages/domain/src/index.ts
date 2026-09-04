@@ -404,3 +404,6 @@ export type { DeliveryAddressDecision } from "./delivery-address.js";
 
 export { berlinDate, reportableOn } from "./eiv-window.js";
 export type { ReportableVerdict } from "./eiv-window.js";
+
+export { deliverySender } from "./delivery-sender.js";
+export type { DeliverySender, SenderTransport } from "./delivery-sender.js";

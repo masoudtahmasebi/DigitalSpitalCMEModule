@@ -313,11 +313,11 @@ export const german = {
     // The platform's own mail sender (P40-01).
     platformMail: "E-Mail-Versand der Plattform",
     platformMailIntro:
-      "Von dieser Adresse verschickt die Plattform E-Mails zu Verwaltungskonten — etwa Links zum Zurücksetzen eines Passworts. Für Teilnehmende gelten stattdessen die SMTP-Angaben des jeweiligen Projekts.",
+      "Von dieser Adresse verschickt die Plattform E-Mails zu Verwaltungskonten — etwa Links zum Zurücksetzen eines Passworts. Sie ist außerdem der Ersatzversand für Teilnahmebescheinigungen: Projekte mit eigenen SMTP-Angaben versenden weiterhin selbst, alle anderen über diesen Zugang. Änderungen hier wirken sich also auch auf Teilnehmende aus.",
     platformMailReady:
       "Der Versand ist eingerichtet. „Passwort vergessen?“ funktioniert für Verwaltungskonten.",
     platformMailIncomplete:
-      "Server und Absenderadresse fehlen noch. Ohne sie kann kein Link verschickt werden — Betroffene brauchen dann eine Einladung durch eine andere Administration.",
+      "Server und Absenderadresse fehlen noch. Ohne sie kann kein Link verschickt werden — Betroffene brauchen dann eine Einladung durch eine andere Administration. Auch Teilnahmebescheinigungen aus Projekten ohne eigene SMTP-Angaben bleiben dann unversendet; sie stehen im Portal weiterhin zum Download bereit.",
     platformMailSecure: "Verschlüsselt ab Verbindungsaufbau (Port 465)",
     /*
      * The test send, and the four things it can say (P77-01).
@@ -619,8 +619,11 @@ export const german = {
       "Bitte Link und Fassung gemeinsam angeben oder beide leer lassen.",
 
     smtp: "E-Mail-Versand (SMTP)",
-    smtpIntro:
-      "Wird für den Versand der Teilnahmebescheinigungen verwendet. Ohne Angaben versendet die Plattform keine E-Mails für dieses Projekt.",
+    smtpIntro: "Wird für den Versand der Teilnahmebescheinigungen verwendet.",
+    smtpFallback: (address: string) =>
+      `Ohne eigenen Server versendet die Plattform die Bescheinigungen über ihren eigenen Zugang, als ${address}. Ihre eigene Absenderadresse erscheint nur dann auf der E-Mail, wenn Sie hier auch einen eigenen Server hinterlegen — eine fremde Adresse über unseren Server wird von vielen Empfängern als Spam aussortiert (SPF/DMARC).`,
+    smtpNoFallback:
+      "Ohne Angaben versendet die Plattform keine E-Mails für dieses Projekt. Die Bescheinigung bleibt gültig und steht der teilnehmenden Person im Portal zum Download bereit. Der Versand über die Plattform wird unter Sicherheit → E-Mail-Versand der Plattform eingerichtet.",
     smtpHost: "Server",
     smtpPort: "Port",
     smtpUsername: "Benutzername",

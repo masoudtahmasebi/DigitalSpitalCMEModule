@@ -32,7 +32,7 @@
  * certificate id and an outcome; what goes into the audit record is a count.
  */
 
-import { planDeliveryAttempt, stripTrailingSlashes } from "@ds/domain";
+import { deliverySender, planDeliveryAttempt, stripTrailingSlashes } from "@ds/domain";
 import type { DeliveryChannel, OutboundMessage } from "@ds/plugin-api";
 import { SYSTEM_ACTOR, type AuditServicePort } from "../../audit/audit.service.js";
 import type {
@@ -238,6 +238,7 @@ export class CertificateDeliveryService {
     row: DueDelivery,
     attachment: { filename: string; bytes: Uint8Array } | undefined,
   ): OutboundMessage {
+    const sender = this.senderFor(row);
     const { subject, body } = certificateEmail({
       participantName: row.participantName,
       courseTitle: row.courseTitle,
@@ -254,7 +255,11 @@ export class CertificateDeliveryService {
       // The **body** is deliberately not stripped: it is the message, not a
       // header, and newlines in it are the paragraphs.
       to: headerSafe(row.recipientEmail ?? ""),
-      from: formatSender(row.fromAddress, row.fromName),
+      // The From is the chosen sender's, never a mix of the two (P185-01).
+      from:
+        sender.kind === "none"
+          ? formatSender(null, null)
+          : formatSender(sender.transport.fromAddress, sender.transport.fromName),
       subject: headerSafe(subject),
       body,
       /*
@@ -284,12 +289,64 @@ export class CertificateDeliveryService {
             ],
           }),
       transport: {
-        host: row.smtpHost ?? "",
-        port: String(row.smtpPort ?? ""),
-        ...(row.smtpUsername === null ? {} : { username: row.smtpUsername }),
-        ...(row.smtpPassword === null ? {} : { password: row.smtpPassword }),
+        host: sender.kind === "none" ? "" : (sender.transport.host ?? ""),
+        port: sender.kind === "none" ? "" : String(sender.transport.port ?? ""),
+        ...(sender.kind === "none" || sender.transport.username === null
+          ? {}
+          : { username: sender.transport.username }),
+        ...(sender.kind === "none" || sender.transport.password === null
+          ? {}
+          : { password: sender.transport.password }),
+        /*
+         * Only when the chosen sender records an answer. `null` leaves the key
+         * off, and `SmtpDeliveryChannel` then infers implicit TLS from port
+         * 465 — which is what every certificate has done to date.
+         *
+         * It is here rather than left out because the platform's sender *does*
+         * record it, has since P40-01, and the reset mail honours it. Choosing
+         * that server and silently dropping its TLS setting would send on a
+         * plain socket to a host configured for 465-style implicit TLS, which
+         * fails at connect and would be read as "the platform's SMTP is
+         * broken" rather than as a field this code did not carry.
+         */
+        ...(sender.kind === "none" || sender.transport.secure !== true
+          ? {}
+          : { secure: "true" }),
       },
     };
+  }
+
+  /**
+   * Whose server carries this, and under whose address (P185-01).
+   *
+   * `deliverySender` in `@ds/domain` decides, and the console reads the same
+   * rule so an operator is told which sender their project will use before
+   * anything is sent. A `??` chain here would leave the screen guessing about
+   * the one thing it exists to report.
+   */
+  private senderFor(row: DueDelivery) {
+    return deliverySender({
+      project: {
+        host: row.smtpHost,
+        port: row.smtpPort,
+        username: row.smtpUsername,
+        password: row.smtpPassword,
+        fromAddress: row.fromAddress,
+        fromName: row.fromName,
+        // `projects` has no `secure` column, so nobody said — and the channel
+        // keeps inferring it from the port, exactly as before P185-01.
+        secure: null,
+      },
+      platform: {
+        host: row.platformSmtpHost,
+        port: row.platformSmtpPort,
+        username: row.platformSmtpUsername,
+        password: row.platformSmtpPassword,
+        fromAddress: row.platformFromAddress,
+        fromName: row.platformFromName,
+        secure: row.platformSmtpSecure,
+      },
+    });
   }
 
   /**

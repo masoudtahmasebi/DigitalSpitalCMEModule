@@ -275,11 +275,11 @@ export const en: DeepPartial<typeof german> = {
     ownFactorNone: "Not set up.",
     platformMail: "Platform email delivery",
     platformMailIntro:
-      "The platform sends email about administration accounts from this address — password reset links, for instance. For participants the SMTP settings of the respective project apply instead.",
+      "The platform sends email about administration accounts from this address — password reset links, for instance. It is also the fallback sender for Teilnahmebescheinigungen: projects with SMTP settings of their own keep sending themselves, every other project sends through this one. Changes here therefore reach participants too.",
     platformMailReady:
       "Delivery is configured. “Forgot your password?” works for administration accounts.",
     platformMailIncomplete:
-      "Server and sender address are still missing. Without them no link can be sent — the people affected then need an invitation from another administrator.",
+      "Server and sender address are still missing. Without them no link can be sent — the people affected then need an invitation from another administrator. Teilnahmebescheinigungen from projects without SMTP settings of their own also stay unsent; they remain downloadable in the portal.",
     platformMailSecure: "Encrypted from connection start (port 465)",
     platformMailTest: "Send test email",
     platformMailTestHint:
@@ -461,8 +461,11 @@ export const en: DeepPartial<typeof german> = {
       "Please give link and version together, or leave both empty.",
 
     smtp: "Email delivery (SMTP)",
-    smtpIntro:
-      "Used to send the Teilnahmebescheinigungen. Without these settings the platform sends no email for this project.",
+    smtpIntro: "Used to send the Teilnahmebescheinigungen.",
+    smtpFallback: (address: string) =>
+      `Without a server of your own the platform sends the certificates through its own, as ${address}. Your own sender address appears on the e-mail only if you also configure your own server here — another party's address over our server is filed as spam by many recipients (SPF/DMARC).`,
+    smtpNoFallback:
+      "Without these, the platform sends no e-mail for this project. The certificate stays valid and the participant can download it in the portal. Delivery through the platform is configured under Security → Platform email delivery.",
     smtpHost: "Server",
     smtpPort: "Port",
     smtpUsername: "User name",

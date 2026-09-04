@@ -17,7 +17,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import { createPool } from "@ds/postgres";
 import type { DeliveryChannel, DeliveryOutcome, OutboundMessage } from "@ds/plugin-api";
@@ -468,6 +468,154 @@ describe("the delivery address on the enrolment (P183-01)", () => {
     expect((await certificateRow(certificateId)).delivery_abandoned_reason).toBe(
       "no_recipient",
     );
+  });
+});
+
+describe("the platform's own sender, for a project with none (P185-01)", () => {
+  async function setProjectSmtp(over: {
+    host: string | null;
+    from: string | null;
+  }): Promise<void> {
+    await seedPool.query(
+      "UPDATE projects SET smtp_host = $1, smtp_from_address = $2, smtp_port = 587",
+      [over.host, over.from],
+    );
+  }
+
+  /*
+   * `platform_smtp` — the table Sicherheit → Plattform-Versand writes, the one
+   * invitations and password resets already send from. Writing anywhere else
+   * would make this suite green against a sender no operator can set (§9.10b).
+   */
+  async function setPlatformSmtp(over: {
+    host: string | null;
+    from: string | null;
+    secure?: boolean;
+  }): Promise<void> {
+    await seedPool.query(
+      `UPDATE platform_smtp
+          SET host = $1, from_address = $2, port = 587,
+              from_name = 'DigitalSpital', secure = $3
+        WHERE id = true`,
+      [over.host, over.from, over.secure ?? false],
+    );
+  }
+
+  afterEach(async () => {
+    await setPlatformSmtp({ host: null, from: null });
+  });
+
+  it("sends through the platform when the project has no server", async () => {
+    await setProjectSmtp({ host: null, from: null });
+    await setPlatformSmtp({
+      host: "mail.digitalspital.de",
+      from: "no-reply@digitalspital.de",
+    });
+
+    const { certificateId } = await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.transport["host"]).toBe("mail.digitalspital.de");
+    expect(sent[0]?.from).toContain("no-reply@digitalspital.de");
+    expect((await certificateRow(certificateId)).status).toBe("delivered");
+  });
+
+  it("leaves a project with its own server alone", async () => {
+    await setProjectSmtp({ host: "mail.medice.com", from: "fortbildung@medice.com" });
+    await setPlatformSmtp({
+      host: "mail.digitalspital.de",
+      from: "no-reply@digitalspital.de",
+    });
+
+    await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent[0]?.transport["host"]).toBe("mail.medice.com");
+    expect(sent[0]?.from).toContain("fortbildung@medice.com");
+  });
+
+  /*
+   * The case the whole design turns on. A project with a From address and no
+   * host is the likeliest half-configuration there is, and a per-column
+   * fallback would put `fortbildung@medice.com` on our server — which fails SPF
+   * and is quarantined by the recipient **after** our SMTP transaction
+   * succeeded. `delivered` on every row and nothing in any inbox.
+   */
+  it("never sends the customer's address through the platform's server", async () => {
+    await setProjectSmtp({ host: null, from: "fortbildung@medice.com" });
+    await setPlatformSmtp({
+      host: "mail.digitalspital.de",
+      from: "no-reply@digitalspital.de",
+    });
+
+    await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.transport["host"]).toBe("mail.digitalspital.de");
+    expect(sent[0]?.from).toContain("no-reply@digitalspital.de");
+    expect(sent[0]?.from).not.toContain("medice.com");
+  });
+
+  it("still hands an empty host on when neither is configured", async () => {
+    await setProjectSmtp({ host: null, from: null });
+    await setPlatformSmtp({ host: null, from: null });
+
+    await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    /*
+     * The fake channel accepts everything, so the assertion is on what it was
+     * handed. An empty host is what the real `SmtpDeliveryChannel` answers
+     * `{ status: "permanent", reason: "no SMTP host configured" }` to — the
+     * behaviour before P185-01, unchanged for an installation that has set up
+     * neither sender.
+     */
+    expect(sent[0]?.transport["host"]).toBe("");
+    expect(sent[0]?.transport["secure"]).toBeUndefined();
+  });
+
+  /*
+   * Implicit TLS travels with the identity. `platform_smtp.secure` has been
+   * honoured by the reset mail since P40-01; dropping it here would open a
+   * plain socket to a host expecting TLS on connect, fail, and read as "the
+   * platform's SMTP is broken" rather than as a field this path did not carry.
+   */
+  it("carries the platform sender's TLS setting", async () => {
+    await setProjectSmtp({ host: null, from: null });
+    await setPlatformSmtp({
+      host: "mail.digitalspital.de",
+      from: "no-reply@digitalspital.de",
+      secure: true,
+    });
+
+    await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent[0]?.transport["secure"]).toBe("true");
+  });
+
+  /*
+   * §9.2 at the other end of the same wire from `Organisation.test.tsx`: a From
+   * address stored beside no host is a sender that cannot send, so the whole
+   * identity falls through rather than half of it being borrowed.
+   */
+  it("does not use a platform From address that has no host behind it", async () => {
+    await setProjectSmtp({ host: null, from: null });
+    await setPlatformSmtp({ host: null, from: "no-reply@digitalspital.de" });
+
+    await queueCertificate();
+    const { service, sent } = build();
+    await service.sweep(new Date());
+
+    expect(sent[0]?.transport["host"]).toBe("");
+    expect(sent[0]?.from).not.toContain("digitalspital.de");
   });
 });
 

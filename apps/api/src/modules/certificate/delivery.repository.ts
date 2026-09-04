@@ -21,7 +21,14 @@ import type { Pool } from "pg";
 import { eq, sql } from "drizzle-orm";
 import { runInTenant } from "../../db/tenant-db.js";
 import type { SecretCipher } from "../../shared/secret-cipher.js";
-import { certificates, courses, enrolments, projects, users } from "../../db/schema.js";
+import {
+  certificates,
+  courses,
+  enrolments,
+  platformSmtp,
+  projects,
+  users,
+} from "../../db/schema.js";
 
 /** What the claim function returns: enough to open the right tenant scope. */
 export interface ClaimedDelivery {
@@ -59,6 +66,13 @@ export interface DueDelivery {
   readonly fromAddress: string | null;
   readonly fromName: string | null;
   readonly smtpHost: string | null;
+  readonly platformFromAddress: string | null;
+  readonly platformFromName: string | null;
+  readonly platformSmtpHost: string | null;
+  readonly platformSmtpPort: number | null;
+  readonly platformSmtpUsername: string | null;
+  readonly platformSmtpPassword: string | null;
+  readonly platformSmtpSecure: boolean;
   readonly smtpPort: number | null;
   readonly smtpUsername: string | null;
   /** Decrypted. Goes straight to the channel and no further. */
@@ -144,23 +158,69 @@ export class DeliveryRepository implements DeliveryRepositoryPort {
           smtpPort: projects.smtpPort,
           smtpUsername: projects.smtpUsername,
           smtpPasswordEnc: projects.smtpPasswordEnc,
+          /*
+           * The platform's own sender, for a project that has none (P185-01).
+           *
+           * **`platform_smtp`, the table that has held it since P40-01** — not
+           * a new column beside the EIV settings. It is the same value: the
+           * host, credentials and From address the platform sends its own mail
+           * from, set on Sicherheit → Plattform-Versand and used today for
+           * invitations and password resets.
+           *
+           * A second copy is CLAUDE.md §9.10b, and the quiet direction is the
+           * expensive one: an operator fills in the screen they can find, the
+           * worker reads the columns nobody filled in, and a certificate is
+           * abandoned with both screens looking configured.
+           *
+           * A single un-scoped row, so it is joined unconditionally rather than
+           * looked up separately — one query, and no way for the send to read a
+           * sender the console did not.
+           *
+           * Selected whole. `deliverySender` chooses **one** of the two
+           * identities and never merges them: a customer's From address over
+           * our server fails SPF and is quarantined at the far end, after our
+           * SMTP transaction has already succeeded.
+           */
+          platformFromAddress: platformSmtp.fromAddress,
+          platformFromName: platformSmtp.fromName,
+          platformSmtpHost: platformSmtp.host,
+          platformSmtpPort: platformSmtp.port,
+          platformSmtpUsername: platformSmtp.username,
+          platformSmtpPasswordEnc: platformSmtp.passwordEnc,
+          platformSmtpSecure: platformSmtp.secure,
         })
         .from(certificates)
         .innerJoin(enrolments, eq(enrolments.id, certificates.enrolmentId))
         .innerJoin(courses, eq(courses.id, enrolments.courseId))
         .innerJoin(projects, eq(projects.id, courses.projectId))
         .innerJoin(users, eq(users.id, enrolments.userId))
+        /*
+         * A cross join to the singleton. `platform_smtp` has exactly one row
+         * (`id = true`) and no tenant column, so there is nothing to join *on*.
+         *
+         * `inner`, not `left`: the migration inserts the row, so its absence
+         * means a database older than this code rather than "unconfigured" —
+         * and a left join would turn that into a certificate abandoned for a
+         * missing sender, which is §9.6's shape exactly. An empty result here
+         * is `load` answering `undefined`, which the worker leaves queued.
+         */
+        .innerJoin(platformSmtp, eq(platformSmtp.id, sql`true`))
         .where(eq(certificates.id, claim.certificateId))
         .limit(1);
 
       if (row === undefined) return undefined;
 
-      const { smtpPasswordEnc, ...rest } = row;
+      const { smtpPasswordEnc, platformSmtpPasswordEnc, ...rest } = row;
       return {
         ...rest,
-        // The one place the SMTP password is decrypted.
+        // The one place an SMTP password is decrypted — both of them, and
+        // whichever `deliverySender` does not choose is never used.
         smtpPassword:
           smtpPasswordEnc === null ? null : this.cipher.decrypt(smtpPasswordEnc),
+        platformSmtpPassword:
+          platformSmtpPasswordEnc === null
+            ? null
+            : this.cipher.decrypt(platformSmtpPasswordEnc),
       };
     });
   }
