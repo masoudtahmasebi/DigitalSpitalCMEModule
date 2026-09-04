@@ -556,6 +556,39 @@ that the course wins and a finished enrolment is protected instead
 - A seed supplies **a starting value where there is nothing, never a
   replacement**: `COALESCE(courses.x, EXCLUDED.x)`.
 
+### 9.10c An environment is a dependency, and half of one fails everywhere at once
+
+`docker compose` interpolates the **whole** compose file before it looks at
+which service the command names, and `docker-compose.prod.yml` has
+`${SECRETS_KMS_KEY:?…}`. So a caller holding half the host's environment cannot
+run `ps`, `exec`, `logs` or `config` — every one of them dies identically, with
+an error naming a variable the caller never mentions.
+
+The host keeps its environment in **two** files: `config.env`, written by a
+human, and `secrets.env`, generated at 0600 by `secrets.sh`. `deploy.sh` and
+`dsc` source both. Two workflow steps and `watchdog.sh` sourced only the first
+(P194-01), and all three redirect stderr away so a transient docker error cannot
+kill a report — which left an empty answer, and an empty answer reads as
+"nothing to report".
+
+Four deploys failed closed on a question they could not ask. The watchdog's
+container census counted nothing and reported no problem from it, while check 2
+turned the same failure into `API readiness: 000 could not run the check` — an
+alert about the API for a fault in the watchdog.
+
+**Checks:**
+
+- `pnpm check:compose-env`. Every shell script and every workflow `run:` block
+  that reaches `docker compose` for the prod stack must also load `secrets.env`.
+  It names the three real defects on the commit that had them.
+- When a caller needs a service's environment, it does not assemble it —
+  §9.10b at the level of a whole environment. `host-env.sh` is the one home;
+  a second reader that reproduces half of what the deploy does is the shape.
+- And the tell that would have found it years earlier: **eight warnings and one
+  error usually have one cause.** P189-03 dismissed compose's `DS_* is not set`
+  warnings as noise crowding out the real message. They were the same fault's
+  other half — `deploy.sh` exports those and a bare read does not.
+
 ### 9.11 Fix the class, not the instance
 
 When a report arrives, the question is not "where is this bug" but **"what else
