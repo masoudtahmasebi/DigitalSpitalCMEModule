@@ -14,7 +14,7 @@
     "@ds/build-info": "workspace:*",
     "@ds/domain": "workspace:*",
     "@ds/sdk": "workspace:*",
-    "bwip-js": "^4.11.2",
+    "bwip-js": "^4.11.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "@ds/copy": "workspace:*"
