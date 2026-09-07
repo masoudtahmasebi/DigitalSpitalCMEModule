@@ -519,31 +519,29 @@ describe("validateSegments", () => {
 
   it("applies the wall-clock budget across the whole batch, not per segment", () => {
     /*
-     * Numbers restated for the 2× bound (P153-01): the budget here is
-     * 25 × 2 = 50 s, so the two 30-second segments are individually plausible
-     * and together are not. The property under test is unchanged — one batch,
-     * one budget — and it is the property that stops a client splitting an
+     * One batch, one budget: the property that stops a client splitting an
      * impossible claim into possible-looking pieces.
+     *
+     * Sized from `wallClockBudget` rather than written out (P198-01). This case
+     * held `30` and `30` against a budget of `50`, and both numbers moved when
+     * the bound did — twice — each time turning a real guard into a case that
+     * asserted nothing. Two segments of two-thirds of the budget each are
+     * individually payable and together are not, whatever the budget becomes.
      */
+    const elapsed = 25;
+    const budget = wallClockBudget(elapsed, 0);
+    const each = (budget * 2) / 3;
+
     const result = validateSegments(
       [
-        { startSec: 0, endSec: 30 },
-        { startSec: 100, endSec: 130 },
+        { startSec: 0, endSec: each },
+        { startSec: 1000, endSec: 1000 + each },
       ],
-      { durationSec: 1500, elapsedWallClockSec: 25, wallClockToleranceSec: 0 },
+      { durationSec: 1500, elapsedWallClockSec: elapsed, wallClockToleranceSec: 0 },
     );
 
-    /*
-     * One batch, one budget — asserted as the sum rather than as a count
-     * (P196-01). The second segment is now credited as far as the budget
-     * reaches and refused beyond it, so the count is 2 and the *total* is still
-     * 50. The property under test is the total: a client cannot split an
-     * impossible claim into possible-looking pieces and get more for it.
-     */
-    // `toBeCloseTo` on the bound: 25 × 2 × 1.15 is 57.499999999999993 in
-    // binary floating point and the credited total is 57.5, which is the same
-    // number arrived at by a different order of operations.
-    expect(totalCredited(result.accepted)).toBeCloseTo(wallClockBudget(25, 0), 6);
+    // The first fits; the second is a thousand-second hop nothing can pay for.
+    expect(totalCredited(result.accepted)).toBeLessThanOrEqual(budget);
     expect(result.rejected[0]?.reason).toBe("faster_than_wallclock");
   });
 
@@ -1224,5 +1222,86 @@ describe("the wall-clock bound holds however a claim is shaped (P196)", () => {
     // Ten budgets, not a video.
     expect(maxWatchedPosition(stored)).toBeLessThanOrEqual(10 * budget);
     expect(maxWatchedPosition(stored)).toBeLessThan(DURATION);
+  });
+});
+
+/*
+ * P198 — a whole video is credited at every rate the player offers.
+ *
+ * The client, after P196: *"please make sure that the user is able to go to
+ * next step, no matter what the speed of the video is."*
+ *
+ * P196 fixed the mechanism and proved it with a simulation I ran once. A
+ * simulation run once is a claim, not a check (§11 rule 3) — so the session it
+ * modelled is a test now, driven over `PLAYBACK_RATES` itself rather than a
+ * list of numbers copied out of it. Adding a 3× entry to the menu fails here
+ * rather than costing somebody a CME point.
+ *
+ * What it drives: a fifteen-minute video watched start to finish, flushing on
+ * the widget's own heartbeat, against a server clock that jitters — which is
+ * the condition the defect needed and the one no fixed-interval model has.
+ */
+describe("a full video is credited at every rate on the menu (P198)", () => {
+  const DURATION = 952;
+  const FLUSH_SEC = 15;
+
+  /** Deterministic jitter: a test that flakes on the gate is worse than none. */
+  function jitterer(seed: number): () => number {
+    let state = seed;
+    return () => {
+      state = (state * 1103515245 + 12345) % 2147483648;
+      return state / 2147483648;
+    };
+  }
+
+  function watchWholeVideo(rate: number, maxJitterSec: number) {
+    const jitter = jitterer(20260907);
+    let stored: readonly WatchedSegment[] = [];
+    let position = 0;
+    let frozenAt: number | undefined;
+
+    while (position < DURATION) {
+      const segment = {
+        startSec: position,
+        endSec: Math.min(DURATION, position + FLUSH_SEC * rate),
+      };
+      const before = maxWatchedPosition(stored);
+      const result = validateSegments([segment], {
+        durationSec: DURATION,
+        // The server measures the interval between its own two writes, and
+        // that measurement is not exact.
+        elapsedWallClockSec: FLUSH_SEC - maxJitterSec * jitter(),
+        previousSegments: stored,
+      });
+      stored = mergeWatchedSegments([...stored, ...result.accepted]);
+      const after = maxWatchedPosition(stored);
+      if (after === before && frozenAt === undefined) frozenAt = before;
+      position = segment.endSec;
+    }
+
+    return { percent: watchedPercent(stored, DURATION), frozenAt };
+  }
+
+  it.each(PLAYBACK_RATES.map((rate) => [rate] as const))(
+    "%s× reaches 100 %% and never stalls",
+    (rate) => {
+      const { percent, frozenAt } = watchWholeVideo(rate, 2);
+
+      expect(
+        frozenAt,
+        `credit stopped advancing at ${String(frozenAt)} s and the learner ` +
+          "watched the rest of the video into a record that had stopped",
+      ).toBeUndefined();
+      expect(percent).toBe(100);
+    },
+  );
+
+  it("still reaches 100 % when the interval is measured badly", () => {
+    // Four seconds of error on a fifteen-second heartbeat, at the fastest rate:
+    // well past anything observed, and the gate still lets the learner finish.
+    const { percent, frozenAt } = watchWholeVideo(Math.max(...PLAYBACK_RATES), 4);
+
+    expect(frozenAt).toBeUndefined();
+    expect(percent).toBe(100);
   });
 });

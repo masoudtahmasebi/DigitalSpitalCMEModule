@@ -19,6 +19,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { clockTime } from "@ds/domain";
 import type { MediaSource } from "@ds/sdk";
 import { VideoPlayer } from "./VideoPlayer.js";
 
@@ -723,5 +724,135 @@ describe("a host that cannot seek at all", () => {
     withSeekable(1);
     expect(screen.getByText(/Vorspulen ist nicht möglich/)).toBeTruthy();
     expect(screen.queryByText(/der Videoserver unterstützt das nicht/)).toBeNull();
+  });
+});
+
+/*
+ * P199 — the time under the pointer.
+ *
+ * The client: *"add the feature to see where in the video the user is, by
+ * hovering over the progress bar of the video."*
+ *
+ * jsdom gives every element a zero-sized `getBoundingClientRect`, so the track
+ * has to be given one — otherwise `seekFraction` divides by zero and every case
+ * here reads 0:00 and passes for the wrong reason (§9.1).
+ */
+describe("the scrub bar's hover preview (P199)", () => {
+  function barWithWidth(over: Partial<React.ComponentProps<typeof VideoPlayer>> = {}) {
+    const rendered = renderPlayer(over);
+    // The same `currentTime` trap the seek cases use: a seek is a write to the
+    // element, and `VideoPlayer` takes no `onSeek` prop to listen on.
+    const video = rendered.container.querySelector("video") as HTMLVideoElement;
+    let current = 0;
+    const writes: number[] = [];
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      get: () => current,
+      set: (value: number) => {
+        current = value;
+        writes.push(value);
+      },
+    });
+    const slider = screen.getByRole("slider", { name: "Wiedergabeposition" });
+    vi.spyOn(slider, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      right: 400,
+      top: 0,
+      bottom: 8,
+      width: 400,
+      height: 8,
+      toJSON: () => ({}),
+    } as DOMRect);
+    return { ...rendered, slider, writes };
+  }
+
+  /*
+   * A pointer move that actually carries a coordinate.
+   *
+   * `fireEvent.pointerMove(el, { clientX })` delivers `clientX: null` here —
+   * jsdom has no `PointerEvent` that carries coordinates, so testing-library
+   * falls back to a plain `Event` and the init is dropped. Probed rather than
+   * assumed: every case in this block first passed against a label reading
+   * `0:00` at `left: 0%`, which is what a zero coordinate looks like and is
+   * indistinguishable from a preview that works (§9.1).
+   *
+   * A `MouseEvent` typed `pointermove` carries `clientX` and still reaches
+   * React's `onPointerMove`, so the product keeps pointer events — which is
+   * what makes the readout work for a finger dragging the bar, not just a
+   * mouse.
+   */
+  function hover(slider: HTMLElement, clientX: number): void {
+    fireEvent(slider, new MouseEvent("pointermove", { clientX, bubbles: true }));
+  }
+
+  it("reads back the time the pointer is over", () => {
+    const { slider } = barWithWidth();
+
+    // A quarter of the way along a 25:45 video is 6:26.
+    hover(slider, 100);
+
+    expect(screen.getByText("6:26")).toBeTruthy();
+  });
+
+  it("agrees with where a click actually lands", () => {
+    /*
+     * The property that makes the preview worth having, and the one a separate
+     * geometry calculation would break: what it promises is what a click does.
+     * Both go through `seekFraction` and `seekPositionSec`, and this is the
+     * test that says so (§9.7 — name the caller).
+     */
+    const { slider, writes } = barWithWidth({ startAtSec: 0 });
+
+    hover(slider, 300);
+    const previewed = screen.getByText(/^\d+:\d\d$/u).textContent;
+    fireEvent.click(slider, { clientX: 300 });
+
+    expect(writes).toHaveLength(1);
+    expect(clockTime(writes[0] ?? 0)).toBe(previewed);
+  });
+
+  it("says so where the gate will not let the playhead go", () => {
+    /*
+     * §9.2 and §9.4: a bar that reads back a time it will refuse to seek to is
+     * a control that looks like it works. Said at the moment somebody points at
+     * it, rather than after the playhead snaps back.
+     */
+    const { slider } = barWithWidth({ seekCeilingSec: 300 });
+
+    hover(slider, 380); // ~24:27, well past 5:00
+
+    expect(screen.getByText(/noch nicht freigegeben/u)).toBeTruthy();
+  });
+
+  it("says nothing about a position the gate allows", () => {
+    // The other half, or the case above would pass on a label that always warns.
+    const { slider } = barWithWidth({ seekCeilingSec: 1200 });
+
+    hover(slider, 100); // 6:26, inside the ceiling
+
+    expect(screen.queryByText(/noch nicht freigegeben/u)).toBeNull();
+    expect(screen.getByText("6:26")).toBeTruthy();
+  });
+
+  it("clears when the pointer leaves", () => {
+    const { slider } = barWithWidth();
+
+    hover(slider, 100);
+    expect(screen.queryByText("6:26")).toBeTruthy();
+
+    fireEvent.pointerLeave(slider);
+    expect(screen.queryByText("6:26")).toBeNull();
+  });
+
+  it("is hidden from screen readers, which have the slider's own value", () => {
+    // Two readings of the same axis, one of them describing a pointer the
+    // listener does not have. `aria-valuetext` is the one that answers.
+    const { slider } = barWithWidth();
+
+    hover(slider, 100);
+
+    expect(screen.getByText("6:26").getAttribute("aria-hidden")).toBe("true");
   });
 });

@@ -615,6 +615,23 @@ export const de = {
     /** The slider's value when the range is capped: "14:35 von 25:45, freigegeben bis 12:30". */
     seekValueLimited: (position: string, duration: string, limit: string): string =>
       `${position} von ${duration}, freigegeben bis ${limit}`,
+    /**
+     * The time under the pointer, shown while hovering the scrub bar (P199-01).
+     *
+     * The client asked to "see where in the video the user is, by hovering over
+     * the progress bar". On a 25-minute Fortbildung the bar is the only way to
+     * judge distance, and without a readout a hover says nothing a glance at the
+     * playhead does not.
+     */
+    seekPreview: (clock: string): string => clock,
+    /**
+     * And the same, where the gate will not let the playhead go (§9.4).
+     *
+     * A bar that reads back a time it will refuse to seek to is a control that
+     * looks like it works. This says so at the moment somebody points at it,
+     * rather than after they click and the playhead snaps back.
+     */
+    seekPreviewLocked: (clock: string): string => `${clock} · noch nicht freigegeben`,
     /** The union the server has credited — not the furthest position reached. */
     covered: (percent: number): string => `${percent} % angesehen`,
     speed: "Geschwindigkeit",
