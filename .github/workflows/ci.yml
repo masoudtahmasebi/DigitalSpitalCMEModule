@@ -531,6 +531,38 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # …and the same scan over the **whole history**, on every event (P207-01).
+      #
+      # The action above picks its scope from the event type: a push or a pull
+      # request scans that push's range, and only `schedule` runs
+      # `gitleaks detect` over `git log -p --full-history --all`. So a fixture
+      # that looks like a credential does not fail the pull request that adds
+      # it — it fails a nightly, days later, on a commit that has nothing to do
+      # with it.
+      #
+      # That is the failure `.gitleaksignore`'s own header describes ("a check
+      # that passes because of what it did not look at is not passing", P33-02),
+      # and it happened again in a worse form: **every scheduled run since the
+      # schedule was added has been red — five for five, from the first one.**
+      # Four German fixture passwords landed on 11.08 and the nightly has
+      # reported them ever since, to nobody. An alert that is always red is an
+      # alert that cannot tell you anything, and a real committed credential
+      # would have arrived in exactly the same colour.
+      #
+      # The full scan is 440 commits and 12 MB in **two seconds**. There was
+      # never a cost reason for it to be the nightly's job alone.
+      #
+      # Pinned to the version the action installs, so the two cannot disagree
+      # about what a finding is. `--exit-code 1` because gitleaks exits 0 on a
+      # clean scan and would otherwise report nothing either way.
+      - name: Scan the whole history for committed secrets
+        run: |
+          version=8.24.3
+          curl -fsSL --retry 3 \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+            | tar -xz -C "${RUNNER_TEMP}" gitleaks
+          "${RUNNER_TEMP}/gitleaks" detect --redact --no-banner -v --exit-code 1
+
       # ----------------------------------------------------------------------
       # The audits go **last**, and that is the point of this ordering (P182-02).
       #

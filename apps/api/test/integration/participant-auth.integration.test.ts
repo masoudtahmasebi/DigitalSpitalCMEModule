@@ -726,10 +726,10 @@ describe("resetting a forgotten password (P40-03)", () => {
   it("sets the password, and the participant can sign in with it", async () => {
     const token = await freshToken();
 
-    const confirmed = await confirm(token, "ein-ganz-neues-passwort-2026");
+    const confirmed = await confirm(token, "new-password-for-tests");
     expect(confirmed).toBe(204);
 
-    const signedIn = await signIn(tenant, { password: "ein-ganz-neues-passwort-2026" });
+    const signedIn = await signIn(tenant, { password: "new-password-for-tests" });
     expect(signedIn.status).toBe(200);
   });
 
@@ -737,8 +737,8 @@ describe("resetting a forgotten password (P40-03)", () => {
     // P39-01 on this plane: without the state check a link is a permanent key
     // to the account, replayable by anybody who ever saw the mail.
     const token = await freshToken();
-    expect(await confirm(token, "erste-wahl-2026-lang")).toBe(204);
-    expect(await confirm(token, "zweite-wahl-2026-lang")).toBe(REFUSED);
+    expect(await confirm(token, "first-password-for-tests")).toBe(204);
+    expect(await confirm(token, "second-password-for-tests")).toBe(REFUSED);
   });
 
   it("refuses a link older than its window", async () => {
@@ -749,7 +749,7 @@ describe("resetting a forgotten password (P40-03)", () => {
       `UPDATE learner_credential_tokens SET created_at = now() - interval '2 hours'
         WHERE accepted_at IS NULL AND revoked_at IS NULL`,
     );
-    expect(await confirm(token, "zu-spaet-2026-lang")).toBe(REFUSED);
+    expect(await confirm(token, "expired-password-for-tests")).toBe(REFUSED);
   });
 
   it("refuses a password the policy rejects, without spending the link", async () => {
