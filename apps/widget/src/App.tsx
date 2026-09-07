@@ -1077,16 +1077,33 @@ function Loaded(props: {
       The hero inside `StickyMetaBar` bleeds past all of this, which is why the
       column is applied part by part below rather than to this element.
     */
-    /* No `py-4` (P204-01). The client, with the embed open on their own page:
-       "there is a not needed `mb-4` and `space-y-6 py-4` which makes this
-       different than the design." The hero is meant to meet the page header,
-       and the padding put a band of the host page's background above it.
-       `space-y-6` stays: it is the gap *between* the logo, the hero and the
-       content, which the drawing does have. */
-    <div className="space-y-6">
-      <div className={CONTENT}>
-        <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
-      </div>
+    /*
+      No `py-4` and no `space-y-6` (P204-01, then P208-01).
+
+      The client named both at once — "there is a not needed `mb-4` and
+      `space-y-6 py-4` which makes this different than the design" — and P204-01
+      took only the padding, keeping `space-y-6` on the reasoning that it is the
+      gap between the logo, the hero and the content. That was a claim about a
+      drawing I do not have, and it missed a defect that needs no drawing:
+
+      `BrandLogo` returns **null** when the customer has set no logo. The
+      wrapper below did not, so the first child was an empty div and
+      `space-y-6` still reserved 24 px above the hero — a band of the host
+      page's background exactly where the `py-4` complaint was.
+
+      `Catalogue` had already met this and guarded it, with the reason in its
+      own comment. Its sibling screen never got the guard. So the gap now
+      belongs to the elements that want one rather than to the container: the
+      logo carries its own `mb-6` and only exists when there is a logo, and the
+      tab panel carries `mt-6`. With no logo the hero meets the page header,
+      which is what the layout draws.
+    */
+    <div>
+      {branding.logoUrl === undefined ? null : (
+        <div className={`${CONTENT} mb-6`}>
+          <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
+        </div>
+      )}
 
       {/*
         Full width, and it insets its own parts: the hero bleeds to the edges
@@ -1109,7 +1126,11 @@ function Loaded(props: {
         evaluation — each of those has a progress reading of its own, and two
         different accounts of the same course on one screen is one too many.
       */}
-      <div className={CONTENT}>
+      {/* `mt-6` (P208-01): the gap the container's `space-y-6` used to give
+          between the meta strip and the tab row. It is unchanged — it now
+          belongs to the element that wants it, so removing the band above the
+          hero could not take it with it. */}
+      <div className={`${CONTENT} mt-6`}>
         <TabbedPanel
           tabs={TABS.map((entry) => ({ id: entry, label: de.tabs[entry] }))}
           active={tab}

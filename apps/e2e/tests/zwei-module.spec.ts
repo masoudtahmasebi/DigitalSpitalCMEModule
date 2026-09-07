@@ -49,6 +49,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import {
   fillNearest,
+  inlineError,
   menu,
   readIssuedPassword,
   signInToConsole,
@@ -167,8 +168,14 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
         .selectOption({ label: "Lernerfolgskontrolle" });
       await operator.locator("#content-new-title").fill("Zweite Prüfung");
       await operator.getByRole("button", { name: "Hinzufügen", exact: true }).click();
+      /*
+       * `inlineError`, not `getByText` (P207-02). Since P205-01 the refusal is
+       * said twice — the form's own Notice and a toast — and a bare text
+       * locator resolves to two elements and fails strict mode. See the
+       * helper for why `.first()` would be the wrong repair.
+       */
       await expect(
-        operator.getByText(/bereits eine Lernerfolgskontrolle/u),
+        inlineError(operator, /bereits eine Lernerfolgskontrolle/u),
         "the console accepted a second Lernerfolgskontrolle in one module (P87-06)",
       ).toBeVisible({ timeout: 15_000 });
 

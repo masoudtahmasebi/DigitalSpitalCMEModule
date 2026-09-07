@@ -38,9 +38,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -123,9 +123,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -190,9 +190,9 @@ jobs:
       # and undeclared there is a variable that does not arrive.
       INTEGRATION_RESET: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -350,11 +350,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build the API image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
@@ -401,7 +401,7 @@ jobs:
       # (ADR-0013). This job is what verifies that file before a server ever
       # runs it.
       - name: Build the admin console image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
@@ -413,7 +413,7 @@ jobs:
           cache-to: type=gha,scope=admin,mode=max
 
       - name: Build the portal image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
@@ -459,7 +459,7 @@ jobs:
           fi
 
       - name: Build the widget image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
@@ -478,11 +478,11 @@ jobs:
       # itself, so that diff fails with "unknown revision" the moment a push
       # carries more than one commit — full history avoids depending on
       # guessing the right depth.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -527,9 +527,41 @@ jobs:
         run: node scripts/check-deadlines.mjs
 
       - name: Scan for committed secrets
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # …and the same scan over the **whole history**, on every event (P207-01).
+      #
+      # The action above picks its scope from the event type: a push or a pull
+      # request scans that push's range, and only `schedule` runs
+      # `gitleaks detect` over `git log -p --full-history --all`. So a fixture
+      # that looks like a credential does not fail the pull request that adds
+      # it — it fails a nightly, days later, on a commit that has nothing to do
+      # with it.
+      #
+      # That is the failure `.gitleaksignore`'s own header describes ("a check
+      # that passes because of what it did not look at is not passing", P33-02),
+      # and it happened again in a worse form: **every scheduled run since the
+      # schedule was added has been red — five for five, from the first one.**
+      # Four German fixture passwords landed on 11.08 and the nightly has
+      # reported them ever since, to nobody. An alert that is always red is an
+      # alert that cannot tell you anything, and a real committed credential
+      # would have arrived in exactly the same colour.
+      #
+      # The full scan is 440 commits and 12 MB in **two seconds**. There was
+      # never a cost reason for it to be the nightly's job alone.
+      #
+      # Pinned to the version the action installs, so the two cannot disagree
+      # about what a finding is. `--exit-code 1` because gitleaks exits 0 on a
+      # clean scan and would otherwise report nothing either way.
+      - name: Scan the whole history for committed secrets
+        run: |
+          version=8.24.3
+          curl -fsSL --retry 3 \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+            | tar -xz -C "${RUNNER_TEMP}" gitleaks
+          "${RUNNER_TEMP}/gitleaks" detect --redact --no-banner -v --exit-code 1
 
       # ----------------------------------------------------------------------
       # The audits go **last**, and that is the point of this ordering (P182-02).
@@ -571,12 +603,12 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
           queries: security-extended
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
 
   dependency-review:
     name: Dependency review
@@ -586,7 +618,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Advisory here, and enforced elsewhere (P88-04).
       #
@@ -613,7 +645,7 @@ jobs:
       # this workflow cannot switch the setting on for itself (§9.9 — a setting
       # documented is a setting not applied, so the enforcing check is the one
       # that runs rather than this one).
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/dependency-review-action@v5
         continue-on-error: true
         with:
           fail-on-severity: moderate

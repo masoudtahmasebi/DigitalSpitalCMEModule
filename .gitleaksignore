@@ -70,3 +70,25 @@ d8c7d85ea4f6167a7b3daabf5e856493084deff3:apps/api/src/modules/certificate/delive
 # by the fix.
 f3cdaf732281bc846f816f0f11c59256f4dd415d:infra/deploy/host-env.test.sh:generic-api-key:47
 f3cdaf732281bc846f816f0f11c59256f4dd415d:infra/deploy/watchdog.test.sh:generic-api-key:81
+
+# Four German fixture passwords in the password-reset suite — `erste-wahl-…`,
+# `zweite-wahl-…`, `zu-spaet-…` and the one the participant then signs in with.
+# They authenticate nothing: they exist because the policy demands twelve
+# characters, and the suite needs two that differ so a spent link can be told
+# from a fresh one.
+#
+# **Fixed forward** to `first-password-for-tests` and friends, which is what
+# this file's own rule asks for; these five fingerprints cover the single
+# commit that introduced the hyphenated-German version and cannot be reached by
+# the fix.
+#
+# They are also the reason the nightly full-history scan had never once been
+# green — five scheduled runs, five failures, from the first one. See the
+# `Scan the whole history for committed secrets` step in ci.yml (P207-01):
+# a check nobody reads is not a check, and the answer is to run it where the
+# work happens rather than to keep suppressing what it finds.
+622fb7680a86b8f17391e8c0f3278b3224340ae1:apps/api/test/integration/participant-auth.integration.test.ts:generic-api-key:661
+622fb7680a86b8f17391e8c0f3278b3224340ae1:apps/api/test/integration/participant-auth.integration.test.ts:generic-api-key:664
+622fb7680a86b8f17391e8c0f3278b3224340ae1:apps/api/test/integration/participant-auth.integration.test.ts:generic-api-key:672
+622fb7680a86b8f17391e8c0f3278b3224340ae1:apps/api/test/integration/participant-auth.integration.test.ts:generic-api-key:673
+622fb7680a86b8f17391e8c0f3278b3224340ae1:apps/api/test/integration/participant-auth.integration.test.ts:generic-api-key:684

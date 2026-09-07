@@ -243,3 +243,48 @@ export async function uploadThroughMediaDialog(page: Page, file: string): Promis
   await dialog.getByRole("tab", { name: "Datei hochladen" }).click();
   await dialog.locator('input[type="file"]').setInputFiles(file);
 }
+
+/**
+ * The failure message **on the page**, as distinct from the toast (P207-02).
+ *
+ * ## Why this exists
+ *
+ * P205-01 put a toast under every rejected API request, because the client
+ * asked for one — a screen that says nothing about a refusal is the defect it
+ * came from. Screens that already render their own `SaveProblem` therefore say
+ * the same sentence twice: once in a `Notice` anchored to the form, once in a
+ * toast in the bottom-right corner.
+ *
+ * That is a known cost, recorded in P205.md as owed a per-screen pass. What was
+ * not anticipated is that it breaks *locators*. The two-module journey asserted
+ *
+ *     operator.getByText(/bereits eine Lernerfolgskontrolle/u)
+ *
+ * and the deploy of 08d8d0f failed with
+ *
+ *     strict mode violation: … resolved to 2 elements
+ *
+ * The product was correct — the console refused the second exam and said why,
+ * twice — and the check went red anyway. That is the shape worth a helper
+ * rather than a `.first()`: `.first()` picks whichever element happens to come
+ * first in the DOM, which is the toast or the notice depending on where the
+ * host is mounted, and the toast **auto-dismisses after twelve seconds**. An
+ * assertion pinned to it is an assertion that can fail on a slow runner for a
+ * reason having nothing to do with the product.
+ *
+ * ## What it targets
+ *
+ * The inline `Notice` carries a title — `de.error.title`, "Es ist ein Fehler
+ * aufgetreten" — and the toast carries only the sentence. That is the one
+ * difference in the markup that is a property rather than a coincidence of
+ * position, so it is what this filters on.
+ *
+ * Use this for every assertion about a *failure*. Success messages
+ * ("Gespeichert.") never toast and need nothing.
+ */
+export function inlineError(page: Page, message: RegExp): Locator {
+  return page
+    .getByRole("alert")
+    .filter({ hasText: "Es ist ein Fehler aufgetreten" })
+    .filter({ hasText: message });
+}
