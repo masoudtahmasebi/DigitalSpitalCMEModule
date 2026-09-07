@@ -19,7 +19,8 @@
         "DATABASE_URL",
         "MIGRATION_DATABASE_URL",
         "POSTGRES_SUPERUSER_URL",
-        "REDIS_URL"
+        "REDIS_URL",
+        "INTEGRATION_RESET"
       ]
     },
     "dev": {

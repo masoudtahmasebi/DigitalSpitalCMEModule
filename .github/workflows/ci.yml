@@ -95,6 +95,10 @@ jobs:
           # A shell that parses and then dies at compose interpolation is the
           # defect P194 is named for; neither check above can see it.
           pnpm check:compose-env
+          # And that a variable this workflow sets reaches the turbo task that
+          # reads it. `INTEGRATION_RESET` was set, commented and relied on for
+          # months while turbo's strict env mode stripped it (P206-03).
+          pnpm check:turbo-env
 
       - name: Build
         run: pnpm build
@@ -165,11 +169,25 @@ jobs:
       # Integration test fixture seeding only (BYPASSRLS) — see .env.example.
       POSTGRES_SUPERUSER_URL: postgres://postgres:postgres@127.0.0.1:5432/ds_education
       REDIS_URL: redis://127.0.0.1:6379
-      # Truncate before every test file (P32-02). Safe here and nowhere else:
-      # the Postgres above is a container created for this job and discarded
-      # with it. The suites ask for this explicitly rather than doing it by
-      # default, so the same command at a developer's terminal cannot empty the
-      # database they develop against.
+      # Truncate before every test file, and clear the rate-limit keyspace
+      # before every case (P32-02, P206-02). Safe here and nowhere else: the
+      # Postgres above is a container created for this job and discarded with
+      # it. The suites ask for this explicitly rather than doing it by default,
+      # so the same command at a developer's terminal cannot empty the database
+      # they develop against.
+      #
+      # **Setting it here is only half of it** (P206-03). The step below runs
+      # `turbo run test:integration`, and turbo 2 runs tasks in strict
+      # environment mode: a task sees only what its `env` list in `turbo.json`
+      # declares. This was set, and commented, and relied on, and stripped —
+      # so `requested()` fell through to its other branch, which asks whether
+      # the database name ends in `_test`. Here it is `ds_education`. It does
+      # not. P32-02's truncation therefore never ran in CI at all, on any run,
+      # while running fine at every developer's terminal.
+      #
+      # `pnpm check:turbo-env` now derives this pairing from this file and
+      # `turbo.json` rather than leaving it to a comment. A variable set here
+      # and undeclared there is a variable that does not arrive.
       INTEGRATION_RESET: "1"
     steps:
       - uses: actions/checkout@v4
