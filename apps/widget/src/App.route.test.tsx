@@ -617,6 +617,49 @@ describe("opening a course straight on the Punktemeldung", () => {
  * defect: the catalogue rendered, the URL did not move, and a reload went back
  * into the course.
  */
+describe("opening a course from the catalogue (P203)", () => {
+  it("puts the course in the address the moment it opens", async () => {
+    /*
+     * The client, with the address bar in the screenshot: they clicked a course
+     * on the WordPress page and the URL stayed at
+     * `…/dscme/` — the embed's own address, naming no course.
+     *
+     * The cause is a `useRef` used as an effect guard. `addressApplied` is set
+     * by the effect that *reads* the fragment, and the effect that *writes* it
+     * returns early while the flag is false. A ref does not re-render and is
+     * not a dependency, so once the read effect flips it, the write effect has
+     * no reason to run again: `screen`, `tab` and `addressCourseSlug` are all
+     * unchanged since mount.
+     *
+     * So a learner who opens a course and stays on Übersicht never gets an
+     * address — and one who clicks a tab does, which is why every earlier
+     * report of this was about a deeper screen and looked like it worked.
+     */
+    stubCatalogue();
+    window.history.replaceState(null, "", "");
+
+    renderCatalogue();
+
+    // Open the first course from the list.
+    const open = await screen.findByRole("button", {
+      name: /Zur Fortbildung|Fortbildung ansehen/u,
+    });
+    fireEvent.click(open);
+
+    await waitFor(() => {
+      expect(inOutline()).toBe(true);
+    });
+
+    // Nothing else is touched — no tab clicked, no module opened.
+    await waitFor(() => {
+      expect(
+        window.location.hash,
+        "the course was opened and the address never named it",
+      ).toBe(`#ds/kurs/${COURSE_SLUG}`);
+    });
+  });
+});
+
 describe("returning to the catalogue", () => {
   it("clears the course fragment, so a reload lands on the list", async () => {
     stubCatalogue();

@@ -2253,10 +2253,15 @@ One of:
 
 ---
 
-## S35 — Does the Anerkennungsbescheid actually require an Evaluation? — **raised 04.09.2026**
+## S35 — Does the Anerkennungsbescheid actually require an Evaluation? — **raised 04.09.2026, ANSWERED 07.09.2026**
 
-- **Owner:** MEDICE / ÄKWL · **Blocks:** nothing technically; blocks a claim we
-  are making in writing · **Raised:** 04.09 by the client's PM
+- **Owner:** MEDICE / ÄKWL · **Blocks:** nothing technically; blocked a claim we
+  were making in writing · **Raised:** 04.09 by the client's PM
+- **Answered:** 07.09 by the client — _"do the evaluation text … it is not
+  mandatory"_. Acted on in P206-01: the claim is gone from the console and from
+  `docs/gdpr.md`, and `evaluation` is now a conditional completion condition, so
+  a course with no questions can be finished. We still hold **no document**
+  either way; what changed is that we no longer assert one.
 
 > could you provide the information for the evaluation form and why you think
 > that this is a mandatory requirement. because I have never read something like

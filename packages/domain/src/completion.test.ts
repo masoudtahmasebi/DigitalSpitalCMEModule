@@ -391,3 +391,75 @@ describe("reading, as a condition of finishing the course", () => {
     expect(result.outstandingForCourse).toEqual(["watch", "quiz", "reading"]);
   });
 });
+
+/*
+ * P206-01 — a course that asks nothing cannot withhold certification for an
+ * answer it never requested.
+ *
+ * The client, twice: the evaluation is not mandatory. Before this, `evaluation`
+ * was unconditional, so a course with no questions had a gate nothing could
+ * open — and the console said so in a sentence that also claimed the
+ * Anerkennungsbescheid required it, which is the part nobody could source
+ * (S35).
+ */
+describe("a course with no Evaluationsbogen (P206)", () => {
+  const watched = {
+    requiredWatchPercent: 100,
+    achievedWatchPercent: 100,
+    quizPassed: true,
+    readingAcknowledged: true,
+    efnPresent: true,
+    awardsCmePoints: true,
+  };
+
+  it("completes without one", () => {
+    expect(
+      isCourseComplete({ ...watched, evaluationSubmitted: false, hasEvaluation: false }),
+    ).toEqual({
+      courseComplete: true,
+      complete: true,
+      outstanding: [],
+      outstandingForCourse: [],
+    });
+  });
+
+  it("still waits for one when the course has questions", () => {
+    /*
+     * The other direction, and the one that costs something if it is wrong:
+     * skipping an evaluation a course does ask for would certify somebody the
+     * operator wanted to hear from.
+     */
+    const result = isCourseComplete({
+      ...watched,
+      evaluationSubmitted: false,
+      hasEvaluation: true,
+    });
+
+    expect(result.complete).toBe(false);
+    expect(result.outstanding).toContain("evaluation");
+  });
+
+  it("waits for one when the caller does not say", () => {
+    // `?? true`, like `awardsCmePoints`: a caller that has not been updated
+    // keeps the stricter behaviour rather than certifying by omission.
+    const result = isCourseComplete({ ...watched, evaluationSubmitted: false });
+
+    expect(result.complete).toBe(false);
+    expect(result.outstanding).toContain("evaluation");
+  });
+
+  it("does not excuse the watching or the quiz", () => {
+    // No questions is not no course.
+    const result = isCourseComplete({
+      ...watched,
+      achievedWatchPercent: 40,
+      quizPassed: false,
+      evaluationSubmitted: false,
+      hasEvaluation: false,
+    });
+
+    expect(result.courseComplete).toBe(false);
+    expect(result.outstanding).toEqual(expect.arrayContaining(["watch", "quiz"]));
+    expect(result.outstanding).not.toContain("evaluation");
+  });
+});

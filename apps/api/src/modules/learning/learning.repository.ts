@@ -25,6 +25,7 @@ import {
   efnProfiles,
   eivSubmissions,
   enrolments,
+  evaluations,
   evaluationResponses,
   modules,
   userCustomers,
@@ -188,6 +189,8 @@ export interface LearningRepositoryPort {
     enrolmentId: string,
   ): Promise<{ status: string; failureKind: string | null } | undefined>;
   hasEvaluationResponse(enrolmentId: string): Promise<boolean>;
+  /** Whether this course asks anything at all in its Evaluationsbogen (P206-01). */
+  hasEvaluationQuestions(courseId: string): Promise<boolean>;
   markCompleted(
     enrolmentId: string,
     at: Date,
@@ -488,6 +491,27 @@ export class LearningRepository implements LearningRepositoryPort {
     return row === undefined
       ? undefined
       : { status: row.status, failureKind: row.failureKind };
+  }
+
+  /*
+   * Whether the course asks anything (P206-01).
+   *
+   * `LIMIT 1` rather than a count: the question is existence, and a course with
+   * forty questions should not cost more to answer than one with one.
+   *
+   * Inside the tenant context like every other read here — `evaluations` is
+   * tenant-scoped, and on the bare pool RLS would match zero rows and report a
+   * course that *has* questions as having none, which is §9.6 pointed straight
+   * at a completion gate.
+   */
+  async hasEvaluationQuestions(courseId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: evaluations.id })
+      .from(evaluations)
+      .where(eq(evaluations.courseId, courseId))
+      .limit(1);
+
+    return row !== undefined;
   }
 
   async hasEvaluationResponse(enrolmentId: string): Promise<boolean> {

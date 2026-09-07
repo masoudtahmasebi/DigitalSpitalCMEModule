@@ -169,7 +169,12 @@ export function TabbedPanel<T extends string>(props: {
       <div
         role="tablist"
         aria-label={props.label}
-        className="order-3 flex flex-wrap gap-2 sm:order-1 max-sm:mt-6 max-sm:flex-col max-sm:gap-3"
+        /* `sm:items-end` so a tab's own bottom margin lifts it off the panel
+             rather than shortening its box — flex items stretch by default, and
+             a margin on a stretched item eats its height instead of moving it.
+             `sm:` only: below it the row is `flex-col`, where `items-end` would
+             right-align the stacked buttons (P204-01). */
+        className="order-3 flex flex-wrap gap-2 sm:order-1 sm:items-end max-sm:mt-6 max-sm:flex-col max-sm:gap-3"
       >
         {props.tabs.map((tab) => {
           const selected = tab.id === props.active;
@@ -235,7 +240,12 @@ export function TabbedPanel<T extends string>(props: {
                     // the design has the same 1.25rem family as every other
                     // teal block here. The top-right stays square in both, so
                     // the shape is still recognisably one family.
-                    "rounded-full rounded-tr-none bg-brand-600 text-brand-contrast hover:bg-brand-700 max-sm:rounded-[1.25rem] max-sm:rounded-tr-none max-sm:py-3.5 max-sm:text-base")
+                    // `sm:mb-1.5` — the inactive tabs stand *off* the panel while the
+                    // selected one merges into it (P204-01). They sat on the
+                    // same baseline, so the row read as four attached tabs with
+                    // one painted white; the gap is what makes "selected" a
+                    // position rather than only a colour.
+                    "rounded-full rounded-tr-none bg-brand-600 text-brand-contrast hover:bg-brand-700 sm:mb-1.5 max-sm:rounded-[1.25rem] max-sm:rounded-tr-none max-sm:py-3.5 max-sm:text-base")
               }
             >
               {tab.label}

@@ -737,7 +737,7 @@ export const en: DeepPartial<typeof german> = {
   evaluation: {
     title: "Evaluation form",
     intro:
-      "The Anerkennungsbescheid requires an evaluation. Without questions the course cannot be completed.",
+      "If you add questions, participants fill in the evaluation before their Teilnahmebescheinigung. With no questions the step is skipped.",
     empty: "No questions yet.",
     addQuestion: "Add question",
     prompt: "Question",

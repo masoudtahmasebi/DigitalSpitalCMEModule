@@ -77,7 +77,9 @@ let projectId: string;
 let suffixForTests: string;
 /** A course awarding no CME points — see the suite at the end of this file. */
 let freeCourseSlug: string;
+let plainCourseSlug: string;
 let freeVideoId: string;
+let plainVideoId: string;
 let video1Id: string;
 let video2Id: string;
 let quizId: string;
@@ -186,6 +188,32 @@ beforeAll(async () => {
   );
 
   /*
+   * One Evaluationsbogen question, on **both** courses in this fixture.
+   *
+   * Until P206 the evaluation was an unconditional condition of completion, so
+   * a fixture with no questions still produced `outstanding: ["evaluation"]`
+   * and eight cases here asserted the gate without ever having created the
+   * thing being gated on. That is §9.1: they were green on a course where the
+   * step does not exist, so they could not have gone red for the right reason.
+   *
+   * The rule is now "an evaluation is outstanding when the course has
+   * questions". These cases are about a course that *does*, so the fixture now
+   * says so. The other side of the conditional — a course with no questions,
+   * where the step is correctly skipped — has its own describe block below,
+   * with its own course, because the two cannot share one.
+   */
+  await insert(
+    `INSERT INTO evaluations (customer_id, course_id, ordinal, prompt, kind, required, options)
+     VALUES ($1,$2,0,$3,'scale',true,$4::jsonb) RETURNING id`,
+    [
+      customerId,
+      courseId,
+      "Wie bewerten Sie die Fortbildung?",
+      JSON.stringify(["1", "2", "3", "4", "5"]),
+    ],
+  );
+
+  /*
    * A second course in the same project, awarding **no** CME points.
    *
    * Educational material without accreditation is a real case — the client has
@@ -215,6 +243,55 @@ beforeAll(async () => {
     [
       customerId,
       freeChapter,
+      "Einführung",
+      JSON.stringify([{ url: VIDEO_1_URL, mimeType: "video/mp4", label: null }]),
+    ],
+  );
+  await insert(
+    `INSERT INTO evaluations (customer_id, course_id, ordinal, prompt, kind, required, options)
+     VALUES ($1,$2,0,$3,'scale',true,$4::jsonb) RETURNING id`,
+    [
+      customerId,
+      freeCourseId,
+      "Wie bewerten Sie die Fortbildung?",
+      JSON.stringify(["1", "2", "3", "4", "5"]),
+    ],
+  );
+
+  /*
+   * A third course, with **no Evaluationsbogen at all** (P206).
+   *
+   * The other side of the conditional the two courses above now exercise. It
+   * needs a course of its own: "the evaluation is outstanding" and "there is no
+   * evaluation" cannot both be asserted against one fixture, and a suite that
+   * only ever ran against courses with questions is how the step came to be
+   * demanded of courses that have none — the console offers the Evaluationsbogen
+   * as optional, and completion refused without it anyway.
+   *
+   * No CME points either, so the EFN is not a second reason for the same
+   * refusal and a green result here means the evaluation was skipped rather
+   * than some other condition happening to be met.
+   */
+  plainCourseSlug = `lf-plain-${suffix}`;
+  const plainCourseId = await insert(
+    `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent, cme_points, status)
+     VALUES ($1,$2,$3,$4,100,70,NULL,'published') RETURNING id`,
+    [customerId, projectId, plainCourseSlug, "Fortbildung ohne Evaluationsbogen"],
+  );
+  const plainModule = await insert(
+    "INSERT INTO modules (customer_id, course_id, ordinal, title) VALUES ($1,$2,0,$3) RETURNING id",
+    [customerId, plainCourseId, "Modul 1"],
+  );
+  const plainChapter = await insert(
+    "INSERT INTO chapters (customer_id, module_id, ordinal, title) VALUES ($1,$2,0,$3) RETURNING id",
+    [customerId, plainModule, "Kapitel 1"],
+  );
+  plainVideoId = await insert(
+    `INSERT INTO contents (customer_id, chapter_id, ordinal, kind, title, duration_sec, media_sources)
+     VALUES ($1,$2,0,'video',$3,60,$4::jsonb) RETURNING id`,
+    [
+      customerId,
+      plainChapter,
       "Einführung",
       JSON.stringify([{ url: VIDEO_1_URL, mimeType: "video/mp4", label: null }]),
     ],
@@ -334,7 +411,7 @@ async function backdateProgress(seconds: number): Promise<void> {
   await seedPool.query(
     `UPDATE enrolments SET created_at = now() - ${interval}
       WHERE course_id IN (SELECT id FROM courses WHERE slug = ANY($2))`,
-    [String(seconds), [courseSlug, freeCourseSlug]],
+    [String(seconds), [courseSlug, freeCourseSlug, plainCourseSlug]],
   );
 }
 
@@ -849,6 +926,58 @@ describe("a course without CME points", () => {
     // this course does not have.
     expect(body.detail).not.toContain("Fortbildungsnummer");
     expect(body.detail).not.toMatch(/EFN/iu);
+  });
+});
+
+/**
+ * A course with no Evaluationsbogen (P206).
+ *
+ * The client's report: *"why is the 'requires an evaluation' text still in here
+ * as it is not mandatory?"* — the console has always presented the
+ * Evaluationsbogen as optional, and `isCourseComplete` demanded one regardless,
+ * so a course whose author added no questions could be watched, passed and
+ * never finished. The step could not be completed either: there was nothing to
+ * answer.
+ *
+ * These are the caller tests for `hasEvaluationQuestions` (§9.7). The rule
+ * itself is decided in `packages/domain/src/completion.ts` and covered there;
+ * what a domain test cannot show is that the API *asks* the database the
+ * question. Delete the repository read and the service's argument and this
+ * block goes red while every domain test stays green.
+ */
+describe("a course with no Evaluationsbogen", () => {
+  it("does not list an evaluation nobody can fill in", async () => {
+    const { status, body } = await call("PUT", `/courses/${plainCourseSlug}/enrolment`);
+
+    expect(status).toBe(200);
+    expect(body.outstanding).toEqual(["watch"]);
+  });
+
+  it("completes on the watching alone", async () => {
+    await backdateProgress(600); // P55-01 — see the helper.
+    await call("POST", `/courses/${plainCourseSlug}/contents/${plainVideoId}/progress`, {
+      segments: [{ startSec: 0, endSec: 60 }],
+      lastPositionSec: 60,
+    });
+
+    const { body } = await call("GET", `/courses/${plainCourseSlug}/enrolment`);
+
+    expect(body.achievedWatchPercent).toBe(100);
+    expect(body.outstanding).toEqual([]);
+    expect(body.courseComplete).toBe(true);
+    // `complete` is "every condition is met", not "the Punktemeldung has been
+    // filed" — with no evaluation and no EFN there is nothing left to meet, so
+    // it is true here while `completedAt` is still null. The next case is what
+    // stamps it.
+    expect(body.complete).toBe(true);
+    expect(body.completedAt).toBeNull();
+  });
+
+  it("accepts the completion the evaluation used to block", async () => {
+    const { status, body } = await call("POST", `/courses/${plainCourseSlug}/completion`);
+
+    expect(status).toBe(200);
+    expect(body.completedAt).not.toBeNull();
   });
 });
 

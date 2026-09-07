@@ -41,6 +41,7 @@
  */
 
 import {
+  ApiError,
   createClient,
   isForbidden,
   problemCorrelationId,
@@ -48,7 +49,29 @@ import {
   type ApiClient,
 } from "@ds/sdk";
 import { currentCsrfToken } from "./staff-auth.js";
+import { de } from "./locale/de.js";
+
+/**
+ * The sentence used when the API sent no readable `detail` (P205-01).
+ *
+ * From the locale table rather than written here, so the wrapper says the same
+ * thing every screen's own catch already says.
+ */
+const GENERIC_FAILURE = de.error.generic;
 import type { AdminConfig } from "./config.js";
+
+/**
+ * Where a failure goes when no screen catches it (P205-01).
+ *
+ * A ref rather than a parameter because `staffClient` is a plain function built
+ * before the shell renders, and the publisher is a React thing that does not
+ * exist yet at that moment. The shell sets it; until it does, the default is a
+ * no-op, so a client built in a test or before mount cannot throw for want of a
+ * toast host.
+ */
+export const toastPublisher: { current: (text: string) => void } = {
+  current: () => undefined,
+};
 
 export function createAdminClient(
   config: AdminConfig,
@@ -71,7 +94,7 @@ function staffClient(
   customerId: string | undefined,
   onExpired: () => void,
 ): ApiClient {
-  return createClient({
+  const client = createClient({
     baseUrl,
     customerId,
     credentials: "include",
@@ -81,6 +104,52 @@ function staffClient(
       return undefined;
     },
   });
+
+  return announcing(client);
+}
+
+/**
+ * Every rejected request says something (P205-01).
+ *
+ * The floor under 48 hand-written channels: a screen may still show its own
+ * message with the context a toast cannot carry, and a screen that shows
+ * nothing — or writes into a state its own reload clears, which is the defect
+ * this came from — is no longer silent.
+ *
+ * A `Proxy` rather than 100 wrapped methods: `ApiClient` grows a method
+ * whenever the contract does, and a hand-maintained list is a list that will be
+ * one short. The wrapper is transparent — it re-throws, always, so every
+ * existing `catch` behaves exactly as before.
+ *
+ * `401` and `403` are skipped: the console routes both already, to the login
+ * form and to the "not an admin" screen.
+ */
+function announcing(client: ApiClient): ApiClient {
+  return new Proxy(client, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver) as unknown;
+      if (typeof value !== "function") return value;
+
+      return (...args: unknown[]) => {
+        const result = (value as (...a: unknown[]) => unknown).apply(target, args);
+        if (!(result instanceof Promise)) return result;
+
+        return result.catch((error: unknown) => {
+          const status = statusOf(error);
+          if (status !== 401 && status !== 403) {
+            toastPublisher.current(describeError(error, GENERIC_FAILURE));
+          }
+          throw error;
+        });
+      };
+    },
+  });
+}
+
+/** The status of a problem-details failure, or `undefined` for anything else. */
+function statusOf(error: unknown): number | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  return error.problem.status;
 }
 
 /**
