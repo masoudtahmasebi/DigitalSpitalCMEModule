@@ -125,6 +125,37 @@ const DEFAULT_WALL_CLOCK_TOLERANCE_SEC = 2;
 export const MAX_PLAYBACK_RATE = 2;
 
 /**
+ * Slack on the wall-clock budget, as a fraction of the interval (P196-02).
+ *
+ * The budget compares a media-time claim against a difference between two
+ * server write times. Those two clocks are not the same clock, and at
+ * `MAX_PLAYBACK_RATE` an honest claim already equals the budget exactly — so
+ * without a proportional term the margin for every source of error is a flat
+ * two seconds, and a learner at 2× is refused by jitter alone.
+ *
+ * Fifteen per cent of a fifteen-second heartbeat is 2.25 s of media at 1×, or
+ * 4.5 s at 2×. Enough to absorb the jitter measured in the reproduction, and
+ * far too little to walk a video: a whole 952 s video claimed in one call still
+ * needs 400 s of elapsed time to be payable.
+ */
+export const CLOCK_SLACK = 0.15;
+
+/**
+ * The media seconds a report covering `elapsedWallClockSec` may be credited.
+ *
+ * One home for the formula (P196-02). `validateSegments` applies it and
+ * `watch.test.ts` asserts against it, so a change to the bound cannot leave the
+ * tests asserting the previous one — which is how three cases came to pin
+ * `elapsed × 2 + 2` by hand and had to be rewritten when it moved.
+ */
+export function wallClockBudget(
+  elapsedWallClockSec: number,
+  toleranceSec: number = DEFAULT_WALL_CLOCK_TOLERANCE_SEC,
+): number {
+  return elapsedWallClockSec * MAX_PLAYBACK_RATE * (1 + CLOCK_SLACK) + toleranceSec;
+}
+
+/**
  * How far past the watched edge the player may seek (P154-01).
  *
  * ## What it was, and what its own comment said it was for
@@ -567,10 +598,38 @@ export function validateSegments(
   const rejected: RejectedSegment[] = [];
 
   const tolerance = options.wallClockToleranceSec ?? DEFAULT_WALL_CLOCK_TOLERANCE_SEC;
+  /*
+   * The budget, with slack proportional to the interval it measures (P196-02).
+   *
+   * `elapsed × MAX_PLAYBACK_RATE` is exactly what an honest learner at the
+   * fastest rate on offer claims, so the flat two seconds was the entire margin
+   * for every source of error in that measurement — and the measurement is a
+   * difference between two database write times, against a media clock the
+   * browser advances on its own schedule. Two seconds of ordinary jitter in a
+   * fifteen-second heartbeat is enough to refuse a report from somebody
+   * watching normally at 2×.
+   *
+   * Reproduced before changing it: at 2× with jitter up to 2 s the record froze
+   * at 447 s of a 952 s video — 46 %, against the client's reported 50 % on the
+   * same shape. At 1.75× and below, nothing was refused. The two fastest of the
+   * five rates the menu offers were the ones that could not be credited, which
+   * is §9.2 for a control the product hands every learner.
+   *
+   * A proportional term rather than a bigger constant, for the reason P153-01
+   * gave when it made the rate a multiplier: any flat number that absorbs
+   * jitter in a fifteen-second heartbeat is a number a slow reporter can hide a
+   * skip behind. This scales with the interval it is forgiving error in.
+   *
+   * What it costs: the effective ceiling becomes `MAX_PLAYBACK_RATE × 1.15`
+   * rather than exactly `MAX_PLAYBACK_RATE`. A client can claim 2.3 media
+   * seconds per real second instead of 2. That is the price of crediting 2× at
+   * all, and it is nowhere near enough to walk a video — `watch.test.ts` pins
+   * both ends.
+   */
   const budget =
     options.elapsedWallClockSec === undefined
       ? undefined
-      : options.elapsedWallClockSec * MAX_PLAYBACK_RATE + tolerance;
+      : wallClockBudget(options.elapsedWallClockSec, tolerance);
 
   let claimed = 0;
 
@@ -653,8 +712,75 @@ export function validateSegments(
         ? segment.startSec - furthest
         : 0;
 
+    /*
+     * Over budget: credit the seconds the budget can pay for, and refuse only
+     * the excess (P196-01).
+     *
+     * This used to discard the whole segment, and that is the defect the client
+     * reported ten times. Two halves, and neither is survivable alone:
+     *
+     *   * **The rate the player offers has no headroom.** At 2× a fifteen
+     *     second heartbeat claims thirty media seconds against a budget of
+     *     `13 × 2 + 2` when two of those seconds were spent in flight. Measured:
+     *     2× is refused once a request takes 1.5 s, 1.75× once it takes 3 s. So
+     *     ordinary latency refuses the two fastest speeds on the menu — §9.2,
+     *     a control that can only produce a refusal.
+     *   * **One refusal was permanent.** A discarded segment does not advance
+     *     `furthest`, so the next report — at *any* rate, including a perfect
+     *     1× — begins past the frozen ceiling and is refused `beyond_ceiling`,
+     *     and so is every one after it. The learner watches the rest of the
+     *     video into a record that has stopped, and nothing they can do,
+     *     including starting it again, recovers it.
+     *
+     * Clamping is the same answer P158-01 already gave for the tail that
+     * overshoots the duration, and for the same reason: throwing away every
+     * second of a genuine run-up because its last fraction is unpayable is a
+     * refusal aimed at the wrong thing.
+     *
+     * **The invariant is exactly as strong.** `claimed` still cannot exceed
+     * `budget`, so no more media seconds are credited than
+     * `elapsed × MAX_PLAYBACK_RATE + tolerance` — a client posting `[0,
+     * duration]` in one call still gets a heartbeat's worth and not a video.
+     * What changes is only that the remainder is refused instead of the whole.
+     *
+     * The gap is paid first and is not clamped: a hop's cost is the thing that
+     * makes it uneconomic, and part-crediting a hop would let a client walk the
+     * video by paying for half of each stride.
+     */
     if (budget !== undefined && claimed + gap + length > budget) {
-      rejected.push({ segment, reason: "faster_than_wallclock" });
+      /*
+       * The clamp is paid for out of **elapsed time only** — the tolerance is
+       * excluded (P196-01).
+       *
+       * The tolerance exists to forgive a boundary overshoot: a claim a shade
+       * over the budget is accepted whole by the test above and never reaches
+       * here. It must not become a per-request *grant*, and it would: a client
+       * posting the whole video the instant it enrolled has an elapsed time of
+       * zero, and a clamp funded by the tolerance would hand it two seconds
+       * every request — slow, unbounded, and credit for a video nobody opened.
+       * That is P55-01's exploit at a lower rate, which is not a fix.
+       *
+       * `learning.service.test.ts` pins exactly that case, and it is why this
+       * subtracts the tolerance rather than clamping to `budget`.
+       */
+      const payable = budget - tolerance - claimed - gap;
+
+      if (payable <= 0) {
+        rejected.push({ segment, reason: "faster_than_wallclock" });
+        continue;
+      }
+
+      const clamped = { startSec: segment.startSec, endSec: segment.startSec + payable };
+      claimed = budget - tolerance;
+      accepted.push(clamped);
+      if (furthest !== undefined && clamped.endSec > furthest) furthest = clamped.endSec;
+      // Said as well as credited: the caller reports what was not taken, and a
+      // learner whose every report is part-refused is a learner on a rate this
+      // installation cannot sustain.
+      rejected.push({
+        segment: { startSec: clamped.endSec, endSec: segment.endSec },
+        reason: "faster_than_wallclock",
+      });
       continue;
     }
 
