@@ -302,7 +302,7 @@ ENTRYPOINT ["node", "dist/backup/cli.js"]
 # The image carries **no hostname**. Everything it needs to know — which API,
 # which project — is read from `/config.js`, written when the container starts
 # (P16-02), so the same image is deployable to any environment.
-FROM nginx:1.27-alpine AS admin
+FROM nginx:1.31-alpine AS admin
 COPY --from=build-web /repo/apps/admin/dist /usr/share/nginx/html
 COPY infra/nginx/admin.conf /etc/nginx/conf.d/default.conf
 
@@ -320,7 +320,7 @@ EXPOSE 80
 # Ships `ds-lms.js` alongside its own bundle: the widget is loaded from this
 # origin rather than from the widget host, so a learner's browser makes no
 # cross-origin request to start a Fortbildung.
-FROM nginx:1.27-alpine AS portal
+FROM nginx:1.31-alpine AS portal
 COPY --from=build-web /repo/apps/portal/dist /usr/share/nginx/html
 COPY infra/nginx/portal.conf /etc/nginx/conf.d/default.conf
 COPY infra/nginx/ds-runtime-config.sh /docker-entrypoint.d/20-ds-runtime-config.sh
@@ -336,7 +336,7 @@ EXPOSE 80
 # next deploy without anybody updating a plugin. The one thing that matters
 # here is therefore CORS — the script is fetched cross-origin by definition,
 # and `widget.conf` sets the headers.
-FROM nginx:1.27-alpine AS widget
+FROM nginx:1.31-alpine AS widget
 COPY --from=build-web /repo/apps/widget/dist /usr/share/nginx/html
 COPY infra/nginx/widget.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

@@ -17,16 +17,38 @@
  * criterion), and the Redis-backed cache (P1-03) is injected at the edge.
  */
 
-import { errors, jwtVerify, type JWTPayload } from "jose";
+import { errors, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose";
 
 /**
  * Resolves the signing key for a token's `kid`. Backed by cached JWKS.
  *
- * Derived from `jwtVerify`'s own parameter type rather than naming a concrete
- * key type: jose 6 removed the `KeyLike` export, and deriving keeps this
- * correct across future jose majors without another edit here.
+ * ## This was `Parameters<typeof jwtVerify>[1]`, and that was wrong (P207-03)
+ *
+ * The comment here used to say deriving from `jwtVerify`'s own parameter type
+ * "keeps this correct across future jose majors without another edit here".
+ * It did the opposite, for a reason worth writing down:
+ *
+ * - In jose 6.2.4 `jwtVerify` had **one** signature, whose second parameter was
+ *   `JWTVerifyGetKey` — a function. The derivation resolved to something
+ *   callable and everything worked.
+ * - From 6.2.10 `jwtVerify` is **overloaded**, and the second overload takes
+ *   `KeyInput | JWTVerifyGetKey` so a caller can forward either form.
+ *   `Parameters<>` on an overloaded function silently resolves to the **last**
+ *   overload, so this type became a union including `CryptoKey` — and
+ *   `JwksProvider`, which does not merely forward the resolver but **calls**
+ *   it, stopped compiling with "not all constituents of type … are callable".
+ *
+ * Two different things had been conflated under one name: what `verifyToken`
+ * *accepts* (anything `jwtVerify` accepts) and what `JwksProvider` *produces
+ * and invokes* (a key-getter function). This is the second, which is what every
+ * use in this codebase actually means, and it is still assignable to
+ * `jwtVerify`'s parameter under both overloads.
+ *
+ * So: name the type jose exports for exactly this, rather than deriving one.
+ * A derivation is only stable if what it derives from is; an overload set is
+ * not.
  */
-export type KeyResolver = Parameters<typeof jwtVerify>[1];
+export type KeyResolver = JWTVerifyGetKey;
 
 export type TokenRejectionReason =
   | "malformed"
