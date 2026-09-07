@@ -1067,3 +1067,64 @@ describe("an exam that was sat and not passed", () => {
     ).toBeGreaterThan(0);
   });
 });
+
+/**
+ * No band of the host page above the hero (P208-01).
+ *
+ * ## The report
+ *
+ * The client, twice: *"there is a not needed `mb-4` and `space-y-6 py-4` which
+ * makes this different than the design"*, and then, with DevTools open on the
+ * embed: *"why is `space-y-6` back on the div with parent of
+ * `class="ds-lms-root"`?"*
+ *
+ * It was never back. P204-01 removed `py-4` and `mb-4` and **kept**
+ * `space-y-6`, on the reasoning that it is the gap between the logo, the hero
+ * and the content. That reasoning was a claim about a drawing I do not have —
+ * the same PR said so under "Not verified" — and it missed something that needs
+ * no drawing at all.
+ *
+ * ## What is actually wrong, and it is derivable
+ *
+ * `BrandLogo` returns `null` when the customer has set no logo. The course
+ * detail wrapped it unconditionally:
+ *
+ *     <div className="space-y-6">
+ *       <div className={CONTENT}><BrandLogo … /></div>
+ *       <StickyMetaBar … />
+ *
+ * so with no logo that first child is an **empty div**, and `space-y-6` still
+ * reserves 24 px above the hero — a band of the host page's background where
+ * the layout has the hero meeting the page header.
+ *
+ * The catalogue already fixed exactly this and left the reason in a comment:
+ * *"`BrandLogo` returns null when the customer has set no logo, but `px-4 pt-4`
+ * inside a `space-y-6` does not — it left 40 px of nothing above the hero."*
+ * The course detail never got the same guard. One screen learned the lesson and
+ * its sibling did not, which is CLAUDE.md §9.11 in one file.
+ *
+ * ## Why this assertion and not a pixel one
+ *
+ * jsdom has no layout, so 24 px is not observable here. What is observable, and
+ * is the whole defect, is that an **empty element** sits between the root and
+ * the hero. A test asserting the absence of `space-y-6` in a class string would
+ * pass on a rewrite that reintroduced the gap by another name (§9.7).
+ */
+describe("the top of the course detail", () => {
+  it("puts no empty element above the hero when the customer has no logo", async () => {
+    const { container } = renderApp();
+    await screen.findByRole("heading", { name: course().title });
+
+    const root = container.firstElementChild;
+    expect(root).not.toBeNull();
+
+    const empty = [...(root?.children ?? [])].filter(
+      (child) => child.childElementCount === 0 && child.textContent === "",
+    );
+
+    expect(
+      empty.map((child) => child.className),
+      "an empty element above the hero is a band of the host page's background",
+    ).toEqual([]);
+  });
+});
