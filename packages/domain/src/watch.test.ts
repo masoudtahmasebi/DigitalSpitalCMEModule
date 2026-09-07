@@ -5,7 +5,7 @@ import {
   CEILING_ACCEPTANCE_TOLERANCE_SEC,
   creditedDurationSec,
   fillSamplingGaps,
-  MAX_PLAYBACK_RATE,
+  wallClockBudget,
   isSeekAllowed,
   SEEK_CEILING_TOLERANCE_SEC,
   maxWatchedPosition,
@@ -435,17 +435,40 @@ describe("the forward seek ceiling (P154-01)", () => {
   });
 });
 
+/** Media seconds a result actually credits — the bound every budget case asserts. */
+function totalCredited(
+  segments: readonly { startSec: number; endSec: number }[],
+): number {
+  return segments.reduce((sum, s) => sum + (s.endSec - s.startSec), 0);
+}
+
 describe("validateSegments", () => {
   it("rejects a whole video claimed in one call", () => {
-    // The attack this exists to stop: post [0, duration] once and complete
-    // any video instantly. The interval is well-formed, so only comparing it
-    // against elapsed real time reveals it.
+    /*
+     * The attack this exists to stop: post [0, duration] once and complete any
+     * video instantly. The interval is well-formed, so only comparing it
+     * against elapsed real time reveals it.
+     *
+     * Restated for P196-01, which credits the payable part instead of
+     * discarding the segment. **The property is unchanged and is asserted
+     * directly now**: what may be credited is a heartbeat's worth, and a
+     * heartbeat is not a video. The caller gets exactly what an honest
+     * `[0, 62]` would have got over the same thirty seconds, so the clamp hands
+     * a liar nothing a watcher did not already have.
+     *
+     * Asserting "nothing was accepted" was asserting the shape of the refusal
+     * rather than the bound, and that shape is what made a single refusal
+     * permanent — see the P196 block at the end of this file.
+     */
+    const budget = wallClockBudget(30);
     const result = validateSegments([{ startSec: 0, endSec: 1500 }], {
       durationSec: 1500,
       elapsedWallClockSec: 30,
     });
 
-    expect(result.accepted).toEqual([]);
+    const credited = totalCredited(result.accepted);
+    expect(credited).toBeLessThanOrEqual(budget);
+    expect(credited).toBeLessThan(1500);
     expect(result.rejected[0]?.reason).toBe("faster_than_wallclock");
   });
 
@@ -510,7 +533,17 @@ describe("validateSegments", () => {
       { durationSec: 1500, elapsedWallClockSec: 25, wallClockToleranceSec: 0 },
     );
 
-    expect(result.accepted).toHaveLength(1);
+    /*
+     * One batch, one budget — asserted as the sum rather than as a count
+     * (P196-01). The second segment is now credited as far as the budget
+     * reaches and refused beyond it, so the count is 2 and the *total* is still
+     * 50. The property under test is the total: a client cannot split an
+     * impossible claim into possible-looking pieces and get more for it.
+     */
+    // `toBeCloseTo` on the bound: 25 × 2 × 1.15 is 57.499999999999993 in
+    // binary floating point and the credited total is 57.5, which is the same
+    // number arrived at by a different order of operations.
+    expect(totalCredited(result.accepted)).toBeCloseTo(wallClockBudget(25, 0), 6);
     expect(result.rejected[0]?.reason).toBe("faster_than_wallclock");
   });
 
@@ -548,20 +581,29 @@ describe("validateSegments", () => {
   it("still refuses a whole video claimed at more than the fastest rate on offer", () => {
     // The anti-skip property the budget exists for, restated against the new
     // bound: 2 × 30 s of wall clock is 60 s of credit, and 1500 is not that.
+    // Asserted as the credited total since P196-01 clamps rather than discards.
     const result = validateSegments([{ startSec: 0, endSec: 1500 }], {
       durationSec: 1500,
       elapsedWallClockSec: 30,
     });
 
-    expect(result.accepted).toEqual([]);
+    expect(totalCredited(result.accepted)).toBeLessThanOrEqual(wallClockBudget(30));
     expect(result.rejected[0]?.reason).toBe("faster_than_wallclock");
   });
 
   it("caps the budget at the fastest rate the player offers, not higher", () => {
-    // One second past 2× is refused: the bound is the product's own cap, so a
-    // client cannot claim a rate the player cannot be set to.
+    /*
+     * The bound is the product's own cap, so a client cannot claim a rate the
+     * player cannot be set to.
+     *
+     * Restated for P196-02, which added `CLOCK_SLACK` so that 2× is creditable
+     * at all: the cap is now `MAX_PLAYBACK_RATE × (1 + CLOCK_SLACK)` rather
+     * than `MAX_PLAYBACK_RATE` exactly, and this asserts a claim past *that*
+     * is still refused. The slack is the margin for measuring one clock against
+     * another; it is not a rate anybody is offered.
+     */
     const result = validateSegments(
-      [{ startSec: 0, endSec: 15 * MAX_PLAYBACK_RATE + 3 }],
+      [{ startSec: 0, endSec: wallClockBudget(15, 2) + 1 }],
       {
         durationSec: 2490,
         elapsedWallClockSec: 15,
@@ -959,9 +1001,10 @@ describe("a forward jump the server never authorised", () => {
       elapsedWallClockSec,
     });
 
-    // The budget is elapsed x MAX_PLAYBACK_RATE + 2 s of tolerance, and nothing
-    // may reach past it — 62 s of a 24:49 video, not 520.
-    const budget = elapsedWallClockSec * MAX_PLAYBACK_RATE + 2;
+    // Nothing may reach past the budget — seventy-odd seconds of a 24:49
+    // video, not 520. Taken from `wallClockBudget` rather than restated here,
+    // so widening the bound cannot leave this asserting the previous one.
+    const budget = wallClockBudget(elapsedWallClockSec);
     expect(maxWatchedPosition(result.accepted)).toBeLessThanOrEqual(budget);
     expect(result.rejected.some((r) => r.reason === "faster_than_wallclock")).toBe(true);
   });
@@ -975,5 +1018,211 @@ describe("a forward jump the server never authorised", () => {
      */
     expect(CEILING_ACCEPTANCE_TOLERANCE_SEC).toBeLessThan(SEEK_STEP_SEC);
     expect(CEILING_ACCEPTANCE_TOLERANCE_SEC).toBeLessThan(SEEK_JUMP_SEC);
+  });
+});
+
+/*
+ * P196 — a refusal must not be permanent, and a rate the player offers must be
+ * creditable at the latency a request actually has.
+ *
+ * Reported by the client for the tenth time, with the network tab open:
+ *
+ *     watchedPercent: 50, accepted: 0,
+ *     watchedSegments: [{startSec: 0, endSec: 479.261741}],
+ *     seekCeilingSec: 479.761741,
+ *     rejected: [{segment: {startSec: 946.76106, …}}]
+ *
+ * on a 15:52 video played to the end at 2×. Credit stopped dead part-way and
+ * every later report was refused. These two cases are the mechanism, and both
+ * were watched to fail before anything was changed.
+ */
+describe("a refusal is not a dead end (P196)", () => {
+  const DURATION = 952;
+
+  it("credits what the budget allows instead of discarding the whole segment", () => {
+    /*
+     * A claim five seconds past what the interval can pay for. Expressed
+     * against `wallClockBudget` rather than as literals, because the whole
+     * point is the relationship: whatever the bound is, the excess is refused
+     * and the rest is kept.
+     */
+    const elapsed = 13;
+    const budget = wallClockBudget(elapsed);
+    const result = validateSegments([{ startSec: 0, endSec: budget + 5 }], {
+      durationSec: DURATION,
+      elapsedWallClockSec: elapsed,
+      previousSegments: [],
+    });
+
+    /*
+     * The payable seconds of watched video, not nothing.
+     *
+     * `budget - tolerance`: the clamp is funded by elapsed time alone. The
+     * tolerance forgives a claim a shade over the line — such a claim is
+     * accepted whole and never clamped — but it does not buy credit, or a
+     * client with no elapsed time at all would be granted it every request.
+     */
+    expect(result.accepted).toHaveLength(1);
+    expect(result.accepted[0]?.startSec).toBe(0);
+    expect(result.accepted[0]?.endSec).toBeCloseTo(budget - 2, 6);
+
+    // The excess is reported rather than silently dropped, so a learner stuck
+    // on a rate this installation cannot sustain is visible in the response.
+    expect(result.rejected[0]?.reason).toBe("faster_than_wallclock");
+    expect(result.rejected[0]?.segment.endSec).toBeCloseTo(budget + 5, 6);
+  });
+
+  it("lets a learner who was refused once carry on watching", () => {
+    // The refusal.
+    const first = validateSegments([{ startSec: 0, endSec: 30 }], {
+      durationSec: DURATION,
+      elapsedWallClockSec: 13,
+      previousSegments: [],
+    });
+    let stored = mergeWatchedSegments([...first.accepted]);
+
+    /*
+     * And then ordinary playback, at 1×, from where the player actually is —
+     * which is ahead of what was credited, because the shortfall is real.
+     *
+     * Before P196 every one of these came back `beyond_ceiling`: the ceiling
+     * could not advance because reports were refused, and reports were refused
+     * because they began past the ceiling. A learner in that state could not
+     * finish the video by any action available to them, including starting it
+     * over — the record kept refusing the far side of its own frozen edge.
+     */
+    let position = 30;
+    for (let i = 0; i < 5; i += 1) {
+      const report = validateSegments([{ startSec: position, endSec: position + 15 }], {
+        durationSec: DURATION,
+        elapsedWallClockSec: 15,
+        previousSegments: stored,
+      });
+      expect(
+        report.rejected.map((entry) => entry.reason),
+        `report ${i + 1} after the refusal was rejected`,
+      ).toEqual([]);
+      stored = mergeWatchedSegments([...stored, ...report.accepted]);
+      position += 15;
+    }
+
+    // The two seconds the budget could not pay for are made up by the gap
+    // charge on the next report, so watching on reaches the position played.
+    expect(maxWatchedPosition(stored)).toBeCloseTo(position, 5);
+  });
+
+  it("still refuses a jump the elapsed time cannot pay for", () => {
+    // The property the ceiling exists for, unchanged: the far side of a hole
+    // costs what watching it would have cost.
+    const result = validateSegments([{ startSec: 946.76, endSec: 952 }], {
+      durationSec: DURATION,
+      elapsedWallClockSec: 15,
+      previousSegments: [{ startSec: 0, endSec: 479.26 }],
+    });
+
+    expect(result.accepted).toHaveLength(0);
+    expect(result.rejected[0]?.reason).toBe("beyond_ceiling");
+  });
+
+  it("still refuses a whole video claimed in one call", () => {
+    const result = validateSegments([{ startSec: 0, endSec: DURATION }], {
+      durationSec: DURATION,
+      elapsedWallClockSec: 15,
+      previousSegments: [],
+    });
+
+    // Clamped to the budget, never the whole thing.
+    const credited =
+      (result.accepted[0]?.endSec ?? 0) - (result.accepted[0]?.startSec ?? 0);
+    expect(credited).toBeLessThanOrEqual(wallClockBudget(15));
+    expect(credited).toBeLessThan(DURATION);
+  });
+});
+
+/*
+ * The bound itself, as a property rather than as cases (P196-01).
+ *
+ * Clamping means "reject the excess" rather than "reject the segment", and the
+ * whole safety of that rests on one sentence: **no call may credit more media
+ * seconds than the budget allows.** Three worked examples cannot say that; this
+ * can, over every shape a caller can send — honest heartbeats, a whole video in
+ * one call, a batch split into plausible-looking pieces, and hops across holes.
+ */
+describe("the wall-clock bound holds however a claim is shaped (P196)", () => {
+  const DURATION = 1500;
+  const ELAPSED = 30;
+  const TOLERANCE = 2;
+  const budget = wallClockBudget(ELAPSED, TOLERANCE);
+
+  const shapes: readonly (readonly { startSec: number; endSec: number }[])[] = [
+    [{ startSec: 0, endSec: 60 }],
+    [{ startSec: 0, endSec: DURATION }],
+    [
+      { startSec: 0, endSec: 30 },
+      { startSec: 30, endSec: 60 },
+      { startSec: 60, endSec: 90 },
+    ],
+    Array.from({ length: 40 }, (_, i) => ({ startSec: i * 20, endSec: i * 20 + 20 })),
+    [
+      { startSec: 0, endSec: 5 },
+      { startSec: 700, endSec: 800 },
+    ],
+    [{ startSec: 1400, endSec: DURATION }],
+    /*
+     * Two over-budget segments in one batch, overlapping so the second is not
+     * charged a gap. This is the shape that makes the clamp's own accounting
+     * load-bearing: without `claimed = budget`, the first clamp costs nothing
+     * and the second is paid for out of a budget that was already spent, so one
+     * call credits twice what elapsed time allows.
+     *
+     * Added because removing that line left every other shape green — §9.1 in
+     * the test written to guard the bound.
+     */
+    [
+      { startSec: 0, endSec: 100 },
+      { startSec: 0, endSec: 100 },
+    ],
+    [
+      { startSec: 0, endSec: 100 },
+      { startSec: 50, endSec: 200 },
+    ],
+  ];
+
+  it.each(shapes.map((segments, i) => [i, segments] as const))(
+    "shape %i credits no more than the budget",
+    (_i, segments) => {
+      const result = validateSegments(segments, {
+        durationSec: DURATION,
+        elapsedWallClockSec: ELAPSED,
+        wallClockToleranceSec: TOLERANCE,
+        previousSegments: [],
+      });
+
+      expect(totalCredited(result.accepted)).toBeLessThanOrEqual(budget);
+    },
+  );
+
+  it("cannot be walked past by repeating a claim the budget already refused", () => {
+    /*
+     * The exploit clamping could have opened: post the whole video, take the
+     * clamp, post it again. Each call is refused down to a heartbeat, so ten
+     * calls buy exactly what ten heartbeats of honest watching buy — and the
+     * elapsed time is the thing a caller cannot forge.
+     */
+    let stored: readonly { startSec: number; endSec: number }[] = [];
+    for (let call = 0; call < 10; call += 1) {
+      const result = validateSegments([{ startSec: 0, endSec: DURATION }], {
+        durationSec: DURATION,
+        elapsedWallClockSec: ELAPSED,
+        wallClockToleranceSec: TOLERANCE,
+        previousSegments: stored,
+      });
+      expect(totalCredited(result.accepted)).toBeLessThanOrEqual(budget);
+      stored = mergeWatchedSegments([...stored, ...result.accepted]);
+    }
+
+    // Ten budgets, not a video.
+    expect(maxWatchedPosition(stored)).toBeLessThanOrEqual(10 * budget);
+    expect(maxWatchedPosition(stored)).toBeLessThan(DURATION);
   });
 });

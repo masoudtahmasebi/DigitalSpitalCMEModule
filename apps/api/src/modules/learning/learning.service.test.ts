@@ -731,9 +731,21 @@ describe("recordProgress", () => {
   });
 
   it("rejects a segment claiming more playback than wall-clock time allows", async () => {
-    // One hour of "playback" reported one minute after the last write is not
-    // playback. Rejecting it is what stops a scripted client from completing a
-    // 25-minute video instantly.
+    /*
+     * One hour of "playback" reported one minute after the last write is not
+     * playback. Refusing it is what stops a scripted client from completing a
+     * 25-minute video instantly.
+     *
+     * Restated for P196-01, which credits the payable part rather than
+     * discarding the segment: the caller keeps the seconds the elapsed minute
+     * entitles it to and is refused the rest. That is the same credit an honest
+     * learner watching at 2× for that minute would have, so the claim buys
+     * nothing — and it is a fraction of the video rather than the whole, which
+     * is the property this case exists for.
+     *
+     * Asserting `watchedPercent === 0` was asserting the shape of the refusal,
+     * and that shape is what made one refusal permanent (P196).
+     */
     const { repository } = fakeRepository({
       progress: [
         progressRow({
@@ -756,7 +768,10 @@ describe("recordProgress", () => {
 
     expect(result.rejected).toHaveLength(1);
     expect(result.rejected[0]?.reason).toBe("faster_than_wallclock");
-    expect(result.watchedPercent).toBe(0);
+    // A minute's worth, not an hour's: far short of the video, and no more than
+    // the same minute of honest watching would have earned.
+    expect(result.watchedPercent).toBeLessThan(30);
+    expect(result.watchedPercent).toBeGreaterThan(0);
   });
 
   /*

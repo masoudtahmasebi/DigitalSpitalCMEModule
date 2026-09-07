@@ -51,6 +51,8 @@ export {
   fillSamplingGaps,
   isSeekAllowed,
   MAX_PLAYBACK_RATE,
+  CLOCK_SLACK,
+  wallClockBudget,
   CEILING_ACCEPTANCE_TOLERANCE_SEC,
   maxWatchedPosition,
   SEEK_CEILING_TOLERANCE_SEC,
