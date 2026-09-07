@@ -712,6 +712,48 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * `zwei-module.spec.ts` failed on the installation because its own title
        * does not, which is the same defect and not this file's luck.
        */
+      /*
+       * The catalogue's tab row, measured (P209-01).
+       *
+       * The client has reported this row three times — a padding, then a
+       * missing gap under the unselected tabs, then *"now icons are not in the
+       * same line."* Every one was a geometry defect, and geometry is the one
+       * thing this project had no instrument for: jsdom has no layout, so the
+       * 417 widget tests cannot see a 7 px offset, and no amount of asserting
+       * class strings would have (§9.7 — the test would be about the class).
+       *
+       * The third report was caused by the fix for the second. `sm:items-end`
+       * with a bottom margin on the unselected tabs does give the gap the
+       * drawing has, and it also puts every shorter box's label higher, because
+       * bottom-aligned boxes of different heights do not share a baseline. The
+       * selected tab is 1 px taller than the others for its border, so the
+       * labels sat 7.00 px apart.
+       *
+       * A browser is the only thing that can say so, and one is already here.
+       */
+      const labelCentres = await Promise.all(
+        (await learner.getByRole("tab").all()).map((tab) =>
+          tab.evaluate((element) => {
+            /* The text's own box, not the button's: the complaint is about
+               where the words sit, and a button can grow around them without
+               moving them — which is precisely the shape of the fix. */
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            const box = range.getBoundingClientRect();
+            return (box.top + box.bottom) / 2;
+          }),
+        ),
+      );
+
+      expect(
+        labelCentres.length,
+        "the catalogue drew no tabs at all, so the measurement below proves nothing",
+      ).toBeGreaterThan(1);
+      expect(
+        Math.max(...labelCentres) - Math.min(...labelCentres),
+        `the tab labels are not on one line: centres at ${labelCentres.join(", ")}`,
+      ).toBeLessThanOrEqual(1);
+
       await openCourseFromCatalogue(learner, COURSE);
 
       /*
