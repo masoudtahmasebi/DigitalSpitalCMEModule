@@ -1049,8 +1049,27 @@ export const german = {
 
   evaluation: {
     title: "Evaluationsbogen",
+    /**
+     * Two sentences, and both were wrong (P206-01, S35).
+     *
+     * It read: *"Der Anerkennungsbescheid verlangt eine Evaluation. Ohne
+     * Fragen kann die Fortbildung nicht abgeschlossen werden."*
+     *
+     * The first is a claim about a legal document that this repository has
+     * never been able to source. The client's own PM asked for the evidence
+     * and said they had never read anything like it; it was raised as S35, and
+     * the client answered on 07.09.2026 that it is not mandatory.
+     *
+     * The second was true only because of the defect beside it: `evaluation`
+     * was an unconditional completion condition, so a course with no questions
+     * had a gate nothing could open. That is fixed, so the sentence is now
+     * false as well.
+     *
+     * What replaces them says what the screen actually decides — whether
+     * learners are asked — which is the thing the author on this tab controls.
+     */
     intro:
-      "Der Anerkennungsbescheid verlangt eine Evaluation. Ohne Fragen kann die Fortbildung nicht abgeschlossen werden.",
+      "Wenn Sie Fragen anlegen, füllen Teilnehmende den Evaluationsbogen vor der Teilnahmebescheinigung aus. Ohne Fragen entfällt dieser Schritt.",
     empty: "Noch keine Fragen.",
     addQuestion: "Frage hinzufügen",
     prompt: "Frage",

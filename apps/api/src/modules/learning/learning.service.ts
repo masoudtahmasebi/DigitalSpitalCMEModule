@@ -847,12 +847,21 @@ export class LearningService {
     enrolment: EnrolmentRow,
     learner: LearnerContext,
   ): Promise<EnrolmentState> {
-    const [tree, stored, efnPresent, evaluationSubmitted] = await Promise.all([
-      this.repository.findCourseTree(courseId),
-      this.repository.findProgress(enrolment.id),
-      this.repository.hasEfn(learner.userId),
-      this.repository.hasEvaluationResponse(enrolment.id),
-    ]);
+    const [tree, stored, efnPresent, evaluationSubmitted, hasEvaluation] =
+      await Promise.all([
+        this.repository.findCourseTree(courseId),
+        this.repository.findProgress(enrolment.id),
+        this.repository.hasEfn(learner.userId),
+        this.repository.hasEvaluationResponse(enrolment.id),
+        /*
+         * Whether the course asks anything (P206-01). Read from the course, not
+         * the enrolment: an operator who adds the first question should have it
+         * asked of everyone still in progress, and one who removes the last
+         * should not leave people holding a gate nothing can open. §9.10b — the
+         * course is the home of what the event *is*.
+         */
+        this.repository.hasEvaluationQuestions(courseId),
+      ]);
 
     const figures = summariseEnrolment({
       tree,
@@ -879,6 +888,7 @@ export class LearningService {
       passThresholdPercent: enrolment.passThresholdPercent,
       efnPresent,
       evaluationSubmitted,
+      hasEvaluation,
       cmePoints: enrolment.cmePoints,
     });
 
@@ -991,6 +1001,14 @@ export function summariseEnrolment(input: {
   efnPresent: boolean;
   evaluationSubmitted: boolean;
   /**
+   * Whether the course asks anything in its Evaluationsbogen (P206-01).
+   *
+   * Optional so the admin re-scoring path and the tests that predate it keep
+   * the stricter behaviour, which is what `isCourseComplete` does with
+   * `undefined`.
+   */
+  hasEvaluation?: boolean | undefined;
+  /**
    * This enrolment already has a completion recorded (P167-01).
    *
    * Passed through to `isCourseComplete`, which uses it to keep a finished
@@ -1032,6 +1050,8 @@ export function summariseEnrolment(input: {
     readingAcknowledged,
     alreadyCompleted: input.alreadyCompleted,
     evaluationSubmitted: input.evaluationSubmitted,
+    // A course that asks nothing cannot wait for an answer (P206-01).
+    hasEvaluation: input.hasEvaluation,
     efnPresent: input.efnPresent,
     // No points, no Punktemeldung, and therefore no reason to hold a
     // physician's Fortbildungsnummer — see the note in `completion.ts`.

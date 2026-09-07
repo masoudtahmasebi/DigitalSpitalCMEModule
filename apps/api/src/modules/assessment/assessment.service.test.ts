@@ -172,6 +172,9 @@ function build(
     findSubmissionState: async () => undefined,
     hasEfn: async () => false,
     hasEvaluationResponse: async () => false,
+    // P206-01: these fixtures predate the conditional evaluation, so they keep
+    // asking for one.
+    hasEvaluationQuestions: async () => true,
     markCompleted: async () => undefined,
     markCourseCompleted: async () => undefined,
   };
@@ -606,6 +609,9 @@ describe("submit", () => {
       findSubmissionState: async () => undefined,
       hasEfn: async () => false,
       hasEvaluationResponse: async () => false,
+      // P206-01: these fixtures predate the conditional evaluation, so they keep
+      // asking for one.
+      hasEvaluationQuestions: async () => true,
       markCompleted: async () => undefined,
       markCourseCompleted: async () => undefined,
     };

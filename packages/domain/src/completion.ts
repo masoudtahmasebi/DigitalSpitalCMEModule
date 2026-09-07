@@ -41,8 +41,28 @@
  * for — and then *refuses to certify* until they supply it, which is the part
  * that turns a data-minimisation slip into a dead end.
  *
- * So `efn` is conditional. The evaluation is not: it is asked of every learner,
- * accredited course or otherwise.
+ * So `efn` is conditional.
+ *
+ * ## And so is the evaluation, since P206-01
+ *
+ * It was not. `evaluation` was unconditional, which made a course with no
+ * evaluation questions **impossible to finish**: nothing could produce a
+ * response row, so the condition stood outstanding for ever. The console said
+ * so, in the words that started this:
+ *
+ *   > Der Anerkennungsbescheid verlangt eine Evaluation. Ohne Fragen kann die
+ *   > Fortbildung nicht abgeschlossen werden.
+ *
+ * The second sentence was true of the software. The first is a claim about a
+ * legal document that this repository has never been able to source — raised as
+ * S35 after the client's own PM asked for the evidence and said they had never
+ * read anything like it, and answered by the client on 07.09.2026: it is not
+ * mandatory.
+ *
+ * So the rule now matches the `efn` one exactly: a course that asks nothing
+ * cannot withhold certification for an answer it never requested. A course that
+ * *does* have questions is unchanged — the evaluation is still required before
+ * it completes.
  */
 
 export type CompletionCondition = "watch" | "quiz" | "reading" | "evaluation" | "efn";
@@ -114,6 +134,21 @@ export interface CompletionInput {
    * a bug, under-reporting a Punktemeldung is a compliance incident.
    */
   readonly awardsCmePoints?: boolean | undefined;
+
+  /**
+   * Whether this course asks anything in its Evaluationsbogen (P206-01).
+   *
+   * `false` means the operator has authored no questions, so there is nothing
+   * to submit and nothing to wait for. Before this, `evaluation` was
+   * unconditional and such a course could never be completed by anybody — the
+   * gate stood open on an answer the product never asked for.
+   *
+   * Optional and defaulting to `true` for the same reason `awardsCmePoints` is:
+   * a caller that has not been updated keeps the stricter behaviour. Waiting
+   * for an evaluation that exists is a delay; skipping one that exists would
+   * certify somebody the course wanted to hear from.
+   */
+  readonly hasEvaluation?: boolean | undefined;
 }
 
 export interface CompletionResult {
@@ -143,9 +178,17 @@ export function isCourseComplete(input: CompletionInput): CompletionResult {
   if (input.achievedWatchPercent < input.requiredWatchPercent) outstanding.push("watch");
   if (!input.quizPassed) outstanding.push("quiz");
   if (!input.readingAcknowledged) outstanding.push("reading");
-  if (!input.evaluationSubmitted) outstanding.push("evaluation");
+  /*
+   * Conditional on the course actually asking something (P206-01).
+   *
+   * `?? true` for the same reason `awardsCmePoints` has it: a caller that does
+   * not know keeps the stricter behaviour. A course that asks questions is
+   * unaffected.
+   */
+  const needsEvaluation = input.hasEvaluation ?? true;
+  if (needsEvaluation && !input.evaluationSubmitted) outstanding.push("evaluation");
 
-  // The one conditional condition — see the module header.
+  // The other conditional condition — see the module header.
   const needsEfn = input.awardsCmePoints ?? true;
   if (needsEfn && !input.efnPresent) outstanding.push("efn");
 

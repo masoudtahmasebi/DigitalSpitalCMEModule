@@ -168,6 +168,8 @@ interface FakeState {
   progress: ProgressRow[];
   efn: boolean;
   evaluation: boolean;
+  /** Whether the course asks anything (P206-01). Defaults to yes. */
+  evaluationQuestions?: boolean;
 }
 
 function fakeRepository(
@@ -216,6 +218,13 @@ function fakeRepository(
     findSubmissionState: async () => undefined,
     hasEfn: async () => state.efn,
     hasEvaluationResponse: async () => state.evaluation,
+    /*
+     * P206-01. `true` by default so every case that predates the conditional
+     * evaluation keeps asking for one — the fixtures were written when it was
+     * unconditional, and flipping them all to "no questions" would quietly
+     * remove the condition from tests that are about something else.
+     */
+    hasEvaluationQuestions: async () => state.evaluationQuestions ?? true,
     markCompleted: async () => undefined,
     markCourseCompleted: async () => undefined,
     ...overrides,

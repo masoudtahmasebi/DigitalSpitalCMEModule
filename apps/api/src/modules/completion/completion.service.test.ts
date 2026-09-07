@@ -186,6 +186,9 @@ function build(
     findSubmissionState: async () => undefined,
     hasEfn: async () => efn !== undefined,
     hasEvaluationResponse: async () => options.evaluationSubmitted ?? false,
+    // P206-01: these fixtures predate the conditional evaluation, so they keep
+    // asking for one.
+    hasEvaluationQuestions: async () => true,
     markCompleted: async (id, at, attested) => {
       completedCalls.push({ id, at, attested });
     },
