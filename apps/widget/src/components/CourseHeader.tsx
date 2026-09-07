@@ -68,7 +68,10 @@ export function StickyMetaBar(props: {
       : de.overview.resume;
 
   return (
-    <div className="mb-4">
+    /* No `mb-4` (P204-01): the parent's `space-y-6` already sets the gap under
+       this block, and the two stacked. Named by the client as a difference from
+       the design. */
+    <div>
       {/* Two panels side by side: the teal title block and the course artwork.
           The image is not decorative framing — it is the Titelbild the customer
           authored, and the layout gives it exactly half the width — measured on

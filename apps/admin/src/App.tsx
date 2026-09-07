@@ -26,6 +26,7 @@
  */
 
 import { courseAvailability, formatBerlinDate } from "@ds/domain";
+import { ToastProvider } from "./toasts.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AdminCourseDetail,
@@ -42,6 +43,7 @@ import {
   createPlatformClient,
   describeError,
   isForbidden,
+  toastPublisher,
 } from "./api.js";
 import { de } from "./locale/de.js";
 import { Badge, Button, ConfirmButton, Notice, Spinner, Table } from "./components/ui.js";
@@ -174,15 +176,21 @@ export function App() {
   // `Console` renders the frame itself: the sidebar's contents and the app
   // bar's scope control are both its state, and passing them up only to be
   // passed back down would put the console's navigation in two files (P22-07).
+  /*
+   * The toast host wraps the console rather than sitting inside it (P205-01),
+   * so a failure raised while a screen is unmounting still has somewhere to go.
+   */
   return (
-    <Console
-      config={config}
-      profile={profile}
-      onExpired={() => setProfile(undefined)}
-      onSignOut={() => {
-        void signOut(config.apiBase).then(() => setProfile(undefined));
-      }}
-    />
+    <ToastProvider publishRef={toastPublisher}>
+      <Console
+        config={config}
+        profile={profile}
+        onExpired={() => setProfile(undefined)}
+        onSignOut={() => {
+          void signOut(config.apiBase).then(() => setProfile(undefined));
+        }}
+      />
+    </ToastProvider>
   );
 }
 
@@ -996,6 +1004,10 @@ export function Console(props: {
    * while somebody has the tab open say so on the next refresh rather than
    * whenever React happens to re-render.
    */
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `courses` is not read
+  // by the callback; it is the *signal*. The clock should be re-taken when the
+  // list is, so a course that expires while the tab is open says so on the next
+  // refresh rather than on whatever unrelated render happens next.
   const now = useMemo(() => new Date(), [courses]);
   const [problem, setProblem] = useState<string | undefined>();
   /*

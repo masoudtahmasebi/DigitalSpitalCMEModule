@@ -552,7 +552,42 @@ function Loaded(props: {
    * fragment has been read would erase the very link that was followed.
    */
   useEffect(() => {
+    /*
+     * `course.data` is a dependency because `addressApplied` is a **ref**
+     * (P203-01).
+     *
+     * A ref does not re-render and is not a dependency, so when the read effect
+     * above flips it — which it does the moment `course.data` arrives — this
+     * effect had no reason to run again: `screen`, `tab` and
+     * `addressCourseSlug` are all unchanged since mount. A learner who opened a
+     * course and stayed on Übersicht therefore never got an address, and the
+     * URL kept naming the embed's own page.
+     *
+     * That is why every earlier report of this was about a deeper screen and
+     * looked as though routing worked: clicking a tab changes `tab`, which
+     * runs this effect, which writes the address that should already have been
+     * there.
+     *
+     * Listing `course.data` makes the two effects run in the same commit, in
+     * declaration order — the read sets the flag, then this writes.
+     */
     if (!addressApplied.current) return;
+    /*
+     * And never over a fragment that is not ours (P203-01).
+     *
+     * `<ds-lms>` mounts inside a customer's WordPress page, beside anchors that
+     * were there first. Before this effect ran on `course.data`, a foreign
+     * fragment was left alone by accident — the flag simply had not been set
+     * when the effect last ran. Now that it runs on load, the rule it was
+     * relying on has to be stated: an empty hash or one of ours may be
+     * replaced, `#kontakt` may not.
+     *
+     * `decode` is the same reader the effect above uses, so "ours" means
+     * exactly what it means everywhere else in the widget.
+     */
+    const current = window.location.hash;
+    const ours = current === "" || current === "#" || decode(current) !== undefined;
+    if (!ours) return;
     /*
      * The course goes into the address only when the host page does not name
      * one (P156-02). On a single-course embed the attribute is the course and
@@ -563,7 +598,7 @@ function Loaded(props: {
     const fragment = `#${encode(routeForScreen(screen, tab), addressCourseSlug)}`;
     if (window.location.hash === fragment) return;
     window.history.replaceState(null, "", fragment);
-  }, [screen, tab, addressCourseSlug]);
+  }, [screen, tab, addressCourseSlug, course.data]);
 
   const resumed = useRef(false);
   useEffect(() => {
@@ -1042,7 +1077,13 @@ function Loaded(props: {
       The hero inside `StickyMetaBar` bleeds past all of this, which is why the
       column is applied part by part below rather than to this element.
     */
-    <div className="space-y-6 py-4">
+    /* No `py-4` (P204-01). The client, with the embed open on their own page:
+       "there is a not needed `mb-4` and `space-y-6 py-4` which makes this
+       different than the design." The hero is meant to meet the page header,
+       and the padding put a band of the host page's background above it.
+       `space-y-6` stays: it is the gap *between* the logo, the hero and the
+       content, which the drawing does have. */
+    <div className="space-y-6">
       <div className={CONTENT}>
         <BrandLogo apiBase={apiBase} projectSlug={projectSlug} />
       </div>
