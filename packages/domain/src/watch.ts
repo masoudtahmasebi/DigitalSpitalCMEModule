@@ -133,12 +133,41 @@ export const MAX_PLAYBACK_RATE = 2;
  * without a proportional term the margin for every source of error is a flat
  * two seconds, and a learner at 2× is refused by jitter alone.
  *
- * Fifteen per cent of a fifteen-second heartbeat is 2.25 s of media at 1×, or
- * 4.5 s at 2×. Enough to absorb the jitter measured in the reproduction, and
- * far too little to walk a video: a whole 952 s video claimed in one call still
- * needs 400 s of elapsed time to be payable.
+ * ## How this number was chosen (P198-01)
+ *
+ * Not by taste. The client's requirement after P196 was that a learner can
+ * finish "no matter what the speed of the video is", so the slack is sized
+ * against the worst measurement error the gate must survive at the fastest rate
+ * on the menu — solved rather than guessed:
+ *
+ *     error 2 s -> needs >= 0.077   (effective cap 2.15x)
+ *     error 3 s -> needs >= 0.167   (effective cap 2.33x)
+ *     error 4 s -> needs >= 0.273   (effective cap 2.55x)
+ *     error 5 s -> needs >= 0.400   (effective cap 2.80x)
+ *
+ * 0.3 carries four seconds of error on a fifteen-second heartbeat at 2×, with
+ * margin. `watch.test.ts` drives a whole video at every rate in
+ * `PLAYBACK_RATES` under that error and fails if any of them stalls, so this
+ * number cannot be lowered without a test saying which learner it breaks.
+ *
+ * ## What it costs, and why that is not a bypass
+ *
+ * The effective cap becomes 2.6 media seconds per real second rather than 2.
+ * A client claiming as fast as the gate allows finishes a course in about
+ * three-quarters of the time the fastest honest learner takes. That is a margin
+ * on a rate limit, not a way past the gate: a 952 s video still cannot be
+ * credited without roughly six minutes of elapsed time, and the ceiling still
+ * refuses the far side of any hole it has not been reported across.
+ *
+ * ## The fix this stands in for
+ *
+ * The durable answer is not a bigger number: it is to stop charging a learner
+ * twice for seconds the budget itself clamped away. That needs the furthest
+ * *validated* position stored beside the credited union — a column, a migration
+ * and its own ticket — and it would let this slack go back down. Named in
+ * P198.md rather than left as a number nobody can explain.
  */
-export const CLOCK_SLACK = 0.15;
+export const CLOCK_SLACK = 0.3;
 
 /**
  * The media seconds a report covering `elapsedWallClockSec` may be credited.

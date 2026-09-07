@@ -997,6 +997,41 @@ function SeekBar(props: {
     props.onSeek(seekPositionSec(seekFraction(clientX, rect), props.durationSec));
   };
 
+  /*
+   * Where the pointer is over the bar, in media seconds (P199-01).
+   *
+   * The client: *"add the feature to see where in the video the user is, by
+   * hovering over the progress bar of the video."* On a twenty-five-minute
+   * Fortbildung the bar is the only instrument for judging distance, and a
+   * hover that reads nothing back leaves a person estimating from pixels.
+   *
+   * `seekFraction` and `seekPositionSec` — the same two functions the click
+   * path uses, not a second reading of the geometry (§9.10b). A preview that
+   * disagreed with where a click lands would be worse than none.
+   *
+   * Held as a fraction rather than as seconds so the label can be positioned
+   * from the same number it displays.
+   */
+  const [hoverFraction, setHoverFraction] = useState<number | undefined>(undefined);
+
+  const previewFromPointer = (clientX: number) => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (rect === undefined) return;
+    setHoverFraction(seekFraction(clientX, rect));
+  };
+
+  const hoverSec =
+    hoverFraction === undefined
+      ? undefined
+      : seekPositionSec(hoverFraction, props.durationSec);
+
+  /*
+   * Whether a click there would actually go. The bar already draws the gate as
+   * a shaded region; this says the same thing in words at the moment somebody
+   * points at it, rather than after the playhead snaps back (§9.2).
+   */
+  const hoverLocked = hoverSec !== undefined && limited && hoverSec > props.seekLimitSec;
+
   return (
     <>
       <div
@@ -1024,6 +1059,19 @@ function SeekBar(props: {
         }
         aria-describedby={limited || !props.seekable ? noteId : undefined}
         onClick={(event) => seekFromPointer(event.clientX)}
+        /*
+         * Pointer events rather than mouse events: one pair covers mouse, pen
+         * and touch. A finger dragging along the bar gets the same readout,
+         * and `onPointerLeave` fires for all three when it goes.
+         */
+        onPointerMove={(event) => previewFromPointer(event.clientX)}
+        onPointerLeave={() => setHoverFraction(undefined)}
+        /*
+         * Keyboard users are not left out, but they do not need this: the
+         * slider already announces its own value through `aria-valuetext`, and
+         * a second live region saying the same thing would read it twice.
+         */
+        onBlur={() => setHoverFraction(undefined)}
         onKeyDown={(event) => {
           const step =
             event.key === "ArrowLeft"
@@ -1049,6 +1097,36 @@ function SeekBar(props: {
             style={{ left: `${bar.startPercent}%`, width: `${bar.widthPercent}%` }}
           />
         ))}
+
+        {/*
+          The hovered time, above the bar (P199-01).
+
+          `aria-hidden`, deliberately: the slider already announces its position
+          through `aria-valuetext`, and this is the *pointer's* position, which
+          a screen-reader user has no pointer to move. Exposing it would read a
+          second number that answers a question they did not ask.
+
+          `-translate-x-1/2` centres the label on the pointer, and the track's
+          own `relative` box clips nothing — a label near either end overflows
+          the bar rather than being pushed inwards, so its tip stays on the
+          moment it names.
+
+          `pointer-events-none` so the label cannot sit between the pointer and
+          the bar and swallow the click it is describing.
+        */}
+        {hoverSec === undefined ? null : (
+          <span
+            aria-hidden="true"
+            className={`pointer-events-none absolute -top-8 -translate-x-1/2 whitespace-nowrap rounded px-2 py-1 text-xs font-medium tabular-nums shadow ${
+              hoverLocked ? "bg-gray-700 text-gray-100" : "bg-gray-900 text-white"
+            }`}
+            style={{ left: `${(hoverFraction ?? 0) * 100}%` }}
+          >
+            {hoverLocked
+              ? de.media.seekPreviewLocked(clockTime(hoverSec))
+              : de.media.seekPreview(clockTime(hoverSec))}
+          </span>
+        )}
 
         {/*
         The locked remainder. Hatched rather than merely darker: the bar already

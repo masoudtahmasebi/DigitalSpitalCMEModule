@@ -274,6 +274,27 @@ export function PlatformEiv(props: { client: ApiClient }) {
         </fieldset>
       ) : null}
 
+      {/*
+        Where to verify what was just chosen (P200-01).
+
+        The test itself is `EivCheckPanel` on the course, because the VNR and
+        its password belong to the accredited event rather than to the platform.
+        This screen is where somebody asks the question, so this is where the
+        answer to "where" belongs — §9.4, and the client asked it directly.
+
+        A sentence and not a link: the console has no route to a *particular*
+        course from here, and a link to the course list would land somebody one
+        screen short of the panel with nothing telling them what to open next.
+        Naming the path does the whole job.
+      */}
+      <section className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+        <h3 className="text-sm font-semibold text-gray-900">
+          {de.platform.checkHeading}
+        </h3>
+        <p className="mt-1 text-xs text-gray-600">{de.platform.checkWhere}</p>
+        <p className="mt-1 text-xs text-gray-600">{de.platform.checkSafe}</p>
+      </section>
+
       <div className="flex flex-wrap items-center gap-3">
         <Button
           // Disabled rather than refused: the API refuses this combination too,

@@ -1555,6 +1555,33 @@ export const german = {
     liveMissing:
       "Für das Echtsystem fehlt die Bestätigung. Solange sie fehlt, wird nichts übermittelt.",
 
+    /**
+     * Where the connection test is (P200-01).
+     *
+     * The client, having set the register and armed the worker: *"i want to be
+     * able to test the eiv from setting."* The test exists — `EivCheckPanel`,
+     * P103-01 — and it is on the **course**, because the VNR and its password
+     * are a property of the accredited event and not of the platform. So this
+     * screen was the right place to ask and the wrong place to look, and said
+     * nothing either way.
+     *
+     * §9.4: the person who has just chosen the Echtsystem is exactly the person
+     * who wants to know whether the credentials work, and they are standing
+     * here.
+     */
+    checkHeading: "Verbindung zur Ärztekammer prüfen",
+    checkWhere:
+      "Die Zugangsdaten gehören zur VNR einer Fortbildung, nicht zur Plattform. " +
+      "Die Prüfung finden Sie deshalb bei der jeweiligen Fortbildung unter " +
+      "Angebot → Fortbildungen → Zertifizierung.",
+    /**
+     * And what it does, because "prüfen" against a register that files
+     * statutory reports is a word somebody will hesitate over — rightly.
+     */
+    checkSafe:
+      "Die Prüfung meldet nichts. Sie authentifiziert sich nur und liest die " +
+      "Veranstaltung, die die Ärztekammer zu dieser VNR führt.",
+
     save: "Einstellungen speichern",
     saving: "Wird gespeichert …",
     saved: "Die Einstellungen wurden gespeichert.",

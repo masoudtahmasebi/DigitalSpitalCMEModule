@@ -1099,6 +1099,15 @@ export const en: DeepPartial<typeof german> = {
     liveMissing:
       "The production system needs a confirmation and has none. Nothing is reported while it is missing.",
 
+    checkHeading: "Check the connection to the Ärztekammer",
+    checkWhere:
+      "The credentials belong to a course's VNR, not to the platform. " +
+      "You will find the check on the course itself, under " +
+      "Angebot → Fortbildungen → Zertifizierung.",
+    checkSafe:
+      "The check reports nobody. It authenticates and reads back the event the " +
+      "Ärztekammer holds against that VNR, and nothing else.",
+
     save: "Save settings",
     saving: "Saving \u2026",
     saved: "The settings were saved.",
