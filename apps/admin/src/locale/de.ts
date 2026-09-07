@@ -520,6 +520,8 @@ export const german = {
     saving: "Wird gespeichert …",
     saved: "Gespeichert.",
     cancel: "Abbrechen",
+    /** Dismisses a message about one action (P202-01), not a form. */
+    dismiss: "Schließen",
     edit: "Bearbeiten",
     /**
      * Accessible names for the row-level Bearbeiten buttons.
@@ -1649,6 +1651,31 @@ export const german = {
     columnVnr: "VNR",
     columnPoints: "Punkte",
     columnParticipants: "Teilnehmende",
+    /**
+     * Why a course is or is not reaching learners (P201-01).
+     *
+     * The client created a course, could not find it in the Fortbildungsbereich,
+     * and asked what was going on. The screen already said the rule — "until it
+     * is published it is a draft and participants cannot see it" — and never
+     * applied it to a row, so the one question an operator actually has had no
+     * answer anywhere in the console.
+     *
+     * There are four reasons a course does not appear, and only one of them is
+     * "draft". A guess at which is worth nothing; the row says which.
+     */
+    columnVisibility: "Sichtbarkeit",
+    visibleDraft: "Entwurf",
+    visibleDraftWhy: "Nicht veröffentlicht — für Teilnehmende unsichtbar.",
+    visibleNotYet: (from: string): string => `Sichtbar ab ${from}`,
+    visibleEnded: (to: string): string => `Beendet am ${to}`,
+    visibleNow: "Sichtbar",
+    /**
+     * The fifth reason, which is not a date and not a status: the catalogue
+     * splits On Demand from everything else into two tabs, so a Live- or
+     * Präsenz-Fortbildung is published, in window, and on the tab nobody was
+     * looking at.
+     */
+    visibleOtherTab: "unter \u201eWeitere\u201c",
     columnCertificate: "Bescheinigung",
     certificateReady: "bereit",
     certificateNotReady: "unvollständig",
