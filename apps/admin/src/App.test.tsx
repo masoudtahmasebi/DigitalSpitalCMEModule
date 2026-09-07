@@ -38,6 +38,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Console } from "./App.js";
+import { ApiError } from "@ds/sdk";
 import type { StaffProfile } from "./staff-auth.js";
 import { de } from "./locale/de.js";
 
@@ -743,7 +744,7 @@ describe("removing a course", () => {
     status: "published" as const,
     title: "ADHS Akademie adult",
     description: null,
-    deliveryType: "on_demand" as const,
+    deliveryType: "on_demand" as "on_demand" | "live" | "praesenz",
     thema: [],
     altersgruppe: [],
     learningObjectives: [],
@@ -811,5 +812,176 @@ describe("removing a course", () => {
     // The marker, and the reason as its accessible name — not the button.
     expect(screen.getByLabelText(de.courses.lockedByEnrolments)).toBeTruthy();
     expect(adminDeleteCourse).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * P201/P202 — the course list says why a course is invisible, and a refused
+ * action is shown.
+ *
+ * Both came from one report. The client created a course, could not find it in
+ * the Fortbildungsbereich, and separately hit a 409 deleting one and saw
+ * nothing at all on screen.
+ */
+const COURSE_BASE = {
+  vnr: "2760012024200355009",
+  cmePoints: 4,
+  cmeCategory: "D",
+  requiredWatchPercent: 100,
+  passThresholdPercent: 70,
+  enrolmentCount: 0,
+  completedCount: 0,
+  certificateReady: true,
+  missingCertificateFields: [],
+  contentLocked: false,
+  description: null,
+  thema: [],
+  altersgruppe: [],
+  learningObjectives: [],
+  targetAudience: null,
+  prerequisites: null,
+  heroImageUrl: null,
+  deliveryType: "on_demand" as "on_demand" | "live" | "praesenz",
+  validFrom: null as string | null,
+  validTo: null as string | null,
+};
+
+function course(
+  over: Partial<typeof COURSE_BASE> & { slug: string; title: string; status: string },
+) {
+  return { ...COURSE_BASE, ...over };
+}
+
+/** Choose the customer, so the courses screen actually loads. */
+async function openCourses(admin: unknown) {
+  await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+  fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+  await waitFor(() =>
+    expect(
+      (admin as { adminListCourses: { mock: { calls: unknown[] } } }).adminListCourses
+        .mock.calls.length,
+    ).toBeGreaterThan(0),
+  );
+}
+
+describe("why a course is not reaching learners (P201)", () => {
+  it("names the reason on the row, for each of the four", async () => {
+    /*
+     * The case my first answer got wrong. I told the client their course was a
+     * draft; they sent back a screenshot of it published. There are four
+     * answers and the row has to say which — a guess is worth nothing.
+     */
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    const admin = fakeClient({
+      adminListCourses: vi.fn().mockResolvedValue([
+        course({ slug: "a", title: "Entwurf-Kurs", status: "draft" }),
+        course({
+          slug: "b",
+          title: "Künftig-Kurs",
+          status: "published",
+          validFrom: "2099-01-01T00:00:00Z",
+        }),
+        course({
+          slug: "c",
+          title: "Abgelaufen-Kurs",
+          status: "published",
+          validTo: "2020-01-01T00:00:00Z",
+        }),
+        course({ slug: "d", title: "Sichtbar-Kurs", status: "published" }),
+      ]),
+    });
+    renderConsole({ admin, platform });
+    await openCourses(admin);
+
+    await waitFor(() => expect(screen.getByText("Entwurf-Kurs")).toBeTruthy());
+
+    expect(screen.getByText("Entwurf")).toBeTruthy();
+    expect(screen.getByText(/Sichtbar ab/u)).toBeTruthy();
+    expect(screen.getByText(/Beendet am/u)).toBeTruthy();
+    expect(screen.getByText("Sichtbar")).toBeTruthy();
+  });
+
+  it("names the tab, for a published course that is not on demand", async () => {
+    /*
+     * The fifth reason, and the one no status or date explains: the catalogue
+     * splits On Demand from Live and Präsenz, so this course is published, in
+     * window, and on the tab nobody was looking at.
+     */
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    const admin = fakeClient({
+      adminListCourses: vi.fn().mockResolvedValue([
+        course({
+          slug: "l",
+          title: "Live-Kurs",
+          status: "published",
+          deliveryType: "live",
+        }),
+      ]),
+    });
+    renderConsole({ admin, platform });
+    await openCourses(admin);
+
+    await waitFor(() => expect(screen.getByText("Live-Kurs")).toBeTruthy());
+    expect(screen.getByText(/Weitere/u)).toBeTruthy();
+  });
+});
+
+describe("a refused action is shown (P202)", () => {
+  it("keeps the API's own sentence on screen after the list reloads", async () => {
+    /*
+     * The defect, exactly: the message was written into the *load* channel and
+     * then `loadCourses()` cleared it on success. A 409 in the network tab and
+     * nothing on the screen.
+     *
+     * The reload is what makes this case worth having — asserting the message
+     * appears without it would pass on the broken code.
+     */
+    /*
+     * A real `ApiError`, not a look-alike. `problemDetail` narrows with
+     * `instanceof`, so an object carrying the same fields falls straight
+     * through to the generic sentence — and the case would then pass while
+     * proving the opposite of what it claims.
+     */
+    const conflict = new ApiError(
+      {
+        type: "https://docs.ds-education.de/errors/conflict",
+        title: "Conflict",
+        status: 409,
+        detail: "Dieses Kurs enthält noch 1 Module. Diese müssen zuerst gelöscht werden.",
+        correlationId: "d61f7fc2-8332-4d84-b063-7fe360279a14",
+      },
+      new Response(null, { status: 409 }),
+    );
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    const admin = fakeClient({
+      adminListCourses: vi
+        .fn()
+        .mockResolvedValue([
+          course({ slug: "x", title: "Test DS Course", status: "published" }),
+        ]),
+      adminDeleteCourse: vi.fn().mockRejectedValue(conflict),
+    });
+    renderConsole({ admin, platform });
+    await openCourses(admin);
+    await waitFor(() => expect(screen.getByText("Test DS Course")).toBeTruthy());
+
+    // The accessible name is `deleteAria` — "Fortbildung „…“ löschen" — not the
+    // visible "Löschen", because a table of identical buttons needs each one to
+    // say which row it acts on.
+    fireEvent.click(screen.getByRole("button", { name: /Fortbildung .* löschen/u }));
+    fireEvent.click(screen.getByRole("button", { name: /Wirklich löschen/u }));
+
+    // The API's own detail, not a generic sentence.
+    await waitFor(() => expect(screen.getByText(/enthält noch 1 Module/u)).toBeTruthy());
+
+    // And the rows are still there: a refused action must not take the table
+    // with it, or the message is about rows nobody can see.
+    expect(screen.getByText("Test DS Course")).toBeTruthy();
   });
 });

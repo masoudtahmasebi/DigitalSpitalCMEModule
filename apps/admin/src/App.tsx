@@ -25,6 +25,7 @@
  * down along with every learner. Learners stay federated; operators do not.
  */
 
+import { courseAvailability, formatBerlinDate } from "@ds/domain";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AdminCourseDetail,
@@ -210,6 +211,94 @@ export function App() {
  * Signed out, none of it applies: there is nowhere to navigate and no scope to
  * qualify, so the sign-in form gets a narrow centred column and nothing else.
  */
+/**
+ * Why a course is, or is not, reaching learners (P201-01).
+ *
+ * ## Why this cell exists
+ *
+ * The client created a course, could not find it in the Fortbildungsbereich,
+ * and asked what was going on. My first answer was "it is a draft" and it was
+ * **wrong** — they sent back a screenshot of the course published. Guessing at
+ * which of the reasons applies is worth nothing; the row saying which one is
+ * worth having every time somebody asks.
+ *
+ * The screen already carried the rule in its intro — *"until it is published it
+ * is a draft and participants cannot see it"* — and never applied it to a row.
+ * §9.4: state the rule where the person is looking at the thing it decides.
+ *
+ * ## The rule is `courseAvailability`, not a copy of it
+ *
+ * The catalogue's SQL narrows on `status`, `validFrom` and `validTo`, and
+ * `catalog.service.ts` applies `courseAvailability` to what comes back. This
+ * cell asks the **same domain function** rather than re-deriving the three
+ * comparisons, so the console cannot develop its own opinion about who can see
+ * what (§4 invariant 6).
+ *
+ * ## The fifth reason, which is not availability at all
+ *
+ * A published, in-window course still does not appear where somebody is looking
+ * if it is not `on_demand`: the catalogue splits On Demand from Live and
+ * Präsenz into two tabs. That is not a defect and not something
+ * `courseAvailability` knows about, so it is said separately.
+ */
+function VisibilityCell(props: {
+  course: {
+    status: string;
+    validFrom: string | null;
+    validTo: string | null;
+    deliveryType: string;
+  };
+  now: Date;
+}) {
+  const { course } = props;
+  const state = courseAvailability(
+    {
+      status: course.status === "published" ? "published" : "draft",
+      validFrom: course.validFrom === null ? null : new Date(course.validFrom),
+      validTo: course.validTo === null ? null : new Date(course.validTo),
+    },
+    props.now,
+  );
+
+  if (state === "draft") {
+    return (
+      <>
+        <Badge tone="muted">{de.courses.visibleDraft}</Badge>
+        <p className="mt-1 text-xs text-gray-500">{de.courses.visibleDraftWhy}</p>
+      </>
+    );
+  }
+
+  if (state === "not_yet") {
+    return (
+      <Badge tone="warn">
+        {de.courses.visibleNotYet(
+          formatBerlinDate(new Date(course.validFrom ?? Date.now())),
+        )}
+      </Badge>
+    );
+  }
+
+  if (state === "ended") {
+    return (
+      <Badge tone="warn">
+        {de.courses.visibleEnded(
+          formatBerlinDate(new Date(course.validTo ?? Date.now())),
+        )}
+      </Badge>
+    );
+  }
+
+  return (
+    <>
+      <Badge tone="ok">{de.courses.visibleNow}</Badge>
+      {course.deliveryType === "on_demand" ? null : (
+        <p className="mt-1 text-xs text-gray-500">{de.courses.visibleOtherTab}</p>
+      )}
+    </>
+  );
+}
+
 function Shell(props: {
   children: React.ReactNode;
   /**
@@ -894,7 +983,27 @@ export function Console(props: {
    */
   const [customers, setCustomers] = useState<readonly { id: string; name: string }[]>([]);
   const [courses, setCourses] = useState<AdminCourseSummary[] | undefined>();
+
+  /*
+   * The clock the visibility column is read against (P201-01).
+   *
+   * `@ds/domain` takes time as an argument and never reads it — so somebody has
+   * to supply one, and it should be the same instant for every row of a list or
+   * two courses whose windows differ by a second could be described
+   * inconsistently on one screen.
+   *
+   * Recomputed when the list is, which is what makes a course that expires
+   * while somebody has the tab open say so on the next refresh rather than
+   * whenever React happens to re-render.
+   */
+  const now = useMemo(() => new Date(), [courses]);
   const [problem, setProblem] = useState<string | undefined>();
+  /*
+   * A refused *action*, as opposed to a failed *load* (P202-01). Separate
+   * because the two want opposite things from the screen: a failed load has no
+   * table to show, and a refused action needs the table still on screen.
+   */
+  const [actionProblem, setActionProblem] = useState<string | undefined>();
   const [forbidden, setForbidden] = useState(false);
 
   const loadCourses = useCallback(async () => {
@@ -931,11 +1040,30 @@ export function Console(props: {
    */
   const removeCourse = useCallback(
     async (slug: string) => {
-      setProblem(undefined);
+      /*
+       * The refusal goes to `actionProblem`, not `problem` (P202-01).
+       *
+       * Two defects met here, and the client saw the sum of them: a 409 in the
+       * network tab and nothing at all on the screen.
+       *
+       *   * This wrote the message into `problem` and then called
+       *     `loadCourses()`, whose first act on success is
+       *     `setProblem(undefined)`. The sentence was erased before it could
+       *     render — every time, for every refusal.
+       *   * And `problem` is the screen's *load* channel: rendering it replaces
+       *     the whole table with an error and a retry button. That is right
+       *     when the list could not be fetched and wrong when the list is fine
+       *     and one action was refused — it would have hidden the very rows the
+       *     message is about.
+       *
+       * So a refused action gets its own channel, which the reload does not
+       * touch, shown above the table with the rows still there.
+       */
+      setActionProblem(undefined);
       try {
         await client.adminDeleteCourse(slug);
       } catch (error) {
-        setProblem(describeError(error, de.error.generic));
+        setActionProblem(describeError(error, de.error.generic));
       }
       await loadCourses();
     },
@@ -1369,6 +1497,34 @@ export function Console(props: {
           screen is explained rather than repeated per line.
         */}
           <p className="mb-3 max-w-3xl text-sm text-gray-600">{de.courses.deleteRule}</p>
+          {/*
+            A refused action, above the rows it is about (P202-01).
+
+            Dismissible, and cleared by the next attempt, because it describes
+            one act rather than the state of the screen — an error that outlives
+            what caused it is an error somebody learns to ignore.
+
+            `role="alert"` so it is announced: the button that produced it may
+            have been the last thing focused, and a message that appears
+            silently below the focus ring is a message a screen-reader user
+            never learns about.
+          */}
+          {actionProblem === undefined ? null : (
+            <div role="alert" className="mb-3">
+              <Notice tone="error" title={de.error.title}>
+                <div className="flex items-start justify-between gap-4">
+                  <span>{actionProblem}</span>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded text-sm font-medium underline underline-offset-2"
+                    onClick={() => setActionProblem(undefined)}
+                  >
+                    {de.common.dismiss}
+                  </button>
+                </div>
+              </Notice>
+            </div>
+          )}
           <Table
             headers={[
               de.courses.columnTitle,
@@ -1376,6 +1532,7 @@ export function Console(props: {
               de.courses.columnPoints,
               de.courses.columnParticipants,
               de.courses.columnCertificate,
+              de.courses.columnVisibility,
               de.courses.columnActions,
             ]}
           >
@@ -1418,6 +1575,13 @@ export function Console(props: {
                       ? de.courses.certificateReady
                       : de.courses.certificateNotReady}
                   </Badge>
+                </td>
+                {/*
+                  Why this course is or is not reaching learners (P201-01).
+                  See `visibilityOf` for the rule and why it is that function.
+                */}
+                <td className="px-4 py-3">
+                  <VisibilityCell course={course} now={now} />
                 </td>
                 <td className="px-4 py-3">
                   <ConfirmButton
