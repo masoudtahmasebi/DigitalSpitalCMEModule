@@ -7,11 +7,13 @@
  * rejects must produce a visible sentence without any screen having arranged
  * for it.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ApiError } from "@ds/sdk";
 import { ToastProvider } from "./toasts.js";
 import { createAdminClient, toastPublisher } from "./api.js";
+import { App } from "./App.js";
+import { de } from "./locale/de.js";
 
 afterEach(cleanup);
 
@@ -144,5 +146,66 @@ describe("the failure net (P205)", () => {
     // Not an empty container: a fixed, always-present box would sit over the
     // bottom-right of every screen and swallow clicks there.
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+/*
+ * P205-02 — the host belongs to the layout, not to one branch.
+ *
+ * The client: *"shouldn't the toast and error handling be a general thing that
+ * the layout has?"* It was not. `App` returns from three places — the
+ * password-reset screen, the sign-in form, and the console — and only the last
+ * had a host. A failure raised on either of the other two reached the default
+ * no-op publisher and vanished, on the two screens where a failure is most
+ * likely.
+ *
+ * Driven through `App` itself rather than by reading the source, because the
+ * property is "every branch", and a branch is something you have to arrive at.
+ */
+describe("the host is on every branch of the shell (P205-02)", () => {
+  beforeEach(() => {
+    // `readConfig` reads `window.__DS_CONFIG__` and returns undefined without
+    // it — App then renders a configuration error and neither branch below is
+    // reached, which is how the first version of these two cases failed.
+    (window as unknown as { __DS_CONFIG__: unknown }).__DS_CONFIG__ = {
+      apiBase: "http://api.test",
+    };
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete (window as unknown as { __DS_CONFIG__?: unknown }).__DS_CONFIG__;
+    window.history.replaceState(null, "", "#");
+  });
+
+  /** Nobody is signed in, and no reset token: the sign-in form. */
+  it("is present on the sign-in screen", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 401 })),
+    );
+
+    render(<App />);
+    // The sign-in form, not the console.
+    await waitFor(() => expect(screen.getByLabelText(/E-Mail/u)).toBeTruthy());
+
+    toastPublisher.current("Etwas ist schiefgegangen");
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+  });
+
+  it("is present on the password-reset screen", async () => {
+    window.history.replaceState(null, "", "#passwort-neu?token=abc123");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 401 })),
+    );
+
+    render(<App />);
+    // On the reset branch, not the sign-in one — `newPasswordTitle` appears on
+    // no other screen, so this cannot pass from the wrong branch.
+    await waitFor(() => expect(screen.getByText(de.auth.newPasswordTitle)).toBeTruthy());
+
+    toastPublisher.current("Etwas ist schiefgegangen");
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
   });
 });

@@ -27,7 +27,7 @@
 
 import { courseAvailability, formatBerlinDate } from "@ds/domain";
 import { ToastProvider } from "./toasts.js";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type {
   AdminCourseDetail,
   AdminCourseSummary,
@@ -153,45 +153,74 @@ export function App() {
    * from the address bar at the same moment — so a reload does not carry the
    * token and a bookmark cannot preserve it.
    */
+  /*
+   * Every branch below is wrapped in `withToasts` (P205-02).
+   *
+   * The client asked the right question — *"shouldn't the toast and error
+   * handling be a general thing that the layout has?"* — and the answer was no,
+   * it was not. `ToastProvider` sat on the signed-in branch alone, so the
+   * sign-in form and the password-reset screen had no host at all: a failure
+   * raised there reached the default no-op publisher and vanished. Those are
+   * the two screens where a failure is most likely, which is the shape §9.1
+   * keeps naming — a net with a hole exactly where things fall.
+   */
   if (resetToken !== undefined) {
-    return (
+    return withToasts(
       <Shell apiBase={config.apiBase}>
         <NewPassword
           apiBase={config.apiBase}
           token={resetToken}
           onDone={() => setResetToken(undefined)}
         />
-      </Shell>
+      </Shell>,
     );
   }
 
   if (profile === undefined) {
-    return (
+    return withToasts(
       <Shell apiBase={config.apiBase}>
         <SignIn apiBase={config.apiBase} onSignedIn={setProfile} />
-      </Shell>
+      </Shell>,
     );
   }
 
   // `Console` renders the frame itself: the sidebar's contents and the app
   // bar's scope control are both its state, and passing them up only to be
   // passed back down would put the console's navigation in two files (P22-07).
-  /*
-   * The toast host wraps the console rather than sitting inside it (P205-01),
-   * so a failure raised while a screen is unmounting still has somewhere to go.
-   */
-  return (
-    <ToastProvider publishRef={toastPublisher}>
-      <Console
-        config={config}
-        profile={profile}
-        onExpired={() => setProfile(undefined)}
-        onSignOut={() => {
-          void signOut(config.apiBase).then(() => setProfile(undefined));
-        }}
-      />
-    </ToastProvider>
+  return withToasts(
+    <Console
+      config={config}
+      profile={profile}
+      onExpired={() => setProfile(undefined)}
+      onSignOut={() => {
+        void signOut(config.apiBase).then(() => setProfile(undefined));
+      }}
+    />,
   );
+}
+
+/**
+ * The toast host, around whatever the console is currently showing (P205-02).
+ *
+ * A function rather than a component wrapping `App`'s body, because `App`
+ * returns from three places and the point is that **none of them can be the
+ * one that forgets**. Written as a wrapper each branch calls, it is one word at
+ * each return and impossible to half-apply.
+ *
+ * Outside `Shell` rather than inside: a failure raised while a screen unmounts
+ * still needs somewhere to go, and the host must outlive the screen.
+ *
+ * ## What this deliberately does not reach
+ *
+ * The sign-in and password-reset screens now *have* a host, but their own calls
+ * go through `staff-auth.ts` rather than the wrapped SDK client, so the net in
+ * `api.ts` does not announce them — and must not. `requestPasswordReset`
+ * answers identically for an unknown address, a disabled account and a
+ * successful send (§9.5, P40): a toast that distinguished them would hand an
+ * enumeration oracle to anyone with a login form.
+ */
+function withToasts(children: ReactNode): ReactNode {
+  return <ToastProvider publishRef={toastPublisher}>{children}</ToastProvider>;
 }
 
 /**
