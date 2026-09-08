@@ -59,6 +59,8 @@ export function UploadField(props: {
   onChange: (value: string) => void;
   /** Told what the bucket stored it as; used by the material field. */
   onMimeType?: (mimeType: string) => void;
+  /** Marked with an asterisk, for a field the form will not submit without. */
+  required?: boolean;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -69,6 +71,7 @@ export function UploadField(props: {
       // "absent" from "present and undefined", and `Field` accepts only the
       // first.
       {...(props.hint === undefined ? {} : { hint: props.hint })}
+      {...(props.required === undefined ? {} : { required: props.required })}
       htmlFor={props.id}
     >
       {isUploadedReference(props.value) ? (

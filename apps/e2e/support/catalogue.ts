@@ -38,6 +38,22 @@
  * §9.13 rule about the rig being shaped like the deployment, applied to the
  * deployment's *data* rather than to its configuration.
  *
+ * ## Since DEP-37 the alphabet is no longer the order at all
+ *
+ * The catalogue sorts `created_at DESC` now, with the title only as a tiebreak
+ * (P210-01). This run's course is created during the run, so it is the newest
+ * and lands on page one — the failure described above cannot happen the way it
+ * did.
+ *
+ * The paging stays, and this is not caution for its own sake: it is the
+ * property, not the page number, that this helper is for. Two runs in the same
+ * minute, a seed that adds courses after this one, or a future manual ordering
+ * would each put it back on page two, and none of those is a reason for the
+ * suite to start failing. What the paragraphs above describe is now **history**
+ * rather than the current mechanism, which is worth saying plainly: a comment
+ * that explains a live behaviour by an order the code no longer uses is the
+ * kind of thing that gets believed (§11.9).
+ *
  * ## What it cannot do
  *
  * There is no search in the catalogue. A physician on a tenant with two

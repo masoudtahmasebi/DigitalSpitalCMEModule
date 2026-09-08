@@ -2102,3 +2102,47 @@ describe("a content-locked course refuses structural edits (P178-01)", () => {
     });
   });
 });
+
+/**
+ * Newest first, in Verwaltung and in the catalogue (DEP-37, P210-01).
+ *
+ * The client, through Amruth: *"Newly added courses should appear at the top of
+ * the list so that administrators and users can immediately see the latest
+ * content without having to scroll through the entire catalogue."*
+ *
+ * Both lists were `ORDER BY title`, which is a real order and the wrong one for
+ * the question an operator is asking when they open the screen: *what did I
+ * just make?*
+ *
+ * ## Why the title of this fixture matters
+ *
+ * "Zzz …" sorts **last** alphabetically and is created **last**, so the two
+ * orders disagree and this case can tell them apart. A fixture whose alphabet
+ * happens to match its creation order would pass on both implementations —
+ * which is CLAUDE.md §9.1, and is exactly the trap `learning-flow`'s three
+ * courses fall into: they were inserted in the same order their titles sort.
+ */
+describe("the course list is ordered newest first (DEP-37)", () => {
+  const newestSlug = `zzz-neueste-${RUN}`;
+
+  beforeAll(async () => {
+    const created = await asAdmin("POST", "/admin/courses", {
+      projectSlug,
+      slug: newestSlug,
+      // Sorts after every other fixture in this file, and is made after them.
+      title: "Zzz zuletzt angelegt",
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+  }, 30_000);
+
+  it("puts the most recently created course first in Verwaltung", async () => {
+    const { status, body } = await asAdmin("GET", "/admin/courses");
+
+    expect(status).toBe(200);
+    expect(body.length, "the fixture course was not listed at all").toBeGreaterThan(1);
+    expect(
+      body[0].slug,
+      `newest first: got ${body.map((c: { slug: string }) => c.slug).join(", ")}`,
+    ).toBe(newestSlug);
+  });
+});

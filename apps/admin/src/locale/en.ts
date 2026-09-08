@@ -389,6 +389,7 @@ export const en: DeepPartial<typeof german> = {
     slug: "Short name",
     title: "Title",
     optional: "optional",
+    required: "required",
     slugHint:
       "Lower case letters, digits and hyphens. The short name appears in addresses and cannot be changed later.",
     unsaved: "There are unsaved changes.",
@@ -568,6 +569,14 @@ export const en: DeepPartial<typeof german> = {
   },
 
   structure: {
+    problems: {
+      title: "Title",
+      sources: "Video sources",
+      sourceMimeType: "Video source format",
+      durationSec: "Video length",
+      fileUrl: "File URL",
+      body: "Text",
+    },
     title: "Contents",
     intro:
       "Order determines unlocking: a chapter becomes reachable only once the one before it is complete. Changes to the order therefore affect participations already under way.",

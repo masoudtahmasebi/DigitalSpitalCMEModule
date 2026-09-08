@@ -15,7 +15,7 @@
  * the rollup input is identical — only the fetch is batched.
  */
 
-import { and, count, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../../db/tenant-db.js";
 import {
   auditLog,
@@ -346,8 +346,20 @@ export class AdminRepository implements AdminRepositoryPort {
     return urls;
   }
 
+  /**
+   * Newest first, the same order as the learner's catalogue (DEP-37, P210-01).
+   *
+   * Two lists of the same courses that sort differently are two answers to one
+   * question, and the operator who publishes a course goes looking for it in
+   * both. The tiebreak is the title, for the reason given in
+   * `catalog.repository.ts`: `created_at` is not unique, and this list is
+   * unpaged today but is the obvious thing to page next.
+   */
   async listCourses(): Promise<AdminCourseRow[]> {
-    return this.db.select(COURSE_COLUMNS).from(courses).orderBy(courses.title);
+    return this.db
+      .select(COURSE_COLUMNS)
+      .from(courses)
+      .orderBy(desc(courses.createdAt), asc(courses.title));
   }
 
   async findCourse(slug: string): Promise<AdminCourseRow | undefined> {

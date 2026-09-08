@@ -540,6 +540,7 @@ export const german = {
     slug: "Kürzel",
     title: "Titel",
     optional: "optional",
+    required: "erforderlich",
     slugHint:
       "Kleinbuchstaben, Ziffern und Bindestriche. Das Kürzel erscheint in Adressen und lässt sich später nicht ändern.",
     unsaved: "Es gibt ungespeicherte Änderungen.",
@@ -738,6 +739,21 @@ export const german = {
   },
 
   structure: {
+    /*
+     * The field a `ContentProblem` from `@ds/domain` names, in the words above
+     * that field on the form (DEP-34). `sourceMimeType` is deliberately absent
+     * from the sentence the form prints — it is a *wrong* value rather than a
+     * missing one, and "Es fehlt noch: Format" would send an author looking for
+     * an empty field they have already filled in.
+     */
+    problems: {
+      title: "Titel",
+      sources: "Videoquellen",
+      sourceMimeType: "Format der Videoquelle",
+      durationSec: "Länge des Videos",
+      fileUrl: "Datei-URL",
+      body: "Text",
+    },
     title: "Inhalte",
     intro:
       "Reihenfolge bestimmt die Freischaltung: ein Kapitel wird erst erreichbar, wenn das vorhergehende abgeschlossen ist. Änderungen an der Reihenfolge wirken sich deshalb auf laufende Teilnahmen aus.",

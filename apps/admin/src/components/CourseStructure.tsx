@@ -73,7 +73,7 @@ import type {
   ContentWrite,
   MediaSourceWrite,
 } from "@ds/sdk";
-import { lengthsAgree, mimeTypeForUrl } from "@ds/domain";
+import { contentProblems, lengthsAgree, mimeTypeForUrl } from "@ds/domain";
 import { MediaCheckPanel } from "./MediaCheck.js";
 import { de } from "../locale/de.js";
 import { nullable, swap } from "../drafts.js";
@@ -745,6 +745,61 @@ function ContentForm(props: {
 
   const id = (field: string) => `content-${initial?.id ?? "new"}-${field}`;
 
+  /*
+   * What this draft is still missing, from `@ds/domain` (DEP-34, P210-03).
+   *
+   * The rule was written, exhaustively unit-tested, called by the API — and by
+   * nothing in the console. That is CLAUDE.md §9.3 exactly: `contentProblems`
+   * decides that a video needs a source and a length, and this form's submit
+   * button was disabled on `title.trim() === ""` and nothing else. So the
+   * console offered **Hinzufügen** for a video with no source, and the API
+   * answered 422 — §9.2, a control that can only produce an error.
+   *
+   * Calling the same function is what makes the form's answer and the server's
+   * answer the same answer. It is not a second copy of the rule; a second copy
+   * is what would eventually disagree.
+   *
+   * The draft mirrors what `onSubmit` below actually sends, `nullable` and
+   * blank-row filtering included — a check over different values from the ones
+   * that get posted would be a different check.
+   */
+  const problems = contentProblems({
+    kind,
+    title: title.trim(),
+    body: nullable(body),
+    sources: sources.filter((source) => source.url.trim() !== ""),
+    posterUrl: nullable(posterUrl),
+    captionsUrl: nullable(captionsUrl),
+    durationSec: durationSec.trim() === "" ? null : Number(durationSec),
+    fileUrl: nullable(fileUrl),
+    mimeType: nullable(mimeType) ?? mimeTypeForUrl(fileUrl) ?? null,
+  });
+  const missing = problems.filter((problem) => problem !== "sourceMimeType");
+
+  /*
+   * Which fields this kind requires — derived from the same rule, not restated.
+   *
+   * "What would `contentProblems` complain about if nothing were filled in?" is
+   * exactly the set of required fields, and asking it that way means the
+   * asterisks cannot drift from the refusal. A hand-written map here would be a
+   * second copy of a rule that already exists in one place, and the kind whose
+   * requirements are least obvious — `video`, which needs a source *and* a
+   * length — is precisely the one somebody would get wrong.
+   */
+  const requiredFields = new Set(
+    contentProblems({
+      kind,
+      title: "",
+      body: null,
+      sources: [],
+      posterUrl: null,
+      captionsUrl: null,
+      durationSec: null,
+      fileUrl: null,
+      mimeType: null,
+    }),
+  );
+
   return (
     <form
       onSubmit={(event) => {
@@ -784,7 +839,11 @@ function ContentForm(props: {
               onChange={setKind}
             />
           </Field>
-          <Field label={de.common.title} htmlFor={id("title")}>
+          <Field
+            label={de.common.title}
+            htmlFor={id("title")}
+            required={requiredFields.has("title")}
+          >
             <TextInput
               id={id("title")}
               value={title}
@@ -892,6 +951,7 @@ function ContentForm(props: {
             }
             {...(kind === "video" ? { hint: de.structure.videoBodyHint } : {})}
             htmlFor={id("body")}
+            required={requiredFields.has("body")}
           >
             <TextArea
               id={id("body")}
@@ -907,6 +967,7 @@ function ContentForm(props: {
           <div className="grid gap-3 sm:grid-cols-2">
             <UploadField
               label={de.structure.fileUrl}
+              required={requiredFields.has("fileUrl")}
               id={id("file")}
               value={fileUrl}
               purpose="material"
@@ -922,10 +983,31 @@ function ContentForm(props: {
 
         <SaveProblem title={de.error.title} problem={saver.problem} />
 
+        {/*
+          A disabled button that says why (DEP-34, §9.4).
+
+          The client's report is about not being able to tell which fields are
+          needed, and half of that is the marking beside each label; the other
+          half is here. A control that refuses and gives no reason is the same
+          defect as one that errors — the person is left to guess, and on this
+          form what is required changes with the dropdown at the top.
+
+          Fields, never values (§9.5), and `de.newCourse.missing` — the same
+          sentence the creation wizard prints, so the console says this one thing
+          one way rather than twice in two wordings.
+        */}
+        {problems.length === 0 ? null : (
+          <p className="text-sm text-gray-700" role="status">
+            {de.newCourse.missing(
+              missing.map((problem) => de.structure.problems[problem]),
+            )}
+          </p>
+        )}
+
         <div className="flex gap-2">
           <Button
             type="submit"
-            disabled={saver.state === "saving" || title.trim() === ""}
+            disabled={saver.state === "saving" || problems.length > 0}
           >
             {saver.state === "saving" ? de.common.saving : props.submitLabel}
           </Button>
@@ -1003,9 +1085,15 @@ function EditForm(props: {
   );
   const saver = useSaver();
 
-  const incomplete = props.fields.some(
-    (field) => field.optional !== true && (values[field.key] ?? "").trim() === "",
-  );
+  /*
+   * The labels of the fields still empty, rather than a boolean (DEP-34).
+   *
+   * `some()` answered whether the button should be disabled and nothing else,
+   * so the form knew exactly what was missing and told nobody.
+   */
+  const incomplete = props.fields
+    .filter((field) => field.optional !== true && (values[field.key] ?? "").trim() === "")
+    .map((field) => field.label);
 
   return (
     <form
@@ -1026,6 +1114,11 @@ function EditForm(props: {
                   : field.label
               }
               htmlFor={id}
+              /* The same marking as the content form (DEP-34). This form
+                 already refused to submit without these; what it did not do is
+                 say which they were, so "required" was inferred from the
+                 *absence* of "(optional)" on the other rows. */
+              required={field.optional !== true}
             >
               {field.multiline === true ? (
                 <TextArea
@@ -1048,8 +1141,19 @@ function EditForm(props: {
 
         <SaveProblem title={de.error.title} problem={saver.problem} />
 
+        {/* And the reason the button is refusing, in the console's one wording
+            for this (DEP-34, §9.4). */}
+        {incomplete.length === 0 ? null : (
+          <p className="text-sm text-gray-700" role="status">
+            {de.newCourse.missing(incomplete)}
+          </p>
+        )}
+
         <div className="flex gap-2">
-          <Button type="submit" disabled={saver.state === "saving" || incomplete}>
+          <Button
+            type="submit"
+            disabled={saver.state === "saving" || incomplete.length > 0}
+          >
             {saver.state === "saving"
               ? de.common.saving
               : (props.submitLabel ?? de.common.save)}
@@ -1322,6 +1426,8 @@ export function MeasuredDuration(props: {
       label={de.structure.durationSec}
       hint={measured ? de.structure.durationMeasuredHint : de.structure.durationHint}
       htmlFor={props.id}
+      /* A video's watch gate is a percentage of this number (DEP-34). */
+      required
     >
       {measured ? (
         // Shown, not editable. The number is a reading of the file, and a box
@@ -1418,8 +1524,15 @@ function SourcesEditor(props: {
 
   return (
     <fieldset className="space-y-2">
+      {/* A `fieldset` rather than a `Field`, so the marker is repeated here
+          rather than shared — the asterisk belongs to the group, and every
+          video needs at least one source in it (DEP-34). */}
       <legend className="text-sm font-medium text-gray-900">
         {de.structure.sources}
+        <span aria-hidden="true" className="ml-0.5 text-red-700">
+          *
+        </span>
+        <span className="sr-only"> ({de.common.required})</span>
       </legend>
       <p className="text-xs text-gray-500">{de.structure.sourcesHint}</p>
 
