@@ -930,6 +930,41 @@ describe("a course without CME points", () => {
 });
 
 /**
+ * The catalogue answers newest first (DEP-37, P210-01).
+ *
+ * The other half of the same change; `authoring.integration.test.ts` covers
+ * Verwaltung. Both are asserted because they are two queries in two
+ * repositories, and the client asked for the order to be the same in both —
+ * an operator who publishes a course goes looking for it in each.
+ *
+ * The course is created **inside the case** with a title that sorts last, so
+ * the alphabet and the creation order disagree. This file's three fixtures
+ * cannot do that job: they were inserted in the order their titles happen to
+ * sort, so a test over them would pass under either implementation (§9.1).
+ */
+describe("the catalogue is ordered newest first (DEP-37)", () => {
+  it("lists the most recently created course first", async () => {
+    const before = await call("GET", "/courses?perPage=50");
+    expect(before.body.items.length, "nothing to order").toBeGreaterThan(1);
+
+    const slug = `lf-zzz-${randomUUID().slice(0, 8)}`;
+    await insert(
+      `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent, pass_threshold_percent, cme_points, status)
+       VALUES ($1,$2,$3,$4,100,70,NULL,'published') RETURNING id`,
+      [customerId, projectId, slug, "Zzz zuletzt angelegt"],
+    );
+
+    const { status, body } = await call("GET", "/courses?perPage=50");
+
+    expect(status).toBe(200);
+    expect(
+      body.items[0].slug,
+      `newest first: got ${body.items.map((i: { slug: string }) => i.slug).join(", ")}`,
+    ).toBe(slug);
+  });
+});
+
+/**
  * A course with no Evaluationsbogen (P206).
  *
  * The client's report: *"why is the 'requires an evaluation' text still in here

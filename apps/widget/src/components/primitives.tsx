@@ -169,12 +169,23 @@ export function TabbedPanel<T extends string>(props: {
       <div
         role="tablist"
         aria-label={props.label}
-        /* `sm:items-end` so a tab's own bottom margin lifts it off the panel
-             rather than shortening its box — flex items stretch by default, and
-             a margin on a stretched item eats its height instead of moving it.
-             `sm:` only: below it the row is `flex-col`, where `items-end` would
-             right-align the stacked buttons (P204-01). */
-        className="order-3 flex flex-wrap gap-2 sm:order-1 sm:items-end max-sm:mt-6 max-sm:flex-col max-sm:gap-3"
+        /* `sm:items-start`, and the lift comes from the selected tab being
+             *taller* rather than from the others being pushed up (P209-01).
+
+             It was `sm:items-end` with `sm:mb-1.5` on the inactive tabs, which
+             did produce the gap the drawing has and produced something else
+             too: aligned to the bottom, a shorter box puts its label higher, so
+             "Weitere" sat **7.00 px** above "On Demand" — measured in Chromium
+             against this project's own compiled Tailwind, not estimated. The
+             client saw it immediately: *"now icons are not in the same line."*
+
+             Aligned to the top, every tab's label is on one line and the
+             selected one grows downward into the panel it merges with, which is
+             what a folder tab actually is.
+
+             `sm:` only: below it the row is `flex-col`, where the alignment
+             would left/right-align the stacked buttons (P204-01). */
+        className="order-3 flex flex-wrap gap-2 sm:order-1 sm:items-start max-sm:mt-6 max-sm:flex-col max-sm:gap-3"
       >
         {props.tabs.map((tab) => {
           const selected = tab.id === props.active;
@@ -227,7 +238,13 @@ export function TabbedPanel<T extends string>(props: {
                     // one pixel it is wide, and `relative` puts it in front:
                     // the tablist is after the panel in the DOM (`order-*`
                     // reorders what you see, never what paints on top).
-                    "relative -mb-px rounded-tl-[1.25rem] border border-b-0 border-brand-100 bg-white text-brand-700 max-sm:hidden"
+                    //
+                    // `sm:pb-4` is the gap under the inactive tabs, expressed
+                    // where it belongs (P209-01): this tab reaches 6 px further
+                    // down than they do, into the panel. Previously they were
+                    // pushed *up* by the same 6 px, which moved their labels
+                    // with them.
+                    "relative -mb-px rounded-tl-[1.25rem] border border-b-0 border-brand-100 bg-white text-brand-700 sm:pb-4 max-sm:hidden"
                   : // Half-height on three corners, square on the top-right —
                     // the layout's shape for every teal block (see the file
                     // header). It was `rounded-t-xl`, which squares off the two
@@ -240,12 +257,20 @@ export function TabbedPanel<T extends string>(props: {
                     // the design has the same 1.25rem family as every other
                     // teal block here. The top-right stays square in both, so
                     // the shape is still recognisably one family.
-                    // `sm:mb-1.5` — the inactive tabs stand *off* the panel while the
-                    // selected one merges into it (P204-01). They sat on the
-                    // same baseline, so the row read as four attached tabs with
-                    // one painted white; the gap is what makes "selected" a
-                    // position rather than only a colour.
-                    "rounded-full rounded-tr-none bg-brand-600 text-brand-contrast hover:bg-brand-700 sm:mb-1.5 max-sm:rounded-[1.25rem] max-sm:rounded-tr-none max-sm:py-3.5 max-sm:text-base")
+                    // The inactive tabs stand *off* the panel while the
+                    // selected one merges into it (P204-01) — the gap is what
+                    // makes "selected" a position rather than only a colour.
+                    // That gap is now `sm:pb-4` on the selected tab above,
+                    // rather than `sm:mb-1.5` here: pushing these up moved
+                    // their labels up with them (P209-01).
+                    //
+                    // `sm:border-t sm:border-t-transparent` earns its place: the
+                    // selected tab has a 1 px top border and this one has none,
+                    // so without it the labels land 1 px apart. A transparent
+                    // border costs no width and no colour, and 1 px is exactly
+                    // the kind of thing that is invisible until somebody
+                    // measures and finds the fix was only nearly right.
+                    "rounded-full rounded-tr-none bg-brand-600 text-brand-contrast hover:bg-brand-700 sm:border-t sm:border-t-transparent max-sm:rounded-[1.25rem] max-sm:rounded-tr-none max-sm:py-3.5 max-sm:text-base")
               }
             >
               {tab.label}

@@ -29,6 +29,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CourseDetail, EnrolmentState } from "@ds/sdk";
 import { createWidgetClient, isConfigured, type WidgetConfig } from "./api.js";
 import { useBranding } from "./branding.js";
+import { useScrollToTopOnChange } from "./scroll-to-top.js";
 import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
 import type { TokenProvider } from "./token.js";
@@ -351,6 +352,15 @@ function Routed(
   // **Fortbildung fortsetzen** across its own navigation.
   const [intent, setIntent] = useState<OpenIntent>(props.openAt ?? "start");
 
+  /*
+   * Opening a course, and leaving one, put the learner at the top (DEP-36).
+   *
+   * The pair of screens this component switches between. `Loaded` does the same
+   * for the screens *inside* a course, and both go through one hook so there is
+   * one rule rather than two that can drift.
+   */
+  useScrollToTopOnChange(selected ?? "catalogue");
+
   if (selected === undefined) {
     return (
       <Catalogue
@@ -599,6 +609,17 @@ function Loaded(props: {
     if (window.location.hash === fragment) return;
     window.history.replaceState(null, "", fragment);
   }, [screen, tab, addressCourseSlug, course.data]);
+
+  /*
+   * And the screens within a course (DEP-36).
+   *
+   * Keyed on the same route the address is written from, so a screen that gets
+   * an address gets this without anybody remembering to add it — which is the
+   * §9.3 failure this shape avoids. Deliberately **not** keyed on `tab`: the
+   * tab row is already near the top, and moving the page when somebody clicks
+   * a tab they can see would be its own defect.
+   */
+  useScrollToTopOnChange(encode(routeForScreen(screen, "overview")));
 
   const resumed = useRef(false);
   useEffect(() => {

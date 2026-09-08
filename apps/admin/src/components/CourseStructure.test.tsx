@@ -33,7 +33,14 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import type {
   ApiClient,
   AuthoringChapter,
@@ -439,5 +446,79 @@ describe("a content-locked course", () => {
     mount(withExam);
     await screen.findByText("Abschlussprüfung Modul 1");
     expect(screen.getByText(de.structure.editQuiz)).toBeTruthy();
+  });
+});
+
+/**
+ * Required fields are marked, and the refusal says what it wants (DEP-34).
+ *
+ * Amruth's report: *"Required fields are not visibly marked in the course
+ * creation form … The Add button is enabled only when required information is
+ * filled, making it unclear which fields need to be completed."*
+ *
+ * Two defects in one sentence, and the second is the larger:
+ *
+ * 1. Only **optional** fields carried a marker, so "required" was something you
+ *    inferred from an absence — on a form where which fields are required
+ *    changes with the dropdown at the top.
+ * 2. `contentProblems` in `@ds/domain` decides that a video needs a source and
+ *    a length. The API called it. The console did not, and disabled its button
+ *    on `title.trim() === ""` alone — so **Hinzufügen** was offered for a video
+ *    with neither, and the API answered 422. That is §9.3 (a rule nothing
+ *    calls) producing §9.2 (a control that can only fail).
+ *
+ * These cases drive the real form rather than the rule: `contentProblems` has
+ * its own exhaustive unit tests in `@ds/domain`, and they would all still pass
+ * with the call site deleted (§9.7).
+ */
+describe("the content form's required fields (DEP-34)", () => {
+  async function openContentForm(): Promise<void> {
+    mount(structure([module()]));
+    await screen.findByText("ADHS erkennen");
+    const add = screen.getAllByRole("button", { name: de.structure.newContent });
+    (add[0] as HTMLElement).click();
+    await screen.findByLabelText(de.structure.kind);
+  }
+
+  it("marks the title as required rather than leaving it to be inferred", async () => {
+    await openContentForm();
+
+    // The accessible name carries the word; the asterisk beside it is
+    // `aria-hidden`, so this is what a screen reader is told too.
+    expect(
+      screen.getByLabelText(
+        new RegExp(`^${de.common.title}.*\\(${de.common.required}\\)$`, "u"),
+      ),
+    ).toBeTruthy();
+  });
+
+  it("refuses a video with no source and no length, and names both", async () => {
+    await openContentForm();
+
+    // A title, and nothing else — which is exactly what used to enable the
+    // button and then produce a 422.
+    const title = screen.getByLabelText(
+      new RegExp(`^${de.common.title}.*\\(${de.common.required}\\)$`, "u"),
+    );
+    fireEvent.change(title, { target: { value: "Ein Video" } });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          de.newCourse.missing([
+            de.structure.problems.sources,
+            de.structure.problems.durationSec,
+          ]),
+        ),
+      ).toBeTruthy();
+    });
+
+    const submit = screen
+      .getAllByRole("button", { name: de.common.add })
+      .find((button) => (button as HTMLButtonElement).type === "submit");
+    expect(
+      (submit as HTMLButtonElement | undefined)?.disabled,
+      "the console offered an add the API refuses",
+    ).toBe(true);
   });
 });

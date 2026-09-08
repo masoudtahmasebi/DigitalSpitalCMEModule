@@ -12,7 +12,19 @@
  * the P10-02 suite asserts.
  */
 
-import { and, asc, count, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { CourseStatus } from "@ds/domain";
 import type { Db } from "../../db/tenant-db.js";
 import {
@@ -183,7 +195,23 @@ export class CatalogRepository implements CatalogRepositoryPort {
       .select()
       .from(courses)
       .where(where)
-      .orderBy(asc(courses.title))
+      /*
+       * Newest first (DEP-37, P210-01).
+       *
+       * It was `asc(courses.title)`, which is a real order and the wrong one
+       * for the question somebody is asking when they open the catalogue —
+       * *what is new?* The client asked for it directly: "Newly added courses
+       * should appear at the top of the list so that administrators and users
+       * can immediately see the latest content without having to scroll
+       * through the entire catalogue."
+       *
+       * The title is the **tiebreak**, not decoration. `created_at` is a
+       * `timestamptz` with microsecond resolution, so two courses seeded in the
+       * same statement can share one — and a `LIMIT`/`OFFSET` over a
+       * non-deterministic order is how a row appears on two pages or on none.
+       * The tiebreak is what makes paging total.
+       */
+      .orderBy(desc(courses.createdAt), asc(courses.title))
       .limit(filter.limit)
       .offset(filter.offset)) as unknown as CourseRow[];
 

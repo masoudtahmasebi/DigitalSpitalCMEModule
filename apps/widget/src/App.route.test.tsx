@@ -1128,3 +1128,67 @@ describe("the top of the course detail", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * A screen change puts the learner at the top (DEP-36, P210-02).
+ *
+ * Amruth's report: *"Opening a course from the course list navigates to the
+ * course detail page with the scroll position in the middle of the page. The
+ * top of the page (course header/hero section) is not visible on load."*
+ *
+ * The widget swaps screens in place, so nothing resets the host page's scroll.
+ *
+ * The second case is the one worth having. "Scroll to the top on mount" is the
+ * obvious fix and is wrong: an embed can sit anywhere on a customer's page, and
+ * yanking the reader upward because the widget finished loading is a defect
+ * nobody reported only because the widget did not do it. So the absence is
+ * asserted as deliberately as the presence.
+ */
+describe("the scroll position on a screen change", () => {
+  it("goes to the top when a course is opened from the catalogue", async () => {
+    const scrollTo = vi.fn();
+    vi.stubGlobal("scrollTo", scrollTo);
+    stubCatalogue();
+    renderCatalogue();
+
+    const open = await screen.findByRole("button", {
+      name: /Zur Fortbildung|Fortbildung ansehen/u,
+    });
+    expect(
+      scrollTo,
+      "the widget moved the page before anybody navigated",
+    ).not.toHaveBeenCalled();
+
+    fireEvent.click(open);
+    await waitFor(() => {
+      expect(inOutline()).toBe(true);
+    });
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, left: 0 });
+  });
+
+  it("leaves the page alone when the widget merely loads", async () => {
+    const scrollTo = vi.fn();
+    vi.stubGlobal("scrollTo", scrollTo);
+
+    renderApp();
+    await screen.findByRole("heading", { name: course().title });
+
+    /*
+     * A sentinel rather than a bare absence assertion (P205-01's lesson): "not
+     * called" a tick after render passes whether the rule holds or React simply
+     * has not flushed. Driving a real navigation afterwards proves the spy was
+     * wired and the effect does fire — so the absence above is about the rule.
+     */
+    expect(
+      scrollTo,
+      "the widget scrolled the host page on first render",
+    ).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getAllByRole("tab")[1] as HTMLElement);
+    await waitFor(() => {
+      expect(screen.getAllByRole("tab")[1]?.getAttribute("aria-selected")).toBe("true");
+    });
+    expect(scrollTo, "a tab change is not a screen change").not.toHaveBeenCalled();
+  });
+});

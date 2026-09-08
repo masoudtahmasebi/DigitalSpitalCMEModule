@@ -7,6 +7,7 @@
  */
 
 import { useState, type ReactNode } from "react";
+import { de } from "../locale/de.js";
 
 /**
  * The two class strings every control in this file shares (P133-02).
@@ -83,11 +84,34 @@ export function Field(props: {
   htmlFor: string;
   children: ReactNode;
   problem?: string;
+  /**
+   * Marks the field as one the form will not submit without (DEP-34).
+   *
+   * The console marked **optional** fields — "(optional)" after the label — and
+   * left required ones unmarked, so "required" was a thing you inferred from an
+   * absence, on a form where most fields are required and the ones that are not
+   * depend on a dropdown two rows up. Amruth's report: *"Required fields are
+   * not visibly marked … users cannot easily tell which fields must be
+   * completed."*
+   *
+   * The asterisk is `aria-hidden` and the accessible name carries the word,
+   * because "Titel star" is not what a screen reader should say and "Titel
+   * (erforderlich)" is.
+   */
+  required?: boolean;
 }) {
   return (
     <div className="space-y-1">
       <label htmlFor={props.htmlFor} className="block text-sm font-medium text-gray-900">
         {props.label}
+        {props.required === true ? (
+          <>
+            <span aria-hidden="true" className="ml-0.5 text-red-700">
+              *
+            </span>
+            <span className="sr-only"> ({de.common.required})</span>
+          </>
+        ) : null}
       </label>
       {props.children}
       {props.hint === undefined ? null : (
