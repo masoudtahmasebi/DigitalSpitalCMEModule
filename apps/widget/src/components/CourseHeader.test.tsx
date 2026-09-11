@@ -272,7 +272,7 @@ describe("StickyMetaBar", () => {
     render(
       <StickyMetaBar
         course={course()}
-        state={state()}
+        status={state().progress.status}
         onBack={undefined}
         onResume={undefined}
       />,
@@ -297,7 +297,7 @@ describe("StickyMetaBar", () => {
     const { container } = render(
       <StickyMetaBar
         course={course()}
-        state={state()}
+        status={state().progress.status}
         onBack={undefined}
         onResume={vi.fn()}
       />,
@@ -312,7 +312,7 @@ describe("StickyMetaBar", () => {
     render(
       <StickyMetaBar
         course={course()}
-        state={state()}
+        status={state().progress.status}
         onBack={undefined}
         onResume={undefined}
       />,
@@ -324,7 +324,7 @@ describe("StickyMetaBar", () => {
     render(
       <StickyMetaBar
         course={course()}
-        state={state()}
+        status={state().progress.status}
         onBack={onBack}
         onResume={undefined}
       />,

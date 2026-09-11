@@ -15,7 +15,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { CourseDetail, EnrolmentState } from "@ds/sdk";
+import type { CourseDetail } from "@ds/sdk";
 import { OverviewTab } from "./OverviewTab.js";
 
 // Without this every render stacks in one document, and an assertion that
@@ -39,13 +39,6 @@ function courseWith(modules: CourseDetail["modules"]): CourseDetail {
   } as unknown as CourseDetail;
 }
 
-/** Not enrolled. The Inhalte list draws the same either way. */
-const STATE = {
-  modules: [],
-  watchedPercent: 0,
-  quizPassed: false,
-} as unknown as EnrolmentState;
-
 const chapter = (title: string) => ({
   id: `ch-${title}`,
   ordinal: 0,
@@ -66,7 +59,6 @@ describe("the topic line under a module", () => {
             chapters: [chapter("Kapitel 1 – Definition und Epidemiologie")],
           },
         ] as unknown as CourseDetail["modules"])}
-        state={STATE}
       />,
     );
 
@@ -90,7 +82,6 @@ describe("the topic line under a module", () => {
             chapters: [chapter("Kapitel 1 – Definition und Epidemiologie")],
           },
         ] as unknown as CourseDetail["modules"])}
-        state={STATE}
       />,
     );
 
@@ -110,7 +101,6 @@ describe("the topic line under a module", () => {
             chapters: [chapter("Grundlagen"), chapter("Epidemiologie")],
           },
         ] as unknown as CourseDetail["modules"])}
-        state={STATE}
       />,
     );
 
@@ -129,7 +119,6 @@ describe("the topic line under a module", () => {
             chapters: [chapter("Grundlagen")],
           },
         ] as unknown as CourseDetail["modules"])}
-        state={STATE}
       />,
     );
 
@@ -160,7 +149,6 @@ describe("the Inhalte row's right-hand column", () => {
             chapters: [timed(1524)],
           },
         ] as unknown as CourseDetail["modules"])}
-        state={STATE}
       />,
     );
 
@@ -180,7 +168,6 @@ describe("the Inhalte row's right-hand column", () => {
             chapters: [chapter("Nur Material")],
           },
         ] as unknown as CourseDetail["modules"])}
-        state={STATE}
       />,
     );
 
@@ -200,7 +187,6 @@ describe("the rules between sections", () => {
           description: null,
           learningObjectives: ["Sichere Diagnosestellung"],
         }}
-        state={STATE}
       />,
     );
 

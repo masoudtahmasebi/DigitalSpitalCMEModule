@@ -42,7 +42,20 @@ import { Button, CourseMetaBar, ProgressPanel } from "./primitives.js";
 
 export function StickyMetaBar(props: {
   course: CourseDetail;
-  state: EnrolmentState;
+  /**
+   * The enrolment's own status, and nothing else of it (P213-01).
+   *
+   * It used to be the whole `EnrolmentState` for the sake of one field. The
+   * DocCheck preview renders this header for a reader who has no enrolment at
+   * all — not an empty one, none, because they have no account — and the only
+   * way to draw it was to invent a zero-progress enrolment to satisfy a
+   * parameter that is read once. Narrowing the prop is what makes
+   * `"not_started"` there a statement of fact rather than a fabricated record.
+   *
+   * The **rule** stays here: which label goes on the button is still decided in
+   * one place, from the server's status, exactly as P68-02 left it.
+   */
+  status: EnrolmentState["progress"]["status"];
   /** Only rendered when the learner arrived through the catalogue. */
   onBack: (() => void) | undefined;
   onResume: (() => void) | undefined;
@@ -63,9 +76,7 @@ export function StickyMetaBar(props: {
    * disagree with the progress beside it.
    */
   const resumeLabel =
-    props.state.progress.status === "not_started"
-      ? de.overview.start
-      : de.overview.resume;
+    props.status === "not_started" ? de.overview.start : de.overview.resume;
 
   return (
     /* No `mb-4` (P204-01): the parent's `space-y-6` already sets the gap under

@@ -67,20 +67,43 @@ const index = readFileSync("packages/domain/src/index.ts", "utf8");
 /**
  * Every name `index.ts` re-exports, and which of them are types.
  *
- * Types come from two shapes and the second is the one that was missed:
- * `export type { A, B }` blocks, where the members carry no keyword of their
- * own, and inline `type A` inside a value export list.
+ * ## The third defect in this script, found by it missing a rule (P213-01)
+ *
+ * The previous version matched **members**: a name alone on a line indented by
+ * exactly two spaces. That is what a multi-line `export { … } from "…"` block
+ * looks like, and `index.ts` has 41 statements that are not — the whole export
+ * fits on one line. Every name in them was invisible to this scan, including
+ * `contentGates`, `isCourseComplete`, `punktemeldungOutcome`,
+ * `resolveTenantContext` and `evaluateGate` — five compliance rules whose being
+ * called is the entire question this script exists to ask.
+ *
+ * It was found because a rule added in P213-01 with **no caller at all** —
+ * `anonymousAccess`, a TypeScript restatement of a predicate that lives in SQL
+ * — was not reported. A check that cannot see two thirds of its input is §9.1's
+ * second form, and it is the form that reads as good news.
+ *
+ * So the statement is the unit now, not the line. Each `export … from "…"` is
+ * matched whole, its brace list split on commas, and `export type { … }` or an
+ * inline `type X` marks a name as a type.
  */
-const names = [...index.matchAll(/^\s{2}(?:type )?([A-Za-z][A-Za-z0-9_]*),?$/gm)].map(
-  (match) => match[1],
-);
+const names = [];
+const typeNames = new Set();
 
-const typeNames = new Set(
-  [...index.matchAll(/^\s{2}type ([A-Za-z][A-Za-z0-9_]*),?$/gm)].map((match) => match[1]),
-);
-for (const block of index.matchAll(/export type \{([\s\S]*?)\}/gu)) {
-  for (const [, name] of block[1].matchAll(/([A-Za-z][A-Za-z0-9_]*)/gu)) {
-    typeNames.add(name);
+for (const statement of index.matchAll(
+  /export\s+(type\s+)?\{([^}]*)\}\s*from\s*["'][^"']+["']/gu,
+)) {
+  const wholeBlockIsTypes = statement[1] !== undefined;
+  for (const member of statement[2].split(",")) {
+    // `A as B` re-exports under B, which is the name a caller writes.
+    const match =
+      /^\s*(?:(type)\s+)?[A-Za-z][A-Za-z0-9_]*(?:\s+as\s+([A-Za-z][A-Za-z0-9_]*))?\s*$/u.exec(
+        member,
+      );
+    if (match === null) continue;
+    const name =
+      match[2] ?? /[A-Za-z][A-Za-z0-9_]*/u.exec(member.replace(/^\s*type\s+/u, ""))[0];
+    names.push(name);
+    if (wholeBlockIsTypes || match[1] !== undefined) typeNames.add(name);
   }
 }
 

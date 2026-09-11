@@ -38,6 +38,7 @@ import {
   parseBranding,
   questionProblems,
   questionRemoval,
+  signInMethodsProblem,
   storageKeyOf,
   validateReorder,
   MIN_QUIZ_OPTIONS,
@@ -201,6 +202,8 @@ export class AuthoringService {
     // portal and later gets a Keycloak realm should not need a new project.
     assign(patch, "identityProvider", update.identityProvider);
     assign(patch, "loginUrl", update.loginUrl);
+    assign(patch, "docCheckLoginAllowed", update.docCheckLoginAllowed);
+    assign(patch, "keycloakLoginAllowed", update.keycloakLoginAllowed);
     assign(patch, "keycloakIssuer", update.keycloakIssuer);
     assign(patch, "keycloakAudience", update.keycloakAudience);
     assign(patch, "keycloakRealm", update.keycloakRealm);
@@ -210,6 +213,40 @@ export class AuthoringService {
     assign(patch, "smtpUsername", update.smtpUsername);
     assign(patch, "smtpFromAddress", update.smtpFromAddress);
     assign(patch, "smtpFromName", update.smtpFromName);
+
+    if (
+      update.docCheckLoginAllowed !== undefined ||
+      update.keycloakLoginAllowed !== undefined
+    ) {
+      /*
+       * The pair rule, evaluated against what the row would become (P213-01).
+       *
+       * This is a PATCH, so a request naming one flag is asking about the pair
+       * without holding it. Checking only the submitted fields would let a
+       * project reach "neither permitted" in two legal-looking requests — and
+       * the database CHECK from migration 0055 would then refuse the second one
+       * with a constraint name, which is a 500 and tells the operator nothing
+       * (§9.4). The refusal belongs here, where it can say what to do.
+       *
+       * A slug RLS hides reads as `undefined` and takes the same 404 the update
+       * below would give it, rather than being read as an absent pair (§9.6).
+       */
+      const current = await this.repository.findProjectSignInMethods(slug);
+      if (current === undefined) {
+        throw AppError.notFound(`project slug=${slug} not visible in tenant`);
+      }
+      const problem = signInMethodsProblem({
+        docCheckLoginAllowed: update.docCheckLoginAllowed ?? current.docCheckLoginAllowed,
+        keycloakLoginAllowed: update.keycloakLoginAllowed ?? current.keycloakLoginAllowed,
+      });
+      if (problem !== undefined) {
+        throw new AppError(
+          "validation",
+          `sign-in methods rejected: ${problem}`,
+          "Mindestens eine Anmeldemöglichkeit muss erlaubt bleiben. Ohne DocCheck und ohne Anmeldung über das Kundenkonto kann niemand dieses Projekt öffnen.",
+        );
+      }
+    }
 
     if (update.branding !== undefined) {
       /*

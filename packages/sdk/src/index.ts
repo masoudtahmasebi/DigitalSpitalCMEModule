@@ -341,6 +341,23 @@ export function createClient(options: ClientOptions) {
   const courseQuery = (slug: string | undefined) =>
     slug === undefined || slug === "" ? "" : `?course=${encodeURIComponent(slug)}`;
 
+  /**
+   * A catalogue path with its filters, for the signed-in route and the preview
+   * route alike.
+   *
+   * One builder rather than two: the pair differ only in their prefix, and two
+   * copies of "how a filter is spelled" is how the preview would quietly stop
+   * honouring a facet the real catalogue gained (§9.10b).
+   */
+  const withCourseQuery = (path: string, query: CourseListQuery): string => {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) search.set(key, String(value));
+    }
+    const qs = search.toString();
+    return qs === "" ? path : `${path}?${qs}`;
+  };
+
   return {
     request,
     requestBlob,
@@ -374,16 +391,32 @@ export function createClient(options: ClientOptions) {
       return url.toString();
     },
 
-    listCourses: (query: CourseListQuery = {}): Promise<CourseListResponse> => {
-      const search = new URLSearchParams();
-      for (const [key, value] of Object.entries(query)) {
-        if (value !== undefined) search.set(key, String(value));
-      }
-      const qs = search.toString();
-      return request(qs === "" ? "/courses" : `/courses?${qs}`);
-    },
+    listCourses: (query: CourseListQuery = {}): Promise<CourseListResponse> =>
+      request(withCourseQuery("/courses", query)),
 
     getCourseBySlug: (slug: string): Promise<CourseDetail> => request(course(slug)),
+
+    /**
+     * The same catalogue, for a visitor holding no platform token (P213-01).
+     *
+     * A DocCheck login produces no bearer this API can validate, so the widget
+     * calls these two instead of the pair above when it has no token and the
+     * project permits it. The response shape is identical — deliberately, so
+     * the same components render both — and carries no enrolment state,
+     * because there is no user to have one.
+     *
+     * It answers 404 when the project has not opted in, and the *same* 404 for
+     * a project that does not exist. That 404 **is** the widget's answer: it
+     * renders its signed-out notice, which is the screen such a visitor saw
+     * before any of this existed. What it must not do is tell the two apart and
+     * report which — that would rebuild the project-slug oracle the route was
+     * shaped to avoid (ADR-0007).
+     */
+    listPreviewCourses: (query: CourseListQuery = {}): Promise<CourseListResponse> =>
+      request(withCourseQuery("/preview/courses", query)),
+
+    getPreviewCourseBySlug: (slug: string): Promise<CourseDetail> =>
+      request(`/preview/courses/${seg(slug)}`),
 
     /**
      * Idempotent: enrolling twice returns the same enrolment.

@@ -50,6 +50,7 @@ import { ProgressCard, StickyMetaBar } from "./components/CourseHeader.js";
 import { StickyProgress } from "./components/StickyProgress.js";
 import { ExpertsTab } from "./components/ExpertsTab.js";
 import { OverviewTab } from "./components/OverviewTab.js";
+import { PreviewApp } from "./components/PreviewApp.js";
 import { BrandLogo } from "./components/BrandLogo.js";
 import { CourseShell } from "./components/CourseShell.js";
 import { PlayerScreen } from "./components/PlayerScreen.js";
@@ -273,6 +274,32 @@ export function App(props: AppProps) {
    * a caller precisely nothing (CLAUDE.md §4 invariant 2).
    */
   if (props.signedIn === false) {
+    /*
+     * …and there may be something for them to read (P213-01).
+     *
+     * A DocCheck visitor lands here — the plugin writes `signed-in="no"` for
+     * them, because `DS_LMS_Token_Source::available()` is false without a
+     * Keycloak token. The client asked for such a visitor to get the catalogue
+     * and the course descriptions rather than one sentence.
+     *
+     * `PreviewApp` asks the API whether this project permits that, and renders
+     * exactly the `SignedOutNotice` below when it does not — so a project that
+     * has not opted in is unchanged, and the decision is the server's rather
+     * than the page's (§4 invariant 1). `isConfigured` is checked first because
+     * the preview needs an API to ask.
+     */
+    if (isConfigured(props)) {
+      return (
+        <PreviewApp
+          apiBase={props.apiBase}
+          projectSlug={props.projectSlug}
+          courseSlug={props.courseSlug}
+          {...(props.profileHint === undefined ? {} : { profileHint: props.profileHint })}
+          signInUrl={props.signInUrl}
+        />
+      );
+    }
+
     return (
       <SignedOutNotice
         title={de.signedOut.title}
@@ -1134,7 +1161,7 @@ function Loaded(props: {
       */}
       <StickyMetaBar
         course={detail}
-        state={state}
+        status={state.progress.status}
         onBack={props.onBackToCatalogue}
         onResume={resume}
       />
@@ -1177,7 +1204,7 @@ function Loaded(props: {
             A teal tab meeting a grey panel draws the seam instead of hiding it. */}
             <div className="min-w-0 rounded-2xl rounded-tl-none border border-brand-100 bg-white p-5 shadow-sm max-sm:rounded-t-none max-sm:border-t-0 max-sm:border-brand-500 sm:p-6">
               {tab === "overview" ? (
-                <OverviewTab course={detail} state={state} />
+                <OverviewTab course={detail} />
               ) : tab === "speakers" ? (
                 <ExpertsTab experts={detail.experts} />
               ) : tab === "library" ? (

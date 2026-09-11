@@ -8,6 +8,7 @@
 
 import { Module } from "@nestjs/common";
 import { CatalogController } from "./catalog.controller.js";
+import { CataloguePreviewController } from "./preview.controller.js";
 
-@Module({ controllers: [CatalogController] })
+@Module({ controllers: [CatalogController, CataloguePreviewController] })
 export class CatalogModule {}

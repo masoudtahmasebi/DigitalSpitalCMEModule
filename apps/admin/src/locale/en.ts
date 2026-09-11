@@ -434,6 +434,21 @@ export const en: DeepPartial<typeof german> = {
     loginUrlHint:
       "If participants sign in on the customer's website — in a WordPress portal, for example — enter that page's address here. The overview page then links there instead of showing a sign-in form of its own. Leave empty to sign in through this portal.",
 
+    signIn: "Sign-in methods",
+
+    keycloakLogin: "Sign-in with the customer account",
+    keycloakLoginLabel: "Allow sign-in with the customer account",
+    keycloakLoginHint:
+      "The ordinary sign-in: it goes through the Keycloak realm configured below and is the only one that lets participants take a course and earn CME points.",
+
+    docCheckLogin: "DocCheck preview",
+    docCheckLoginLabel: "Allow viewing without a customer account",
+    docCheckLoginHint:
+      "Healthcare professionals who signed in through DocCheck hold no access to this portal. With this option on, they can read the course list and the descriptions. They cannot take part, watch videos, sit the Lernerfolgskontrolle, receive a Teilnahmebescheinigung or have points reported — that requires the customer account, because only it holds the EFN.",
+
+    noSignInMethod:
+      "At least one sign-in method has to stay enabled. With neither, nobody could open this project.",
+
     keycloak: "Sign-in (Keycloak)",
     keycloakWarning:
       "These values decide which realm every access token of this project is checked against. A wrong value locks out every participant of this project.",

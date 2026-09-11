@@ -16,7 +16,7 @@
 
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import { createPool } from "@ds/postgres";
 import { NestFactory } from "@nestjs/core";
@@ -488,5 +488,145 @@ describe("GET /courses/:slug", () => {
       headers: { authorization: `Bearer ${token}`, "x-ds-project": projectSlug },
     });
     expect(response.status).toBe(404);
+  });
+});
+
+/**
+ * The catalogue preview for a DocCheck visitor (P213-01).
+ *
+ * The client: *"when the user logs in with doccheck they are able to see the
+ * course list, and they can see course descriptions, but if they want to
+ * participate, they will get a popup"*.
+ *
+ * A DocCheck login identifies somebody to the **website** and cannot produce a
+ * platform token, so this is the one place a request with no bearer reads
+ * tenant data. That makes it the part of this change worth the most testing,
+ * and these cases are written around the three things that must hold:
+ *
+ * 1. **Opt-in.** A project that has not enabled DocCheck is refused, and is
+ *    refused the same way a project that does not exist is (ADR-0007, §9.5) —
+ *    otherwise the route is a project-slug oracle for one request.
+ * 2. **Read only.** The preview reads the catalogue. Everything that advances a
+ *    Fortbildung still needs a token, and the case below asserts that against
+ *    the same project with the preview switched *on* — the state in which a
+ *    mistake would actually be reachable.
+ * 3. **No user.** A preview reader has no enrolment, because they have no
+ *    account. Not by a filter, but because there is no user id to match.
+ *
+ * They run in this file rather than a new one because the fixture it already
+ * builds — a project, a published course, a granted and a denied subject — is
+ * exactly what the preview needs, and because the case directly above asserts
+ * the authenticated route still denies by default. The two belong together: it
+ * is the *pair* that says the boundary moved where it was meant to and nowhere
+ * else.
+ */
+describe("GET /preview/courses — the DocCheck catalogue (P213-01)", () => {
+  const allowPreview = async (allowed: boolean): Promise<void> => {
+    await seedPool.query(
+      "UPDATE projects SET doccheck_login_allowed = $2 WHERE slug = $1",
+      [projectSlug, allowed],
+    );
+  };
+
+  /** No Authorization header at all — which is the entire point. */
+  const preview = async (path: string, slug = projectSlug): Promise<Response> =>
+    fetch(`${baseUrl}/preview${path}`, { headers: { "x-ds-project": slug } });
+
+  afterEach(async () => {
+    await allowPreview(false);
+  });
+
+  it("refuses a project that has not permitted DocCheck", async () => {
+    await allowPreview(false);
+
+    const response = await preview("/courses");
+
+    expect(response.status).toBe(404);
+  });
+
+  it("refuses an unknown project the same way, so it is not an oracle", async () => {
+    await allowPreview(true);
+
+    const known = await preview("/courses", `${projectSlug}-does-not-exist`);
+    await allowPreview(false);
+    const optedOut = await preview("/courses");
+
+    /*
+     * Same status and same problem *document* — minus the correlation id, which
+     * is per-request by design and is the one field that legitimately differs.
+     * Comparing whole bodies was the first version of this and failed on it.
+     */
+    const shape = async (response: Response): Promise<unknown> => {
+      const { correlationId: _ignored, ...rest } = (await response.json()) as Record<
+        string,
+        unknown
+      >;
+      return rest;
+    };
+
+    expect(known.status).toBe(404);
+    expect(optedOut.status).toBe(404);
+    expect(await shape(known)).toEqual(await shape(optedOut));
+  });
+
+  it("lists the published courses once the project permits it", async () => {
+    await allowPreview(true);
+
+    const response = await preview("/courses");
+    const body = (await response.json()) as {
+      items: { slug: string; enrolment: unknown }[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.items.map((item) => item.slug)).toContain(courseSlug);
+  });
+
+  it("serves a course's description without a token", async () => {
+    await allowPreview(true);
+
+    const response = await preview(`/courses/${courseSlug}`);
+    const body = (await response.json()) as { slug: string; title: string };
+
+    expect(response.status).toBe(200);
+    expect(body.title).toBe("Pipeline course");
+  });
+
+  it("shows no enrolment, because a preview reader has no account", async () => {
+    await allowPreview(true);
+
+    const response = await preview("/courses");
+    const body = (await response.json()) as { items: { enrolment: unknown }[] };
+
+    // Null rather than absent: the field is part of the card's shape, and the
+    // honest value for somebody with no account is "you are not enrolled".
+    for (const item of body.items) expect(item.enrolment).toBeNull();
+  });
+
+  it("still refuses to enrol, with the preview switched on", async () => {
+    /*
+     * The case that matters most. Opening the catalogue must not open anything
+     * that advances a Fortbildung — and the state in which a mistake would be
+     * reachable is *this* one, with the project opted in, not the default.
+     */
+    await allowPreview(true);
+
+    const response = await fetch(`${baseUrl}/courses/${courseSlug}/enrolment`, {
+      method: "PUT",
+      headers: { "x-ds-project": projectSlug },
+    });
+
+    expect(response.status).toBe(401);
+  });
+
+  it("does not make the authenticated catalogue public either", async () => {
+    await allowPreview(true);
+
+    // `/courses`, not `/preview/courses`: the route a signed-in learner uses is
+    // untouched, and a token-less caller still gets nothing from it.
+    const response = await fetch(`${baseUrl}/courses`, {
+      headers: { "x-ds-project": projectSlug },
+    });
+
+    expect(response.status).toBe(401);
   });
 });
