@@ -239,12 +239,28 @@ export function TabbedPanel<T extends string>(props: {
                     // the tablist is after the panel in the DOM (`order-*`
                     // reorders what you see, never what paints on top).
                     //
-                    // `sm:pb-4` is the gap under the inactive tabs, expressed
-                    // where it belongs (P209-01): this tab reaches 6 px further
-                    // down than they do, into the panel. Previously they were
-                    // pushed *up* by the same 6 px, which moved their labels
+                    // `sm:pb-[1.125rem]` is the gap under the inactive tabs,
+                    // expressed where it belongs (P209-01): this tab reaches
+                    // further down than they do, into the panel. Previously
+                    // they were pushed *up* instead, which moved their labels
                     // with them.
-                    "relative -mb-px rounded-tl-[1.25rem] border border-b-0 border-brand-100 bg-white text-brand-700 sm:pb-4 max-sm:hidden"
+                    //
+                    // 18 px against the row's own `py-2.5`, so the tab is 8 px
+                    // taller and — after the 1 px the `-mb-px` overlap takes
+                    // back — the inactive tabs stand **7 px** off the panel.
+                    // That is the drawing's figure: on `screens/page-02.png`
+                    // the teal tabs end at design y 682 and the panel's top
+                    // edge, read at design x 1234 clear of every tab, is at
+                    // 690. It was `sm:pb-4`, which measured 5 px in Chromium
+                    // — close, and two pixels is exactly the kind of nearly
+                    // right this file exists to stop.
+                    //
+                    // Measured in the browser, not asserted here: the distance
+                    // is between two boxes and jsdom lays out neither. The
+                    // check is in `journey.spec.ts` beside the one for the
+                    // labels being on one line, because the two are the same
+                    // measurement from opposite ends (P222-02, DEP-28).
+                    "relative -mb-px rounded-tl-[1.25rem] border border-b-0 border-brand-100 bg-white text-brand-700 sm:pb-[1.125rem] max-sm:hidden"
                   : // Half-height on three corners, square on the top-right —
                     // the layout's shape for every teal block (see the file
                     // header). It was `rounded-t-xl`, which squares off the two
@@ -260,9 +276,9 @@ export function TabbedPanel<T extends string>(props: {
                     // The inactive tabs stand *off* the panel while the
                     // selected one merges into it (P204-01) — the gap is what
                     // makes "selected" a position rather than only a colour.
-                    // That gap is now `sm:pb-4` on the selected tab above,
-                    // rather than `sm:mb-1.5` here: pushing these up moved
-                    // their labels up with them (P209-01).
+                    // That gap is now `sm:pb-[1.125rem]` on the selected tab
+                    // above, rather than `sm:mb-1.5` here: pushing these up
+                    // moved their labels up with them (P209-01).
                     //
                     // `sm:border-t sm:border-t-transparent` earns its place: the
                     // selected tab has a 1 px top border and this one has none,
@@ -327,7 +343,7 @@ export function CourseMetaBar(props: {
      * supplies, so `mx-4` survives only below `sm` where the strip is a card
      * inside a full-bleed hero rather than flush to it.
      */
-    <div className="relative z-10 -mt-12 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl rounded-br-[1.75rem] bg-white px-5 py-3.5 shadow-md max-sm:mx-4 max-sm:-mt-7 max-sm:flex-col max-sm:gap-y-4 max-sm:px-5 max-sm:py-6">
+    <div className="relative z-10 -mt-12 flex flex-wrap items-center gap-x-[1.625rem] gap-y-3 rounded-xl rounded-br-[1.75rem] bg-white px-5 py-3.5 shadow-md max-sm:mx-4 max-sm:-mt-7 max-sm:flex-col max-sm:gap-y-4 max-sm:px-5 max-sm:py-6">
       {props.points === null ? null : (
         /*
          * **One orange pill with an internal hairline**, at every width — not
@@ -360,19 +376,67 @@ export function CourseMetaBar(props: {
       )}
 
       {/*
-        `border-l` is a divider between columns, and there are no columns below
-        `sm`. Left in place there it would draw a stub of a rule to the left of
-        centred text.
+        ## One divider, and it stands between the duration and the modules
+
+        DEP-27, Amruth 02.09: *"Remove the divider between punkte button and
+        timer … There should be only one divider which is before the module
+        info."* The drawing agrees, and it was measured rather than taken on
+        trust — `docs/design/screens/page-02.png`, ×1920/1400:
+
+        | element                 | design x  |
+        | ----------------------- | --------- |
+        | CME pill                | 280 … 459 |
+        | clock glyph             | 487 … 514 |
+        | duration text           | 528 … 705 |
+        | **the only grey rule**  | **731**   |
+        | modules glyph           | 757 … 784 |
+        | modules text            | 800 … 872 |
+
+        A column scan of the whole 86 px bar finds exactly one grey vertical
+        run in it. Both halves were wrong before: a rule to the left of the
+        duration that the drawing does not have, and none of the weight the
+        one it does have carries.
+
+        The rule is its **own element** rather than a `border-l` on the modules
+        group, for two reasons. It is 55 design px tall on an 86 px bar — a
+        third taller than the 30 px line of icon-and-text it used to hang off,
+        so a border could not be that height without padding the content to
+        match it. And a border belongs to whatever it is drawn on, which is how
+        a rule that should appear once came to be written twice.
+
+        It is drawn only when there is something on **both** sides of it. A
+        divider with nothing to its left is a stub, which is what the mobile
+        column used to get before `max-sm:border-l-0` was bolted on; here the
+        condition says it once.
       */}
       {props.duration === null ? null : (
-        <span className="flex items-center gap-2 border-l border-gray-200 pl-6 text-sm text-gray-800 max-sm:border-l-0 max-sm:pl-0 max-sm:text-base max-sm:font-semibold">
+        <span className="flex items-center gap-3.5 text-sm text-gray-800 max-sm:text-base max-sm:font-semibold">
           <ClockIcon />
           {props.duration}
         </span>
       )}
 
+      {props.modules === null ||
+      (props.duration === null && props.points === null) ? null : (
+        /*
+          2 px, which is the client's figure and not the export's: measured,
+          the drawing's rule is a single fully-saturated column at 1400 px —
+          a hairline, so somewhere between 1 and 1.4 px at 1920 and not
+          distinguishable from 1 px at that resolution. Amruth asked for 2 px
+          explicitly, a deliberate deviation from the render recorded here and
+          in the ticket rather than absorbed (CLAUDE.md §3).
+
+          `#dddddd` is the export's own measured colour, not `gray-200`
+          (`#e5e7eb`), which is both lighter and cooler.
+        */
+        <span
+          aria-hidden="true"
+          className="h-[3.4375rem] w-0.5 shrink-0 bg-[#dddddd] max-sm:hidden"
+        />
+      )}
+
       {props.modules === null ? null : (
-        <span className="flex items-center gap-2 border-l border-gray-200 pl-6 text-sm text-gray-800 max-sm:border-l-0 max-sm:pl-0 max-sm:text-base max-sm:font-semibold">
+        <span className="flex items-center gap-3.5 text-sm text-gray-800 max-sm:text-base max-sm:font-semibold">
           <ModulesIcon />
           {props.modules}
         </span>
@@ -391,7 +455,7 @@ export function ClockIcon(props: { className?: string }) {
       viewBox="0 0 20 20"
       // Orange, not teal. Both exports draw the meta strip's glyphs in the
       // accent colour beside the points pill — they are one group.
-      className={props.className ?? "h-5 w-5 text-cta-500"}
+      className={props.className ?? "h-7 w-7 shrink-0 text-cta-500"}
       fill="currentColor"
       aria-hidden="true"
     >
@@ -419,7 +483,7 @@ export function ModulesIcon(props: { className?: string }) {
     <svg
       viewBox="0 0 24 24"
       // Orange, for the reason on ClockIcon.
-      className={props.className ?? "h-5 w-5 text-cta-500"}
+      className={props.className ?? "h-7 w-7 shrink-0 text-cta-500"}
       aria-hidden="true"
     >
       {/*

@@ -730,7 +730,27 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * labels sat 7.00 px apart.
        *
        * A browser is the only thing that can say so, and one is already here.
+       *
+       * ## Wait for the thing, then measure it (P221-01)
+       *
+       * `all()` and `evaluateAll()` are the two locator methods that do **not**
+       * retry: they resolve against whatever is in the document at the instant
+       * they run and answer an empty array when the answer is "not yet". Every
+       * other Playwright call in this file auto-waits, which is why nothing
+       * here had ever needed a wait written down.
+       *
+       * A geometry measurement therefore has to state what it is waiting for
+       * as an assertion of its own, before it snapshots. Otherwise the suite
+       * is racing the API — and it will win on a rig whose API is on
+       * `127.0.0.1` and lose against an installation across the internet,
+       * which is exactly how deploy 131 failed with *"the catalogue drew no
+       * course cards"* on a catalogue that had one (§9.1: a check whose answer
+       * depends on network timing is not measuring the layout).
        */
+      await expect(
+        learner.getByRole("tab").first(),
+        "the catalogue's tab row never rendered",
+      ).toBeVisible({ timeout: 20_000 });
       const labelCentres = await Promise.all(
         (await learner.getByRole("tab").all()).map((tab) =>
           tab.evaluate((element) => {
@@ -753,6 +773,76 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         Math.max(...labelCentres) - Math.min(...labelCentres),
         `the tab labels are not on one line: centres at ${labelCentres.join(", ")}`,
       ).toBeLessThanOrEqual(1);
+
+      /*
+       * The gap beneath the unselected tabs (DEP-28, P222-02).
+       *
+       * > There should be gap beneath the tabs
+       *
+       * Measured on `screens/page-02.png` (×1920/1400): the teal tabs end at
+       * design y 682 and the panel's own top edge — read at design x 1234,
+       * clear of every tab — is at 690. **Seven design px of white**, which is
+       * what makes the row read as folder tabs standing on a panel rather than
+       * as four buttons welded to it.
+       *
+       * P209-01 built it, and built it the second way round: the selected tab
+       * carries `sm:pb-4` and reaches *further down* into the panel, instead of
+       * the others being pushed up — because pushing them up moved their labels
+       * with them, which is the 7.00 px misalignment the assertion above exists
+       * for. The two are the same measurement from opposite ends and they have
+       * to be checked together, or fixing either one silently spends the other.
+       *
+       * Asserted here rather than in a component test because it is a distance
+       * between two boxes that jsdom does not lay out (§9.7): a unit test could
+       * only say `sm:pb-4` is in a class string, which is a test about Tailwind
+       * and would stay green if the panel moved.
+       */
+      /*
+       * Anchored on the tablist **element**, not on `document`. The widget's
+       * shadow root is open in this browser only so that Playwright's own
+       * locators can pierce it (`support/shadow.ts`); a bare
+       * `document.querySelectorAll` inside `evaluate` does not pierce an open
+       * shadow root and would have found nothing — a null the assertion below
+       * would have reported as "no tab to measure" on a page full of tabs.
+       */
+      const tabGap = await learner
+        .getByRole("tablist")
+        .first()
+        .evaluate((list) => {
+          // `Array.from`, not a spread: the e2e project's target does not
+          // give `NodeListOf` an iterator.
+          const unselected = Array.from(list.querySelectorAll('[role="tab"]')).filter(
+            (tab) => tab.getAttribute("aria-selected") !== "true",
+          );
+          const panel = list.previousElementSibling;
+          if (unselected.length === 0 || panel === null) return null;
+          const panelTop = panel.getBoundingClientRect().top;
+          return unselected.map((tab) => panelTop - tab.getBoundingClientRect().bottom);
+        });
+
+      expect(
+        tabGap,
+        "no unselected tab, or no panel, to measure the gap between",
+      ).not.toBeNull();
+      const gaps = tabGap ?? [];
+      /*
+       * A range, not a figure. The drawing's 7 px is a target the browser will
+       * not hit exactly — the tabs' 40 px box comes out of a line-height and
+       * the panel's edge out of a 1 px border — but the two failures this
+       * guards against are both far outside it: no gap at all (the tabs weld
+       * to the panel, which is the report) and a gap wide enough that the row
+       * stops touching its panel.
+       */
+      for (const gap of gaps) {
+        expect(
+          gap,
+          `an unselected tab does not stand off the panel — the gap beneath it is ${gap.toFixed(1)} px, and the drawing has 7. Gaps: ${gaps.map((n) => n.toFixed(1)).join(", ")}`,
+        ).toBeGreaterThan(2);
+        expect(
+          gap,
+          `an unselected tab floats too far above the panel — ${gap.toFixed(1)} px, and the drawing has 7. Gaps: ${gaps.map((n) => n.toFixed(1)).join(", ")}`,
+        ).toBeLessThan(16);
+      }
 
       /*
        * The course cards line up (DEP-42).
@@ -779,6 +869,21 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * On a rig with a single course only the second is checkable, and the
        * assertion says so rather than passing quietly on nothing (§9.1).
        */
+      /*
+       * The wait the measurement below is entitled to assume — see P221-01 on
+       * the tab row above. `CoursePanel` draws the tab row from static copy
+       * and the cards behind `list.loading`, so "tabs are on screen" says
+       * nothing at all about whether `listCourses` has answered yet.
+       *
+       * `article` is unambiguous here: the only other one in the widget is a
+       * speaker in `ExpertsTab`, which belongs to the course-detail screen the
+       * learner has not opened.
+       */
+      await expect(
+        learner.locator("article").first(),
+        "the catalogue never drew a course card",
+      ).toBeVisible({ timeout: 20_000 });
+
       const cards = await learner.locator("article").evaluateAll((nodes) =>
         nodes.map((node) => {
           const card = node.getBoundingClientRect();

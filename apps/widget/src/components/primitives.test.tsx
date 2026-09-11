@@ -133,6 +133,83 @@ describe("CourseMetaBar — the strip under the hero (DEP-27)", () => {
     // outer radius has to clip it.
     expect(badge.className).toContain("overflow-hidden");
   });
+
+  /*
+   * The second round of DEP-27, which arrived as a comment on the ticket an
+   * hour after the first fix and was never done (Amruth, 02.09 15:34):
+   *
+   *   * The time icon and module icon size needs to be a bit bigger
+   *   * Remove the divider between punkte button and timer, once the divider is
+   *     removed, reduce the gap between the two.
+   *   * There should be only one divider which is before the module info.
+   *
+   * Measured against `docs/design/screens/page-02.png` before being believed —
+   * a column scan of the 86 px bar finds exactly one grey vertical run in it,
+   * at design x 731, between the duration text (ends 705) and the modules glyph
+   * (starts 757). The drawing and the report agree.
+   */
+  it("draws exactly one divider, and it is not between the points and the duration", () => {
+    const strip = bar();
+    const rules = [...strip.children].filter((child) =>
+      child.className.includes("bg-[#dddddd]"),
+    );
+
+    expect(rules.length, "the bar should carry exactly one divider").toBe(1);
+
+    // Which side of the duration it falls on is the whole report, so assert the
+    // position rather than only the count: points, duration, rule, modules.
+    const order = [...strip.children];
+    const duration = screen.getByText("2 Stunden 30 Minuten");
+    const modules = screen.getByText("3 Module");
+    const rule = rules[0];
+    if (rule === undefined) throw new Error("no divider to place");
+
+    expect(order.indexOf(duration)).toBeLessThan(order.indexOf(rule));
+    expect(order.indexOf(rule)).toBeLessThan(order.indexOf(modules));
+  });
+
+  it("hangs no border on the duration or the modules themselves", () => {
+    // The old shape drew the rule as a `border-l` on each of the two groups,
+    // which is why there were two of them and why neither could be 55 px tall
+    // on a 30 px line of text. A border belongs to what it is drawn on; this
+    // rule belongs to the bar.
+    bar();
+    for (const text of ["2 Stunden 30 Minuten", "3 Module"]) {
+      expect(screen.getByText(text).className).not.toContain("border-l");
+    }
+  });
+
+  it("gives the two glyphs the drawing's size rather than the default 20 px", () => {
+    // Measured: both glyphs are 28-29 design px wide and 30 tall. They were
+    // `h-5 w-5` — 20 px — which is what "needs to be a bit bigger" is about.
+    bar();
+    const glyphs = [...document.querySelectorAll("svg")];
+    expect(glyphs.length).toBeGreaterThanOrEqual(2);
+    for (const glyph of glyphs) {
+      expect(glyph.getAttribute("class")).toContain("h-7 w-7");
+    }
+  });
+
+  it("drops the divider when there is nothing on one side of it", () => {
+    cleanup();
+    render(
+      <CourseMetaBar
+        points={null}
+        pointsLabel="CME Punkte"
+        duration={null}
+        modules="3 Module"
+        action={null}
+      />,
+    );
+    const strip = document.body.querySelector("div");
+    if (strip === null) throw new Error("CourseMetaBar rendered nothing");
+
+    // A rule with nothing to its left is a stub, which is exactly the defect
+    // `max-sm:border-l-0` used to be patching over on the mobile column.
+    expect(
+      [...strip.children].filter((child) => child.className.includes("bg-[#dddddd]")),
+    ).toHaveLength(0);
+  });
 });
 
 describe("ModulesIcon (DEP-27b)", () => {
