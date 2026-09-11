@@ -123,27 +123,97 @@ function staffClient(
  *
  * `401` and `403` are skipped: the console routes both already, to the login
  * form and to the "not an admin" screen.
+ *
+ * ## And one status on one method, which is a different kind of skip
+ *
+ * See `ANSWERS_WITH_NOT_FOUND`. That one is not "the console handles this
+ * elsewhere" — it is "this is not a failure at all".
  */
+
+/**
+ * Calls whose **404 is an answer**, not a failure.
+ *
+ * `GET /admin/branding/font` 404s deliberately when a project has never had a
+ * font uploaded: *"there is no font"* and *"there is no project"* are the same
+ * answer on purpose, because a font must not be evidence that a tenant exists
+ * (§9.5, and `branding.controller.ts` says so). Having no custom font is the
+ * normal state of every customer who has not uploaded one — which, today, is
+ * all of them.
+ *
+ * ## How this got shipped, which is the part worth keeping
+ *
+ * Two correct changes, layered, producing a wrong result:
+ *
+ * - **P22-08** found "Bitte versuchen Sie es später erneut." on the screen of
+ *   every customer who had simply not uploaded a font, and fixed it —
+ *   `BrandingSettings` catches the 404 and renders an empty upload form. That
+ *   fix is still there and still right.
+ * - **P205-01** then added the net above, one layer up, so that no rejected
+ *   request could be silent. It cannot know that this particular rejection is
+ *   an answer, so it announced it — **before** the component's own handler ran,
+ *   and into a toast the component does not own and cannot clear.
+ *
+ * The result: opening Erscheinungsbild raised "Bitte versuchen Sie es später
+ * erneut. (Referenz: …)", and because the toast outlives the screen (which is
+ * deliberate — see `withToasts`) it followed the operator onto Texte,
+ * Sicherheit and Mediathek. Reproduced in the browser before being fixed; the
+ * toast carried the same reference id on all four screens, which is what said
+ * it was one event and not four.
+ *
+ * It is also §9.4 twice over: the sentence is *advice*, and the advice is
+ * wrong. Trying again later will 404 for ever.
+ *
+ * ## Why a table and not "skip every 404"
+ *
+ * Because a 404 is usually exactly what it says. A course opened from a stale
+ * link, a participant deleted in another tab — those must still be announced,
+ * and they are the reason the net exists. What is special here is the
+ * **route**, not the status.
+ *
+ * The table is keyed by SDK method name, which is what the `Proxy` below has.
+ * It is deliberately short and deliberately reasoned: an entry is a claim that
+ * the API returns this status as a normal answer, and it needs the sentence
+ * saying why.
+ */
+const ANSWERS_WITH_NOT_FOUND: ReadonlySet<string> = new Set(["adminGetFont"]);
+
 function announcing(client: ApiClient): ApiClient {
   return new Proxy(client, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver) as unknown;
       if (typeof value !== "function") return value;
 
+      const name = typeof property === "string" ? property : "";
+
       return (...args: unknown[]) => {
         const result = (value as (...a: unknown[]) => unknown).apply(target, args);
         if (!(result instanceof Promise)) return result;
 
         return result.catch((error: unknown) => {
-          const status = statusOf(error);
-          if (status !== 401 && status !== 403) {
+          if (announceable(name, statusOf(error))) {
             toastPublisher.current(describeError(error, GENERIC_FAILURE));
           }
+          // Re-thrown always, so every existing `catch` behaves exactly as
+          // before — including the ones that treat a 404 as an answer.
           throw error;
         });
       };
     },
   });
+}
+
+/**
+ * Whether this rejection is something to tell the operator about.
+ *
+ * Separated from the `Proxy` so it can be tested without one — the question
+ * "does a font 404 raise a toast?" is a pure one, and answering it needed a
+ * browser and a signed-in console (§9.7 in the direction it is usually stated
+ * the other way round: here the caller is covered and the rule was not).
+ */
+export function announceable(method: string, status: number | undefined): boolean {
+  if (status === 401 || status === 403) return false;
+  if (status === 404 && ANSWERS_WITH_NOT_FOUND.has(method)) return false;
+  return true;
 }
 
 /** The status of a problem-details failure, or `undefined` for anything else. */
