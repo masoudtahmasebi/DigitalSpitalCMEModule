@@ -945,7 +945,19 @@ function Loaded(props: {
      * the page and applies the content column to the band's contents and to
      * the white panel below it, so nothing here may centre first.
      */
-    const shell = (body: React.ReactNode, currentContentId: string, progress = false) => (
+    /*
+      `surface` is the exam's grey, measured per screen (DEP-41).
+      
+      The player keeps white and everything after it — Lernerfolgskontrolle,
+      Evaluationsbogen, Punktemeldung — is `#fafafa`, which is what pages 06–13
+      draw. See `CourseShell`'s `surface` prop for the samples.
+    */
+    const shell = (
+      body: React.ReactNode,
+      currentContentId: string,
+      progress = false,
+      surface: "white" | "muted" = "muted",
+    ) => (
       <div className="py-4">
         <CourseShell
           apiBase={apiBase}
@@ -963,6 +975,7 @@ function Loaded(props: {
           }}
           onResume={resume}
           progress={progress}
+          surface={surface}
           /*
             The sidebar's **CME-Punkte geltend machen** row (layout 05–12).
 
@@ -1004,6 +1017,9 @@ function Loaded(props: {
         />,
         screen.contentId,
         true,
+        // The player's column is white in the drawing (pages 06–07); only the
+        // screens after it are grey. See `CourseShell`'s `surface`.
+        "white",
       );
     }
 

@@ -76,6 +76,23 @@ export function CourseShell(props: {
    */
   progress: boolean;
   /**
+   * The left column's surface (DEP-41).
+   *
+   * `"muted"` on the exam, the evaluation and the Punktemeldung; `"white"` on
+   * the player. That is not a preference — it is measured. Sampled inside the
+   * white card on the 1400 px renders:
+   *
+   *   page-06, page-07 (player)             left rgb(255,255,255)
+   *   page-08/09/11/12 (Lernerfolgskontrolle) left rgb(250,250,250)
+   *   page-13 (Punktemeldung)               left rgb(250,250,250)
+   *   every one of them                     right rgb(255,255,255)
+   *
+   * So the grey is the *exam's* surface, not the shell's, and a shell that
+   * greyed both would have got the player wrong — which is what made this
+   * worth measuring rather than reading off one screenshot.
+   */
+  surface?: "white" | "muted";
+  /**
    * The Punktemeldung, for the sidebar's last row (layout pages 05–12).
    *
    * Threaded rather than derived here, and `undefined` whenever the server
@@ -220,7 +237,15 @@ export function CourseShell(props: {
         scroll position rather than at most of them.
       */}
       <div className={CONTENT}>
-        <div className="-mt-14 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm max-sm:pb-24 sm:p-6">
+        {/*
+          No outline, and a shadow that carries the edge instead (DEP-40).
+          
+          The drawing's panel has no 1 px rule around it — the card is lifted
+          off the page by its shadow alone, which is what makes it read as one
+          surface with the teal band rather than a box sitting on it. A border
+          *and* a shadow drew both.
+        */}
+        <div className="-mt-14 rounded-2xl bg-white p-5 shadow-lg max-sm:pb-24 sm:p-6">
           {/*
           The sidebar is `20rem`, the drawing's is 304 px (DEP-24).
 
@@ -242,7 +267,23 @@ export function CourseShell(props: {
           `lg` regardless.
         */}
           <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-            <div className="min-w-0 space-y-4">
+            {/*
+              `#fafafa` behind the exam, and the divider that separates it from
+              the white sidebar — both measured, see the `surface` prop.
+              
+              `-m-5 p-5 sm:-m-6 sm:p-6` pulls the fill out to the card's own
+              edge: the drawing runs the grey to the panel's rounded corner,
+              not to an inset rectangle inside its padding. The divider is
+              `lg:` only, because below that breakpoint the grid is one column
+              and a vertical rule between stacked blocks separates nothing.
+            */}
+            <div
+              className={`min-w-0 space-y-4 ${
+                (props.surface ?? "white") === "muted"
+                  ? "-m-5 rounded-l-2xl bg-[#fafafa] p-5 lg:border-r lg:border-[#e0e0e0] sm:-m-6 sm:p-6"
+                  : ""
+              }`}
+            >
               <PlayerStatusContext.Provider value={setStatus}>
                 {props.children}
               </PlayerStatusContext.Provider>

@@ -1,5 +1,5 @@
 /**
- * The **Fortbildungsfortschritt** sidebar (layout 6.5).
+ * The **Modul Übersicht** sidebar (layout 6.5).
  *
  * These assertions used to live in `PlayerScreen.test.tsx`, because the sidebar
  * used to live in `PlayerScreen`. It moved to `CourseShell` in #61 — the layout
@@ -15,6 +15,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { de } from "../locale/de.js";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type {
   ChapterState,
@@ -275,7 +276,7 @@ describe("which chapter the learner is inside", () => {
   });
 });
 
-describe("the Fortbildungsfortschritt sidebar", () => {
+describe("the Modul Übersicht sidebar", () => {
   it("opens on the module being watched", () => {
     renderSidebar();
     const toggle = screen.getByRole("button", {
@@ -343,7 +344,7 @@ describe("the Fortbildungsfortschritt sidebar", () => {
       ],
     });
 
-    const outline = screen.getByRole("navigation", { name: "Fortbildungsfortschritt" });
+    const outline = screen.getByRole("navigation", { name: de.player.outline });
     const button = screen.getByRole("button", { name: "Fortbildung pausieren" });
     expect(outline.contains(button)).toBe(true);
 

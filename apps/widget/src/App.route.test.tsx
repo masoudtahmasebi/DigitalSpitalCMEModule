@@ -1066,6 +1066,49 @@ describe("an exam that was sat and not passed", () => {
         .length,
     ).toBeGreaterThan(0);
   });
+
+  /**
+   * The exam's surface is grey and the player's is white (DEP-41).
+   *
+   * Measured, not preferred — sampled inside the white card on the design
+   * renders at 1400 px:
+   *
+   *   page-06, page-07 (player)                 left rgb(255,255,255)
+   *   page-08/09/11/12 (Lernerfolgskontrolle)   left rgb(250,250,250)
+   *   page-13 (Punktemeldung)                   left rgb(250,250,250)
+   *
+   * Asserted through `App` rather than on `CourseShell`, because the property is
+   * the **wiring**: the shell takes a `surface` prop and would happily render
+   * either value on either screen. A component test would pass on a build that
+   * passed "muted" everywhere, which is the version of this that gets the player
+   * wrong (§9.7).
+   */
+  describe("the exam and the player sit on different surfaces (DEP-41)", () => {
+    /** The muted fill, as the shell spells it. Any element carrying it will do. */
+    const muted = (): Element | null => document.querySelector(".bg-\\[\\#fafafa\\]");
+
+    it("puts the Lernerfolgskontrolle on the grey one", async () => {
+      stubExam(scoredSixty());
+      window.history.replaceState(null, "", `#ds/inhalt/${QUIZ_ID}`);
+      renderApp();
+
+      // The exam is really mounted — otherwise this passes on any screen that
+      // simply has no grey element, which is most of them (§9.1).
+      await screen.findByText(/Bestehen/u);
+
+      expect(muted()).not.toBeNull();
+    });
+
+    it("leaves the player white", async () => {
+      stubExam(scoredSixty());
+      window.history.replaceState(null, "", `#ds/inhalt/${VIDEO_ID}`);
+      renderApp();
+
+      await waitFor(() => expect(inPlayer()).toBe(true));
+
+      expect(muted()).toBeNull();
+    });
+  });
 });
 
 /**

@@ -485,16 +485,20 @@ export const de = {
     back: "Zurück zur Übersicht",
 
     /**
-     * The sidebar's heading (P190-01).
+     * The sidebar's heading — back to the drawing's word (DEP-40).
      *
-     * It read "Modul Übersicht", which describes the list and not what the
-     * list is telling you. Every player and exam page of the layout heads this
-     * column **Fortbildungsfortschritt** — and that is the more accurate word
-     * for what is drawn: the rows carry state glyphs, the exam and the
-     * Punktemeldung are steps in it, and none of that is an "overview of
-     * modules". §5 makes the layout's copy authoritative.
+     * P190-01 changed this to "Fortbildungsfortschritt" on the reasoning that
+     * *"every player and exam page of the layout heads this column
+     * Fortbildungsfortschritt"*. **That sentence is false.**
+     * `screens/page-06.png` and `page-12.png` both head it `Modul Übersicht`,
+     * and they are the authority (§5, and `docs/design/README.md`'s own first
+     * line). The argument for the change was good and the fact it rested on
+     * was not checked — §11.9, a comment is a claim.
+     *
+     * The client ruled on it directly when the conflict was put to them, with
+     * DEP-40 asking for the opposite: *"the render wins"*.
      */
-    outline: "Fortbildungsfortschritt",
+    outline: "Modul Übersicht",
     toggleModule: (title: string): string => `Modul „${title}“ ein- oder ausklappen`,
     /**
      * The same control's name with the count in it (P93-03).

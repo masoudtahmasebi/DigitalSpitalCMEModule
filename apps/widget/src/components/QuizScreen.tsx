@@ -719,13 +719,30 @@ function Rosette() {
     <svg
       viewBox="0 0 32 32"
       aria-hidden="true"
-      className="mx-auto h-9 w-9 text-brand-600"
+      /*
+        48 px, measured (DEP-41).
+        
+        `screens/page-12.png` draws the badge at 35 px in a 1400 px render —
+        48 px at the 1920 frame — and it was `h-9 w-9` (36 px).
+      */
+      className="mx-auto h-12 w-12 text-brand-600"
       fill="currentColor"
     >
       <path d="M16 1.5 19 4l3.6-.7 1.4 3.4 3.4 1.4L26.7 12l2.5 3-2.5 3 .7 3.6-3.4 1.4-1.4 3.4L19 25.6 16 28.1l-3-2.5-3.6.7-1.4-3.4L4.6 21.5 5.3 18l-2.5-3 2.5-3-.7-3.6 3.4-1.4L9.4 3.3 13 4l3-2.5Z" />
+      {/*
+        A star, not a tick (DEP-41).
+        
+        The scalloped badge was right and what sat inside it was not: this was
+        a checkmark, which reads as "verified" — the glyph a form uses to say a
+        field is valid. The drawing puts a five-pointed star there, and the
+        difference is the difference between "accepted" and "well done".
+        
+        Generated rather than drawn by hand: ten points alternating between an
+        outer radius of 6.4 and an inner of 2.6 about (16, 15.6), starting at
+        −90°, so the star is centred in the badge and sits upright.
+      */}
       <path
-        d="m14.6 19.2-3.3-3.3 1.5-1.5 1.8 1.8 4.6-4.6 1.5 1.5-6.1 6.1Z"
-        className="text-brand-contrast"
+        d="M16.0 9.2 L17.53 13.5 L22.09 13.62 L18.47 16.4 L19.76 20.78 L16.0 18.2 L12.24 20.78 L13.53 16.4 L9.91 13.62 L14.47 13.5 Z"
         fill="#fff"
       />
     </svg>
