@@ -434,6 +434,14 @@ export const en: DeepPartial<typeof german> = {
     loginUrlHint:
       "If participants sign in on the customer's website — in a WordPress portal, for example — enter that page's address here. The overview page then links there instead of showing a sign-in form of its own. Leave empty to sign in through this portal.",
 
+    primaryColor: "Primary colour",
+    primaryColorHint:
+      "The learner interface's main colour: the header, active tabs, buttons and the progress ring. A hex value, for example #007f95. Leave empty for the platform's default.",
+    primaryColorPick: "Pick the primary colour",
+    primaryContrastColor: "Text colour on the primary colour",
+    primaryContrastColorHint:
+      "The colour for text and icons sitting on the primary colour — usually white. It is not derived automatically, so the customer decides legibility themselves.",
+    primaryContrastPick: "Pick the text colour on the primary colour",
     signIn: "Sign-in methods",
 
     keycloakLogin: "Sign-in with the customer account",

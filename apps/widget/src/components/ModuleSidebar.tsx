@@ -488,10 +488,21 @@ function Chevron(props: { open: boolean }) {
       className={`h-3 w-3 shrink-0 text-gray-400 transition-transform ${
         props.open ? "rotate-180" : ""
       }`}
-      fill="currentColor"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d="M8 11 3 6h10l-5 5Z" />
+      {/*
+        A stroked chevron, not a filled triangle (DEP-40).
+        
+        `screens/page-06.png` draws these as two thin strokes meeting at a
+        point. The solid caret read as a different control — a dropdown rather
+        than a disclosure — which is the whole of what the ticket reported.
+      */}
+      <path d="m4 6 4 4 4-4" />
     </svg>
   );
 }

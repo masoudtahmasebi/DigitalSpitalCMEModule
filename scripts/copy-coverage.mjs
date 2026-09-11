@@ -133,11 +133,6 @@ const unused = paths.filter((path) => {
 const BASELINE = new Map([
   ["catalog.filterHeading", "obsolete — the filter row labels its own selects"],
   ["overviewTab.moduleLabel", "obsolete — the outline numbers its modules itself"],
-  [
-    "signedOut.expiredTitle",
-    "raise — no screen tells a mid-course expiry from a missing token",
-  ],
-  ["signedOut.expiredMessage", "raise — same"],
   ["player.toggleModule", "obsolete — superseded by the counted variant (P93-03)"],
   ["player.tabLocked", "layout — the padlocked tab draws an icon, not this word"],
   [

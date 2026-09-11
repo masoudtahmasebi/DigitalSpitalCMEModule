@@ -147,8 +147,14 @@ describe("a DocCheck visitor on a project that permits the preview", () => {
     /*
      * The assertion that would catch a participation call added later: no
      * `/courses/…`, no `/enrolment`, no `/completion`, no `/certificate`.
-     * Written as a filter rather than an exact list because the branding fetch
-     * is cached across renders and its presence depends on test order.
+     *
+     * A filter rather than an exact list, and the reason changed (P215-01).
+     * It used to be "the branding fetch is cached across renders and its
+     * presence depends on test order" — which was true, and was the ambient
+     * state that took CI red. `vitest.setup.ts` empties that cache after every
+     * case now, so the branding request is deterministic. The filter stays
+     * because what this defends is *which* requests are forbidden, not how
+     * many happen.
      */
     const forbidden = requested.filter((path) => !path.startsWith("/preview/"));
     expect(forbidden.every((path) => path === "/branding")).toBe(true);

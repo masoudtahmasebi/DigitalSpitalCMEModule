@@ -602,6 +602,14 @@ export const german = {
      * a CME point). A shorter label would be a setting somebody turns on to see
      * what happens.
      */
+    primaryColor: "Primärfarbe",
+    primaryColorHint:
+      "Die Hauptfarbe der Lernoberfläche: Kopfbereich, aktive Reiter, Schaltflächen und der Fortschrittsring. Als Hex-Wert, zum Beispiel #007f95. Leer lassen für die Standardfarbe der Plattform.",
+    primaryColorPick: "Primärfarbe auswählen",
+    primaryContrastColor: "Schriftfarbe auf der Primärfarbe",
+    primaryContrastColorHint:
+      "Die Farbe für Text und Symbole, die auf der Primärfarbe liegen — meist Weiß. Sie wird nicht automatisch berechnet, damit der Kunde die Lesbarkeit selbst entscheidet.",
+    primaryContrastPick: "Schriftfarbe auf der Primärfarbe auswählen",
     signIn: "Anmeldemöglichkeiten",
 
     keycloakLogin: "Anmeldung über das Kundenkonto",

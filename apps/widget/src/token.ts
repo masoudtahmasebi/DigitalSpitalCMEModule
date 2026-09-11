@@ -171,11 +171,30 @@ function endpointProvider(
     });
 
     if (!response.ok) {
-      // The status, not the body: an error page from a proxy or a WAF is not
-      // this endpoint's JSON, and `404` is the single most useful fact about
-      // it — it is the difference between "the plugin is not installed or the
-      // setting is off" and "the endpoint refused this caller".
-      throw new TokenUnavailableError(`endpoint_${response.status}`);
+      /*
+       * The endpoint's own `reason` when it sent one, the status otherwise
+       * (P214-01).
+       *
+       * This read the status **only**, with a comment saying an error page
+       * from a proxy or a WAF is not this endpoint's JSON. That is true and is
+       * still honoured — an unparseable or unrecognised body falls through to
+       * `endpoint_<status>` below. What it missed is that the plugin answers
+       * `404 {"token":null,"reason":"no_token_held"}` for a signed-out
+       * visitor, by design since P97-01, and this threw that body away.
+       *
+       * So the one reason the widget has different words for could never
+       * arrive: `no_token_held` was reachable only through the 200 path, which
+       * the plugin does not use. Two sides of one contract, each internally
+       * consistent, each with tests, and the seam between them exercised by
+       * nothing — CLAUDE.md §9.13. The visible cost was a physician whose
+       * session had expired being told to contact the site's operator.
+       *
+       * `reasonOf` is the same guard the 200 path uses: a short lowercase
+       * token or nothing. A body that is HTML, or JSON with prose in `reason`,
+       * yields `undefined` and we are back to the status.
+       */
+      const reason = await reasonOfResponse(response);
+      throw new TokenUnavailableError(reason ?? `endpoint_${response.status}`);
     }
 
     const body: unknown = await response.json();
@@ -211,6 +230,22 @@ function readToken(body: unknown): string | undefined {
 }
 
 /** The endpoint's own `reason`, when it sent one. */
+/**
+ * The `reason` from a failed response's body, if it has a usable one.
+ *
+ * Never throws: this runs on the failure path, and a provider that threw while
+ * working out *why* something failed would replace a precise message with a
+ * worse one. A body that is not JSON — the proxy error page the old comment
+ * was about — simply yields `undefined`.
+ */
+async function reasonOfResponse(response: Response): Promise<string | undefined> {
+  try {
+    return reasonOf(await response.json());
+  } catch {
+    return undefined;
+  }
+}
+
 function reasonOf(body: unknown): string | undefined {
   if (typeof body !== "object" || body === null) return undefined;
   const value = (body as Record<string, unknown>)["reason"];

@@ -68,6 +68,7 @@
     "check:deadlines": "node scripts/check-deadlines.mjs",
     "check:roles": "node scripts/role-matrix.mjs",
     "check:rules": "node scripts/unused-rules.mjs",
+    "build:wp-plugin": "node scripts/build-wp-plugin.mjs",
     "check:sdk": "node scripts/check-sdk.mjs",
     "check:seed-structure": "node scripts/check-seed-structure.mjs",
     "check:backlog": "node scripts/check-backlog-numbers.mjs",

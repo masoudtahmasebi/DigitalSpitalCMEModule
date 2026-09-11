@@ -127,7 +127,19 @@ function VideoLesson(props: {
   // All three are the server's, replaced on every response — never adjusted
   // locally. The ceiling is here rather than derived from `covered` so that the
   // rule deciding how far a learner may skip has exactly one implementation.
-  const [watchedPercent, setWatchedPercent] = useState(lesson.watchedPercent);
+  /*
+   * `watchedPercent` is no longer held here (DEP-40).
+   *
+   * It existed to print "… % angesehen" above the video, and the drawing has
+   * no such line — `screens/page-06.png` puts the percentage in the teal
+   * masthead's progress card, which reads it from the enrolment that
+   * `onProgress()` below refreshes. Keeping a second copy in this component
+   * would be a second reading of one number with nothing rendering it.
+   *
+   * `covered` and `seekCeilingSec` stay: both are the *gate's* state, both are
+   * read by this screen, and both are replaced from the server's answer on
+   * every response rather than adjusted locally.
+   */
   const [covered, setCovered] = useState<readonly WatchedSegment[]>(
     lesson.watchedSegments,
   );
@@ -136,17 +148,10 @@ function VideoLesson(props: {
   // A new lesson in the same mounted component: reset to that lesson's own
   // figures rather than briefly showing the previous video's coverage.
   useEffect(() => {
-    setWatchedPercent(lesson.watchedPercent);
     setCovered(lesson.watchedSegments);
     setSeekCeilingSec(lesson.seekCeilingSec);
     positionRef.current = lesson.lastPositionSec;
-  }, [
-    lesson.id,
-    lesson.watchedPercent,
-    lesson.watchedSegments,
-    lesson.seekCeilingSec,
-    lesson.lastPositionSec,
-  ]);
+  }, [lesson.id, lesson.watchedSegments, lesson.seekCeilingSec, lesson.lastPositionSec]);
 
   /*
    * The seconds the gate has not credited, from the union it did.
@@ -221,7 +226,6 @@ function VideoLesson(props: {
         segments,
         lastPositionSec: positionRef.current,
       });
-      setWatchedPercent(result.watchedPercent);
       // The union the gate credited, not the intervals we believed we sent.
       // The difference is visible exactly when something was rejected.
       setCovered(result.watchedSegments);
@@ -335,13 +339,19 @@ function VideoLesson(props: {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-gray-900">{lesson.title}</h2>
-        <span className="text-sm text-gray-600">
-          {de.content.watched(watchedPercent)}
-        </span>
-      </div>
-
+      {/*
+        No title and no percentage above the video (DEP-40).
+        
+        `screens/page-06.png` puts the video at the top of its column with
+        nothing over it: the module and chapter headings are **below** the
+        player, in `Summary`, and the percentage lives in the teal masthead's
+        progress card where the drawing has it. Two of them on one screen was
+        two readings of the same number, and the one up here was the one a
+        learner met first.
+        
+        `watchedPercent` is still tracked and still reported — this removed the
+        line, not the number. `PlayerProgressCard` in `CourseShell` draws it.
+      */}
       {/*
         Which seconds are still missing (P85-01), once there is something to be
         missing from (P102-01).

@@ -397,7 +397,7 @@ const EXAM_ROW = /Lernerfolgskontrolle$/u;
 
 /** The sidebar, so a query can be scoped away from the player's own controls. */
 function outline(): HTMLElement {
-  return screen.getByRole("navigation", { name: "Fortbildungsfortschritt" });
+  return screen.getByRole("navigation", { name: de.player.outline });
 }
 
 describe("the Lernerfolgskontrolle in the module outline", () => {
@@ -591,7 +591,7 @@ describe("the controls", () => {
      */
     renderPlayer();
 
-    const outline = screen.getByRole("navigation", { name: "Fortbildungsfortschritt" });
+    const outline = screen.getByRole("navigation", { name: de.player.outline });
     const pause = screen.getByRole("button", { name: "Fortbildung pausieren" });
     expect(outline.contains(pause)).toBe(true);
   });
@@ -651,7 +651,7 @@ describe("the controls", () => {
     const onOpen = vi.fn();
     renderPlayer({ onOpen, state: withQuizOpen(state(), 3) });
 
-    const outline = screen.getByRole("navigation", { name: "Fortbildungsfortschritt" });
+    const outline = screen.getByRole("navigation", { name: de.player.outline });
     const begin = screen.getByRole("button", { name: "Prüfung starten" });
     const pause = screen.getByRole("button", { name: "Fortbildung pausieren" });
 

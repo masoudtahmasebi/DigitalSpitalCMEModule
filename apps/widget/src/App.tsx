@@ -51,6 +51,7 @@ import { StickyProgress } from "./components/StickyProgress.js";
 import { ExpertsTab } from "./components/ExpertsTab.js";
 import { OverviewTab } from "./components/OverviewTab.js";
 import { PreviewApp } from "./components/PreviewApp.js";
+import { FailureNotice } from "./components/FailureNotice.js";
 import { BrandLogo } from "./components/BrandLogo.js";
 import { CourseShell } from "./components/CourseShell.js";
 import { PlayerScreen } from "./components/PlayerScreen.js";
@@ -329,6 +330,13 @@ export function App(props: AppProps) {
 function Routed(
   props: WidgetConfig & {
     getToken: TokenProvider;
+    /**
+     * Where the host signs somebody in, carried down for the one screen that
+     * needs it: a session that ends mid-course (P214-01). Already on the
+     * element, and already spread into this component — it only had to be
+     * declared to be usable.
+     */
+    signInUrl?: string | undefined;
     onCourseOpen?: ((slug: string, intent: OpenIntent) => boolean) | undefined;
     openAt?: OpenIntent | undefined;
     onProgress?: ((detail: ProgressDetail) => void) | undefined;
@@ -394,6 +402,7 @@ function Routed(
         apiBase={apiBase}
         projectSlug={projectSlug}
         client={client}
+        signInUrl={props.signInUrl}
         onOpen={(slug, chosen) => {
           // A host that routes cancels the event and replaces this element
           // with one pinned to the course. Switching screens here as well
@@ -412,6 +421,7 @@ function Routed(
       projectSlug={projectSlug}
       courseSlug={selected}
       client={client}
+      signInUrl={props.signInUrl}
       openAt={intent}
       addressCourseSlug={courseSlug === "" ? selected : undefined}
       // Only offered when the learner arrived through the catalogue.
@@ -449,6 +459,7 @@ function Catalogue(props: {
   apiBase: string;
   projectSlug: string;
   client: ReturnType<typeof createWidgetClient>;
+  signInUrl: string | undefined;
   onOpen: (slug: string, intent: OpenIntent) => void;
 }) {
   const branding = useBranding(props.apiBase, props.projectSlug);
@@ -468,7 +479,12 @@ function Catalogue(props: {
           <BrandLogo apiBase={props.apiBase} projectSlug={props.projectSlug} />
         </div>
       )}
-      <CourseList client={props.client} branding={branding} onOpen={props.onOpen} />
+      <CourseList
+        client={props.client}
+        branding={branding}
+        signInUrl={props.signInUrl}
+        onOpen={props.onOpen}
+      />
     </div>
   );
 }
@@ -478,6 +494,7 @@ function Loaded(props: {
   projectSlug: string;
   courseSlug: string;
   client: ReturnType<typeof createWidgetClient>;
+  signInUrl: string | undefined;
   /** Where this course opens — see `OpenIntent`. */
   openAt: OpenIntent;
   /**
@@ -761,10 +778,18 @@ function Loaded(props: {
     enrolment.data === undefined
   ) {
     return (
-      <ErrorNotice
-        title={de.error.title}
-        message={describeError(failure, de.error)}
-        retryLabel={de.error.retry}
+      /*
+       * `FailureNotice`, not `ErrorNotice` (P214-01).
+       *
+       * This is where a physician lands when their Keycloak session ends while
+       * they are reading — the token fetch fails before any request goes out,
+       * and until now that drew a red "Es ist ein Fehler aufgetreten … wenden
+       * Sie sich an den Betreiber der Seite". It is the one failure on this
+       * screen that is not a failure.
+       */
+      <FailureNotice
+        error={failure}
+        signInUrl={props.signInUrl}
         onRetry={() => {
           course.reload();
           enrolment.reload();
@@ -920,7 +945,19 @@ function Loaded(props: {
      * the page and applies the content column to the band's contents and to
      * the white panel below it, so nothing here may centre first.
      */
-    const shell = (body: React.ReactNode, currentContentId: string, progress = false) => (
+    /*
+      `surface` is the exam's grey, measured per screen (DEP-41).
+      
+      The player keeps white and everything after it — Lernerfolgskontrolle,
+      Evaluationsbogen, Punktemeldung — is `#fafafa`, which is what pages 06–13
+      draw. See `CourseShell`'s `surface` prop for the samples.
+    */
+    const shell = (
+      body: React.ReactNode,
+      currentContentId: string,
+      progress = false,
+      surface: "white" | "muted" = "muted",
+    ) => (
       <div className="py-4">
         <CourseShell
           apiBase={apiBase}
@@ -938,6 +975,7 @@ function Loaded(props: {
           }}
           onResume={resume}
           progress={progress}
+          surface={surface}
           /*
             The sidebar's **CME-Punkte geltend machen** row (layout 05–12).
 
@@ -979,6 +1017,9 @@ function Loaded(props: {
         />,
         screen.contentId,
         true,
+        // The player's column is white in the drawing (pages 06–07); only the
+        // screens after it are grey. See `CourseShell`'s `surface`.
+        "white",
       );
     }
 

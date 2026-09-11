@@ -525,7 +525,30 @@ export function ProgressRing(props: {
   /** `onBrand` draws white-on-teal for the sidebar card. */
   tone?: "onBrand" | "onLight";
 }) {
-  const radius = 34;
+  /*
+   * Measured from `docs/design/screens/page-02.png`, not chosen (DEP-39).
+   *
+   * The client: *"the progress circle is too small relative to the widget"*.
+   * It was, in two ways at once, and only one of them is a size:
+   *
+   *   design   outer 145 px, stroke 16 px  → the stroke is 11.0 % of the box
+   *   built     outer  96 px, stroke  6 px → the stroke is  6.3 % of the box
+   *
+   * So scaling the box alone would have produced a ring that is the right size
+   * and still reads as a thin hoop. The render is 1400 px wide against a
+   * 1920 px frame, so every figure above is the measured pixel × 1920/1400 —
+   * `docs/design/README.md` claims these files are 1:1 at 1920 and that is
+   * stale; the derived numbers still agree with its own 284 px card, which is
+   * what says the scale factor is right rather than the claim.
+   *
+   * The viewBox stays 80 and the box becomes `h-36 w-36` (144 px), so one
+   * viewBox unit is 1.8 px: a stroke of 8.9 units draws 16.0 px, and a radius
+   * of 35.5 units puts the outer edge at 143.8 px. Within a pixel of the
+   * drawing, and expressed so the two numbers cannot drift apart — change the
+   * box and the stroke follows.
+   */
+  const radius = 35.5;
+  const strokeWidth = 8.9;
   const circumference = 2 * Math.PI * radius;
   const total = Math.max(0, props.total);
   const completed = Math.max(0, Math.min(total, props.completed));
@@ -544,18 +567,18 @@ export function ProgressRing(props: {
 
   return (
     <div
-      className="relative inline-flex h-24 w-24 shrink-0 items-center justify-center"
+      className="relative inline-flex h-36 w-36 shrink-0 items-center justify-center"
       role="img"
       aria-label={props.label}
     >
-      <svg className="h-24 w-24 -rotate-90" viewBox="0 0 80 80" aria-hidden="true">
+      <svg className="h-36 w-36 -rotate-90" viewBox="0 0 80 80" aria-hidden="true">
         <circle
           cx="40"
           cy="40"
           r={radius}
           fill="none"
           stroke={onBrand ? "rgba(255,255,255,0.28)" : "#e5e7eb"}
-          strokeWidth="5"
+          strokeWidth={strokeWidth}
         />
         {/*
           Omitted entirely at zero rather than drawn with a zero-length dash.
@@ -570,8 +593,18 @@ export function ProgressRing(props: {
             cy="40"
             r={radius}
             fill="none"
-            stroke={onBrand ? "#ffffff" : "var(--ds-brand-600, #17788d)"}
-            strokeWidth="5"
+            /*
+             * `currentColor` via a class, not a second copy of the hex.
+             *
+             * This carried `#17788d` — the *old* `brand.600` default, written
+             * out again here — so the ring stayed the previous teal when the
+             * palette moved to `#007f95` (DEP-38). An SVG attribute cannot read
+             * a Tailwind token, but it can read `currentColor`, and the class
+             * on the element is the one home for the value.
+             */
+            stroke={onBrand ? "#ffffff" : "currentColor"}
+            className={onBrand ? undefined : "text-brand-600"}
+            strokeWidth={strokeWidth}
             strokeLinecap="round"
             strokeDasharray={`${dash} ${circumference}`}
           />
@@ -582,9 +615,12 @@ export function ProgressRing(props: {
           onBrand ? "text-white" : "text-brand-700"
         }`}
       >
-        <span className="text-2xl font-bold">{count}</span>
+        {/* Scaled with the ring: the numeral is the card's focal point and a
+            `text-2xl` "2" inside a 144 px ring reads as a small number in a big
+            hoop, which is the other half of what DEP-39 reported. */}
+        <span className="text-4xl font-bold">{count}</span>
         {remainder === "" ? null : (
-          <span className="mt-1 text-xs font-medium">{remainder}</span>
+          <span className="mt-1 text-sm font-medium">{remainder}</span>
         )}
       </span>
     </div>

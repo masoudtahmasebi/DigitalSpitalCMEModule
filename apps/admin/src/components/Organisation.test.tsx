@@ -276,6 +276,61 @@ describe("branding and the consent pair", () => {
     ).toBe("datenschutz-2026-01");
   });
 
+  /*
+   * The colours reach the API (P218-01).
+   *
+   * `primaryColor` was parsed, validated and applied to `--ds-brand-600` for
+   * months with **no screen able to set it** — so the thing worth asserting is
+   * not that a field renders, it is that what an operator types arrives in the
+   * request. A field that renders and sends nothing is the same defect wearing
+   * a control (§9.3 into §9.2).
+   */
+  it("sends the primary colour an operator typed", async () => {
+    const client = clientWith([project()]);
+    render(<Organisation apiBase={API_BASE} client={client} />);
+    await openSettings();
+
+    fireEvent.change(screen.getByLabelText(de.organisation.primaryColor), {
+      target: { value: "#007f95" },
+    });
+    fireEvent.change(screen.getByLabelText(de.organisation.primaryContrastColor), {
+      target: { value: "#ffffff" },
+    });
+    fireEvent.click(screen.getByText(de.common.save));
+
+    await waitFor(() => {
+      expect(client.adminUpdateProject).toHaveBeenCalledWith(
+        "medice",
+        expect.objectContaining({
+          branding: expect.objectContaining({
+            primaryColor: "#007f95",
+            primaryContrastColor: "#ffffff",
+          }),
+        }),
+      );
+    });
+  });
+
+  /*
+   * The other half, and the one the first sabotage exposed as uncovered.
+   *
+   * Breaking the *load* — `primaryColor: ""` instead of reading the stored
+   * value — left the write test green, because it types a value before saving.
+   * An operator opening the form would have seen an empty field over a
+   * configured colour and had no way to know which was true.
+   */
+  it("shows the colour the project already has", async () => {
+    const client = clientWith([
+      project({ branding: { primaryColor: "#123456" } as ProjectSummary["branding"] }),
+    ]);
+    render(<Organisation apiBase={API_BASE} client={client} />);
+    await openSettings();
+
+    expect(
+      (screen.getByLabelText(de.organisation.primaryColor) as HTMLInputElement).value,
+    ).toBe("#123456");
+  });
+
   it("sends the consent pair, which is what makes the checkbox appear", async () => {
     const client = clientWith([project()]);
     render(<Organisation apiBase={API_BASE} client={client} />);

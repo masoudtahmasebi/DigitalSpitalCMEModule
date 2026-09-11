@@ -893,6 +893,69 @@ function ProjectSettings(props: {
         <p className="text-xs text-gray-600">{de.organisation.brandingIntro}</p>
 
         <Field
+          label={de.organisation.primaryColor}
+          hint={de.organisation.primaryColorHint}
+          htmlFor={id("primary-color")}
+        >
+          {/*
+            A colour well beside the hex, both writing one value.
+            
+            The text input is the one that is authoritative — an operator
+            pastes `#007f95` from a brand guide far more often than they pick
+            from a wheel — and `<input type="color">` is the affordance that
+            says "this is a colour" at a glance. Neither is decorative: the
+            well cannot express "unset", and the text field cannot be scanned.
+          */}
+          <div className="flex items-center gap-3">
+            <input
+              type="color"
+              aria-label={de.organisation.primaryColorPick}
+              className="h-9 w-12 shrink-0 cursor-pointer rounded border border-gray-300 bg-white p-1"
+              value={
+                /^#[0-9a-f]{6}$/iu.test(branding.primaryColor)
+                  ? branding.primaryColor
+                  : "#007f95"
+              }
+              onChange={(event) =>
+                setBranding((b) => ({ ...b, primaryColor: event.target.value }))
+              }
+            />
+            <TextInput
+              id={id("primary-color")}
+              value={branding.primaryColor}
+              maxLength={7}
+              onChange={(v) => setBranding((b) => ({ ...b, primaryColor: v }))}
+            />
+          </div>
+        </Field>
+        <Field
+          label={de.organisation.primaryContrastColor}
+          hint={de.organisation.primaryContrastColorHint}
+          htmlFor={id("primary-contrast")}
+        >
+          <div className="flex items-center gap-3">
+            <input
+              type="color"
+              aria-label={de.organisation.primaryContrastPick}
+              className="h-9 w-12 shrink-0 cursor-pointer rounded border border-gray-300 bg-white p-1"
+              value={
+                /^#[0-9a-f]{6}$/iu.test(branding.primaryContrastColor)
+                  ? branding.primaryContrastColor
+                  : "#ffffff"
+              }
+              onChange={(event) =>
+                setBranding((b) => ({ ...b, primaryContrastColor: event.target.value }))
+              }
+            />
+            <TextInput
+              id={id("primary-contrast")}
+              value={branding.primaryContrastColor}
+              maxLength={7}
+              onChange={(v) => setBranding((b) => ({ ...b, primaryContrastColor: v }))}
+            />
+          </div>
+        </Field>
+        <Field
           label={de.organisation.catalogTitle}
           hint={de.organisation.catalogTitleHint}
           htmlFor={id("catalog-title")}
@@ -1001,6 +1064,19 @@ function brandingForm(project: ProjectSummary) {
   const str = (key: string): string =>
     typeof b[key] === "string" ? (b[key] as string) : "";
   return {
+    /*
+     * The colours (P218-01).
+     *
+     * `primaryColor` has been parsed by `@ds/domain`, validated against
+     * `HEX_COLOR`, refused by `invalidBrandingFields` when malformed, and
+     * written to `--ds-brand-600`/`--ds-brand-700` by `brandingCssVars` since
+     * P10-08 — and **no screen in this console could set it.** The white-label
+     * story had a working engine and no steering wheel, which is §9.3 in its
+     * most expensive form: the client asked where the colours were, and the
+     * honest answer was "nowhere".
+     */
+    primaryColor: str("primaryColor"),
+    primaryContrastColor: str("primaryContrastColor"),
     catalogTitle: str("catalogTitle"),
     catalogIntro: str("catalogIntro"),
     catalogHeroImageUrl: str("catalogHeroImageUrl"),
