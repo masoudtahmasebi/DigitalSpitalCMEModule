@@ -267,9 +267,16 @@ this table nobody reported: it was drawn from the mobile export directly rather
 than assembled from the same defaults as everything else.
 
 Both scales are checkable rather than assumed. P158 settled the desktop half by
-measuring glyph ink — `screens/*.png` is **1:1 at 1920**, so a radius read off
-page 02 is already CSS pixels, and the inline progress card's 284 px is our
-`18rem` almost exactly. The mobile file is 2× a 430 px frame: the sticky card
+measuring glyph ink, and recorded that `screens/*.png` is **1:1 at 1920** — which
+is **no longer true of the files in this directory** and cost an hour on DEP-39
+before anyone checked. `page-02.png` is **1400 × 1834**, so every figure in the
+table above is a measured pixel × **1920/1400 = 1.3714**.
+
+The derived numbers are unchanged and that is what says the factor is right
+rather than the claim: the inline progress card measures 206 px here, and
+206 × 1.3714 = 282.5 — the 284 px this table already recorded, and our `18rem`
+almost exactly. **Measure the card first and check it lands on 284 before
+trusting any other number off these renders.** The mobile file is 2× a 430 px frame: the sticky card
 measures 560 px in an 860 px-wide export against the built `w-[17.5rem]`, so its
 40 px radius is 20 px of ours — the same number the desktop card gives at 1:1.
 

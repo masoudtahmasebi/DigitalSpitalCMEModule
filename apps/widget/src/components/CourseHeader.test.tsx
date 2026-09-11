@@ -20,8 +20,26 @@ import { ProgressCard, StickyMetaBar } from "./CourseHeader.js";
 
 afterEach(cleanup);
 
-const RING_RADIUS = 34;
-const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+/*
+ * The circumference is read off the rendered circle, never restated (DEP-39).
+ *
+ * It was `const RING_RADIUS = 34` — a second copy of a number that lives in
+ * `ProgressRing`. Resizing the ring to the measured design broke this test with
+ * `expected 89.2 to be close to 85.5`, which says nothing about the property
+ * under test: the arc is still exactly 40 % of the circle, and the only thing
+ * that changed is a circle this file had its own opinion about.
+ *
+ * `dasharray` is `"<arc> <circumference>"`, so the denominator is already in
+ * the DOM. Reading it makes the assertion "the arc is 40 % of *this* ring",
+ * which is the thing worth defending and cannot go stale.
+ */
+function ringCircumference(container: HTMLElement): number {
+  const dash =
+    container
+      .querySelector("circle[stroke-dasharray]")
+      ?.getAttribute("stroke-dasharray") ?? "";
+  return Number.parseFloat(dash.split(" ")[1] ?? "0");
+}
 
 function state(overrides: Partial<EnrolmentState> = {}): EnrolmentState {
   return {
@@ -102,7 +120,7 @@ describe("ProgressCard", () => {
   it("draws the arc from the module counts, not from the content percentage", () => {
     const { container } = render(<ProgressCard state={state()} onResume={undefined} />);
     // 2 of 5 modules is 40 % of the ring. 63 % would be the content figure.
-    expect(arcLength(container)).toBeCloseTo(0.4 * CIRCUMFERENCE, 1);
+    expect(arcLength(container)).toBeCloseTo(0.4 * ringCircumference(container), 1);
   });
 
   it("puts the same two numbers in the ring and in the sentence", () => {
