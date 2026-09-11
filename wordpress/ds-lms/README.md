@@ -213,10 +213,19 @@ kill switch that takes effect immediately with no deployment.
 | Condition         | Behaviour                                                        |
 | ----------------- | ---------------------------------------------------------------- |
 | Feature flag off  | Route is not registered at all — 404 `{"code":"rest_no_route"}`  |
-| Not logged in     | 401 from the permission callback; the handler never runs         |
+| `Origin` not ours | Refused by the permission callback; the handler never runs       |
 | Missing/bad nonce | Refused. `X-WP-Nonce` for `wp_rest` is required                  |
 | No token held     | 404 `{"token":null,"reason":"no_token_held"}`                    |
 | Any request       | `Cache-Control: no-store, private` plus WordPress's no-cache set |
+
+**Holding no token is not a permission failure, and until 2.1.0 it was treated
+as one.** `permitted()` used to end `return DS_LMS_Token_Source::available();`,
+so a signed-out visitor never reached the handler and got a forbidden status
+instead of the 404 below — which the widget reads as _the endpoint is broken_
+rather than _you are not signed in_. A physician whose session had expired was
+told to contact the operator of the site. The callback now decides origin and
+nonce; whether a token exists is the handler's answer, and it always was
+(P214-01).
 
 **The two 404s are different, and the body is the only thing that says so.** A
 browser console prints `404 (Not Found)` for both, so switching the feature flag

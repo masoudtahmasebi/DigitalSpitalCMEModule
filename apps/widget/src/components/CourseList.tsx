@@ -42,16 +42,11 @@ import type { Branding } from "@ds/domain";
 import type { ApiClient, CourseSummary, DeliveryType } from "@ds/sdk";
 import type { OpenIntent } from "../intent.js";
 import { de } from "../locale/de.js";
-import { describeError, useAsync } from "../hooks.js";
+import { useAsync } from "../hooks.js";
 import { CONTENT } from "../layout.js";
-import {
-  Button,
-  ErrorNotice,
-  ImagePlaceholder,
-  Spinner,
-  TabbedPanel,
-} from "./primitives.js";
+import { Button, ImagePlaceholder, Spinner, TabbedPanel } from "./primitives.js";
 import { CatalogSeal } from "./CatalogSeal.js";
+import { FailureNotice } from "./FailureNotice.js";
 
 const PER_PAGE = 10;
 
@@ -88,6 +83,8 @@ export interface CatalogPanelProps {
   readonly onOpen: (slug: string, intent: OpenIntent) => void;
   /** The section's own line, drawn above its filters (P106-01). */
   readonly description?: string | undefined;
+  /** Where the host signs somebody in, for an ended session (P214-01). */
+  readonly signInUrl?: string | undefined;
 }
 
 /**
@@ -117,6 +114,11 @@ export const CATALOG_SECTIONS: readonly CatalogSection[] = [
 export function CourseList(props: {
   client: ApiClient;
   branding: Branding;
+  /**
+   * Where the host signs somebody in, for the one failure that is not a
+   * failure: a session that ended while the catalogue was open (P214-01).
+   */
+  signInUrl?: string | undefined;
   onOpen: (slug: string, intent: OpenIntent) => void;
 }) {
   const [sectionId, setSectionId] = useState(CATALOG_SECTIONS[0]?.id ?? "");
@@ -162,6 +164,7 @@ export function CourseList(props: {
             client={props.client}
             onOpen={props.onOpen}
             description={section.description}
+            signInUrl={props.signInUrl}
           />
         </TabbedPanel>
       </div>
@@ -247,10 +250,12 @@ function CoursePanel(
   if (list.data === undefined) {
     return (
       <div className={panel}>
-        <ErrorNotice
-          title={de.error.title}
-          message={describeError(list.error, de.error)}
-          retryLabel={de.error.retry}
+        {/* `FailureNotice` tells a dead session apart from a broken one — see
+            its header. A physician whose Keycloak session expired while the
+            catalogue was open was being shown a red alert about the site. */}
+        <FailureNotice
+          error={list.error}
+          signInUrl={props.signInUrl}
           onRetry={list.reload}
         />
       </div>

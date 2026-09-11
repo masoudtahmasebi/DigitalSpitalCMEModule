@@ -22,16 +22,24 @@
  * 1. **Feature flag.** Off by default and switchable in the admin screen
  *    without a deployment. The endpoint 404s when off — not 403, because a 403
  *    confirms the route exists.
- * 2. **Logged in.** `is_user_logged_in()` in the permission callback, so an
- *    anonymous request never reaches the handler.
+ * 2. **Same origin.** An `Origin` header that is present and is not ours is
+ *    refused in the permission callback. (This replaced `is_user_logged_in()`
+ *    in P98-01: MEDICE's physicians are never WordPress users, so that test
+ *    refused every one of them.)
  * 3. **Nonce.** `X-WP-Nonce` for `wp_rest`, tying the request to this
- *    visitor's session and this origin. Without it, any site the visitor
- *    browses could fetch their token with a cross-origin credentialed request.
+ *    visitor's session and this origin. Defence in depth rather than the
+ *    boundary — see `permitted()`, which says why.
  * 4. **No user parameter.** The route accepts none, and `DS_LMS_Token_Source`
  *    has no argument for one. "Return only the caller's token" is not enforced
  *    by a check; it is enforced by there being no other token reachable.
  * 5. **No-store.** A token in a proxy or a page cache outlives the session it
  *    belongs to.
+ *
+ * Note what is **not** in that list: "the session holds a token". That is not a
+ * permission question — `handle()` reads the session and answers 404 with
+ * `no_token_held` when there is nothing — and treating it as one produced
+ * P214-01, where an expired session was reported to a physician as a fault in
+ * the site. `permitted()`'s docblock has the table.
  *
  * @package ds-lms
  */
@@ -112,6 +120,38 @@ final class DS_LMS_Token_Endpoint {
 	 * this endpoint answers has genuinely widened, from "WordPress users" to
 	 * "browsers on this origin holding a MEDICE session", and that is a
 	 * decision, not a refactor.
+	 *
+	 * ## What this does NOT decide, and why it used to (P214-01)
+	 *
+	 * It used to end `return DS_LMS_Token_Source::available();` — "is there a
+	 * token in this session?" — and that sentence read like the strongest gate
+	 * on the endpoint. It was not a gate at all. `handle()` asks the very same
+	 * function one line later, so the set of requests that walk away with a
+	 * token is identical either way. All the check decided was **which refusal
+	 * the caller sees**, and it decided it wrong:
+	 *
+	 * | Condition                    | Before             | Now                              |
+	 * | ---------------------------- | ------------------ | -------------------------------- |
+	 * | Another origin               | 401/403 forbidden  | unchanged                        |
+	 * | Missing or forged nonce      | 401/403 forbidden  | unchanged                        |
+	 * | Signed in, no Keycloak token | 401/403 forbidden  | 404 `{"reason":"no_token_held"}` |
+	 *
+	 * The third row is the whole ticket. A physician whose Keycloak session had
+	 * expired was told *"Das liegt nicht an Ihrem Konto — wenden Sie sich an
+	 * den Betreiber der Seite"*, because the widget reads a non-OK **status**
+	 * as "the endpoint failed" and only a body saying `no_token_held` as "you
+	 * are not signed in". P99-03 fixed exactly that sentence appearing for
+	 * exactly that person, and this put it back through a different door.
+	 *
+	 * The 404 path was already written, already documented in `handle()`'s own
+	 * table, and already asserted by the suite — and it was **unreachable**,
+	 * because the suite called `handle()` directly and nothing checked that
+	 * WordPress would ever get that far (CLAUDE.md §9.7). The tests now go
+	 * through this callback first.
+	 *
+	 * A second, quieter consequence: `available()` calls `current()`, which
+	 * **refreshes an expiring token against Keycloak**. Asking here and again
+	 * in `handle()` made that two refresh attempts per request. It is now one.
 	 */
 	public static function permitted(): bool {
 		if ( ! self::same_origin() ) {
@@ -128,9 +168,18 @@ final class DS_LMS_Token_Endpoint {
 			return false;
 		}
 
-		// The only real credential: this request's own session already holds a
-		// token. Nothing is minted, looked up by id, or derived from a claim.
-		return DS_LMS_Token_Source::available();
+		/*
+		 * Whether this session holds a token is `handle()`'s question, not
+		 * this one's — see the docblock above. Answering it here cannot make
+		 * the endpoint safer, because `handle()` reads the same session on the
+		 * same request and can return nothing else; it can only turn "you are
+		 * signed out" into "something is broken, call the webmaster".
+		 *
+		 * The property that makes this endpoint safe is unchanged and is not a
+		 * check: `DS_LMS_Token_Source::current()` takes no arguments, so there
+		 * is no token reachable from here except this request's own.
+		 */
+		return true;
 	}
 
 	/**

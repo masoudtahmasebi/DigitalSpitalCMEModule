@@ -13,6 +13,50 @@ something is missing, and which WordPress and PHP versions are required.
 Newest first. `tests/security-test.php` refuses a release whose newest entry
 here disagrees with `Version:` in `ds-lms.php`.
 
+## 2.1.0 — 11.09.2026
+
+### An expired session is no longer reported as a fault in the site (P214-01)
+
+A physician on `/dscme/`, signed in, reading, saw this:
+
+> **Es ist ein Fehler aufgetreten** — Diese Seite konnte keine Anmeldedaten für
+> das Lernmodul abrufen. Das liegt nicht an Ihrem Konto — bitte versuchen Sie es
+> später erneut oder wenden Sie sich an den Betreiber der Seite. Technische
+> Angabe: Token-Endpunkt — endpoint_403.
+
+Nothing was broken. Their Keycloak session had expired, which is ordinary, and
+the one thing that would have fixed it — signing in again — was the one thing
+the screen did not offer. Contacting the site's operator could not have helped.
+
+**What changed here.** `permitted()`, the endpoint's permission callback, ended
+with `return DS_LMS_Token_Source::available();` — "does this session hold a
+token?". That is not a permission question. `handle()` asks the same function
+one line later and answers `404 {"token":null,"reason":"no_token_held"}` when
+there is nothing, which is the answer the widget knows how to phrase kindly. So
+the check let no extra caller in and kept no caller out; all it did was replace
+a clear refusal with a forbidden status, which reads as a fault.
+
+The callback now decides only the two things it is for — the request's origin,
+and the nonce — and the handler answers the rest. The set of requests that
+receive a token is **unchanged**: `DS_LMS_Token_Source::current()` takes no
+argument, so there is no token reachable from this endpoint except the calling
+session's own, and that is the property that makes it safe. It always was.
+
+One quieter improvement falls out: `available()` calls `current()`, which
+**refreshes an expiring token against Keycloak**. Asking in the callback and
+again in the handler made that two refresh attempts per request. It is one now.
+
+**Why no test caught it.** `tests/security-test.php` asserted the 404 and the
+`no_token_held` reason by calling `DS_LMS_Token_Endpoint::handle()` directly —
+so it proved the handler's behaviour on an input WordPress would never deliver
+to it, and stayed green for as long as the path was unreachable. The suite now
+goes through a `dispatch()` helper that runs the permission callback first and
+the handler only if it passed, the way the route actually runs.
+
+Requires the platform side released the same day: before it, the widget read a
+failed response's **status** and discarded its body, so `no_token_held` could
+not reach a screen even when the plugin sent it.
+
 ## 2.0.0 — 19.08.2026
 
 **Breaking:** a page that renders `[ds_lms]` now shows the catalogue where it

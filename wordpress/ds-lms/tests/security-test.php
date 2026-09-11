@@ -86,6 +86,53 @@ function configure( array $overrides = array() ): void {
 }
 
 /**
+ * The route as WordPress runs it: permission callback first, handler only if it
+ * passed (P214-01).
+ *
+ * ## Why this exists, and why its absence was the whole defect
+ *
+ * Every assertion about what this endpoint *returns* called
+ * `DS_LMS_Token_Endpoint::handle()` directly. That is the handler, and
+ * WordPress never reaches it unless `permitted()` said yes — so the suite was
+ * asserting the behaviour of a function on inputs the product could not
+ * deliver to it. `handle()`'s documented 404 with `no_token_held`, written for
+ * P97-01 because the ambiguity cost a day, was **unreachable in production**:
+ * `permitted()` ended with `return DS_LMS_Token_Source::available();` and
+ * refused that exact case first.
+ *
+ * The tests were green. The product answered a forbidden status, the widget
+ * read it as "the endpoint failed", and a physician whose session had expired
+ * was told to contact the site operator. CLAUDE.md §9.7, exactly: *a test can
+ * cover a function exhaustively and prove nothing about the product, because
+ * nothing checks that the function is called.*
+ *
+ * So: nothing below asserts a status without going through here.
+ *
+ * The refusal status is WordPress's, not ours — core answers `rest_forbidden`
+ * and picks 401 or 403 by `is_user_logged_in()`. Which one hardly matters and
+ * is deliberately not the thing asserted: the widget maps **every** non-OK
+ * status to the same "this page could not obtain a token" sentence, so the
+ * property that counts is whether a refusal happens at all.
+ */
+function dispatch( ?WP_REST_Request $request = null ): array {
+	if ( ! DS_LMS_Token_Endpoint::permitted() ) {
+		return array(
+			'refused' => true,
+			'status'  => is_user_logged_in() ? 403 : 401,
+			'data'    => array( 'code' => 'rest_forbidden' ),
+		);
+	}
+
+	$response = DS_LMS_Token_Endpoint::handle( $request ?? new WP_REST_Request() );
+
+	return array(
+		'refused' => false,
+		'status'  => $response->status,
+		'data'    => $response->data,
+	);
+}
+
+/**
  * Sign somebody in the way the MEDICE site actually does (P98-01).
  *
  * **No WordPress user.** Their theme puts the whole Keycloak token response
@@ -205,12 +252,36 @@ check(
 echo "\nWho may call it\n";
 // ---------------------------------------------------------------------------
 
+/*
+ * Holding no token is **not** a permission failure (P214-01).
+ *
+ * It is an answer, and the endpoint has always had the right one written down.
+ * Asserted through `dispatch()` so it is the *product's* answer and not the
+ * handler's in isolation — the previous version of this check asserted
+ * `permitted() === false` here, which is what made the documented 404
+ * unreachable and told an expired physician to ring the webmaster.
+ */
 ds_test_reset();
 configure();
 $_SERVER['HTTP_X_WP_NONCE'] = 'good-nonce';
+$result = dispatch();
 check(
-	'a logged-out request is refused even with a valid nonce',
-	false === DS_LMS_Token_Endpoint::permitted()
+	'a caller with no session reaches the handler rather than a refusal',
+	false === $result['refused']
+);
+check( 'and is told 404, not forbidden', 404 === $result['status'] );
+check(
+	'and gets the reason, which is what the widget reads as "please sign in"',
+	'no_token_held' === ( $result['data']['reason'] ?? null )
+);
+/*
+ * `array_key_exists`, not `??`. The null coalescing operator treats a key
+ * present-and-null as absent, so `$data['token'] ?? 'x'` can never be null and
+ * the check could only ever fail — which it did, on a correct product.
+ */
+check(
+	'and no token, obviously',
+	array_key_exists( 'token', $result['data'] ) && null === $result['data']['token']
 );
 
 ds_test_reset();
@@ -1015,9 +1086,12 @@ echo "\nWho the token endpoint answers, now that WordPress has no opinion\n";
 ds_test_reset();
 configure();
 $_SERVER['HTTP_X_WP_NONCE'] = 'good-nonce';
+$result = dispatch();
 check(
-	'a visitor with no session is refused — there is nothing to return',
-	false === DS_LMS_Token_Endpoint::permitted()
+	'a visitor with no session gets no token — the point, and it is a 404',
+	404 === $result['status']
+		&& array_key_exists( 'token', $result['data'] )
+		&& null === $result['data']['token']
 );
 
 ds_test_reset();
