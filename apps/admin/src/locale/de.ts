@@ -602,6 +602,9 @@ export const german = {
      * a CME point). A shorter label would be a setting somebody turns on to see
      * what happens.
      */
+    contentMaxWidth: "Maximale Breite der Lernoberfläche",
+    contentMaxWidthHint:
+      "Wie breit der Inhalt der Lernoberfläche höchstens wird — als CSS-Länge, zum Beispiel 1430px oder 90rem. Stellen Sie hier die Breite ein, die auch die übrigen Seiten der Kundenwebsite verwenden, damit das Modul bündig mit dem Seitenkopf abschließt. Leer lassen für die Standardbreite von 1430px. Erlaubt sind px, rem, em, vw und ch.",
     primaryColor: "Primärfarbe",
     primaryColorHint:
       "Die Hauptfarbe der Lernoberfläche: Kopfbereich, aktive Reiter, Schaltflächen und der Fortschrittsring. Als Hex-Wert, zum Beispiel #007f95. Leer lassen für die Standardfarbe der Plattform.",

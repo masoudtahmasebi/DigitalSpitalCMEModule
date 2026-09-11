@@ -958,7 +958,16 @@ function Loaded(props: {
       progress = false,
       surface: "white" | "muted" = "muted",
     ) => (
-      <div className="py-4">
+      /*
+        `pb-4`, not `py-4` (DEP-35).
+        
+        Amruth: *"the banner has gap from header, we need to remove this gap —
+        this has been the same way across all the sub pages too"*. It was this
+        16 px. Measured on `screens/page-06.png` and `page-08.png`: the teal
+        band starts at **y = 0** on both — flush under the host page's header,
+        with nothing above it. The bottom padding stays; only the top was drawn.
+      */
+      <div className="pb-4">
         <CourseShell
           apiBase={apiBase}
           projectSlug={projectSlug}
