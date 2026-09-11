@@ -320,8 +320,11 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
           learner.getByRole("button", { name: "Prüfung starten" }),
         ).toBeVisible({ timeout: 60_000 });
       } catch (cause) {
+        // `N % angesehen` above the video went with DEP-40; the server's
+        // figure is drawn in the masthead's progress card now. This is a
+        // failure diagnostic only — it never gates the assertion above.
         const credited = await learner
-          .getByText(/% angesehen/u)
+          .getByText(/% der Fortbildung absolviert/u)
           .first()
           .textContent()
           .catch(() => null);

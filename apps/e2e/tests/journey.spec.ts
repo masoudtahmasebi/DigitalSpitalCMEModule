@@ -1055,10 +1055,24 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * this suite triggered would not be evidence that the flush happens.
        *
        * The percentage is the server's answer, not the client's belief: the
-       * player renders the union the API credited.
+       * card renders what the API credited, off the enrolment.
+       *
+       * ## It used to read `N % angesehen`, and that line is gone (DEP-40)
+       *
+       * The drawing has no title and no percentage above the video —
+       * `screens/page-06.png` starts the column with the player — and the
+       * client asked for both to go. So this probe had to move to where the
+       * number now lives: `PlayerProgressCard`, in the teal masthead, which is
+       * where the drawing puts it.
+       *
+       * The property is unchanged and is the one that matters: a **non-zero**
+       * figure the server produced. P86-03 is the warning this follows — an
+       * assertion left pointing at a line a fix deliberately removed does not
+       * fail as "the line moved", it fails as "the product is broken", and the
+       * next person spends the morning on the wrong thing.
        */
       await expect(
-        learner.getByText(/[1-9]\d* % angesehen/u).first(),
+        learner.getByText(/[1-9]\d* % der Fortbildung absolviert/u).first(),
         "watched time never reached the API — nothing credited the segments",
       ).toBeVisible({ timeout: 40_000 });
 
@@ -1093,8 +1107,11 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         "a reload did not return to the section the learner was in (P82-04)",
       ).toBeVisible({ timeout: 30_000 });
 
+      // The same number, for the same reason as above: `N % angesehen` was
+      // removed with the line over the video (DEP-40), and the card in the
+      // masthead is where the server's figure is drawn now.
       await expect(
-        learner.getByText(/[1-9]\d* % angesehen/u).first(),
+        learner.getByText(/[1-9]\d* % der Fortbildung absolviert/u).first(),
         "progress did not survive a reload",
       ).toBeVisible({ timeout: 30_000 });
 

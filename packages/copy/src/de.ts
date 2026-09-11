@@ -755,7 +755,6 @@ export const de = {
      */
     gaps: (spans: readonly string[]): string =>
       `Diese Stellen fehlen noch: ${spans.join(", ")}. Spulen Sie dorthin, um die Wiedergabe zu vervollständigen.`,
-    watched: (percent: number): string => `${percent} % angesehen`,
     /** The <track> label a player shows in its captions menu. */
     captions: "Untertitel (Deutsch)",
     videoUnsupported:
