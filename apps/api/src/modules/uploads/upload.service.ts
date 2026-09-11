@@ -42,6 +42,7 @@ import { AppError } from "../../shared/problem-details.js";
 import type { ObjectStorage, UploadRefusal } from "../../shared/object-storage.js";
 import {
   customerPrefix,
+  joinUrl,
   keyBelongsToCustomer,
   planMultipart,
   storageKeyOf,
@@ -126,6 +127,20 @@ export interface UploadLogger {
   warn(message: string): void;
 }
 
+/**
+ * The extension the public image URL wears, per stored type.
+ *
+ * Cosmetic — `GET /media/:id` reads the id and ignores the suffix — so an
+ * unknown image type gets `.img` rather than a guess that claims to be a PNG.
+ */
+const EXTENSION_FOR_IMAGE: Readonly<Record<string, string>> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/svg+xml": "svg",
+};
+
 export class UploadService {
   constructor(
     private readonly repository: UploadRepositoryPort,
@@ -133,7 +148,35 @@ export class UploadService {
     /** Undefined when the deployment has no object storage configured. */
     private readonly storage: ObjectStorage | undefined,
     private readonly logger: UploadLogger = { warn: () => undefined },
+    /**
+     * Where `GET /media/:id` lives (P212-01). Empty when the deployment has
+     * not been told its own address, in which case no `publicUrl` is offered —
+     * a URL built on a guess is worse than none, because it is **stored**.
+     */
+    private readonly publicApiBaseUrl: string = "",
   ) {}
+
+  /**
+   * The stable public address of an image asset, or null.
+   *
+   * Null for three reasons, all of which mean "there is no such URL": the
+   * deployment does not know its own address, the asset's type was never
+   * described (P79-01 — an undescribed object is not evidence that it is an
+   * image), or it is not an image at all. `GET /media/:id` refuses the last two
+   * in SQL, so offering a URL for them would be §9.2 — a link that 404s.
+   *
+   * The extension is cosmetic and the route ignores it; it is there because a
+   * URL pasted into a CMS or a mail client is treated differently when it looks
+   * like an image, which is what the client asked for by writing
+   * `aaaa.com/imageurl.jpg`.
+   */
+  private publicImageUrl(id: string, mimeType: string | null): string | null {
+    if (this.publicApiBaseUrl === "") return null;
+    if (mimeType === null || !mimeType.startsWith("image/")) return null;
+
+    const extension = EXTENSION_FOR_IMAGE[mimeType] ?? "img";
+    return joinUrl(this.publicApiBaseUrl, `media/${id}.${extension}`);
+  }
 
   async begin(
     courseSlug: string,
@@ -434,6 +477,16 @@ export class UploadService {
     return {
       id: row.id,
       reference: row.storageKey,
+      /*
+       * The stable, public address of an image (P212-01).
+       *
+       * Built by the API rather than by the console, for §9.10b's reason: the
+       * shape of this URL is one fact, and a console that assembled it from its
+       * own `DS_API_BASE` would be a second opinion that drifts the day the API
+       * moves. `null` for anything that is not an image — `GET /media/:id`
+       * refuses those in SQL, and offering a URL that 404s is §9.2.
+       */
+      publicUrl: this.publicImageUrl(row.id, row.mimeType),
       fileName: row.fileName,
       mimeType: row.mimeType,
       byteSize: row.byteSize,

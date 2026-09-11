@@ -314,6 +314,8 @@ export class UploadController {
         ...(principal.userId === undefined ? {} : { userId: principal.userId }),
       }),
       objectStorageFor(this.config),
+      undefined,
+      this.config.PUBLIC_API_BASE_URL,
     );
   }
 
@@ -336,6 +338,8 @@ export class UploadController {
         ...(principal.userId === undefined ? {} : { userId: principal.userId }),
       }),
       objectStorageFor(this.config),
+      undefined,
+      this.config.PUBLIC_API_BASE_URL,
     );
   }
 }

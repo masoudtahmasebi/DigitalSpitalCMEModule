@@ -4966,6 +4966,29 @@ export interface components {
              */
             reference: string;
             /**
+             * @description A stable, unauthenticated URL for an **image**, or `null`.
+             *
+             *     `reference` above is the internal address and is resolved to a
+             *     presigned URL that expires. That is correct for a lecture video —
+             *     the signature is the authorisation, and it is the only kind that can
+             *     travel on a `<video>` request, which carries no Authorization
+             *     header. It is wrong for a course cover or a speaker photograph: the
+             *     customer pastes those into their own site, and a URL that dies after
+             *     an hour is a trap.
+             *
+             *     So this is `{PUBLIC_API_BASE_URL}/media/{id}.{ext}`, which 302s to a
+             *     freshly signed URL on every request. The id is the stable part; the
+             *     signature never leaves the platform.
+             *
+             *     `null` when the asset is not an image, when its type was never
+             *     described, or when the deployment has not been told its own public
+             *     address. Images only is enforced by `resolve_public_image`
+             *     (migration 0054) rather than by the route, so widening it takes a
+             *     migration: a lecture video is gated content and an unguessable id
+             *     is not that gate.
+             */
+            publicUrl: string | null;
+            /**
              * @description What the author called it. A label shown only inside the customer's
              *     own console; the stored key is always the name the API generated.
              */

@@ -83,6 +83,9 @@ beforeAll(async () => {
   process.env["S3_ACCESS_KEY_ID"] = bucket.accessKeyId;
   process.env["S3_SECRET_ACCESS_KEY"] = bucket.secretAccessKey;
   process.env["S3_FORCE_PATH_STYLE"] = "yes";
+  // So `publicUrl` is offered at all (P212-01): empty means "this deployment
+  // does not know its own address", and the field is null.
+  process.env["PUBLIC_API_BASE_URL"] = "https://api.example.test";
 
   const pair = await generateKeyPair("RS256");
   privateKey = pair.privateKey;
@@ -839,5 +842,113 @@ describe("a bucket that does not answer (P145-01)", () => {
     const confirmed = await pending;
     expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
     expect(confirmed.body.reference).toBe(`s3://${ticket.key}`);
+  });
+});
+
+/**
+ * A stable public URL for an image, and nothing else (P212-01).
+ *
+ * The client: *"why doesn't the images have a link to our system that gets
+ * translated to a public s3 url? like you give aaaa.com/imageurl.jpg -> our
+ * system generates the public url and gives it back to the browser"*.
+ *
+ * That is what `GET /media/:id` does. These cases run against the real
+ * database, because the part that matters is **in SQL**: `resolve_public_image`
+ * (migration 0054) is SECURITY DEFINER with a three-column grant and the
+ * predicate `mime_type LIKE 'image/%'`. A unit test over the controller would
+ * assert the wrong thing — the rule it must not break is not in the controller.
+ *
+ * The route is `@Public()`, so **every one of these requests is made with no
+ * token and no tenant header.** That is the whole point and also the risk, and
+ * it is why the second and third cases exist.
+ */
+const PUBLIC_MEDIA_SUB = `public-media-admin-${RUN}`;
+
+describe("the public image URL (P212-01)", () => {
+  let imageId: string;
+  let videoId: string;
+  let undescribedId: string;
+  let customerId: string;
+
+  beforeAll(async () => {
+    const tenant = await seedTenant("public-media");
+    customerId = tenant.customerId;
+
+    const asset = async (name: string, mime: string | null): Promise<string> =>
+      insert(
+        `INSERT INTO media_assets (customer_id, storage_key, file_name, mime_type)
+         VALUES ($1,$2,$3,$4) RETURNING id`,
+        [customerId, `s3://${customerId}/${name}`, name, mime],
+      );
+
+    await grantAdmin(PUBLIC_MEDIA_SUB, customerId);
+
+    imageId = await asset("titelbild.png", "image/png");
+    videoId = await asset("vorlesung.mp4", "video/mp4");
+    // P79-01: null means "not described", which is not evidence of an image.
+    undescribedId = await asset("irgendwas.bin", null);
+  }, 30_000);
+
+  /** No token, no tenant header — exactly what an `<img>` sends. */
+  const fetchImage = async (id: string): Promise<Response> =>
+    fetch(`${baseUrl}/media/${id}`, { redirect: "manual" });
+
+  it("redirects an image to a signed URL", async () => {
+    const response = await fetchImage(`${imageId}.png`);
+
+    expect(response.status).toBe(302);
+    const location = response.headers.get("location") ?? "";
+    expect(location, "the redirect should point at the object store").toContain(
+      "titelbild.png",
+    );
+    expect(
+      location,
+      "and it should be signed — an unsigned URL would mean a public bucket",
+    ).toMatch(/X-Amz-Signature=/u);
+  });
+
+  it("does not let the browser cache the redirect", async () => {
+    // The *location* expires; the URL the browser holds does not. A cached 302
+    // would hand somebody a stale signature and a broken image, which is the
+    // failure this route exists to remove.
+    const response = await fetchImage(imageId);
+
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("refuses a video, because an unguessable id is not a watch gate", async () => {
+    const response = await fetchImage(`${videoId}.mp4`);
+
+    expect(response.status).toBe(404);
+  });
+
+  it("refuses an object whose type was never described", async () => {
+    const response = await fetchImage(undescribedId);
+
+    expect(response.status).toBe(404);
+  });
+
+  it("answers 404 for a malformed id rather than failing in the driver", async () => {
+    const response = await fetchImage("not-a-uuid");
+
+    expect(response.status).toBe(404);
+  });
+
+  it("offers the URL on the library listing, and only for the image", async () => {
+    const { status, body } = await callAs(
+      PUBLIC_MEDIA_SUB,
+      `projekt-public-media-${RUN}`,
+      "GET",
+      "/admin/media",
+    );
+
+    expect(status).toBe(200);
+    const rows = body as { id: string; publicUrl: string | null }[];
+    const image = rows.find((row) => row.id === imageId);
+    const video = rows.find((row) => row.id === videoId);
+
+    expect(image?.publicUrl).toBe(`https://api.example.test/media/${imageId}.png`);
+    // §9.2: a URL that 404s is worse than no URL.
+    expect(video?.publicUrl).toBeNull();
   });
 });

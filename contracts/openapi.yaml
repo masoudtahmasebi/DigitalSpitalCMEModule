@@ -7113,6 +7113,7 @@ components:
           altText,
           createdAt,
           usedByCount,
+          publicUrl,
         ]
       description: |
         One file in the customer's library. The bucket holds the bytes; this is
@@ -7127,6 +7128,30 @@ components:
             The `s3://…` value to store on a content — the same string
             `adminCompleteUpload` returned, so reusing a file is assigning this
             to a field.
+        publicUrl:
+          type: string
+          nullable: true
+          description: |
+            A stable, unauthenticated URL for an **image**, or `null`.
+
+            `reference` above is the internal address and is resolved to a
+            presigned URL that expires. That is correct for a lecture video —
+            the signature is the authorisation, and it is the only kind that can
+            travel on a `<video>` request, which carries no Authorization
+            header. It is wrong for a course cover or a speaker photograph: the
+            customer pastes those into their own site, and a URL that dies after
+            an hour is a trap.
+
+            So this is `{PUBLIC_API_BASE_URL}/media/{id}.{ext}`, which 302s to a
+            freshly signed URL on every request. The id is the stable part; the
+            signature never leaves the platform.
+
+            `null` when the asset is not an image, when its type was never
+            described, or when the deployment has not been told its own public
+            address. Images only is enforced by `resolve_public_image`
+            (migration 0054) rather than by the route, so widening it takes a
+            migration: a lecture video is gated content and an unguessable id
+            is not that gate.
         fileName:
           type: string
           description: |

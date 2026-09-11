@@ -1160,6 +1160,8 @@ export const german = {
     altHint:
       "Der Titel benennt die Datei für Sie in dieser Liste. Der Alternativtext beschreibt das Bild für Menschen, die es nicht sehen können — er wird von Screenreadern vorgelesen und ist für die Barrierefreiheit (WCAG 1.1.1) erforderlich. Bleibt er leer, gilt er als nicht gesetzt.",
     use: "Diese Datei verwenden",
+    copyUrl: "URL kopieren",
+    copied: "URL kopiert.",
     forget: "Aus Mediathek entfernen",
     upload: {
       title: "Dateien hinzufügen",

@@ -181,6 +181,13 @@ services:
       # existing `.env` on the server still works.
       ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
 
+      # The API's own public address, for the stable image URLs it hands out
+      # (P212-01). Derived by `deploy.sh` for Caddy's CSP already, so this is
+      # the same fact reaching a second reader rather than a new setting
+      # somebody has to remember — §9.9's "a README sentence is not a
+      # mechanism".
+      PUBLIC_API_BASE_URL: ${API_DOMAIN_URL}
+
       # The parent domain the staff session cookie is scoped to — ".cme.example.de"
       # — so the console at verwaltung.… and the API at api.… are same-site and
       # the browser attaches it (ADR-0012).

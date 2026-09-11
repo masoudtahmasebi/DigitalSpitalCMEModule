@@ -805,6 +805,8 @@ export const en: DeepPartial<typeof german> = {
     altHint:
       "The title names the file for you in this list. The alternative text describes the image for people who cannot see it — screen readers read it out, and it is required for accessibility (WCAG 1.1.1). Left empty, it counts as not set.",
     use: "Use this file",
+    copyUrl: "Copy URL",
+    copied: "URL copied.",
     forget: "Remove from library",
     upload: {
       title: "Add files",
