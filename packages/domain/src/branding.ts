@@ -53,6 +53,23 @@ export interface Branding {
   readonly primaryContrastColor?: string;
   /** Accent used for links and focus rings. Falls back to primary. */
   readonly accentColor?: string;
+  /**
+   * How wide the widget's content column may grow — a CSS length (DEP-35).
+   *
+   * The widget owns its column rather than inheriting the host page's, because
+   * the hero, the course artwork and the player's teal band all bleed past it
+   * and a WordPress container would clip them. That stays right, and it is why
+   * the column cannot simply be dropped.
+   *
+   * What it cost is DEP-35: a fixed `1430px` is a guess about somebody else's
+   * theme, and on MEDICE's site the page runs wider — *"the layout stretches
+   * the width and aligns from the logo till the logout button"*. So the cap is
+   * a value the customer sets, against a theme only they can measure, without
+   * waiting for a release.
+   *
+   * Unset keeps `1430px` — what every deployment renders today.
+   */
+  readonly contentMaxWidth?: string;
   /** A CSS font stack — never a URL. See the module header. */
   readonly fontFamily?: string;
   /**
@@ -271,6 +288,53 @@ const MAX_CATALOG_INTRO_LENGTH = 400;
 const POLICY_VERSION = /^[A-Za-z0-9._-]{1,64}$/;
 
 /**
+ * A CSS length, and nothing that could be an expression (DEP-35).
+ *
+ * Digits, one optional decimal, and a unit from a closed list. Deliberately
+ * **not** `calc()`, `var()`, `min()` or a percentage: this value is
+ * interpolated into a custom property that ends up in a `max-width`, and this
+ * pattern is what stops a branding field becoming a way to write arbitrary CSS
+ * into a physician's page. A customer who needs arithmetic computes it and
+ * enters the result.
+ */
+/** The units a theme is actually measured in. A closed list, checked by suffix. */
+const CSS_UNITS = ["px", "rem", "em", "vw", "ch"] as const;
+
+const isDigits = (part: string): boolean =>
+  part.length > 0 && [...part].every((c) => c >= "0" && c <= "9");
+
+/**
+ * A CSS length, checked without a regular expression at all.
+ *
+ * Two of this repository's own lint rules refused the obvious patterns, and
+ * both were right to: `security/detect-unsafe-regex` on digits-then-optional-
+ * decimal-then-unit, and the local `no-restricted-syntax` on `/[a-z]+$/` and
+ * `/^[0-9]+$/`, because a repetition anchored at the end backtracks
+ * quadratically. P212 caught a real one the same way.
+ *
+ * Rather than argue about whether these particular nestings can backtrack, the
+ * check is written so the question cannot arise: a suffix match against a
+ * closed list, then a character-class scan of each half.
+ *
+ * Deliberately **not** `calc()`, `var()`, `min()` or a percentage: the value is
+ * interpolated into a custom property that ends up in a `max-width`, and this
+ * is what stops a branding field becoming a way to write arbitrary CSS into a
+ * physician's page. A customer who needs arithmetic computes it and enters the
+ * result.
+ */
+function isCssLength(value: string): boolean {
+  const unit = CSS_UNITS.find((candidate) => value.endsWith(candidate));
+  if (unit === undefined) return false;
+
+  const magnitude = value.slice(0, value.length - unit.length);
+  const [whole, fraction, ...rest] = magnitude.split(".");
+  if (rest.length > 0) return false;
+  if (whole === undefined || whole.length > 5 || !isDigits(whole)) return false;
+  if (fraction === undefined) return true;
+  return fraction.length <= 2 && isDigits(fraction);
+}
+
+/**
  * Read branding from whatever is in the `projects.branding` column.
  *
  * Total: any input produces a `Branding`, because a malformed value must not
@@ -290,6 +354,7 @@ export function parseBranding(value: unknown): Branding {
     primaryColor?: string;
     primaryContrastColor?: string;
     accentColor?: string;
+    contentMaxWidth?: string;
     fontFamily?: string;
     fontFamilyName?: string;
     fontVersion?: string;
@@ -314,6 +379,7 @@ export function parseBranding(value: unknown): Branding {
     branding.logoAlt = logoAlt;
   }
 
+  assign(branding, "contentMaxWidth", satisfying(raw["contentMaxWidth"], isCssLength));
   assign(branding, "primaryColor", matching(raw["primaryColor"], HEX_COLOR));
   assign(
     branding,
@@ -383,6 +449,12 @@ export function invalidBrandingFields(value: unknown): readonly string[] {
   const raw = value as Record<string, unknown>;
   const invalid: string[] = [];
 
+  const checkWith = (key: string, predicate: (candidate: string) => boolean): void => {
+    const candidate = raw[key];
+    if (candidate === undefined || candidate === null) return;
+    if (typeof candidate !== "string" || !predicate(candidate)) invalid.push(key);
+  };
+
   const check = (key: string, pattern: RegExp): void => {
     const candidate = raw[key];
     if (candidate === undefined || candidate === null) return;
@@ -405,6 +477,7 @@ export function invalidBrandingFields(value: unknown): readonly string[] {
   };
 
   checkAssetUrl("logoUrl");
+  checkWith("contentMaxWidth", isCssLength);
   check("primaryColor", HEX_COLOR);
   check("primaryContrastColor", HEX_COLOR);
   check("accentColor", HEX_COLOR);
@@ -478,6 +551,9 @@ export function brandingCssVariables(
 ): ReadonlyArray<[string, string]> {
   const vars: Array<[string, string]> = [];
 
+  if (branding.contentMaxWidth !== undefined) {
+    vars.push(["--ds-content-max", branding.contentMaxWidth]);
+  }
   if (branding.primaryColor !== undefined) {
     vars.push(["--ds-brand-600", branding.primaryColor]);
     // A single supplied colour drives the hover state too, rather than leaving
@@ -549,6 +625,16 @@ export function fontFaceRule(familyName: string, url: string): string | undefine
     // rather than silently falling back to a different family for it.
     `font-weight:100 900;font-style:normal;}`
   );
+}
+
+/** `matching`, for a rule a regex should not express — see `isCssLength`. */
+function satisfying(
+  value: unknown,
+  predicate: (candidate: string) => boolean,
+): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return predicate(trimmed) ? trimmed : undefined;
 }
 
 function matching(value: unknown, pattern: RegExp): string | undefined {

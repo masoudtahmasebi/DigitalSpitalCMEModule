@@ -956,6 +956,18 @@ function ProjectSettings(props: {
           </div>
         </Field>
         <Field
+          label={de.organisation.contentMaxWidth}
+          hint={de.organisation.contentMaxWidthHint}
+          htmlFor={id("content-max")}
+        >
+          <TextInput
+            id={id("content-max")}
+            value={branding.contentMaxWidth}
+            maxLength={12}
+            onChange={(v) => setBranding((b) => ({ ...b, contentMaxWidth: v }))}
+          />
+        </Field>
+        <Field
           label={de.organisation.catalogTitle}
           hint={de.organisation.catalogTitleHint}
           htmlFor={id("catalog-title")}
@@ -1075,6 +1087,7 @@ function brandingForm(project: ProjectSummary) {
      * most expensive form: the client asked where the colours were, and the
      * honest answer was "nowhere".
      */
+    contentMaxWidth: str("contentMaxWidth"),
     primaryColor: str("primaryColor"),
     primaryContrastColor: str("primaryContrastColor"),
     catalogTitle: str("catalogTitle"),

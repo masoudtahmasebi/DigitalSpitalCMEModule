@@ -34,8 +34,23 @@
  * heading can line up with the panel beneath it.
  */
 
-/** The column itself, without padding — for anything that supplies its own. */
-export const CONTENT_WIDTH = "w-full max-w-[1430px]";
+/**
+ * The column itself, without padding — for anything that supplies its own.
+ *
+ * The cap is a custom property so a customer can match their own theme
+ * (DEP-35). `1430px` stays the default, so a deployment that sets nothing
+ * renders exactly as before; `brandingCssVariables` writes `--ds-content-max`
+ * when the project's `contentMaxWidth` is set.
+ *
+ * Measured from `screens/page-01.png`: the drawing's widget panel spans
+ * x 261…1658 at 1920 — 1398 px, which is this 1430 minus the `px-4` gutters —
+ * while the theme's own header runs from the logo at x 254 to the Logout
+ * button's right edge at 1713. So even in the drawing the widget is narrower
+ * than the page around it, and on the live site the difference is what the
+ * client reported. The number that closes it belongs to MEDICE's theme, which
+ * is why this is a setting rather than a new constant guessed here.
+ */
+export const CONTENT_WIDTH = "w-full max-w-[var(--ds-content-max,1430px)]";
 
 /** The column as a screen uses it: centred, with the narrow-viewport gutter. */
 export const CONTENT = `mx-auto ${CONTENT_WIDTH} px-4`;

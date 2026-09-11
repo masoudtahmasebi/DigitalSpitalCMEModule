@@ -457,3 +457,58 @@ describe("the catalogue hero", () => {
     expect(invalidBrandingFields({ primaryColor: "#0d6f7a" })).toEqual([]);
   });
 });
+
+/**
+ * The content column's cap, as a customer sets it (DEP-35).
+ *
+ * The widget's column is fixed at 1430 px and MEDICE's own pages run wider —
+ * *"the layout stretches the width and aligns from the logo till the logout
+ * button"*. The number belongs to their theme, so it is a setting, and the
+ * interesting half is what it **refuses**: the value lands in a custom
+ * property that ends up in a `max-width`, so anything that could be an
+ * expression is a way to write CSS into a physician's page.
+ */
+describe("contentMaxWidth (DEP-35)", () => {
+  it("accepts the units a theme is actually measured in", () => {
+    for (const value of ["1430px", "90rem", "1200px", "75.5rem", "100vw", "60ch"]) {
+      expect(parseBranding({ contentMaxWidth: value }).contentMaxWidth).toBe(value);
+    }
+  });
+
+  it("drops anything that could be an expression", () => {
+    for (const value of [
+      "calc(100% - 2rem)",
+      "var(--x)",
+      "min(90rem, 100vw)",
+      "100%",
+      "1430",
+      "expression(alert(1))",
+      "1430px; background: url(evil)",
+    ]) {
+      expect(
+        parseBranding({ contentMaxWidth: value }).contentMaxWidth,
+        `${value} should not survive parsing`,
+      ).toBeUndefined();
+    }
+  });
+
+  it("names the field when it refuses one, so the console can say so", () => {
+    expect(invalidBrandingFields({ contentMaxWidth: "calc(100%)" })).toContain(
+      "contentMaxWidth",
+    );
+    expect(invalidBrandingFields({ contentMaxWidth: "90rem" })).not.toContain(
+      "contentMaxWidth",
+    );
+  });
+
+  it("writes the custom property the column reads, and only when set", () => {
+    expect(brandingCssVariables({ contentMaxWidth: "90rem" })).toContainEqual([
+      "--ds-content-max",
+      "90rem",
+    ]);
+    expect(
+      brandingCssVariables({}).map(([name]) => name),
+      "an unset cap must fall through to the stylesheet's 1430px default",
+    ).not.toContain("--ds-content-max");
+  });
+});

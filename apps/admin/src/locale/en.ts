@@ -434,6 +434,9 @@ export const en: DeepPartial<typeof german> = {
     loginUrlHint:
       "If participants sign in on the customer's website — in a WordPress portal, for example — enter that page's address here. The overview page then links there instead of showing a sign-in form of its own. Leave empty to sign in through this portal.",
 
+    contentMaxWidth: "Maximum width of the learner interface",
+    contentMaxWidthHint:
+      "How wide the learner interface's content may grow — a CSS length, for example 1430px or 90rem. Set the width the customer's other pages use, so the module lines up with the page header. Leave empty for the 1430px default. px, rem, em, vw and ch are allowed.",
     primaryColor: "Primary colour",
     primaryColorHint:
       "The learner interface's main colour: the header, active tabs, buttons and the progress ring. A hex value, for example #007f95. Leave empty for the platform's default.",
