@@ -78,6 +78,40 @@ export function Button(props: {
   );
 }
 
+/**
+ * A labelled checkbox.
+ *
+ * It lived in `CourseSettings.tsx` under a comment reading *"these two are the
+ * only checkboxes in the console"*, which stopped being true some time before
+ * P213-01 found it: `Security.tsx` and `PlatformEiv.tsx` had each written their
+ * own `<input type="checkbox">` beside it, and the project screen's two sign-in
+ * switches would have been a fourth. A comment explaining why something is not
+ * shared is a claim with an expiry date (§11.9).
+ *
+ * The two bespoke ones are deliberately left where they are — both carry a
+ * description under the label that this shape has no room for. Promoting this
+ * one is about the plain case, which is now the common one.
+ */
+export function Checkbox(props: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <label htmlFor={props.id} className="flex items-center gap-2 text-sm text-gray-900">
+      <input
+        id={props.id}
+        type="checkbox"
+        checked={props.checked}
+        onChange={(event) => props.onChange(event.target.checked)}
+        className="h-4 w-4 rounded border-gray-300 text-brand-600"
+      />
+      {props.label}
+    </label>
+  );
+}
+
 export function Field(props: {
   label: string;
   hint?: string;

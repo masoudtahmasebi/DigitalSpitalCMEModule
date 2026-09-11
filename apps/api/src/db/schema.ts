@@ -121,6 +121,16 @@ export const projects = pgTable("projects", {
    * portal — and was invisible to every query this application builds.
    */
   loginUrl: text("login_url"),
+  /**
+   * Which sign-in entry points this project offers (migration 0055, P213-01).
+   *
+   * `doccheck_login_allowed` is also what permits the **catalogue preview**: a
+   * DocCheck login cannot produce a platform token, so "DocCheck is permitted"
+   * and "a tokenless visitor may read the catalogue" are the same fact. The
+   * migration's comment says why they are one column rather than two.
+   */
+  docCheckLoginAllowed: boolean("doccheck_login_allowed").notNull().default(false),
+  keycloakLoginAllowed: boolean("keycloak_login_allowed").notNull().default(true),
   keycloakIssuer: text("keycloak_issuer"),
   keycloakAudience: text("keycloak_audience"),
   keycloakRealm: text("keycloak_realm"),

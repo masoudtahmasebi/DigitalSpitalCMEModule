@@ -144,6 +144,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/preview/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The catalogue, for a visitor holding no platform token
+         * @description The course list a DocCheck visitor may read (P213-01).
+         *
+         *     A DocCheck login identifies somebody as a healthcare professional to the
+         *     customer's website; it produces **no platform token**, because a CME
+         *     point cannot be awarded to somebody the accreditation chain cannot name.
+         *     This route serves what such a visitor may see and nothing else.
+         *
+         *     Same shape as `GET /courses` and the same underlying query — so the
+         *     published and validity rules cannot drift between the two audiences —
+         *     with two differences that follow from there being no caller:
+         *
+         *     * every card's enrolment state is absent, because there is no user to
+         *       have one;
+         *     * the project must have `docCheckLoginAllowed`, or this answers 404.
+         *
+         *     The 404 is deliberately the same for a project that does not exist, one
+         *     that has not opted in, and a request with no `X-DS-Project` header.
+         *     Telling them apart would make this a project-slug oracle (ADR-0007).
+         */
+        get: operations["listPreviewCourses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/preview/courses/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One course description, for a visitor holding no platform token
+         * @description The course detail a DocCheck visitor may read (P213-01) — the same tree
+         *     `GET /courses/{slug}` returns, with no enrolment state on it.
+         *
+         *     It describes the Fortbildung; it does not start one. Everything that
+         *     advances a Fortbildung — enrolling, watch progress, the
+         *     Lernerfolgskontrolle, the Evaluationsbogen, the EFN, the Punktemeldung
+         *     and the Teilnahmebescheinigung — lives on routes that require a bearer
+         *     the API validates against Keycloak JWKS, and this route changes none of
+         *     them. The widget renders a dialog pointing at the customer's own sign-in
+         *     when a visitor reaches for one.
+         *
+         *     Media URLs in the response are the public indirection added in P212-01,
+         *     not signed object-store URLs.
+         */
+        get: operations["getPreviewCourseBySlug"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/courses/{slug}/enrolment": {
         parameters: {
             query?: never;
@@ -4547,6 +4616,28 @@ export interface components {
             departmentSlug: string;
             loginUrl: string | null;
             /**
+             * @description Whether this project offers the DocCheck entry point (P213-01).
+             *
+             *     Because a DocCheck login yields no platform token, this is also what
+             *     permits a visitor holding no token to read the catalogue and the
+             *     course descriptions through `GET /preview/courses`. It never permits
+             *     participation: enrolling, watching, the Lernerfolgskontrolle, the
+             *     Evaluationsbogen, an EFN, a Punktemeldung and a certificate all
+             *     require a bearer the API validates against Keycloak JWKS.
+             *
+             *     Defaults to `false`, so no project began disclosing its catalogue
+             *     because a migration ran.
+             */
+            docCheckLoginAllowed: boolean;
+            /**
+             * @description Whether this project offers the Keycloak entry point — the only one
+             *     that produces a platform token (P213-01).
+             *
+             *     A project with neither method permitted is refused on write, by this
+             *     API and by a database CHECK, because it is a project nobody can open.
+             */
+            keycloakLoginAllowed: boolean;
+            /**
              * @description Returned so the console can show what it set. The Keycloak fields
              *     below are meaningless when this is `local`, and the form says so
              *     rather than presenting three inputs nothing reads.
@@ -4702,6 +4793,21 @@ export interface components {
              *     not delete the password they had.
              */
             identityProvider?: components["schemas"]["IdentityProvider"];
+            /**
+             * @description Permit the DocCheck entry point, and with it the tokenless catalogue
+             *     preview (P213-01). See `ProjectSummary.docCheckLoginAllowed` for what
+             *     the preview does and does not open.
+             */
+            docCheckLoginAllowed?: boolean;
+            /**
+             * @description Permit the Keycloak entry point (P213-01).
+             *
+             *     Setting this and `docCheckLoginAllowed` both to `false` is refused
+             *     with a `validation` problem naming the pair — as a PATCH, against the
+             *     **stored** value of whichever flag is not sent, so it cannot be
+             *     reached in two requests.
+             */
+            keycloakLoginAllowed?: boolean;
             /** Format: uri */
             keycloakIssuer?: string | null;
             keycloakAudience?: string | null;
@@ -4965,6 +5071,29 @@ export interface components {
              *     to a field.
              */
             reference: string;
+            /**
+             * @description A stable, unauthenticated URL for an **image**, or `null`.
+             *
+             *     `reference` above is the internal address and is resolved to a
+             *     presigned URL that expires. That is correct for a lecture video —
+             *     the signature is the authorisation, and it is the only kind that can
+             *     travel on a `<video>` request, which carries no Authorization
+             *     header. It is wrong for a course cover or a speaker photograph: the
+             *     customer pastes those into their own site, and a URL that dies after
+             *     an hour is a trap.
+             *
+             *     So this is `{PUBLIC_API_BASE_URL}/media/{id}.{ext}`, which 302s to a
+             *     freshly signed URL on every request. The id is the stable part; the
+             *     signature never leaves the platform.
+             *
+             *     `null` when the asset is not an image, when its type was never
+             *     described, or when the deployment has not been told its own public
+             *     address. Images only is enforced by `resolve_public_image`
+             *     (migration 0054) rather than by the route, so widening it takes a
+             *     migration: a lecture video is gated content and an unguessable id
+             *     is not that gate.
+             */
+            publicUrl: string | null;
             /**
              * @description What the author called it. A label shown only inside the customer's
              *     own console; the stored key is always the name the API generated.
@@ -5644,6 +5773,115 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listPreviewCourses: {
+        parameters: {
+            query?: {
+                thema?: string;
+                altersgruppe?: string;
+                deliveryType?: string;
+                page?: number;
+                perPage?: number;
+            };
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of courses plus facet counts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseListResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getPreviewCourseBySlug: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Project slug identifying the calling host surface (ADR-0007). Pins the
+                 *     tenant, and on the learner plane also resolves the Keycloak realm to
+                 *     validate the bearer token against.
+                 *
+                 *     **How a bad slug is answered depends on which plane asked**, because the
+                 *     two callers know different things already (P22-01):
+                 *
+                 *     - *Learner plane* (bearer token): an unknown **or unbound** slug is a
+                 *       generic `401`, never a `404` — whether a project exists is not a fact
+                 *       an anonymous caller should be able to enumerate, and a project with no
+                 *       Keycloak binding cannot authenticate anybody in any case.
+                 *     - *Staff plane* (session cookie, ADR-0012): an unknown slug is a `404`
+                 *       carrying `detail`. The caller is already authenticated and the
+                 *       platform knows who they are, so naming what was not found is both
+                 *       honest and safe. A staff session needs no identity provider at all, so
+                 *       a project **without** a Keycloak binding resolves normally here —
+                 *       answering 401 for that locked operators out of every tenant-scoped
+                 *       console screen on a project the console itself had just created.
+                 *     - Either plane, **header absent**: `422` with `detail`. The header is
+                 *       required; omitting it is a malformed request, not a failed
+                 *       authentication, and answering 401 makes a console send the operator
+                 *       back to a login form they never left.
+                 *
+                 *     A caller who is authenticated but holds no grant reaching the resolved
+                 *     customer gets `403` on both planes.
+                 */
+                "X-DS-Project": components["parameters"]["ProjectHeader"];
+            };
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The course detail tree. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
             404: components["responses"]["NotFound"];
         };
     };

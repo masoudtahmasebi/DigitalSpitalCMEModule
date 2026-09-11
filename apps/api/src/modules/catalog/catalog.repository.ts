@@ -38,6 +38,15 @@ import {
 
 export interface CourseRow {
   id: string;
+  /**
+   * Selected so a stored `s3://` reference can be checked against the course's
+   * **own** customer before it is signed (P211-01).
+   *
+   * RLS already bounds this query to the caller's tenant, so this is defence in
+   * depth rather than the defence — which is the shape ADR-0002 asks for, and
+   * the same reason `media-url.ts` re-checks a key it was handed from a row.
+   */
+  customerId: string;
   slug: string;
   title: string;
   description: string | null;

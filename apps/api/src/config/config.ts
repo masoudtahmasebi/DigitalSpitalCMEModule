@@ -157,6 +157,28 @@ const schema = z
     // that can sign them in.
     PORTAL_BASE_URL: z.string().default(""),
 
+    /**
+     * Where `GET /media/:id` lives, so the API can hand out the stable image
+     * URL rather than leaving each consumer to assemble one (P212-01).
+     *
+     * The API has never needed to know its own address before: every URL it
+     * built pointed at the portal or the console. This one points at itself,
+     * because the value is pasted into a customer's WordPress page and
+     * re-fetched by browsers that have never spoken to us.
+     *
+     * **Not derived from the request's `Host` header**, and that is the same
+     * rule §9.5 states for a password-reset link: a caller must not be able to
+     * name the host. Here it would be worse than a link in a mail — this URL is
+     * **stored** in `courses.hero_image_url`, so a request through an unexpected
+     * host would persist an address nobody else can resolve.
+     *
+     * Empty in development, where an absolute URL is not wanted; the deploy
+     * passes `API_DOMAIN_URL`, which it already derives for Caddy's CSP. When
+     * empty, `publicUrl` is null and the console keeps storing the `s3://`
+     * reference — the behaviour before this existed.
+     */
+    PUBLIC_API_BASE_URL: z.string().default(""),
+
     // ---------------------------------------------------------------------
     // Object storage for course media (P10-09)
     // ---------------------------------------------------------------------

@@ -33,7 +33,7 @@
  */
 
 import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
-import type { ChildCensus } from "@ds/domain";
+import type { ChildCensus, SignInMethods } from "@ds/domain";
 import type { Db } from "../../db/tenant-db.js";
 import {
   auditLog,
@@ -67,6 +67,15 @@ export interface AuthoringRepositoryPort {
     identityProvider: string;
   }): Promise<void>;
   findDepartmentId(slug: string): Promise<string | undefined>;
+  /**
+   * The two sign-in flags as stored (P213-01).
+   *
+   * A PATCH may name one of the pair, and the rule that refuses "neither" is
+   * about the pair — so the service needs the value it is not changing. A
+   * project RLS hides returns `undefined`, which is the same answer as a slug
+   * that does not exist, and the caller turns both into the same 404 (§9.6).
+   */
+  findProjectSignInMethods(slug: string): Promise<SignInMethods | undefined>;
   updateProject(slug: string, patch: ProjectPatch): Promise<boolean>;
   createCourse(input: {
     projectId: string;
@@ -169,6 +178,8 @@ export interface ProjectRow {
   /** `keycloak` or `local` — see `schema.ts`. */
   identityProvider: string;
   loginUrl: string | null;
+  docCheckLoginAllowed: boolean;
+  keycloakLoginAllowed: boolean;
   keycloakIssuer: string | null;
   keycloakAudience: string | null;
   keycloakRealm: string | null;
@@ -189,6 +200,8 @@ export interface ProjectPatch {
   /** `keycloak` or `local` — see `schema.ts`. */
   identityProvider?: string;
   loginUrl?: string | null;
+  docCheckLoginAllowed?: boolean;
+  keycloakLoginAllowed?: boolean;
   keycloakIssuer?: string | null;
   keycloakAudience?: string | null;
   keycloakRealm?: string | null;
@@ -338,6 +351,18 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
     return row?.id;
   }
 
+  async findProjectSignInMethods(slug: string): Promise<SignInMethods | undefined> {
+    const [row] = await this.db
+      .select({
+        docCheckLoginAllowed: projects.docCheckLoginAllowed,
+        keycloakLoginAllowed: projects.keycloakLoginAllowed,
+      })
+      .from(projects)
+      .where(eq(projects.slug, slug))
+      .limit(1);
+    return row;
+  }
+
   async findDepartmentId(slug: string): Promise<string | undefined> {
     const [row] = await this.db
       .select({ id: departments.id })
@@ -405,6 +430,8 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
         departmentSlug: departments.slug,
         identityProvider: projects.identityProvider,
         loginUrl: projects.loginUrl,
+        docCheckLoginAllowed: projects.docCheckLoginAllowed,
+        keycloakLoginAllowed: projects.keycloakLoginAllowed,
         keycloakIssuer: projects.keycloakIssuer,
         keycloakAudience: projects.keycloakAudience,
         keycloakRealm: projects.keycloakRealm,

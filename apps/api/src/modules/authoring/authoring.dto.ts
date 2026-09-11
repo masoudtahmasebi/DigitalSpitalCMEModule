@@ -22,6 +22,7 @@
  */
 
 import { z } from "zod";
+import { mediaReference } from "../../shared/media-reference.js";
 
 const INVALID_ORIGIN =
   "must be scheme + host + optional port, optionally with * as the whole " +
@@ -101,14 +102,6 @@ const httpsUrl = url.refine((value) => value.startsWith("https://"), {
  * time, so a row that somehow held one would render as a padlock rather than as
  * somebody else's video.
  */
-const mediaReference = z
-  .string()
-  .trim()
-  .max(2000)
-  .refine(
-    (value) => value.startsWith("s3://") || z.string().url().safeParse(value).success,
-    "must be an absolute URL or an s3:// reference",
-  );
 
 // ---------------------------------------------------------------------------
 // Structure: departments and projects
@@ -165,6 +158,25 @@ export const projectUpdateSchema = z.object({
    * CHECK applies, stated here so an operator is told rather than 500'd.
    */
   loginUrl: httpsUrl.nullable().optional(),
+  /**
+   * Which sign-in entry points this project offers (P213-01).
+   *
+   * `docCheckLoginAllowed` is also what opens the **catalogue preview**: a
+   * DocCheck login yields no platform token, so permitting it and permitting a
+   * tokenless visitor to read the catalogue are the same decision. Migration
+   * 0055 says why that is one column rather than two.
+   *
+   * Refusing *both* is refused — a project nobody can sign in to is a project
+   * nobody can reach, and storing it would be a screen offering a state the
+   * product cannot serve (§9.2). That rule is **not** here: this is a PATCH, so
+   * a request naming one flag does not carry the other, and a check over the
+   * submitted fields alone would pass a pair that is invalid once merged.
+   * `signInMethodsProblem` in `@ds/domain` is the rule, `updateProject` reads
+   * the stored value and calls it, and migration 0055's CHECK is the same
+   * statement for every writer that is not this route.
+   */
+  docCheckLoginAllowed: z.boolean().optional(),
+  keycloakLoginAllowed: z.boolean().optional(),
   keycloakIssuer: url.nullable().optional(),
   keycloakAudience: z.string().trim().max(200).nullable().optional(),
   keycloakRealm: z.string().trim().max(200).nullable().optional(),
@@ -223,6 +235,8 @@ export const projectSummarySchema = z.object({
   departmentSlug: z.string(),
   identityProvider: identityProvider,
   loginUrl: z.string().nullable(),
+  docCheckLoginAllowed: z.boolean(),
+  keycloakLoginAllowed: z.boolean(),
   keycloakIssuer: z.string().nullable(),
   keycloakAudience: z.string().nullable(),
   keycloakRealm: z.string().nullable(),
@@ -440,7 +454,10 @@ export const expertsWriteSchema = z.object({
         name: z.string().trim().min(1).max(200),
         institution: z.string().trim().max(300).nullable().optional(),
         biography: richText.nullable().optional(),
-        photoUrl: url.nullable().optional(),
+        /* The Mediathek, not a pasted URL (P211-01) — the client: "we should
+           not have any photo url anywhere, all of them should open the
+           mediathek". */
+        photoUrl: mediaReference.nullable().optional(),
       }),
     )
     .max(50),

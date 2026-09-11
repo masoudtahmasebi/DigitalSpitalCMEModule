@@ -100,6 +100,31 @@ export const RATE_LIMIT_RULES = {
    */
   mediaUpload: { limit: 60, windowSec: 60 },
   /**
+   * `GET /media/:id`, the public image redirect (P212-01).
+   *
+   * Generous, because it is keyed on the **client IP** — this route has no
+   * principal by design, and a course page carrying a cover and six speaker
+   * photographs is seven requests before anybody scrolls. A hospital behind one
+   * NAT address is many such pages at once.
+   *
+   * It is not nothing, either: the route takes an unauthenticated request and
+   * does a database round trip, so a bare loop over uuids should cost the
+   * looper something. 600 a minute is far past any reader and far below a
+   * scrape.
+   */
+  mediaPublic: { limit: 600, windowSec: 60 },
+  /**
+   * The unauthenticated catalogue preview (P213-01).
+   *
+   * Keyed on the client IP, because this route has no principal by design — so
+   * it is a hospital's whole building behind one NAT address, reading a
+   * catalogue. Tighter than `mediaPublic` because each request is a real
+   * catalogue query with facets rather than a redirect, and looser than
+   * anything that writes: a person browsing loads a list and a handful of
+   * detail pages.
+   */
+  cataloguePreview: { limit: 120, windowSec: 60 },
+  /**
    * Participant sign-in (P25-02). The tightest limit in the platform.
    *
    * It is the **only unauthenticated write on the learner plane**, so it is the

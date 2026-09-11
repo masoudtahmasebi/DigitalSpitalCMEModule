@@ -26,12 +26,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ApiClient, DepartmentSummary, ProjectSummary } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { invalidEmbedOriginPatterns } from "@ds/domain";
+import { invalidEmbedOriginPatterns, signInMethodsProblem } from "@ds/domain";
 import { slugify } from "../drafts.js";
 import { readPlatformSender } from "../staff-auth.js";
 import { useLoaded, useSaver } from "../hooks.js";
 import {
   Button,
+  Checkbox,
   Field,
   Notice,
   Panel,
@@ -584,6 +585,8 @@ function ProjectSettings(props: {
   const [smtpFromAddress, setSmtpFromAddress] = useState(project.smtpFromAddress ?? "");
   const [smtpFromName, setSmtpFromName] = useState(project.smtpFromName ?? "");
   const [loginUrl, setLoginUrl] = useState(project.loginUrl ?? "");
+  const [docCheckLogin, setDocCheckLogin] = useState(project.docCheckLoginAllowed);
+  const [keycloakLogin, setKeycloakLogin] = useState(project.keycloakLoginAllowed);
   const [branding, setBranding] = useState(() => brandingForm(project));
   const saver = useSaver();
 
@@ -594,6 +597,22 @@ function ProjectSettings(props: {
   const policyIncomplete =
     (branding.privacyPolicyUrl.trim() === "") !==
     (branding.privacyPolicyVersion.trim() === "");
+
+  /*
+   * Neither method permitted, said before the API says it (P213-01).
+   *
+   * The rule is `signInMethodsProblem` in `@ds/domain` and it is enforced by
+   * `updateProject` and by a database CHECK — this is the same rule read
+   * forwards, so the operator is told at the moment they untick the second box
+   * rather than after pressing **Speichern**. The same shape as
+   * `rejectedOrigins` above and as `invalidBrandingFields` one screen over: a
+   * refusal that arrives only as a 422 is a refusal somebody argues with.
+   */
+  const noSignInMethod =
+    signInMethodsProblem({
+      docCheckLoginAllowed: docCheckLogin,
+      keycloakLoginAllowed: keycloakLogin,
+    }) !== undefined;
 
   const id = (field: string) => `project-${project.slug}-${field}`;
 
@@ -608,6 +627,8 @@ function ProjectSettings(props: {
               name: name.trim(),
               identityProvider,
               loginUrl: blankToNull(loginUrl),
+              docCheckLoginAllowed: docCheckLogin,
+              keycloakLoginAllowed: keycloakLogin,
               keycloakIssuer: blankToNull(issuer),
               keycloakAudience: blankToNull(audience),
               keycloakRealm: blankToNull(realm),
@@ -690,6 +711,57 @@ function ProjectSettings(props: {
           onChange={setLoginUrl}
         />
       </Field>
+
+      {/*
+        Which doors this project has (P213-01).
+
+        Two settings and not one, because they are two different decisions:
+        whether a physician can sign in with the customer's own account, and
+        whether a DocCheck visitor may read the catalogue at all.
+
+        The second is spelled out rather than named, because "DocCheck erlauben"
+        does not say what it grants and the difference is the whole of the
+        compliance story — a DocCheck login produces no Fortbildungsnummer, so
+        it can never lead to a CME point. The hint says what such a visitor can
+        and cannot do, at the point somebody decides (§9.4).
+      */}
+      <fieldset className="space-y-3">
+        <legend className="text-sm font-semibold text-gray-900">
+          {de.organisation.signIn}
+        </legend>
+
+        <Field
+          label={de.organisation.keycloakLogin}
+          hint={de.organisation.keycloakLoginHint}
+          htmlFor={id("keycloak-login")}
+        >
+          <Checkbox
+            id={id("keycloak-login")}
+            label={de.organisation.keycloakLoginLabel}
+            checked={keycloakLogin}
+            onChange={setKeycloakLogin}
+          />
+        </Field>
+
+        <Field
+          label={de.organisation.docCheckLogin}
+          hint={de.organisation.docCheckLoginHint}
+          htmlFor={id("doccheck-login")}
+        >
+          <Checkbox
+            id={id("doccheck-login")}
+            label={de.organisation.docCheckLoginLabel}
+            checked={docCheckLogin}
+            onChange={setDocCheckLogin}
+          />
+        </Field>
+
+        {noSignInMethod ? (
+          <p className="text-sm text-red-700" role="alert">
+            {de.organisation.noSignInMethod}
+          </p>
+        ) : null}
+      </fieldset>
 
       <fieldset className="space-y-3">
         <legend className="text-sm font-semibold text-gray-900">
@@ -904,7 +976,10 @@ function ProjectSettings(props: {
 
       <SaveProblem title={de.error.title} problem={saver.problem} />
 
-      <Button type="submit" disabled={saver.state === "saving" || policyIncomplete}>
+      <Button
+        type="submit"
+        disabled={saver.state === "saving" || policyIncomplete || noSignInMethod}
+      >
         {saver.state === "saving" ? de.common.saving : de.common.save}
       </Button>
     </form>

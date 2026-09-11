@@ -1110,6 +1110,74 @@ describe("project settings", () => {
     expect(branding.cornerRadiusPx).toBe(8);
   });
 
+  /*
+   * The sign-in pair (P213-01).
+   *
+   * Written as four cases because the interesting one is the **third**: the
+   * rule is about a pair and this route is a PATCH, so a request naming one
+   * flag has to be judged against the stored value of the other. A check over
+   * the submitted fields alone passes every one of these and still lets a
+   * project reach "neither permitted" in two legal-looking requests.
+   */
+  describe("which sign-in methods a project offers", () => {
+    async function methods(): Promise<{ doccheck: boolean; keycloak: boolean }> {
+      const { body } = await asAdmin("GET", "/admin/projects");
+      const row = body.find((p: any) => p.slug === projectSlug);
+      return { doccheck: row.docCheckLoginAllowed, keycloak: row.keycloakLoginAllowed };
+    }
+
+    it("starts closed to DocCheck and open to Keycloak", async () => {
+      // Migration 0055's defaults, and they are the reason an existing
+      // installation does not change behaviour when it runs: nothing begins
+      // disclosing its catalogue, and nobody is signed out.
+      expect(await methods()).toEqual({ doccheck: false, keycloak: true });
+    });
+
+    it("stores both, and returns them", async () => {
+      const saved = await asAdmin("PATCH", `/admin/projects/${projectSlug}`, {
+        docCheckLoginAllowed: true,
+        keycloakLoginAllowed: true,
+      });
+      expect(saved.status).toBe(200);
+      expect(await methods()).toEqual({ doccheck: true, keycloak: true });
+    });
+
+    it("refuses the second request that would leave nobody able to sign in", async () => {
+      // DocCheck only — legal, and a real configuration: a reading room with
+      // no accredited participation.
+      const first = await asAdmin("PATCH", `/admin/projects/${projectSlug}`, {
+        keycloakLoginAllowed: false,
+      });
+      expect(first.status).toBe(200);
+      expect(await methods()).toEqual({ doccheck: true, keycloak: false });
+
+      // Now the pair the rule is about — and the request names only one of it.
+      const refused = await asAdmin("PATCH", `/admin/projects/${projectSlug}`, {
+        docCheckLoginAllowed: false,
+      });
+      expect(refused.status).toBe(422);
+      // Unchanged: a refused save applies none of itself.
+      expect(await methods()).toEqual({ doccheck: true, keycloak: false });
+    });
+
+    it("refuses both-false in one request too, and says so in German", async () => {
+      const refused = await asAdmin("PATCH", `/admin/projects/${projectSlug}`, {
+        docCheckLoginAllowed: false,
+        keycloakLoginAllowed: false,
+      });
+      expect(refused.status).toBe(422);
+      expect(String(refused.body.detail)).toContain("Anmeldemöglichkeit");
+
+      // Back to a sane pair, so the ordering of later cases in this file is
+      // not decided by what this one left behind.
+      const restored = await asAdmin("PATCH", `/admin/projects/${projectSlug}`, {
+        docCheckLoginAllowed: false,
+        keycloakLoginAllowed: true,
+      });
+      expect(restored.status).toBe(200);
+    });
+  });
+
   it("creates a department and a project inside this tenant", async () => {
     const slug = `neu-${randomUUID().slice(0, 8)}`;
 

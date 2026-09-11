@@ -78,6 +78,8 @@ function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     copyOverrides: {},
     identityProvider: "keycloak",
     loginUrl: null,
+    docCheckLoginAllowed: false,
+    keycloakLoginAllowed: true,
     keycloakIssuer: "https://auth.example.de/realms/medice",
     keycloakAudience: "ds-widget",
     keycloakRealm: "medice",

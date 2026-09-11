@@ -124,7 +124,7 @@ describe("every CME screen sits on the shared content column", () => {
     const { container } = render(
       <StickyMetaBar
         course={course()}
-        state={state()}
+        status={state().progress.status}
         onBack={undefined}
         onResume={undefined}
       />,

@@ -96,6 +96,25 @@ it.
 4. The controller parses input with zod, calls a service, and returns a value.
    Controllers make no decisions.
 
+### The routes that have no principal at all
+
+Four things are readable without a token, and each of them resolves its tenant
+through a `SECURITY DEFINER` function owned by the BYPASSRLS role
+`ds_binding_resolver`, with a column grant that bounds what the function can
+see: a project's branding (`resolve_project_branding`, 0007), where a project
+signs in (`resolve_project_signin`, 0028), an image by id
+(`resolve_public_image`, 0054, predicate `mime_type LIKE 'image/%'`), and — for
+a project that permits DocCheck — the catalogue and course descriptions
+(`resolve_catalogue_preview`, 0055, predicate `doccheck_login_allowed`).
+
+That is the whole list, and it is a list rather than a pattern anybody may
+follow: each one widens what an unauthenticated caller may read, so adding one
+is a migration a reviewer sees in a diff.
+[ADR-0014](adr/0014-catalogue-preview-without-identity.md) records why the
+fourth exists and what bounds it — chiefly that a preview reader has no user at
+all, so every route that advances a Fortbildung is closed to them by requiring
+a principal rather than by a list of refusals somebody has to maintain.
+
 ---
 
 ## 3. Layering, and why it is enforced mechanically

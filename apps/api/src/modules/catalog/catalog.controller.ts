@@ -10,13 +10,17 @@
  * request-scoped DI. `CatalogController` itself stays an ordinary singleton.
  */
 
-import { Controller, Get, Param, Query } from "@nestjs/common";
+import { Controller, Get, Inject, Param, Query } from "@nestjs/common";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
 import { Roles } from "../../auth/roles.decorator.js";
 import { AppError } from "../../shared/problem-details.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
+import { APP_CONFIG } from "../../db/tokens.js";
+import type { AppConfig } from "../../config/config.js";
+import { mediaResolverFor } from "../../shared/media-url.factory.js";
+import type { MediaResolver } from "../../shared/media-url.js";
 import { CatalogService } from "./catalog.service.js";
 import { courseListQuerySchema } from "./catalog.dto.js";
 
@@ -29,6 +33,17 @@ const ANY_AUTHENTICATED_ROLE = [
 
 @Controller("courses")
 export class CatalogController {
+  /**
+   * Built once, from configuration — it holds a presigner and no request state
+   * (P211-01). The same construction `LearningController` uses, so the
+   * catalogue's hero image and a lesson's video are signed by one thing.
+   */
+  private readonly media: MediaResolver;
+
+  constructor(@Inject(APP_CONFIG) config: AppConfig) {
+    this.media = mediaResolverFor(config);
+  }
+
   @Get()
   @Roles(...ANY_AUTHENTICATED_ROLE)
   async list(
@@ -47,7 +62,10 @@ export class CatalogController {
     // The user id comes from the validated token, never from the query — the
     // card's "Fortbildung fortsetzen" reflects the caller's own enrolment and
     // nobody else's.
-    return CatalogService.fromDb(db).listCourses(parsed.data, principal.userId);
+    return CatalogService.fromDb(db, this.media).listCourses(
+      parsed.data,
+      principal.userId,
+    );
   }
 
   @Get(":slug")
@@ -57,6 +75,6 @@ export class CatalogController {
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ) {
-    return CatalogService.fromDb(db).getCourseBySlug(slug, principal.userId);
+    return CatalogService.fromDb(db, this.media).getCourseBySlug(slug, principal.userId);
   }
 }

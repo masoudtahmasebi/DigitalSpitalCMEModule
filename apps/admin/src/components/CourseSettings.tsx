@@ -37,7 +37,7 @@ import { useEffect, useState } from "react";
 import type { AdminCourseDetail, ApiClient } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
-import { Badge, Button, Field, Notice, TextInput } from "./ui.js";
+import { Badge, Button, Checkbox, Field, Notice, TextInput } from "./ui.js";
 import { EivCheckPanel } from "./EivCheck.js";
 import { encode } from "../routes.js";
 
@@ -705,33 +705,6 @@ function initialForm(course: AdminCourseDetail) {
     eivPunkteBasis: course.eivPunkteBasis,
     eivPunkteLernerfolg: course.eivPunkteLernerfolg,
   };
-}
-
-/**
- * A labelled checkbox.
- *
- * Local rather than in `ui.tsx` because these two are the only checkboxes in
- * the console; promoting it would be a shared component with one caller, and
- * `ui.tsx` earns its place by being what several screens agree on.
- */
-function Checkbox(props: {
-  id: string;
-  label: string;
-  checked: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  return (
-    <label htmlFor={props.id} className="flex items-center gap-2 text-sm text-gray-900">
-      <input
-        id={props.id}
-        type="checkbox"
-        checked={props.checked}
-        onChange={(event) => props.onChange(event.target.checked)}
-        className="h-4 w-4 rounded border-gray-300 text-brand-600"
-      />
-      {props.label}
-    </label>
-  );
 }
 
 function emptyToNull(value: string): string | null {

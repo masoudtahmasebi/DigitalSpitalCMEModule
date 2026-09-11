@@ -36,6 +36,8 @@ afterEach(cleanup);
 const ASSET: MediaAsset = {
   id: "aaaaaaaa-0000-4000-8000-00000000000a",
   reference: "s3://cust/courses/c1/video-9f2c3d.mp4",
+  // A video has no public URL by design (P212-01).
+  publicUrl: null,
   fileName: "Intro Modul 1.mp4",
   mimeType: "video/mp4",
   byteSize: 1024,
@@ -411,5 +413,50 @@ describe("an upload that is still in flight when the tab changes (P150-02)", () 
     );
 
     vi.doUnmock("../uploads.js");
+  });
+});
+
+/**
+ * Picking an image gives the field a URL that keeps working (P212-01).
+ *
+ * The case above this file's fixture — *"hands back the reference an upload
+ * would have produced"* — is about a **video**, and stays exactly right: a
+ * lecture is addressed by `s3://…` and resolved to a signature per request,
+ * because the signature is the authorisation and a `<video>` request carries no
+ * other kind.
+ *
+ * An image is different, and the client said why:
+ *
+ * > you give aaaa.com/imageurl.jpg -> our system generates the public url and
+ * > gives it back to the browser
+ *
+ * Storing the reference would put an `s3://…` in `courses.hero_image_url`,
+ * which resolves to a URL that dies after an hour — fine inside the product,
+ * useless in the WordPress page this is pasted into. So the picker hands back
+ * `publicUrl` when there is one.
+ *
+ * The `.png` on the end is not decoration: `MediaDialog` derives the mime type
+ * from the URL's extension, and that is the second argument asserted here.
+ */
+describe("picking an image (P212-01)", () => {
+  const IMAGE = {
+    ...ASSET,
+    id: "bbbbbbbb-0000-4000-8000-00000000000b",
+    reference: "s3://cust/courses/c1/titelbild-4a1b.png",
+    publicUrl: "https://api.example.test/media/bbbbbbbb-0000-4000-8000-00000000000b.png",
+    fileName: "Titelbild.png",
+    mimeType: "image/png",
+  };
+
+  it("hands back the stable URL rather than the expiring reference", async () => {
+    const { onPick } = open({
+      kind: "image",
+      purpose: "poster",
+      client: client({ adminListMedia: vi.fn(async () => [IMAGE]) }),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Diese Datei verwenden" }));
+
+    expect(onPick).toHaveBeenCalledWith(IMAGE.publicUrl, "image/png");
   });
 });

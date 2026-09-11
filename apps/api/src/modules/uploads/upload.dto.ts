@@ -212,6 +212,15 @@ export type MediaList = z.infer<typeof mediaListSchema>;
 export interface MediaAssetResponse {
   readonly id: string;
   readonly reference: string;
+  /**
+   * A stable, unauthenticated URL for an **image**, or null (P212-01).
+   *
+   * `reference` is the internal address and resolves to a presigned URL that
+   * expires. This one does not: it points at `GET /media/:id`, which 302s to a
+   * freshly signed URL per request. See `contracts/openapi.yaml` for why the
+   * two exist and which media may have the second.
+   */
+  readonly publicUrl: string | null;
   readonly fileName: string;
   readonly mimeType: string | null;
   readonly byteSize: number | null;

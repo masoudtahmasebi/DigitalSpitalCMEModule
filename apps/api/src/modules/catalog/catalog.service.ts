@@ -10,6 +10,7 @@
  */
 
 import { AppError } from "../../shared/problem-details.js";
+import { PassthroughMediaResolver, type MediaResolver } from "../../shared/media-url.js";
 import type { Db } from "../../db/tenant-db.js";
 import {
   CatalogRepository,
@@ -38,6 +39,22 @@ export class CatalogService {
   constructor(
     private readonly repository: CatalogRepositoryPort,
     private readonly now: () => Date = () => new Date(),
+    /**
+     * Turns a stored `s3://` reference into something a browser can fetch
+     * (P211-01).
+     *
+     * The catalogue used to pass `hero_image_url` and an expert's `photo_url`
+     * straight through, which was correct while the only way to fill those
+     * fields was to paste an `https://` URL. Now that both offer the Mediathek,
+     * a row can hold `s3://<key>` — and an unresolved one reaches the page as
+     * `<img src="s3://…">`, which renders nothing and logs nothing. That is
+     * §9.2: a control whose result cannot work.
+     *
+     * The **same** resolver the lesson path uses, not a second one: it already
+     * refuses a key belonging to another customer, and a bucket has no RLS to
+     * fall back on (§4 invariant 3).
+     */
+    private readonly media: MediaResolver = new PassthroughMediaResolver(),
   ) {}
 
   /**
@@ -50,11 +67,30 @@ export class CatalogService {
    * `db/tenant-db.decorator.ts` for why this per-request construction
    * replaces NestJS request-scoped DI here.
    */
-  static fromDb(db: Db): CatalogService {
-    return new CatalogService(new CatalogRepository(db));
+  static fromDb(db: Db, media?: MediaResolver): CatalogService {
+    return new CatalogService(
+      new CatalogRepository(db),
+      () => new Date(),
+      ...(media === undefined ? [] : [media]),
+    );
   }
 
-  async listCourses(query: CourseListQuery, userId: string): Promise<CourseListResponse> {
+  /**
+   * `userId` is **undefined** for the DocCheck catalogue preview (P213-01).
+   *
+   * Not an empty string, which was the first attempt and is worse than wrong:
+   * `enrolments.user_id` is a `uuid`, so `''` does not match nothing — it is
+   * rejected by the type, and the whole request 500s. The integration case
+   * found it, which is the only reason this comment exists rather than a
+   * plausible-looking sentinel.
+   *
+   * Undefined means "there is nobody to have an enrolment", and the query is
+   * skipped rather than run in a form that cannot return a row.
+   */
+  async listCourses(
+    query: CourseListQuery,
+    userId: string | undefined,
+  ): Promise<CourseListResponse> {
     const selection = {
       ...(query.thema === undefined ? {} : { thema: query.thema }),
       ...(query.altersgruppe === undefined ? {} : { altersgruppe: query.altersgruppe }),
@@ -69,11 +105,15 @@ export class CatalogService {
       offset: (query.page - 1) * query.perPage,
     });
 
-    // One query for the page, not one per card.
-    const enrolled = await this.repository.findEnrolments(
-      rows.map((row) => row.id),
-      userId,
-    );
+    // One query for the page, not one per card — and none at all when nobody
+    // is asking on their own behalf (the preview; see the note above).
+    const enrolled =
+      userId === undefined
+        ? new Map<string, { courseComplete: boolean; complete: boolean }>()
+        : await this.repository.findEnrolments(
+            rows.map((row) => row.id),
+            userId,
+          );
 
     return {
       items: rows.map((row) =>
@@ -81,6 +121,7 @@ export class CatalogService {
           row,
           durations.get(row.id) ?? { moduleCount: 0, totalDurationSec: 0 },
           enrolled.get(row.id) ?? null,
+          (stored) => this.media.resolve(stored, row.customerId, readAt),
         ),
       ),
       page: query.page,
@@ -109,7 +150,7 @@ export class CatalogService {
    * exist: RLS returns no row, and this returns 404 rather than 403. Existence
    * is not disclosed (P2-05 acceptance criterion).
    */
-  async getCourseBySlug(slug: string, userId: string): Promise<CourseDetail> {
+  async getCourseBySlug(slug: string, userId: string | undefined): Promise<CourseDetail> {
     const tree = await this.repository.findCourseTree(slug);
 
     if (tree === undefined) {
@@ -143,9 +184,14 @@ export class CatalogService {
       );
     }
 
-    const enrolled = await this.repository.findEnrolments([tree.course.id], userId);
+    const enrolled =
+      userId === undefined
+        ? new Map<string, { courseComplete: boolean; complete: boolean }>()
+        : await this.repository.findEnrolments([tree.course.id], userId);
 
-    return toDetail(tree, enrolled.get(tree.course.id) ?? null);
+    return toDetail(tree, enrolled.get(tree.course.id) ?? null, (stored) =>
+      this.media.resolve(stored, tree.course.customerId, this.now()),
+    );
   }
 }
 
@@ -153,13 +199,15 @@ function toSummary(
   row: CourseRow,
   aggregate: { moduleCount: number; totalDurationSec: number },
   enrolment: { courseComplete: boolean; complete: boolean } | null,
+  /** See the constructor: an unresolved `s3://` renders as a broken image. */
+  resolve: (stored: string | null) => string | null,
 ): CourseSummary {
   return {
     id: row.id,
     slug: row.slug,
     title: row.title,
     description: row.description,
-    heroImageUrl: row.heroImageUrl,
+    heroImageUrl: resolve(row.heroImageUrl),
     deliveryType: row.deliveryType,
     thema: row.thema,
     altersgruppe: row.altersgruppe,
@@ -174,6 +222,7 @@ function toSummary(
 function toDetail(
   tree: CourseTreeRows,
   enrolment: { courseComplete: boolean; complete: boolean } | null,
+  resolve: (stored: string | null) => string | null,
 ): CourseDetail {
   const { course } = tree;
 
@@ -221,6 +270,7 @@ function toDetail(
       course,
       { moduleCount: tree.modules.length, totalDurationSec },
       enrolment,
+      resolve,
     ),
     learningObjectives: course.learningObjectives,
     targetAudience: course.targetAudience,
@@ -236,6 +286,12 @@ function toDetail(
     requiredWatchPercent: course.requiredWatchPercent,
     passThresholdPercent: course.passThresholdPercent,
     modules,
-    experts: tree.experts,
+    /* A Referent's photograph goes through the same resolver as the hero and
+       the lesson's video — one home for "what does this stored string mean"
+       (§9.10b). */
+    experts: tree.experts.map((expert) => ({
+      ...expert,
+      photoUrl: resolve(expert.photoUrl),
+    })),
   };
 }

@@ -592,6 +592,31 @@ export const german = {
     loginUrlHint:
       "Wenn die Teilnehmenden sich auf der Website des Kunden anmelden — zum Beispiel im WordPress-Portal —, tragen Sie hier die Adresse dieser Seite ein. Die Übersichtsseite verlinkt dann dorthin, statt ein eigenes Anmeldeformular zu zeigen. Leer lassen für die Anmeldung über dieses Portal.",
 
+    /*
+     * Which doors this project has (P213-01).
+     *
+     * The DocCheck hint is the longest one on this screen on purpose. It is the
+     * only setting here that changes what an **unangemeldeter** visitor can
+     * read, and the person deciding needs to know both halves: what it opens
+     * (the list and the descriptions) and what it does not (anything leading to
+     * a CME point). A shorter label would be a setting somebody turns on to see
+     * what happens.
+     */
+    signIn: "Anmeldemöglichkeiten",
+
+    keycloakLogin: "Anmeldung über das Kundenkonto",
+    keycloakLoginLabel: "Anmeldung über das Kundenkonto erlauben",
+    keycloakLoginHint:
+      "Die übliche Anmeldung: Sie führt über den unten konfigurierten Keycloak-Realm und ist die einzige, mit der Teilnehmende eine Fortbildung absolvieren und CME-Punkte erhalten können.",
+
+    docCheckLogin: "DocCheck-Vorschau",
+    docCheckLoginLabel: "Ansicht ohne Anmeldung im Kundenkonto erlauben",
+    docCheckLoginHint:
+      "Fachkreisangehörige, die sich über DocCheck angemeldet haben, halten keinen Zugang zu diesem Portal. Ist diese Option aktiv, können sie die Fortbildungsübersicht und die Beschreibungen lesen. Teilnehmen, Videos ansehen, die Lernerfolgskontrolle absolvieren, eine Teilnahmebescheinigung erhalten oder Punkte melden können sie damit nicht — dafür wird das Kundenkonto verlangt, weil nur dort die EFN hinterlegt ist.",
+
+    noSignInMethod:
+      "Mindestens eine Anmeldemöglichkeit muss erlaubt bleiben. Ohne beide könnte niemand dieses Projekt öffnen.",
+
     keycloak: "Anmeldung (Keycloak)",
     keycloakWarning:
       "Diese Werte entscheiden, gegen welchen Realm jedes Zugangstoken dieses Projekts geprüft wird. Ein falscher Wert sperrt alle Teilnehmenden dieses Projekts aus.",
@@ -993,7 +1018,9 @@ export const german = {
     name: "Name",
     institution: "Institution",
     biography: "Kurzvita",
-    photoUrl: "Foto-URL",
+    photoUrl: "Foto",
+    photoHint:
+      "Querformat, mindestens 1200 px breit. Das Bild wird auf die Fläche zugeschnitten.",
   },
 
   quiz: {
@@ -1158,6 +1185,8 @@ export const german = {
     altHint:
       "Der Titel benennt die Datei für Sie in dieser Liste. Der Alternativtext beschreibt das Bild für Menschen, die es nicht sehen können — er wird von Screenreadern vorgelesen und ist für die Barrierefreiheit (WCAG 1.1.1) erforderlich. Bleibt er leer, gilt er als nicht gesetzt.",
     use: "Diese Datei verwenden",
+    copyUrl: "URL kopieren",
+    copied: "URL kopiert.",
     forget: "Aus Mediathek entfernen",
     upload: {
       title: "Dateien hinzufügen",
@@ -1749,8 +1778,9 @@ export const german = {
     description: "Beschreibung",
     descriptionHint:
       "Erscheint auf der Kursseite unter „Beschreibung der Fortbildung“ und gekürzt auf der Übersichtskarte.",
-    heroImageUrl: "Titelbild (URL)",
-    heroImageHint: "Wird neben dem Titel und auf der Übersichtskarte angezeigt.",
+    heroImageUrl: "Titelbild",
+    heroImageHint:
+      "Wird neben dem Titel und auf der Übersichtskarte angezeigt. Querformat, mindestens 1200 px breit — das Bild wird auf die Fläche zugeschnitten.",
     deliveryType: "Format",
     deliveryOnDemand: "On Demand",
     deliveryLive: "Live",

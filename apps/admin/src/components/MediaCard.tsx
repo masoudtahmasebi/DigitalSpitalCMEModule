@@ -33,6 +33,7 @@
  * nothing renders, which is the §9.2 shape — a control that cannot do anything.
  */
 
+import { useState } from "react";
 import type { ApiClient, MediaAsset } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { useReadableAsset } from "../media-preview.js";
@@ -112,10 +113,32 @@ export function MediaCard(props: {
 
       <div className="flex flex-wrap gap-2">
         {props.onPick === undefined ? null : (
-          <Button onClick={() => props.onPick?.(asset.reference)} disabled={working}>
+          /*
+            The stable URL where there is one, the `s3://` reference otherwise
+            (P212-01).
+
+            An image picked into a field is very often one the customer also
+            wants on their own site, and `publicUrl` is an address that keeps
+            working — the reference resolves to a signature that expires after
+            an hour. For everything else there is no public URL by design, and
+            the reference is what a content row has always held.
+          */
+          <Button
+            onClick={() => props.onPick?.(asset.publicUrl ?? asset.reference)}
+            disabled={working}
+          >
             {de.media.use}
           </Button>
         )}
+        {/*
+          "Give me the URL" — the client, twice: *"the mediathek should also
+          have a possibility to get the url, like the wordpress uploader"*, and
+          Philipp, who went looking for one and found none.
+
+          Only for images, because only images have one. Offering a copy button
+          that yields a link 404ing on arrival is §9.2 with extra steps.
+        */}
+        {asset.publicUrl === null ? null : <CopyUrlButton url={asset.publicUrl} />}
         <Button
           variant="danger"
           onClick={() => library.forget(asset)}
@@ -214,5 +237,44 @@ function MediaThumbnail(props: { client: ApiClient; asset: MediaAsset }) {
         {de.media.openFile}
       </a>
     </div>
+  );
+}
+
+/**
+ * Copies an asset's public URL, and says that it did (P212-01).
+ *
+ * The confirmation is the point rather than a nicety: a clipboard write is
+ * invisible, and the client's report on a *different* screen was exactly this —
+ * *"when I save something … I was a bit confused when I clicked on save. Is it
+ * now saved or not?"*. A control whose effect cannot be seen is one people
+ * press twice and still doubt.
+ *
+ * `navigator.clipboard` is absent on an insecure origin and can be refused by
+ * permission policy, so the failure path shows the URL to copy by hand rather
+ * than pretending. Never a thrown error: failing to copy a URL is not worth an
+ * error banner.
+ */
+function CopyUrlButton(props: { url: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+
+  return (
+    <span className="flex items-center gap-2">
+      <Button
+        variant="secondary"
+        onClick={() => {
+          void navigator.clipboard
+            ?.writeText(props.url)
+            .then(() => setState("copied"))
+            .catch(() => setState("failed"));
+        }}
+      >
+        {de.media.copyUrl}
+      </Button>
+      {state === "idle" ? null : (
+        <span className="text-xs text-[color:var(--ds-ink-muted)]" role="status">
+          {state === "copied" ? de.media.copied : props.url}
+        </span>
+      )}
+    </span>
   );
 }

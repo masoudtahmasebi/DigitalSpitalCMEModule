@@ -14,7 +14,7 @@
  * add numbers together at all.
  */
 
-import type { CourseDetail, EnrolmentState, ModuleSummary } from "@ds/sdk";
+import type { CourseDetail, ModuleSummary } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { moduleHeading } from "../module-title.js";
 import { DESCRIPTION_LIMIT } from "../read-more.js";
@@ -33,7 +33,17 @@ import { ReadMore } from "./ReadMore.js";
  */
 const DIVIDED = "border-t border-gray-200 pt-8 first:border-t-0 first:pt-0";
 
-export function OverviewTab(props: { course: CourseDetail; state: EnrolmentState }) {
+/*
+ * `course` and nothing else.
+ *
+ * It used to take an `EnrolmentState` as well and never read a field of it —
+ * found while giving the DocCheck preview a course description to render
+ * (P213-01), where there *is* no enrolment. An unused required prop is not
+ * harmless here: it is what made this tab look like a screen that needs a
+ * learner, and it is the reason the preview's first sketch fabricated a
+ * zero-progress enrolment to satisfy a parameter nothing looks at.
+ */
+export function OverviewTab(props: { course: CourseDetail }) {
   const { course } = props;
 
   return (

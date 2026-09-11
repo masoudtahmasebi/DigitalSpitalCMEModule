@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ApiClient, MediaAsset } from "@ds/sdk";
 import { MediaLibrary } from "./MediaLibrary.js";
+import { de } from "../locale/de.js";
 
 afterEach(cleanup);
 
@@ -23,6 +24,8 @@ function asset(overrides: Partial<MediaAsset> = {}): MediaAsset {
   return {
     id: "aaaaaaaa-0000-4000-8000-00000000000a",
     reference: "s3://cust/courses/c1/video-9f2c3d.mp4",
+    // A video has no public URL by design (P212-01).
+    publicUrl: null,
     fileName: "Intro Modul 1.mp4",
     mimeType: "video/mp4",
     byteSize: 5_242_880,
@@ -212,5 +215,51 @@ describe("the upload panel's course list", () => {
     render(<MediaLibrary client={broken} />);
 
     expect(await screen.findByText("Intro Modul 1.mp4")).toBeTruthy();
+  });
+});
+
+/**
+ * The URL an image actually has, and what "use this one" hands back (P212-01).
+ *
+ * The client, after Philipp went looking for an image URL and found none:
+ *
+ * > we should not have any photo url anywhere, all of them should open the
+ * > media thek, and the mediathek should also have a possibility to get the url
+ *
+ * and, on the shape of it:
+ *
+ * > you give aaaa.com/imageurl.jpg -> our system generates the public url and
+ * > gives it back to the browser
+ *
+ * `publicUrl` is that address. It is null for anything that is not an image,
+ * and these cases assert both halves — a copy button that yields a link 404ing
+ * on arrival would be §9.2 with extra steps, and `GET /media/:id` refuses a
+ * video in SQL (migration 0054).
+ */
+describe("an image's public URL (P212-01)", () => {
+  const image = (): MediaAsset =>
+    asset({
+      id: "bbbbbbbb-0000-4000-8000-00000000000b",
+      reference: "s3://cust/courses/c1/titelbild-4a1b.png",
+      publicUrl:
+        "https://api.example.test/media/bbbbbbbb-0000-4000-8000-00000000000b.png",
+      fileName: "Titelbild.png",
+      mimeType: "image/png",
+    });
+
+  it("offers to copy it", async () => {
+    render(
+      <MediaLibrary client={client({ adminListMedia: vi.fn(async () => [image()]) })} />,
+    );
+    await screen.findByText("Titelbild.png");
+
+    expect(screen.getByRole("button", { name: de.media.copyUrl })).toBeTruthy();
+  });
+
+  it("does not offer to copy one for a video, because there is none", async () => {
+    render(<MediaLibrary client={client()} />);
+    await screen.findByText("Intro Modul 1.mp4");
+
+    expect(screen.queryByRole("button", { name: de.media.copyUrl })).toBeNull();
   });
 });

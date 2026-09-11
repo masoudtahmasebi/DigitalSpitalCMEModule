@@ -76,6 +76,9 @@ export {
   isEmbedOriginPattern,
 } from "./embed-origin.js";
 
+export { signInMethodsProblem } from "./sign-in-methods.js";
+export type { SignInMethods, SignInMethodsProblem } from "./sign-in-methods.js";
+
 export { evaluateGate, evaluateSequence } from "./gating.js";
 export type { GateReason, GateResult, GateStatus, GatingItem } from "./gating.js";
 export { contentGates } from "./module-quiz.js";

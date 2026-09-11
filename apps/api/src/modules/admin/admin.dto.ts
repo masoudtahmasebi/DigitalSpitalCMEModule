@@ -16,6 +16,7 @@
  */
 
 import { z } from "zod";
+import { mediaReference } from "../../shared/media-reference.js";
 
 /** Percentages are integers 0–100 (CLAUDE.md §5). */
 const percent = z.number().int().min(0).max(100);
@@ -143,7 +144,16 @@ export const adminCourseUpdateSchema = z.object({
   targetAudience: z.string().max(5000).nullable().optional(),
   prerequisites: z.string().max(2000).nullable().optional(),
   /** The image beside the hero and on the catalogue card. */
-  heroImageUrl: z.string().url().max(2000).nullable().optional(),
+  /**
+   * A URL the customer serves, **or** an `s3://` reference from the Mediathek
+   * (P211-01).
+   *
+   * It was `.url()` only, which is what a field offering nothing but a text box
+   * needs. Now the field offers the Mediathek, and an uploaded object is
+   * addressed by reference — `catalog.service.ts` signs it on the way out, and
+   * refuses one belonging to another customer.
+   */
+  heroImageUrl: mediaReference.nullable().optional(),
   cmePoints: z.number().int().positive().max(100).nullable().optional(),
   cmeCategory: z.string().max(50).nullable().optional(),
   /**

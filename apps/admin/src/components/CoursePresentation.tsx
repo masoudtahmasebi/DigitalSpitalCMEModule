@@ -33,6 +33,7 @@ import type { AdminCourseDetail, ApiClient } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
 import { Button, Field, Notice, Select, TextArea, TextInput } from "./ui.js";
+import { UploadField } from "./UploadField.js";
 
 type DeliveryType = "on_demand" | "live" | "praesenz";
 
@@ -149,18 +150,36 @@ export function CoursePresentation(props: {
         />
       </Field>
 
-      <Field
+      {/*
+        The Mediathek, not a URL to paste (P211-01).
+
+        The client, after building a course: *"we should not have any photo url
+        anywhere, all of them should open the mediathek"* — and, on the
+        workaround they had been left with, *"I have pasted an URL of a
+        plattform image. At least it is working."*
+
+        `UploadField` is the control that already does this everywhere else: it
+        uploads, it offers **Aus Mediathek wählen**, and it still accepts a
+        pasted URL, which is what keeps a customer's own CDN working (P88-02).
+        This field simply never got it.
+
+        `purpose="poster"` is the platform's **image** purpose — it decides the
+        accepted types and the size ceiling, and `LIBRARY_KIND` maps it to the
+        library's `image` family. The name is historical (video posters were
+        the first images the platform stored); adding an `image` purpose would
+        be a contract change, an SDK regeneration and a migration for no
+        difference an author could see.
+      */}
+      <UploadField
         label={de.course.heroImageUrl}
-        htmlFor="course-hero"
         hint={de.course.heroImageHint}
-      >
-        <TextInput
-          id="course-hero"
-          value={form.heroImageUrl}
-          maxLength={2000}
-          onChange={(value) => set("heroImageUrl", value)}
-        />
-      </Field>
+        id="course-hero"
+        value={form.heroImageUrl}
+        purpose="poster"
+        client={props.client}
+        courseSlug={course.slug}
+        onChange={(value) => set("heroImageUrl", value)}
+      />
 
       <Field label={de.course.deliveryType} htmlFor="course-delivery">
         <Select

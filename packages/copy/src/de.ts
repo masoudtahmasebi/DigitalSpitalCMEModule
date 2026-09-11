@@ -269,7 +269,14 @@ export const de = {
 
   signedOut: {
     title: "Bitte melden Sie sich an",
-    /** Both the never-signed-in and the DocCheck cases land here. */
+    /**
+     * The visitor holds no token and the project offers no preview either —
+     * so this screen is all there is, and it has to be the whole invitation.
+     *
+     * Where the preview *is* offered, a DocCheck visitor reads the catalogue
+     * instead and meets `preview.dialog` at the moment they reach for
+     * something an identity is needed for (P213-01).
+     */
     message:
       "Diese Fortbildung ist Fachkreisangehörigen vorbehalten. Bitte melden Sie sich mit Ihrem MEDICE-Konto an, um sie zu starten.",
     action: "Anmelden",
@@ -283,6 +290,55 @@ export const de = {
     expiredTitle: "Ihre Anmeldung ist abgelaufen",
     expiredMessage:
       "Ihr Fortschritt ist gespeichert. Bitte melden Sie sich erneut an, um dort weiterzumachen, wo Sie aufgehört haben.",
+  },
+
+  /**
+   * What a DocCheck visitor reads, and what they are told when they reach for
+   * more than reading (P213-01).
+   *
+   * ## Why the dialog says what it says
+   *
+   * The refusal is real and permanent for this login: DocCheck says somebody is
+   * a healthcare professional, it does not name a physician to the Ärztekammer,
+   * and a CME point cannot be awarded to somebody the accreditation chain
+   * cannot name. So the copy does two things and neither is an apology — it
+   * says what this login *does* cover (reading), and it names the one action
+   * that changes the situation (§9.4).
+   *
+   * It does **not** say "Sie sind nicht berechtigt". The visitor is entitled to
+   * everything here; they have signed in through a door that carries no
+   * Fortbildungsnummer.
+   */
+  preview: {
+    /** Sits above the catalogue, so the state is stated before it is met. */
+    noticeTitle: "Sie sind über DocCheck angemeldet",
+    noticeMessage:
+      "Sie können alle Fortbildungen und ihre Beschreibungen ansehen. Zum Teilnehmen und für CME-Punkte melden Sie sich bitte mit Ihrem MEDICE-Konto an.",
+    dialog: {
+      title: "Anmeldung mit MEDICE-Konto erforderlich",
+      message:
+        "Für die Teilnahme an dieser Fortbildung benötigen wir Ihre Einheitliche Fortbildungsnummer (EFN), damit Ihre CME-Punkte an die Ärztekammer gemeldet werden können. Ihre DocCheck-Anmeldung reicht dafür nicht aus.",
+      /**
+       * What is behind the door, so the choice is informed rather than a
+       * demand. Short, and each item is a thing they cannot do right now.
+       */
+      lead: "Mit Ihrem MEDICE-Konto können Sie:",
+      items: [
+        "Videos ansehen und Ihren Fortschritt speichern",
+        "Die Lernerfolgskontrolle absolvieren",
+        "Ihre Teilnahmebescheinigung herunterladen",
+        "CME-Punkte für Ihre EFN melden lassen",
+      ],
+      action: "Mit MEDICE-Konto anmelden",
+      /**
+       * Named "weiter ansehen" rather than "Abbrechen": closing this returns
+       * them to something they can still do, and a cancel label implies the
+       * reading was what was interrupted.
+       */
+      dismiss: "Weiter ansehen",
+      /** Read by a screen reader on the close control in the corner. */
+      close: "Hinweis schließen",
+    },
   },
 
   /**

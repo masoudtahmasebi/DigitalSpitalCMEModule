@@ -434,6 +434,21 @@ export const en: DeepPartial<typeof german> = {
     loginUrlHint:
       "If participants sign in on the customer's website — in a WordPress portal, for example — enter that page's address here. The overview page then links there instead of showing a sign-in form of its own. Leave empty to sign in through this portal.",
 
+    signIn: "Sign-in methods",
+
+    keycloakLogin: "Sign-in with the customer account",
+    keycloakLoginLabel: "Allow sign-in with the customer account",
+    keycloakLoginHint:
+      "The ordinary sign-in: it goes through the Keycloak realm configured below and is the only one that lets participants take a course and earn CME points.",
+
+    docCheckLogin: "DocCheck preview",
+    docCheckLoginLabel: "Allow viewing without a customer account",
+    docCheckLoginHint:
+      "Healthcare professionals who signed in through DocCheck hold no access to this portal. With this option on, they can read the course list and the descriptions. They cannot take part, watch videos, sit the Lernerfolgskontrolle, receive a Teilnahmebescheinigung or have points reported — that requires the customer account, because only it holds the EFN.",
+
+    noSignInMethod:
+      "At least one sign-in method has to stay enabled. With neither, nobody could open this project.",
+
     keycloak: "Sign-in (Keycloak)",
     keycloakWarning:
       "These values decide which realm every access token of this project is checked against. A wrong value locks out every participant of this project.",
@@ -698,7 +713,8 @@ export const en: DeepPartial<typeof german> = {
     name: "Name",
     institution: "Institution",
     biography: "Short biography",
-    photoUrl: "Photo URL",
+    photoUrl: "Photo",
+    photoHint: "Landscape, at least 1200 px wide. The image is cropped to fit.",
   },
 
   quiz: {
@@ -804,6 +820,8 @@ export const en: DeepPartial<typeof german> = {
     altHint:
       "The title names the file for you in this list. The alternative text describes the image for people who cannot see it — screen readers read it out, and it is required for accessibility (WCAG 1.1.1). Left empty, it counts as not set.",
     use: "Use this file",
+    copyUrl: "Copy URL",
+    copied: "URL copied.",
     forget: "Remove from library",
     upload: {
       title: "Add files",
@@ -1194,8 +1212,9 @@ export const en: DeepPartial<typeof german> = {
     description: "Description",
     descriptionHint:
       "Appears on the course page under “Beschreibung der Fortbildung” and, shortened, on the overview card.",
-    heroImageUrl: "Cover image (URL)",
-    heroImageHint: "Shown beside the title and on the overview card.",
+    heroImageUrl: "Cover image",
+    heroImageHint:
+      "Shown beside the title and on the overview card. Landscape, at least 1200 px wide — the image is cropped to fit.",
     deliveryType: "Format",
     deliveryOnDemand: "On demand",
     deliveryLive: "Live",

@@ -100,6 +100,8 @@ const INVOKE: Record<string, (c: ReturnType<typeof client>) => unknown> = {
 
   listCourses: (c) => c.listCourses({ page: 1 }),
   getCourseBySlug: (c) => c.getCourseBySlug("adhs"),
+  listPreviewCourses: (c) => c.listPreviewCourses({ page: 1 }),
+  getPreviewCourseBySlug: (c) => c.getPreviewCourseBySlug("adhs"),
   enrol: (c) => c.enrol("adhs"),
   getEnrolment: (c) => c.getEnrolment("adhs"),
   getLesson: (c) => c.getLesson("adhs", ID),
