@@ -993,7 +993,9 @@ export const german = {
     name: "Name",
     institution: "Institution",
     biography: "Kurzvita",
-    photoUrl: "Foto-URL",
+    photoUrl: "Foto",
+    photoHint:
+      "Querformat, mindestens 1200 px breit. Das Bild wird auf die Fläche zugeschnitten.",
   },
 
   quiz: {
@@ -1749,8 +1751,9 @@ export const german = {
     description: "Beschreibung",
     descriptionHint:
       "Erscheint auf der Kursseite unter „Beschreibung der Fortbildung“ und gekürzt auf der Übersichtskarte.",
-    heroImageUrl: "Titelbild (URL)",
-    heroImageHint: "Wird neben dem Titel und auf der Übersichtskarte angezeigt.",
+    heroImageUrl: "Titelbild",
+    heroImageHint:
+      "Wird neben dem Titel und auf der Übersichtskarte angezeigt. Querformat, mindestens 1200 px breit — das Bild wird auf die Fläche zugeschnitten.",
     deliveryType: "Format",
     deliveryOnDemand: "On Demand",
     deliveryLive: "Live",

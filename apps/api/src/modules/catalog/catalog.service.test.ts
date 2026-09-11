@@ -5,8 +5,11 @@ import { AppError } from "../../shared/problem-details.js";
 import type { CatalogRepositoryPort, CourseRow } from "./catalog.repository.js";
 
 /** The MEDICE course as accredited (Anerkennungsbescheid, 18.06.2026). */
+const CUSTOMER_ID = "11111111-1111-4111-8111-111111111111";
+
 const adhs: CourseRow = {
   id: "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  customerId: CUSTOMER_ID,
   slug: "adhs-akademie-adult",
   status: "published",
   title: "ADHS Akademie adult",
@@ -448,5 +451,111 @@ describe("the card's call to action reflects the caller's own enrolment", () => 
     const detail = await new CatalogService(repo).getCourseBySlug(adhs.slug, LEARNER);
 
     expect(detail.enrolment).toEqual({ courseComplete: true, complete: true });
+  });
+});
+
+/**
+ * An image chosen from the Mediathek reaches the browser signed (P211-01).
+ *
+ * The client, after building a course: *"we should not have any photo url
+ * anywhere, all of them should open the mediathek"* — and, on the workaround
+ * they had been left with, *"I have pasted an URL of a plattform image. At
+ * least it is working."*
+ *
+ * Offering the picker is only half of it. An uploaded object is stored as
+ * `s3://<key>` and is not fetchable by a browser; the lesson path has signed
+ * these since P10-09, and the catalogue passed `hero_image_url` and an expert's
+ * `photo_url` **straight through** — correct while the only way to fill those
+ * fields was to paste an `https://` URL, and a broken image the moment the
+ * field started offering the library.
+ *
+ * That is the §9.2 shape: a control whose result cannot work. So the picker and
+ * the resolution are one change, and these cases are why.
+ *
+ * The third case is the one that must not be lost: a key belonging to **another
+ * customer** is refused rather than signed. The bucket has no RLS to fall back
+ * on, so this is the only thing standing between a mis-seeded row and one
+ * tenant's artwork on another's page.
+ */
+describe("images stored in the Mediathek (P211-01)", () => {
+  const OTHER_CUSTOMER = "22222222-2222-4222-8222-222222222222";
+
+  /** The same contract `media-url.ts` implements, in three lines. */
+  const signing = {
+    resolve: (stored: string | null, customerId: string): string | null => {
+      if (stored === null) return null;
+      if (!stored.startsWith("s3://")) return stored;
+      return stored.startsWith(`s3://${customerId}/`) ? `${stored}?signed` : null;
+    },
+  };
+
+  it("signs a hero image the operator picked from the library", async () => {
+    const repo = fakeRepository({
+      listCourses: async () => ({
+        rows: [{ ...adhs, heroImageUrl: `s3://${CUSTOMER_ID}/hero.png` }],
+        total: 1,
+        durations: new Map([[adhs.id, { moduleCount: 5, totalDurationSec: 9000 }]]),
+      }),
+    });
+
+    const list = await new CatalogService(repo, () => new Date(), signing).listCourses(
+      { page: 1, perPage: 10 },
+      LEARNER,
+    );
+
+    expect(list.items[0]?.heroImageUrl).toBe(`s3://${CUSTOMER_ID}/hero.png?signed`);
+  });
+
+  it("signs a Referent's photograph on the course detail", async () => {
+    const repo = fakeRepository({
+      findCourseTree: async (slug) => {
+        const tree = await fakeRepository().findCourseTree(slug);
+        if (tree === undefined) return undefined;
+        return {
+          ...tree,
+          experts: tree.experts.map((expert) => ({
+            ...expert,
+            photoUrl: `s3://${CUSTOMER_ID}/referent.jpg`,
+          })),
+        };
+      },
+    });
+
+    const detail = await new CatalogService(
+      repo,
+      () => new Date(),
+      signing,
+    ).getCourseBySlug(adhs.slug, LEARNER);
+
+    expect(detail.experts[0]?.photoUrl).toBe(`s3://${CUSTOMER_ID}/referent.jpg?signed`);
+  });
+
+  it("refuses a key belonging to another customer rather than signing it", async () => {
+    const repo = fakeRepository({
+      listCourses: async () => ({
+        rows: [{ ...adhs, heroImageUrl: `s3://${OTHER_CUSTOMER}/hero.png` }],
+        total: 1,
+        durations: new Map([[adhs.id, { moduleCount: 5, totalDurationSec: 9000 }]]),
+      }),
+    });
+
+    const list = await new CatalogService(repo, () => new Date(), signing).listCourses(
+      { page: 1, perPage: 10 },
+      LEARNER,
+    );
+
+    // Null, not the raw reference: a browser cannot fetch it either way, and a
+    // response that echoes another tenant's object key is a leak in itself.
+    expect(list.items[0]?.heroImageUrl).toBeNull();
+  });
+
+  it("still passes an ordinary URL through, which is what the client is using", async () => {
+    const list = await new CatalogService(
+      fakeRepository(),
+      () => new Date(),
+      signing,
+    ).listCourses({ page: 1, perPage: 10 }, LEARNER);
+
+    expect(list.items[0]?.heroImageUrl).toBe(adhs.heroImageUrl);
   });
 });

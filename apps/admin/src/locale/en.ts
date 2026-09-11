@@ -698,7 +698,8 @@ export const en: DeepPartial<typeof german> = {
     name: "Name",
     institution: "Institution",
     biography: "Short biography",
-    photoUrl: "Photo URL",
+    photoUrl: "Photo",
+    photoHint: "Landscape, at least 1200 px wide. The image is cropped to fit.",
   },
 
   quiz: {
@@ -1194,8 +1195,9 @@ export const en: DeepPartial<typeof german> = {
     description: "Description",
     descriptionHint:
       "Appears on the course page under “Beschreibung der Fortbildung” and, shortened, on the overview card.",
-    heroImageUrl: "Cover image (URL)",
-    heroImageHint: "Shown beside the title and on the overview card.",
+    heroImageUrl: "Cover image",
+    heroImageHint:
+      "Shown beside the title and on the overview card. Landscape, at least 1200 px wide — the image is cropped to fit.",
     deliveryType: "Format",
     deliveryOnDemand: "On demand",
     deliveryLive: "Live",

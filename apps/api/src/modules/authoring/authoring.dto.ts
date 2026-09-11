@@ -22,6 +22,7 @@
  */
 
 import { z } from "zod";
+import { mediaReference } from "../../shared/media-reference.js";
 
 const INVALID_ORIGIN =
   "must be scheme + host + optional port, optionally with * as the whole " +
@@ -101,14 +102,6 @@ const httpsUrl = url.refine((value) => value.startsWith("https://"), {
  * time, so a row that somehow held one would render as a padlock rather than as
  * somebody else's video.
  */
-const mediaReference = z
-  .string()
-  .trim()
-  .max(2000)
-  .refine(
-    (value) => value.startsWith("s3://") || z.string().url().safeParse(value).success,
-    "must be an absolute URL or an s3:// reference",
-  );
 
 // ---------------------------------------------------------------------------
 // Structure: departments and projects
@@ -440,7 +433,10 @@ export const expertsWriteSchema = z.object({
         name: z.string().trim().min(1).max(200),
         institution: z.string().trim().max(300).nullable().optional(),
         biography: richText.nullable().optional(),
-        photoUrl: url.nullable().optional(),
+        /* The Mediathek, not a pasted URL (P211-01) — the client: "we should
+           not have any photo url anywhere, all of them should open the
+           mediathek". */
+        photoUrl: mediaReference.nullable().optional(),
       }),
     )
     .max(50),

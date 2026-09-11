@@ -19,6 +19,7 @@ import type { ApiClient, AuthoringExpert } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { freshKey, nullable, swap } from "../drafts.js";
 import { useLoaded, useSaver } from "../hooks.js";
+import { UploadField } from "./UploadField.js";
 import {
   Button,
   Field,
@@ -123,6 +124,8 @@ export function ExpertsEditor(props: { client: ApiClient; courseSlug: string }) 
                   onChange={(next) =>
                     setExperts(experts.map((e, i) => (i === index ? next : e)))
                   }
+                  client={client}
+                  courseSlug={courseSlug}
                 />
               </Row>
             </li>
@@ -162,7 +165,14 @@ export function ExpertsEditor(props: { client: ApiClient; courseSlug: string }) 
   );
 }
 
-function ExpertFields(props: { expert: Draft; onChange: (next: Draft) => void }) {
+function ExpertFields(props: {
+  expert: Draft;
+  onChange: (next: Draft) => void;
+  /* Both threaded for the photograph's Mediathek field (P211-01): the picker
+     needs a client to list the library, and the course to upload against. */
+  client: ApiClient;
+  courseSlug: string;
+}) {
   const { expert } = props;
   const id = (field: string) => `expert-${expert.key}-${field}`;
   const set = (change: Partial<Draft>) => props.onChange({ ...expert, ...change });
@@ -198,14 +208,28 @@ function ExpertFields(props: { expert: Draft; onChange: (next: Draft) => void })
             onChange={(institution) => set({ institution })}
           />
         </Field>
-        <Field label={de.experts.photoUrl} htmlFor={id("photo")}>
-          <TextInput
-            id={id("photo")}
-            value={expert.photoUrl}
-            maxLength={2000}
-            onChange={(photoUrl) => set({ photoUrl })}
-          />
-        </Field>
+        {/*
+          The Mediathek, not a URL to paste (P211-01).
+
+          This is the field the client was looking at: *"What I did not
+          understand is here for the experts — Photo URL. So I was thinking, OK,
+          then I should go into the Mediathek and copy the URL of the image, but
+          I can't even find one."* There was no URL to find, because an uploaded
+          object is addressed by reference and signed on the way out — so the
+          workaround the field implied did not exist.
+
+          See `CoursePresentation.tsx` for why the purpose is `poster`.
+        */}
+        <UploadField
+          label={de.experts.photoUrl}
+          hint={de.experts.photoHint}
+          id={id("photo")}
+          value={expert.photoUrl}
+          purpose="poster"
+          client={props.client}
+          courseSlug={props.courseSlug}
+          onChange={(photoUrl) => set({ photoUrl })}
+        />
       </div>
       <Field label={de.experts.biography} htmlFor={id("bio")}>
         <TextArea
