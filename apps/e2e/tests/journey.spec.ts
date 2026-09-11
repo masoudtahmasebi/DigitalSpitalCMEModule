@@ -754,6 +754,87 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         `the tab labels are not on one line: centres at ${labelCentres.join(", ")}`,
       ).toBeLessThanOrEqual(1);
 
+      /*
+       * The course cards line up (DEP-42).
+       *
+       * The client: *"cards grow or shrink in height based on their content …
+       * making the list appear jagged and uneven"*. Measured from
+       * `screens/page-01.png` (1400 px render, ×1920/1400): the three cards
+       * with a placeholder are 253 px each — **347 design px** — and their grey
+       * image blocks are 246 px each, identical to the pixel.
+       *
+       * Geometry is the one thing jsdom cannot answer: it has no layout, so a
+       * component test could only assert the class strings, which is a test
+       * about Tailwind rather than about what a physician sees (§9.7, and
+       * P209-01's reasoning for measuring the tab row here rather than in a
+       * unit test).
+       *
+       * Two properties, and the second is the one `mt-auto` is for:
+       *
+       *   1. every card is the same height — within 1 px, sub-pixel rounding;
+       *   2. every primary action sits the same distance from its card's
+       *      bottom edge, which is what stops a short description lifting its
+       *      buttons half a card above its neighbour's.
+       *
+       * On a rig with a single course only the second is checkable, and the
+       * assertion says so rather than passing quietly on nothing (§9.1).
+       */
+      const cards = await learner.locator("article").evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const card = node.getBoundingClientRect();
+          const action = node.querySelector("button");
+          return {
+            height: card.height,
+            fromBottom:
+              action === null
+                ? null
+                : card.bottom - action.getBoundingClientRect().bottom,
+          };
+        }),
+      );
+
+      expect(
+        cards.length,
+        "the catalogue drew no course cards, so the measurements below prove nothing",
+      ).toBeGreaterThan(0);
+
+      const offsets = cards
+        .map((card) => card.fromBottom)
+        .filter((value): value is number => value !== null);
+      expect(offsets.length, "no course card carried an action button to measure").toBe(
+        cards.length,
+      );
+      /*
+       * An **absolute** distance, not agreement between cards — and the first
+       * version of this got it wrong in a way worth recording.
+       *
+       * It compared the offsets to each other. On a rig with one course that is
+       * a comparison of one number with itself, so it read 0 and passed on any
+       * layout at all: removing `mt-auto` left it green. A check that cannot go
+       * red is not evidence (§9.1), and this one was written to prove a fix it
+       * could not have failed. It was caught by sabotaging the fix, which is
+       * the only reason it is not still here.
+       *
+       * The card's bottom padding is `sm:py-8` — 32 px — so an anchored action
+       * row ends about that far from the card's edge. Without `mt-auto` the row
+       * follows the description and the free space collects *below* it, which
+       * on a 347 px card is a gap far wider than the padding. 40 px is the
+       * padding plus sub-pixel rounding and a focus ring.
+       */
+      const anchored = Math.max(...offsets);
+      expect(
+        anchored,
+        `the action row is not anchored to the card's bottom — it ends ${anchored.toFixed(1)} px above it, where the card's own padding is 32 px. Offsets: ${offsets.map((n) => n.toFixed(1)).join(", ")}`,
+      ).toBeLessThanOrEqual(40);
+
+      if (cards.length > 1) {
+        const heights = cards.map((card) => card.height);
+        expect(
+          Math.max(...heights) - Math.min(...heights),
+          `the cards are not a uniform height: ${heights.map((n) => n.toFixed(1)).join(", ")}`,
+        ).toBeLessThanOrEqual(1);
+      }
+
       await openCourseFromCatalogue(learner, COURSE);
 
       /*

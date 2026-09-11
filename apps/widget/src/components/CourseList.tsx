@@ -591,7 +591,25 @@ function CourseCard(props: {
     !course.enrolment.complete;
 
   return (
-    <article className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.08)] sm:flex-row">
+    /*
+      A uniform floor, and an action row anchored to the bottom (DEP-42).
+      
+      The client: *"cards grow or shrink in height based on their content …
+      making the list appear jagged"*. Measured from `screens/page-01.png`
+      (1400 px render, ×1920/1400): the cards start at y 898, 1163 and 1428
+      with an 11 px gap, so each is **253 px → 347 design px**, and all three
+      grey image blocks are **246 px → 337 px**, identical to the pixel.
+      
+      `min-h`, not `h`. A card can carry two states the drawing's four rows do
+      not show — "finished, point not yet claimed" and "certified, certificate
+      waiting" (P168-04) — and a hard height would clip the one sentence a
+      physician most needs to see. So the floor is uniform, the image stays
+      `self-stretch` and therefore flush at any height, and a card that has
+      more to say grows rather than hiding it. That is a deliberate deviation
+      from the ticket's "fixed height regardless of content", and it is the
+      half of the sentence that would otherwise cost a §9.4 defect.
+    */
+    <article className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.08)] sm:min-h-[347px] sm:flex-row">
       {/*
         Flush to the card's left edge and full height, as the layout draws it —
         no padding around the image.
@@ -633,7 +651,7 @@ function CourseCard(props: {
           55 px, wider than the padding on the card's other three sides — the
           text column is inset from the artwork, not merely padded away from
           it. */}
-      <div className="min-w-0 flex-1 p-5 sm:py-8 sm:pl-14 sm:pr-8">
+      <div className="flex min-w-0 flex-1 flex-col p-5 sm:py-8 sm:pl-14 sm:pr-8">
         <p className="text-sm font-semibold text-brand-600">
           {de.catalog.cardMeta(course)}
         </p>
@@ -652,8 +670,15 @@ function CourseCard(props: {
         )}
 
         {/* The CTA is the server's answer, not a guess from the card's own
-            fields: `enrolment` is the caller's row, or null. */}
-        <div className="mt-6 flex flex-wrap gap-4">
+            fields: `enrolment` is the caller's row, or null.
+            
+            `mt-auto` is what levels the row across cards (DEP-42): the column
+            is a flex column, so the free space collects above this instead of
+            below it, and a two-line description no longer leaves its buttons
+            half a card higher than its neighbour's. `pt-6` keeps the gap when
+            the description is long enough that there is no free space to
+            collect. */}
+        <div className="mt-auto flex flex-wrap gap-4 pt-6">
           <Button onClick={() => props.onOpen("start")}>
             {course.enrolment !== null && course.enrolment.courseComplete
               ? de.catalog.review
