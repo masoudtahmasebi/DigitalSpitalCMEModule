@@ -136,11 +136,19 @@ describe("the token endpoint says this session holds nothing", () => {
    * succeed. Pinning the count would make this test fail the next time a screen
    * gains a parallel load, which is not the property it is here to defend.
    */
-  it("sends nothing to the API — there is no token to send", async () => {
+  it("sends nothing that needs a token — there is none to send", async () => {
     renderWidget();
     await screen.findByText(de.signedOut.expiredTitle);
 
-    expect(requested.filter((url) => url.includes("api.example.test"))).toEqual([]);
+    /*
+     * `/courses…` is the whole set that needs a bearer here: the course tree
+     * and the enrolment. `/branding` and `/copy` are deliberately **not**
+     * excluded by accident — they are public, carry no token, and the widget
+     * is right to fetch them so the notice below renders in the customer's own
+     * colours rather than unbranded.
+     */
+    expect(requested.filter((url) => url.includes("/courses"))).toEqual([]);
+    expect(requested.filter((url) => url.includes("/enrolment"))).toEqual([]);
     expect(requested.length).toBeGreaterThan(0);
   });
 });

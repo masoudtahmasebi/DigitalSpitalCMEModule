@@ -459,10 +459,25 @@ describe("the ds-lms:course-open event", () => {
     element.tokenProvider = async () => "token";
     host.append(element);
 
-    // The list is fetched after the first commit.
-    for (let i = 0; i < 5; i += 1) {
-      await settle();
-    }
+    /*
+     * Wait for the card, not for five turns (P215-01).
+     *
+     * This counted commits, and how many the catalogue needs depends on
+     * whether `useBranding`'s module-scoped cache is warm — which depended on
+     * which case ran before this one, which depended on the order vitest chose
+     * its files in. The suite went red in CI on a commit that touched nothing
+     * here, and was green locally six runs running.
+     *
+     * `vitest.setup.ts` now empties that cache after every case, so the
+     * ordering cannot decide it. This is the other half: this file's own header
+     * already said *"for an assertion that something appears, prefer
+     * `waitForText`, which waits for the fact instead of for a duration"* — a
+     * rule written and not followed, three lines below where it is stated.
+     */
+    await waitForText(
+      () => element.shadowRootForTest?.textContent ?? "",
+      "Zur Fortbildung",
+    );
 
     const buttons = [
       ...(element.shadowRootForTest?.querySelectorAll("button") ?? []),
@@ -502,9 +517,11 @@ describe("the ds-lms:course-open event", () => {
     const { element, open } = await catalogue();
 
     open.click();
-    for (let i = 0; i < 5; i += 1) {
-      await settle();
-    }
+    // The same correction: wait for the catalogue to go, not for five turns.
+    await waitForAbsence(
+      () => element.shadowRootForTest?.textContent ?? "",
+      "Zur Fortbildung",
+    );
 
     expect(element.shadowRootForTest?.textContent ?? "").not.toContain("Zur Fortbildung");
   });

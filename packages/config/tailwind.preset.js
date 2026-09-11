@@ -22,13 +22,30 @@ export const dsPreset = {
         // the colour a physician sees first. The defaults track the Zeplin
         // artwork so an unbranded deployment already looks like the design
         // rather than like a placeholder.
+        /*
+         * `#007f95` is the teal, and it is MEDICE's (DEP-38).
+         *
+         * It was `#17788d`, sampled from the Zeplin artwork rather than given
+         * as a value. The client gave the value: *"The teal color used every
+         * where should be this - #007f95"*. The scale below is rebuilt around
+         * it — the tints and shades are derived from the new 600 rather than
+         * left pointing at the old hue, which would have produced a hero in one
+         * teal and its hover state in another.
+         *
+         * **Changing this may change nothing on a branded deployment, and that
+         * is the part worth knowing.** `--ds-brand-600` and `--ds-brand-700`
+         * are written by `brandingCssVars` from the project's `primaryColor`
+         * (Verwaltung → Erscheinungsbild). Where a customer has set one, theirs
+         * wins and these defaults are never read. 50, 100, 500 and 800 have no
+         * branding input at all, so those four are always these values.
+         */
         brand: {
-          50: "var(--ds-brand-50, #e8f3f6)",
-          100: "var(--ds-brand-100, #c9e3ea)",
-          500: "var(--ds-brand-500, #1b8098)",
-          600: "var(--ds-brand-600, #17788d)",
-          700: "var(--ds-brand-700, #116072)",
-          800: "var(--ds-brand-800, #0d4b59)",
+          50: "var(--ds-brand-50, #e6f2f5)",
+          100: "var(--ds-brand-100, #c2e0e7)",
+          500: "var(--ds-brand-500, #0d92a9)",
+          600: "var(--ds-brand-600, #007f95)",
+          700: "var(--ds-brand-700, #006678)",
+          800: "var(--ds-brand-800, #00505e)",
           contrast: "var(--ds-brand-contrast, #ffffff)",
         },
 
@@ -75,7 +92,13 @@ export const dsPreset = {
         // explicitly.
         canvas: "var(--ds-canvas, #f4f7f8)",
 
-        accent: "var(--ds-accent, #17788d)",
+        /*
+         * The focus ring's colour. Falls back to the brand teal, so an
+         * unbranded deployment focuses in the same teal it draws everything
+         * else in — kept in step with `brand.600` above by hand, because a
+         * CSS var cannot reference another var's *fallback* (DEP-38).
+         */
+        accent: "var(--ds-accent, #007f95)",
         status: {
           notStarted: "#6b7280",
           inProgress: "#b45309",

@@ -14,5 +14,13 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    /*
+     * Every ambient store, reset after every case (P215-01, §9.8).
+     *
+     * Here rather than in each test file because the rule has been learned
+     * twice already and applied narrowly both times. `vitest.setup.ts` says
+     * what leaks and why it mattered.
+     */
+    setupFiles: ["./vitest.setup.ts"],
   },
 });

@@ -570,7 +570,17 @@ export function ProgressRing(props: {
             cy="40"
             r={radius}
             fill="none"
-            stroke={onBrand ? "#ffffff" : "var(--ds-brand-600, #17788d)"}
+            /*
+             * `currentColor` via a class, not a second copy of the hex.
+             *
+             * This carried `#17788d` — the *old* `brand.600` default, written
+             * out again here — so the ring stayed the previous teal when the
+             * palette moved to `#007f95` (DEP-38). An SVG attribute cannot read
+             * a Tailwind token, but it can read `currentColor`, and the class
+             * on the element is the one home for the value.
+             */
+            stroke={onBrand ? "#ffffff" : "currentColor"}
+            className={onBrand ? undefined : "text-brand-600"}
             strokeWidth="5"
             strokeLinecap="round"
             strokeDasharray={`${dash} ${circumference}`}

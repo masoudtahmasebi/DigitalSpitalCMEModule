@@ -46,6 +46,14 @@ export type Copy = typeof de;
  */
 const inFlight = new Map<string, Promise<Copy>>();
 
+/**
+ * Empty it — the same reason and the same automatic call as
+ * `clearBrandingCache` (P215-01). Two caches with one shape get one rule.
+ */
+export function clearCopyCache(): void {
+  inFlight.clear();
+}
+
 async function load(apiBase: string, projectSlug: string): Promise<Copy> {
   // `\u0000` as the separator, written as an escape. A literal NUL makes the
   // file binary to `grep`, which is how `branding.ts` once hid three call sites

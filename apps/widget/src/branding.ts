@@ -44,6 +44,22 @@ import { parseBranding, type Branding } from "@ds/domain";
  */
 const inFlight = new Map<string, Promise<Branding>>();
 
+/**
+ * Empty it. Exported for tests, and called for them automatically (P215-01).
+ *
+ * A cache that outlives a case is state that lies (§9.8). This one is keyed on
+ * (apiBase, projectSlug), which every widget test uses the same two values for
+ * — so whether a case pays for the fetch depends on which case ran before it,
+ * and a test that waits a fixed number of React commits passes or fails on
+ * that. `element.test.ts` did exactly that and went red in CI on a commit that
+ * changed nothing but the *order* vitest picked its files in.
+ *
+ * `vitest.setup.ts` calls this after every case so no test has to remember.
+ */
+export function clearBrandingCache(): void {
+  inFlight.clear();
+}
+
 function load(apiBase: string, projectSlug: string): Promise<Branding> {
   /*
    * `\u0000` as the separator, written as an escape and not as the byte.
