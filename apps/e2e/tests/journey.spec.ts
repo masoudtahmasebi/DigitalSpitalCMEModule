@@ -730,7 +730,27 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * labels sat 7.00 px apart.
        *
        * A browser is the only thing that can say so, and one is already here.
+       *
+       * ## Wait for the thing, then measure it (P221-01)
+       *
+       * `all()` and `evaluateAll()` are the two locator methods that do **not**
+       * retry: they resolve against whatever is in the document at the instant
+       * they run and answer an empty array when the answer is "not yet". Every
+       * other Playwright call in this file auto-waits, which is why nothing
+       * here had ever needed a wait written down.
+       *
+       * A geometry measurement therefore has to state what it is waiting for
+       * as an assertion of its own, before it snapshots. Otherwise the suite
+       * is racing the API — and it will win on a rig whose API is on
+       * `127.0.0.1` and lose against an installation across the internet,
+       * which is exactly how deploy 131 failed with *"the catalogue drew no
+       * course cards"* on a catalogue that had one (§9.1: a check whose answer
+       * depends on network timing is not measuring the layout).
        */
+      await expect(
+        learner.getByRole("tab").first(),
+        "the catalogue's tab row never rendered",
+      ).toBeVisible({ timeout: 20_000 });
       const labelCentres = await Promise.all(
         (await learner.getByRole("tab").all()).map((tab) =>
           tab.evaluate((element) => {
@@ -779,6 +799,21 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * On a rig with a single course only the second is checkable, and the
        * assertion says so rather than passing quietly on nothing (§9.1).
        */
+      /*
+       * The wait the measurement below is entitled to assume — see P221-01 on
+       * the tab row above. `CoursePanel` draws the tab row from static copy
+       * and the cards behind `list.loading`, so "tabs are on screen" says
+       * nothing at all about whether `listCourses` has answered yet.
+       *
+       * `article` is unambiguous here: the only other one in the widget is a
+       * speaker in `ExpertsTab`, which belongs to the course-detail screen the
+       * learner has not opened.
+       */
+      await expect(
+        learner.locator("article").first(),
+        "the catalogue never drew a course card",
+      ).toBeVisible({ timeout: 20_000 });
+
       const cards = await learner.locator("article").evaluateAll((nodes) =>
         nodes.map((node) => {
           const card = node.getBoundingClientRect();
