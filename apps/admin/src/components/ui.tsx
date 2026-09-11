@@ -40,7 +40,29 @@ export function Button(props: {
    * on the order the form happens to render in (P90-01).
    */
   id?: string;
-  variant?: "primary" | "secondary" | "danger";
+  /**
+   * How much of the page's attention this control is entitled to.
+   *
+   * The console had three weights and used `secondary` for everything that was
+   * not *the* action of a screen — which, on the authoring tree, is every
+   * control on every row. A module row carries Bearbeiten, Löschen and two
+   * reorder buttons; a chapter adds a `<select>`; a content row two more. Ten
+   * modules is upward of sixty bordered boxes, and they outweigh the titles
+   * they belong to by area. The eye lands on the buttons and has to hunt for
+   * the course.
+   *
+   * `quiet` is the missing weight: a real button, focusable and labelled
+   * exactly as before, that draws its border only on hover or focus. It is what
+   * Linear, Stripe and Vercel use for per-row actions, and the reason is the
+   * same one `Row`'s own header gives for hairlines over cards — a repeated
+   * control is not information, and spending a border on each repetition buys
+   * nothing.
+   *
+   * `secondary` stays for a real alternative to a primary action — the cancel
+   * beside a save, the second of two choices. `quiet` is never *the* action of
+   * a screen.
+   */
+  variant?: "primary" | "secondary" | "danger" | "quiet";
   disabled?: boolean;
   /**
    * The button's name for assistive technology, when the visible label is not
@@ -81,7 +103,11 @@ export function Button(props: {
       ? "bg-brand-600 text-white shadow-sm hover:bg-brand-700 active:bg-brand-800"
       : variant === "danger"
         ? "bg-red-700 text-white shadow-sm hover:bg-red-800"
-        : "border border-gray-300 bg-white text-gray-800 shadow-sm hover:border-gray-400 hover:bg-gray-50";
+        : variant === "quiet"
+          ? // A transparent border, not none: the box has to keep its size, or
+            // every row twitches by two pixels when the pointer crosses it.
+            "border border-transparent text-gray-700 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
+          : "border border-gray-300 bg-white text-gray-800 shadow-sm hover:border-gray-400 hover:bg-gray-50";
 
   return (
     <button
@@ -301,6 +327,18 @@ export function Select<T extends string>(props: {
  * "up arrow" — these are the reorder controls, and a control whose purpose a
  * screen-reader user cannot determine is not a control (CLAUDE.md §3, the a11y
  * floor is costed in and not reducible).
+ *
+ * Quiet by default, for the reason spelled out on `Button`'s `variant`: this is
+ * only ever a per-row control, and there are two of them on every row of a tree
+ * that can be forty rows long.
+ *
+ * It takes `CONTROL_FOCUS` in the same change, which it did not carry before.
+ * That was **not** an invisible focus ring — `CONTROL_FOCUS` begins with
+ * `outline-none`, so without it this button kept the browser's own default
+ * outline and a keyboard user could see it. What was true is that it was the
+ * one control in the console focusing in a different colour from every other,
+ * and that matters more now the resting border has gone: the hover border and
+ * the focus ring are the only two things left that say this is a control.
  */
 export function IconButton(props: {
   label: string;
@@ -315,7 +353,7 @@ export function IconButton(props: {
       title={props.label}
       disabled={props.disabled === true}
       onClick={props.onClick}
-      className="inline-flex h-8 w-8 items-center justify-center rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-30"
+      className={`${CONTROL_FOCUS} inline-flex h-8 w-8 items-center justify-center rounded border border-transparent text-sm text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:opacity-25 disabled:hover:border-transparent disabled:hover:bg-transparent`}
     >
       <span aria-hidden="true">{props.glyph}</span>
     </button>
@@ -493,8 +531,18 @@ export function ConfirmButton(props: {
 
   if (!armed) {
     return (
+      /*
+       * Quiet until it is armed, and that is the whole point of the two states.
+       *
+       * All twelve call sites are a destructive action on **a row** — delete
+       * this course, revoke this account, discard this submission. A bordered
+       * button per row for something an operator does once a month is exactly
+       * the weight `Button`'s `variant` note is about: the delete outranks the
+       * thing being deleted. Arming it is what makes it loud, and the armed
+       * state below is unchanged — `danger`, filled, beside a cancel.
+       */
       <Button
-        variant="secondary"
+        variant="quiet"
         {...(props["aria-label"] === undefined
           ? {}
           : { "aria-label": props["aria-label"] })}
@@ -557,10 +605,43 @@ export function ConfirmButton(props: {
  * content. Actions are right-aligned and grouped, so the eye finds them in the
  * same place on every row instead of wherever the title happened to end.
  */
+/**
+ * One step of type scale per level of the tree.
+ *
+ * Three steps and no more: a fourth would be a size nobody can tell from its
+ * neighbour, and the tree is only ever three deep (module → chapter → content).
+ */
+const TITLE_WEIGHT = {
+  section: "text-[0.9375rem] font-bold text-gray-900",
+  group: "text-sm font-semibold text-gray-900",
+  item: "text-sm font-medium text-gray-800",
+} as const;
+
 export function Row(props: {
   /** "MODUL 1" — small, muted, inline before the title. */
   eyebrow?: string;
   title: ReactNode;
+  /**
+   * How deep in the tree this row sits, expressed as type rather than as
+   * indentation alone.
+   *
+   * Every row drew its title at `text-sm font-semibold text-gray-900` —
+   * module, chapter and content alike — so the only thing distinguishing three
+   * levels of hierarchy was an eleven-pixel uppercase eyebrow and a left rule.
+   * On a real course that is forty rows of identical-looking text, and the
+   * question a person actually has on this screen is *where does this module
+   * end*.
+   *
+   * Indentation alone does not answer it either: `RowList`'s `flush` already
+   * indents, and the screenshot of the authoring tree shows why that is not
+   * enough — by the third level the indent is a few pixels against a row that
+   * is 1,100 wide.
+   *
+   * So the type carries it. `section` is a module, `group` a chapter, `item`
+   * the content inside — the default, because most rows in the console are
+   * flat lists where there is no hierarchy to express.
+   */
+  level?: "section" | "group" | "item";
   /** Subtitle, counts, anything that qualifies the title. One muted line. */
   meta?: ReactNode;
   actions?: ReactNode;
@@ -576,7 +657,7 @@ export function Row(props: {
                 {props.eyebrow}
               </span>
             )}
-            <span className="text-sm font-semibold text-gray-900">{props.title}</span>
+            <span className={TITLE_WEIGHT[props.level ?? "item"]}>{props.title}</span>
           </div>
           {props.meta === undefined ? null : (
             <div className="mt-0.5 text-xs text-gray-600">{props.meta}</div>
