@@ -166,7 +166,7 @@ export function Participants(props: {
               <td>
                 <Button
                   variant="secondary"
-                  ariaLabel={de.participants.support.openAria(row.participantName)}
+                  aria-label={de.participants.support.openAria(row.participantName)}
                   onClick={() =>
                     setOpenRow(openRow === row.enrolmentId ? undefined : row.enrolmentId)
                   }

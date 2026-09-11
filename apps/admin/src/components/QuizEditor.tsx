@@ -491,7 +491,7 @@ function QuestionBlock(props: {
               question.answerCount > 0 ? de.quiz.confirmRetire : de.common.confirmDelete
             }
             cancelLabel={de.common.cancel}
-            ariaLabel={question.answerCount > 0 ? de.quiz.retireOnRemove : undefined}
+            aria-label={question.answerCount > 0 ? de.quiz.retireOnRemove : undefined}
             onConfirm={props.onDelete}
           />
         </span>
