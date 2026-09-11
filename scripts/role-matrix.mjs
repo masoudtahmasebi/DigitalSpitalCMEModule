@@ -83,9 +83,20 @@ function capabilities() {
   return held;
 }
 
-/** The nav entries the console draws, and the capability each one needs. */
+/**
+ * The nav entries the console draws, and the capability each one needs.
+ *
+ * The table lives in `components/shell/navigation.ts`. It used to be a literal
+ * in the middle of `App.tsx`'s 1,929 lines, and moving it is what this comment
+ * is here to survive: **a gate that parses a literal out of a source file
+ * breaks when somebody moves the file**, and the only reason that is tolerable
+ * here is that it breaks *loudly* — the `expected` check below turned the move
+ * into "navigation: <nothing>" and a non-zero exit rather than a sweep of zero
+ * screens reported as a pass. That is the property to preserve if this is ever
+ * repointed again (§9.1).
+ */
 function navigation() {
-  const source = readFileSync("apps/admin/src/App.tsx", "utf8");
+  const source = readFileSync("apps/admin/src/components/shell/navigation.ts", "utf8");
   const start = source.indexOf("const NAV:");
   const nav = source.slice(start, source.indexOf("\n];", start));
   const entries = [];
@@ -187,7 +198,7 @@ const nav = navigation();
 /*
  * Every screen this script knows how to check must have been found in the
  * console's navigation, and vice versa. Without this the script degrades
- * quietly: a rename in `App.tsx` drops a screen from the sweep and the run
+ * quietly: a rename in `navigation.ts` drops a screen from the sweep and the run
  * still says "every drawn screen loads".
  */
 const known = Object.keys(SCREEN_LOADS).sort();
