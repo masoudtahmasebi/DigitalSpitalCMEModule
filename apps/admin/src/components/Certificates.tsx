@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ApiClient, CertificateRecord } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { describeError, isForbidden } from "../api.js";
+import { describeError, isForbidden, isRetryable } from "../api.js";
 import {
   Badge,
   Button,
@@ -69,6 +69,15 @@ export function Certificates(props: { client: ApiClient; courseSlug?: string }) 
   const { client, courseSlug } = props;
   const [rows, setRows] = useState<CertificateRecord[] | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
+  /*
+   * Whether the failure above is one trying again could fix (P231-02).
+   *
+   * Set from the same error as the sentence, in the same place: a screen that
+   * derived the words from the error and the button from something else would
+   * eventually say "this no longer exists" over a control offering to look for
+   * it again (§9.2).
+   */
+  const [loadRetryable, setLoadRetryable] = useState(true);
   const [forbidden, setForbidden] = useState(false);
 
   const load = useCallback(async () => {
@@ -77,7 +86,10 @@ export function Certificates(props: { client: ApiClient; courseSlug?: string }) 
       setRows(await client.adminListCertificates(courseSlug));
     } catch (error) {
       if (isForbidden(error)) setForbidden(true);
-      else setProblem(describeError(error, de.certificates.loadFailed));
+      else {
+        setProblem(describeError(error, de.certificates.loadFailed));
+        setLoadRetryable(isRetryable(error));
+      }
     }
   }, [client, courseSlug]);
 
@@ -111,6 +123,7 @@ export function Certificates(props: { client: ApiClient; courseSlug?: string }) 
         title={de.error.title}
         retryLabel={de.error.retry}
         problem={problem}
+        retryable={loadRetryable}
         onRetry={() => void load()}
       />
     );

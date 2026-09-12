@@ -393,6 +393,23 @@ export function LoadFailure(props: {
   title: string;
   retryLabel: string;
   problem: string;
+  /**
+   * Whether trying again could ever produce a different answer (P231-02).
+   *
+   * **Required, with no default, deliberately.** `isRetryable` was the rule and
+   * this is its caller — and a rule with no caller is exactly what CLAUDE.md
+   * §9.3 is about: `inviteStatus`, `resetStatus` and `invalidBrandingFields`
+   * were each exported, exhaustively tested, and called from nowhere. An
+   * optional prop defaulting to `true` would have left eleven screens
+   * unchanged and the rule unapplied, which is the same outcome with a
+   * different shape. A required prop makes the compiler ask every one of them.
+   *
+   * When it is `false` the button is **absent**, not disabled: a disabled
+   * control still says "this is the thing to do here, but not now", and for a
+   * 404 there is no later when it works. The sentence above it already says
+   * what to do instead — reload the page (§9.2, §9.4).
+   */
+  retryable: boolean;
   onRetry: () => void;
 }) {
   return (
@@ -400,9 +417,11 @@ export function LoadFailure(props: {
       <Notice tone="error" title={props.title}>
         {props.problem}
       </Notice>
-      <Button variant="secondary" onClick={props.onRetry}>
-        {props.retryLabel}
-      </Button>
+      {props.retryable ? (
+        <Button variant="secondary" onClick={props.onRetry}>
+          {props.retryLabel}
+        </Button>
+      ) : null}
     </div>
   );
 }

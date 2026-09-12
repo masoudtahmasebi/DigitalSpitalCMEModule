@@ -75,7 +75,7 @@ export function EvaluationEditor(props: {
     () => client.adminGetEvaluation(courseSlug),
     [client, courseSlug],
   );
-  const [evaluation, setEvaluation, loadProblem, retry] = useLoaded(load);
+  const [evaluation, setEvaluation, loadProblem, retry, loadRetryable] = useLoaded(load);
   const [draft, setDraft] = useState<DraftQuestion[] | undefined>();
   const saver = useSaver();
 
@@ -87,6 +87,7 @@ export function EvaluationEditor(props: {
         title={de.error.title}
         retryLabel={de.error.retry}
         problem={loadProblem}
+        retryable={loadRetryable}
         onRetry={retry}
       />
     );

@@ -216,6 +216,79 @@ export function announceable(method: string, status: number | undefined): boolea
   return true;
 }
 
+/**
+ * Statuses whose fallback sentence must not be advice to retry (P231-01).
+ *
+ * ## Why a table and not one more `if`
+ *
+ * This is the **third** instance of one shape. `ANSWERS_WITH_NOT_FOUND` fixed
+ * the font toast (P225-01) and the 403 branch above fixed the inline sentence
+ * (P225-05), and both were written as the single case in front of us. The
+ * class is larger than either: the console's fallback is whatever the call
+ * site passed, every call site passes a sentence ending *"Bitte versuchen Sie
+ * es später erneut"*, and for three statuses retrying is not a thing that can
+ * work.
+ *
+ * | Status | Retrying the identical request will                            |
+ * | ------ | --------------------------------------------------------------- |
+ * | `404`  | not find it again — the thing is gone                           |
+ * | `409`  | meet the same conflict — somebody else's change is still there  |
+ * | `422`  | be rejected identically — the input is what was refused         |
+ *
+ * **404 is the one that matters most, and it is not a corner case.**
+ * `AppError.notFound(reason, clientDetail?)` sends no `detail` unless the
+ * second argument is given, and **42 of its 45 call sites omit it** — `reason`
+ * is internal by design and never serialised. So forty-two distinct 404s in
+ * this API reached an operator as "please try again later", one of them being
+ * the second click of a GDPR erasure (P230-01), where the honest reading is
+ * "it already worked".
+ *
+ * ## What is deliberately absent from this table
+ *
+ * `429`, `500`, `502`, and every transport failure — a timeout, a dropped
+ * connection, an offline browser, which carry **no status at all**. For those,
+ * "try again later" is the correct and useful sentence, and a rule that
+ * suppressed it everywhere would remove the one piece of advice the console
+ * can honestly give. `401` and `403` never reach here: routing handles the
+ * first and the branch above handles the second.
+ */
+const FALLBACK: ReadonlyMap<number, string> = new Map([
+  [404, de.error.gone],
+  [409, de.error.conflict],
+  [422, de.error.rejected],
+]);
+
+/**
+ * The sentence for a failure the API chose not to explain.
+ *
+ * `generic` — the call site's own words — is used for everything not in the
+ * table, so a screen that has better words than "try again later" for a
+ * timeout still gets to use them.
+ */
+function fallbackFor(status: number | undefined, generic: string): string {
+  if (status === undefined) return generic;
+  return FALLBACK.get(status) ?? generic;
+}
+
+/**
+ * Whether offering a retry control for this failure could ever succeed.
+ *
+ * The affordance half of the table above, and the piece P230 deferred to here:
+ * deciding what an error *is* belongs with the error layer rather than with a
+ * form's state machine. A screen drawing "Erneut versuchen" beside a 404 is
+ * §9.2 — a control that can only produce the same error, which looks like a
+ * decision to whoever clicks it.
+ *
+ * A transport failure has no status and is the most retryable case there is,
+ * so `undefined` answers `true` rather than falling through to a status test.
+ */
+export function isRetryable(error: unknown): boolean {
+  const status = statusOf(error);
+  if (status === undefined) return true;
+  if (status === 401 || status === 403) return false;
+  return status === 429 || status >= 500;
+}
+
 /** The status of a problem-details failure, or `undefined` for anything else. */
 function statusOf(error: unknown): number | undefined {
   if (!(error instanceof ApiError)) return undefined;
@@ -257,7 +330,7 @@ export function describeError(error: unknown, generic: string): string {
    */
   const sentence = isForbidden(error)
     ? de.error.forbidden
-    : (problemDetail(error) ?? generic);
+    : (problemDetail(error) ?? fallbackFor(statusOf(error), generic));
 
   /*
    * The correlation id, appended (P122-01).

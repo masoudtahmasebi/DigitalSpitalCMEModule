@@ -144,7 +144,7 @@ export function CourseStructureEditor(props: {
     () => client.adminGetStructure(courseSlug),
     [client, courseSlug],
   );
-  const [structure, setStructure, loadProblem, retry] = useLoaded(load);
+  const [structure, setStructure, loadProblem, retry, loadRetryable] = useLoaded(load);
   const saver = useSaver();
 
   const mutate = useCallback(
@@ -168,6 +168,7 @@ export function CourseStructureEditor(props: {
         title={de.error.title}
         retryLabel={de.error.retry}
         problem={loadProblem}
+        retryable={loadRetryable}
         onRetry={retry}
       />
     );
