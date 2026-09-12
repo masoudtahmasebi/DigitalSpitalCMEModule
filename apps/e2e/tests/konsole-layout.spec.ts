@@ -85,4 +85,89 @@ test.describe("Verwaltung, gemessen", () => {
       ).toBeLessThan(lineHeight * 1.6);
     }
   });
+
+  /**
+   * Every `--ds-admin-*` token resolves in the bundle the browser was served
+   * (P228-01).
+   *
+   * ## Why this exists when `check:design-tokens` already passes
+   *
+   * That script reads **source**. This reads what Vite emitted, what the
+   * browser parsed, and what the cascade produced — which is §9.9's shape one
+   * layer down: a definition in the repository is a definition in the
+   * stylesheet only if the build kept it. A token dropped by a PostCSS step, a
+   * `:root` rule shadowed by something later in the sheet, or a stylesheet that
+   * failed to load at all are each invisible to a grep and obvious here.
+   *
+   * ## Why an empty string is the assertion
+   *
+   * `getPropertyValue` for a custom property that was never declared returns
+   * `""` — not `undefined`, not a throw. That is exactly the state
+   * `--ds-surface-sunken` was in from P88-01 until P228-01, and it is why
+   * nothing failed: every layer answered politely. The browser then treats the
+   * whole declaration as invalid at computed-value time and paints
+   * `rgba(0, 0, 0, 0)`.
+   *
+   * So both halves are asserted — the variable has a value, **and** an element
+   * that uses it computes to something other than transparent. The second is
+   * the one a person would have seen.
+   */
+  test("jeder Design-Token der Verwaltung löst sich im ausgelieferten Bundle auf", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await signInToConsole(page, {
+      email: CUSTOMER_ADMIN_EMAIL,
+      password: STAFF_PASSWORD,
+    });
+
+    /*
+     * The closed set the console defines. Named here rather than scraped from
+     * the stylesheet, because a test that derives its expectations from the
+     * thing under test agrees with it however wrong it is (§9.1) — if a token
+     * is deleted, this list is what notices.
+     */
+    const TOKENS = [
+      "--ds-admin-ink",
+      "--ds-admin-ink-muted",
+      "--ds-admin-surface",
+      "--ds-admin-hairline",
+      "--ds-admin-surface-sunken",
+    ] as const;
+
+    const values = await page.evaluate((tokens) => {
+      const root = window.getComputedStyle(document.documentElement);
+      return tokens.map((token) => [token, root.getPropertyValue(token).trim()]);
+    }, TOKENS);
+
+    for (const [token, value] of values) {
+      expect(
+        value,
+        `${token} resolves to nothing in the served bundle, so every ` +
+          "declaration reading it is invalid at computed-value time and the " +
+          "property renders as if it had never been set",
+      ).not.toBe("");
+    }
+
+    /*
+     * And the consequence, measured rather than reasoned about. A probe
+     * element in the real document, carrying the real utility class the media
+     * thumbnail uses — the rig seeds no media asset, so there is no thumbnail
+     * of its own to measure, and the cascade is the same either way.
+     */
+    const background = await page.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.style.backgroundColor = "var(--ds-admin-surface-sunken)";
+      document.body.append(probe);
+      const computed = window.getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return computed;
+    });
+
+    expect(
+      background,
+      "an element backed by --ds-admin-surface-sunken paints transparent, " +
+        "which is what an undefined custom property looks like from the outside",
+    ).not.toBe("rgba(0, 0, 0, 0)");
+  });
 });

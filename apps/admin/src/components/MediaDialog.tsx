@@ -91,7 +91,7 @@ export function MediaDialog(props: {
   return (
     <Modal label={de.media.dialogTitle} onClose={props.onClose}>
       <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-base font-semibold text-[color:var(--ds-ink)]">
+        <h2 className="text-base font-semibold text-[color:var(--ds-admin-ink)]">
           {de.media.dialogTitle}
         </h2>
         <Button variant="secondary" onClick={props.onClose}>
@@ -102,7 +102,7 @@ export function MediaDialog(props: {
       <div
         role="tablist"
         aria-label={de.media.tabsLabel}
-        className="mt-3 flex flex-wrap gap-2 border-b border-[color:var(--ds-hairline)]"
+        className="mt-3 flex flex-wrap gap-2 border-b border-[color:var(--ds-admin-hairline)]"
       >
         {(["library", "upload", "url"] as const).map((id) => (
           <button
@@ -217,7 +217,7 @@ function LibraryTab(props: {
       )}
 
       {library.assets === undefined ? (
-        <p className="text-sm text-[color:var(--ds-ink-muted)]">{de.loading}</p>
+        <p className="text-sm text-[color:var(--ds-admin-ink-muted)]">{de.loading}</p>
       ) : (shown ?? []).length === 0 ? (
         /*
          * Two empty states, told apart, and the first one carries the way out
@@ -226,7 +226,7 @@ function LibraryTab(props: {
          * button reads as a broken list.
          */
         <div className="space-y-2">
-          <p className="text-sm text-[color:var(--ds-ink-muted)]">
+          <p className="text-sm text-[color:var(--ds-admin-ink-muted)]">
             {library.assets.length === 0 ? de.media.empty : de.media.noMatch}
           </p>
           {library.assets.length === 0 ? (
@@ -247,7 +247,9 @@ function LibraryTab(props: {
         </ul>
       )}
 
-      <p className="text-xs text-[color:var(--ds-ink-muted)]">{de.media.forgetHint}</p>
+      <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
+        {de.media.forgetHint}
+      </p>
     </div>
   );
 }
@@ -387,11 +389,11 @@ function UploadTab(props: {
         }}
         className={`rounded-lg border-2 border-dashed p-6 text-center ${
           over
-            ? "border-brand-600 bg-[color:var(--ds-surface-sunken)]"
-            : "border-[color:var(--ds-hairline)]"
+            ? "border-brand-600 bg-[color:var(--ds-admin-surface-sunken)]"
+            : "border-[color:var(--ds-admin-hairline)]"
         }`}
       >
-        <label className="block text-sm font-medium text-[color:var(--ds-ink)]">
+        <label className="block text-sm font-medium text-[color:var(--ds-admin-ink)]">
           <span className="mb-2 block">{de.media.dropHere}</span>
           <input
             ref={input}
@@ -407,7 +409,7 @@ function UploadTab(props: {
         </label>
       </div>
 
-      <p className="text-xs text-[color:var(--ds-ink-muted)]">
+      <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
         {de.media.uploadHints[props.purpose]}
       </p>
 
@@ -438,7 +440,7 @@ function UrlTab(props: { onSubmit: (url: string) => void }) {
           onChange={setUrl}
         />
       </label>
-      <p className="text-xs text-[color:var(--ds-ink-muted)]">{de.media.urlHint}</p>
+      <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">{de.media.urlHint}</p>
       <Button disabled={trimmed === ""} onClick={() => props.onSubmit(trimmed)}>
         {de.media.urlSubmit}
       </Button>
@@ -518,7 +520,7 @@ function Modal(props: { label: string; onClose: () => void; children: ReactNode 
             first.focus();
           }
         }}
-        className="w-full max-w-3xl rounded-lg border border-[color:var(--ds-hairline)] bg-[color:var(--ds-surface)] p-4 shadow-xl"
+        className="w-full max-w-3xl rounded-lg border border-[color:var(--ds-admin-hairline)] bg-[color:var(--ds-admin-surface)] p-4 shadow-xl"
       >
         {props.children}
       </div>

@@ -68,7 +68,15 @@ const components = globSync("apps/admin/src/**/*.tsx").filter(
  * Strip comments first, always.
  */
 function code(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+  /*
+   * As many spaces and newlines as the comment occupied, never one space
+   * (P228-01). This function's result is what the reported line number is
+   * counted from, so collapsing a comment moves every finding after it —
+   * `check-design-tokens.mjs` reported a read on line 171 as line 104 before
+   * this was fixed in both places.
+   */
+  const blank = (match) => match.replace(/[^\n]/g, " ");
+  return source.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/\/\/[^\n]*/g, blank);
 }
 
 /**
