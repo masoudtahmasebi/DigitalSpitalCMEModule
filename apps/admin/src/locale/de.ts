@@ -1330,6 +1330,28 @@ export const german = {
     title: "Es ist ein Fehler aufgetreten",
     retry: "Erneut versuchen",
     generic: "Bitte versuchen Sie es später erneut.",
+    /**
+     * A refused action, as opposed to a failed one (P225-05).
+     *
+     * `describeError` used to answer a 403 with `generic` — *"Bitte versuchen
+     * Sie es später erneut."* — which is **advice, and the advice is wrong**:
+     * retrying a refusal refuses for ever. It is the same §9.4 defect as the
+     * font toast one section up, and it reaches every inline error channel in
+     * the console, because every one of them calls `describeError`.
+     *
+     * The reason a 403 does not get the API's own `detail` is unchanged and
+     * still right: that sentence is written for a developer reading a log, and
+     * telling an operator which role they lack is more than they need in order
+     * to act. What changes is the substitute — a sentence that says what
+     * happened and who can change it.
+     *
+     * Deliberately *not* `auth.forbidden`, which says "keine Berechtigung für
+     * die Verwaltung" and is the right words for being refused the console
+     * itself. This one is about a single action inside a console the operator
+     * is legitimately in.
+     */
+    forbidden:
+      "Ihr Konto hat keine Berechtigung für diese Aktion. Bitte wenden Sie sich an Ihre Administration.",
     misconfigured:
       "Die Verwaltung ist nicht korrekt konfiguriert. Bitte prüfen Sie die Umgebungsvariablen.",
   },

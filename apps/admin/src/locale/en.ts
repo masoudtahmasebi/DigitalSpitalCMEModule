@@ -927,6 +927,8 @@ export const en: DeepPartial<typeof german> = {
     title: "Something went wrong",
     retry: "Try again",
     generic: "Please try again later.",
+    forbidden:
+      "Your account is not permitted to do this. Please contact your administration.",
     misconfigured:
       "The administration console is not configured correctly. Please check the environment variables.",
   },

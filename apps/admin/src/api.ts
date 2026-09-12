@@ -234,7 +234,30 @@ function statusOf(error: unknown): number | undefined {
  * which role they lack is more than they need to act on it.
  */
 export function describeError(error: unknown, generic: string): string {
-  const sentence = isForbidden(error) ? generic : (problemDetail(error) ?? generic);
+  /*
+   * A refusal is not a failure, and must not be answered with advice to retry
+   * (P225-05).
+   *
+   * This read `isForbidden(error) ? generic : …`, and `generic` is *"Bitte
+   * versuchen Sie es später erneut."* at every call site in the console. So a
+   * 403 — an operator doing something their role does not permit — was told to
+   * try again later, which will refuse for ever. Same §9.4 shape as the
+   * `adminGetFont` toast above: the sentence is advice, and the advice is
+   * wrong.
+   *
+   * The reason a 403 does not carry the API's own `detail` is unchanged and
+   * still right: that text is written for a developer reading a log, and
+   * naming the missing role tells an operator more than they need in order to
+   * act. What changes is the substitute.
+   *
+   * This reaches every inline error channel in the console, because all of
+   * them call this function — which is the point. The global toast is a
+   * separate path and stays silent on 403 (see `announceable`), so the
+   * operator gets one message, not two.
+   */
+  const sentence = isForbidden(error)
+    ? de.error.forbidden
+    : (problemDetail(error) ?? generic);
 
   /*
    * The correlation id, appended (P122-01).
