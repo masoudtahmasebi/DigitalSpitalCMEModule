@@ -156,3 +156,86 @@ function useMounted(): { readonly current: boolean } {
   }, []);
   return alive;
 }
+
+/**
+ * A form with unsaved edits says so before the operator loses them (P234-01).
+ *
+ * ## The defect
+ *
+ * Nothing in the console guarded an in-progress edit. Clicking a navigation
+ * link discarded it, and so did a reload or a closed tab — silently, in every
+ * case. `grep -rn "beforeunload" apps/admin/src` returned nothing.
+ *
+ * The worst instance is the project settings form in `Organisation`: twenty-odd
+ * fields including SMTP host, port, username, password, sender address and the
+ * whole branding object. An operator part-way through configuring a customer's
+ * mail who clicks **Fortbildungen** loses all of it and is told nothing.
+ *
+ * `QuizEditor` is the only screen that ever mentioned this, and only as a
+ * passive amber note beside a button — it warns, it does not guard.
+ *
+ * ## Why this is a registry and not a prop
+ *
+ * The thing that has to ask "is anything unsaved?" is the **navigation**, which
+ * lives in `Console` and knows nothing about the screen it is about to replace.
+ * Threading a callback from ten forms up through `Shell` would put the same
+ * fact in ten places, which is §4 invariant 6 and §9.10b.
+ *
+ * So a form declares its own state and the registry answers one question for
+ * everybody. A module-level `Set` rather than a context: the answer is needed
+ * inside an event handler, not during a render, and a context read would make
+ * every form re-render whenever any other form changed.
+ *
+ * ## Why every form, and not just the big ones
+ *
+ * A guard that fires on some screens and not others is worse than none. It
+ * teaches the operator that the console warns them, and then one day it does
+ * not — which is §9.2's shape: an affordance that looks like a decision. The
+ * adoption cost was measured before this was written: every form can express
+ * dirtiness as one comparison against what it loaded.
+ */
+const unsaved = new Set<string>();
+
+/** Whether any mounted form is holding edits the server has not seen. */
+export function hasUnsavedChanges(): boolean {
+  return unsaved.size > 0;
+}
+
+/**
+ * Exported for tests, which would otherwise leak a registration between cases —
+ * §9.8's "reset every ambient store in `afterEach`, not only the one that
+ * broke", and this is a module-level `Set`, which is exactly that kind of store.
+ */
+export function forgetUnsavedChanges(): void {
+  unsaved.clear();
+}
+
+/**
+ * Declare whether this form is holding unsaved edits.
+ *
+ * `id` identifies the form, so two mounted at once are counted separately and
+ * unmounting one does not clear the other's flag.
+ */
+export function useUnsavedChanges(id: string, dirty: boolean): void {
+  useEffect(() => {
+    if (!dirty) {
+      unsaved.delete(id);
+      return;
+    }
+    unsaved.add(id);
+
+    /*
+     * The browser's own guard, for the half of the problem no router can see:
+     * a reload, a closed tab, a typed URL. The text is the browser's — every
+     * engine ignores whatever a page supplies and shows its own sentence — so
+     * `preventDefault` is the whole API and inventing copy here would be copy
+     * nobody ever reads.
+     */
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => {
+      unsaved.delete(id);
+      window.removeEventListener("beforeunload", warn);
+    };
+  }, [id, dirty]);
+}

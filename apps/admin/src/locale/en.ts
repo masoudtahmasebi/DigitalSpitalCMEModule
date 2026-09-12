@@ -393,6 +393,8 @@ export const en: DeepPartial<typeof german> = {
     slugHint:
       "Lower case letters, digits and hyphens. The short name appears in addresses and cannot be changed later.",
     unsaved: "There are unsaved changes.",
+    leaveUnsaved:
+      "This page has unsaved changes. Do you want to discard them and continue?",
   },
 
   organisation: {
