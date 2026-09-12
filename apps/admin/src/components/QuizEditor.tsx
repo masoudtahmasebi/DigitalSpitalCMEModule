@@ -107,7 +107,7 @@ export function QuizEditor(props: {
   const { client, contentId } = props;
 
   const load = useCallback(() => client.adminGetQuiz(contentId), [client, contentId]);
-  const [quiz, setQuiz, loadProblem, retry] = useLoaded(load);
+  const [quiz, setQuiz, loadProblem, retry, loadRetryable] = useLoaded(load);
   const [draft, setDraft] = useState<DraftQuestion[] | undefined>();
   const [showProblems, setShowProblems] = useState(false);
   const saver = useSaver();
@@ -123,6 +123,7 @@ export function QuizEditor(props: {
         title={de.error.title}
         retryLabel={de.error.retry}
         problem={loadProblem}
+        retryable={loadRetryable}
         onRetry={retry}
       />
     );

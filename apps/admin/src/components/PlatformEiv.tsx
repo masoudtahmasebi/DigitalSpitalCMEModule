@@ -41,7 +41,7 @@ import { useCallback, useEffect, useState } from "react";
 import { formatBerlinDateTime } from "@ds/domain";
 import type { ApiClient, EivPlatformSettings } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { describeError, isForbidden } from "../api.js";
+import { describeError, isForbidden, isRetryable } from "../api.js";
 import { Button, LoadFailure, Notice, Spinner } from "./ui.js";
 
 type Endpoint = EivPlatformSettings["endpoint"];
@@ -53,6 +53,15 @@ export function PlatformEiv(props: { client: ApiClient }) {
 
   const [stored, setStored] = useState<EivPlatformSettings | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
+  /*
+   * Whether the failure above is one trying again could fix (P231-02).
+   *
+   * Set from the same error as the sentence, in the same place: a screen that
+   * derived the words from the error and the button from something else would
+   * eventually say "this no longer exists" over a control offering to look for
+   * it again (§9.2).
+   */
+  const [loadRetryable, setLoadRetryable] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -72,7 +81,10 @@ export function PlatformEiv(props: { client: ApiClient }) {
       setConfirmLive(false);
     } catch (error) {
       if (isForbidden(error)) setForbidden(true);
-      else setProblem(describeError(error, de.error.generic));
+      else {
+        setProblem(describeError(error, de.error.generic));
+        setLoadRetryable(isRetryable(error));
+      }
     }
   }, [client]);
 
@@ -94,6 +106,7 @@ export function PlatformEiv(props: { client: ApiClient }) {
         title={de.error.title}
         retryLabel={de.error.retry}
         problem={problem}
+        retryable={loadRetryable}
         onRetry={() => void load()}
       />
     );

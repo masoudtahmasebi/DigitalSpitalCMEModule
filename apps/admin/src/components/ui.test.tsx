@@ -28,7 +28,16 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { Button, ConfirmButton, Field, Select, TextArea, TextInput } from "./ui.js";
+import { de } from "../locale/de.js";
+import {
+  Button,
+  ConfirmButton,
+  Field,
+  LoadFailure,
+  Select,
+  TextArea,
+  TextInput,
+} from "./ui.js";
 
 afterEach(cleanup);
 
@@ -245,5 +254,59 @@ describe("Field's width", () => {
       </Field>,
     );
     expect(screen.getByLabelText("Farbe").className).toContain("w-full");
+  });
+});
+
+/**
+ * The retry control is absent when retrying cannot work (P231-02).
+ *
+ * ## Why this is a component test and not a unit test of `isRetryable`
+ *
+ * `api.test.ts` already proves `isRetryable(failure(404))` is `false`
+ * exhaustively. That is §9.7's trap in one line: **nothing in that file checks
+ * that anybody calls it.** The rule could be perfect and every screen could go
+ * on drawing the button, and the suite would stay green — which is exactly
+ * what happened to `inviteStatus`, `resetStatus` and `invalidBrandingFields`
+ * (§9.3).
+ *
+ * So the property asserted here is the *rendering*, by role, the way a person
+ * meets it.
+ *
+ * Wiring it up the stack is the other half, and TypeScript is what enforces
+ * that: `retryable` is a **required** prop, so all eleven `LoadFailure` call
+ * sites had to answer the question. The compiler named every one of them.
+ */
+describe("LoadFailure", () => {
+  const common = {
+    title: de.error.title,
+    retryLabel: de.error.retry,
+    onRetry: () => undefined,
+  };
+
+  it("offers a retry for a failure that could go the other way", () => {
+    render(<LoadFailure {...common} problem={de.error.generic} retryable={true} />);
+    expect(screen.getByRole("button", { name: de.error.retry })).toBeTruthy();
+  });
+
+  it("withholds it entirely when trying again cannot work", () => {
+    render(<LoadFailure {...common} problem={de.error.gone} retryable={false} />);
+    expect(
+      screen.queryByRole("button", { name: de.error.retry }),
+      "a retry control was drawn beside a sentence saying the entry no longer " +
+        "exists — a control that can only produce the same error, which looks " +
+        "like a decision to whoever clicks it (§9.2)",
+    ).toBeNull();
+  });
+
+  it("still says what happened when it withholds the control", () => {
+    /*
+     * The half that makes §9.2 safe to apply: removing an affordance is only
+     * an improvement if something else says what to do instead. `de.error.gone`
+     * ends "Bitte laden Sie die Seite neu" — so the screen is not merely
+     * quieter, it is answerable (§9.4, §9.10).
+     */
+    render(<LoadFailure {...common} problem={de.error.gone} retryable={false} />);
+    expect(screen.getByText(de.error.gone)).toBeTruthy();
+    expect(de.error.gone).toContain("neu");
   });
 });

@@ -29,7 +29,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ApiClient, LearnerRecord } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { describeError, isForbidden } from "../api.js";
+import { describeError, isForbidden, isRetryable } from "../api.js";
 import { useSaver } from "../hooks.js";
 import {
   Badge,
@@ -47,6 +47,15 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
   const { client, courseSlug } = props;
   const [rows, setRows] = useState<LearnerRecord[] | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
+  /*
+   * Whether the failure above is one trying again could fix (P231-02).
+   *
+   * Set from the same error as the sentence, in the same place: a screen that
+   * derived the words from the error and the button from something else would
+   * eventually say "this no longer exists" over a control offering to look for
+   * it again (§9.2).
+   */
+  const [loadRetryable, setLoadRetryable] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [editing, setEditing] = useState<string | undefined>();
   const [name, setName] = useState("");
@@ -75,7 +84,10 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
       setRows(await client.adminListLearners(courseSlug));
     } catch (error) {
       if (isForbidden(error)) setForbidden(true);
-      else setProblem(describeError(error, de.learners.loadFailed));
+      else {
+        setProblem(describeError(error, de.learners.loadFailed));
+        setLoadRetryable(isRetryable(error));
+      }
     }
   }, [client, courseSlug]);
 
@@ -189,6 +201,7 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
         title={de.error.title}
         retryLabel={de.error.retry}
         problem={problem}
+        retryable={loadRetryable}
         onRetry={() => void load()}
       />
     );
