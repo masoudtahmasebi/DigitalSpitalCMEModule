@@ -71,14 +71,47 @@ function code(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
 }
 
+/**
+ * Where `key` is used as a whole name, or `-1`.
+ *
+ * A plain scan rather than `new RegExp(key + "(?![A-Za-z0-9_])")`, and the
+ * reason is not style. CodeQL rates a regular expression built from file
+ * content a **high**-severity finding — `js/regex-injection` — and escaping the
+ * dots with `String.replace` is not a sanitiser it recognises, so the alert
+ * stands however careful the escaping is. Other scripts in `scripts/` do
+ * interpolate, but they interpolate a name matched by a far tighter pattern,
+ * which is why they have passed for months and this did not.
+ *
+ * Arguing with the scanner would have been the wrong move twice over: the regex
+ * was doing nothing `indexOf` cannot, and this repository has already been
+ * pushed off regular expressions twice by its own lint rules (P212, P220-02).
+ * A closed-list scan cannot raise the question at all.
+ *
+ * The right-hand boundary is the whole point: without it `de.copy.intro` also
+ * matches `de.copy.introDetail`, and the checker would report a screen for
+ * rendering a string it does not render.
+ */
+function wholeNameAt(source, key) {
+  let from = 0;
+  for (;;) {
+    const at = source.indexOf(key, from);
+    if (at === -1) return -1;
+    const next = source[at + key.length] ?? "";
+    const isNameChar =
+      (next >= "a" && next <= "z") ||
+      (next >= "A" && next <= "Z") ||
+      (next >= "0" && next <= "9") ||
+      next === "_";
+    if (!isNameChar) return at;
+    from = at + key.length;
+  }
+}
+
 const problems = [];
 for (const file of components) {
   const source = code(readFileSync(file, "utf8"));
   for (const key of descriptions) {
-    // A word boundary on the right, so `de.copy.intro` does not match
-    // `de.copy.introDetail`.
-    const uses = new RegExp(`${key.replace(/\./g, "\\.")}(?![A-Za-z0-9_])`);
-    const at = source.search(uses);
+    const at = wholeNameAt(source, key);
     if (at === -1) continue;
     const line = source.slice(0, at).split("\n").length;
     problems.push(
