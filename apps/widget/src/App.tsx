@@ -396,6 +396,47 @@ function Routed(
    */
   useScrollToTopOnChange(selected ?? "catalogue");
 
+  /*
+   * While the catalogue is on screen, the address must not name a course
+   * (DEP-43 / P226-01).
+   *
+   * ## Why this is an effect and not a line in the click handler
+   *
+   * It was a line in the click handler — `clearCourseFragment()` immediately
+   * before `setSelected(undefined)` — and that is an **ordering**, which is a
+   * thing a race can get between. `Loaded`'s own address effect writes whenever
+   * the hash is empty or one of ours, and *empty passes that test*. So a
+   * pending passive effect from an earlier commit, flushed after the clear,
+   * wrote the course fragment back over it.
+   *
+   * Proven rather than reasoned, by spying on `history.replaceState` and
+   * repeating the case 200 times:
+   *
+   *     #ds/kurs/adhs-akademie-adult        <- App.tsx:654, the address effect
+   *     === clicking ===
+   *     /                                   <- clearCourseFragment
+   *     #ds/kurs/adhs-akademie-adult/referenten   <- App.tsx:654 again
+   *
+   * The tell is in the first line: on a failing run the load had written only
+   * `…/adhs-akademie-adult`, not `…/referenten`. The commit that moved `tab`
+   * had not flushed its effects yet. It flushed after the click, saw an empty
+   * hash, judged it ours, and restored the course the learner had just left —
+   * so a reload put them back inside it. That is DEP-33 reappearing under a
+   * race.
+   *
+   * As an invariant it cannot be raced: whenever no course is selected, the
+   * fragment goes, however many times it takes. `clearCourseFragment` is
+   * already idempotent (an empty or foreign hash is left alone), so this is
+   * free to run on every commit where the catalogue is up.
+   *
+   * A host page's own `#kontakt` is still never touched — that rule lives in
+   * `clearCourseFragment` and is unchanged.
+   */
+  useEffect(() => {
+    if (selected !== undefined) return;
+    clearCourseFragment();
+  });
+
   if (selected === undefined) {
     return (
       <Catalogue
@@ -429,15 +470,15 @@ function Routed(
         courseSlug === ""
           ? () => {
               /*
-               * The address leaves with the learner (DEP-33).
+               * The address leaves with the learner (DEP-33), but the clearing
+               * is the effect above rather than a call here (DEP-43).
                *
-               * Without this the fragment went on naming the course — and the
-               * tab within it — while the catalogue was on screen, so a reload
-               * put them back inside the course they had just left. The screen
-               * changing without the URL changing is §9.8's third symptom, and
-               * the one that only shows up on F5.
+               * A call here is an ordering — clear, then unmount — and P226
+               * showed a pending address effect getting between the two and
+               * putting the course fragment back. The invariant runs on every
+               * commit where no course is selected, so there is nothing to get
+               * between.
                */
-              clearCourseFragment();
               setSelected(undefined);
             }
           : undefined

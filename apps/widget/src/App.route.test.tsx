@@ -679,6 +679,78 @@ describe("returning to the catalogue", () => {
     });
   });
 
+  /**
+   * The address must not name a course while the catalogue is on screen —
+   * whatever put it there (DEP-43 / P226-01).
+   *
+   * ## What this test is, and what the other one is not
+   *
+   * The case above asserts the **outcome** of one click, and it passed on the
+   * broken code roughly 98 times in 100. That is what made DEP-43 look like a
+   * flake: a single run is a coin weighted 49:1.
+   *
+   * The defect was an **ordering** — `clearCourseFragment()` then
+   * `setSelected(undefined)` — and `Loaded`'s address effect writes whenever
+   * the hash is empty **or** one of ours, with empty passing the test. A
+   * pending passive effect from an earlier commit, flushed after the clear,
+   * put the course fragment back. Proven by spying on `history.replaceState`:
+   *
+   *     #ds/kurs/adhs-akademie-adult        <- the address effect
+   *     === clicking ===
+   *     /                                   <- clearCourseFragment
+   *     #ds/kurs/adhs-akademie-adult/referenten   <- the address effect again
+   *
+   * ## Why this one is deterministic and that one cannot be
+   *
+   * Reproducing the *race* needs a commit whose effects have not flushed when
+   * the click lands, and nothing in a test can schedule that: two
+   * `fireEvent`s in one tick do not do it, because testing-library flushes
+   * between them (tried, and it did not reproduce).
+   *
+   * So this asserts the **invariant the fix installs** instead, which is the
+   * property that makes the race impossible rather than unlikely: *on any
+   * commit where no course is selected, a course fragment is removed.* The
+   * `replaceState` below is exactly what the late effect did, and the
+   * `rerender` is the commit — the fix has no dependency array, so every
+   * commit enforces it.
+   *
+   * On the ordered version nothing re-clears, and this goes red every time.
+   */
+  it("takes the fragment off again if anything puts it back", async () => {
+    stubCatalogue();
+    window.history.replaceState(null, "", `#ds/kurs/${COURSE_SLUG}/referenten`);
+
+    const view = renderCatalogue();
+    await waitFor(() => {
+      expect(selectedTab()).toBe("Experten/Referenten");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Zurück zur Übersicht/u }));
+    await waitFor(() => {
+      expect(window.location.hash).toBe("");
+    });
+
+    // What the racing effect did, done deliberately.
+    window.history.replaceState(null, "", `#ds/kurs/${COURSE_SLUG}/referenten`);
+    view.rerender(
+      <App
+        apiBase="https://api.test"
+        projectSlug="medice-adhs"
+        courseSlug=""
+        getToken={async () => "token"}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        window.location.hash,
+        "a course fragment survived a commit on which the catalogue was the " +
+          "screen — so whatever writes one wins, and a reload reopens a course " +
+          "the learner has left",
+      ).toBe("");
+    });
+  });
+
   it("still shows the catalogue, not just a cleared URL", async () => {
     // The other half: clearing the address without leaving the course would be
     // the same defect facing the other way.
