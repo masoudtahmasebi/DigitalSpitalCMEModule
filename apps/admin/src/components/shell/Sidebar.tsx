@@ -62,7 +62,7 @@ export function Sidebar(props: {
                       onClick={() => {
                         props.onNavigate(section.kind);
                       }}
-                      className={`mb-0.5 block w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ds-ink)] ${
+                      className={`mb-0.5 block w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ds-admin-ink)] ${
                         active
                           ? "bg-brand-500 text-white shadow-[0_1px_12px_-2px_rgba(228,0,61,0.65)]"
                           : "text-white/65 hover:bg-white/10 hover:text-white"

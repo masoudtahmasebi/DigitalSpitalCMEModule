@@ -1322,7 +1322,7 @@ function AutoPoster(props: {
         onChange={onChange}
       />
       {busy ? (
-        <p className="mt-1 text-xs text-[color:var(--ds-ink-muted)]" role="status">
+        <p className="mt-1 text-xs text-[color:var(--ds-admin-ink-muted)]" role="status">
           {de.structure.posterCapturing}
         </p>
       ) : null}
@@ -1443,7 +1443,7 @@ export function MeasuredDuration(props: {
         // Shown, not editable. The number is a reading of the file, and a box
         // around it would invite the edit this whole component exists to stop.
         <p
-          className="rounded-md border border-[color:var(--ds-hairline)] bg-[color:var(--ds-surface)] px-3 py-2 text-sm text-[color:var(--ds-ink)]"
+          className="rounded-md border border-[color:var(--ds-admin-hairline)] bg-[color:var(--ds-admin-surface)] px-3 py-2 text-sm text-[color:var(--ds-admin-ink)]"
           id={props.id}
         >
           {de.structure.durationMeasured(Number(props.state))}
@@ -1458,7 +1458,7 @@ export function MeasuredDuration(props: {
       )}
 
       {props.state === "running" ? (
-        <p className="mt-1 text-xs text-[color:var(--ds-ink-muted)]" role="status">
+        <p className="mt-1 text-xs text-[color:var(--ds-admin-ink-muted)]" role="status">
           {de.structure.durationDetecting}
         </p>
       ) : null}
@@ -1498,7 +1498,9 @@ export function MeasuredDuration(props: {
          */
         <p
           className={`mt-1 text-xs ${
-            sourceChangedHere ? "text-[color:var(--ds-ink-muted)]" : "text-amber-700"
+            sourceChangedHere
+              ? "text-[color:var(--ds-admin-ink-muted)]"
+              : "text-amber-700"
           }`}
           role="status"
         >
@@ -1556,7 +1558,7 @@ function SourcesEditor(props: {
               // A key is not editable text. It is the server's, and a
               // hand-edited one can only ever be refused — so it renders as
               // what it is and the row is removed rather than corrected.
-              <span className="flex items-center rounded-md border border-[color:var(--ds-hairline)] bg-[color:var(--ds-surface)] px-3 py-2 text-sm text-[color:var(--ds-ink)]">
+              <span className="flex items-center rounded-md border border-[color:var(--ds-admin-hairline)] bg-[color:var(--ds-admin-surface)] px-3 py-2 text-sm text-[color:var(--ds-admin-ink)]">
                 {de.uploads.stored} · {referenceName(source.url)}
               </span>
             ) : (
@@ -1606,7 +1608,7 @@ function SourcesEditor(props: {
       </ul>
 
       {props.sources.length < 2 ? null : (
-        <p className="text-xs text-[color:var(--ds-ink-muted)]">
+        <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
           {de.structure.sourceLabelHint}
         </p>
       )}
@@ -1668,7 +1670,7 @@ function SourcesEditor(props: {
         />
       )}
 
-      <p className="text-xs text-[color:var(--ds-ink-muted)]">
+      <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
         {de.uploads.videoUploadHint}
       </p>
 

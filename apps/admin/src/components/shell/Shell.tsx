@@ -61,10 +61,10 @@ export function Shell(props: {
   const menuOpen = props.menuOpen ?? false;
 
   return (
-    <div className="min-h-screen bg-[color:var(--ds-surface)] md:flex">
+    <div className="min-h-screen bg-[color:var(--ds-admin-surface)] md:flex">
       {signedIn ? (
         <aside
-          className={`shrink-0 bg-[color:var(--ds-ink)] md:block md:min-h-screen md:w-64 ${
+          className={`shrink-0 bg-[color:var(--ds-admin-ink)] md:block md:min-h-screen md:w-64 ${
             menuOpen ? "block" : "hidden"
           }`}
         >

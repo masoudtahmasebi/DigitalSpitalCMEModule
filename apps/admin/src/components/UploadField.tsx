@@ -75,8 +75,8 @@ export function UploadField(props: {
       htmlFor={props.id}
     >
       {isUploadedReference(props.value) ? (
-        <div className="flex items-center gap-2 rounded-md border border-[color:var(--ds-hairline)] bg-[color:var(--ds-surface)] px-3 py-2">
-          <span className="text-sm text-[color:var(--ds-ink)]">
+        <div className="flex items-center gap-2 rounded-md border border-[color:var(--ds-admin-hairline)] bg-[color:var(--ds-admin-surface)] px-3 py-2">
+          <span className="text-sm text-[color:var(--ds-admin-ink)]">
             {de.uploads.stored} · {referenceName(props.value)}
           </span>
           <span className="ml-auto">
@@ -166,7 +166,7 @@ export function MediaPreview(props: {
   if (resolved.kind === "none") return null;
   if (resolved.kind === "loading") {
     return (
-      <p className="mt-2 text-xs text-[color:var(--ds-ink-muted)]">
+      <p className="mt-2 text-xs text-[color:var(--ds-admin-ink-muted)]">
         {de.uploads.previewLoading}
       </p>
     );
@@ -184,7 +184,7 @@ export function MediaPreview(props: {
       <img
         src={resolved.url}
         alt={de.uploads.previewPosterAlt}
-        className="mt-2 max-h-40 rounded-md border border-[color:var(--ds-hairline)] object-contain"
+        className="mt-2 max-h-40 rounded-md border border-[color:var(--ds-admin-hairline)] object-contain"
       />
     );
   }
@@ -209,7 +209,7 @@ export function MediaPreview(props: {
         controls
         preload="metadata"
         aria-label={de.uploads.previewVideoLabel}
-        className="mt-2 max-h-64 w-full rounded-md border border-[color:var(--ds-hairline)] bg-black"
+        className="mt-2 max-h-64 w-full rounded-md border border-[color:var(--ds-admin-hairline)] bg-black"
       />
     );
   }
