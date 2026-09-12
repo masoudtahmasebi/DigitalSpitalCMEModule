@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { ApiClient, SecondFactorPolicies, SecondFactorPolicy } from "@ds/sdk";
 import { describeError } from "../api.js";
+import { useSaver } from "../hooks.js";
 import { de } from "../locale/de.js";
 import {
   Button,
@@ -92,6 +93,21 @@ export function Security(props: {
    * *rotation* read as a removal.
    */
   const [removed, setRemoved] = useState(false);
+  /*
+   * The in-flight half, so a policy control is shut while its own request is
+   * open (P230-01).
+   *
+   * This screen is `auth`. A second-factor policy is set from a `PolicyRow`'s
+   * `onChange`, not a button, and nothing disabled it during the round trip —
+   * so two quick changes sent two requests and **which one won was decided by
+   * network ordering rather than by what the operator chose last**. The reload
+   * that follows each would then show whichever answered second.
+   *
+   * `saved` / `removed` stay: they are two different success sentences and
+   * P69-01 is why they are apart. Only the error and the busy flag come from
+   * the hook.
+   */
+  const saver = useSaver(de.security.saveFailed);
 
   const load = useCallback(async () => {
     try {
@@ -110,18 +126,31 @@ export function Security(props: {
     customerId: string | null,
     policy: SecondFactorPolicy,
   ): Promise<void> {
-    try {
-      await client.adminSetSecondFactorPolicy({ customerId, policy });
-      setRemoved(false);
-      setSaved(true);
-      setError(undefined);
-      await load();
-    } catch (cause) {
+    const ok = await saver.run(() =>
+      client.adminSetSecondFactorPolicy({ customerId, policy }),
+    );
+    if (!ok) {
       setSaved(false);
-      setError(describeError(cause, de.security.saveFailed));
+      return;
     }
+    setRemoved(false);
+    setSaved(true);
+    setError(undefined);
+    await load();
   }
 
+  /*
+   * No saver here, deliberately, and it is worth saying why so the next reader
+   * does not "fix" it (P230-01).
+   *
+   * `ConfirmButton` calls `setArmed(false)` **before** `props.onConfirm()`, so
+   * the confirm button is gone from the tree by the time a second click could
+   * land. React flushes a click synchronously, so the re-render happens between
+   * two physical clicks. The two-step confirm is the guard.
+   *
+   * It was reported by `scripts/check-savers.mjs`' first draft and was a false
+   * positive; the check knows about `ConfirmButton` now.
+   */
   async function removeOwn(): Promise<void> {
     try {
       await client.adminRemoveOwnSecondFactor();
@@ -217,12 +246,18 @@ export function Security(props: {
   return (
     // No heading here: `Page` draws it from the navigation entry (P30-02).
     <div className="space-y-4">
-      {error === undefined ? null : (
+      {/*
+       * One error channel, two sources: the list failing to load or a policy
+       * being refused. They are mutually exclusive in practice — only one
+       * policy request is ever open, which is what P230-01 made true — and two
+       * red boxes stacked is worse than one saying the last thing that failed.
+       */}
+      {(saver.problem ?? error) === undefined ? null : (
         <Notice tone="error">
-          <p>{error}</p>
+          <p>{saver.problem ?? error}</p>
         </Notice>
       )}
-      {saved && error === undefined ? (
+      {saved && saver.problem === undefined && error === undefined ? (
         <Notice tone="success">
           <p>{de.security.saved}</p>
         </Notice>
@@ -240,7 +275,7 @@ export function Security(props: {
             // Rendered read-only rather than hidden: an operator should be able
             // to see the rule their own account is under even when somebody
             // else sets it.
-            disabled={!editable(null, props.isSuperAdmin)}
+            disabled={saver.state === "saving" || !editable(null, props.isSuperAdmin)}
             governs={governing.has(null)}
             onChange={(policy) => void save(null, policy)}
           />
@@ -252,7 +287,7 @@ export function Security(props: {
               label={`${de.security.customerScope}: ${customer.name}`}
               hint={undefined}
               value={forCustomer.get(customer.id) ?? "optional"}
-              disabled={!editable(customer.id, true)}
+              disabled={saver.state === "saving" || !editable(customer.id, true)}
               governs={governing.has(customer.id)}
               onChange={(policy) => void save(customer.id, policy)}
             />
@@ -265,7 +300,7 @@ export function Security(props: {
               label={scopeLabel(scope)}
               hint={undefined}
               value={forCustomer.get(scope.customerId ?? "") ?? "optional"}
-              disabled={!scope.mayChange}
+              disabled={saver.state === "saving" || !scope.mayChange}
               governs={true}
               onChange={(policy) => void save(scope.customerId, policy)}
             />
