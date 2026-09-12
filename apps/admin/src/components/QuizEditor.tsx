@@ -47,6 +47,7 @@ import {
   Spinner,
   TextArea,
   TextInput,
+  FieldError,
 } from "./ui.js";
 
 type QuestionKind = "single" | "multi";
@@ -587,9 +588,7 @@ function QuestionBlock(props: {
         </fieldset>
 
         {props.problems.map((problem) => (
-          <p key={problem} className="text-xs font-medium text-red-700">
-            {problem}
-          </p>
+          <FieldError key={problem}>{problem}</FieldError>
         ))}
       </div>
     </div>

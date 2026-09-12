@@ -33,6 +33,7 @@ import {
   Button,
   ConfirmButton,
   Field,
+  FieldError,
   LoadFailure,
   Select,
   TextArea,
@@ -308,5 +309,52 @@ describe("LoadFailure", () => {
     render(<LoadFailure {...common} problem={de.error.gone} retryable={false} />);
     expect(screen.getByText(de.error.gone)).toBeTruthy();
     expect(de.error.gone).toContain("neu");
+  });
+});
+
+/**
+ * An error beside a field reaches a screen reader (P233-02).
+ *
+ * ## The claim this replaces, which was mine and was wrong
+ *
+ * P231 said *"`Notice` is not a live region, so a screen reader is not told
+ * when an error appears."* It is one — `ui.tsx` spreads `role="alert"` onto
+ * every tone but `info`. The correction is recorded in that ticket rather than
+ * the sentence deleted.
+ *
+ * What **was** silent is narrower: the error rendered beside a field, five bare
+ * red paragraphs across four files, in no live region at all. A sighted
+ * operator sees red appear under the input they just used; a screen reader user
+ * gets nothing, with the focus still in the field.
+ *
+ * ## Why the assertion is the role and not the class
+ *
+ * `toHaveClass("text-red-700")` would pass on a paragraph nothing announces,
+ * which is the property that was broken. `getByRole("alert")` is the one that
+ * goes red.
+ */
+describe("FieldError", () => {
+  it("announces, rather than only turning red", () => {
+    render(<FieldError>Die Änderung konnte nicht gespeichert werden.</FieldError>);
+    expect(
+      screen.getByRole("alert"),
+      "the field error is in no live region, so a screen reader user is not " +
+        "told their save was refused — the focus is still in the field and " +
+        "nothing interrupts to say so",
+    ).toBeTruthy();
+  });
+
+  it("is what `Field` renders for its own problem, so 109 call sites get it", () => {
+    /*
+     * §9.7, name the caller. `FieldError` announcing proves nothing if `Field`
+     * still renders its own paragraph — which is exactly the shape §9.3 keeps
+     * catching on this project.
+     */
+    render(
+      <Field label="Name" htmlFor="x" problem="Pflichtfeld">
+        <TextInput id="x" value="" onChange={() => undefined} />
+      </Field>,
+    );
+    expect(screen.getByRole("alert").textContent).toBe("Pflichtfeld");
   });
 });

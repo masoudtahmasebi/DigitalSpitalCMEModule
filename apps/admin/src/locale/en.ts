@@ -935,6 +935,11 @@ export const en: DeepPartial<typeof german> = {
     conflict:
       "Someone else has changed this data in the meantime. Please reload the page and check your input.",
     rejected: "The input was not accepted. Please check the details.",
+    crashTitle: "This view could not be loaded",
+    crashBody:
+      "An error in the administration console stopped this view. The other areas still work — use the navigation to reach them. Reloading fixes it in most cases.",
+    crashReload: "Reload the page",
+    crashBuild: (commit: string): string => `Build: ${commit}`,
   },
 
   /** The Punktemeldung queue (P110-01). */
