@@ -30,7 +30,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ApiClient, LearnerRecord } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { describeError, isForbidden, isRetryable } from "../api.js";
-import { useSaver } from "../hooks.js";
+import { useSaver, useUnsavedChanges } from "../hooks.js";
 import {
   Badge,
   Button,
@@ -59,6 +59,13 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
   const [loadRetryable, setLoadRetryable] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [editing, setEditing] = useState<string | undefined>();
+  /*
+   * A name correction open in a row is unsaved work (P234-01). `editing` holds
+   * the enrolment id being corrected, so its presence is the whole condition —
+   * and the field it belongs to goes on a Teilnahmebescheinigung, which makes
+   * losing a half-typed one worse than losing most drafts.
+   */
+  useUnsavedChanges("learner-name", editing !== undefined);
   const [name, setName] = useState("");
   const [erasing, setErasing] = useState<string | undefined>();
   /** Which row is confirming a withdrawal (P31-02). Shares `reason` below. */

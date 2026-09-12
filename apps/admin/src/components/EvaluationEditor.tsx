@@ -22,7 +22,7 @@ import { useCallback, useState } from "react";
 import type { ApiClient, AuthoringEvaluation, EvaluationWrite } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { freshKey, swap } from "../drafts.js";
-import { useLoaded, useSaver } from "../hooks.js";
+import { useLoaded, useSaver, useUnsavedChanges } from "../hooks.js";
 import {
   Button,
   ConfirmButton,
@@ -77,6 +77,20 @@ export function EvaluationEditor(props: {
   );
   const [evaluation, setEvaluation, loadProblem, retry, loadRetryable] = useLoaded(load);
   const [draft, setDraft] = useState<DraftQuestion[] | undefined>();
+
+  /*
+   * `draft` already **is** the answer (P234-01).
+   *
+   * `undefined` means "rendering the server's document"; anything else means
+   * the operator has changed something that has not been stored. So unlike the
+   * settings forms, this needs no `onChange` and no separate flag — a second
+   * source for the same fact is §4 invariant 6, and this one would drift the
+   * first time somebody cleared one and not the other.
+   *
+   * The save clears `draft` on success, so the guard lifts at exactly the
+   * moment the server has it.
+   */
+  useUnsavedChanges("evaluation", draft !== undefined);
   const saver = useSaver();
 
   const questions = draft ?? (evaluation === undefined ? undefined : toDraft(evaluation));
