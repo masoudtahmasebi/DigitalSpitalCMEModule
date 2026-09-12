@@ -234,7 +234,7 @@ function QuestionBlock(props: {
       }
     >
       <div className="space-y-3">
-        <Field label={de.evaluation.prompt} htmlFor={id("prompt")}>
+        <Field label={de.evaluation.prompt} htmlFor={id("prompt")} wide>
           <TextArea
             id={id("prompt")}
             value={question.prompt}

@@ -979,7 +979,7 @@ function ProjectSettings(props: {
             onChange={(v) => setBranding((b) => ({ ...b, catalogTitle: v }))}
           />
         </Field>
-        <Field label={de.organisation.catalogIntro} htmlFor={id("catalog-intro")}>
+        <Field label={de.organisation.catalogIntro} htmlFor={id("catalog-intro")} wide>
           <TextArea
             id={id("catalog-intro")}
             value={branding.catalogIntro}

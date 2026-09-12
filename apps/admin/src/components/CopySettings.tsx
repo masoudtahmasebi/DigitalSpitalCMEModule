@@ -129,10 +129,20 @@ export function CopySettings(props: { client: ApiClient }) {
 
   return (
     <div className="space-y-4">
-      <p className="max-w-3xl text-sm text-[color:var(--ds-ink-muted)]">
-        {de.copy.intro}
-      </p>
+      {/*
+        No intro paragraph here. `de.copy.intro` is the screen's `description`
+        in `components/shell/navigation.ts`, and `Page` draws it under the
+        title — so rendering it again put the *same sentence twice*, one
+        directly under the other, on the Texte screen. Visible in a screenshot
+        of the running console and in nothing else; no test looked, because
+        both halves were individually correct (§9.10b — one value, one home,
+        and `Section`'s own doc says the page chrome belongs to the destination
+        rather than to the component that fills it).
 
+        `PlatformEiv` had the same pair and is fixed with it. Those two were the
+        only ones: `grep -c` for each of the thirteen nav descriptions in the
+        components returned 1 for these and 0 for the other eleven.
+      */}
       <div className="flex flex-wrap items-end gap-4">
         <label className="text-sm">
           <span className="mb-1 block font-medium">{de.copy.project}</span>

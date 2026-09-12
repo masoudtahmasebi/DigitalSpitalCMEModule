@@ -142,7 +142,9 @@ export function PlatformEiv(props: { client: ApiClient }) {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <p className="text-sm text-gray-600">{de.platform.intro}</p>
+      {/* The intro is this screen's nav `description` and `Page` already draws
+          it — see the note in `CopySettings`. These two were the only screens
+          printing their own on top of it. */}
 
       {problem === undefined ? null : <Notice tone="error">{problem}</Notice>}
       {saved ? <Notice tone="success">{de.platform.saved}</Notice> : null}
