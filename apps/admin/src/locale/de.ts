@@ -544,6 +544,16 @@ export const german = {
     slugHint:
       "Kleinbuchstaben, Ziffern und Bindestriche. Das Kürzel erscheint in Adressen und lässt sich später nicht ändern.",
     unsaved: "Es gibt ungespeicherte Änderungen.",
+    /*
+     * The confirmation before navigating away from unsaved edits (P234-01).
+     *
+     * A question, not a warning: the operator is deciding, and a sentence that
+     * only states a consequence leaves them to work out what the two buttons
+     * do. It names the loss rather than the screen, because what they are
+     * about to lose is the thing they care about.
+     */
+    leaveUnsaved:
+      "Es gibt ungespeicherte Änderungen auf dieser Seite. Möchten Sie sie verwerfen und fortfahren?",
   },
 
   organisation: {

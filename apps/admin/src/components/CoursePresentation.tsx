@@ -30,6 +30,7 @@
 
 import { useEffect, useState } from "react";
 import type { AdminCourseDetail, ApiClient } from "@ds/sdk";
+import { useUnsavedChanges } from "../hooks.js";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
 import { Button, Field, Notice, Select, TextArea, TextInput } from "./ui.js";
@@ -52,6 +53,16 @@ export function CoursePresentation(props: {
   const [form, setForm] = useState(() => initialForm(course));
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  /*
+   * Whether the operator has touched anything since the last successful save
+   * (P234-01). Edited, not different: one `onChange` on the container catches
+   * every control, including any added later, because React's synthetic
+   * `change` bubbles — where comparing field by field is a list that a new
+   * field silently escapes (§9.3).
+   */
+  const [edited, setEdited] = useState(false);
+  useUnsavedChanges("course-presentation", edited);
   const [problem, setProblem] = useState<string | undefined>();
 
   /*
@@ -108,6 +119,8 @@ export function CoursePresentation(props: {
         validTo: toInstant(form.validTo),
       });
       setSaved(true);
+      // The server has it: there is nothing left to lose.
+      setEdited(false);
       props.onSaved(updated);
     } catch (error) {
       setProblem(describeError(error, de.error.generic));
@@ -117,7 +130,12 @@ export function CoursePresentation(props: {
   }
 
   return (
-    <div className="space-y-6">
+    <div
+      className="space-y-6"
+      // Every control below, including any added after this was written:
+      // React's synthetic `change` bubbles, so one handler covers the screen.
+      onChange={() => setEdited(true)}
+    >
       <p className="text-sm text-gray-700">{de.course.presentationIntro}</p>
 
       {problem === undefined ? null : (

@@ -36,11 +36,12 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Console } from "./App.js";
 import { ApiError } from "@ds/sdk";
 import type { StaffProfile } from "./staff-auth.js";
 import { de } from "./locale/de.js";
+import { forgetUnsavedChanges, useUnsavedChanges } from "./hooks.js";
 
 afterEach(cleanup);
 
@@ -983,5 +984,129 @@ describe("a refused action is shown (P202)", () => {
     // And the rows are still there: a refused action must not take the table
     // with it, or the message is about rows nobody can see.
     expect(screen.getByText("Test DS Course")).toBeTruthy();
+  });
+});
+
+/**
+ * The navigation asks the registry before it moves (P234-01).
+ *
+ * ## Why this is here and not in `hooks.unsaved.test.tsx`
+ *
+ * That file proves a form can *declare* it is holding edits. This proves the
+ * console *asks* — §9.7, name the caller. Without this test the registry could
+ * be perfect and every sidebar link could go on discarding work, and both
+ * suites would be green. That is the exact shape §9.3 keeps catching here:
+ * `inviteStatus`, `resetStatus`, `invalidBrandingFields`, each exported,
+ * exhaustively tested, and called from nowhere.
+ */
+describe("navigating away from unsaved edits (P234-01)", () => {
+  /*
+   * Before *and* after. The registry is a module-level Set — §9.8's ambient
+   * store — and a case that only cleans up afterwards still inherits whatever
+   * a case in another describe block left behind.
+   */
+  beforeEach(() => forgetUnsavedChanges());
+  afterEach(() => {
+    forgetUnsavedChanges();
+    /*
+     * And the spy, which is the ambient store this file's own tests leaked
+     * first (§9.8, and P22-08's lesson again).
+     *
+     * `confirm.mockRestore()` at the end of a test body never runs when the
+     * test fails before it — so the *second* case failing left `window.confirm`
+     * stubbed with a call count of 1, and the *third* case reported "the
+     * console asked about unsaved changes on a screen with none". Two failures,
+     * one of them entirely fictional, and the fictional one is the more
+     * convincing.
+     */
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * A form holding edits, rendered beside the console.
+   *
+   * The registry is module-global, so this registers exactly as a real form
+   * does — and it keeps the test about the *navigation's* half of the contract
+   * rather than about any one form's dirtiness rule. No test-only export into
+   * the production module, which is the other way to do this and the one that
+   * eventually gets used in earnest.
+   */
+  function DirtyForm() {
+    useUnsavedChanges("a-form", true);
+    return null;
+  }
+
+  async function consoleWithADirtyForm() {
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    const view = renderConsole({ platform });
+    /*
+     * Waits for the picker's *options*, not for the picker — which is rendered
+     * immediately carrying only its placeholder, so waiting for the element
+     * waits for nothing (P232-01).
+     *
+     * PR #80 turns this into a `chooseCustomer` helper. It is written out here
+     * because that branch is off `main` and this one is in the redesign stack;
+     * when both land, this becomes the helper.
+     */
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox").querySelectorAll("option").length,
+      ).toBeGreaterThan(1),
+    );
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Kunden" })).toBeTruthy(),
+    );
+    return view;
+  }
+
+  it("refuses when the operator declines, and the screen does not change", async () => {
+    await consoleWithADirtyForm();
+    const before = screen.getByRole("button", { name: "Kunden" });
+    expect(before).toBeTruthy();
+
+    // What a form holding edits does, done directly: this test is about the
+    // navigation's half of the contract, not about any one form's.
+    render(<DirtyForm />);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Teilnehmende" }));
+
+    expect(
+      confirm,
+      "the console navigated without asking, so an in-progress edit was " +
+        "discarded silently — which is the defect",
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("button", { name: "Kunden" }),
+      "the operator said no and the console moved anyway",
+    ).toBeTruthy();
+  });
+
+  it("goes when the operator accepts", async () => {
+    await consoleWithADirtyForm();
+    render(<DirtyForm />);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Teilnehmende" }));
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: de.participants.title })).toBeTruthy(),
+    );
+  });
+
+  it("does not ask when there is nothing to lose", async () => {
+    await consoleWithADirtyForm();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Teilnehmende" }));
+
+    expect(
+      confirm,
+      "the console asked about unsaved changes on a screen with none, which " +
+        "is the way a guard gets clicked through without being read",
+    ).not.toHaveBeenCalled();
   });
 });

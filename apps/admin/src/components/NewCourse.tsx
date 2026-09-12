@@ -59,7 +59,7 @@ import { useMemo, useState } from "react";
 import type { ApiClient, CourseCreate, ProjectSummary } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { slugify } from "../drafts.js";
-import { useSaver } from "../hooks.js";
+import { useSaver, useUnsavedChanges } from "../hooks.js";
 import { Button, Field, Notice, SaveProblem, Select, TextArea, TextInput } from "./ui.js";
 
 type DeliveryType = NonNullable<CourseCreate["deliveryType"]>;
@@ -95,6 +95,19 @@ export function NewCourse(props: {
   const [description, setDescription] = useState("");
   const [deliveryType, setDeliveryType] = useState<DeliveryType>("on_demand");
   const [step, setStep] = useState<Step>("basics");
+
+  /*
+   * A course being created is unsaved work like any other (P234-01), and more
+   * of it than most: a title, a slug, a description and a delivery type, none
+   * of which exists anywhere until the form is submitted.
+   *
+   * Dirty from the first character typed into the title — `projectSlug` has a
+   * default and is not evidence of anything, and neither is `step`.
+   */
+  useUnsavedChanges(
+    "new-course",
+    title.trim() !== "" || slug.trim() !== "" || description.trim() !== "",
+  );
   const saver = useSaver();
 
   const effectiveSlug = touchedSlug ? slug : slugify(title);

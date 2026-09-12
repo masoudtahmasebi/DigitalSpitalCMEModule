@@ -35,6 +35,7 @@ import { useEffect, useMemo, useState } from "react";
 import { copyDefaultAt, copyKeysOf } from "@ds/domain";
 import { de as widgetCopy } from "@ds/copy";
 import type { ApiClient, ProjectSummary } from "@ds/sdk";
+import { useUnsavedChanges } from "../hooks.js";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
 import { Button, Notice, Select, TextInput } from "./ui.js";
@@ -71,6 +72,16 @@ export function CopySettings(props: { client: ApiClient }) {
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  /*
+   * Whether the operator has touched anything since the last successful save
+   * (P234-01). Edited, not different: one `onChange` on the container catches
+   * every control, including any added later, because React's synthetic
+   * `change` bubbles — where comparing field by field is a list that a new
+   * field silently escapes (§9.3).
+   */
+  const [edited, setEdited] = useState(false);
+  useUnsavedChanges("copy", edited);
   const [problem, setProblem] = useState<string | undefined>();
 
   const editable = useMemo(() => new Set(copyKeysOf(widgetCopy)), []);
@@ -113,6 +124,8 @@ export function CopySettings(props: { client: ApiClient }) {
       const project = rows.find((entry) => entry.slug === slug);
       setDraft({ ...(project?.copyOverrides ?? {}) });
       setSaved(true);
+      // The server has it: there is nothing left to lose.
+      setEdited(false);
     } catch (error) {
       setProblem(describeError(error, de.error.generic));
     } finally {
@@ -128,7 +141,12 @@ export function CopySettings(props: { client: ApiClient }) {
   });
 
   return (
-    <div className="space-y-4">
+    <div
+      className="space-y-4"
+      // Every control below, including any added after this was written:
+      // React's synthetic `change` bubbles, so one handler covers the screen.
+      onChange={() => setEdited(true)}
+    >
       {/*
         No intro paragraph here. `de.copy.intro` is the screen's `description`
         in `components/shell/navigation.ts`, and `Page` draws it under the

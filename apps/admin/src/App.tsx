@@ -44,6 +44,7 @@ import {
   isForbidden,
   toastPublisher,
 } from "./api.js";
+import { hasUnsavedChanges } from "./hooks.js";
 import { de } from "./locale/de.js";
 import { Badge, Button, ConfirmButton, Notice, Spinner, Table } from "./components/ui.js";
 import { EmptyState, Page, type Crumb } from "./components/page.js";
@@ -850,14 +851,36 @@ export function Console(props: {
    * API and a browser (§9.2 — that question is the one this table exists to
    * answer correctly).
    */
+  /**
+   * Navigate, unless a form on this screen is holding edits nobody has saved
+   * (P234-01).
+   *
+   * ## Why the guard is here and not in each form
+   *
+   * The thing that has to ask is the navigation, and it knows nothing about
+   * the screen it is replacing. Threading a callback up from ten forms would
+   * put one fact in ten places (§4 invariant 6), so a form declares its state
+   * to `useUnsavedChanges` and this asks the registry once.
+   *
+   * ## Why `window.confirm`
+   *
+   * It is the browser's own modal: focus-trapped, announced, dismissable with
+   * Escape, and keyboard-operable without anything being written here — which
+   * is more than a hand-rolled dialog would give on day one, and this console
+   * has no dialog primitive with those properties yet. Ugly, and honest.
+   * A designed replacement is named in P234 as not done rather than implied.
+   */
+  const navigate = (next: View) => {
+    if (hasUnsavedChanges() && !window.confirm(de.common.leaveUnsaved)) return;
+    setView(next);
+    setMenuOpen(false);
+  };
+
   const nav = (
     <Sidebar
       groups={visibleNav(props.profile.capabilities)}
       active={view.kind}
-      onNavigate={(kind) => {
-        setView({ kind } as View);
-        setMenuOpen(false);
-      }}
+      onNavigate={(kind) => navigate({ kind } as View)}
     />
   );
 
