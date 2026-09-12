@@ -153,6 +153,64 @@ function renderConsole(clients: { admin?: unknown; platform?: unknown } = {}) {
   };
 }
 
+/**
+ * The customer picker, once the registry's answer is actually in it (P232-01).
+ *
+ * ## Why waiting for the combobox is not waiting
+ *
+ * `Shell` renders the `<select>` immediately, carrying one option — *"Kunde
+ * auswählen …"*. The customers arrive later, from `adminListCustomers`. So
+ *
+ *     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+ *
+ * is satisfied by the **empty** picker: it waits for a thing that was already
+ * there. Everything after it then runs against a list that may not have
+ * loaded, and `expect` outside a `waitFor` does not retry.
+ *
+ * That is deploy 131's shape (P221) in a component test — a gate whose
+ * condition is not the condition anybody cares about — and CI caught it on an
+ * unrelated pull request:
+ *
+ *     AssertionError: expected [ 'Kunde auswählen …' ] to include 'Medice'
+ *
+ * The whole failure is in that array: one option, the placeholder. Under load
+ * the render carrying the customers had not happened yet.
+ *
+ * ## Not reproduced locally, and that is recorded rather than glossed
+ *
+ * 150 repeats unloaded and 150 more under 3× CPU oversubscription were all
+ * green. The defect is derived from source and **observed in CI**, which is
+ * enough to act on — unlike DEP-43, where the mechanism needed a stack trace
+ * because the cause was not visible in the code.
+ */
+function customerOptions(): Promise<string[]> {
+  return waitFor(() => {
+    const options = [...screen.getByRole("combobox").querySelectorAll("option")];
+    // More than the placeholder: the registry's answer has been rendered.
+    expect(
+      options.length,
+      "the customer picker still holds only its placeholder, so the registry's " +
+        "answer has not been rendered yet and anything asserted about it now " +
+        "is asserted about an empty list",
+    ).toBeGreaterThan(1);
+    return options.map((o) => o.textContent ?? "");
+  });
+}
+
+/**
+ * Choose a customer, once there is one to choose.
+ *
+ * `fireEvent.change` on a `<select>` whose options have not arrived sets the
+ * value to `""`, because jsdom has nothing matching to select — so the console
+ * is told "no customer" and every assertion after it waits for something that
+ * will not happen. Nine call sites did this; none has been seen to fail, and
+ * all nine are one render away from the failure above.
+ */
+async function chooseCustomer(id: string): Promise<void> {
+  await customerOptions();
+  fireEvent.change(screen.getByRole("combobox"), { target: { value: id } });
+}
+
 describe("a super admin with no customer chosen (P22-03)", () => {
   it("does not ask for courses at all", async () => {
     const admin = fakeClient();
@@ -234,7 +292,7 @@ describe("a super admin with no customer chosen (P22-03)", () => {
     renderConsole({ admin, platform });
 
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
 
     await waitFor(() => expect(screen.getByText(/Fehler/)).toBeTruthy());
     // Both still on screen, next to the error.
@@ -252,7 +310,7 @@ describe("choosing a customer (P22-03)", () => {
     renderConsole({ admin, platform });
 
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
 
     await waitFor(() =>
       expect(
@@ -273,10 +331,7 @@ describe("choosing a customer (P22-03)", () => {
     });
     renderConsole({ platform });
 
-    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    const options = [...screen.getByRole("combobox").querySelectorAll("option")].map(
-      (o) => o.textContent,
-    );
+    const options = await customerOptions();
     expect(options).toContain("Medice");
     expect(options).toContain("DS");
   });
@@ -328,7 +383,7 @@ describe("the chosen customer survives a reload (P22-08)", () => {
     const { unmount } = renderConsole({ platform });
 
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
 
     await waitFor(() =>
       expect(window.localStorage.getItem(`ds.admin.customer.${SUPER_ADMIN.id}`)).toBe(
@@ -396,7 +451,7 @@ describe("every screen renders inside the layout (P22-09)", () => {
     });
     renderConsole({ admin, platform });
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Kunden" })).toBeTruthy(),
     );
@@ -461,7 +516,7 @@ describe("the screen is in the address bar (P42-01)", () => {
     const admin = fakeClient({ adminListCourses: vi.fn().mockResolvedValue([]) });
     renderConsole({ admin, platform });
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Kunden" })).toBeTruthy(),
     );
@@ -539,7 +594,7 @@ describe("the screen is in the address bar (P42-01)", () => {
     });
     renderConsole({ admin, platform });
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
 
     // Mounting *at* the quiz: the half a click test cannot reach, and the one
     // that decides whether F5 keeps your place.
@@ -570,7 +625,7 @@ describe("one page frame, on every screen (P30-02)", () => {
     const admin = fakeClient({ adminListCourses: vi.fn().mockResolvedValue([]) });
     renderConsole({ admin, platform });
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Kunden" })).toBeTruthy(),
     );
@@ -779,7 +834,7 @@ describe("removing a course", () => {
     // P22-03: no customer chosen means no course list is even requested, so
     // the picker has to be used before there is a row to delete.
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
 
     await screen.findByText("ADHS Akademie adult");
     return { adminDeleteCourse };
@@ -855,7 +910,7 @@ function course(
 /** Choose the customer, so the courses screen actually loads. */
 async function openCourses(admin: unknown) {
   await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-  fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+  await chooseCustomer(MEDICE.id);
   await waitFor(() =>
     expect(
       (admin as { adminListCourses: { mock: { calls: unknown[] } } }).adminListCourses
