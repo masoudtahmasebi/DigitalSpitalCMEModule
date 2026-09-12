@@ -1371,6 +1371,24 @@ export const german = {
       "Diese Daten wurden zwischenzeitlich von jemand anderem geändert. Bitte laden Sie die Seite neu und prüfen Sie Ihre Eingaben.",
     /** 422 — the input is what was refused, so sending it again is refused again. */
     rejected: "Die Eingaben wurden nicht akzeptiert. Bitte prüfen Sie die Angaben.",
+
+    /*
+     * A screen that threw while rendering (P233-01).
+     *
+     * Without an error boundary React unmounts the whole tree, so this was a
+     * blank white page — which is what a failed deploy, an expired session and
+     * a wrong URL all look like too. The first thing that costs is somebody
+     * checking the server for a fault in the bundle they already have (§9.9).
+     *
+     * The build is named because a report that identifies the bundle is worth
+     * more than one that does not, and because nothing else on a crashed
+     * screen can say it — the footer went down with the rest.
+     */
+    crashTitle: "Diese Ansicht konnte nicht geladen werden",
+    crashBody:
+      "Ein Fehler in der Verwaltung hat diese Ansicht gestoppt. Die übrigen Bereiche funktionieren weiter — über die Navigation gelangen Sie dorthin. Ein Neuladen behebt es in den meisten Fällen.",
+    crashReload: "Seite neu laden",
+    crashBuild: (commit: string): string => `Build: ${commit}`,
   },
 
   /**

@@ -44,6 +44,7 @@ import {
   Table,
   TextArea,
   TextInput,
+  FieldError,
 } from "./ui.js";
 
 export function Organisation(props: { client: ApiClient; apiBase: string }) {
@@ -285,9 +286,7 @@ function RenameDepartment(props: {
         maxLength={300}
         onChange={setName}
       />
-      {saver.problem === undefined ? null : (
-        <p className="text-xs font-medium text-red-700">{saver.problem}</p>
-      )}
+      {saver.problem === undefined ? null : <FieldError>{saver.problem}</FieldError>}
       <div className="flex gap-2">
         <Button
           disabled={saver.state === "saving" || name.trim() === ""}

@@ -39,6 +39,7 @@ import { de } from "../../locale/de.js";
 import { buildCommit, buildVersion } from "../../config.js";
 import { BuildFooter } from "../BuildFooter.js";
 import { TopBar } from "./TopBar.js";
+import { ErrorBoundary } from "../ErrorBoundary.js";
 
 export function Shell(props: {
   children: ReactNode;
@@ -56,6 +57,11 @@ export function Shell(props: {
   scope?: ReactNode;
   menuOpen?: boolean;
   onToggleMenu?: () => void;
+  /**
+   * Which screen is being shown, so the per-screen boundary resets when the
+   * operator navigates. Any stable string identifying the destination.
+   */
+  screenKey?: string;
 }) {
   const signedIn = props.onSignOut !== undefined;
   const menuOpen = props.menuOpen ?? false;
@@ -94,7 +100,20 @@ export function Shell(props: {
         />
 
         <main className="min-w-0 flex-1 p-5 sm:p-6">
-          <div className={signedIn ? "" : "mx-auto max-w-md pt-12"}>{props.children}</div>
+          <div className={signedIn ? "" : "mx-auto max-w-md pt-12"}>
+            {/*
+             * One broken screen keeps the app bar, the sidebar and the customer
+             * picker, so the operator can go somewhere else (P233-01). Without
+             * it a render-time throw anywhere unmounted the whole tree and left
+             * a blank page — which looks exactly like a failed deploy.
+             *
+             * `resetKey` is the screen, so navigating away from a screen that
+             * threw and back to it tries again. Without that the boundary's own
+             * state outlives the children it wraps, and the fix produces §9.8's
+             * defect: a place you cannot get back to.
+             */}
+            <ErrorBoundary resetKey={props.screenKey}>{props.children}</ErrorBoundary>
+          </div>
         </main>
 
         {/* Rendered here rather than passed in at each of the five call sites,
