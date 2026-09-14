@@ -28,7 +28,15 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { Button, ConfirmButton, Field, Select, TextArea, TextInput } from "./ui.js";
+import {
+  Button,
+  ConfirmButton,
+  Field,
+  IconButton,
+  Select,
+  TextArea,
+  TextInput,
+} from "./ui.js";
 
 afterEach(cleanup);
 
@@ -185,6 +193,38 @@ describe("the accessible name, one spelling everywhere", () => {
     expect(
       screen.getByRole("button", { name: "Fortbildung ADHS löschen" }).textContent,
     ).toBe("Löschen");
+  });
+
+  /**
+   * `IconButton` — the one primitive with no rendered test until now.
+   *
+   * It is the least likely of the five to break and the most expensive if it
+   * does: its whole visible content is a glyph, so an unnamed one announces as
+   * "button" and nothing else. The reorder controls on the authoring tree are
+   * all `IconButton`, and P224 made them quiet — which removes the resting
+   * border a sighted user had and changes nothing for a screen reader, because
+   * the name was always the only thing it had.
+   *
+   * Structurally it is already safe in a way the other four are not: `label` is
+   * a **required** prop and is written straight to `aria-label`, so there is no
+   * spelling that silently drops it and no optional path that forgets it. That
+   * is why `check:aria-props` has nothing to say about it — the prop is not
+   * passed as `aria-…` at the call site at all.
+   *
+   * The test is here anyway, because "structurally safe" is an argument and
+   * `getByRole(…, { name })` is an observation, and the argument is exactly the
+   * kind that stops being true when somebody makes `label` optional.
+   */
+  it("gives an IconButton its label as the accessible name, over the glyph", () => {
+    render(
+      <IconButton label="Nach oben verschieben" glyph="↑" onClick={() => undefined} />,
+    );
+    const button = screen.getByRole("button", { name: "Nach oben verschieben" });
+    expect(
+      button.textContent,
+      "the glyph became the accessible name, so the control announces as an " +
+        "arrow character rather than as what it does",
+    ).toBe("↑");
   });
 
   it("leaves the visible text as the name when none was passed", () => {
