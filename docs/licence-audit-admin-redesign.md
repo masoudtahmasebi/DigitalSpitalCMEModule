@@ -36,35 +36,85 @@ changed CSS is Tailwind utility classes already in the project's own preset, so
 no new utility family enters the build; the added TypeScript is three small
 components extracted from a file that already shipped.
 
-## 3. What this audit does **not** establish, and why
+## 3. The references, their licences, and the commits they were read at
 
-**The three references' licence texts were not read**, and this document does
-not state them.
+This section replaced an earlier one that said the licence texts **could not be
+read**, because the GitHub API is not reachable from this environment. That was
+true of the API and false of the repositories: `raw.githubusercontent.com` and
+the git transport both work, and `git ls-remote` resolves an exact commit
+without any API call. §11.14 — a stale note repeated is a stale note asserted —
+so it is corrected here rather than left standing.
 
-The environment this work ran in restricts GitHub access to
-`masoudtahmasebi/DigitalSpitalCMEModule`. Reading the licence metadata for
-`cruip/mosaic-lite`, `TailAdmin/tailadmin-free-tailwind-dashboard-template` and
-`justboil/admin-one-react-tailwind` was attempted and refused:
+| Reference                     | Repository                                                        | Commit read (`git ls-remote … HEAD`)       | Licence                                              | Source of that finding                                                                                                     |
+| ----------------------------- | ----------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **TailAdmin**                 | `TailAdmin/tailadmin-free-tailwind-dashboard-template`            | `e805ab8da73ff754f5420fa7c81b2528935b930d` | **MIT** — _"Copyright (c) 2023 TailAdmin"_           | `LICENSE` at that ref                                                                                                      |
+| **TailAdmin** (React variant) | `TailAdmin/free-react-tailwind-admin-dashboard`                   | `046b73be65c7ec41b2d961d4aaa445236de49aad` | **MIT** — _"Copyright (c) 2023 TailAdmin"_           | `LICENSE.md` at that ref                                                                                                   |
+| **Cruip Mosaic**              | `cruip/tailwind-dashboard-template` (package name `mosaic-react`) | `173f64183e3f5488e8e22d3a3f6a8de75bf63d7a` | **GPL** — see below                                  | `README.md` §"Terms and License"; **there is no `LICENSE` file in the tree** and `package.json` has **no `license` field** |
+| **JustBoil Admin One**        | `justboil/admin-one-react-tailwind`                               | `251841fff0a36e4ac1eb96836adcd2858a66c3ac` | **MIT** — _"Copyright (c) 2019-current JustBoil.me"_ | `LICENSE` at that ref                                                                                                      |
 
-```
-GitHub access to this repository is not enabled for this session.
-```
+### The work order's TailAdmin URL does not resolve
 
-Stating a licence from memory would be precisely the kind of fluent, unverified
-sentence CLAUDE.md §11 exists to stop — and it would be load-bearing, because
-somebody would later rely on it. So: **not recorded, and recorded as not
-recorded.**
+It names
+`https://github.com/TailAdmin/free-tailwind-admin-dashboard-template/tree/main/tailwind-admin-nextjs-free`.
+`git ls-remote` on that repository fails — GitHub answers as it does for a
+repository that is not publicly readable. The two TailAdmin repositories in the
+table above are the ones that do resolve, and both are MIT. Recorded because a
+future reader following the work order's link will not find it.
 
-This does not block approval of P223–P225, because the obligation those licences
-create is conditional on use, and §1 and §2 above establish there was none. It
-**would** block any future change that copies from them, and such a change must
-record, before it is written:
+### Cruip Mosaic is the one that matters, and it is **GPL**
 
-- the exact repository URL;
-- the exact commit or tag inspected;
-- the SPDX identifier and the full licence text as of that commit;
-- every attribution or notice requirement;
-- a file-by-file list of what was copied versus reimplemented.
+Verbatim from `README.md` at `173f6418`:
+
+> ## Terms and License
+>
+> - Released under the [GPL](https://www.gnu.org/licenses/gpl-3.0.html).
+> - Copyright 2020 [Cruip](https://cruip.com/).
+> - Use it for personal and commercial projects, but please don't republish,
+>   redistribute, or resell the template.
+
+Two things follow, and both are worth stating plainly:
+
+1. **Copying Mosaic source into this repository would be a serious licence
+   problem**, not a paperwork one. The GPL is copyleft; this platform is not
+   distributed under it. That is precisely why the "inspiration only" rule in
+   the work order exists, and why §1's negative finding is load-bearing rather
+   than a formality.
+2. **The licence is a README sentence, not a `LICENSE` file or an SPDX field.**
+   There is nothing machine-readable to key on. Anyone who later reaches for
+   Mosaic will find no licence file, and may conclude there is no licence.
+
+### What each licence would require _if_ anything were used
+
+- **MIT** (TailAdmin, Admin One): retain the copyright notice and the permission
+  notice in any copy or substantial portion. In practice that means a
+  `THIRD-PARTY-NOTICES` entry naming the project, the copyright line and the
+  full MIT text.
+- **GPL** (Mosaic): reciprocal. Distributing a work derived from it obliges
+  distributing the corresponding source under the same terms. There is no
+  attribution-only path.
+
+**None of this is triggered.** §1 and §2 establish that nothing was copied, and
+the obligation each licence creates is conditional on use.
+
+### Fonts, icons, illustrations, screenshots, demo assets
+
+**None taken from any reference.** The evidence is the file-type row in §2: the
+three pull requests add no `woff`/`woff2`/`ttf`/`otf`/`eot`, no
+`png`/`jpe?g`/`gif`/`webp`/`svg`/`ico`, no `mp4` and no `pdf`. Every added file
+is `.ts`, `.tsx`, `.mjs` or `.md`.
+
+Icons in the console are inline SVG paths written in this repository — the
+`Chevron` and `Rosette` in the widget's `primitives.tsx` are the pattern, and
+the admin console's are the same shape. Typography is the project's own
+`--ds-font-family`, which is a **family name and never a URL**: the platform
+loads no third-party font, for the reason recorded in
+`packages/domain/branding.ts`.
+
+### Dependencies
+
+**No dependency was added, removed or upgraded.** `pnpm-lock.yaml` is unchanged
+across all three pull requests (§2). So no transitive licence enters the build
+and there is no new licence surface to audit.
 
 ## 4. The statement that appears on each pull request
 
