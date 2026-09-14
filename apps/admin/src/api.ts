@@ -296,15 +296,26 @@ function statusOf(error: unknown): number | undefined {
 }
 
 /**
- * A German sentence for a failure, without leaking internals.
+ * The sentence for a failure, in the operator's language, without leaking
+ * internals.
  *
  * The predicates and the `detail` extraction come from `@ds/sdk`, which owns
  * `ApiError`; what stays here is the copy, because an admin on a settings
  * screen and a physician mid-video need different words for the same status.
  *
- * A 403 gets the generic line on purpose: the API's own detail for a refused
- * admin action is written for a developer reading a log, and telling an admin
- * which role they lack is more than they need to act on it.
+ * Not "a German sentence": `de.ts` exports German or the English overlay
+ * depending on `currentLanguage()`, so every string this returns switches with
+ * the console. `api.test.ts` drives the English path rather than reasoning
+ * about it.
+ *
+ * **A 403 does not get the generic line.** This paragraph said it did until
+ * P225-08 — P225-05 changed the branch to `de.error.forbidden` and left the
+ * header behind, which is §11.9 exactly: a comment is a claim, and a stale one
+ * is worse than none because it stops the next person reading the code under
+ * it. What is still true, and is the reason the branch exists at all, is that a
+ * 403 does not carry the API's own `detail`: that text is written for a
+ * developer reading a log, and naming the role an operator lacks is more than
+ * they need in order to act.
  */
 export function describeError(error: unknown, generic: string): string {
   /*
