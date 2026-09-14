@@ -28,7 +28,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { ConfirmButton, Select, TextArea, TextInput } from "./ui.js";
+import { Button, ConfirmButton, IconButton, Select, TextArea, TextInput } from "./ui.js";
 
 afterEach(cleanup);
 
@@ -141,5 +141,87 @@ describe("a refused delete is marked, not narrated (P100-01)", () => {
     );
 
     expect(screen.getByText("Löschen")).toBeTruthy();
+  });
+});
+
+/**
+ * One spelling of the accessible name, across all four primitives (P223-02).
+ *
+ * `Button` declared `ariaLabel` while `TextInput` and `Select` declared
+ * `"aria-label"`, and a **hyphenated** JSX attribute is never checked against a
+ * component's props — so the call site that guessed wrong got silence. The top
+ * bar's language switch passed `aria-label` from P86-01 until P223 and was
+ * named "EN" to a screen reader, to the one person who most needs it.
+ *
+ * Asserted through the **accessible name**, not the attribute: `getByRole(…, {
+ * name })` is what a screen reader computes, so this fails if the attribute is
+ * dropped *and* if something else overrides it. `node scripts/aria-props.mjs`
+ * covers the other direction — a component given a hyphenated prop it does not
+ * declare — because a type cannot.
+ */
+describe("the accessible name, one spelling everywhere", () => {
+  it("gives a Button the name it was passed, not its visible text", () => {
+    render(
+      <Button aria-label="Sprache wechseln zu English" onClick={() => undefined}>
+        EN
+      </Button>,
+    );
+    const button = screen.getByRole("button", { name: "Sprache wechseln zu English" });
+    expect(button.textContent).toBe("EN");
+  });
+
+  it("gives an unarmed ConfirmButton the name it was passed", () => {
+    // A list draws one per row; eleven buttons all named "Löschen" is a name
+    // collision a screen reader cannot resolve except by counting.
+    render(
+      <ConfirmButton
+        label="Löschen"
+        aria-label="Fortbildung ADHS löschen"
+        confirmLabel="Wirklich löschen"
+        cancelLabel="Abbrechen"
+        onConfirm={() => undefined}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Fortbildung ADHS löschen" }).textContent,
+    ).toBe("Löschen");
+  });
+
+  /**
+   * `IconButton` — the one primitive with no rendered test until now.
+   *
+   * It is the least likely of the five to break and the most expensive if it
+   * does: its whole visible content is a glyph, so an unnamed one announces as
+   * "button" and nothing else. The reorder controls on the authoring tree are
+   * all `IconButton`, and P224 made them quiet — which removes the resting
+   * border a sighted user had and changes nothing for a screen reader, because
+   * the name was always the only thing it had.
+   *
+   * Structurally it is already safe in a way the other four are not: `label` is
+   * a **required** prop and is written straight to `aria-label`, so there is no
+   * spelling that silently drops it and no optional path that forgets it. That
+   * is why `check:aria-props` has nothing to say about it — the prop is not
+   * passed as `aria-…` at the call site at all.
+   *
+   * The test is here anyway, because "structurally safe" is an argument and
+   * `getByRole(…, { name })` is an observation, and the argument is exactly the
+   * kind that stops being true when somebody makes `label` optional.
+   */
+  it("gives an IconButton its label as the accessible name, over the glyph", () => {
+    render(
+      <IconButton label="Nach oben verschieben" glyph="↑" onClick={() => undefined} />,
+    );
+    const button = screen.getByRole("button", { name: "Nach oben verschieben" });
+    expect(
+      button.textContent,
+      "the glyph became the accessible name, so the control announces as an " +
+        "arrow character rather than as what it does",
+    ).toBe("↑");
+  });
+
+  it("leaves the visible text as the name when none was passed", () => {
+    // The common case, and the one that must not gain an empty label.
+    render(<Button onClick={() => undefined}>Speichern</Button>);
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeTruthy();
   });
 });
