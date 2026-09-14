@@ -36,6 +36,33 @@ export function menu(page: Page) {
   return page.getByRole("navigation", { name: "Menü" });
 }
 
+/**
+ * The sidebar, opened first if this width keeps it behind the hamburger
+ * (P224-07).
+ *
+ * `Shell` renders the `<aside>` as `hidden md:block`, so below 768 px the
+ * navigation — and therefore everything `menu()` returns — is not visible until
+ * the top bar's **Menü** button is tapped. Every browser test until now ran at
+ * 1440 px, where that is never true, so `menu()` worked everywhere it was used
+ * and was width-dependent the whole time.
+ *
+ * That is the §9.13 trap on the rig rather than on the product: a harness
+ * shaped like one deployment. The first 390 px test written against it failed
+ * with *"signing in reached neither enrolment, nor a code prompt, nor the
+ * console"* on a page whose own text, quoted in the error, was the console.
+ *
+ * Use this instead of `menu()` in any test that sets a viewport narrower than
+ * `md`. It is a no-op at desktop widths, because the toggle is `md:hidden`.
+ */
+export async function openMenu(page: Page) {
+  const nav = menu(page);
+  if (await nav.isVisible()) return nav;
+
+  await page.getByRole("button", { name: "Menü", exact: true }).click();
+  await nav.waitFor({ state: "visible", timeout: 10_000 });
+  return nav;
+}
+
 export interface ConsoleCredentials {
   readonly email: string;
   readonly password: string;
@@ -91,11 +118,26 @@ export async function signInToConsole(
   const enrolling = page.getByText("Zwei-Faktor-Authentifizierung einrichten");
   const codePrompt = page.getByLabel("Sechsstelliger Code");
   const console_ = menu(page).getByRole("button", { name: "Fortbildungen" });
+  /*
+   * The same arrival, seen at a width where the sidebar is not drawn (P224-07).
+   *
+   * `console_` waits for a sidebar entry, and below `md` the sidebar is
+   * `hidden` until the hamburger is tapped — so at 390 px this helper timed out
+   * on a fully signed-in console and reported that it had reached none of the
+   * three screens, quoting that console's own text back in the message.
+   *
+   * The toggle is `md:hidden` and only rendered when `signedIn`, so it is
+   * exactly as good a witness as the sidebar entry and at the opposite widths.
+   * Racing both means the helper answers "in" at every width rather than at the
+   * one every existing test happened to use.
+   */
+  const narrowConsole = page.getByRole("button", { name: "Menü", exact: true });
 
   const outcome = await Promise.race([
     whichever(enrolling.waitFor({ state: "visible", timeout: 25_000 }), "enrol"),
     whichever(codePrompt.waitFor({ state: "visible", timeout: 25_000 }), "code"),
     whichever(console_.waitFor({ state: "visible", timeout: 25_000 }), "in"),
+    whichever(narrowConsole.waitFor({ state: "visible", timeout: 25_000 }), "in"),
     // The losers never settle, so if none of the three appears the race would
     // hang until Playwright's own timeout and report nothing about why. This
     // arm is what turns that into a sentence.
@@ -135,11 +177,20 @@ export async function signInToConsole(
     await page.getByRole("button", { name: "Bestätigen" }).click();
   }
 
-  // Signed in, not merely submitted: the sidebar is the first thing every
-  // caller reaches for. "Fortbildungen" rather than "Kunden" because a customer
-  // administrator does not get "Kunden" at all — which is the point of the role
-  // and would otherwise make this helper unusable for them.
-  await expect(console_).toBeVisible({ timeout: 20_000 });
+  /*
+   * Signed in, not merely submitted: the sidebar is the first thing every
+   * caller reaches for. "Fortbildungen" rather than "Kunden" because a customer
+   * administrator does not get "Kunden" at all — which is the point of the role
+   * and would otherwise make this helper unusable for them.
+   *
+   * Below `md` the sidebar is collapsed, so the assertion is "the console is
+   * drawn", witnessed by whichever of the two is on screen at this width. The
+   * race above already got this right; this line did not, and it is the one
+   * that actually failed — the fix for the first half shipped, the helper got
+   * past the race, and this threw twenty seconds later on the same cause
+   * (§9.1: a fix is not verified until the thing it fixes is observed).
+   */
+  await expect(console_.or(narrowConsole).first()).toBeVisible({ timeout: 20_000 });
 }
 
 type Outcome = "enrol" | "code" | "in" | "none";
