@@ -29,7 +29,7 @@
  */
 
 import { expect, test } from "@playwright/test";
-import { menu, signInToConsole } from "../support/console.js";
+import { menu, openMenu, signInToConsole } from "../support/console.js";
 import { CUSTOMER_ADMIN_EMAIL, STAFF_PASSWORD } from "../support/world.js";
 
 test.describe("Verwaltung, gemessen", () => {
@@ -169,5 +169,255 @@ test.describe("Verwaltung, gemessen", () => {
       "an element backed by --ds-admin-surface-sunken paints transparent, " +
         "which is what an undefined custom property looks like from the outside",
     ).not.toBe("rgba(0, 0, 0, 0)");
+  });
+
+  /**
+   * The two questions the review asked about P224, at the width they matter
+   * (P224-07).
+   *
+   * ## Why 390 px, and why in a browser
+   *
+   * Both are properties of layout under a constraint, and neither is visible
+   * anywhere else. jsdom has no layout, so a component test can only assert
+   * that `whitespace-nowrap` is in a class string — which is a test about
+   * Tailwind and would stay green on a cell that overflows the screen anyway
+   * (§9.7). 390 px is an iPhone 14/15 in CSS pixels and the narrowest width the
+   * console's responsive floor claims to support.
+   *
+   * ## 1. `whitespace-nowrap` and horizontal overflow
+   *
+   * P224-03 stopped the completion count wrapping, and stopping text wrapping
+   * is exactly how a table is pushed wider than the screen. CLAUDE.md's own
+   * responsive rule allows a **table** its own `overflow-x` container and
+   * forbids the **page body** scrolling sideways, so that is the line asserted:
+   * `documentElement.scrollWidth` must not exceed its `clientWidth`. A table
+   * that scrolls inside its own box passes; a page you have to drag sideways to
+   * read does not.
+   *
+   * ## 2. Quiet destructive controls, without a pointer
+   *
+   * `quiet` draws its border on `hover` and on focus. **A touch screen has
+   * neither**, so the question is fair: is a per-row delete still a control to
+   * somebody who can never hover it?
+   *
+   * What is measurable, and is asserted here:
+   *
+   * - It is **visible** and carries its accessible name at 390 px.
+   * - Its **hit target** meets WCAG 2.5.8 Target Size (Minimum), 24 × 24 CSS
+   *   px. Measured from `getBoundingClientRect`, with no pointer over it —
+   *   Playwright does not hover unless told to, so the box measured is the
+   *   resting box.
+   * - Its box is **the same size as the bordered `secondary` control** it was
+   *   before. That is the property that can go red and the one that matters:
+   *   `quiet` uses `border-transparent` rather than `border-0` precisely so the
+   *   geometry does not change, and the failure mode worth catching is somebody
+   *   later reimplementing `quiet` as bare text, which shrinks the target and
+   *   is invisible in a screenshot at 1440 px.
+   *
+   * What is **not** asserted, and is stated rather than implied: whether the
+   * control *looks* like a control at rest is a judgement about appearance, and
+   * a number cannot settle it. At rest `quiet` is `text-gray-700`,
+   * `font-semibold`, `text-sm`, in a `px-3.5 py-2` box — it is a weighted label
+   * in a button-sized box, not a hyperlink. Whether that reads as tappable to
+   * an operator on a phone belongs in the manual acceptance steps, with a
+   * screenshot, and it is listed there.
+   */
+  test("die Fortbildungsliste auf 390 px: kein Querscrollen, tippbare Aktionen", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signInToConsole(page, {
+      email: CUSTOMER_ADMIN_EMAIL,
+      password: STAFF_PASSWORD,
+    });
+
+    // At 390 px the sidebar is behind the hamburger — see `openMenu`.
+    await (await openMenu(page)).getByRole("button", { name: "Fortbildungen" }).click();
+
+    const deletes = page.getByRole("button", { name: /Fortbildung .* löschen/u });
+    await expect(
+      deletes.first(),
+      "the courses table drew no per-row delete, so the measurements below prove nothing",
+    ).toBeVisible({ timeout: 20_000 });
+
+    // --- 1. The page itself must not scroll sideways ----------------------
+    const overflow = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      // Whatever is actually sticking out, named, so a failure says which
+      // element to look at rather than only that one exists.
+      widest: Array.from(document.querySelectorAll<HTMLElement>("body *"))
+        .map((node) => ({
+          tag: node.tagName.toLowerCase(),
+          cls: node.className.toString().slice(0, 60),
+          right: node.getBoundingClientRect().right,
+        }))
+        .sort((a, b) => b.right - a.right)
+        .slice(0, 3),
+    }));
+
+    expect(
+      overflow.scrollWidth,
+      `the page scrolls sideways at 390 px: ${overflow.scrollWidth} px of content ` +
+        `in a ${overflow.clientWidth} px viewport. The three widest elements are ` +
+        overflow.widest
+          .map((n) => `<${n.tag} class="${n.cls}"> ending at ${n.right.toFixed(0)} px`)
+          .join("; ") +
+        ". A table may scroll inside its own box; the page body may not.",
+    ).toBeLessThanOrEqual(overflow.clientWidth + 1);
+
+    /*
+     * And **why** the page does not overflow, which is the half that can rot.
+     *
+     * Measured: the table is 1,011 px wide in a 390 px viewport. It does not
+     * push the page sideways only because `Table` wraps it in an
+     * `overflow-x-auto` box — so the page-level assertion above is a true
+     * statement about a container nothing else asserts the existence of. Remove
+     * that wrapper and the page overflows; keep it and a reviewer has no way to
+     * tell from the passing test which of the two facts they are relying on.
+     *
+     * So the container is asserted directly: the table's own width exceeds its
+     * scroll parent's, and that parent clips it. That is also the honest record
+     * of what `whitespace-nowrap` costs at this width — the columns are read by
+     * dragging the table, which is the documented responsive rule for a table
+     * and is listed for Masoud in the manual acceptance steps rather than
+     * claimed to be comfortable.
+     */
+    const clipped = await page
+      .locator("table")
+      .first()
+      .evaluate((table) => {
+        const parent = table.parentElement;
+        if (parent === null) throw new Error("the table has no parent to scroll in");
+        return {
+          overflowX: window.getComputedStyle(parent).overflowX,
+          tableWidth: table.getBoundingClientRect().width,
+          parentWidth: parent.getBoundingClientRect().width,
+        };
+      });
+
+    expect(
+      clipped.overflowX,
+      `the courses table is ${clipped.tableWidth.toFixed(0)} px wide inside a ` +
+        `${clipped.parentWidth.toFixed(0)} px box whose overflow-x is ` +
+        `"${clipped.overflowX}". Without a scrolling container that width lands on ` +
+        "the page body, and the whole console has to be dragged sideways rather " +
+        "than the one table.",
+    ).toMatch(/auto|scroll/u);
+
+    // --- 2. The quiet destructive control is a tappable target ------------
+    const targets = await deletes.evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const box = button.getBoundingClientRect();
+        const style = window.getComputedStyle(button);
+        return {
+          name: button.getAttribute("aria-label") ?? button.textContent ?? "",
+          width: box.width,
+          height: box.height,
+          paddingX: Number.parseFloat(style.paddingLeft),
+          paddingY: Number.parseFloat(style.paddingTop),
+          borderWidth: Number.parseFloat(style.borderTopWidth),
+        };
+      }),
+    );
+
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) {
+      expect(
+        Math.min(target.width, target.height),
+        `"${target.name}" is ${target.width.toFixed(0)} × ${target.height.toFixed(0)} px ` +
+          "at 390 px, below the 24 × 24 CSS px of WCAG 2.5.8 Target Size (Minimum). " +
+          "On a touch screen this control can never be hovered, so its resting box " +
+          "is the whole of its affordance.",
+      ).toBeGreaterThanOrEqual(24);
+
+      /*
+       * The border is transparent, not absent. If somebody reimplements
+       * `quiet` as bare text this goes to 0 and the target shrinks by 2 px in
+       * each direction — invisible in a screenshot, and the reason
+       * `border-transparent` was chosen over `border-0` in the first place.
+       */
+      expect(
+        target.borderWidth,
+        `"${target.name}" has no border box at rest (${target.borderWidth} px). ` +
+          "`quiet` keeps a transparent border so the control does not change " +
+          "size when a pointer crosses it, and so its touch target is the same " +
+          "as the bordered variant it replaced.",
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * The screen P224 actually redesigned, at 390 px (P224-07).
+   *
+   * The courses list above is where `whitespace-nowrap` landed. **This** is
+   * where `quiet` landed: the authoring tree draws two `IconButton` reorder
+   * controls on every row, and there are fifty of them on the rig's course.
+   * They are the smallest controls in the console and the ones P224 took the
+   * resting border off, so if the quiet weight costs anybody a tap target it
+   * costs it here.
+   *
+   * Two properties, both of which hold today and both of which can go red:
+   *
+   * - every reorder control is **inside the viewport** at 390 px. It is not a
+   *   given — measured on this same screen, twelve other buttons are not, and
+   *   that is recorded as a defect in `docs/backlog/P224.md` rather than
+   *   asserted away here.
+   * - each is at least 24 × 24 CSS px, WCAG 2.5.8 Target Size (Minimum).
+   *   Measured: **32 × 32**. That passes 2.5.8 and does **not** reach the
+   *   44 × 44 of 2.5.5 Target Size (Enhanced, AAA), which is stated here rather
+   *   than quietly asserted at the lower bar.
+   */
+  test("die Reihenfolge-Schaltflächen im Kursaufbau sind auf 390 px erreichbar", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signInToConsole(page, {
+      email: CUSTOMER_ADMIN_EMAIL,
+      password: STAFF_PASSWORD,
+    });
+
+    await (await openMenu(page)).getByRole("button", { name: "Fortbildungen" }).click();
+    await page
+      .getByRole("button", { name: /DS Demo – Fortbildung mit CME/u })
+      .first()
+      .click();
+
+    const reorder = page.getByRole("button", { name: "Nach oben verschieben" });
+    await expect(
+      reorder.first(),
+      "the authoring tree drew no reorder control, so the measurements below prove nothing",
+    ).toBeVisible({ timeout: 20_000 });
+
+    const controls = await reorder.evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const box = button.getBoundingClientRect();
+        return {
+          width: box.width,
+          height: box.height,
+          right: box.right,
+          viewport: document.documentElement.clientWidth,
+        };
+      }),
+    );
+
+    expect(controls.length).toBeGreaterThan(0);
+    for (const control of controls) {
+      expect(
+        control.right,
+        `a reorder control ends at ${control.right.toFixed(0)} px in a ` +
+          `${control.viewport} px viewport, so it is off the side of the screen. ` +
+          "On a phone a per-row control that has to be scrolled to horizontally " +
+          "is a control most people will never find.",
+      ).toBeLessThanOrEqual(control.viewport + 1);
+
+      expect(
+        Math.min(control.width, control.height),
+        `a reorder control is ${control.width.toFixed(0)} × ` +
+          `${control.height.toFixed(0)} px, below the 24 × 24 CSS px of WCAG 2.5.8 ` +
+          "Target Size (Minimum). It is quiet, so its resting box is the whole of " +
+          "its affordance on a screen that cannot hover.",
+      ).toBeGreaterThanOrEqual(24);
+    }
   });
 });
