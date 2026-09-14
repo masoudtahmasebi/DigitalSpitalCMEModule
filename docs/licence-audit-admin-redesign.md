@@ -10,26 +10,40 @@ This is that record. It covers the three pull requests P223, P224 and P225.
 
 ## 1. The finding
 
-**Nothing was copied.** No source code, assets, fonts, icons, illustrations,
-screenshots or branding from any of the three references is present in these
-changes. The references were used only as prior art for layout and interaction
+**No reference source code, copied implementation, asset, font, icon,
+illustration, screenshot, or branding was added to the product code or asset
+tree.** The references were used only as prior art for layout and interaction
 principles — the ideas that a per-row control should be quiet, that a tree needs
 a type scale, that a form field has a readable measure — each implemented
 independently against this repository's own Tailwind preset and existing
 primitives.
 
-Because nothing was copied, **no attribution obligation arises**, whatever the
-three licences say.
+**Reference names and licence findings remain present in audit and backlog
+documentation** — this file, `docs/backlog/P219.md` and `docs/backlog/P224.md`.
+That is deliberate: a record of what was looked at and what its licence says is
+the point of an audit, and naming a project in prose is not use of it.
+
+The earlier wording of this paragraph, and of §2's first row, claimed _no
+textual trace of the references anywhere in the repository_. That cannot be
+true of a repository that contains this audit, and it was not true when it was
+written — the same grep that produced the negative result also matched the
+backlog tickets, which the row's own result column then went on to name. The
+claim that is worth making, and that survives being checked, is scoped to the
+**product code and asset tree**: §2 makes it there.
+
+Because nothing was copied into the product, **no attribution obligation
+arises**, whatever the three licences say.
 
 ## 2. The evidence, and it is a negative that can be checked
 
-| Question                                                   | Command                                                                                                                       | Result                                                                                                 |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Any textual trace of the references in the repository?     | `grep -rniE "tailadmin\|mosaic\|cruip\|justboil\|admin-?one\|artifact-ui" --exclude-dir=node_modules --exclude-dir=.git .`    | **Nothing** outside the four backlog tickets that name them as inspiration                             |
-| Any font, icon, image, SVG or media file added or changed? | `git diff --name-only origin/main...HEAD \| grep -iE '\.(woff2?\|ttf\|otf\|eot\|png\|jpe?g\|gif\|webp\|svg\|ico\|mp4\|pdf)$'` | **None**                                                                                               |
-| What files do the three PRs add at all?                    | `git diff --name-status origin/main...HEAD \| awk '$1=="A"'`                                                                  | 13 files: 7 `.ts`/`.tsx`, 2 `.mjs`, 3 `.md`, 1 `.spec.ts`                                              |
-| Any dependency added, removed or upgraded?                 | `git diff --name-only origin/main...HEAD \| grep -i lock`                                                                     | **`pnpm-lock.yaml` is unchanged**                                                                      |
-| Any `package.json` change beyond scripts?                  | `git diff origin/main...HEAD -- '**/package.json' package.json`                                                               | Two new `check:` scripts and their entries in `verify`. No `dependencies` or `devDependencies` change. |
+| Question                                                            | Command                                                                                                                                          | Result                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any trace of the references in the **product code and asset tree**? | `grep -rniE "tailadmin\|mosaic\|cruip\|justboil\|admin-?one\|artifact-ui" --exclude-dir=node_modules apps packages wordpress infra contracts db` | **No matches.** Zero lines of output                                                                                                                                                                                                |
+| Then where in the repository _are_ they named?                      | the same grep over `.`, with the file list rather than the line count                                                                            | Exactly three files, all documentation: `docs/backlog/P219.md`, `docs/backlog/P224.md`, and this audit                                                                                                                              |
+| Any font, icon, image, SVG or media file added or changed?          | `git diff --name-only origin/main...HEAD \| grep -iE '\.(woff2?\|ttf\|otf\|eot\|png\|jpe?g\|gif\|webp\|svg\|ico\|mp4\|pdf)$'`                    | **None**                                                                                                                                                                                                                            |
+| What files do the three PRs add at all?                             | `git diff --name-status origin/main...HEAD \| awk '$1=="A"'`                                                                                     | 15 files: 7 `.ts`/`.tsx`, 1 `.spec.ts`, 2 `.mjs`, 5 `.md`. Re-counted at the head this file is on — it read "13 … 3 `.md`" while the tree held five, because `P226.md` and this audit were added after the row was written (§11.14) |
+| Any dependency added, removed or upgraded?                          | `git diff --name-only origin/main...HEAD \| grep -i lock`                                                                                        | **`pnpm-lock.yaml` is unchanged**                                                                                                                                                                                                   |
+| Any `package.json` change beyond scripts?                           | `git diff origin/main...HEAD -- '**/package.json' package.json`                                                                                  | Two new `check:` scripts and their entries in `verify`. No `dependencies` or `devDependencies` change.                                                                                                                              |
 
 **Bundle-size impact: none from dependencies**, because there are none. The
 changed CSS is Tailwind utility classes already in the project's own preset, so
@@ -112,13 +126,25 @@ loads no third-party font, for the reason recorded in
 
 ### Dependencies
 
-**No dependency was added, removed or upgraded.** `pnpm-lock.yaml` is unchanged
-across all three pull requests (§2). So no transitive licence enters the build
-and there is no new licence surface to audit.
+**No dependency was added, removed, or upgraded, and `pnpm-lock.yaml` is
+unchanged** across all three pull requests (§2); therefore these pull requests
+introduce **no new dependency or transitive-licence obligations**.
+
+Stated that way on purpose. The previous sentence said _no transitive licence
+enters the build_, which is a claim about the whole build and not about this
+diff — the build already resolves a dependency tree with licences of its own,
+and this audit has not enumerated them. What is established here is the
+delta: these three pull requests add nothing to it.
 
 ## 4. The statement that appears on each pull request
 
-> No source code, assets, fonts, icons, illustrations, screenshots or branding
-> were copied from TailAdmin, Cruip/Mosaic/Artifact, or Admin One. The
-> references were used only for independent implementation of layout and
-> interaction principles.
+> No reference source code, copied implementation, asset, font, icon,
+> illustration, screenshot, or branding was added to the product code or asset
+> tree. Reference names and licence findings remain present in audit and
+> backlog documentation.
+>
+> The references — TailAdmin, Cruip/Mosaic/Artifact, Admin One — were used only
+> for independent implementation of layout and interaction principles. No
+> dependency was added, removed, or upgraded, and `pnpm-lock.yaml` is
+> unchanged; therefore these pull requests introduce no new dependency or
+> transitive-licence obligations.
