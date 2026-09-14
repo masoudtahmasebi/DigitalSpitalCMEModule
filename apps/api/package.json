@@ -25,7 +25,7 @@
     "@nestjs/common": "^11.2.3",
     "@nestjs/core": "^11.2.3",
     "@nestjs/platform-express": "^11.2.3",
-    "@node-rs/argon2": "^2.2.0",
+    "@node-rs/argon2": "^2.2.1",
     "bwip-js": "^4.11.4",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
@@ -36,7 +36,7 @@
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "zod": "^4.5.4",
+    "zod": "^4.6.2",
     "@ds/copy": "workspace:*"
   },
   "devDependencies": {
