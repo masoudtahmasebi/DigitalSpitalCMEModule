@@ -3,15 +3,35 @@
 @tailwind utilities;
 
 /*
- * DigitalSpital's own brand, for DigitalSpital's own tool (P22-08).
+ * DigitalSpital's own brand, for DigitalSpital's own tool (P22-08, P228-01).
  *
- * The `--ds-brand-*` variables exist so a *customer's* colours can be applied
- * to the learner surfaces at runtime (ADR-0009, and `packages/config`'s
- * preset). The admin console is not a customer surface — it is the product
- * DigitalSpital sells — so it pins them to DigitalSpital's palette here and
- * never reads a customer's branding.
+ * ## Two namespaces, and which one a name belongs to
  *
- * That distinction is worth keeping sharp: a console that took on each
+ * `--ds-*` is the **shared** namespace. Its members are declared in
+ * `packages/config/tailwind.preset.js` with a fallback, and written at runtime
+ * on a learner surface by `brandingCssVars` in `@ds/domain` from a customer's
+ * project settings. The learner widget renders them.
+ *
+ * `--ds-admin-*` is **this console's own**, defined below and read nowhere
+ * else. Nothing at runtime writes it, no customer can influence it, and
+ * changing one cannot alter a single pixel of the widget — which is the whole
+ * point of giving it a different prefix rather than a comment.
+ *
+ * The console may **override** a shared token — it does, immediately below —
+ * and it may never **invent** one, because a bare `--ds-x` that only the
+ * console defines reads at the call site exactly like a branding token that a
+ * customer can set. That is how `--ds-surface-sunken` came to be referenced
+ * twice and defined nowhere, rendering `rgba(0, 0, 0, 0)` from P88-01 until
+ * P228-01 found it.
+ *
+ * `scripts/check-design-tokens.mjs` enforces both halves. It is in
+ * `pnpm verify`.
+ *
+ * ## Why the console pins the shared brand rather than reading branding
+ *
+ * The admin console is not a customer surface — it is the product DigitalSpital
+ * sells — so it pins `--ds-brand-*` to DigitalSpital's palette here and never
+ * reads a customer's branding (ADR-0009). A console that took on each
  * customer's colours as the operator switched between them would make "which
  * customer am I acting within" a thing you read off the chrome, which is
  * exactly the question the app bar answers in words.
@@ -36,10 +56,32 @@
    * carrying the `vamtam_accent_N` numbering, which says nothing at the point
    * of use.
    */
-  --ds-ink: #242627;
-  --ds-ink-muted: #5f6567;
-  --ds-surface: #e9e9e7;
-  --ds-hairline: #00000026;
+  --ds-admin-ink: #242627;
+  --ds-admin-ink-muted: #5f6567;
+  --ds-admin-surface: #e9e9e7;
+  --ds-admin-hairline: #00000026;
+
+  /*
+   * The well a thumbnail or a drop target sits in — one step darker than
+   * `--ds-admin-surface`, so an image with a light edge still has a boundary
+   * and an empty frame reads as a place a picture goes.
+   *
+   * It was referenced from P88-01 and **never defined**. An unresolved custom
+   * property with no fallback makes the whole declaration invalid at
+   * computed-value time, so `background-color` fell back to `transparent`:
+   * measured in Chromium as `rgba(0, 0, 0, 0)` against `rgb(233, 233, 231)`
+   * for a token that resolves. `MediaThumbnail`'s own comment — "a grey
+   * rectangle where a picture should be is indistinguishable from a feature
+   * that was never built" — described a grey rectangle that was not there,
+   * which is §11.9 in one line.
+   *
+   * `#dcdcda` is `--ds-admin-surface` with **13 subtracted from each channel**
+   * — `e9e9e7` → `dcdcda`, 13/255 = 5.1 %. An equal delta on all three keeps
+   * the neutral exactly as neutral as its parent (R = G, B one step lower,
+   * before and after), so this is a darker shade of the page rather than a
+   * fourth grey with its own cast.
+   */
+  --ds-admin-surface-sunken: #dcdcda;
 }
 
 /*
@@ -47,8 +89,8 @@
  * it is doing exactly the job it was designed for.
  */
 body {
-  background: var(--ds-surface);
-  color: var(--ds-ink);
+  background: var(--ds-admin-surface);
+  color: var(--ds-admin-ink);
 }
 
 /*

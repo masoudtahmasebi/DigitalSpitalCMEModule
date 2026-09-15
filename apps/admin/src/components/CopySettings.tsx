@@ -35,6 +35,7 @@ import { useEffect, useMemo, useState } from "react";
 import { copyDefaultAt, copyKeysOf } from "@ds/domain";
 import { de as widgetCopy } from "@ds/copy";
 import type { ApiClient, ProjectSummary } from "@ds/sdk";
+import { useUnsavedChanges } from "../hooks.js";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
 import { Button, Notice, Select, TextInput } from "./ui.js";
@@ -71,6 +72,16 @@ export function CopySettings(props: { client: ApiClient }) {
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  /*
+   * Whether the operator has touched anything since the last successful save
+   * (P234-01). Edited, not different: one `onChange` on the container catches
+   * every control, including any added later, because React's synthetic
+   * `change` bubbles — where comparing field by field is a list that a new
+   * field silently escapes (§9.3).
+   */
+  const [edited, setEdited] = useState(false);
+  useUnsavedChanges("copy", edited);
   const [problem, setProblem] = useState<string | undefined>();
 
   const editable = useMemo(() => new Set(copyKeysOf(widgetCopy)), []);
@@ -113,6 +124,8 @@ export function CopySettings(props: { client: ApiClient }) {
       const project = rows.find((entry) => entry.slug === slug);
       setDraft({ ...(project?.copyOverrides ?? {}) });
       setSaved(true);
+      // The server has it: there is nothing left to lose.
+      setEdited(false);
     } catch (error) {
       setProblem(describeError(error, de.error.generic));
     } finally {
@@ -128,11 +141,26 @@ export function CopySettings(props: { client: ApiClient }) {
   });
 
   return (
-    <div className="space-y-4">
-      <p className="max-w-3xl text-sm text-[color:var(--ds-ink-muted)]">
-        {de.copy.intro}
-      </p>
+    <div
+      className="space-y-4"
+      // Every control below, including any added after this was written:
+      // React's synthetic `change` bubbles, so one handler covers the screen.
+      onChange={() => setEdited(true)}
+    >
+      {/*
+        No intro paragraph here. `de.copy.intro` is the screen's `description`
+        in `components/shell/navigation.ts`, and `Page` draws it under the
+        title — so rendering it again put the *same sentence twice*, one
+        directly under the other, on the Texte screen. Visible in a screenshot
+        of the running console and in nothing else; no test looked, because
+        both halves were individually correct (§9.10b — one value, one home,
+        and `Section`'s own doc says the page chrome belongs to the destination
+        rather than to the component that fills it).
 
+        `PlatformEiv` had the same pair and is fixed with it. Those two were the
+        only ones: `grep -c` for each of the thirteen nav descriptions in the
+        components returned 1 for these and 0 for the other eleven.
+      */}
       <div className="flex flex-wrap items-end gap-4">
         <label className="text-sm">
           <span className="mb-1 block font-medium">{de.copy.project}</span>
@@ -162,7 +190,7 @@ export function CopySettings(props: { client: ApiClient }) {
       {problem === undefined ? null : <Notice tone="error">{problem}</Notice>}
       {!saved ? null : <Notice tone="success">{de.copy.saved}</Notice>}
 
-      <p className="text-xs text-[color:var(--ds-ink-muted)]">
+      <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
         {de.copy.counts(shown.length, keys.length)}
       </p>
 
@@ -173,12 +201,14 @@ export function CopySettings(props: { client: ApiClient }) {
           return (
             <li
               key={key}
-              className="rounded-md border border-[color:var(--ds-hairline)] p-3"
+              className="rounded-md border border-[color:var(--ds-admin-hairline)] p-3"
             >
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <code className="text-xs text-[color:var(--ds-ink-muted)]">{key}</code>
+                <code className="text-xs text-[color:var(--ds-admin-ink-muted)]">
+                  {key}
+                </code>
                 {isEditable ? null : (
-                  <span className="text-xs text-[color:var(--ds-ink-muted)]">
+                  <span className="text-xs text-[color:var(--ds-admin-ink-muted)]">
                     {de.copy.fixed}
                   </span>
                 )}
@@ -196,7 +226,7 @@ export function CopySettings(props: { client: ApiClient }) {
                       setDraft((current) => ({ ...current, [key]: value }));
                     }}
                   />
-                  <p className="mt-1 text-xs text-[color:var(--ds-ink-muted)]">
+                  <p className="mt-1 text-xs text-[color:var(--ds-admin-ink-muted)]">
                     {de.copy.fallback(fallback ?? "")}
                   </p>
                 </div>
@@ -206,7 +236,7 @@ export function CopySettings(props: { client: ApiClient }) {
                  * it and finds out why it is not theirs to change, instead of
                  * concluding the list is incomplete.
                  */
-                <p className="mt-2 text-sm text-[color:var(--ds-ink-muted)]">
+                <p className="mt-2 text-sm text-[color:var(--ds-admin-ink-muted)]">
                   {de.copy.fixedHint}
                 </p>
               )}

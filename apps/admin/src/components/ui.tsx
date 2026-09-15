@@ -40,7 +40,29 @@ export function Button(props: {
    * on the order the form happens to render in (P90-01).
    */
   id?: string;
-  variant?: "primary" | "secondary" | "danger";
+  /**
+   * How much of the page's attention this control is entitled to.
+   *
+   * The console had three weights and used `secondary` for everything that was
+   * not *the* action of a screen — which, on the authoring tree, is every
+   * control on every row. A module row carries Bearbeiten, Löschen and two
+   * reorder buttons; a chapter adds a `<select>`; a content row two more. Ten
+   * modules is upward of sixty bordered boxes, and they outweigh the titles
+   * they belong to by area. The eye lands on the buttons and has to hunt for
+   * the course.
+   *
+   * `quiet` is the missing weight: a real button, focusable and labelled
+   * exactly as before, that draws its border only on hover or focus. It is what
+   * Linear, Stripe and Vercel use for per-row actions, and the reason is the
+   * same one `Row`'s own header gives for hairlines over cards — a repeated
+   * control is not information, and spending a border on each repetition buys
+   * nothing.
+   *
+   * `secondary` stays for a real alternative to a primary action — the cancel
+   * beside a save, the second of two choices. `quiet` is never *the* action of
+   * a screen.
+   */
+  variant?: "primary" | "secondary" | "danger" | "quiet";
   disabled?: boolean;
   /**
    * The button's name for assistive technology, when the visible label is not
@@ -52,8 +74,27 @@ export function Button(props: {
    * stays "Bearbeiten".
    *
    * Leave it unset when the label already says what the button does.
+   *
+   * ## Why the key is hyphenated, and why that is not the safer spelling
+   *
+   * It was `ariaLabel`, and `TextInput` and `Select` have taken `"aria-label"`
+   * since P68-02 — so the console had two spellings for one idea and a call
+   * site that guessed wrong got **silence**: a **hyphenated** JSX attribute is
+   * never checked against a component's props, because it cannot be a
+   * JavaScript identifier. The language switch in the top bar passed
+   * `aria-label` to this component and had done since P86-01; React dropped it
+   * and the button's accessible name was the two letters "EN" — to the one
+   * person who most needs that control, the one who cannot read the current
+   * language (§9.4).
+   *
+   * P68-02 found this class and closed it for two of the three primitives.
+   * That the third survived is §9.11: the fix went where the report was.
+   *
+   * One spelling now, and `node scripts/aria-props.mjs` is what keeps it one —
+   * because the compiler structurally cannot (§9.3: this was a rule written and
+   * not enforced, in the one place a type could not say so).
    */
-  ariaLabel?: string;
+  "aria-label"?: string | undefined;
   children: ReactNode;
 }) {
   const variant = props.variant ?? "primary";
@@ -62,7 +103,11 @@ export function Button(props: {
       ? "bg-brand-600 text-white shadow-sm hover:bg-brand-700 active:bg-brand-800"
       : variant === "danger"
         ? "bg-red-700 text-white shadow-sm hover:bg-red-800"
-        : "border border-gray-300 bg-white text-gray-800 shadow-sm hover:border-gray-400 hover:bg-gray-50";
+        : variant === "quiet"
+          ? // A transparent border, not none: the box has to keep its size, or
+            // every row twitches by two pixels when the pointer crosses it.
+            "border border-transparent text-gray-700 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
+          : "border border-gray-300 bg-white text-gray-800 shadow-sm hover:border-gray-400 hover:bg-gray-50";
 
   return (
     <button
@@ -70,7 +115,9 @@ export function Button(props: {
       disabled={props.disabled === true}
       onClick={props.onClick}
       {...(props.id === undefined ? {} : { id: props.id })}
-      {...(props.ariaLabel === undefined ? {} : { "aria-label": props.ariaLabel })}
+      {...(props["aria-label"] === undefined
+        ? {}
+        : { "aria-label": props["aria-label"] })}
       className={`${CONTROL_FOCUS} inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none ${skin}`}
     >
       {props.children}
@@ -116,6 +163,27 @@ export function Field(props: {
   label: string;
   hint?: string;
   htmlFor: string;
+  /**
+   * Let this field use the whole width it is given.
+   *
+   * The default is a cap, and the cap is the fix: `Shell`'s own comment has
+   * claimed since P100-01 that the console "capped the things that should be
+   * capped: prose at `max-w-3xl`, **form fields at `max-w-2xl`**, each where it
+   * is rendered". Prose was capped. Fields were not — `max-w-2xl` appears in
+   * exactly one component in the console, and it is not this one. So the rule
+   * was written, read as done, and never applied (§9.3), and §11.9 is why it
+   * survived: the comment asserting it is the reason nobody looked.
+   *
+   * What that costs is visible on Konten, where **Name** and **E-Mail-Adresse**
+   * are 1,100 px-wide text inputs. A field that wide is harder to use, not
+   * easier: the label is at one end of the screen and the caret at the other,
+   * and a 320-character maximum invites a line nobody can read back.
+   *
+   * `wide` exists for the fields that genuinely want the room — a textarea of
+   * German body copy, an editor spanning a panel. It is opt-in, because the
+   * default being wrong is how this happened.
+   */
+  wide?: boolean;
   children: ReactNode;
   problem?: string;
   /**
@@ -135,7 +203,7 @@ export function Field(props: {
   required?: boolean;
 }) {
   return (
-    <div className="space-y-1">
+    <div className={props.wide === true ? "space-y-1" : "max-w-2xl space-y-1"}>
       <label htmlFor={props.htmlFor} className="block text-sm font-medium text-gray-900">
         {props.label}
         {props.required === true ? (
@@ -151,10 +219,38 @@ export function Field(props: {
       {props.hint === undefined ? null : (
         <p className="text-xs text-gray-600">{props.hint}</p>
       )}
-      {props.problem === undefined ? null : (
-        <p className="text-xs font-medium text-red-700">{props.problem}</p>
-      )}
+      {props.problem === undefined ? null : <FieldError>{props.problem}</FieldError>}
     </div>
+  );
+}
+
+/**
+ * An error about one field, announced (P233-02).
+ *
+ * ## Why this exists rather than five copies of a red paragraph
+ *
+ * `Notice` already carries `role="alert"` for every tone but `info`, so a
+ * screen-level error **is** announced — I claimed otherwise in P231 and was
+ * wrong; the correction is recorded there. What was genuinely silent is the
+ * error rendered *beside a field*: five bare
+ * `<p className="text-xs font-medium text-red-700">` in four files, in no live
+ * region at all.
+ *
+ * A sighted operator sees red appear under the input they just used. A screen
+ * reader user gets nothing — the focus is still in the field, and nothing
+ * interrupts to say the save was refused. §9.4: say what the thing is, to the
+ * person holding it.
+ *
+ * `role="alert"` rather than `aria-live="polite"` on purpose. Polite waits for
+ * a pause, and the thing being announced is a refusal of the action just
+ * taken; by the time a pause arrives the operator has moved on and the
+ * sentence has lost its subject.
+ */
+export function FieldError(props: { children: ReactNode }) {
+  return (
+    <p role="alert" className="text-xs font-medium text-red-700">
+      {props.children}
+    </p>
   );
 }
 
@@ -280,6 +376,18 @@ export function Select<T extends string>(props: {
  * "up arrow" — these are the reorder controls, and a control whose purpose a
  * screen-reader user cannot determine is not a control (CLAUDE.md §3, the a11y
  * floor is costed in and not reducible).
+ *
+ * Quiet by default, for the reason spelled out on `Button`'s `variant`: this is
+ * only ever a per-row control, and there are two of them on every row of a tree
+ * that can be forty rows long.
+ *
+ * It takes `CONTROL_FOCUS` in the same change, which it did not carry before.
+ * That was **not** an invisible focus ring — `CONTROL_FOCUS` begins with
+ * `outline-none`, so without it this button kept the browser's own default
+ * outline and a keyboard user could see it. What was true is that it was the
+ * one control in the console focusing in a different colour from every other,
+ * and that matters more now the resting border has gone: the hover border and
+ * the focus ring are the only two things left that say this is a control.
  */
 export function IconButton(props: {
   label: string;
@@ -294,7 +402,7 @@ export function IconButton(props: {
       title={props.label}
       disabled={props.disabled === true}
       onClick={props.onClick}
-      className="inline-flex h-8 w-8 items-center justify-center rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-30"
+      className={`${CONTROL_FOCUS} inline-flex h-8 w-8 items-center justify-center rounded border border-transparent text-sm text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:opacity-25 disabled:hover:border-transparent disabled:hover:bg-transparent`}
     >
       <span aria-hidden="true">{props.glyph}</span>
     </button>
@@ -313,6 +421,23 @@ export function LoadFailure(props: {
   title: string;
   retryLabel: string;
   problem: string;
+  /**
+   * Whether trying again could ever produce a different answer (P231-02).
+   *
+   * **Required, with no default, deliberately.** `isRetryable` was the rule and
+   * this is its caller — and a rule with no caller is exactly what CLAUDE.md
+   * §9.3 is about: `inviteStatus`, `resetStatus` and `invalidBrandingFields`
+   * were each exported, exhaustively tested, and called from nowhere. An
+   * optional prop defaulting to `true` would have left eleven screens
+   * unchanged and the rule unapplied, which is the same outcome with a
+   * different shape. A required prop makes the compiler ask every one of them.
+   *
+   * When it is `false` the button is **absent**, not disabled: a disabled
+   * control still says "this is the thing to do here, but not now", and for a
+   * 404 there is no later when it works. The sentence above it already says
+   * what to do instead — reload the page (§9.2, §9.4).
+   */
+  retryable: boolean;
   onRetry: () => void;
 }) {
   return (
@@ -320,9 +445,11 @@ export function LoadFailure(props: {
       <Notice tone="error" title={props.title}>
         {props.problem}
       </Notice>
-      <Button variant="secondary" onClick={props.onRetry}>
-        {props.retryLabel}
-      </Button>
+      {props.retryable ? (
+        <Button variant="secondary" onClick={props.onRetry}>
+          {props.retryLabel}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -431,8 +558,11 @@ export function ConfirmButton(props: {
    * "Löschen" is a name collision: a screen reader announces the same thing
    * eleven times and the rows become distinguishable only by counting. The
    * visible label stays short; the name says which course.
+   *
+   * Hyphenated, for the reason spelled out on `Button` above: one spelling
+   * across the three primitives, checked by `scripts/aria-props.mjs`.
    */
-  ariaLabel?: string | undefined;
+  "aria-label"?: string | undefined;
   onConfirm: () => void;
 }) {
   const [armed, setArmed] = useState(false);
@@ -469,9 +599,21 @@ export function ConfirmButton(props: {
 
   if (!armed) {
     return (
+      /*
+       * Quiet until it is armed, and that is the whole point of the two states.
+       *
+       * All twelve call sites are a destructive action on **a row** — delete
+       * this course, revoke this account, discard this submission. A bordered
+       * button per row for something an operator does once a month is exactly
+       * the weight `Button`'s `variant` note is about: the delete outranks the
+       * thing being deleted. Arming it is what makes it loud, and the armed
+       * state below is unchanged — `danger`, filled, beside a cancel.
+       */
       <Button
-        variant="secondary"
-        {...(props.ariaLabel === undefined ? {} : { ariaLabel: props.ariaLabel })}
+        variant="quiet"
+        {...(props["aria-label"] === undefined
+          ? {}
+          : { "aria-label": props["aria-label"] })}
         onClick={() => setArmed(true)}
       >
         {props.label}
@@ -531,10 +673,43 @@ export function ConfirmButton(props: {
  * content. Actions are right-aligned and grouped, so the eye finds them in the
  * same place on every row instead of wherever the title happened to end.
  */
+/**
+ * One step of type scale per level of the tree.
+ *
+ * Three steps and no more: a fourth would be a size nobody can tell from its
+ * neighbour, and the tree is only ever three deep (module → chapter → content).
+ */
+const TITLE_WEIGHT = {
+  section: "text-[0.9375rem] font-bold text-gray-900",
+  group: "text-sm font-semibold text-gray-900",
+  item: "text-sm font-medium text-gray-800",
+} as const;
+
 export function Row(props: {
   /** "MODUL 1" — small, muted, inline before the title. */
   eyebrow?: string;
   title: ReactNode;
+  /**
+   * How deep in the tree this row sits, expressed as type rather than as
+   * indentation alone.
+   *
+   * Every row drew its title at `text-sm font-semibold text-gray-900` —
+   * module, chapter and content alike — so the only thing distinguishing three
+   * levels of hierarchy was an eleven-pixel uppercase eyebrow and a left rule.
+   * On a real course that is forty rows of identical-looking text, and the
+   * question a person actually has on this screen is *where does this module
+   * end*.
+   *
+   * Indentation alone does not answer it either: `RowList`'s `flush` already
+   * indents, and the screenshot of the authoring tree shows why that is not
+   * enough — by the third level the indent is a few pixels against a row that
+   * is 1,100 wide.
+   *
+   * So the type carries it. `section` is a module, `group` a chapter, `item`
+   * the content inside — the default, because most rows in the console are
+   * flat lists where there is no hierarchy to express.
+   */
+  level?: "section" | "group" | "item";
   /** Subtitle, counts, anything that qualifies the title. One muted line. */
   meta?: ReactNode;
   actions?: ReactNode;
@@ -550,7 +725,7 @@ export function Row(props: {
                 {props.eyebrow}
               </span>
             )}
-            <span className="text-sm font-semibold text-gray-900">{props.title}</span>
+            <span className={TITLE_WEIGHT[props.level ?? "item"]}>{props.title}</span>
           </div>
           {props.meta === undefined ? null : (
             <div className="mt-0.5 text-xs text-gray-600">{props.meta}</div>
@@ -744,14 +919,14 @@ export function UploadProgress(props: {
         aria-valuenow={props.percent}
         aria-valuemin={0}
         aria-valuemax={100}
-        className="h-2 flex-1 overflow-hidden rounded-full bg-[color:var(--ds-surface)]"
+        className="h-2 flex-1 overflow-hidden rounded-full bg-[color:var(--ds-admin-surface)]"
       >
         <div
           className="h-full bg-[color:var(--ds-brand-500)] transition-[width]"
           style={{ width: `${props.percent}%` }}
         />
       </div>
-      <span className="w-12 text-right text-xs tabular-nums text-[color:var(--ds-ink-muted)]">
+      <span className="w-12 text-right text-xs tabular-nums text-[color:var(--ds-admin-ink-muted)]">
         {props.percent}%
       </span>
       <Button variant="secondary" onClick={props.onCancel}>

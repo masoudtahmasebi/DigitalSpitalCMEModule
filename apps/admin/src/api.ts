@@ -123,27 +123,170 @@ function staffClient(
  *
  * `401` and `403` are skipped: the console routes both already, to the login
  * form and to the "not an admin" screen.
+ *
+ * ## And one status on one method, which is a different kind of skip
+ *
+ * See `ANSWERS_WITH_NOT_FOUND`. That one is not "the console handles this
+ * elsewhere" — it is "this is not a failure at all".
  */
+
+/**
+ * Calls whose **404 is an answer**, not a failure.
+ *
+ * `GET /admin/branding/font` 404s deliberately when a project has never had a
+ * font uploaded: *"there is no font"* and *"there is no project"* are the same
+ * answer on purpose, because a font must not be evidence that a tenant exists
+ * (§9.5, and `branding.controller.ts` says so). Having no custom font is the
+ * normal state of every customer who has not uploaded one — which, today, is
+ * all of them.
+ *
+ * ## How this got shipped, which is the part worth keeping
+ *
+ * Two correct changes, layered, producing a wrong result:
+ *
+ * - **P22-08** found "Bitte versuchen Sie es später erneut." on the screen of
+ *   every customer who had simply not uploaded a font, and fixed it —
+ *   `BrandingSettings` catches the 404 and renders an empty upload form. That
+ *   fix is still there and still right.
+ * - **P205-01** then added the net above, one layer up, so that no rejected
+ *   request could be silent. It cannot know that this particular rejection is
+ *   an answer, so it announced it — **before** the component's own handler ran,
+ *   and into a toast the component does not own and cannot clear.
+ *
+ * The result: opening Erscheinungsbild raised "Bitte versuchen Sie es später
+ * erneut. (Referenz: …)", and because the toast outlives the screen (which is
+ * deliberate — see `withToasts`) it followed the operator onto Texte,
+ * Sicherheit and Mediathek. Reproduced in the browser before being fixed; the
+ * toast carried the same reference id on all four screens, which is what said
+ * it was one event and not four.
+ *
+ * It is also §9.4 twice over: the sentence is *advice*, and the advice is
+ * wrong. Trying again later will 404 for ever.
+ *
+ * ## Why a table and not "skip every 404"
+ *
+ * Because a 404 is usually exactly what it says. A course opened from a stale
+ * link, a participant deleted in another tab — those must still be announced,
+ * and they are the reason the net exists. What is special here is the
+ * **route**, not the status.
+ *
+ * The table is keyed by SDK method name, which is what the `Proxy` below has.
+ * It is deliberately short and deliberately reasoned: an entry is a claim that
+ * the API returns this status as a normal answer, and it needs the sentence
+ * saying why.
+ */
+const ANSWERS_WITH_NOT_FOUND: ReadonlySet<string> = new Set(["adminGetFont"]);
+
 function announcing(client: ApiClient): ApiClient {
   return new Proxy(client, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver) as unknown;
       if (typeof value !== "function") return value;
 
+      const name = typeof property === "string" ? property : "";
+
       return (...args: unknown[]) => {
         const result = (value as (...a: unknown[]) => unknown).apply(target, args);
         if (!(result instanceof Promise)) return result;
 
         return result.catch((error: unknown) => {
-          const status = statusOf(error);
-          if (status !== 401 && status !== 403) {
+          if (announceable(name, statusOf(error))) {
             toastPublisher.current(describeError(error, GENERIC_FAILURE));
           }
+          // Re-thrown always, so every existing `catch` behaves exactly as
+          // before — including the ones that treat a 404 as an answer.
           throw error;
         });
       };
     },
   });
+}
+
+/**
+ * Whether this rejection is something to tell the operator about.
+ *
+ * Separated from the `Proxy` so it can be tested without one — the question
+ * "does a font 404 raise a toast?" is a pure one, and answering it needed a
+ * browser and a signed-in console (§9.7 in the direction it is usually stated
+ * the other way round: here the caller is covered and the rule was not).
+ */
+export function announceable(method: string, status: number | undefined): boolean {
+  if (status === 401 || status === 403) return false;
+  if (status === 404 && ANSWERS_WITH_NOT_FOUND.has(method)) return false;
+  return true;
+}
+
+/**
+ * Statuses whose fallback sentence must not be advice to retry (P231-01).
+ *
+ * ## Why a table and not one more `if`
+ *
+ * This is the **third** instance of one shape. `ANSWERS_WITH_NOT_FOUND` fixed
+ * the font toast (P225-01) and the 403 branch above fixed the inline sentence
+ * (P225-05), and both were written as the single case in front of us. The
+ * class is larger than either: the console's fallback is whatever the call
+ * site passed, every call site passes a sentence ending *"Bitte versuchen Sie
+ * es später erneut"*, and for three statuses retrying is not a thing that can
+ * work.
+ *
+ * | Status | Retrying the identical request will                            |
+ * | ------ | --------------------------------------------------------------- |
+ * | `404`  | not find it again — the thing is gone                           |
+ * | `409`  | meet the same conflict — somebody else's change is still there  |
+ * | `422`  | be rejected identically — the input is what was refused         |
+ *
+ * **404 is the one that matters most, and it is not a corner case.**
+ * `AppError.notFound(reason, clientDetail?)` sends no `detail` unless the
+ * second argument is given, and **42 of its 45 call sites omit it** — `reason`
+ * is internal by design and never serialised. So forty-two distinct 404s in
+ * this API reached an operator as "please try again later", one of them being
+ * the second click of a GDPR erasure (P230-01), where the honest reading is
+ * "it already worked".
+ *
+ * ## What is deliberately absent from this table
+ *
+ * `429`, `500`, `502`, and every transport failure — a timeout, a dropped
+ * connection, an offline browser, which carry **no status at all**. For those,
+ * "try again later" is the correct and useful sentence, and a rule that
+ * suppressed it everywhere would remove the one piece of advice the console
+ * can honestly give. `401` and `403` never reach here: routing handles the
+ * first and the branch above handles the second.
+ */
+const FALLBACK: ReadonlyMap<number, string> = new Map([
+  [404, de.error.gone],
+  [409, de.error.conflict],
+  [422, de.error.rejected],
+]);
+
+/**
+ * The sentence for a failure the API chose not to explain.
+ *
+ * `generic` — the call site's own words — is used for everything not in the
+ * table, so a screen that has better words than "try again later" for a
+ * timeout still gets to use them.
+ */
+function fallbackFor(status: number | undefined, generic: string): string {
+  if (status === undefined) return generic;
+  return FALLBACK.get(status) ?? generic;
+}
+
+/**
+ * Whether offering a retry control for this failure could ever succeed.
+ *
+ * The affordance half of the table above, and the piece P230 deferred to here:
+ * deciding what an error *is* belongs with the error layer rather than with a
+ * form's state machine. A screen drawing "Erneut versuchen" beside a 404 is
+ * §9.2 — a control that can only produce the same error, which looks like a
+ * decision to whoever clicks it.
+ *
+ * A transport failure has no status and is the most retryable case there is,
+ * so `undefined` answers `true` rather than falling through to a status test.
+ */
+export function isRetryable(error: unknown): boolean {
+  const status = statusOf(error);
+  if (status === undefined) return true;
+  if (status === 401 || status === 403) return false;
+  return status === 429 || status >= 500;
 }
 
 /** The status of a problem-details failure, or `undefined` for anything else. */
@@ -153,18 +296,52 @@ function statusOf(error: unknown): number | undefined {
 }
 
 /**
- * A German sentence for a failure, without leaking internals.
+ * The sentence for a failure, in the operator's language, without leaking
+ * internals.
  *
  * The predicates and the `detail` extraction come from `@ds/sdk`, which owns
  * `ApiError`; what stays here is the copy, because an admin on a settings
  * screen and a physician mid-video need different words for the same status.
  *
- * A 403 gets the generic line on purpose: the API's own detail for a refused
- * admin action is written for a developer reading a log, and telling an admin
- * which role they lack is more than they need to act on it.
+ * Not "a German sentence": `de.ts` exports German or the English overlay
+ * depending on `currentLanguage()`, so every string this returns switches with
+ * the console. `api.test.ts` drives the English path rather than reasoning
+ * about it.
+ *
+ * **A 403 does not get the generic line.** This paragraph said it did until
+ * P225-08 — P225-05 changed the branch to `de.error.forbidden` and left the
+ * header behind, which is §11.9 exactly: a comment is a claim, and a stale one
+ * is worse than none because it stops the next person reading the code under
+ * it. What is still true, and is the reason the branch exists at all, is that a
+ * 403 does not carry the API's own `detail`: that text is written for a
+ * developer reading a log, and naming the role an operator lacks is more than
+ * they need in order to act.
  */
 export function describeError(error: unknown, generic: string): string {
-  const sentence = isForbidden(error) ? generic : (problemDetail(error) ?? generic);
+  /*
+   * A refusal is not a failure, and must not be answered with advice to retry
+   * (P225-05).
+   *
+   * This read `isForbidden(error) ? generic : …`, and `generic` is *"Bitte
+   * versuchen Sie es später erneut."* at every call site in the console. So a
+   * 403 — an operator doing something their role does not permit — was told to
+   * try again later, which will refuse for ever. Same §9.4 shape as the
+   * `adminGetFont` toast above: the sentence is advice, and the advice is
+   * wrong.
+   *
+   * The reason a 403 does not carry the API's own `detail` is unchanged and
+   * still right: that text is written for a developer reading a log, and
+   * naming the missing role tells an operator more than they need in order to
+   * act. What changes is the substitute.
+   *
+   * This reaches every inline error channel in the console, because all of
+   * them call this function — which is the point. The global toast is a
+   * separate path and stays silent on 403 (see `announceable`), so the
+   * operator gets one message, not two.
+   */
+  const sentence = isForbidden(error)
+    ? de.error.forbidden
+    : (problemDetail(error) ?? fallbackFor(statusOf(error), generic));
 
   /*
    * The correlation id, appended (P122-01).

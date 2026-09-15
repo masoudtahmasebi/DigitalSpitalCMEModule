@@ -36,11 +36,12 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Console } from "./App.js";
 import { ApiError } from "@ds/sdk";
 import type { StaffProfile } from "./staff-auth.js";
 import { de } from "./locale/de.js";
+import { forgetUnsavedChanges, useUnsavedChanges } from "./hooks.js";
 
 afterEach(cleanup);
 
@@ -153,6 +154,64 @@ function renderConsole(clients: { admin?: unknown; platform?: unknown } = {}) {
   };
 }
 
+/**
+ * The customer picker, once the registry's answer is actually in it (P232-01).
+ *
+ * ## Why waiting for the combobox is not waiting
+ *
+ * `Shell` renders the `<select>` immediately, carrying one option — *"Kunde
+ * auswählen …"*. The customers arrive later, from `adminListCustomers`. So
+ *
+ *     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+ *
+ * is satisfied by the **empty** picker: it waits for a thing that was already
+ * there. Everything after it then runs against a list that may not have
+ * loaded, and `expect` outside a `waitFor` does not retry.
+ *
+ * That is deploy 131's shape (P221) in a component test — a gate whose
+ * condition is not the condition anybody cares about — and CI caught it on an
+ * unrelated pull request:
+ *
+ *     AssertionError: expected [ 'Kunde auswählen …' ] to include 'Medice'
+ *
+ * The whole failure is in that array: one option, the placeholder. Under load
+ * the render carrying the customers had not happened yet.
+ *
+ * ## Not reproduced locally, and that is recorded rather than glossed
+ *
+ * 150 repeats unloaded and 150 more under 3× CPU oversubscription were all
+ * green. The defect is derived from source and **observed in CI**, which is
+ * enough to act on — unlike DEP-43, where the mechanism needed a stack trace
+ * because the cause was not visible in the code.
+ */
+function customerOptions(): Promise<string[]> {
+  return waitFor(() => {
+    const options = [...screen.getByRole("combobox").querySelectorAll("option")];
+    // More than the placeholder: the registry's answer has been rendered.
+    expect(
+      options.length,
+      "the customer picker still holds only its placeholder, so the registry's " +
+        "answer has not been rendered yet and anything asserted about it now " +
+        "is asserted about an empty list",
+    ).toBeGreaterThan(1);
+    return options.map((o) => o.textContent ?? "");
+  });
+}
+
+/**
+ * Choose a customer, once there is one to choose.
+ *
+ * `fireEvent.change` on a `<select>` whose options have not arrived sets the
+ * value to `""`, because jsdom has nothing matching to select — so the console
+ * is told "no customer" and every assertion after it waits for something that
+ * will not happen. Nine call sites did this; none has been seen to fail, and
+ * all nine are one render away from the failure above.
+ */
+async function chooseCustomer(id: string): Promise<void> {
+  await customerOptions();
+  fireEvent.change(screen.getByRole("combobox"), { target: { value: id } });
+}
+
 describe("a super admin with no customer chosen (P22-03)", () => {
   it("does not ask for courses at all", async () => {
     const admin = fakeClient();
@@ -234,7 +293,7 @@ describe("a super admin with no customer chosen (P22-03)", () => {
     renderConsole({ admin, platform });
 
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
 
     await waitFor(() => expect(screen.getByText(/Fehler/)).toBeTruthy());
     // Both still on screen, next to the error.
@@ -252,7 +311,7 @@ describe("choosing a customer (P22-03)", () => {
     renderConsole({ admin, platform });
 
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
 
     await waitFor(() =>
       expect(
@@ -273,10 +332,7 @@ describe("choosing a customer (P22-03)", () => {
     });
     renderConsole({ platform });
 
-    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    const options = [...screen.getByRole("combobox").querySelectorAll("option")].map(
-      (o) => o.textContent,
-    );
+    const options = await customerOptions();
     expect(options).toContain("Medice");
     expect(options).toContain("DS");
   });
@@ -328,7 +384,7 @@ describe("the chosen customer survives a reload (P22-08)", () => {
     const { unmount } = renderConsole({ platform });
 
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
 
     await waitFor(() =>
       expect(window.localStorage.getItem(`ds.admin.customer.${SUPER_ADMIN.id}`)).toBe(
@@ -396,7 +452,7 @@ describe("every screen renders inside the layout (P22-09)", () => {
     });
     renderConsole({ admin, platform });
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Kunden" })).toBeTruthy(),
     );
@@ -461,7 +517,7 @@ describe("the screen is in the address bar (P42-01)", () => {
     const admin = fakeClient({ adminListCourses: vi.fn().mockResolvedValue([]) });
     renderConsole({ admin, platform });
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Kunden" })).toBeTruthy(),
     );
@@ -539,7 +595,7 @@ describe("the screen is in the address bar (P42-01)", () => {
     });
     renderConsole({ admin, platform });
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
 
     // Mounting *at* the quiz: the half a click test cannot reach, and the one
     // that decides whether F5 keeps your place.
@@ -570,7 +626,7 @@ describe("one page frame, on every screen (P30-02)", () => {
     const admin = fakeClient({ adminListCourses: vi.fn().mockResolvedValue([]) });
     renderConsole({ admin, platform });
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Kunden" })).toBeTruthy(),
     );
@@ -779,7 +835,7 @@ describe("removing a course", () => {
     // P22-03: no customer chosen means no course list is even requested, so
     // the picker has to be used before there is a row to delete.
     await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await chooseCustomer(MEDICE.id);
 
     await screen.findByText("ADHS Akademie adult");
     return { adminDeleteCourse };
@@ -855,7 +911,7 @@ function course(
 /** Choose the customer, so the courses screen actually loads. */
 async function openCourses(admin: unknown) {
   await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
-  fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+  await chooseCustomer(MEDICE.id);
   await waitFor(() =>
     expect(
       (admin as { adminListCourses: { mock: { calls: unknown[] } } }).adminListCourses
@@ -983,5 +1039,129 @@ describe("a refused action is shown (P202)", () => {
     // And the rows are still there: a refused action must not take the table
     // with it, or the message is about rows nobody can see.
     expect(screen.getByText("Test DS Course")).toBeTruthy();
+  });
+});
+
+/**
+ * The navigation asks the registry before it moves (P234-01).
+ *
+ * ## Why this is here and not in `hooks.unsaved.test.tsx`
+ *
+ * That file proves a form can *declare* it is holding edits. This proves the
+ * console *asks* — §9.7, name the caller. Without this test the registry could
+ * be perfect and every sidebar link could go on discarding work, and both
+ * suites would be green. That is the exact shape §9.3 keeps catching here:
+ * `inviteStatus`, `resetStatus`, `invalidBrandingFields`, each exported,
+ * exhaustively tested, and called from nowhere.
+ */
+describe("navigating away from unsaved edits (P234-01)", () => {
+  /*
+   * Before *and* after. The registry is a module-level Set — §9.8's ambient
+   * store — and a case that only cleans up afterwards still inherits whatever
+   * a case in another describe block left behind.
+   */
+  beforeEach(() => forgetUnsavedChanges());
+  afterEach(() => {
+    forgetUnsavedChanges();
+    /*
+     * And the spy, which is the ambient store this file's own tests leaked
+     * first (§9.8, and P22-08's lesson again).
+     *
+     * `confirm.mockRestore()` at the end of a test body never runs when the
+     * test fails before it — so the *second* case failing left `window.confirm`
+     * stubbed with a call count of 1, and the *third* case reported "the
+     * console asked about unsaved changes on a screen with none". Two failures,
+     * one of them entirely fictional, and the fictional one is the more
+     * convincing.
+     */
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * A form holding edits, rendered beside the console.
+   *
+   * The registry is module-global, so this registers exactly as a real form
+   * does — and it keeps the test about the *navigation's* half of the contract
+   * rather than about any one form's dirtiness rule. No test-only export into
+   * the production module, which is the other way to do this and the one that
+   * eventually gets used in earnest.
+   */
+  function DirtyForm() {
+    useUnsavedChanges("a-form", true);
+    return null;
+  }
+
+  async function consoleWithADirtyForm() {
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    const view = renderConsole({ platform });
+    /*
+     * Waits for the picker's *options*, not for the picker — which is rendered
+     * immediately carrying only its placeholder, so waiting for the element
+     * waits for nothing (P232-01).
+     *
+     * PR #80 turns this into a `chooseCustomer` helper. It is written out here
+     * because that branch is off `main` and this one is in the redesign stack;
+     * when both land, this becomes the helper.
+     */
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox").querySelectorAll("option").length,
+      ).toBeGreaterThan(1),
+    );
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: MEDICE.id } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Kunden" })).toBeTruthy(),
+    );
+    return view;
+  }
+
+  it("refuses when the operator declines, and the screen does not change", async () => {
+    await consoleWithADirtyForm();
+    const before = screen.getByRole("button", { name: "Kunden" });
+    expect(before).toBeTruthy();
+
+    // What a form holding edits does, done directly: this test is about the
+    // navigation's half of the contract, not about any one form's.
+    render(<DirtyForm />);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Teilnehmende" }));
+
+    expect(
+      confirm,
+      "the console navigated without asking, so an in-progress edit was " +
+        "discarded silently — which is the defect",
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("button", { name: "Kunden" }),
+      "the operator said no and the console moved anyway",
+    ).toBeTruthy();
+  });
+
+  it("goes when the operator accepts", async () => {
+    await consoleWithADirtyForm();
+    render(<DirtyForm />);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Teilnehmende" }));
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: de.participants.title })).toBeTruthy(),
+    );
+  });
+
+  it("does not ask when there is nothing to lose", async () => {
+    await consoleWithADirtyForm();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Teilnehmende" }));
+
+    expect(
+      confirm,
+      "the console asked about unsaved changes on a screen with none, which " +
+        "is the way a guard gets clicked through without being read",
+    ).not.toHaveBeenCalled();
   });
 });

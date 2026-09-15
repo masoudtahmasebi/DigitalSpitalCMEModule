@@ -42,7 +42,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ApiClient, StaffAccount } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { describeError, isForbidden } from "../api.js";
+import { describeError, isForbidden, isRetryable } from "../api.js";
 import {
   Badge,
   Button,
@@ -88,6 +88,15 @@ export function StaffAccounts(props: {
   const { client } = props;
   const [rows, setRows] = useState<StaffAccount[] | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
+  /*
+   * Whether the failure above is one trying again could fix (P231-02).
+   *
+   * Set from the same error as the sentence, in the same place: a screen that
+   * derived the words from the error and the button from something else would
+   * eventually say "this no longer exists" over a control offering to look for
+   * it again (§9.2).
+   */
+  const [loadRetryable, setLoadRetryable] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   /*
    * The whole invitation, not just its token: the link an operator has to hand
@@ -129,7 +138,10 @@ export function StaffAccounts(props: {
       setRows(await client.adminListStaff());
     } catch (error) {
       if (isForbidden(error)) setForbidden(true);
-      else setProblem(describeError(error, de.staff.loadFailed));
+      else {
+        setProblem(describeError(error, de.staff.loadFailed));
+        setLoadRetryable(isRetryable(error));
+      }
     }
   }, [client]);
 
@@ -215,6 +227,7 @@ export function StaffAccounts(props: {
         title={de.error.title}
         retryLabel={de.error.retry}
         problem={problem}
+        retryable={loadRetryable}
         onRetry={() => void load()}
       />
     );
@@ -302,9 +315,19 @@ export function StaffAccounts(props: {
                 {account.lastLoginAt === null ? "—" : account.lastLoginAt.slice(0, 10)}
               </td>
               <td>
+                {/*
+                  Quiet, like every other per-row control since P224-01. These
+                  three were missed by that change, which scoped to the
+                  authoring tree — and the cost was visible: three bordered
+                  buttons plus a quiet one did not fit the cell, so the row
+                  wrapped to two lines and the accounts table was ragged.
+                  `secondary` survives on this screen in the two places it is
+                  right: the invitation notice's copy button, and the cancel
+                  inside the password dialog.
+                */}
                 <div className="flex flex-wrap justify-end gap-2">
                   <Button
-                    variant="secondary"
+                    variant="quiet"
                     onClick={() =>
                       void act(() => client.adminSignOutStaffEverywhere(account.id))
                     }
@@ -354,7 +377,7 @@ export function StaffAccounts(props: {
                   />
                   {disabled ? (
                     <Button
-                      variant="secondary"
+                      variant="quiet"
                       onClick={() =>
                         void act(() => client.adminSetStaffDisabled(account.id, false))
                       }
@@ -494,8 +517,8 @@ function SetPassword(props: {
   if (!open) {
     return (
       <Button
-        variant="secondary"
-        ariaLabel={de.staff.setPasswordFor(props.email)}
+        variant="quiet"
+        aria-label={de.staff.setPasswordFor(props.email)}
         onClick={() => setOpen(true)}
       >
         {de.staff.setPassword}

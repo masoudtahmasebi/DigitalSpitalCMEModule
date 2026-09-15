@@ -544,6 +544,16 @@ export const german = {
     slugHint:
       "Kleinbuchstaben, Ziffern und Bindestriche. Das Kürzel erscheint in Adressen und lässt sich später nicht ändern.",
     unsaved: "Es gibt ungespeicherte Änderungen.",
+    /*
+     * The confirmation before navigating away from unsaved edits (P234-01).
+     *
+     * A question, not a warning: the operator is deciding, and a sentence that
+     * only states a consequence leaves them to work out what the two buttons
+     * do. It names the loss rather than the screen, because what they are
+     * about to lose is the thing they care about.
+     */
+    leaveUnsaved:
+      "Es gibt ungespeicherte Änderungen auf dieser Seite. Möchten Sie sie verwerfen und fortfahren?",
   },
 
   organisation: {
@@ -1330,8 +1340,65 @@ export const german = {
     title: "Es ist ein Fehler aufgetreten",
     retry: "Erneut versuchen",
     generic: "Bitte versuchen Sie es später erneut.",
+    /**
+     * A refused action, as opposed to a failed one (P225-05).
+     *
+     * `describeError` used to answer a 403 with `generic` — *"Bitte versuchen
+     * Sie es später erneut."* — which is **advice, and the advice is wrong**:
+     * retrying a refusal refuses for ever. It is the same §9.4 defect as the
+     * font toast one section up, and it reaches every inline error channel in
+     * the console, because every one of them calls `describeError`.
+     *
+     * The reason a 403 does not get the API's own `detail` is unchanged and
+     * still right: that sentence is written for a developer reading a log, and
+     * telling an operator which role they lack is more than they need in order
+     * to act. What changes is the substitute — a sentence that says what
+     * happened and who can change it.
+     *
+     * Deliberately *not* `auth.forbidden`, which says "keine Berechtigung für
+     * die Verwaltung" and is the right words for being refused the console
+     * itself. This one is about a single action inside a console the operator
+     * is legitimately in.
+     */
+    forbidden:
+      "Ihr Konto hat keine Berechtigung für diese Aktion. Bitte wenden Sie sich an Ihre Administration.",
     misconfigured:
       "Die Verwaltung ist nicht korrekt konfiguriert. Bitte prüfen Sie die Umgebungsvariablen.",
+
+    /*
+     * Three statuses for which "Bitte versuchen Sie es später erneut" is
+     * advice, and the advice is wrong (P231-01). The third instance of the
+     * same §9.4 shape, after the font toast (P225-01) and the 403 (P225-05).
+     *
+     * Each says what happened and what to do instead, and none of them names
+     * a field's value or an identifier (§9.5).
+     */
+
+    /** 404 — retrying will not find it again. */
+    gone: "Dieser Eintrag existiert nicht mehr. Bitte laden Sie die Seite neu.",
+    /** 409 — the same request meets the same conflict. */
+    conflict:
+      "Diese Daten wurden zwischenzeitlich von jemand anderem geändert. Bitte laden Sie die Seite neu und prüfen Sie Ihre Eingaben.",
+    /** 422 — the input is what was refused, so sending it again is refused again. */
+    rejected: "Die Eingaben wurden nicht akzeptiert. Bitte prüfen Sie die Angaben.",
+
+    /*
+     * A screen that threw while rendering (P233-01).
+     *
+     * Without an error boundary React unmounts the whole tree, so this was a
+     * blank white page — which is what a failed deploy, an expired session and
+     * a wrong URL all look like too. The first thing that costs is somebody
+     * checking the server for a fault in the bundle they already have (§9.9).
+     *
+     * The build is named because a report that identifies the bundle is worth
+     * more than one that does not, and because nothing else on a crashed
+     * screen can say it — the footer went down with the rest.
+     */
+    crashTitle: "Diese Ansicht konnte nicht geladen werden",
+    crashBody:
+      "Ein Fehler in der Verwaltung hat diese Ansicht gestoppt. Die übrigen Bereiche funktionieren weiter — über die Navigation gelangen Sie dorthin. Ein Neuladen behebt es in den meisten Fällen.",
+    crashReload: "Seite neu laden",
+    crashBuild: (commit: string): string => `Build: ${commit}`,
   },
 
   /**
