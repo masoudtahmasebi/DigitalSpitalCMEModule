@@ -273,6 +273,7 @@ function ModuleBlock(props: {
 
   return (
     <Row
+      level="section"
       eyebrow={`${de.structure.module} ${index + 1}`}
       title={module.title}
       meta={module.subtitle}
@@ -291,7 +292,7 @@ function ModuleBlock(props: {
               disabled={index === modules.length - 1}
               onClick={() => props.onReorder(swap(modules, index, index + 1))}
             />
-            <Button variant="secondary" onClick={() => setEditing(!editing)}>
+            <Button variant="quiet" onClick={() => setEditing(!editing)}>
               {editing ? de.common.cancel : de.common.edit}
             </Button>
             <ConfirmButton
@@ -404,6 +405,7 @@ function ChapterBlock(props: {
 
   return (
     <Row
+      level="group"
       eyebrow={`${de.structure.chapter} ${index + 1}`}
       title={chapter.title}
       actions={
@@ -448,7 +450,14 @@ function ChapterBlock(props: {
                   onChange={(event) =>
                     props.onReorder(moveChapter(modules, chapter.id, event.target.value))
                   }
-                  className="rounded border border-gray-300 px-2 py-1 text-xs"
+                  /* Quiet, like the buttons beside it — see `Button`'s
+                     `variant` note. This is a per-row control on a screen that
+                     can carry forty rows, and once the buttons around it lost
+                     their borders it became the loudest thing on a chapter.
+                     `focus:` rather than `focus-visible:`: a `<select>` is
+                     reached by pointer as often as by keyboard and the open
+                     state has to be visible either way. */
+                  className="rounded border border-transparent bg-transparent px-2 py-1 text-xs transition-colors hover:border-gray-300 hover:bg-white focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/25"
                 >
                   {moduleOptions.map(([id, title]) => (
                     <option key={id} value={id}>
@@ -458,7 +467,7 @@ function ChapterBlock(props: {
                 </select>
               </label>
             ) : null}
-            <Button variant="secondary" onClick={() => setEditing(!editing)}>
+            <Button variant="quiet" onClick={() => setEditing(!editing)}>
               {editing ? de.common.cancel : de.common.edit}
             </Button>
             <ConfirmButton
@@ -589,6 +598,7 @@ function ContentRow(props: {
 
   return (
     <Row
+      level="item"
       eyebrow={de.structure.kinds[content.kind]}
       title={content.title}
       meta={meta}
@@ -602,7 +612,7 @@ function ContentRow(props: {
            */}
           {content.kind === "quiz" ? (
             <Button
-              variant="secondary"
+              variant="quiet"
               onClick={() => props.onEditQuiz(content.id, content.title)}
             >
               {locked ? de.structure.viewQuiz : de.structure.editQuiz}
@@ -622,7 +632,7 @@ function ContentRow(props: {
                 disabled={index === chapter.contents.length - 1}
                 onClick={() => move(index + 1)}
               />
-              <Button variant="secondary" onClick={() => setEditing(!editing)}>
+              <Button variant="quiet" onClick={() => setEditing(!editing)}>
                 {editing ? de.common.cancel : de.common.edit}
               </Button>
               <ConfirmButton

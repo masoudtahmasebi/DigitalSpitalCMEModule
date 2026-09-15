@@ -1173,7 +1173,21 @@ export function Console(props: {
                 <td className="px-4 py-3">
                   <button
                     type="button"
-                    className="rounded font-medium text-brand-700 underline decoration-brand-700/30 underline-offset-2 transition-colors hover:text-brand-800 hover:decoration-brand-700"
+                    /*
+                     * The title is the row, so it is set as a title and not as
+                     * a link that happens to be a title.
+                     *
+                     * It was permanently underlined, which in a table of two
+                     * columns of prose reads as raw hypertext and competes with
+                     * the data beside it — and on a long German course name it
+                     * wraps to two underlined lines, which was the widest thing
+                     * on the screen. The underline appears on hover and focus,
+                     * where it is doing the work of saying "this is clickable";
+                     * at rest the colour and weight already do (§9.4 is about
+                     * saying what a thing is, and a brand-coloured semibold
+                     * title in a list of grey cells says it).
+                     */
+                    className="rounded text-left font-semibold text-brand-700 underline-offset-2 transition-colors hover:text-brand-800 hover:underline focus-visible:underline"
                     onClick={() =>
                       setView({ kind: "course", slug: course.slug, tab: "structure" })
                     }
@@ -1189,13 +1203,25 @@ export function Console(props: {
                     <Badge tone="muted">{de.courses.lockedBadge}</Badge>
                   ) : null}
                 </td>
-                <td className="px-4 py-3 text-gray-600">{course.vnr ?? "—"}</td>
-                <td className="px-4 py-3">
+                {/* A VNR is a seventeen-digit number nobody reads as prose —
+                    it is compared, digit by digit, against a Bescheid. */}
+                <td className="px-4 py-3 tabular-nums text-gray-600">
+                  {course.vnr ?? "—"}
+                </td>
+                {/* Tabular figures, so 3 and 12 line up on their units rather
+                    than on their left edge — a column of CME points is read by
+                    comparing it down the page. */}
+                <td className="px-4 py-3 tabular-nums">
                   {course.cmePoints === null
                     ? "—"
                     : `${course.cmePoints} (${course.cmeCategory ?? "?"})`}
                 </td>
-                <td className="px-4 py-3 text-gray-700">
+                {/* `whitespace-nowrap`: "0 von 0 abgeschlossen" wrapped after
+                    the numbers, so a row carrying it was two lines tall and
+                    every other row was one. A column of counts that changes the
+                    row height is the jagged-list defect DEP-42 reported on the
+                    learner's catalogue, in the console. */}
+                <td className="whitespace-nowrap px-4 py-3 text-gray-700">
                   {de.courses.completedOf(course.completedCount, course.enrolmentCount)}
                 </td>
                 <td className="px-4 py-3">
