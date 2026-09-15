@@ -219,10 +219,38 @@ export function Field(props: {
       {props.hint === undefined ? null : (
         <p className="text-xs text-gray-600">{props.hint}</p>
       )}
-      {props.problem === undefined ? null : (
-        <p className="text-xs font-medium text-red-700">{props.problem}</p>
-      )}
+      {props.problem === undefined ? null : <FieldError>{props.problem}</FieldError>}
     </div>
+  );
+}
+
+/**
+ * An error about one field, announced (P233-02).
+ *
+ * ## Why this exists rather than five copies of a red paragraph
+ *
+ * `Notice` already carries `role="alert"` for every tone but `info`, so a
+ * screen-level error **is** announced — I claimed otherwise in P231 and was
+ * wrong; the correction is recorded there. What was genuinely silent is the
+ * error rendered *beside a field*: five bare
+ * `<p className="text-xs font-medium text-red-700">` in four files, in no live
+ * region at all.
+ *
+ * A sighted operator sees red appear under the input they just used. A screen
+ * reader user gets nothing — the focus is still in the field, and nothing
+ * interrupts to say the save was refused. §9.4: say what the thing is, to the
+ * person holding it.
+ *
+ * `role="alert"` rather than `aria-live="polite"` on purpose. Polite waits for
+ * a pause, and the thing being announced is a refusal of the action just
+ * taken; by the time a pause arrives the operator has moved on and the
+ * sentence has lost its subject.
+ */
+export function FieldError(props: { children: ReactNode }) {
+  return (
+    <p role="alert" className="text-xs font-medium text-red-700">
+      {props.children}
+    </p>
   );
 }
 

@@ -880,6 +880,13 @@ export function Console(props: {
       menuOpen={menuOpen}
       onToggleMenu={() => setMenuOpen(!menuOpen)}
       operator={props.profile.displayName}
+      /*
+       * The destination, so a screen that threw is tried again when the
+       * operator navigates away and back (P233-01). `encode` rather than
+       * `view.kind`, because two course tabs are two screens and one of them
+       * failing must not condemn the other.
+       */
+      screenKey={encode(view)}
       // Always present in the console — it is what tells the frame it is signed
       // in. The prop is optional only so a test can render without one.
       onSignOut={props.onSignOut ?? (() => undefined)}

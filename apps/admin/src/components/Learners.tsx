@@ -40,6 +40,7 @@ import {
   Spinner,
   Table,
   TextInput,
+  FieldError,
 } from "./ui.js";
 import { EmptyState } from "./page.js";
 
@@ -268,7 +269,7 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
                        * load, and one channel carrying two unrelated failures
                        * is how a refused correction reads as a broken screen.
                        */
-                      <p className="text-xs font-medium text-red-700">{saver.problem}</p>
+                      <FieldError>{saver.problem}</FieldError>
                     )}
                   </div>
                 ) : (
@@ -323,7 +324,7 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
                       </Button>
                     </div>
                     {eraser.problem === undefined ? null : (
-                      <p className="text-xs font-medium text-red-700">{eraser.problem}</p>
+                      <FieldError>{eraser.problem}</FieldError>
                     )}
                   </div>
                 ) : withdrawing === row.enrolmentId ? (
