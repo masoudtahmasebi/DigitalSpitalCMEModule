@@ -393,3 +393,111 @@ describe("the platform sender's form, while its own settings are still loading",
     );
   });
 });
+
+/**
+ * The single-flight guard on the policy control, observed rather than argued
+ * (P230-03).
+ *
+ * The review's words on the PR body's claim that the rows are disabled
+ * together: *"'In practice' is not strong enough for an auth surface."* Correct.
+ * This is `adminSetSecondFactorPolicy` — the rule deciding whether every
+ * operator of a customer must carry a second factor — and what it does while a
+ * request is open was asserted by a sentence.
+ *
+ * Three properties, and the second is the security one:
+ *
+ * 1. **Every scope becomes read-only while any policy request is open**, not
+ *    only the one being changed. That is what `disabled={saver.state ===
+ *    "saving" || …}` on all three `PolicyRow`s does, and it is a visible
+ *    behaviour change on an auth screen, so it is asserted rather than
+ *    described. `PolicyRow` renders a `<p>` instead of a `<select>` when
+ *    disabled, so the observation is "the combobox is gone", which is what a
+ *    person sees.
+ * 2. **A second policy cannot be dispatched while the first is in flight.**
+ *    Before this change, the control was a `<select onChange>` — nothing about
+ *    it looked like a submit, so nothing guarded it, and two policies in flight
+ *    meant *network ordering* decided which one stuck rather than what the
+ *    operator chose last. On a rule that governs whether a second factor is
+ *    required, the losing write is not a cosmetic loss.
+ * 3. **The rows come back** when the request settles, or the screen is bricked.
+ *
+ * The client's promise does not resolve until this test says so. A promise that
+ * resolved immediately would close the window before the second interaction and
+ * every assertion below would pass on the unguarded code — §11.10, test under
+ * the condition that actually occurs.
+ */
+describe("the second-factor policy control while its own request is open", () => {
+  it("takes every scope out of edit, refuses a second change, and gives them back", async () => {
+    let release: (() => void) | undefined;
+    const inFlight = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const api = client({
+      platform: "optional",
+      customer: "optional",
+      grants: [{ customerId: null }],
+      mayChange: true,
+    });
+    const set = vi.fn(() => inFlight);
+    (
+      api as unknown as { adminSetSecondFactorPolicy: unknown }
+    ).adminSetSecondFactorPolicy = set;
+
+    await act(async () => {
+      render(
+        <Security
+          client={api}
+          apiBase="http://api.test"
+          isSuperAdmin={true}
+          ownSecondFactorEnrolled={true}
+          customers={[CUSTOMER]}
+        />,
+      );
+    });
+
+    const platform = screen.getByLabelText(/Plattform/u);
+    const customer = screen.getByLabelText(new RegExp(CUSTOMER.name, "u"));
+    expect(platform.tagName.toLowerCase()).toBe("select");
+    expect(customer.tagName.toLowerCase()).toBe("select");
+
+    // One change, which never settles.
+    await act(async () => {
+      fireEvent.change(platform, { target: { value: "required" } });
+    });
+
+    expect(set, "the change did not reach the API at all").toHaveBeenCalledTimes(1);
+
+    // 1. Every scope, not only the one being changed.
+    await waitFor(() => {
+      expect(
+        screen.queryByLabelText(/Plattform/u)?.tagName.toLowerCase(),
+        "the scope being changed stayed editable during its own request",
+      ).not.toBe("select");
+    });
+    expect(
+      screen.queryByLabelText(new RegExp(CUSTOMER.name, "u"))?.tagName.toLowerCase(),
+      "a different scope stayed editable while a policy request was open, so two " +
+        "second-factor policies can be in flight at once and network ordering " +
+        "decides which one sticks",
+    ).not.toBe("select");
+
+    // 2. And therefore no second dispatch is reachable.
+    expect(
+      set,
+      "a second policy request was dispatched while the first was still open",
+    ).toHaveBeenCalledTimes(1);
+
+    // 3. The rows come back.
+    await act(async () => {
+      release?.();
+      await inFlight;
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText(/Plattform/u).tagName.toLowerCase(),
+        "the policy rows never became editable again after the request settled",
+      ).toBe("select");
+    });
+  });
+});

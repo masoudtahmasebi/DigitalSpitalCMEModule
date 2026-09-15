@@ -6,23 +6,20 @@ before its licence and attribution obligations were recorded.
 
 This is that record. It covers the three pull requests P223, P224 and P225.
 
-## Where the evidence was gathered, and why this file is on its own branch
+## Where the evidence in §2 was gathered
 
-Every command in §2 is written as `origin/main...HEAD` and was run at the head
-of the redesign stack — commit `fd34f9c0bee6e4e4a18127216257bef66cdbefa3`, the tip of
-`claude/education-platform-roadmap-3vgrqh-admin-c`, which contains all three
-pull requests because they are stacked a → b → c. Run from **this** branch the
-same commands answer about an empty diff, which is true and proves nothing:
-re-run them against that commit, not against this one.
+Every command in §2 is written `origin/main...HEAD` and was run at the head of
+the redesign stack — commit `fd34f9c`, the tip of `…-admin-c`, which held all
+three pull requests because they were stacked a → b → c. **Read from `main`
+after the merge, those commands answer about a different diff**, so re-run them
+against that commit rather than against `main`, or re-derive them with an
+explicit range.
 
-The file is on its own branch for the reason the review gave. It lived only on
-the third branch of the stack, so the first two pull requests asserted a licence
-finding whose record a reviewer could not open from either of them. Moving it
-down the stack would mean rewriting the history of three branches already under
-review, which costs more than it buys. A standalone documentation change that
-merges independently gives every pull request — the three redesign ones and the
-follow-ups after them — the same file to point at, with no rebase and no
-force-push to anything being read.
+The file was briefly its own branch and its own pull request (#85), so that the
+first two pull requests of the stack could point at the record their licence
+statement rests on. That is history now — it merged with the rest, and the
+paragraph explaining the branch has been deleted rather than left to read as
+though it were still true (§11.14).
 
 ---
 

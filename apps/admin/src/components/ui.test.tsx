@@ -28,7 +28,18 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { Button, ConfirmButton, IconButton, Select, TextArea, TextInput } from "./ui.js";
+import { de } from "../locale/de.js";
+import {
+  Button,
+  ConfirmButton,
+  Field,
+  FieldError,
+  IconButton,
+  LoadFailure,
+  Select,
+  TextArea,
+  TextInput,
+} from "./ui.js";
 
 afterEach(cleanup);
 
@@ -223,5 +234,160 @@ describe("the accessible name, one spelling everywhere", () => {
     // The common case, and the one that must not gain an empty label.
     render(<Button onClick={() => undefined}>Speichern</Button>);
     expect(screen.getByRole("button", { name: "Speichern" })).toBeTruthy();
+  });
+});
+
+/**
+ * A form field has a readable measure (P225-02).
+ *
+ * `Shell`'s own comment has claimed since P100-01 that the console "capped …
+ * form fields at `max-w-2xl`, each where it is rendered". Prose was capped;
+ * fields were not, and `max-w-2xl` appeared in exactly one component, which was
+ * not a field. The rule was written, read as done, and never applied — and the
+ * comment asserting it is why nobody looked (§9.3, §11.9).
+ *
+ * The cap lives in `Field` rather than at its 109 call sites, for the reason
+ * `Table` already gives for cell padding: a rule at fifty call sites is a rule
+ * that disagrees with itself.
+ */
+describe("Field's width", () => {
+  function measured(node: HTMLElement | null): string {
+    if (node === null) throw new Error("Field rendered nothing");
+    return node.className;
+  }
+
+  it("caps an ordinary field, so a name is not 1,100 px wide", () => {
+    const { container } = render(
+      <Field label="Name" htmlFor="n">
+        <TextInput id="n" value="" onChange={() => undefined} />
+      </Field>,
+    );
+    expect(measured(container.firstElementChild as HTMLElement)).toContain("max-w-2xl");
+  });
+
+  it("lets a field opt out when it genuinely wants the room", () => {
+    // German body copy, a rich-text editor, an editor spanning a panel. Opt-in,
+    // because the default being wrong is how this happened.
+    const { container } = render(
+      <Field label="Einleitung" htmlFor="i" wide>
+        <TextArea id="i" value="" onChange={() => undefined} />
+      </Field>,
+    );
+    expect(measured(container.firstElementChild as HTMLElement)).not.toContain(
+      "max-w-2xl",
+    );
+  });
+
+  it("caps the box and not the control, so nothing inside is clipped", () => {
+    // The cap is on the field's own wrapper. A control that asks for the full
+    // width of that wrapper still gets it — which is what keeps a colour well,
+    // a select and a text input the same width as each other.
+    render(
+      <Field label="Farbe" htmlFor="c">
+        <TextInput id="c" value="#007f95" onChange={() => undefined} />
+      </Field>,
+    );
+    expect(screen.getByLabelText("Farbe").className).toContain("w-full");
+  });
+});
+
+/**
+ * The retry control is absent when retrying cannot work (P231-02).
+ *
+ * ## Why this is a component test and not a unit test of `isRetryable`
+ *
+ * `api.test.ts` already proves `isRetryable(failure(404))` is `false`
+ * exhaustively. That is §9.7's trap in one line: **nothing in that file checks
+ * that anybody calls it.** The rule could be perfect and every screen could go
+ * on drawing the button, and the suite would stay green — which is exactly
+ * what happened to `inviteStatus`, `resetStatus` and `invalidBrandingFields`
+ * (§9.3).
+ *
+ * So the property asserted here is the *rendering*, by role, the way a person
+ * meets it.
+ *
+ * Wiring it up the stack is the other half, and TypeScript is what enforces
+ * that: `retryable` is a **required** prop, so all eleven `LoadFailure` call
+ * sites had to answer the question. The compiler named every one of them.
+ */
+describe("LoadFailure", () => {
+  const common = {
+    title: de.error.title,
+    retryLabel: de.error.retry,
+    onRetry: () => undefined,
+  };
+
+  it("offers a retry for a failure that could go the other way", () => {
+    render(<LoadFailure {...common} problem={de.error.generic} retryable={true} />);
+    expect(screen.getByRole("button", { name: de.error.retry })).toBeTruthy();
+  });
+
+  it("withholds it entirely when trying again cannot work", () => {
+    render(<LoadFailure {...common} problem={de.error.gone} retryable={false} />);
+    expect(
+      screen.queryByRole("button", { name: de.error.retry }),
+      "a retry control was drawn beside a sentence saying the entry no longer " +
+        "exists — a control that can only produce the same error, which looks " +
+        "like a decision to whoever clicks it (§9.2)",
+    ).toBeNull();
+  });
+
+  it("still says what happened when it withholds the control", () => {
+    /*
+     * The half that makes §9.2 safe to apply: removing an affordance is only
+     * an improvement if something else says what to do instead. `de.error.gone`
+     * ends "Bitte laden Sie die Seite neu" — so the screen is not merely
+     * quieter, it is answerable (§9.4, §9.10).
+     */
+    render(<LoadFailure {...common} problem={de.error.gone} retryable={false} />);
+    expect(screen.getByText(de.error.gone)).toBeTruthy();
+    expect(de.error.gone).toContain("neu");
+  });
+});
+
+/**
+ * An error beside a field reaches a screen reader (P233-02).
+ *
+ * ## The claim this replaces, which was mine and was wrong
+ *
+ * P231 said *"`Notice` is not a live region, so a screen reader is not told
+ * when an error appears."* It is one — `ui.tsx` spreads `role="alert"` onto
+ * every tone but `info`. The correction is recorded in that ticket rather than
+ * the sentence deleted.
+ *
+ * What **was** silent is narrower: the error rendered beside a field, five bare
+ * red paragraphs across four files, in no live region at all. A sighted
+ * operator sees red appear under the input they just used; a screen reader user
+ * gets nothing, with the focus still in the field.
+ *
+ * ## Why the assertion is the role and not the class
+ *
+ * `toHaveClass("text-red-700")` would pass on a paragraph nothing announces,
+ * which is the property that was broken. `getByRole("alert")` is the one that
+ * goes red.
+ */
+describe("FieldError", () => {
+  it("announces, rather than only turning red", () => {
+    render(<FieldError>Die Änderung konnte nicht gespeichert werden.</FieldError>);
+    expect(
+      screen.getByRole("alert"),
+      "the field error is in no live region, so a screen reader user is not " +
+        "told their save was refused — the focus is still in the field and " +
+        "nothing interrupts to say so",
+    ).toBeTruthy();
+  });
+
+  it("is what `Field` renders for its own problem, so 109 call sites get it", () => {
+    /*
+     * §9.7, name the caller. `FieldError` announcing proves nothing if `Field`
+     * still renders its own paragraph — which is exactly the shape §9.3 keeps
+     * catching on this project.
+     */
+    render(
+      <Field label="Name" htmlFor="x" problem="Pflichtfeld">
+        <TextInput id="x" value="" onChange={() => undefined} />
+      </Field>,
+    );
+    expect(screen.getByRole("alert").textContent).toBe("Pflichtfeld");
   });
 });
