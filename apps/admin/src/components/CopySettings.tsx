@@ -172,7 +172,7 @@ export function CopySettings(props: { client: ApiClient }) {
       {problem === undefined ? null : <Notice tone="error">{problem}</Notice>}
       {!saved ? null : <Notice tone="success">{de.copy.saved}</Notice>}
 
-      <p className="text-xs text-[color:var(--ds-ink-muted)]">
+      <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
         {de.copy.counts(shown.length, keys.length)}
       </p>
 
@@ -183,12 +183,14 @@ export function CopySettings(props: { client: ApiClient }) {
           return (
             <li
               key={key}
-              className="rounded-md border border-[color:var(--ds-hairline)] p-3"
+              className="rounded-md border border-[color:var(--ds-admin-hairline)] p-3"
             >
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <code className="text-xs text-[color:var(--ds-ink-muted)]">{key}</code>
+                <code className="text-xs text-[color:var(--ds-admin-ink-muted)]">
+                  {key}
+                </code>
                 {isEditable ? null : (
-                  <span className="text-xs text-[color:var(--ds-ink-muted)]">
+                  <span className="text-xs text-[color:var(--ds-admin-ink-muted)]">
                     {de.copy.fixed}
                   </span>
                 )}
@@ -206,7 +208,7 @@ export function CopySettings(props: { client: ApiClient }) {
                       setDraft((current) => ({ ...current, [key]: value }));
                     }}
                   />
-                  <p className="mt-1 text-xs text-[color:var(--ds-ink-muted)]">
+                  <p className="mt-1 text-xs text-[color:var(--ds-admin-ink-muted)]">
                     {de.copy.fallback(fallback ?? "")}
                   </p>
                 </div>
@@ -216,7 +218,7 @@ export function CopySettings(props: { client: ApiClient }) {
                  * it and finds out why it is not theirs to change, instead of
                  * concluding the list is incomplete.
                  */
-                <p className="mt-2 text-sm text-[color:var(--ds-ink-muted)]">
+                <p className="mt-2 text-sm text-[color:var(--ds-admin-ink-muted)]">
                   {de.copy.fixedHint}
                 </p>
               )}

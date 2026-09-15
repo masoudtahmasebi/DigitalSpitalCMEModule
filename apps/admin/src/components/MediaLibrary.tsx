@@ -168,19 +168,19 @@ export function MediaLibrary(props: { client: ApiClient }) {
       )}
 
       {library.assets === undefined ? (
-        <p className="text-sm text-[color:var(--ds-ink-muted)]">{de.loading}</p>
+        <p className="text-sm text-[color:var(--ds-admin-ink-muted)]">{de.loading}</p>
       ) : (shown ?? []).length === 0 ? (
         /*
          * Two different empty states, and telling them apart is the point.
          * "Nothing matches this filter" is a thing to undo; "you have not
          * uploaded anything yet" is a thing to explain (§9.4).
          */
-        <p className="text-sm text-[color:var(--ds-ink-muted)]">
+        <p className="text-sm text-[color:var(--ds-admin-ink-muted)]">
           {library.assets.length === 0 ? de.media.empty : de.media.noMatch}
         </p>
       ) : (
         <>
-          <p className="text-xs text-[color:var(--ds-ink-muted)]">
+          <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
             {de.media.count((shown ?? []).length, library.assets.length)}
           </p>
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -196,7 +196,9 @@ export function MediaLibrary(props: { client: ApiClient }) {
         </>
       )}
 
-      <p className="text-xs text-[color:var(--ds-ink-muted)]">{de.media.forgetHint}</p>
+      <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
+        {de.media.forgetHint}
+      </p>
 
       {/*
         The storage total, which is the question an operator brings to this
@@ -206,7 +208,7 @@ export function MediaLibrary(props: { client: ApiClient }) {
         archived certificates nobody lists here.
       */}
       {library.assets === undefined || library.assets.length === 0 ? null : (
-        <p className="text-xs text-[color:var(--ds-ink-muted)]">
+        <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
           {de.media.totalSize(humanBytes(totalBytes(library.assets)))}
         </p>
       )}

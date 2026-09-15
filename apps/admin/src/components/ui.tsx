@@ -872,14 +872,14 @@ export function UploadProgress(props: {
         aria-valuenow={props.percent}
         aria-valuemin={0}
         aria-valuemax={100}
-        className="h-2 flex-1 overflow-hidden rounded-full bg-[color:var(--ds-surface)]"
+        className="h-2 flex-1 overflow-hidden rounded-full bg-[color:var(--ds-admin-surface)]"
       >
         <div
           className="h-full bg-[color:var(--ds-brand-500)] transition-[width]"
           style={{ width: `${props.percent}%` }}
         />
       </div>
-      <span className="w-12 text-right text-xs tabular-nums text-[color:var(--ds-ink-muted)]">
+      <span className="w-12 text-right text-xs tabular-nums text-[color:var(--ds-admin-ink-muted)]">
         {props.percent}%
       </span>
       <Button variant="secondary" onClick={props.onCancel}>
