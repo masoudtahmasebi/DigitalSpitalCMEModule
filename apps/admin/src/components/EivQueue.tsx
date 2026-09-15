@@ -40,7 +40,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ApiClient, EivSubmissionPage, EivSubmissionRow } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { describeError, isForbidden } from "../api.js";
+import { describeError, isForbidden, isRetryable } from "../api.js";
 import {
   Badge,
   Button,
@@ -92,6 +92,15 @@ export function EivQueue(props: { client: ApiClient }) {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<EivSubmissionPage | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
+  /*
+   * Whether the failure above is one trying again could fix (P231-02).
+   *
+   * Set from the same error as the sentence, in the same place: a screen that
+   * derived the words from the error and the button from something else would
+   * eventually say "this no longer exists" over a control offering to look for
+   * it again (§9.2).
+   */
+  const [loadRetryable, setLoadRetryable] = useState(true);
   const [forbidden, setForbidden] = useState(false);
 
   const load = useCallback(async () => {
@@ -106,7 +115,10 @@ export function EivQueue(props: { client: ApiClient }) {
       );
     } catch (error) {
       if (isForbidden(error)) setForbidden(true);
-      else setProblem(describeError(error, de.eivQueue.loadFailed));
+      else {
+        setProblem(describeError(error, de.eivQueue.loadFailed));
+        setLoadRetryable(isRetryable(error));
+      }
     }
   }, [client, status, page]);
 
@@ -140,6 +152,7 @@ export function EivQueue(props: { client: ApiClient }) {
         title={de.error.title}
         retryLabel={de.error.retry}
         problem={problem}
+        retryable={loadRetryable}
         onRetry={() => void load()}
       />
     );

@@ -1354,6 +1354,23 @@ export const german = {
       "Ihr Konto hat keine Berechtigung für diese Aktion. Bitte wenden Sie sich an Ihre Administration.",
     misconfigured:
       "Die Verwaltung ist nicht korrekt konfiguriert. Bitte prüfen Sie die Umgebungsvariablen.",
+
+    /*
+     * Three statuses for which "Bitte versuchen Sie es später erneut" is
+     * advice, and the advice is wrong (P231-01). The third instance of the
+     * same §9.4 shape, after the font toast (P225-01) and the 403 (P225-05).
+     *
+     * Each says what happened and what to do instead, and none of them names
+     * a field's value or an identifier (§9.5).
+     */
+
+    /** 404 — retrying will not find it again. */
+    gone: "Dieser Eintrag existiert nicht mehr. Bitte laden Sie die Seite neu.",
+    /** 409 — the same request meets the same conflict. */
+    conflict:
+      "Diese Daten wurden zwischenzeitlich von jemand anderem geändert. Bitte laden Sie die Seite neu und prüfen Sie Ihre Eingaben.",
+    /** 422 — the input is what was refused, so sending it again is refused again. */
+    rejected: "Die Eingaben wurden nicht akzeptiert. Bitte prüfen Sie die Angaben.",
   },
 
   /**

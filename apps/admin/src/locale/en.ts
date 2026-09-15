@@ -931,6 +931,10 @@ export const en: DeepPartial<typeof german> = {
       "Your account is not permitted to do this. Please contact your administration.",
     misconfigured:
       "The administration console is not configured correctly. Please check the environment variables.",
+    gone: "This entry no longer exists. Please reload the page.",
+    conflict:
+      "Someone else has changed this data in the meantime. Please reload the page and check your input.",
+    rejected: "The input was not accepted. Please check the details.",
   },
 
   /** The Punktemeldung queue (P110-01). */

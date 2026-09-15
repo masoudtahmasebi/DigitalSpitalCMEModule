@@ -23,7 +23,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { describeError } from "./api.js";
+import { describeError, isRetryable } from "./api.js";
 import { de } from "./locale/de.js";
 
 export type SaveState = "idle" | "saving" | "saved";
@@ -95,29 +95,49 @@ export function useSaver(fallback: string = de.error.generic): Saver {
  * the whole `CourseStructure`, and a screen that re-fetched after saving would
  * briefly render the pre-save tree.
  */
-export function useLoaded<T>(
-  load: () => Promise<T>,
-): [T | undefined, (value: T) => void, string | undefined, () => void] {
+export function useLoaded<T>(load: () => Promise<T>): [
+  T | undefined,
+  (value: T) => void,
+  string | undefined,
+  () => void,
+  /**
+   * Whether retrying the load could produce a different answer (P231-02).
+   * `true` while nothing has failed, so a caller can pass it straight to
+   * `LoadFailure` without a null check.
+   */
+  boolean,
+] {
   const [value, setValue] = useState<T | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
+  const [retryable, setRetryable] = useState(true);
   const [attempt, setAttempt] = useState(0);
   const alive = useMounted();
 
   useEffect(() => {
     setProblem(undefined);
+    setRetryable(true);
     load().then(
       (loaded) => {
         if (alive.current) setValue(loaded);
       },
       (error: unknown) => {
-        if (alive.current) setProblem(describeError(error, de.error.generic));
+        if (!alive.current) return;
+        setProblem(describeError(error, de.error.generic));
+        /*
+         * Set from the same error as the sentence, in the same place. Two
+         * reads of one value is §4 invariant 6, and the failure mode here is
+         * particular: a screen that computed the sentence from the error and
+         * the affordance from something else would eventually say "this no
+         * longer exists" above a button offering to look for it again.
+         */
+        setRetryable(isRetryable(error));
       },
     );
     // `attempt` is the retry trigger; `load` is expected to be a useCallback.
   }, [load, attempt, alive]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
-  return [value, setValue, problem, retry];
+  return [value, setValue, problem, retry, retryable];
 }
 
 /**

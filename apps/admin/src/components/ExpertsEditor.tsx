@@ -50,7 +50,7 @@ export function ExpertsEditor(props: { client: ApiClient; courseSlug: string }) 
     () => client.adminGetStructure(courseSlug),
     [client, courseSlug],
   );
-  const [structure, setStructure, loadProblem, retry] = useLoaded(load);
+  const [structure, setStructure, loadProblem, retry, loadRetryable] = useLoaded(load);
   const [draft, setDraft] = useState<Draft[] | undefined>();
   const saver = useSaver();
 
@@ -63,6 +63,7 @@ export function ExpertsEditor(props: { client: ApiClient; courseSlug: string }) 
         title={de.error.title}
         retryLabel={de.error.retry}
         problem={loadProblem}
+        retryable={loadRetryable}
         onRetry={retry}
       />
     );
