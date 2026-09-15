@@ -5,7 +5,21 @@
  * per screen that is six copies of the same `setBusy(true) / try / catch /
  * finally` — and the copies drift: one forgets to clear the previous error, one
  * leaves the button enabled during the request and double-submits, one shows
- * "gespeichert" after a failure. So it lives here once.
+ * "gespeichert" after a failure.
+ *
+ * ## "So it lives here once" was not true, and that sentence is why
+ *
+ * It said so from P9-02 until P230-01, while **six screens went on
+ * hand-rolling the triplet** and seven used this. The prediction above came
+ * true in the meantime and on the write where it mattered most: the learner
+ * name correction had no `busy` guard at all, so Speichern stayed live for the
+ * whole round trip and three clicks sent three corrections — each writing its
+ * own `learner.name_corrected` row into the append-only audit log.
+ *
+ * A comment asserting completeness is the reason nobody looks (§11.9), so this
+ * one now claims only what `scripts/check-savers.mjs` enforces: a component
+ * that performs an admin mutation uses this hook, or says in a comment why it
+ * does not.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -26,7 +40,19 @@ export interface Saver {
   readonly reset: () => void;
 }
 
-export function useSaver(): Saver {
+/**
+ * @param fallback the sentence to show when the API sent no `detail` of its
+ * own. Defaults to `de.error.generic`, which is right for a screen with no
+ * better words; a screen that has them should pass them, because "Es ist ein
+ * Fehler aufgetreten" tells an operator nothing about which of their twenty
+ * fields the server disliked.
+ *
+ * It is a fallback and never a replacement: where the API wrote a `detail` —
+ * a refused name correction explains that the Punktemeldung has already gone
+ * and what to do instead — that sentence still wins, because paraphrasing it
+ * would throw away the only actionable part.
+ */
+export function useSaver(fallback: string = de.error.generic): Saver {
   const [state, setState] = useState<SaveState>("idle");
   const [problem, setProblem] = useState<string | undefined>();
   const alive = useMounted();
@@ -44,13 +70,13 @@ export function useSaver(): Saver {
           // The API's `detail` where it wrote one — a refused delete says how
           // many learner records are in the way, and paraphrasing that into a
           // generic sentence would throw away the only actionable part.
-          setProblem(describeError(error, de.error.generic));
+          setProblem(describeError(error, fallback));
           setState("idle");
         }
         return false;
       }
     },
-    [alive],
+    [alive, fallback],
   );
 
   const reset = useCallback(() => {
