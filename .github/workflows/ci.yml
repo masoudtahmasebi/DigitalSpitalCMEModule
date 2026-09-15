@@ -103,6 +103,32 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # The repository's own checks — the twenty in `pnpm check:static`.
+      #
+      # They were in `pnpm verify` and in **no workflow at all** (P229-01), so
+      # every one of them was a gate that could not stop a merge: it ran when
+      # somebody happened to type `pnpm verify` and nowhere else. Among them
+      # `check:seed-overwrites`, which guards a seed silently replacing an
+      # operator's typed course values on every deploy (§9.10b), and
+      # `check:csp`, which guards the class that blocked every video upload for
+      # months (§9.13).
+      #
+      # CLAUDE.md §9.11 anticipated the mirror image of this — "a check that
+      # runs only in CI is a check the person writing the code does not run" —
+      # and P41-03 fixed that direction by adding `check:sdk` to `verify`.
+      # Nobody then looked the other way, and fifteen checks accumulated on the
+      # local side over the following months.
+      #
+      # One name, two callers, so the two cannot drift: `pnpm verify` runs
+      # `pnpm check:static` and so does this step. `pnpm check:ci-parity`
+      # (itself inside `check:static`) fails if a step is ever added to
+      # `verify` that no workflow reaches.
+      #
+      # It has to come after Build: `check:copy` imports `packages/copy/dist`
+      # and `check:sdk` regenerates against the contract.
+      - name: Repository checks
+        run: pnpm check:static
+
       # P2-06: the SDK is generated, never hand-edited.
       - name: Verify generated SDK matches the contract
         run: |
