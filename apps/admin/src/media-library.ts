@@ -39,7 +39,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiClient, MediaAsset } from "@ds/sdk";
 import { de } from "./locale/de.js";
-import { describeError } from "./api.js";
+import { describeError, isRetryable } from "./api.js";
 
 /**
  * Which files to offer.
@@ -64,6 +64,22 @@ export interface MediaLibraryState {
   /** `undefined` while the first load is in flight — not the same as empty. */
   readonly assets: readonly MediaAsset[] | undefined;
   readonly problem: string | undefined;
+  /**
+   * Whether the **load** failed, as opposed to a write (P236-01).
+   *
+   * `assets` stays `undefined` when a load is refused, and the screen reads
+   * that as "still in flight" — so a refusal rendered as an eternal *"Wird
+   * geladen …"* beside the error that said it had already failed. A spinner is
+   * a promise that waiting will work, and this one never resolved.
+   *
+   * It is a third state rather than `assets = []`, because an empty array is a
+   * claim about the customer's files and a refusal is not: rendering "you have
+   * uploaded nothing yet" over a 429 is the one answer worse than the spinner,
+   * since it looks like data.
+   */
+  readonly loadFailed: boolean;
+  /** Whether trying the load again could ever answer differently (P231-02). */
+  readonly loadRetryable: boolean;
   /** The id of the entry currently being written, if any. */
   readonly busy: string | undefined;
   /** What is in the fields right now, which may differ from what is stored. */
@@ -78,6 +94,8 @@ export interface MediaLibraryState {
 export function useMediaLibrary(client: ApiClient, kind: MediaKind): MediaLibraryState {
   const [assets, setAssets] = useState<readonly MediaAsset[] | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadRetryable, setLoadRetryable] = useState(true);
   const [busy, setBusy] = useState<string | undefined>();
   const [drafts, setDrafts] = useState<Readonly<Record<string, MediaDraft>>>({});
 
@@ -100,10 +118,18 @@ export function useMediaLibrary(client: ApiClient, kind: MediaKind): MediaLibrar
   const reload = useCallback(() => {
     client.adminListMedia(kind === undefined ? {} : { kind }).then(
       (rows) => {
-        if (live.current) setAssets(rows);
+        if (!live.current) return;
+        setAssets(rows);
+        // A successful load clears the previous failure, or a retry that works
+        // leaves the failure screen up and the operator with no way off it.
+        setLoadFailed(false);
+        setProblem(undefined);
       },
       (error: unknown) => {
-        if (live.current) setProblem(describeError(error, de.error.generic));
+        if (!live.current) return;
+        setProblem(describeError(error, de.error.generic));
+        setLoadFailed(true);
+        setLoadRetryable(isRetryable(error));
       },
     );
   }, [client, kind]);
@@ -204,7 +230,18 @@ export function useMediaLibrary(client: ApiClient, kind: MediaKind): MediaLibrar
     [client],
   );
 
-  return { assets, problem, busy, draftFor, edit, commit, forget, reload };
+  return {
+    assets,
+    problem,
+    loadFailed,
+    loadRetryable,
+    busy,
+    draftFor,
+    edit,
+    commit,
+    forget,
+    reload,
+  };
 }
 
 function omit<T>(record: Readonly<Record<string, T>>, key: string): Record<string, T> {

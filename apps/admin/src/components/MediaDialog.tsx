@@ -58,7 +58,7 @@ import { de } from "../locale/de.js";
 import { useMediaLibrary, type MediaKind } from "../media-library.js";
 import { ACCEPT, describeUploadFailure, runUpload } from "../uploads.js";
 import { MediaCard } from "./MediaCard.js";
-import { Button, Notice, TextInput, UploadProgress } from "./ui.js";
+import { Button, LoadFailure, Notice, TextInput, UploadProgress } from "./ui.js";
 
 type Tab = "library" | "upload" | "url";
 
@@ -212,39 +212,60 @@ function LibraryTab(props: {
         </Button>
       </div>
 
-      {library.problem === undefined ? null : (
-        <Notice tone="error">{library.problem}</Notice>
-      )}
-
-      {library.assets === undefined ? (
-        <p className="text-sm text-[color:var(--ds-admin-ink-muted)]">{de.loading}</p>
-      ) : (shown ?? []).length === 0 ? (
-        /*
-         * Two empty states, told apart, and the first one carries the way out
-         * (§9.4). "You have uploaded nothing yet" is the state a customer's
-         * very first course opens in, and a shelf with nothing on it and no
-         * button reads as a broken list.
-         */
-        <div className="space-y-2">
-          <p className="text-sm text-[color:var(--ds-admin-ink-muted)]">
-            {library.assets.length === 0 ? de.media.empty : de.media.noMatch}
-          </p>
-          {library.assets.length === 0 ? (
-            <Button onClick={props.onUploadInstead}>{de.media.tabs.upload}</Button>
-          ) : null}
-        </div>
+      {/*
+       * The same distinction as the Mediathek screen (P236-01): a failed load
+       * replaces the shelf, a failed write sits above it.
+       *
+       * It matters more here than there. This dialog is opened *during*
+       * something — an author is adding a video to a course — so a spinner
+       * that never resolves is a step of their work that appears to be
+       * loading and is not, in a box they opened on purpose.
+       */}
+      {library.loadFailed ? (
+        <LoadFailure
+          title={de.error.title}
+          retryLabel={de.error.retry}
+          problem={library.problem ?? de.error.generic}
+          retryable={library.loadRetryable}
+          onRetry={library.reload}
+        />
       ) : (
-        <ul className="grid max-h-[26rem] gap-3 overflow-y-auto sm:grid-cols-2">
-          {(shown ?? []).map((asset) => (
-            <MediaCard
-              key={asset.id}
-              client={props.client}
-              asset={asset}
-              library={library}
-              onPick={props.onPick}
-            />
-          ))}
-        </ul>
+        <>
+          {library.problem === undefined ? null : (
+            <Notice tone="error">{library.problem}</Notice>
+          )}
+
+          {library.assets === undefined ? (
+            <p className="text-sm text-[color:var(--ds-admin-ink-muted)]">{de.loading}</p>
+          ) : (shown ?? []).length === 0 ? (
+            /*
+             * Two empty states, told apart, and the first one carries the way out
+             * (§9.4). "You have uploaded nothing yet" is the state a customer's
+             * very first course opens in, and a shelf with nothing on it and no
+             * button reads as a broken list.
+             */
+            <div className="space-y-2">
+              <p className="text-sm text-[color:var(--ds-admin-ink-muted)]">
+                {library.assets.length === 0 ? de.media.empty : de.media.noMatch}
+              </p>
+              {library.assets.length === 0 ? (
+                <Button onClick={props.onUploadInstead}>{de.media.tabs.upload}</Button>
+              ) : null}
+            </div>
+          ) : (
+            <ul className="grid max-h-[26rem] gap-3 overflow-y-auto sm:grid-cols-2">
+              {(shown ?? []).map((asset) => (
+                <MediaCard
+                  key={asset.id}
+                  client={props.client}
+                  asset={asset}
+                  library={library}
+                  onPick={props.onPick}
+                />
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
       <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
