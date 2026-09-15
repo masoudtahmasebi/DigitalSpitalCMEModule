@@ -29,7 +29,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ApiClient, LearnerRecord } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { describeError, isForbidden } from "../api.js";
+import { describeError, isForbidden, isRetryable } from "../api.js";
+import { useSaver, useUnsavedChanges } from "../hooks.js";
 import {
   Badge,
   Button,
@@ -39,6 +40,7 @@ import {
   Spinner,
   Table,
   TextInput,
+  FieldError,
 } from "./ui.js";
 import { EmptyState } from "./page.js";
 
@@ -46,14 +48,42 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
   const { client, courseSlug } = props;
   const [rows, setRows] = useState<LearnerRecord[] | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
+  /*
+   * Whether the failure above is one trying again could fix (P231-02).
+   *
+   * Set from the same error as the sentence, in the same place: a screen that
+   * derived the words from the error and the button from something else would
+   * eventually say "this no longer exists" over a control offering to look for
+   * it again (§9.2).
+   */
+  const [loadRetryable, setLoadRetryable] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [editing, setEditing] = useState<string | undefined>();
+  /*
+   * A name correction open in a row is unsaved work (P234-01). `editing` holds
+   * the enrolment id being corrected, so its presence is the whole condition —
+   * and the field it belongs to goes on a Teilnahmebescheinigung, which makes
+   * losing a half-typed one worse than losing most drafts.
+   */
+  useUnsavedChanges("learner-name", editing !== undefined);
   const [name, setName] = useState("");
   const [erasing, setErasing] = useState<string | undefined>();
   /** Which row is confirming a withdrawal (P31-02). Shares `reason` below. */
   const [withdrawing, setWithdrawing] = useState<string | undefined>();
   /** The row with an outbound call in flight, so its buttons can be disabled. */
   const [busy, setBusy] = useState<string | undefined>();
+  /*
+   * The name correction's own state (P230-01). One saver rather than one per
+   * row is correct here because `editing` holds a single enrolment id — there
+   * is never a second correction in flight to confuse it with.
+   *
+   * The fallback is this screen's, not the generic one: where the API sends no
+   * `detail`, "Die Änderung konnte nicht gespeichert werden" at least names
+   * what failed.
+   */
+  const saver = useSaver(de.learners.saveFailed);
+  /** The erasure's own, so a refused erasure never reads as a refused rename. */
+  const eraser = useSaver(de.learners.saveFailed);
   const [reason, setReason] = useState("");
 
   const load = useCallback(async () => {
@@ -62,7 +92,10 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
       setRows(await client.adminListLearners(courseSlug));
     } catch (error) {
       if (isForbidden(error)) setForbidden(true);
-      else setProblem(describeError(error, de.learners.loadFailed));
+      else {
+        setProblem(describeError(error, de.learners.loadFailed));
+        setLoadRetryable(isRetryable(error));
+      }
     }
   }, [client, courseSlug]);
 
@@ -71,17 +104,24 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
   }, [load]);
 
   async function correct(row: LearnerRecord): Promise<void> {
-    setProblem(undefined);
-    try {
-      await client.adminCorrectLearnerName(row.enrolmentId, name.trim());
-      setEditing(undefined);
-      setName("");
-      await load();
-    } catch (error) {
-      // A 409 explains that the Punktemeldung has gone and what to do instead.
-      // Shown verbatim: paraphrasing it would drop the instruction.
-      setProblem(describeError(error, de.learners.saveFailed));
-    }
+    /*
+     * `saver.run` is what holds the button shut for the duration. Before
+     * P230-01 this was a bare try/catch and Speichern stayed live, so three
+     * clicks sent three corrections — and `moderation.service.ts` writes a
+     * `learner.name_corrected` audit row per request, so one correction was
+     * recorded three times in an append-only log.
+     *
+     * A 409 explains that the Punktemeldung has gone and what to do instead.
+     * `describeError` inside the hook shows that verbatim; paraphrasing it
+     * would drop the instruction.
+     */
+    const ok = await saver.run(() =>
+      client.adminCorrectLearnerName(row.enrolmentId, name.trim()),
+    );
+    if (!ok) return;
+    setEditing(undefined);
+    setName("");
+    await load();
   }
 
   /**
@@ -128,15 +168,29 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
   }
 
   async function erase(row: LearnerRecord): Promise<void> {
-    setProblem(undefined);
-    try {
-      await client.adminEraseSubject(row.enrolmentId, reason.trim());
-      setErasing(undefined);
-      setReason("");
-      await load();
-    } catch (error) {
-      setProblem(describeError(error, de.learners.saveFailed));
-    }
+    /*
+     * The same guard as `correct`, and the consequence of not having it was
+     * worse (P230-01).
+     *
+     * This is GDPR Art. 17 erasure: irreversible, across tenants, and its
+     * confirm button is a plain `Button` inside this screen's own two-step
+     * rather than a `ConfirmButton` — so it stayed in the tree, enabled, for
+     * the whole round trip.
+     *
+     * `moderation.service.ts` begins `eraseSubject` with
+     * `findEnrolment(enrolmentId)` and throws `notFound` when it is gone. The
+     * erasure removes the enrolment. So a second click would find nothing and
+     * the screen would show **an error for an erasure that had just
+     * succeeded**, next to a row that had already disappeared — read from that
+     * source path, not observed, and named as such.
+     */
+    const ok = await eraser.run(() =>
+      client.adminEraseSubject(row.enrolmentId, reason.trim()),
+    );
+    if (!ok) return;
+    setErasing(undefined);
+    setReason("");
+    await load();
   }
 
   if (forbidden) {
@@ -155,6 +209,7 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
         title={de.error.title}
         retryLabel={de.error.retry}
         problem={problem}
+        retryable={loadRetryable}
         onRetry={() => void load()}
       />
     );
@@ -200,14 +255,29 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
                     <div className="flex gap-2">
                       <Button
                         onClick={() => void correct(row)}
-                        disabled={name.trim() === ""}
+                        disabled={saver.state === "saving" || name.trim() === ""}
                       >
-                        {de.common.save}
+                        {saver.state === "saving" ? de.common.saving : de.common.save}
                       </Button>
-                      <Button variant="secondary" onClick={() => setEditing(undefined)}>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          saver.reset();
+                          setEditing(undefined);
+                        }}
+                      >
                         {de.common.cancel}
                       </Button>
                     </div>
+                    {saver.problem === undefined ? null : (
+                      /*
+                       * Beside the field it is about, not in the screen-level
+                       * notice: `problem` up there is about the list failing to
+                       * load, and one channel carrying two unrelated failures
+                       * is how a refused correction reads as a broken screen.
+                       */
+                      <FieldError>{saver.problem}</FieldError>
+                    )}
                   </div>
                 ) : (
                   (row.attestedName ?? "—")
@@ -244,14 +314,25 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
                       <Button
                         variant="danger"
                         onClick={() => void erase(row)}
-                        disabled={reason.trim() === ""}
+                        disabled={eraser.state === "saving" || reason.trim() === ""}
                       >
-                        {de.learners.eraseConfirm}
+                        {eraser.state === "saving"
+                          ? de.common.saving
+                          : de.learners.eraseConfirm}
                       </Button>
-                      <Button variant="secondary" onClick={() => setErasing(undefined)}>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          eraser.reset();
+                          setErasing(undefined);
+                        }}
+                      >
                         {de.common.cancel}
                       </Button>
                     </div>
+                    {eraser.problem === undefined ? null : (
+                      <FieldError>{eraser.problem}</FieldError>
+                    )}
                   </div>
                 ) : withdrawing === row.enrolmentId ? (
                   /*

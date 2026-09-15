@@ -29,7 +29,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ApiClient, CustomerSummary } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { describeError, isForbidden } from "../api.js";
+import { describeError, isForbidden, isRetryable } from "../api.js";
 import {
   Button,
   ConfirmButton,
@@ -63,6 +63,15 @@ export function Customers(props: {
   const { client } = props;
   const [customers, setCustomers] = useState<CustomerSummary[] | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
+  /*
+   * Whether the failure above is one trying again could fix (P231-02).
+   *
+   * Set from the same error as the sentence, in the same place: a screen that
+   * derived the words from the error and the button from something else would
+   * eventually say "this no longer exists" over a control offering to look for
+   * it again (§9.2).
+   */
+  const [loadRetryable, setLoadRetryable] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [slug, setSlug] = useState("");
   const [name, setName] = useState("");
@@ -74,7 +83,10 @@ export function Customers(props: {
       setCustomers(await client.adminListCustomers());
     } catch (error) {
       if (isForbidden(error)) setForbidden(true);
-      else setProblem(describeError(error, de.customers.loadFailed));
+      else {
+        setProblem(describeError(error, de.customers.loadFailed));
+        setLoadRetryable(isRetryable(error));
+      }
     }
   }, [client]);
 
@@ -129,6 +141,7 @@ export function Customers(props: {
         title={de.error.title}
         retryLabel={de.error.retry}
         problem={problem}
+        retryable={loadRetryable}
         onRetry={() => void load()}
       />
     );

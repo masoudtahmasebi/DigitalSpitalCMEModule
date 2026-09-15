@@ -84,7 +84,7 @@ import {
   withChapters,
   withContents,
 } from "../structure-order.js";
-import { useLoaded, useSaver } from "../hooks.js";
+import { useLoaded, useSaver, useUnsavedChanges } from "../hooks.js";
 import { probeableSourceUrl, probeDurationSec } from "../media-duration.js";
 import { readableUrl } from "../media-preview.js";
 import { capturePosterFrame } from "../poster-frame.js";
@@ -144,7 +144,7 @@ export function CourseStructureEditor(props: {
     () => client.adminGetStructure(courseSlug),
     [client, courseSlug],
   );
-  const [structure, setStructure, loadProblem, retry] = useLoaded(load);
+  const [structure, setStructure, loadProblem, retry, loadRetryable] = useLoaded(load);
   const saver = useSaver();
 
   const mutate = useCallback(
@@ -168,6 +168,7 @@ export function CourseStructureEditor(props: {
         title={de.error.title}
         retryLabel={de.error.retry}
         problem={loadProblem}
+        retryable={loadRetryable}
         onRetry={retry}
       />
     );
@@ -267,12 +268,19 @@ function ModuleBlock(props: {
 }) {
   const { client, module, modules, index } = props;
   const [editing, setEditing] = useState(false);
+  /*
+   * a module being renamed is unsaved work while the editor is open (P234-01). Each inline
+   * editor registers under its own key, because several can be open at once in
+   * this tree and closing one must not clear another's flag.
+   */
+  useUnsavedChanges(`structure-module-${props.module.id}`, editing);
   const locked = useContentLocked();
 
   const blockedBy = recordsUnderModule(module);
 
   return (
     <Row
+      level="section"
       eyebrow={`${de.structure.module} ${index + 1}`}
       title={module.title}
       meta={module.subtitle}
@@ -291,7 +299,7 @@ function ModuleBlock(props: {
               disabled={index === modules.length - 1}
               onClick={() => props.onReorder(swap(modules, index, index + 1))}
             />
-            <Button variant="secondary" onClick={() => setEditing(!editing)}>
+            <Button variant="quiet" onClick={() => setEditing(!editing)}>
               {editing ? de.common.cancel : de.common.edit}
             </Button>
             <ConfirmButton
@@ -394,6 +402,12 @@ function ChapterBlock(props: {
 }) {
   const { client, chapter, module, modules, index } = props;
   const [editing, setEditing] = useState(false);
+  /*
+   * a chapter being renamed is unsaved work while the editor is open (P234-01). Each inline
+   * editor registers under its own key, because several can be open at once in
+   * this tree and closing one must not clear another's flag.
+   */
+  useUnsavedChanges(`structure-chapter-${props.chapter.id}`, editing);
   const locked = useContentLocked();
 
   const blocked = chapter.contents.some((content) => content.learnerRecords > 0);
@@ -404,6 +418,7 @@ function ChapterBlock(props: {
 
   return (
     <Row
+      level="group"
       eyebrow={`${de.structure.chapter} ${index + 1}`}
       title={chapter.title}
       actions={
@@ -448,7 +463,14 @@ function ChapterBlock(props: {
                   onChange={(event) =>
                     props.onReorder(moveChapter(modules, chapter.id, event.target.value))
                   }
-                  className="rounded border border-gray-300 px-2 py-1 text-xs"
+                  /* Quiet, like the buttons beside it — see `Button`'s
+                     `variant` note. This is a per-row control on a screen that
+                     can carry forty rows, and once the buttons around it lost
+                     their borders it became the loudest thing on a chapter.
+                     `focus:` rather than `focus-visible:`: a `<select>` is
+                     reached by pointer as often as by keyboard and the open
+                     state has to be visible either way. */
+                  className="rounded border border-transparent bg-transparent px-2 py-1 text-xs transition-colors hover:border-gray-300 hover:bg-white focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/25"
                 >
                   {moduleOptions.map(([id, title]) => (
                     <option key={id} value={id}>
@@ -458,7 +480,7 @@ function ChapterBlock(props: {
                 </select>
               </label>
             ) : null}
-            <Button variant="secondary" onClick={() => setEditing(!editing)}>
+            <Button variant="quiet" onClick={() => setEditing(!editing)}>
               {editing ? de.common.cancel : de.common.edit}
             </Button>
             <ConfirmButton
@@ -567,6 +589,12 @@ function ContentRow(props: {
 }) {
   const { client, content, chapter, modules, index } = props;
   const [editing, setEditing] = useState(false);
+  /*
+   * a content row being edited is unsaved work while the editor is open (P234-01). Each inline
+   * editor registers under its own key, because several can be open at once in
+   * this tree and closing one must not clear another's flag.
+   */
+  useUnsavedChanges(`structure-content-${props.content.id}`, editing);
   const locked = useContentLocked();
 
   const move = (to: number) =>
@@ -589,6 +617,7 @@ function ContentRow(props: {
 
   return (
     <Row
+      level="item"
       eyebrow={de.structure.kinds[content.kind]}
       title={content.title}
       meta={meta}
@@ -602,7 +631,7 @@ function ContentRow(props: {
            */}
           {content.kind === "quiz" ? (
             <Button
-              variant="secondary"
+              variant="quiet"
               onClick={() => props.onEditQuiz(content.id, content.title)}
             >
               {locked ? de.structure.viewQuiz : de.structure.editQuiz}
@@ -622,7 +651,7 @@ function ContentRow(props: {
                 disabled={index === chapter.contents.length - 1}
                 onClick={() => move(index + 1)}
               />
-              <Button variant="secondary" onClick={() => setEditing(!editing)}>
+              <Button variant="quiet" onClick={() => setEditing(!editing)}>
                 {editing ? de.common.cancel : de.common.edit}
               </Button>
               <ConfirmButton
@@ -1312,7 +1341,7 @@ function AutoPoster(props: {
         onChange={onChange}
       />
       {busy ? (
-        <p className="mt-1 text-xs text-[color:var(--ds-ink-muted)]" role="status">
+        <p className="mt-1 text-xs text-[color:var(--ds-admin-ink-muted)]" role="status">
           {de.structure.posterCapturing}
         </p>
       ) : null}
@@ -1433,7 +1462,7 @@ export function MeasuredDuration(props: {
         // Shown, not editable. The number is a reading of the file, and a box
         // around it would invite the edit this whole component exists to stop.
         <p
-          className="rounded-md border border-[color:var(--ds-hairline)] bg-[color:var(--ds-surface)] px-3 py-2 text-sm text-[color:var(--ds-ink)]"
+          className="rounded-md border border-[color:var(--ds-admin-hairline)] bg-[color:var(--ds-admin-surface)] px-3 py-2 text-sm text-[color:var(--ds-admin-ink)]"
           id={props.id}
         >
           {de.structure.durationMeasured(Number(props.state))}
@@ -1448,7 +1477,7 @@ export function MeasuredDuration(props: {
       )}
 
       {props.state === "running" ? (
-        <p className="mt-1 text-xs text-[color:var(--ds-ink-muted)]" role="status">
+        <p className="mt-1 text-xs text-[color:var(--ds-admin-ink-muted)]" role="status">
           {de.structure.durationDetecting}
         </p>
       ) : null}
@@ -1488,7 +1517,9 @@ export function MeasuredDuration(props: {
          */
         <p
           className={`mt-1 text-xs ${
-            sourceChangedHere ? "text-[color:var(--ds-ink-muted)]" : "text-amber-700"
+            sourceChangedHere
+              ? "text-[color:var(--ds-admin-ink-muted)]"
+              : "text-amber-700"
           }`}
           role="status"
         >
@@ -1546,7 +1577,7 @@ function SourcesEditor(props: {
               // A key is not editable text. It is the server's, and a
               // hand-edited one can only ever be refused — so it renders as
               // what it is and the row is removed rather than corrected.
-              <span className="flex items-center rounded-md border border-[color:var(--ds-hairline)] bg-[color:var(--ds-surface)] px-3 py-2 text-sm text-[color:var(--ds-ink)]">
+              <span className="flex items-center rounded-md border border-[color:var(--ds-admin-hairline)] bg-[color:var(--ds-admin-surface)] px-3 py-2 text-sm text-[color:var(--ds-admin-ink)]">
                 {de.uploads.stored} · {referenceName(source.url)}
               </span>
             ) : (
@@ -1596,7 +1627,7 @@ function SourcesEditor(props: {
       </ul>
 
       {props.sources.length < 2 ? null : (
-        <p className="text-xs text-[color:var(--ds-ink-muted)]">
+        <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
           {de.structure.sourceLabelHint}
         </p>
       )}
@@ -1658,7 +1689,7 @@ function SourcesEditor(props: {
         />
       )}
 
-      <p className="text-xs text-[color:var(--ds-ink-muted)]">
+      <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
         {de.uploads.videoUploadHint}
       </p>
 

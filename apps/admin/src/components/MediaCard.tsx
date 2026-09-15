@@ -53,14 +53,14 @@ export function MediaCard(props: {
   const working = library.busy === asset.id;
 
   return (
-    <li className="space-y-3 rounded-lg border border-[color:var(--ds-hairline)] bg-[color:var(--ds-surface)] p-3">
+    <li className="space-y-3 rounded-lg border border-[color:var(--ds-admin-hairline)] bg-[color:var(--ds-admin-surface)] p-3">
       <MediaThumbnail client={props.client} asset={asset} />
 
       <div className="space-y-1">
-        <p className="break-all text-sm font-medium text-[color:var(--ds-ink)]">
+        <p className="break-all text-sm font-medium text-[color:var(--ds-admin-ink)]">
           {asset.fileName}
         </p>
-        <p className="text-xs text-[color:var(--ds-ink-muted)]">
+        <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
           {asset.mimeType ?? de.media.unknownType} · {humanBytes(asset.byteSize)} ·{" "}
           {new Date(asset.createdAt).toLocaleDateString("de-DE")}
         </p>
@@ -69,7 +69,7 @@ export function MediaCard(props: {
           (§9.4). The API refuses while anything points at the file; without
           this the operator learns that from a 409 after deciding.
         */}
-        <p className="text-xs text-[color:var(--ds-ink-muted)]">
+        <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
           {asset.usedByCount === 0 ? de.media.unused : de.media.usedBy(asset.usedByCount)}
         </p>
       </div>
@@ -108,7 +108,9 @@ export function MediaCard(props: {
       </div>
 
       {family !== "image" ? null : (
-        <p className="text-xs text-[color:var(--ds-ink-muted)]">{de.media.altHint}</p>
+        <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
+          {de.media.altHint}
+        </p>
       )}
 
       <div className="flex flex-wrap gap-2">
@@ -168,12 +170,14 @@ function MediaThumbnail(props: { client: ApiClient; asset: MediaAsset }) {
   const family = familyOf(props.asset.mimeType);
 
   const frame =
-    "flex h-40 w-full items-center justify-center overflow-hidden rounded-md bg-[color:var(--ds-surface-sunken)]";
+    "flex h-40 w-full items-center justify-center overflow-hidden rounded-md bg-[color:var(--ds-admin-surface-sunken)]";
 
   if (preview.kind === "loading") {
     return (
       <div className={frame}>
-        <span className="text-xs text-[color:var(--ds-ink-muted)]">{de.loading}</span>
+        <span className="text-xs text-[color:var(--ds-admin-ink-muted)]">
+          {de.loading}
+        </span>
       </div>
     );
   }
@@ -187,7 +191,7 @@ function MediaThumbnail(props: { client: ApiClient; asset: MediaAsset }) {
      */
     return (
       <div className={frame}>
-        <span className="px-3 text-center text-xs text-[color:var(--ds-ink-muted)]">
+        <span className="px-3 text-center text-xs text-[color:var(--ds-admin-ink-muted)]">
           {de.media.noPreview}
         </span>
       </div>
@@ -271,7 +275,7 @@ function CopyUrlButton(props: { url: string }) {
         {de.media.copyUrl}
       </Button>
       {state === "idle" ? null : (
-        <span className="text-xs text-[color:var(--ds-ink-muted)]" role="status">
+        <span className="text-xs text-[color:var(--ds-admin-ink-muted)]" role="status">
           {state === "copied" ? de.media.copied : props.url}
         </span>
       )}
