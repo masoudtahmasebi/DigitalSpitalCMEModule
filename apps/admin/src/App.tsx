@@ -35,9 +35,8 @@ import type {
   ParticipantList,
   ProjectSummary,
 } from "@ds/sdk";
-import { buildCommit, buildVersion, readConfig } from "./config.js";
+import { readConfig } from "./config.js";
 import { currentStaff, signOut, type StaffProfile } from "./staff-auth.js";
-import { chooseLanguage, currentLanguage } from "./locale/language.js";
 import {
   createAdminClient,
   createPlatformClient,
@@ -69,9 +68,11 @@ import { EivQueue } from "./components/EivQueue.js";
 import { StaffAccounts } from "./components/StaffAccounts.js";
 import { Security } from "./components/Security.js";
 import { SignIn } from "./components/SignIn.js";
-import { BuildFooter } from "./components/BuildFooter.js";
 import { forgetHash, NewPassword, tokenFromHash } from "./components/NewPassword.js";
-import { decode, encode, type Route } from "./routes.js";
+import { decode, encode, type Route, type RouteCourseTab } from "./routes.js";
+import { Shell } from "./components/shell/Shell.js";
+import { Sidebar } from "./components/shell/Sidebar.js";
+import { sectionFor, visibleNav } from "./components/shell/navigation.js";
 
 export function App() {
   const config = useMemo(() => readConfig(), []);
@@ -336,146 +337,6 @@ function VisibilityCell(props: {
   );
 }
 
-function Shell(props: {
-  children: React.ReactNode;
-  /**
-   * Where the build footer asks the API for its commit. Undefined before the
-   * configuration has been read — the footer copes, and still reports this
-   * bundle's own build.
-   */
-  apiBase?: string | undefined;
-  operator?: string;
-  onSignOut?: () => void;
-  /** The navigation column. Absent before sign-in, when there is nowhere to go. */
-  nav?: React.ReactNode;
-  /** Scope controls for the app bar — the customer picker. */
-  scope?: React.ReactNode;
-  /*
-   * On a narrow screen the sidebar collapses (P30-02).
-   *
-   * `md:flex` put it *above* the content rather than beside it, so on a phone
-   * every screen opened with eleven navigation buttons and the operator scrolled
-   * past all of them to reach the thing they had just navigated to.
-   *
-   * The open/closed state lives in `Console` rather than here, because the thing
-   * that has to close the menu is a navigation click — and those buttons are
-   * built there. Passing a callback down and having Shell guess when a click
-   * inside `nav` was a navigation would be the same state in two places.
-   */
-  menuOpen?: boolean;
-  onToggleMenu?: () => void;
-}) {
-  const signedIn = props.onSignOut !== undefined;
-  const menuOpen = props.menuOpen ?? false;
-
-  return (
-    <div className="min-h-screen bg-[color:var(--ds-surface)] md:flex">
-      {signedIn ? (
-        <aside
-          className={`shrink-0 bg-[color:var(--ds-ink)] md:block md:min-h-screen md:w-64 ${
-            menuOpen ? "block" : "hidden"
-          }`}
-        >
-          <div className="flex items-center gap-2.5 px-4 py-4">
-            <span
-              aria-hidden
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-500 text-xs font-bold text-white shadow-sm"
-            >
-              DS
-            </span>
-            <span className="truncate text-sm font-semibold text-white">
-              {de.appShort}
-            </span>
-          </div>
-          {props.nav}
-        </aside>
-      ) : null}
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white px-6 py-3">
-          {signedIn ? (
-            <div className="flex min-w-0 items-center gap-3">
-              <button
-                type="button"
-                aria-expanded={menuOpen}
-                onClick={() => props.onToggleMenu?.()}
-                className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-700 shadow-sm md:hidden"
-              >
-                {menuOpen ? de.nav.closeMenu : de.nav.menu}
-              </button>
-              {props.scope}
-            </div>
-          ) : (
-            <h1 className="text-base font-semibold text-gray-900">{de.appTitle}</h1>
-          )}
-          {signedIn ? (
-            <div className="flex items-center gap-3">
-              {/* Whose session this is. An operator with two accounts — their own
-                  and a super admin one — otherwise has no way to tell which they
-                  are acting as, and the two differ in what they can destroy. */}
-              <span className="text-sm text-gray-600">{props.operator}</span>
-              {/*
-                The language switch (P86-01).
-                
-                In the header rather than under Einstellungen because it is not
-                a setting about the platform — it is a property of the person
-                reading the screen, and somebody who cannot read the current
-                language must be able to find it without navigating through it.
-                
-                Switching reloads: see `locale/language.ts` for why that is the
-                design and not a shortcut.
-              */}
-              <Button
-                variant="secondary"
-                aria-label={de.language.switchTo(
-                  currentLanguage() === "de" ? de.language.english : de.language.german,
-                )}
-                onClick={() => chooseLanguage(currentLanguage() === "de" ? "en" : "de")}
-              >
-                {currentLanguage() === "de" ? "EN" : "DE"}
-              </Button>
-              <Button variant="secondary" onClick={() => props.onSignOut?.()}>
-                {de.auth.signOut}
-              </Button>
-            </div>
-          ) : null}
-        </header>
-
-        <main className="min-w-0 flex-1 p-5 sm:p-6">
-          {/*
-            No width cap on the content once signed in (P104-02).
-
-            `max-w-6xl` centred every screen in a 72rem column, which on a wide
-            monitor left a band of empty grey on both sides of a *table* — and a
-            table is the one thing that genuinely wants the width, because the
-            alternative is truncated titles and a horizontal scrollbar. P100-01
-            capped the things that should be capped: prose at `max-w-3xl`, form
-            fields at `max-w-2xl`, each where it is rendered. A second cap on the
-            whole page then constrained the lists as well, which was never the
-            intent.
-
-            The sign-in screen keeps its own — a lone form centred in a full
-            screen is the one case where the column *is* the layout.
-          */}
-          <div className={signedIn ? "" : "mx-auto max-w-md pt-12"}>{props.children}</div>
-        </main>
-
-        {/* Rendered by Shell rather than passed in at each of the five call
-            sites, so it cannot be forgotten on one — and specifically not on
-            the misconfigured and signed-out branches, which are where "which
-            build is this?" is most often asked. `apiBase` is undefined on the
-            misconfigured branch; the footer then shows this bundle's commit
-            and `unknown` for the API, which is the true answer. */}
-        <BuildFooter
-          apiBase={props.apiBase}
-          commit={buildCommit()}
-          version={buildVersion()}
-        />
-      </div>
-    </div>
-  );
-}
-
 /**
  * The remembered customer, if the browser still has one.
  *
@@ -498,8 +359,8 @@ function readStored(key: string): string | undefined {
  * created course lands on — settings would open on a form asking for a VNR
  * before there is anything to accredit.
  */
-type CourseTab =
-  "settings" | "presentation" | "structure" | "experts" | "evaluation" | "participants";
+/** Likewise — `routes.ts` declares it, this file uses it. */
+type CourseTab = RouteCourseTab;
 
 const COURSE_TABS: ReadonlyArray<readonly [CourseTab, string]> = [
   ["structure", de.structure.title],
@@ -512,246 +373,18 @@ const COURSE_TABS: ReadonlyArray<readonly [CourseTab, string]> = [
   ["participants", de.participants.title],
 ];
 
-type View =
-  | { kind: "courses" }
-  | { kind: "new-course" }
-  | { kind: "organisation" }
-  | { kind: "branding" }
-  | { kind: "copy" }
-  | { kind: "media" }
-  | { kind: "punktemeldungen" }
-  | { kind: "customers" }
-  | { kind: "platform-eiv" }
-  | { kind: "participants" }
-  | { kind: "learners" }
-  | { kind: "certificates" }
-  | { kind: "staff" }
-  | { kind: "security" }
-  | { kind: "course"; slug: string; tab: CourseTab; quizContentId?: string };
-
 /**
- * The sections, and the capability each one needs.
+ * The screen the console is on.
  *
- * `undefined` means every operator. `customer` is held only by `super_admin`
- * (P12-01b) — a customer is the tenant boundary itself, so nobody inside one
- * may see or mint another.
+ * An alias, not a copy. This union was written out here *and* in `routes.ts`,
+ * where its own header said "Mirrors the `CourseTab` union in `App.tsx`" — two
+ * homes for one value, which §9.10b is about. Adding a screen meant editing
+ * both, and nothing would have failed if you edited one.
  *
- * This hides a tab; it does not protect anything. The API 403s the endpoints
- * behind it regardless of what was drawn, and `Customers` handles that 403
- * because a URL can be typed.
+ * `Route` is the home, because that is the file the address bar is parsed in
+ * and an unrepresentable route is the one that actually breaks something.
  */
-interface Section {
-  readonly kind: View["kind"];
-  /** Short, for the sidebar. */
-  readonly label: string;
-  /**
-   * The page heading and the sentence under it.
-   *
-   * Declared here rather than inside each screen — react-admin's `Resource`
-   * idea: the page chrome belongs to the destination, not to the component
-   * that happens to fill it. Ten screens each drawing their own heading is how
-   * three of them ended up with none and two with a heading in a different
-   * size.
-   */
-  readonly title: string;
-  readonly description?: string;
-  /** `undefined` means every operator may see it. */
-  readonly capability?: string;
-}
-
-interface NavGroup {
-  readonly heading: string;
-  readonly sections: readonly Section[];
-}
-
-/**
- * The navigation, grouped by the question each part answers (P30-02).
- *
- * Ten flat destinations is a list an operator re-reads top to bottom every
- * time, because nothing says which part of it they are in. Grouped, the shape
- * of the console is legible at a glance and matches the order somebody actually
- * works in:
- *
- *   **Angebot** — what exists to be taken. A customer, its departments and
- *   projects, and the courses inside them. Setup flows downwards through it.
- *   **Teilnahme** — who is taking it, how far they have got, and what came out
- *   at the end. Access first: an account has to exist before it can have
- *   progress, and this is the screen that creates one.
- *   **Einstellungen** — the platform itself. Visited once, then rarely.
- *
- * Capability decides only what is *drawn*. The API 403s every endpoint behind a
- * hidden screen regardless, because any of them can be reached by typing a URL
- * — `Customers` handles that 403 for exactly that reason.
- */
-const NAV: readonly NavGroup[] = [
-  {
-    heading: de.nav.groupCatalogue,
-    sections: [
-      // A customer is the tenant boundary itself, so only `super_admin` holds
-      // `customer` — nobody inside one may see or mint another (P12-01b).
-      {
-        kind: "customers",
-        label: de.customers.title,
-        title: de.customers.title,
-        description: de.customers.intro,
-        capability: "customer",
-      },
-      /*
-       * Plattform → Punktemeldung (P180-01).
-       *
-       * `platform`, which only `super_admin` holds. There is one EIV worker per
-       * installation and one register it talks to; a customer administrator's
-       * authority is over their own courses and participants, and pointing the
-       * platform at the live Ärztekammer endpoint would file statutory reports
-       * for every tenant at once — including ones they have never heard of.
-       *
-       * Beside Kunden because both are about the installation rather than about
-       * a course, and both are drawn for exactly one role.
-       */
-      {
-        kind: "platform-eiv",
-        label: de.platform.nav,
-        title: de.platform.title,
-        description: de.platform.intro,
-        capability: "platform",
-      },
-      /*
-       * `project`, which a course editor does not hold (P38-01).
-       *
-       * This screen reads departments and projects, and both reads 403 for
-       * them — so leaving it undrawn is not a courtesy here, it is the
-       * difference between a menu entry and a menu entry that can only produce
-       * an error. `department_admin` does hold `project`, and their writes are
-       * refused by the API as they always were.
-       */
-      {
-        kind: "organisation",
-        label: de.nav.organisation,
-        title: de.organisation.title,
-        description: de.organisation.intro,
-        capability: "project",
-      },
-      {
-        kind: "courses",
-        label: de.nav.courses,
-        title: de.courses.title,
-        // The screen an operator opens first, and the only one that had no
-        // description at all (P136-01).
-        description: de.courses.intro,
-      },
-      /*
-       * The Mediathek (P88-01), under ANGEBOT beside the courses whose files it
-       * holds — it is content, not a setting.
-       *
-       * `project`, the same capability as Erscheinungsbild and Texte. The
-       * library spans every course of the customer, so it is not a course
-       * editor's own material: a `course_editor` writes the courses they are
-       * given and does not tidy the shared shelf. Their uploads still land in
-       * it and the picker still offers it to them, which is the reuse this was
-       * built for.
-       */
-      {
-        kind: "media",
-        label: de.media.nav,
-        title: de.media.title,
-        description: de.media.screenIntro,
-        capability: "project",
-      },
-    ],
-  },
-  {
-    heading: de.nav.groupPeople,
-    sections: [
-      {
-        kind: "participants",
-        label: de.participantAccounts.title,
-        title: de.participantAccounts.title,
-        description: de.participantAccounts.intro,
-        capability: "learner_record",
-      },
-      // Learner records and certificates need `learner_record` / `certificate`,
-      // which a department admin and a course editor do not hold: neither has
-      // business correcting a physician's name or withdrawing a document.
-      {
-        kind: "learners",
-        label: de.learners.title,
-        title: de.learners.title,
-        description: de.learners.intro,
-        capability: "learner_record",
-      },
-      {
-        kind: "certificates",
-        label: de.certificates.title,
-        title: de.certificates.title,
-        description: de.certificates.intro,
-        capability: "certificate",
-      },
-      /*
-       * The Punktemeldung queue (P110-01), beside the certificates it produces
-       * — they are two halves of one completion, and an operator looking at a
-       * physician's certificate is one row away from the point it reports.
-       *
-       * `certificate`, the same capability: this row is about one person's CME
-       * record, which is exactly what that capability governs. A weaker one
-       * would put a masked EFN and a statutory deadline in front of somebody
-       * the platform does not trust with the certificate itself.
-       */
-      {
-        kind: "punktemeldungen",
-        label: de.eivQueue.nav,
-        title: de.eivQueue.title,
-        description: de.eivQueue.screenIntro,
-        capability: "certificate",
-      },
-    ],
-  },
-  {
-    heading: de.nav.groupPlatform,
-    sections: [
-      {
-        kind: "staff",
-        label: de.staff.title,
-        title: de.staff.title,
-        description: de.staff.intro,
-        capability: "staff_user",
-      },
-      /*
-       * `project` as well (P38-01). Branding is a project's typeface, colours
-       * and catalogue copy; a course editor writes courses, not the surface
-       * they appear on, and `GET /admin/branding/font` refuses them.
-       */
-      {
-        kind: "branding",
-        label: de.nav.branding,
-        title: de.nav.branding,
-        description: de.branding.intro,
-        capability: "project",
-      },
-      /*
-       * Texte (P83-04), beside Erscheinungsbild and with the same capability.
-       * Both are "how this project looks and reads to a learner", and a course
-       * editor writes courses rather than the surface they appear on.
-       */
-      {
-        kind: "copy",
-        label: de.copy.nav,
-        title: de.copy.nav,
-        description: de.copy.intro,
-        capability: "project",
-      },
-      // No capability: every operator may read the rules their own sign-in is
-      // subject to. Which of them they may *change* is enforced on the write —
-      // hiding the screen would only hide the platform row from the people it
-      // governs (P22-02).
-      {
-        kind: "security",
-        label: de.nav.security,
-        title: de.security.title,
-        description: de.security.intro,
-      },
-    ],
-  },
-];
+type View = Route;
 
 /**
  * Exported, and its clients injectable, so it can be tested (P22-05).
@@ -1209,72 +842,27 @@ export function Console(props: {
    * navigation at all. And the content is mostly tables, which want the
    * horizontal space a vertical nav leaves them.
    */
+  /*
+   * The navigation column.
+   *
+   * Which groups it draws is `visibleNav`'s answer, and it is a separate pure
+   * function so that "what does a `course_editor` see?" can be asked without an
+   * API and a browser (§9.2 — that question is the one this table exists to
+   * answer correctly).
+   */
   const nav = (
-    <nav className="px-2 pb-4" aria-label={de.nav.menu}>
-      {NAV.map((group, groupIndex) => {
-        const visible = group.sections.filter(
-          (section) =>
-            section.capability === undefined ||
-            props.profile.capabilities.includes(section.capability),
-        );
-        // A group whose every destination is hidden must not leave a heading
-        // floating over nothing — which is what a course editor would see over
-        // "Teilnahme" today.
-        if (visible.length === 0) return null;
-
-        /*
-         * A labelled list, not a heading.
-         *
-         * These were `h2`, which put them at the same level as the page title
-         * `Page` draws — so a screen reader's heading list read "Angebot,
-         * Teilnahme, Einstellungen, Fortbildungen" as four peers, and the one
-         * that names the screen you are on was last. `aria-labelledby` on the
-         * list says the same thing without competing for the document outline.
-         */
-        const headingId = `ds-nav-group-${groupIndex}`;
-
-        return (
-          <div key={group.heading} className="mb-4">
-            <p
-              id={headingId}
-              className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35"
-            >
-              {group.heading}
-            </p>
-            <ul aria-labelledby={headingId}>
-              {visible.map((section) => {
-                const active = view.kind === section.kind;
-                return (
-                  <li key={section.kind}>
-                    <button
-                      type="button"
-                      aria-current={active ? "page" : undefined}
-                      onClick={() => {
-                        setView({ kind: section.kind } as View);
-                        setMenuOpen(false);
-                      }}
-                      className={`mb-0.5 block w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ds-ink)] ${
-                        active
-                          ? "bg-brand-500 text-white shadow-[0_1px_12px_-2px_rgba(228,0,61,0.65)]"
-                          : "text-white/65 hover:bg-white/10 hover:text-white"
-                      }`}
-                    >
-                      {section.label}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        );
-      })}
-    </nav>
+    <Sidebar
+      groups={visibleNav(props.profile.capabilities)}
+      active={view.kind}
+      onNavigate={(kind) => {
+        setView({ kind } as View);
+        setMenuOpen(false);
+      }}
+    />
   );
 
   /** The section the current view belongs to, for its page chrome. */
-  const section = NAV.flatMap((group) => group.sections).find(
-    (candidate) => candidate.kind === view.kind,
-  );
+  const section = sectionFor(view.kind);
 
   /**
    * The frame every screen renders inside.
@@ -1627,7 +1215,7 @@ export function Console(props: {
                 <td className="px-4 py-3">
                   <ConfirmButton
                     label={de.courses.delete}
-                    ariaLabel={de.courses.deleteAria(course.title)}
+                    aria-label={de.courses.deleteAria(course.title)}
                     confirmLabel={de.courses.deleteConfirm}
                     cancelLabel={de.common.cancel}
                     disabledReason={

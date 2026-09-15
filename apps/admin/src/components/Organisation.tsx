@@ -181,7 +181,7 @@ function Departments(props: {
                 {editing === department.slug ? null : (
                   <Button
                     variant="secondary"
-                    ariaLabel={de.common.editDepartment(department.name)}
+                    aria-label={de.common.editDepartment(department.name)}
                     onClick={() => setEditing(department.slug)}
                   >
                     {de.common.edit}
@@ -367,7 +367,7 @@ function Projects(props: {
                   variant="secondary"
                   {...(open === project.slug
                     ? {}
-                    : { ariaLabel: de.common.editProject(project.name) })}
+                    : { "aria-label": de.common.editProject(project.name) })}
                   onClick={() =>
                     setOpen(open === project.slug ? undefined : project.slug)
                   }

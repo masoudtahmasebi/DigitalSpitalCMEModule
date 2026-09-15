@@ -495,7 +495,7 @@ function SetPassword(props: {
     return (
       <Button
         variant="secondary"
-        ariaLabel={de.staff.setPasswordFor(props.email)}
+        aria-label={de.staff.setPasswordFor(props.email)}
         onClick={() => setOpen(true)}
       >
         {de.staff.setPassword}
