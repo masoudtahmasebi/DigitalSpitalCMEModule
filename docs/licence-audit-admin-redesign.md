@@ -6,6 +6,21 @@ before its licence and attribution obligations were recorded.
 
 This is that record. It covers the three pull requests P223, P224 and P225.
 
+## Where the evidence in §2 was gathered
+
+Every command in §2 is written `origin/main...HEAD` and was run at the head of
+the redesign stack — commit `fd34f9c`, the tip of `…-admin-c`, which held all
+three pull requests because they were stacked a → b → c. **Read from `main`
+after the merge, those commands answer about a different diff**, so re-run them
+against that commit rather than against `main`, or re-derive them with an
+explicit range.
+
+The file was briefly its own branch and its own pull request (#85), so that the
+first two pull requests of the stack could point at the record their licence
+statement rests on. That is history now — it merged with the rest, and the
+paragraph explaining the branch has been deleted rather than left to read as
+though it were still true (§11.14).
+
 ---
 
 ## 1. The finding
