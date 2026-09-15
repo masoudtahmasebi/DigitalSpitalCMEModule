@@ -26,6 +26,7 @@
 
 import { useEffect, useState } from "react";
 import { isNotFound, type ApiClient, type FontState } from "@ds/sdk";
+import { useUnsavedChanges } from "../hooks.js";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
 import { Badge, Button, Field, Notice, TextInput } from "./ui.js";
@@ -44,6 +45,16 @@ export function BrandingSettings(props: { client: ApiClient }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | undefined>();
   const [saved, setSaved] = useState(false);
+
+  /*
+   * Whether the operator has touched anything since the last successful save
+   * (P234-01). Edited, not different: one `onChange` on the container catches
+   * every control, including any added later, because React's synthetic
+   * `change` bubbles — where comparing field by field is a list that a new
+   * field silently escapes (§9.3).
+   */
+  const [edited, setEdited] = useState(false);
+  useUnsavedChanges("branding", edited);
 
   useEffect(() => {
     client.adminGetFont().then(
@@ -90,6 +101,8 @@ export function BrandingSettings(props: { client: ApiClient }) {
       });
       setState(font);
       setSaved(true);
+      // The server has it: there is nothing left to lose.
+      setEdited(false);
     } catch (error) {
       setProblem(describeError(error, de.error.generic));
     } finally {
@@ -115,7 +128,12 @@ export function BrandingSettings(props: { client: ApiClient }) {
   const stored = state?.fontFamilyName !== null && state?.fontFamilyName !== undefined;
 
   return (
-    <section className="space-y-5">
+    <section
+      className="space-y-5"
+      // Every control below, including any added after this was written:
+      // React's synthetic `change` bubbles, so one handler covers the screen.
+      onChange={() => setEdited(true)}
+    >
       {/* Title and intro come from `Page` (P30-02); these two notes are specific
           to this screen and have no equivalent in the navigation entry. */}
       <div className="space-y-1">

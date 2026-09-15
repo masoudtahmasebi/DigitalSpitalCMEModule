@@ -84,7 +84,7 @@ import {
   withChapters,
   withContents,
 } from "../structure-order.js";
-import { useLoaded, useSaver } from "../hooks.js";
+import { useLoaded, useSaver, useUnsavedChanges } from "../hooks.js";
 import { probeableSourceUrl, probeDurationSec } from "../media-duration.js";
 import { readableUrl } from "../media-preview.js";
 import { capturePosterFrame } from "../poster-frame.js";
@@ -268,6 +268,12 @@ function ModuleBlock(props: {
 }) {
   const { client, module, modules, index } = props;
   const [editing, setEditing] = useState(false);
+  /*
+   * a module being renamed is unsaved work while the editor is open (P234-01). Each inline
+   * editor registers under its own key, because several can be open at once in
+   * this tree and closing one must not clear another's flag.
+   */
+  useUnsavedChanges(`structure-module-${props.module.id}`, editing);
   const locked = useContentLocked();
 
   const blockedBy = recordsUnderModule(module);
@@ -396,6 +402,12 @@ function ChapterBlock(props: {
 }) {
   const { client, chapter, module, modules, index } = props;
   const [editing, setEditing] = useState(false);
+  /*
+   * a chapter being renamed is unsaved work while the editor is open (P234-01). Each inline
+   * editor registers under its own key, because several can be open at once in
+   * this tree and closing one must not clear another's flag.
+   */
+  useUnsavedChanges(`structure-chapter-${props.chapter.id}`, editing);
   const locked = useContentLocked();
 
   const blocked = chapter.contents.some((content) => content.learnerRecords > 0);
@@ -577,6 +589,12 @@ function ContentRow(props: {
 }) {
   const { client, content, chapter, modules, index } = props;
   const [editing, setEditing] = useState(false);
+  /*
+   * a content row being edited is unsaved work while the editor is open (P234-01). Each inline
+   * editor registers under its own key, because several can be open at once in
+   * this tree and closing one must not clear another's flag.
+   */
+  useUnsavedChanges(`structure-content-${props.content.id}`, editing);
   const locked = useContentLocked();
 
   const move = (to: number) =>

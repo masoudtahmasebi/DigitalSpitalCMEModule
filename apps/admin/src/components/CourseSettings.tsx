@@ -35,6 +35,7 @@
 
 import { useEffect, useState } from "react";
 import type { AdminCourseDetail, ApiClient } from "@ds/sdk";
+import { useUnsavedChanges } from "../hooks.js";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
 import { Badge, Button, Checkbox, Field, Notice, TextInput } from "./ui.js";
@@ -57,6 +58,16 @@ export function CourseSettings(props: {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | undefined>();
   const [saved, setSaved] = useState(false);
+
+  /*
+   * Whether the operator has touched anything since the last successful save
+   * (P234-01). Edited, not different: one `onChange` on the container catches
+   * every control, including any added later, because React's synthetic
+   * `change` bubbles — where comparing field by field is a list that a new
+   * field silently escapes (§9.3).
+   */
+  const [edited, setEdited] = useState(false);
+  useUnsavedChanges("course-settings", edited);
 
   /*
    * A different course means a different form. Without this, navigating
@@ -110,6 +121,8 @@ export function CourseSettings(props: {
       });
       setVnrPassword("");
       setSaved(true);
+      // The server has it: there is nothing left to lose.
+      setEdited(false);
       props.onSaved(updated);
     } catch (error) {
       setProblem(describeError(error, de.error.generic));
@@ -134,6 +147,8 @@ export function CourseSettings(props: {
     try {
       props.onSaved(await props.client.adminUpdateCourse(course.slug, { status }));
       setSaved(true);
+      // The server has it: there is nothing left to lose.
+      setEdited(false);
     } catch (error) {
       setProblem(describeError(error, de.error.generic));
     } finally {
@@ -159,6 +174,8 @@ export function CourseSettings(props: {
         await props.client.adminUpdateCourse(course.slug, { contentLocked: next }),
       );
       setSaved(true);
+      // The server has it: there is nothing left to lose.
+      setEdited(false);
     } catch (error) {
       setProblem(describeError(error, de.error.generic));
     } finally {
@@ -169,7 +186,12 @@ export function CourseSettings(props: {
   const isDraft = course.status === "draft";
 
   return (
-    <div className="space-y-8">
+    <div
+      className="space-y-8"
+      // Every control below, including any added after this was written:
+      // React's synthetic `change` bubbles, so one handler covers the screen.
+      onChange={() => setEdited(true)}
+    >
       <section className="space-y-4">
         <h3 className="text-base font-semibold text-gray-900">{de.course.visibility}</h3>
 

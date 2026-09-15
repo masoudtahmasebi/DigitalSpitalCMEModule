@@ -29,7 +29,7 @@ import { de } from "../locale/de.js";
 import { invalidEmbedOriginPatterns, signInMethodsProblem } from "@ds/domain";
 import { slugify } from "../drafts.js";
 import { readPlatformSender } from "../staff-auth.js";
-import { useLoaded, useSaver } from "../hooks.js";
+import { useLoaded, useSaver, useUnsavedChanges } from "../hooks.js";
 import {
   Button,
   Checkbox,
@@ -587,6 +587,23 @@ function ProjectSettings(props: {
   const [docCheckLogin, setDocCheckLogin] = useState(project.docCheckLoginAllowed);
   const [keycloakLogin, setKeycloakLogin] = useState(project.keycloakLoginAllowed);
   const [branding, setBranding] = useState(() => brandingForm(project));
+
+  /*
+   * Whether the operator has touched anything since the last successful save
+   * (P234-01).
+   *
+   * **Edited, not different.** Comparing twenty-odd fields against `project`
+   * would be twenty-odd comparisons that a twenty-first field silently escapes
+   * — §9.3's shape, a rule that stops covering the thing it was written for.
+   * One `onChange` on the `<form>` catches every control, including ones added
+   * later, because React's synthetic `change` bubbles.
+   *
+   * The cost is one false positive: typing something and then typing it back
+   * leaves this true. That is the safe direction — a warning about a loss that
+   * is not happening costs a click, and a missing warning costs the work.
+   */
+  const [edited, setEdited] = useState(false);
+  useUnsavedChanges(`project-${project.slug}`, edited);
   const saver = useSaver();
 
   // Both or neither (P29-02). The API drops a half-configured pair silently —
@@ -618,33 +635,42 @@ function ProjectSettings(props: {
   return (
     <form
       className="space-y-5"
+      // Every control in this form, including any added after this was written.
+      onChange={() => setEdited(true)}
       onSubmit={(event) => {
         event.preventDefault();
-        void saver.run(async () =>
-          props.onDone(
-            await props.client.adminUpdateProject(project.slug, {
-              name: name.trim(),
-              identityProvider,
-              loginUrl: blankToNull(loginUrl),
-              docCheckLoginAllowed: docCheckLogin,
-              keycloakLoginAllowed: keycloakLogin,
-              keycloakIssuer: blankToNull(issuer),
-              keycloakAudience: blankToNull(audience),
-              keycloakRealm: blankToNull(realm),
-              embedOrigins: originLines(embedOrigins),
-              smtpHost: blankToNull(smtpHost),
-              smtpPort: smtpPort.trim() === "" ? null : Number(smtpPort),
-              smtpUsername: blankToNull(smtpUsername),
-              // Absent, not null: an empty box means "keep what is stored".
-              ...(smtpPassword === "" ? {} : { smtpPassword }),
-              smtpFromAddress: blankToNull(smtpFromAddress),
-              smtpFromName: blankToNull(smtpFromName),
-              // Sent whole: `parseBranding` validates the object and stores the
-              // parsed result, so a partial patch would drop everything absent.
-              branding: brandingPayload(branding),
-            }),
-          ),
-        );
+        void saver.run(async () => {
+          const updated = await props.client.adminUpdateProject(project.slug, {
+            name: name.trim(),
+            identityProvider,
+            loginUrl: blankToNull(loginUrl),
+            docCheckLoginAllowed: docCheckLogin,
+            keycloakLoginAllowed: keycloakLogin,
+            keycloakIssuer: blankToNull(issuer),
+            keycloakAudience: blankToNull(audience),
+            keycloakRealm: blankToNull(realm),
+            embedOrigins: originLines(embedOrigins),
+            smtpHost: blankToNull(smtpHost),
+            smtpPort: smtpPort.trim() === "" ? null : Number(smtpPort),
+            smtpUsername: blankToNull(smtpUsername),
+            // Absent, not null: an empty box means "keep what is stored".
+            ...(smtpPassword === "" ? {} : { smtpPassword }),
+            smtpFromAddress: blankToNull(smtpFromAddress),
+            smtpFromName: blankToNull(smtpFromName),
+            // Sent whole: `parseBranding` validates the object and stores the
+            // parsed result, so a partial patch would drop everything absent.
+            branding: brandingPayload(branding),
+          });
+          /*
+           * After the server has it, never before. `saver.run` reports failure
+           * by resolving false, so clearing the flag up front would leave a
+           * refused save looking saved — and the operator could then navigate
+           * away from work the server never received, past a guard that had
+           * already stood down.
+           */
+          setEdited(false);
+          props.onDone(updated);
+        });
       }}
     >
       <Field label={de.common.name} htmlFor={id("name")}>

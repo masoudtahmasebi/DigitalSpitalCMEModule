@@ -40,6 +40,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatBerlinDateTime } from "@ds/domain";
 import type { ApiClient, EivPlatformSettings } from "@ds/sdk";
+import { useUnsavedChanges } from "../hooks.js";
 import { de } from "../locale/de.js";
 import { describeError, isForbidden, isRetryable } from "../api.js";
 import { Button, LoadFailure, Notice, Spinner } from "./ui.js";
@@ -65,6 +66,16 @@ export function PlatformEiv(props: { client: ApiClient }) {
   const [forbidden, setForbidden] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  /*
+   * Whether the operator has touched anything since the last successful save
+   * (P234-01). Edited, not different: one `onChange` on the container catches
+   * every control, including any added later, because React's synthetic
+   * `change` bubbles — where comparing field by field is a list that a new
+   * field silently escapes (§9.3).
+   */
+  const [edited, setEdited] = useState(false);
+  useUnsavedChanges("platform-eiv", edited);
 
   /** The form, seeded from the server and edited locally until Speichern. */
   const [workerEnabled, setWorkerEnabled] = useState(false);
@@ -146,6 +157,8 @@ export function PlatformEiv(props: { client: ApiClient }) {
       setEndpoint(next.endpoint);
       setConfirmLive(false);
       setSaved(true);
+      // The server has it: there is nothing left to lose.
+      setEdited(false);
     } catch (error) {
       setProblem(describeError(error, de.error.generic));
     } finally {
@@ -154,7 +167,12 @@ export function PlatformEiv(props: { client: ApiClient }) {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div
+      className="max-w-3xl space-y-6"
+      // Every control below, including any added after this was written:
+      // React's synthetic `change` bubbles, so one handler covers the screen.
+      onChange={() => setEdited(true)}
+    >
       {/* The intro is this screen's nav `description` and `Page` already draws
           it — see the note in `CopySettings`. These two were the only screens
           printing their own on top of it. */}

@@ -18,7 +18,7 @@ import { useCallback, useState } from "react";
 import type { ApiClient, AuthoringExpert } from "@ds/sdk";
 import { de } from "../locale/de.js";
 import { freshKey, nullable, swap } from "../drafts.js";
-import { useLoaded, useSaver } from "../hooks.js";
+import { useLoaded, useSaver, useUnsavedChanges } from "../hooks.js";
 import { UploadField } from "./UploadField.js";
 import {
   Button,
@@ -52,6 +52,20 @@ export function ExpertsEditor(props: { client: ApiClient; courseSlug: string }) 
   );
   const [structure, setStructure, loadProblem, retry, loadRetryable] = useLoaded(load);
   const [draft, setDraft] = useState<Draft[] | undefined>();
+
+  /*
+   * `draft` already **is** the answer (P234-01).
+   *
+   * `undefined` means "rendering the server's document"; anything else means
+   * the operator has changed something that has not been stored. So unlike the
+   * settings forms, this needs no `onChange` and no separate flag — a second
+   * source for the same fact is §4 invariant 6, and this one would drift the
+   * first time somebody cleared one and not the other.
+   *
+   * The save clears `draft` on success, so the guard lifts at exactly the
+   * moment the server has it.
+   */
+  useUnsavedChanges("experts", draft !== undefined);
   const saver = useSaver();
 
   const experts =
