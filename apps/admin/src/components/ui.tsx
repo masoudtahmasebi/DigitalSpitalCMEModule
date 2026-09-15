@@ -52,8 +52,27 @@ export function Button(props: {
    * stays "Bearbeiten".
    *
    * Leave it unset when the label already says what the button does.
+   *
+   * ## Why the key is hyphenated, and why that is not the safer spelling
+   *
+   * It was `ariaLabel`, and `TextInput` and `Select` have taken `"aria-label"`
+   * since P68-02 — so the console had two spellings for one idea and a call
+   * site that guessed wrong got **silence**: a **hyphenated** JSX attribute is
+   * never checked against a component's props, because it cannot be a
+   * JavaScript identifier. The language switch in the top bar passed
+   * `aria-label` to this component and had done since P86-01; React dropped it
+   * and the button's accessible name was the two letters "EN" — to the one
+   * person who most needs that control, the one who cannot read the current
+   * language (§9.4).
+   *
+   * P68-02 found this class and closed it for two of the three primitives.
+   * That the third survived is §9.11: the fix went where the report was.
+   *
+   * One spelling now, and `node scripts/aria-props.mjs` is what keeps it one —
+   * because the compiler structurally cannot (§9.3: this was a rule written and
+   * not enforced, in the one place a type could not say so).
    */
-  ariaLabel?: string;
+  "aria-label"?: string | undefined;
   children: ReactNode;
 }) {
   const variant = props.variant ?? "primary";
@@ -70,7 +89,9 @@ export function Button(props: {
       disabled={props.disabled === true}
       onClick={props.onClick}
       {...(props.id === undefined ? {} : { id: props.id })}
-      {...(props.ariaLabel === undefined ? {} : { "aria-label": props.ariaLabel })}
+      {...(props["aria-label"] === undefined
+        ? {}
+        : { "aria-label": props["aria-label"] })}
       className={`${CONTROL_FOCUS} inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none ${skin}`}
     >
       {props.children}
@@ -431,8 +452,11 @@ export function ConfirmButton(props: {
    * "Löschen" is a name collision: a screen reader announces the same thing
    * eleven times and the rows become distinguishable only by counting. The
    * visible label stays short; the name says which course.
+   *
+   * Hyphenated, for the reason spelled out on `Button` above: one spelling
+   * across the three primitives, checked by `scripts/aria-props.mjs`.
    */
-  ariaLabel?: string | undefined;
+  "aria-label"?: string | undefined;
   onConfirm: () => void;
 }) {
   const [armed, setArmed] = useState(false);
@@ -471,7 +495,9 @@ export function ConfirmButton(props: {
     return (
       <Button
         variant="secondary"
-        {...(props.ariaLabel === undefined ? {} : { ariaLabel: props.ariaLabel })}
+        {...(props["aria-label"] === undefined
+          ? {}
+          : { "aria-label": props["aria-label"] })}
         onClick={() => setArmed(true)}
       >
         {props.label}

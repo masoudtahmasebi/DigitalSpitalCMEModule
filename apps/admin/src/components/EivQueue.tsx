@@ -312,7 +312,7 @@ export function EivQueue(props: { client: ApiClient }) {
                       label={de.eivQueue.withdraw}
                       confirmLabel={de.eivQueue.withdrawConfirm}
                       cancelLabel={de.eivQueue.withdrawCancel}
-                      ariaLabel={de.eivQueue.withdrawFor(row.efnMasked)}
+                      aria-label={de.eivQueue.withdrawFor(row.efnMasked)}
                       onConfirm={() =>
                         void act(() =>
                           client.adminWithdrawEivSubmission(
