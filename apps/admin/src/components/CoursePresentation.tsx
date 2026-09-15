@@ -190,7 +190,12 @@ export function CoursePresentation(props: {
         />
       </Field>
 
-      <Field label={de.course.thema} htmlFor="course-thema" hint={de.course.onePerLine}>
+      <Field
+        label={de.course.thema}
+        htmlFor="course-thema"
+        hint={de.course.onePerLine}
+        wide
+      >
         <TextArea
           id="course-thema"
           value={form.thema}

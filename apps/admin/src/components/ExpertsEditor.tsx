@@ -231,7 +231,7 @@ function ExpertFields(props: {
           onChange={(photoUrl) => set({ photoUrl })}
         />
       </div>
-      <Field label={de.experts.biography} htmlFor={id("bio")}>
+      <Field label={de.experts.biography} htmlFor={id("bio")} wide>
         <TextArea
           id={id("bio")}
           value={expert.biography}

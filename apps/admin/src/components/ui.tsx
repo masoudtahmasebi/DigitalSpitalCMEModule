@@ -163,6 +163,27 @@ export function Field(props: {
   label: string;
   hint?: string;
   htmlFor: string;
+  /**
+   * Let this field use the whole width it is given.
+   *
+   * The default is a cap, and the cap is the fix: `Shell`'s own comment has
+   * claimed since P100-01 that the console "capped the things that should be
+   * capped: prose at `max-w-3xl`, **form fields at `max-w-2xl`**, each where it
+   * is rendered". Prose was capped. Fields were not — `max-w-2xl` appears in
+   * exactly one component in the console, and it is not this one. So the rule
+   * was written, read as done, and never applied (§9.3), and §11.9 is why it
+   * survived: the comment asserting it is the reason nobody looked.
+   *
+   * What that costs is visible on Konten, where **Name** and **E-Mail-Adresse**
+   * are 1,100 px-wide text inputs. A field that wide is harder to use, not
+   * easier: the label is at one end of the screen and the caret at the other,
+   * and a 320-character maximum invites a line nobody can read back.
+   *
+   * `wide` exists for the fields that genuinely want the room — a textarea of
+   * German body copy, an editor spanning a panel. It is opt-in, because the
+   * default being wrong is how this happened.
+   */
+  wide?: boolean;
   children: ReactNode;
   problem?: string;
   /**
@@ -182,7 +203,7 @@ export function Field(props: {
   required?: boolean;
 }) {
   return (
-    <div className="space-y-1">
+    <div className={props.wide === true ? "space-y-1" : "max-w-2xl space-y-1"}>
       <label htmlFor={props.htmlFor} className="block text-sm font-medium text-gray-900">
         {props.label}
         {props.required === true ? (

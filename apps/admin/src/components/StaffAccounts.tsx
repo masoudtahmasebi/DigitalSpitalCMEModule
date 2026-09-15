@@ -302,9 +302,19 @@ export function StaffAccounts(props: {
                 {account.lastLoginAt === null ? "—" : account.lastLoginAt.slice(0, 10)}
               </td>
               <td>
+                {/*
+                  Quiet, like every other per-row control since P224-01. These
+                  three were missed by that change, which scoped to the
+                  authoring tree — and the cost was visible: three bordered
+                  buttons plus a quiet one did not fit the cell, so the row
+                  wrapped to two lines and the accounts table was ragged.
+                  `secondary` survives on this screen in the two places it is
+                  right: the invitation notice's copy button, and the cancel
+                  inside the password dialog.
+                */}
                 <div className="flex flex-wrap justify-end gap-2">
                   <Button
-                    variant="secondary"
+                    variant="quiet"
                     onClick={() =>
                       void act(() => client.adminSignOutStaffEverywhere(account.id))
                     }
@@ -354,7 +364,7 @@ export function StaffAccounts(props: {
                   />
                   {disabled ? (
                     <Button
-                      variant="secondary"
+                      variant="quiet"
                       onClick={() =>
                         void act(() => client.adminSetStaffDisabled(account.id, false))
                       }
@@ -494,7 +504,7 @@ function SetPassword(props: {
   if (!open) {
     return (
       <Button
-        variant="secondary"
+        variant="quiet"
         aria-label={de.staff.setPasswordFor(props.email)}
         onClick={() => setOpen(true)}
       >

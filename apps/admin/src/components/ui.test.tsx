@@ -28,7 +28,15 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { Button, ConfirmButton, IconButton, Select, TextArea, TextInput } from "./ui.js";
+import {
+  Button,
+  ConfirmButton,
+  Field,
+  IconButton,
+  Select,
+  TextArea,
+  TextInput,
+} from "./ui.js";
 
 afterEach(cleanup);
 
@@ -223,5 +231,59 @@ describe("the accessible name, one spelling everywhere", () => {
     // The common case, and the one that must not gain an empty label.
     render(<Button onClick={() => undefined}>Speichern</Button>);
     expect(screen.getByRole("button", { name: "Speichern" })).toBeTruthy();
+  });
+});
+
+/**
+ * A form field has a readable measure (P225-02).
+ *
+ * `Shell`'s own comment has claimed since P100-01 that the console "capped …
+ * form fields at `max-w-2xl`, each where it is rendered". Prose was capped;
+ * fields were not, and `max-w-2xl` appeared in exactly one component, which was
+ * not a field. The rule was written, read as done, and never applied — and the
+ * comment asserting it is why nobody looked (§9.3, §11.9).
+ *
+ * The cap lives in `Field` rather than at its 109 call sites, for the reason
+ * `Table` already gives for cell padding: a rule at fifty call sites is a rule
+ * that disagrees with itself.
+ */
+describe("Field's width", () => {
+  function measured(node: HTMLElement | null): string {
+    if (node === null) throw new Error("Field rendered nothing");
+    return node.className;
+  }
+
+  it("caps an ordinary field, so a name is not 1,100 px wide", () => {
+    const { container } = render(
+      <Field label="Name" htmlFor="n">
+        <TextInput id="n" value="" onChange={() => undefined} />
+      </Field>,
+    );
+    expect(measured(container.firstElementChild as HTMLElement)).toContain("max-w-2xl");
+  });
+
+  it("lets a field opt out when it genuinely wants the room", () => {
+    // German body copy, a rich-text editor, an editor spanning a panel. Opt-in,
+    // because the default being wrong is how this happened.
+    const { container } = render(
+      <Field label="Einleitung" htmlFor="i" wide>
+        <TextArea id="i" value="" onChange={() => undefined} />
+      </Field>,
+    );
+    expect(measured(container.firstElementChild as HTMLElement)).not.toContain(
+      "max-w-2xl",
+    );
+  });
+
+  it("caps the box and not the control, so nothing inside is clipped", () => {
+    // The cap is on the field's own wrapper. A control that asks for the full
+    // width of that wrapper still gets it — which is what keeps a colour well,
+    // a select and a text input the same width as each other.
+    render(
+      <Field label="Farbe" htmlFor="c">
+        <TextInput id="c" value="#007f95" onChange={() => undefined} />
+      </Field>,
+    );
+    expect(screen.getByLabelText("Farbe").className).toContain("w-full");
   });
 });
