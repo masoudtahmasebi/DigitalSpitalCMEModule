@@ -342,6 +342,13 @@ function Tenant(props: {
   return (
     <Shell
       customerName={signIn.customerName}
+      /*
+       * The course page's content starts with a full-bleed teal band, and the
+       * page's standard gap above it reads as a stray strip rather than as
+       * breathing room — DEP-45. The catalogue keeps the gap: it starts with a
+       * white filter panel, where the gap is what separates two cards.
+       */
+      flushContent={route.kind === "course"}
       onSignOut={() => {
         // Both, unconditionally. Which credential this session came from is not
         // recorded anywhere, and ending the one the visitor does not have is a
@@ -453,32 +460,44 @@ function Routed(props: {
   // branch here.
   const tokenProvider = useMemo(() => cookieTokenProvider(), []);
 
-  return (
-    <div className="space-y-4">
-      {route.kind === "course" ? (
-        <button
-          type="button"
-          className="ds-button-secondary"
-          onClick={() => go({ kind: "catalogue", tenant: route.tenant })}
-        >
-          {de.nav.back}
-        </button>
-      ) : null}
+  const backToCatalogue = useCallback(() => {
+    go({ kind: "catalogue", tenant: route.tenant });
+  }, [go, route.tenant]);
 
-      <WidgetMount
-        config={config}
-        // The tenant travels with the request as `X-DS-Project`, exactly as a
-        // WordPress host would send it — from the path now, not from the
-        // container's configuration. That is the whole of P21-03.
-        projectSlug={route.tenant}
-        courseSlug={route.kind === "course" ? route.slug : undefined}
-        openAt={openAt}
-        tokenProvider={tokenProvider}
-        onOpenCourse={(slug, intent) =>
-          go({ kind: "course", tenant: route.tenant, slug }, intent)
-        }
-      />
-    </div>
+  /*
+   * No wrapper and no band above the widget (DEP-45, DEP-46).
+   *
+   * There was a `space-y-4` div here with a standalone **Zurück zur Übersicht**
+   * button in it on the course route. Measured in the rig at 1280 px, that put
+   * 78 px of page background between the header's rule and the top of the teal
+   * hero — 24 px of `header mb-6`, a 38 px button, 16 px of `space-y-4` — and
+   * left the control for leaving diagonally opposite the control for
+   * continuing.
+   *
+   * Both are one defect with one fix: the widget draws the back control in its
+   * own meta strip beside the CTA, and this component supplies the navigation
+   * behind it. The remaining 24 px is the header's own margin, which `Shell`
+   * drops for a screen whose content starts with a full-bleed band.
+   *
+   * So there is nothing left for a wrapper to space out, and the widget is
+   * returned bare. A `<div>` here would put a block between the header and the
+   * hero again the next time somebody needs one line of layout.
+   */
+  return (
+    <WidgetMount
+      config={config}
+      // The tenant travels with the request as `X-DS-Project`, exactly as a
+      // WordPress host would send it — from the path now, not from the
+      // container's configuration. That is the whole of P21-03.
+      projectSlug={route.tenant}
+      courseSlug={route.kind === "course" ? route.slug : undefined}
+      openAt={openAt}
+      tokenProvider={tokenProvider}
+      onOpenCourse={(slug, intent) =>
+        go({ kind: "course", tenant: route.tenant, slug }, intent)
+      }
+      onBackToCatalogue={backToCatalogue}
+    />
   );
 }
 
@@ -505,6 +524,16 @@ function Shell(props: {
   children: React.ReactNode;
   /** Whose portal this is. Absent on the welcome page, which names nobody. */
   customerName?: string;
+  /**
+   * Drop the gap under the header, for content that begins with a full-bleed
+   * band (DEP-45).
+   *
+   * Named for what it does to the layout rather than for the one screen that
+   * asks for it: the next screen to open with a coloured band wants the same
+   * thing, and a prop called `isCoursePage` would have to be read to find that
+   * out. Default `false` — every existing screen keeps the gap it has.
+   */
+  flushContent?: boolean;
   onSignOut?: () => void;
 }) {
   /*
@@ -559,7 +588,11 @@ function Shell(props: {
       own layout depends on this number.
     */
     <div className="mx-auto max-w-screen-2xl p-4 sm:p-6">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-4">
+      <header
+        className={`flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-4 ${
+          props.flushContent === true ? "" : "mb-6"
+        }`}
+      >
         <a href="/" className="text-lg font-bold text-gray-900">
           {de.appTitle}
         </a>

@@ -36,7 +36,12 @@
  * underneath a learner mid-video, which has no sensible meaning for progress
  * already recorded.
  *
- * ## The one event the widget emits
+ * ## The events the widget emits
+ *
+ * Four, and only the first of them is cancelable: `ds-lms:course-open` below,
+ * then `ds-lms:progress`, `ds-lms:course-complete` and `ds-lms:course-back`.
+ * Each carries its own note at its declaration. The heading here said "the one
+ * event" long after there were three, which is §11.9 — a comment is a claim.
  *
  * With no `course` attribute the widget opens the catalogue and handles the
  * pick itself, which is what a WordPress page wants: one embed, no routing.
@@ -86,6 +91,33 @@ export const PROGRESS_EVENT = "ds-lms:progress";
 export const COURSE_COMPLETE_EVENT = "ds-lms:course-complete";
 
 /**
+ * Dispatched when a learner leaves a course the **host** routed them into
+ * (DEP-46).
+ *
+ * ## Why this one needs an attribute when `course-open` does not
+ *
+ * `ds-lms:course-open` is cancelable and needs no configuration because the
+ * widget has a working answer either way: a host that listens cancels and
+ * routes, a host that does not gets the widget's own navigation. Leaving a
+ * course has no such pair. With a `course` attribute set, this element was
+ * mounted *for that course* — there is no catalogue behind it to return to,
+ * and inventing one would put a host page's visitor on a screen the host never
+ * asked for. That is the rule the `selected` state has carried since P156-02
+ * and it is not weakened here.
+ *
+ * So the widget cannot decide alone whether a way back exists, and it will not
+ * draw a control that can only do nothing (§9.2). `back-to-catalogue="yes"` is
+ * the host saying "I have a catalogue and I will handle this", and it is the
+ * only thing that puts the control on the screen.
+ *
+ * Not cancelable, for the same reason: `preventDefault()` would be a handle on
+ * a fallback that does not exist. A host that sets the attribute and then
+ * ignores the event has made a control that does nothing — which is why the
+ * attribute is the declaration rather than the listener being sniffed for.
+ */
+export const COURSE_BACK_EVENT = "ds-lms:course-back";
+
+/**
  * The `open-at` attribute, which is a string a host page wrote (P168-04).
  *
  * Anything unrecognised — including the attribute being absent — is `"start"`,
@@ -120,6 +152,11 @@ export interface CourseOpenDetail {
    * element with the same word as `open-at`.
    */
   readonly intent: OpenIntent;
+}
+
+/** What `ds-lms:course-back` carries — the course being left. */
+export interface CourseBackDetail {
+  readonly slug: string;
 }
 
 export interface ProgressDetail {
@@ -297,6 +334,20 @@ export class DsLmsElement extends HTMLElement {
     const declared = this.getAttribute("signed-in");
     const signedIn = declared === null ? undefined : declared !== "no";
 
+    /*
+     * Does the host have a catalogue to send this learner back to (DEP-46)?
+     *
+     * Absent is "no", unlike `signed-in` above: there is no earlier behaviour
+     * to preserve here, and "no" is the answer that withholds a control rather
+     * than one that hides a screen. Every host that predates this attribute
+     * keeps exactly the back navigation it has today — none on a course page,
+     * the widget's own when the widget drew the catalogue.
+     *
+     * Read once at connect like every other attribute. A host that starts
+     * routing mid-life would be a host replacing this element anyway.
+     */
+    const routesBack = this.getAttribute("back-to-catalogue") === "yes";
+
     root.render(
       createElement(App, {
         apiBase,
@@ -311,6 +362,14 @@ export class DsLmsElement extends HTMLElement {
         getToken: provider === undefined ? undefined : cachingProvider(provider),
         onCourseOpen: (slug: string, intent: OpenIntent) =>
           this.#announceCourseOpen(slug, intent),
+        /*
+         * Only when the host declared it routes — see `COURSE_BACK_EVENT`.
+         * `undefined` withholds the control rather than drawing a dead one.
+         */
+        onCourseBack: routesBack
+          ? (slug: string) =>
+              this.#announce(COURSE_BACK_EVENT, { slug } satisfies CourseBackDetail)
+          : undefined,
         onProgress: (detail: ProgressDetail) => this.#announce(PROGRESS_EVENT, detail),
         onCourseComplete: (detail: CourseCompleteDetail) =>
           this.#announce(COURSE_COMPLETE_EVENT, detail),

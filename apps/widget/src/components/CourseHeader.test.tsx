@@ -335,7 +335,7 @@ describe("StickyMetaBar", () => {
         onResume={undefined}
       />,
     );
-    expect(screen.queryByRole("button", { name: "Zurück zur Übersicht" })).toBeNull();
+    expect(screen.queryByRole("button", { name: de.catalog.back })).toBeNull();
 
     cleanup();
     const onBack = vi.fn();
@@ -347,7 +347,27 @@ describe("StickyMetaBar", () => {
         onResume={undefined}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Zurück zur Übersicht" }));
+    fireEvent.click(screen.getByRole("button", { name: de.catalog.back }));
     expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it("names where the back control goes, not the tab four rows below it", () => {
+    /*
+     * DEP-46 moved this control into the meta strip, which put it on the same
+     * screen as a tab called **Übersicht** — so "Zurück zur Übersicht", its
+     * label until then, acquired a second and nearer reading. §9.4: the label
+     * names the destination.
+     *
+     * Asserted against the copy table rather than the rendered button on
+     * purpose. The query above already proves the button renders whatever
+     * `catalog.back` says; what this pins is the *string*, which nothing else
+     * in the suite can see and which a well-meaning revert would restore.
+     *
+     * `player.back` is the control this is distinguished from and is left
+     * alone: on the player screen "Übersicht" is the course overview and there
+     * is no tab of that name in view.
+     */
+    expect(de.catalog.back).not.toContain("Übersicht");
+    expect(de.player.back).toBe("Zurück zur Übersicht");
   });
 });

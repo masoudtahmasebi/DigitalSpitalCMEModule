@@ -9,6 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DsLmsElement, registerWidget, WIDGET_ELEMENT_NAME } from "./element.js";
+import { de } from "./locale/de.js";
 
 registerWidget();
 
@@ -372,80 +373,88 @@ describe("white-label branding", () => {
  * - **A host that does not listen is unaffected.** That is the WordPress case,
  *   and it must not need any configuration to keep working.
  */
-describe("the ds-lms:course-open event", () => {
-  const summary = {
-    id: "00000000-0000-4000-8000-000000000001",
-    slug: "adhs-akademie-adult",
-    title: "ADHS Akademie adult",
-    description: null,
-    heroImageUrl: null,
-    deliveryType: "on_demand",
-    thema: [],
-    altersgruppe: [],
-    cmePoints: 4,
-    cmeCategory: "D",
-    moduleCount: 5,
-    totalDurationSec: 9000,
-    enrolment: null,
-  };
+const summary = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "adhs-akademie-adult",
+  title: "ADHS Akademie adult",
+  description: null,
+  heroImageUrl: null,
+  deliveryType: "on_demand",
+  thema: [],
+  altersgruppe: [],
+  cmePoints: 4,
+  cmeCategory: "D",
+  moduleCount: 5,
+  totalDurationSec: 9000,
+  enrolment: null,
+};
 
-  /** Enough of a course for the detail screen to render without throwing. */
-  const detail = {
-    ...summary,
-    learningObjectives: [],
-    targetAudience: null,
-    vnr: null,
-    accreditationBody: null,
-    organizer: null,
-    eventLocation: null,
-    validFrom: null,
-    validTo: null,
-    requiredWatchPercent: 80,
-    passThresholdPercent: 70,
-    modules: [],
-    experts: [],
-  };
+/** Enough of a course for the detail screen to render without throwing. */
+const detail = {
+  ...summary,
+  learningObjectives: [],
+  targetAudience: null,
+  vnr: null,
+  accreditationBody: null,
+  organizer: null,
+  eventLocation: null,
+  validFrom: null,
+  validTo: null,
+  requiredWatchPercent: 80,
+  passThresholdPercent: 70,
+  modules: [],
+  experts: [],
+};
 
-  const enrolment = {
-    enrolmentId: "00000000-0000-4000-8000-000000000002",
-    courseSlug: summary.slug,
-    requiredWatchPercent: 80,
-    passThresholdPercent: 70,
-    achievedWatchPercent: 0,
-    quizPassed: false,
-    evaluationSubmitted: false,
-    efnPresent: false,
-    complete: false,
-    outstanding: [],
-    completedAt: null,
-    progress: { status: "not_started", completedCount: 0, totalCount: 0, percent: 0 },
-    moduleCompletion: { completed: 0, total: 0 },
-    modules: [],
-    resumeContentId: null,
-  };
+const enrolment = {
+  enrolmentId: "00000000-0000-4000-8000-000000000002",
+  courseSlug: summary.slug,
+  requiredWatchPercent: 80,
+  passThresholdPercent: 70,
+  achievedWatchPercent: 0,
+  quizPassed: false,
+  evaluationSubmitted: false,
+  efnPresent: false,
+  complete: false,
+  outstanding: [],
+  completedAt: null,
+  progress: { status: "not_started", completedCount: 0, totalCount: 0, percent: 0 },
+  moduleCompletion: { completed: 0, total: 0 },
+  modules: [],
+  resumeContentId: null,
+};
 
-  beforeEach(() => {
-    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input.toString();
-      const body = url.includes("/enrolment")
-        ? enrolment
-        : url.includes(`/courses/${summary.slug}`)
-          ? detail
-          : url.includes("/courses")
-            ? {
-                items: [summary],
-                total: 1,
-                page: 1,
-                perPage: 10,
-                facets: { thema: [], altersgruppe: [] },
-              }
-            : {};
-      return new Response(JSON.stringify(body), {
-        headers: { "content-type": "application/json" },
-      });
+/**
+ * Enough of the API for a catalogue and a course detail screen to render.
+ *
+ * At module scope, and called from each `beforeEach`, because two blocks below
+ * need it: the course-open event mounts the catalogue, the course-back event
+ * mounts a course.
+ */
+function stubApi(): void {
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const body = url.includes("/enrolment")
+      ? enrolment
+      : url.includes(`/courses/${summary.slug}`)
+        ? detail
+        : url.includes("/courses")
+          ? {
+              items: [summary],
+              total: 1,
+              page: 1,
+              perPage: 10,
+              facets: { thema: [], altersgruppe: [] },
+            }
+          : {};
+    return new Response(JSON.stringify(body), {
+      headers: { "content-type": "application/json" },
     });
   });
+}
 
+describe("the ds-lms:course-open event", () => {
+  beforeEach(stubApi);
   afterEach(() => vi.unstubAllGlobals());
 
   /** Mounts the catalogue — no `course` attribute — and returns the CTA. */
@@ -523,6 +532,84 @@ describe("the ds-lms:course-open event", () => {
       "Zur Fortbildung",
     );
 
+    expect(element.shadowRootForTest?.textContent ?? "").not.toContain("Zur Fortbildung");
+  });
+});
+
+/**
+ * The other half of the contract DEP-46 added.
+ *
+ * The widget draws a back control on a course mount **only** when the host has
+ * said it will handle it. That rule is the reason the control is not simply
+ * always drawn, and §9.2 is the reason the rule exists: on a customer's
+ * WordPress course page there is no catalogue behind the widget, so a back
+ * button there could only ever do nothing.
+ *
+ * `CourseHeader.test.tsx` proves the strip renders the control when given an
+ * `onBack` and withholds it otherwise. That test would pass unchanged on an
+ * element that never supplied one — which is §9.7, and is exactly the wiring
+ * this block exists to pin.
+ */
+describe("the ds-lms:course-back event", () => {
+  beforeEach(stubApi);
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** Mounts one course, the way a routing host does. */
+  async function course(declareBack: boolean): Promise<DsLmsElement> {
+    const element = new DsLmsElement();
+    element.setAttribute("api-base", "https://api.test");
+    element.setAttribute("project", "medice-adhs");
+    element.setAttribute("course", summary.slug);
+    if (declareBack) element.setAttribute("back-to-catalogue", "yes");
+    element.tokenProvider = async () => "token";
+    host.append(element);
+
+    await waitForText(() => element.shadowRootForTest?.textContent ?? "", summary.title);
+    return element;
+  }
+
+  function backButton(element: DsLmsElement): HTMLButtonElement | undefined {
+    const buttons = [
+      ...(element.shadowRootForTest?.querySelectorAll("button") ?? []),
+    ] as HTMLButtonElement[];
+    return buttons.find((button) => (button.textContent ?? "").includes(de.catalog.back));
+  }
+
+  it("draws no back control when the host has not declared one — the WordPress case", async () => {
+    const element = await course(false);
+    expect(backButton(element)).toBeUndefined();
+  });
+
+  it("draws it, and reaches a listener outside the closed shadow root", async () => {
+    const element = await course(true);
+
+    const seen: string[] = [];
+    const listener = (event: Event) => {
+      seen.push((event as CustomEvent<{ slug: string }>).detail.slug);
+    };
+    document.addEventListener("ds-lms:course-back", listener);
+
+    const back = backButton(element);
+    expect(back, "the host declared a catalogue and got no control").toBeDefined();
+    back!.click();
+    document.removeEventListener("ds-lms:course-back", listener);
+
+    expect(seen).toEqual([summary.slug]);
+  });
+
+  it("stays on the course after reporting — the host does the navigating", async () => {
+    /*
+     * The event is not cancelable and the widget has no fallback, so there is
+     * nothing here for a host to suppress. What must not happen is the widget
+     * deciding on its own to show a catalogue this host never asked for: the
+     * element was mounted *for* a course, and P156-02's rule that the attribute
+     * wins for the element's whole lifetime is what this pins.
+     */
+    const element = await course(true);
+    backButton(element)!.click();
+    await settle();
+
+    expect(element.shadowRootForTest?.textContent ?? "").toContain(summary.title);
     expect(element.shadowRootForTest?.textContent ?? "").not.toContain("Zur Fortbildung");
   });
 });

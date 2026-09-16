@@ -91,7 +91,30 @@ export const de = {
      * label promising a file would be a second promise to keep.
      */
     toCertificate: "Zur Teilnahmebescheinigung",
-    back: "Zurück zur Übersicht",
+
+    /**
+     * Leaving a course for the list it came from (DEP-46).
+     *
+     * It said "Zurück zur Übersicht" while it lived on its own, below the meta
+     * strip. DEP-46 moves it up into that strip, beside **Fortbildung
+     * starten** — and in the tab row directly below, the first tab is called
+     * *Übersicht*. In the old position the word had one candidate meaning on the
+     * screen; in the new one it has two, and the nearer of the two is wrong.
+     * That is §9.4: the label has to name the place it goes to, in the words
+     * of the person reading it.
+     *
+     * It is also **short**, which is not a stylistic preference here. The strip
+     * is one row in the approved layout — `CourseMetaBar`'s own note records
+     * the 86 px it was measured at in P190-01 — and it now carries two controls
+     * where it carried one. "Zurück zum Fortbildungsbereich", tried first,
+     * wrapped the pair onto a second row at 1280 px and made the masthead half
+     * as tall again. Seen in the rig's screenshot, not predicted.
+     *
+     * `player.back` keeps "Zurück zur Übersicht" and is a different control:
+     * it leaves the video for the course overview, where "Übersicht" is the
+     * right word and the only one on offer.
+     */
+    back: "Alle Fortbildungen",
 
     /**
      * The catalogue's tab labels.

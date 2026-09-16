@@ -4,7 +4,9 @@
  * This component is the entire learner experience in the portal — the
  * catalogue, watching, the Lernerfolgskontrolle, the Evaluationsbogen, the EFN,
  * the certificate — all inside the widget's closed shadow root. The portal
- * draws a header, a back link, and the URL bar.
+ * draws a header and the URL bar. It used to draw a back link too; since
+ * DEP-46 that control is the widget's, beside the course's own CTA, and the
+ * portal supplies only the navigation behind it.
  *
  * ## Why the catalogue is the widget's and not the portal's
  *
@@ -63,6 +65,18 @@ interface CourseOpenDetail {
 const COURSE_OPEN_EVENT = "ds-lms:course-open";
 
 /**
+ * The widget asking to be sent back to the catalogue (DEP-46).
+ *
+ * The mirror of `course-open`, and deliberately not its twin: that one is
+ * cancelable because the widget can navigate itself, this one is not because
+ * on a course mount it cannot. The widget only draws the control at all
+ * because `back-to-catalogue="yes"` below says this component is listening, so
+ * an unhandled event here is a control that does nothing — which is why the
+ * listener and the attribute are added in the same commit and read together.
+ */
+const COURSE_BACK_EVENT = "ds-lms:course-back";
+
+/**
  * The element as React sees it.
  *
  * Declared locally rather than imported from the widget: the widget is loaded
@@ -79,6 +93,13 @@ interface DsLmsAttributes {
   course?: string;
   /** `"resume"` opens the course at the learner's resume point, not its start page. */
   "open-at"?: string;
+  /**
+   * `"yes"` when this host has a catalogue and handles `ds-lms:course-back`.
+   *
+   * Set only on a course mount: on the catalogue mount there is nothing to go
+   * back *to*, and the widget's own catalogue screen is already showing.
+   */
+  "back-to-catalogue"?: string;
   ref?: (element: (HTMLElement & { tokenProvider?: TokenProvider }) | null) => void;
   key?: string;
 }
@@ -108,8 +129,18 @@ export function WidgetMount(props: {
   openAt: "start" | "resume";
   tokenProvider: TokenProvider;
   onOpenCourse: (slug: string, intent: "start" | "resume") => void;
+  /**
+   * Where the widget's back control goes (DEP-46).
+   *
+   * The portal used to draw this itself, as a button in a 78 px band above the
+   * hero — top-left of the page, while the CTA it belongs beside sat mid-right
+   * inside the widget's meta strip. That band is DEP-45 and that separation is
+   * DEP-46. The control now lives in the strip beside **Fortbildung starten**,
+   * and the portal keeps the part that is genuinely its own: the URL.
+   */
+  onBackToCatalogue: () => void;
 }) {
-  const { tokenProvider, onOpenCourse } = props;
+  const { tokenProvider, onOpenCourse, onBackToCatalogue } = props;
 
   const attach = useCallback(
     (element: (HTMLElement & { tokenProvider?: TokenProvider }) | null) => {
@@ -149,6 +180,23 @@ export function WidgetMount(props: {
     return () => node.removeEventListener(COURSE_OPEN_EVENT, listener);
   }, [onOpenCourse]);
 
+  /*
+    The same wrapper, for the same reason, and a second effect rather than a
+    second branch in the first: the two have different dependencies, and a
+    handler re-created for one reason would otherwise re-subscribe the other.
+
+    No `preventDefault` here — `ds-lms:course-back` is not cancelable, because
+    the widget has no fallback to suppress (see `COURSE_BACK_EVENT`).
+  */
+  useEffect(() => {
+    const node = wrapper.current;
+    if (node === null) return;
+
+    const listener = () => onBackToCatalogue();
+    node.addEventListener(COURSE_BACK_EVENT, listener);
+    return () => node.removeEventListener(COURSE_BACK_EVENT, listener);
+  }, [onBackToCatalogue]);
+
   return (
     <div ref={wrapper}>
       <ds-lms
@@ -158,7 +206,13 @@ export function WidgetMount(props: {
         project={props.projectSlug}
         {...(props.courseSlug === undefined
           ? {}
-          : { course: props.courseSlug, "open-at": props.openAt })}
+          : {
+              course: props.courseSlug,
+              "open-at": props.openAt,
+              // The declaration the widget requires before it will draw a back
+              // control at all — see `COURSE_BACK_EVENT`.
+              "back-to-catalogue": "yes",
+            })}
       />
     </div>
   );

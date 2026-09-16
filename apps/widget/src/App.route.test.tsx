@@ -30,6 +30,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App.js";
+import { de } from "./locale/de.js";
 import type { CourseDetail, EnrolmentState } from "@ds/sdk";
 
 const COURSE_SLUG = "adhs-akademie-adult";
@@ -609,7 +610,7 @@ describe("opening a course straight on the Punktemeldung", () => {
 });
 
 /*
- * DEP-33. Zurück zur Übersicht changes the address as well as the screen.
+ * DEP-33. The back control changes the address as well as the screen.
  *
  * `route.test.ts` proves `clearCourseFragment` removes our fragment and leaves
  * a host page's alone. It would pass unchanged on a widget that never called it
@@ -672,7 +673,7 @@ describe("returning to the catalogue", () => {
       expect(selectedTab()).toBe("Experten/Referenten");
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Zurück zur Übersicht/u }));
+    fireEvent.click(screen.getByRole("button", { name: de.catalog.back }));
 
     await waitFor(() => {
       expect(window.location.hash).toBe("");
@@ -725,7 +726,7 @@ describe("returning to the catalogue", () => {
       expect(selectedTab()).toBe("Experten/Referenten");
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Zurück zur Übersicht/u }));
+    fireEvent.click(screen.getByRole("button", { name: de.catalog.back }));
     await waitFor(() => {
       expect(window.location.hash).toBe("");
     });
@@ -762,7 +763,7 @@ describe("returning to the catalogue", () => {
       expect(inOutline()).toBe(true);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Zurück zur Übersicht/u }));
+    fireEvent.click(screen.getByRole("button", { name: de.catalog.back }));
 
     /*
      * Not "no tabs": the catalogue has its own two (On Demand / Weitere), which

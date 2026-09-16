@@ -318,6 +318,16 @@ export function CourseMetaBar(props: {
   duration: string | null;
   modules: string | null;
   action: ReactNode;
+  /**
+   * The way back to the list this course came from (DEP-46).
+   *
+   * It is a slot beside `action` rather than part of it because the two are
+   * different kinds of thing — one continues the Fortbildung, the other leaves
+   * it — and a caller that has only one of them must not have to compose the
+   * pair itself. `undefined` on every screen that has nowhere to go back to,
+   * which is the same condition that used to withhold the link entirely.
+   */
+  back?: ReactNode;
 }) {
   return (
     /*
@@ -442,7 +452,22 @@ export function CourseMetaBar(props: {
         </span>
       )}
 
-      <span className="ml-auto max-sm:ml-0 max-sm:w-full max-sm:[&>button]:w-full">
+      {/*
+        The two actions of this screen, together (DEP-46).
+
+        `back` used to be a text link on its own line *under* this strip, and
+        the portal drew a second one of its own above the hero — so the control
+        for leaving was as far from the control for continuing as the masthead
+        allows. The ticket asks for one CTA area; this is it.
+
+        Reading order is secondary-then-primary across the row, and
+        `flex-col-reverse` below `sm` puts the primary on top of the stack,
+        where a thumb reaches it first. `[&_button]` rather than `[&>button]`:
+        the buttons are now one level down, and a descendant selector still
+        matches the direct child a single-action caller passes.
+      */}
+      <span className="ml-auto flex items-center gap-4 max-sm:ml-0 max-sm:w-full max-sm:flex-col-reverse max-sm:gap-3 max-sm:[&_button]:w-full">
+        {props.back}
         {props.action}
       </span>
     </div>

@@ -113,9 +113,14 @@ export const de = {
     mismatch: "Die beiden Passwörter stimmen nicht überein.",
   },
 
-  nav: {
-    back: "Zurück zur Übersicht",
-  },
+  /*
+   * `nav.back` lived here until DEP-46 and has gone with the button it labelled.
+   *
+   * The control is the widget's now, in the widget's meta strip, and its label
+   * is `catalog.back` in `@ds/copy` — which is also the one an operator can
+   * override in Verwaltung → Texte. A second copy of the same sentence in a
+   * table nobody can edit is §9.10b: one value, one home.
+   */
 
   /**
    * The root page (P21-03).

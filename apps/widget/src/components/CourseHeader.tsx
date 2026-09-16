@@ -56,7 +56,14 @@ export function StickyMetaBar(props: {
    * one place, from the server's status, exactly as P68-02 left it.
    */
   status: EnrolmentState["progress"]["status"];
-  /** Only rendered when the learner arrived through the catalogue. */
+  /**
+   * Leaving the course, when there is somewhere to leave it to.
+   *
+   * `undefined` on an embed that names a course and has no catalogue behind it
+   * — a customer's WordPress course page — because there the control would go
+   * nowhere (§9.2). Defined in two cases: the widget drew the catalogue itself,
+   * or the host declared it routes and will handle the event (`element.ts`).
+   */
   onBack: (() => void) | undefined;
   onResume: (() => void) | undefined;
 }) {
@@ -142,8 +149,10 @@ export function StickyMetaBar(props: {
       </div>
 
       {/*
-        Back inside the column. The strip and the back link line up with the
-        tab row below them and with the heading above, all three on x = 261.
+        Back inside the column. The strip lines up with the tab row below it and
+        with the heading above, all three on x = 261. Since DEP-46 the back
+        control is inside the strip rather than under it, so there is no longer
+        a third thing here to line up.
       */}
       <div className={CONTENT}>
         <CourseMetaBar
@@ -160,18 +169,33 @@ export function StickyMetaBar(props: {
               </Button>
             )
           }
+          /*
+           * DEP-46: beside the CTA rather than on its own line below the strip.
+           *
+           * It was a bare text link with an arrow, 16 px under a white card, on
+           * a page whose other action is a 58 px pill — so the two controls of
+           * this screen were neither near each other nor alike. A `secondary`
+           * pill puts them in one group.
+           *
+           * `md` rather than `lg`, which is the CTA's size: the two are a pair
+           * and not equals, and the strip is one row in the approved layout.
+           * Two `lg` pills wrapped it at 1280 px — seen in the rig, which is
+           * also why the label is `Alle Fortbildungen` and not the longer
+           * sentence tried first.
+           *
+           * The arrow stays, and stays `aria-hidden`: it says *direction* to a
+           * reader who is scanning and nothing at all to a screen reader, which
+           * already has the label.
+           */
+          back={
+            props.onBack === undefined ? null : (
+              <Button variant="secondary" onClick={props.onBack}>
+                <span aria-hidden="true">←</span>
+                {de.catalog.back}
+              </Button>
+            )
+          }
         />
-
-        {props.onBack === undefined ? null : (
-          <button
-            type="button"
-            onClick={props.onBack}
-            className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-brand-700"
-          >
-            <span aria-hidden="true">←</span>
-            {de.catalog.back}
-          </button>
-        )}
       </div>
     </div>
   );
