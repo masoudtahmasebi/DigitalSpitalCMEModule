@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ApiError } from "@ds/sdk";
-import { ToastProvider } from "./toasts.js";
+import { ToastProvider, type Publish } from "./toasts.js";
 import { createAdminClient, toastPublisher } from "./api.js";
 import { App } from "./App.js";
 import { de } from "./locale/de.js";
@@ -27,7 +27,7 @@ describe("the failure net (P205)", () => {
      * A stubbed `fetch` answering 409 with problem-details, and the assertion
      * is that the sentence appears without any screen having caught anything.
      */
-    const publishRef = { current: (_: string) => undefined };
+    const publishRef: { current: Publish } = { current: () => undefined };
     render(<ToastProvider publishRef={publishRef}>{null}</ToastProvider>);
     toastPublisher.current = publishRef.current;
 
@@ -72,7 +72,7 @@ describe("the failure net (P205)", () => {
     // A disappearing toast over the login form, or over the screen whose whole
     // job is to say "you are not an admin", is noise about something already
     // being explained.
-    const publishRef = { current: (_: string) => undefined };
+    const publishRef: { current: Publish } = { current: () => undefined };
     render(<ToastProvider publishRef={publishRef}>{null}</ToastProvider>);
     toastPublisher.current = publishRef.current;
 
@@ -107,7 +107,7 @@ describe("the failure net (P205)", () => {
      * flush to ride on. When it appears, anything the 403 published would have
      * appeared too — so exactly one alert means the 403 published nothing.
      */
-    publishRef.current("Sentinel");
+    publishRef.current("Sentinel", "error");
     await waitFor(() => expect(screen.getByText("Sentinel")).toBeTruthy());
 
     expect(
@@ -119,20 +119,20 @@ describe("the failure net (P205)", () => {
   it("shows one toast for the same sentence twice", async () => {
     // A screen retrying on a timer would otherwise stack the corner with
     // copies of one problem, which reads as several problems.
-    const publishRef = { current: (_: string) => undefined };
+    const publishRef: { current: Publish } = { current: () => undefined };
     render(<ToastProvider publishRef={publishRef}>{null}</ToastProvider>);
 
-    publishRef.current("Dasselbe Problem");
-    publishRef.current("Dasselbe Problem");
+    publishRef.current("Dasselbe Problem", "error");
+    publishRef.current("Dasselbe Problem", "error");
 
     await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(1));
   });
 
   it("can be dismissed", async () => {
-    const publishRef = { current: (_: string) => undefined };
+    const publishRef: { current: Publish } = { current: () => undefined };
     render(<ToastProvider publishRef={publishRef}>{null}</ToastProvider>);
 
-    publishRef.current("Etwas ist schiefgegangen");
+    publishRef.current("Etwas ist schiefgegangen", "error");
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: /Schließen/u }));
@@ -140,7 +140,7 @@ describe("the failure net (P205)", () => {
   });
 
   it("renders nothing at all when there is nothing to say", () => {
-    const publishRef = { current: (_: string) => undefined };
+    const publishRef: { current: Publish } = { current: () => undefined };
     render(<ToastProvider publishRef={publishRef}>{null}</ToastProvider>);
 
     // Not an empty container: a fixed, always-present box would sit over the
@@ -189,7 +189,7 @@ describe("the host is on every branch of the shell (P205-02)", () => {
     // The sign-in form, not the console.
     await waitFor(() => expect(screen.getByLabelText(/E-Mail/u)).toBeTruthy());
 
-    toastPublisher.current("Etwas ist schiefgegangen");
+    toastPublisher.current("Etwas ist schiefgegangen", "error");
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
   });
 
@@ -205,7 +205,7 @@ describe("the host is on every branch of the shell (P205-02)", () => {
     // no other screen, so this cannot pass from the wrong branch.
     await waitFor(() => expect(screen.getByText(de.auth.newPasswordTitle)).toBeTruthy());
 
-    toastPublisher.current("Etwas ist schiefgegangen");
+    toastPublisher.current("Etwas ist schiefgegangen", "error");
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
   });
 });

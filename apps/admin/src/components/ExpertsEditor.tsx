@@ -155,7 +155,7 @@ export function ExpertsEditor(props: { client: ApiClient; courseSlug: string }) 
         <Button
           disabled={saver.state === "saving" || incomplete}
           onClick={() => {
-            void saver.run(async () => {
+            void saver.run(de.confirm.expertsSaved, async () => {
               setStructure(
                 await client.adminReplaceExperts(courseSlug, {
                   experts: experts.map((expert) => ({

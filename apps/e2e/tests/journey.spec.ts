@@ -374,6 +374,29 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         timeout: 15_000,
       });
 
+      /*
+       * The console said so (P238-01).
+       *
+       * Until this change the operator's confirmation that a save worked was
+       * the row appearing — which is the assertion above, and is not the same
+       * thing: a reorder moves nothing new onto the screen, a name correction
+       * changes one word in a cell, and an erasure removes a row rather than
+       * adding one. Eleven of the fifteen mutations in the console reported
+       * nothing at all.
+       *
+       * Asserted **here**, on the first save of the journey, rather than in a
+       * spec of its own, because what is being checked is that a save a real
+       * operator performs in a real browser produces the sentence — the layer
+       * `confirmations.test.tsx` structurally cannot reach (§9.13). It is a
+       * `role="status"`, so this also fails if the confirmation is ever routed
+       * through the assertive region the failures use.
+       */
+      await expect(
+        operator
+          .getByRole("status")
+          .filter({ hasText: "Die Gliederung wurde gespeichert." }),
+      ).toBeVisible({ timeout: 15_000 });
+
       await operator.getByRole("button", { name: "Kapitel hinzufügen" }).click();
       await fillNearest(operator, "Titel", "Kapitel 1 · Einführung");
       await operator.getByRole("button", { name: "Hinzufügen", exact: true }).click();

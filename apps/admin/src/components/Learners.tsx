@@ -115,7 +115,7 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
      * `describeError` inside the hook shows that verbatim; paraphrasing it
      * would drop the instruction.
      */
-    const ok = await saver.run(() =>
+    const ok = await saver.run(de.confirm.learnerNameCorrected, () =>
       client.adminCorrectLearnerName(row.enrolmentId, name.trim()),
     );
     if (!ok) return;
@@ -184,7 +184,7 @@ export function Learners(props: { client: ApiClient; courseSlug?: string }) {
      * succeeded**, next to a row that had already disappeared — read from that
      * source path, not observed, and named as such.
      */
-    const ok = await eraser.run(() =>
+    const ok = await eraser.run(de.confirm.subjectErased, () =>
       client.adminEraseSubject(row.enrolmentId, reason.trim()),
     );
     if (!ok) return;

@@ -188,7 +188,7 @@ export function EvaluationEditor(props: {
         <Button
           disabled={saver.state === "saving" || incomplete}
           onClick={() => {
-            void saver.run(async () => {
+            void saver.run(de.confirm.evaluationSaved, async () => {
               setEvaluation(
                 await client.adminSetEvaluation(courseSlug, toWrite(questions)),
               );

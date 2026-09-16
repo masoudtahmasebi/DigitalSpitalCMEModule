@@ -293,7 +293,7 @@ export function QuizEditor(props: {
             setShowProblems(true);
             if (anyProblem) return;
             void saver
-              .run(async () => {
+              .run(de.confirm.quizSaved, async () => {
                 const stored = await client.adminSetQuiz(contentId, toWrite(questions));
                 setQuiz(stored);
                 // Adopt the server's document, ids and all: the next save has

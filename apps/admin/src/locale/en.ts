@@ -372,6 +372,28 @@ export const en: DeepPartial<typeof german> = {
     closeMenu: "Close menu",
   },
 
+  /** Confirmations — see the German table for why each names its own action. */
+  confirm: {
+    structureReordered: "The order was saved.",
+    moduleDeleted: "The module was deleted.",
+    chapterDeleted: "The chapter was deleted.",
+    contentDeleted: "The content was deleted.",
+    structureSaved: "The outline was saved.",
+    eivChecked: "The connection was checked.",
+    evaluationSaved: "The evaluation form was saved.",
+    expertsSaved: "Experts and speakers were saved.",
+    /** Lernerfolgskontrolle stays German — it is the word on the Bescheid. */
+    quizSaved: "The Lernerfolgskontrolle was saved.",
+    learnerNameCorrected: "The name was corrected.",
+    subjectErased: "The personal data was deleted.",
+    courseCreated: "The course was created.",
+    departmentCreated: "The department was created.",
+    departmentSaved: "The department was saved.",
+    projectCreated: "The project was created.",
+    projectSaved: "The project was saved.",
+    secondFactorSaved: "The two-factor rule was saved.",
+  },
+
   common: {
     add: "Add",
     save: "Save",

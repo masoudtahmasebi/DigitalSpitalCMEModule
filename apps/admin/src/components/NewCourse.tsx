@@ -139,7 +139,7 @@ export function NewCourse(props: {
   }
 
   const submit = () =>
-    void saver.run(async () => {
+    void saver.run(de.confirm.courseCreated, async () => {
       const structure = await props.client.adminCreateCourse({
         projectSlug,
         slug: effectiveSlug,

@@ -215,7 +215,7 @@ function NewDepartment(props: {
       onSubmit={(event) => {
         event.preventDefault();
         void saver
-          .run(async () =>
+          .run(de.confirm.departmentCreated, async () =>
             props.onDone(
               await props.client.adminCreateDepartment({
                 slug: effectiveSlug,
@@ -291,7 +291,7 @@ function RenameDepartment(props: {
         <Button
           disabled={saver.state === "saving" || name.trim() === ""}
           onClick={() => {
-            void saver.run(async () =>
+            void saver.run(de.confirm.departmentSaved, async () =>
               props.onDone(
                 await props.client.adminUpdateDepartment(props.department.slug, {
                   name: name.trim(),
@@ -464,7 +464,7 @@ function NewProject(props: {
       className="max-w-xl space-y-3"
       onSubmit={(event) => {
         event.preventDefault();
-        void saver.run(async () =>
+        void saver.run(de.confirm.projectCreated, async () =>
           props.onDone(
             await props.client.adminCreateProject({
               departmentSlug,
@@ -639,7 +639,7 @@ function ProjectSettings(props: {
       onChange={() => setEdited(true)}
       onSubmit={(event) => {
         event.preventDefault();
-        void saver.run(async () => {
+        void saver.run(de.confirm.projectSaved, async () => {
           const updated = await props.client.adminUpdateProject(project.slug, {
             name: name.trim(),
             identityProvider,

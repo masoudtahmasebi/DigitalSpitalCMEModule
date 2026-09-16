@@ -126,7 +126,7 @@ export function Security(props: {
     customerId: string | null,
     policy: SecondFactorPolicy,
   ): Promise<void> {
-    const ok = await saver.run(() =>
+    const ok = await saver.run(de.confirm.secondFactorSaved, () =>
       client.adminSetSecondFactorPolicy({ customerId, policy }),
     );
     if (!ok) {
