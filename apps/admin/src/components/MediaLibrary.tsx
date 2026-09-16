@@ -42,7 +42,7 @@ import { de } from "../locale/de.js";
 import { humanBytes, useMediaLibrary, type MediaKind } from "../media-library.js";
 import { MediaCard } from "./MediaCard.js";
 import { MediaUpload } from "./MediaUpload.js";
-import { Button, Notice, TextInput } from "./ui.js";
+import { Button, LoadFailure, Notice, TextInput } from "./ui.js";
 
 /**
  * The filter chips, in the order an operator is likely to want them.
@@ -163,36 +163,59 @@ export function MediaLibrary(props: { client: ApiClient }) {
         </Button>
       </div>
 
-      {library.problem === undefined ? null : (
-        <Notice tone="error">{library.problem}</Notice>
-      )}
-
-      {library.assets === undefined ? (
-        <p className="text-sm text-[color:var(--ds-admin-ink-muted)]">{de.loading}</p>
-      ) : (shown ?? []).length === 0 ? (
-        /*
-         * Two different empty states, and telling them apart is the point.
-         * "Nothing matches this filter" is a thing to undo; "you have not
-         * uploaded anything yet" is a thing to explain (§9.4).
-         */
-        <p className="text-sm text-[color:var(--ds-admin-ink-muted)]">
-          {library.assets.length === 0 ? de.media.empty : de.media.noMatch}
-        </p>
+      {/*
+       * A failed **load** replaces the list; a failed **write** sits above it
+       * (P236-01).
+       *
+       * The distinction is what the reported screenshot was missing. A write
+       * that fails leaves a list on screen that is still true, so the sentence
+       * belongs beside it. A load that fails leaves nothing true on screen at
+       * all — so it takes the place of the list rather than sitting over an
+       * eternal "Wird geladen …", which is what an operator was left waiting
+       * on.
+       */}
+      {library.loadFailed ? (
+        <LoadFailure
+          title={de.error.title}
+          retryLabel={de.error.retry}
+          problem={library.problem ?? de.error.generic}
+          retryable={library.loadRetryable}
+          onRetry={library.reload}
+        />
       ) : (
         <>
-          <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
-            {de.media.count((shown ?? []).length, library.assets.length)}
-          </p>
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {(shown ?? []).map((asset) => (
-              <MediaCard
-                key={asset.id}
-                client={props.client}
-                asset={asset}
-                library={library}
-              />
-            ))}
-          </ul>
+          {library.problem === undefined ? null : (
+            <Notice tone="error">{library.problem}</Notice>
+          )}
+
+          {library.assets === undefined ? (
+            <p className="text-sm text-[color:var(--ds-admin-ink-muted)]">{de.loading}</p>
+          ) : (shown ?? []).length === 0 ? (
+            /*
+             * Two different empty states, and telling them apart is the point.
+             * "Nothing matches this filter" is a thing to undo; "you have not
+             * uploaded anything yet" is a thing to explain (§9.4).
+             */
+            <p className="text-sm text-[color:var(--ds-admin-ink-muted)]">
+              {library.assets.length === 0 ? de.media.empty : de.media.noMatch}
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-[color:var(--ds-admin-ink-muted)]">
+                {de.media.count((shown ?? []).length, library.assets.length)}
+              </p>
+              <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {(shown ?? []).map((asset) => (
+                  <MediaCard
+                    key={asset.id}
+                    client={props.client}
+                    asset={asset}
+                    library={library}
+                  />
+                ))}
+              </ul>
+            </>
+          )}
         </>
       )}
 
