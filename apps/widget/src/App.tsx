@@ -204,6 +204,17 @@ export interface AppProps extends WidgetConfig {
    */
   readonly onCourseOpen?: ((slug: string, intent: OpenIntent) => boolean) | undefined;
   /**
+   * Tell the host page the learner wants to leave this course (DEP-46).
+   *
+   * Only present when the host has declared it draws a catalogue of its own —
+   * `back-to-catalogue="yes"` in `element.ts`. The widget has no fallback here
+   * and deliberately so: a page that names a course *is* that course's page,
+   * and showing a catalogue the host never asked for would be a worse answer
+   * than none. So the control is offered only when somebody is listening,
+   * which is §9.2 rather than caution.
+   */
+  readonly onCourseBack?: ((slug: string) => void) | undefined;
+  /**
    * Where a course named by the `course` attribute opens.
    *
    * `"resume"` lands in the content the learner left off at, which is how a
@@ -338,13 +349,14 @@ function Routed(
      */
     signInUrl?: string | undefined;
     onCourseOpen?: ((slug: string, intent: OpenIntent) => boolean) | undefined;
+    onCourseBack?: ((slug: string) => void) | undefined;
     openAt?: OpenIntent | undefined;
     onProgress?: ((detail: ProgressDetail) => void) | undefined;
     onCourseComplete?: ((detail: CourseCompleteDetail) => void) | undefined;
   },
 ) {
   const { apiBase, projectSlug, courseSlug, getToken, onCourseOpen } = props;
-  const { profileHint } = props;
+  const { profileHint, onCourseBack } = props;
 
   const client = useMemo(
     () =>
@@ -456,6 +468,37 @@ function Routed(
     );
   }
 
+  /*
+   * Whether this course has a way out, and whose way out it is (DEP-46).
+   *
+   * Two cases, and they are not the same mechanism:
+   *
+   * 1. **The widget drew the catalogue.** Leaving is a screen change here, and
+   *    the address leaves with the learner (DEP-33) — but the clearing is the
+   *    invariant effect above rather than a call in this handler (DEP-43). A
+   *    call here is an *ordering* — clear, then unmount — and P226 showed a
+   *    pending address effect getting between the two and putting the course
+   *    fragment back. The effect runs on every commit where no course is
+   *    selected, so there is nothing to get between.
+   *
+   * 2. **The host routed the learner here** and said so with
+   *    `back-to-catalogue`. The widget cannot show a catalogue it was not
+   *    mounted for, so it reports and the host navigates.
+   *
+   * Neither case, and there is no control. That is the WordPress course page:
+   * a catalogue there would be a place the host never asked for.
+   */
+  let backToCatalogue: (() => void) | undefined;
+  if (courseSlug === "") {
+    backToCatalogue = () => {
+      setSelected(undefined);
+    };
+  } else if (onCourseBack !== undefined) {
+    backToCatalogue = () => {
+      onCourseBack(selected);
+    };
+  }
+
   return (
     <Loaded
       apiBase={apiBase}
@@ -465,24 +508,7 @@ function Routed(
       signInUrl={props.signInUrl}
       openAt={intent}
       addressCourseSlug={courseSlug === "" ? selected : undefined}
-      // Only offered when the learner arrived through the catalogue.
-      onBackToCatalogue={
-        courseSlug === ""
-          ? () => {
-              /*
-               * The address leaves with the learner (DEP-33), but the clearing
-               * is the effect above rather than a call here (DEP-43).
-               *
-               * A call here is an ordering — clear, then unmount — and P226
-               * showed a pending address effect getting between the two and
-               * putting the course fragment back. The invariant runs on every
-               * commit where no course is selected, so there is nothing to get
-               * between.
-               */
-              setSelected(undefined);
-            }
-          : undefined
-      }
+      onBackToCatalogue={backToCatalogue}
       onProgress={props.onProgress}
       onCourseComplete={props.onCourseComplete}
     />

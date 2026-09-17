@@ -62,9 +62,11 @@ nonce-protected REST endpoint (P6-02). Another host might use a different
 mechanism. The API neither knows nor cares — it validates the token against
 Keycloak JWKS regardless (ADR-0003).
 
-**Contract 3 — one outbound event, added by P5-11.** Picking a course in the
-catalogue dispatches a cancelable `ds-lms:course-open` carrying
-`{ slug, intent }`, where `intent` is `"start"` or `"resume"` (P15-04).
+**Contract 3 — the outbound events.** Picking a course in the catalogue
+dispatches a cancelable `ds-lms:course-open` carrying `{ slug, intent }`, where
+`intent` is `"start"` or `"resume"` (P5-11, P15-04). `ds-lms:progress` and
+`ds-lms:course-complete` are notifications about a decision the server has
+already recorded. `ds-lms:course-back` is described below.
 
 It exists because hosts differ on exactly one thing: **who owns the URL.** A
 WordPress page's URL belongs to the theme, so the widget navigates internally
@@ -95,10 +97,37 @@ wrong, only less helpful — the same graceful-degradation property as the event
 itself. Anything other than the literal `"resume"` means "start": opening a video
 a learner did not ask for is the worse of the two failures.
 
+**Contract 4 — leaving a course, added by P237 (DEP-46).** The widget's back
+control dispatches a **non-cancelable** `ds-lms:course-back` carrying
+`{ slug }`, and draws that control on a course mount **only** when the host has
+set `back-to-catalogue="yes"`.
+
+This is the one place the contract needs a mode attribute, and the reason is the
+inverse of Contract 3's. There, the widget has a working answer either way, so
+cancellation is enough and configuration would be a second code path. Here it
+has none: with a `course` attribute set the element was mounted _for_ that
+course, and a host page that names a course has no catalogue behind it. Drawing
+a back control anyway would be a control that can only do nothing, and
+navigating to a catalogue the host never asked for would be worse.
+
+So the host declares the capability, and the declaration is what puts the
+control on the screen. The event is not cancelable because `preventDefault()`
+would be a handle on a fallback that does not exist. The graceful-degradation
+property of Contract 3 survives in the form that matters: a host that predates
+this attribute keeps exactly the back navigation it had.
+
+A host that sets the attribute and then ignores the event has built a dead
+control. That is why the attribute is the declaration rather than the widget
+sniffing for a listener — the latter cannot be done, and a host that lies about
+its own capabilities is not a case a contract can defend against.
+
 **The full attribute set** is therefore `api-base`, `project`, `course`
-(optional), `open-at` (optional), `token-endpoint` (optional), plus the
-`tokenProvider` property. Adding to that list is a change to this contract and
-belongs in this ADR, not only in the element.
+(optional), `open-at` (optional), `back-to-catalogue` (optional),
+`token-endpoint` and `token-header` (optional), `signed-in` (optional),
+`sign-in-url` (optional),
+`learner-profile` (optional), plus the `tokenProvider` property. Adding to that
+list is a change to this contract and belongs in this ADR, not only in the
+element.
 
 **Rules the core obeys:**
 

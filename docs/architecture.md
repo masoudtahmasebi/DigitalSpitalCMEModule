@@ -317,8 +317,9 @@ half-question is _who owns the URL?_ — see the row on routing below.
 | ----------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Token comes from  | `/wp-json/ds-lms/v1/token`, nonce-protected, minted from the WP session | Keycloak directly, Authorization Code + PKCE (`@ds/oidc`)                                    |
 | On a 401          | Re-fetch with `refresh=1`                                               | Back through Keycloak — the portal holds no refresh token, deliberately                      |
-| Around the widget | The customer's theme                                                    | A sign-in header and a back link, nothing else                                               |
+| Around the widget | The customer's theme                                                    | A sign-in header, nothing else                                                               |
 | Routing           | The widget navigates itself; the page's URL belongs to the theme        | Listens for `ds-lms:course-open` and cancels it, so each course has its own bookmarkable URL |
+| Leaving a course  | No catalogue behind the page, so no control is drawn                    | Sets `back-to-catalogue`, so the widget draws one and reports `ds-lms:course-back` (P237)    |
 | Progress events   | Available, unused                                                       | Available, unused                                                                            |
 | Widget bundle     | Copied into `assets/` by `scripts/bundle-widget.mjs`                    | Copied into `public/` by the same script                                                     |
 
@@ -328,14 +329,21 @@ shadow root; a host that re-compiled it with its own config would style it
 differently in each host, which is precisely what the shadow root exists to
 prevent.
 
-Three events leave the widget, and only the first is cancelable:
+Four events leave the widget, and only the first is cancelable:
 `ds-lms:course-open` (the host may take over routing, and is told which of the
-catalogue's two buttons was pressed), `ds-lms:progress` and
-`ds-lms:course-complete`. The latter two are notifications about a decision the
-**server** has already recorded, so there is nothing to cancel — and every
-figure in them is a server figure, named individually. A host wiring analytics
-to a client-side estimate would be charting something the platform does not
-credit.
+catalogue's two buttons was pressed), `ds-lms:progress`,
+`ds-lms:course-complete` and `ds-lms:course-back`. The two middle ones are
+notifications about a decision the **server** has already recorded, so there is
+nothing to cancel — and every figure in them is a server figure, named
+individually. A host wiring analytics to a client-side estimate would be
+charting something the platform does not credit.
+
+`ds-lms:course-back` (ADR-0007 Contract 4, P237) is not cancelable for a
+different reason: the widget has no fallback to suppress. On a mount pinned to
+one course there is no catalogue behind it, so the control is drawn **only**
+when the host sets `back-to-catalogue="yes"` — the one mode attribute in the
+contract, and the one case where the widget cannot decide alone whether an
+action is possible.
 
 The portal renders **no learner screen of its own** — not even the catalogue,
 which it used to. That was a second React implementation of approved layout
