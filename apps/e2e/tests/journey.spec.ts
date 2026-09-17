@@ -1250,12 +1250,51 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
           .toBe(false);
       }
 
+      /*
+       * The chrome's own control, which is a pair and not a button that greys
+       * out (DEP-44).
+       *
+       * The video is running at this point — established two blocks up by the
+       * product's own play control, not by a `video.play()` from the test — so
+       * the action the layout draws under the module list must be the pause
+       * half. Before DEP-44 it was the only half there was: "Fortbildung
+       * pausieren", `disabled` whenever the video was stopped, so a learner who
+       * had just opened a section was offered one grey button and nothing else.
+       *
+       * Asserted here rather than in a spec of its own because this is the one
+       * place in the suite where a video is genuinely playing, which is the
+       * precondition the whole pair is about. `enabled: true` is half the
+       * point — a label that is right on a control nobody can press is the
+       * defect wearing different words.
+       */
+      const playback = learner
+        .getByRole("button", { name: "Fortbildung pausieren", exact: true })
+        .first();
+      await expect(
+        playback,
+        "the video is playing and the chrome does not offer a way to stop it",
+      ).toBeEnabled({ timeout: 15_000 });
+
       await learner.getByRole("button", { name: "Pause", exact: true }).first().click();
       await expect
         .poll(() => video.evaluate((element: HTMLVideoElement) => element.paused), {
           message: "Pause was pressed and the video kept playing",
         })
         .toBe(true);
+
+      /*
+       * And having stopped, it turns round rather than going grey — the whole
+       * of the client's sentence, in a browser: *"when a video is not being
+       * played, the course is paused."* The label comes from the element's own
+       * report, so this also fails if the chrome ever starts rendering from
+       * what it last *asked* for instead.
+       */
+      await expect(
+        learner
+          .getByRole("button", { name: "Fortbildung fortsetzen", exact: true })
+          .first(),
+        "the video stopped and the chrome still offered only a pause",
+      ).toBeEnabled({ timeout: 15_000 });
 
       /*
        * And now the part a component test cannot see: the segments reaching the

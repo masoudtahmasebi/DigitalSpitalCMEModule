@@ -276,9 +276,17 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
        * Asserting the **control**, not a padlock somewhere: this is the button
        * a physician's hand goes to, and the two states are mutually exclusive
        * by construction in `PlayerScreen`, so naming one names the other.
+       *
+       * Either face of the playback pair (DEP-44). This named "Fortbildung
+       * pausieren" alone, which was the same question only while that label was
+       * unconditional — the video has not been started at this point, so the
+       * control now correctly reads "Fortbildung fortsetzen" and the old
+       * locator found nothing on a screen that is exactly right.
        */
       await expect(
-        learner.getByRole("button", { name: "Fortbildung pausieren" }).first(),
+        learner
+          .getByRole("button", { name: /^Fortbildung (pausieren|fortsetzen|starten)$/u })
+          .first(),
         "the Lernerfolgskontrolle was offered before its module's video was watched (P87-04)",
       ).toBeVisible({ timeout: 20_000 });
       await expect(learner.getByRole("button", { name: "Prüfung starten" })).toHaveCount(
@@ -400,8 +408,11 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
       // Akt 8 · Modul 2, dieselbe Runde
       // ===================================================================
       await expect(learner.getByText(VIDEO_TWO).first()).toBeVisible({ timeout: 20_000 });
+      // Either face of the pair, for the same reason as Akt 5 (DEP-44).
       await expect(
-        learner.getByRole("button", { name: "Fortbildung pausieren" }).first(),
+        learner
+          .getByRole("button", { name: /^Fortbildung (pausieren|fortsetzen|starten)$/u })
+          .first(),
         "module 2's exam was offered before its own video was watched (P87-04)",
       ).toBeVisible({ timeout: 20_000 });
 

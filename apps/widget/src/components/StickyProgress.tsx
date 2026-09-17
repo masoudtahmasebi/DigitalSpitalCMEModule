@@ -34,6 +34,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { EnrolmentState } from "@ds/sdk";
+import type { PlayerAction } from "../player-status.js";
 import { de } from "../locale/de.js";
 import { Button, ProgressRing } from "./primitives.js";
 
@@ -51,6 +52,20 @@ export function StickyProgress(props: {
   onClaimPoints?: (() => void) | undefined;
   /** The finished Punktemeldung's affordance (P195-02). */
   onOpenCertificate?: (() => void) | undefined;
+  /**
+   * The player's play/pause control, when this panel is floating over a video
+   * (DEP-44).
+   *
+   * This component had **no playback input at all**, so its button read
+   * "Fortbildung fortsetzen" over a running video and offered to navigate to
+   * the content the learner was already watching. On a phone it is the only
+   * progress panel there is — `ProgressCard` is `max-sm:hidden` — so that was
+   * the whole of the control a physician had.
+   *
+   * `undefined` on the course detail page, where there is no video and
+   * `onResume` is the right and only action.
+   */
+  playback?: PlayerAction | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -185,7 +200,23 @@ export function StickyProgress(props: {
             paragraph.
           */}
 
-          {props.onResume === undefined ? null : (
+          {/*
+            Over a video, the playback control; everywhere else, the way back
+            into the course (DEP-44).
+
+            One button either way — the panel is 280 px wide over a video and
+            drawing both would make the learner choose between two things that
+            sound the same. Which one is right is decided by whether there is a
+            video on the screen, which is exactly what `playback` being defined
+            means.
+          */}
+          {props.playback !== undefined ? (
+            <div className="mt-4">
+              <Button variant="cta" onClick={props.playback.run}>
+                {props.playback.label}
+              </Button>
+            </div>
+          ) : props.onResume === undefined ? null : (
             <div className="mt-4">
               <Button variant="cta" onClick={props.onResume}>
                 {props.state.progress.status === "not_started"

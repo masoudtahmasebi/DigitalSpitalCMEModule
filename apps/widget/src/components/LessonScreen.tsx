@@ -49,10 +49,16 @@
  *
  * The layout puts the timeline reading and the **Fortbildung pausieren**
  * control outside the video, in the panel above it (§4.3). So playback is
- * *controlled*: the player reports its real state upward and takes `paused`
- * back down. The alternative — the chrome reaching in through a ref to call
- * `.pause()` — would give one fact two owners, and the panel would eventually
- * say "paused" over a video that was still running.
+ * *controlled*: the player reports its real state upward and takes the chrome's
+ * request back down. The alternative — the chrome reaching in through a ref to
+ * call `.pause()` — would give one fact two owners, and the panel would
+ * eventually say "paused" over a video that was still running.
+ *
+ * Since DEP-44 the request travels as a `PlaybackCommand` rather than a
+ * `paused` boolean, because the control is now a pair — pause *and* resume —
+ * and a boolean whose `false` meant "nothing to say" could only express one
+ * half of it. The ownership rule is unchanged: the element reports, the chrome
+ * asks, and every label on the screen is rendered from the report.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -61,12 +67,12 @@ import type { ApiClient, LessonContent } from "@ds/sdk";
 import { isSessionExpired } from "../session.js";
 import { de } from "../locale/de.js";
 import { coalesce, WatchTracker } from "../watch-tracker.js";
-import { VideoPlayer, type PlaybackState } from "./VideoPlayer.js";
+import { VideoPlayer, type PlaybackCommand, type PlaybackState } from "./VideoPlayer.js";
 
 /** How often watched intervals are sent while playing. */
 const FLUSH_INTERVAL_MS = 15_000;
 
-export type { PlaybackState } from "./VideoPlayer.js";
+export type { PlaybackCommand, PlaybackState } from "./VideoPlayer.js";
 
 export function LessonScreen(props: {
   client: ApiClient;
@@ -76,7 +82,7 @@ export function LessonScreen(props: {
   /** The session ended and no flush will succeed again (P62-05). */
   onAuthLost: () => void;
   /** Set true by the chrome's **Fortbildung pausieren**. */
-  paused: boolean;
+  command: PlaybackCommand | undefined;
   onPlayback: (state: PlaybackState) => void;
   /**
    * Whether this section is already recorded as read (P167-01).
@@ -95,7 +101,7 @@ export function LessonScreen(props: {
       lesson={lesson}
       onProgress={onProgress}
       onAuthLost={props.onAuthLost}
-      paused={props.paused}
+      command={props.command}
       onPlayback={props.onPlayback}
     />
   ) : (
@@ -116,7 +122,7 @@ function VideoLesson(props: {
   onProgress: () => void;
   /** The session ended and no flush will succeed again (P62-05). */
   onAuthLost: () => void;
-  paused: boolean;
+  command: PlaybackCommand | undefined;
   onPlayback: (state: PlaybackState) => void;
 }) {
   const trackerRef = useRef(new WatchTracker());
@@ -411,7 +417,7 @@ function VideoLesson(props: {
         contentId={lesson.id}
         seekCeilingSec={seekCeilingSec}
         watchedSegments={covered}
-        paused={props.paused}
+        command={props.command}
         onPlayback={(state) => {
           positionRef.current = state.positionSec;
           props.onPlayback(state);

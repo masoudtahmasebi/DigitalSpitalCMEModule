@@ -53,7 +53,7 @@ function playerWith(over: Partial<React.ComponentProps<typeof VideoPlayer>> = {}
     // other test keeps asserting the player's ordinary behaviour.
     seekCeilingSec: null as number | null,
     watchedSegments: [],
-    paused: false,
+    command: undefined,
     onPlayback: vi.fn(),
     onTick: vi.fn(),
     onStop: vi.fn(),

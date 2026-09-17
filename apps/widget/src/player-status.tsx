@@ -40,11 +40,25 @@ export interface PlayerAction {
   readonly variant: "primary" | "cta" | "secondary";
   readonly disabled: boolean;
   /**
-   * The layout puts pause bars inside **Fortbildung pausieren** and nothing in
-   * the others. Named rather than passed as a node so the status stays plain
-   * data — see this file's header for why that matters to the re-render path.
+   * The layout puts pause bars inside **Fortbildung pausieren**, a triangle in
+   * its resume counterpart, and nothing in the others. Named rather than passed
+   * as a node so the status stays plain data — see this file's header for why
+   * that matters to the re-render path.
    */
-  readonly icon?: "pause";
+  readonly icon?: "pause" | "play";
+  /**
+   * Marks the one action that starts and stops the video (DEP-44).
+   *
+   * The sidebar draws every action the same way and needs no such distinction.
+   * The floating progress module on a phone does: it has room for one control,
+   * and while a learner is in the player the useful one is play/pause rather
+   * than "go to where you left off", which is where they already are.
+   *
+   * A named field and not `icon === "pause"`, because the icon is presentation
+   * — it is `"play"` for half of this action's life, and a future action with a
+   * pause glyph for some other reason would be picked up by mistake.
+   */
+  readonly kind?: "playback";
   readonly run: () => void;
 }
 

@@ -370,6 +370,7 @@ export function ModuleSidebar(props: {
               onClick={action.run}
             >
               {action.icon === "pause" ? <PauseGlyph /> : null}
+              {action.icon === "play" ? <PlayGlyph /> : null}
               {action.label}
             </Button>
           ))}
@@ -476,6 +477,22 @@ function PauseGlyph() {
   return (
     <svg viewBox="0 0 16 16" className="h-4 w-4" fill="currentColor" aria-hidden="true">
       <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0ZM7 11H5.5V5H7v6Zm3.5 0H9V5h1.5v6Z" />
+    </svg>
+  );
+}
+
+/**
+ * The resume half of the playback pair (DEP-44).
+ *
+ * The same disc as `PauseGlyph` with a triangle in it rather than two bars, so
+ * the control keeps its shape as it turns round and only the symbol inside it
+ * moves. `aria-hidden`, like its twin: the button's own label already says
+ * which of the two it is, and a screen reader does not need it twice.
+ */
+function PlayGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+      <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm-1.5 4.5 5 3.5-5 3.5v-7Z" />
     </svg>
   );
 }

@@ -214,8 +214,38 @@ function inOutline(): boolean {
  * course shell draws its own, so the check would be true on every screen and
  * could never go red.
  */
+/**
+ * Is the player on screen?
+ *
+ * Asked of the `<video>` element and not of a button label. It used to look for
+ * **Fortbildung pausieren**, which was the same question only for as long as
+ * that label was unconditional — DEP-44 turns it into a pair, so on a paused
+ * video the player now says **Fortbildung fortsetzen** and this helper reported
+ * the learner was not in the player at all.
+ *
+ * Widening the regex would not do: "Fortbildung fortsetzen" is also the course
+ * overview's own CTA, so the helper would answer true on the screen it exists
+ * to tell the player apart from.
+ *
+ * Two other anchors were tried and are wrong, both worth recording because the
+ * second is the subtler failure:
+ *
+ * - `<video>`: this file's fixture has no playable source, so the player
+ *   renders its failure state and no `<video>` element at all — "not in the
+ *   player" on a screen that is plainly the player.
+ * - the **absence** of the tab row: true of the player, and equally true of the
+ *   empty screen before anything has rendered. Every `waitFor(inPlayer)` would
+ *   then be satisfied immediately by nothing, and the assertions after it would
+ *   run against a blank document. That is P232's shape — a wait that waits for
+ *   something already there — and it surfaced as the *next* line failing to
+ *   find a control that simply had not been drawn yet.
+ *
+ * So it is the shell's own back control: present on the player, absent from the
+ * course overview (whose back control is `catalog.back`), and drawn only once
+ * the screen is really there.
+ */
 function inPlayer(): boolean {
-  return screen.queryAllByRole("button", { name: /Fortbildung pausieren/u }).length > 0;
+  return screen.queryAllByRole("button", { name: de.player.back }).length > 0;
 }
 
 /**

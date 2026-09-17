@@ -53,7 +53,7 @@
  * renders the decision (CLAUDE.md §4 invariant 1).
  */
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { germanMinutesAndSeconds, mediaLengthVerdict } from "@ds/domain";
 import type { ApiClient, CourseDetail, EnrolmentState, LessonContent } from "@ds/sdk";
 import { de } from "../locale/de.js";
@@ -68,7 +68,11 @@ import {
   passedQuizScore,
 } from "../player.js";
 import { useReportPlayerStatus } from "../player-status.js";
-import { LessonScreen, type PlaybackState } from "./LessonScreen.js";
+import {
+  LessonScreen,
+  type PlaybackCommand,
+  type PlaybackState,
+} from "./LessonScreen.js";
 import { Button } from "./primitives.js";
 
 export function PlayerScreen(props: {
@@ -105,7 +109,21 @@ export function PlayerScreen(props: {
     rate: 1,
     ended: false,
   });
-  const [paused, setPaused] = useState(false);
+  /*
+   * What the learner last asked the video to do (DEP-44).
+   *
+   * `undefined` until they press something, which is what keeps the widget from
+   * starting a video on a host page nobody asked it to start — see
+   * `VideoPlayer`'s header. It is a *request*; the answer to "is it playing" is
+   * `playback`, reported by the element itself, and every label below is
+   * rendered from that rather than from this.
+   */
+  const [command, setCommand] = useState<PlaybackCommand | undefined>();
+
+  /** A fresh command each time, so a second identical press is still a press. */
+  const ask = useCallback((want: "playing" | "paused") => {
+    setCommand((previous) => ({ want, seq: (previous?.seq ?? 0) + 1 }));
+  }, []);
   /**
    * The session lapsed and nothing more will be credited (P62-05).
    *
@@ -230,15 +248,51 @@ export function PlayerScreen(props: {
         ...(lesson.kind !== "video"
           ? []
           : [
-              {
-                label: de.player.pause,
-                // Outlined, as drawn: the pause is the alternative to the
-                // thing in the accent colour, never the thing itself.
-                variant: "secondary" as const,
-                disabled: !playback.playing,
-                icon: "pause" as const,
-                run: () => setPaused(true),
-              },
+              /*
+               * The playback control, which is a **pair** and not a button that
+               * greys out (DEP-44).
+               *
+               * It was `Fortbildung pausieren` with `disabled: !playback.playing`
+               * — so a learner who had not started the video, or who had paused
+               * it with the element's own control, was offered one grey button
+               * and nothing else. The client put it plainly: *"when a video is
+               * not being played, the course is paused"*. That is exactly right,
+               * and the state it names was already here — it just made the
+               * control disappear instead of turning it round.
+               *
+               * The label comes from `playback`, which is the element's own
+               * report, so it cannot claim the video is paused while it runs.
+               * Which of the two resume words is used comes from the course's
+               * server-side status, the same input `CourseHeader` and
+               * `StickyProgress` read — one rule for one question (§4.6).
+               *
+               * Never disabled. A control that can only be grey is the thing
+               * §9.2 is about.
+               */
+              playback.playing
+                ? {
+                    label: de.player.pause,
+                    // Outlined, as drawn: the pause is the alternative to the
+                    // thing in the accent colour, never the thing itself.
+                    variant: "secondary" as const,
+                    disabled: false,
+                    icon: "pause" as const,
+                    kind: "playback" as const,
+                    run: () => ask("paused"),
+                  }
+                : {
+                    label:
+                      state.progress.status === "not_started"
+                        ? de.overview.start
+                        : de.overview.resume,
+                    // The accent colour: with the video stopped this *is* the
+                    // action of the screen, which is what `secondary` denies.
+                    variant: "cta" as const,
+                    disabled: false,
+                    icon: "play" as const,
+                    kind: "playback" as const,
+                    run: () => ask("playing"),
+                  },
             ]),
       ],
     }),
@@ -291,13 +345,17 @@ export function PlayerScreen(props: {
         lesson={lesson}
         onProgress={props.onProgress}
         acknowledged={readingAcknowledged}
-        paused={paused}
-        // The learner pressing the video's own play control clears the
-        // chrome's pause, so the two never contradict each other.
-        onPlayback={(next) => {
-          setPlayback(next);
-          if (next.playing) setPaused(false);
-        }}
+        command={command}
+        /*
+         * The element's report is the only source of "is it playing", and it is
+         * what the control above renders from — so the learner using the
+         * video's own play/pause, a media key or Picture-in-Picture moves the
+         * chrome's label with it. No reconciliation is needed for that any
+         * more: the old `if (next.playing) setPaused(false)` existed because a
+         * stale `paused: true` would otherwise keep re-pausing, and a command
+         * is obeyed once rather than held.
+         */
+        onPlayback={setPlayback}
       />
 
       <div className="flex flex-wrap gap-3">
