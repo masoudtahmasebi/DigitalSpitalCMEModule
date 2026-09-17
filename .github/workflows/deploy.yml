@@ -870,7 +870,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # The spec at the commit that was **deployed**, not whatever the default
+      # branch happens to hold (P240-01).
+      #
+      # `actions/checkout` with no `ref` takes `github.ref`, and on a
+      # `workflow_run` event that is the repository's *default branch* — which
+      # on this repository is `claude/education-platform-roadmap-3vgrqh` and not
+      # `main`. So this job drove each new deployment with the spec from a
+      # branch that had not moved in days.
+      #
+      # It surfaced on deploy 142: `zwei-module.spec.ts` failed at a locator the
+      # merged commit had migrated one line at a time, with the failure quoting
+      # the *old* label at the *old* line number. The deployed product was
+      # correct and the spec driving it was a week old.
+      #
+      # That is the same root as P175-01, in the place P175-01 did not look: it
+      # fixed the **guard** that decides what may be deployed and left the
+      # **checkout** that decides what tests it. A post-deploy journey whose
+      # expectations come from somewhere other than the deployed commit is not
+      # evidence about that commit — green or red (§9.1).
+      #
+      # The `|| github.sha` fallback is the deploy job's own, at line 177, for
+      # the same reason: on a `workflow_dispatch` there is no `workflow_run`,
+      # and an empty `ref` would silently fall back to the default branch —
+      # which is the defect this line exists to remove.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-node@v7
         with:
