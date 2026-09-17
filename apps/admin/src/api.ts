@@ -50,6 +50,7 @@ import {
 } from "@ds/sdk";
 import { currentCsrfToken } from "./staff-auth.js";
 import { de } from "./locale/de.js";
+import type { Publish } from "./toasts.js";
 
 /**
  * The sentence used when the API sent no readable `detail` (P205-01).
@@ -69,7 +70,7 @@ import type { AdminConfig } from "./config.js";
  * no-op, so a client built in a test or before mount cannot throw for want of a
  * toast host.
  */
-export const toastPublisher: { current: (text: string) => void } = {
+export const toastPublisher: { current: Publish } = {
   current: () => undefined,
 };
 
@@ -191,7 +192,7 @@ function announcing(client: ApiClient): ApiClient {
 
         return result.catch((error: unknown) => {
           if (announceable(name, statusOf(error))) {
-            toastPublisher.current(describeError(error, GENERIC_FAILURE));
+            toastPublisher.current(describeError(error, GENERIC_FAILURE), "error");
           }
           // Re-thrown always, so every existing `catch` behaves exactly as
           // before — including the ones that treat a 404 as an answer.

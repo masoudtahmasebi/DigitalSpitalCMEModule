@@ -147,9 +147,18 @@ export function CourseStructureEditor(props: {
   const [structure, setStructure, loadProblem, retry, loadRetryable] = useLoaded(load);
   const saver = useSaver();
 
+  /*
+   * A mutation of the tree, and the sentence the operator gets for it
+   * (P238-01).
+   *
+   * One saver serves five different actions here — reorder, three deletes, and
+   * the forms' own writes — so the sentence cannot live on `useSaver`. "Die
+   * Gliederung wurde gespeichert." after deleting a module is true and is not
+   * what happened.
+   */
   const mutate = useCallback(
-    (action: () => Promise<Structure>) => {
-      void saver.run(async () => setStructure(await action()));
+    (success: string, action: () => Promise<Structure>) => {
+      void saver.run(success, async () => setStructure(await action()));
     },
     [saver, setStructure],
   );
@@ -157,7 +166,9 @@ export function CourseStructureEditor(props: {
   /** Apply a rearrangement to the local tree and send the whole thing. */
   const reorder = useCallback(
     (next: readonly AuthoringModule[]) => {
-      mutate(() => client.adminReorderStructure(courseSlug, toOrder(next)));
+      mutate(de.confirm.structureReordered, () =>
+        client.adminReorderStructure(courseSlug, toOrder(next)),
+      );
     },
     [client, courseSlug, mutate],
   );
@@ -221,6 +232,7 @@ export function CourseStructureEditor(props: {
                   modules={modules}
                   index={index}
                   onMutate={mutate}
+                  onAdopt={setStructure}
                   onReorder={reorder}
                   onEditQuiz={props.onEditQuiz}
                 />
@@ -262,7 +274,28 @@ function ModuleBlock(props: {
   module: AuthoringModule;
   modules: readonly AuthoringModule[];
   index: number;
-  onMutate: (action: () => Promise<Structure>) => void;
+  /**
+   * A real mutation of the tree: the API call, and what to tell the operator
+   * when it worked.
+   */
+  onMutate: (success: string, action: () => Promise<Structure>) => void;
+  /**
+   * Adopting a tree a **child form already saved** (P238-01).
+   *
+   * Separate from `onMutate`, which it used to travel through as
+   * `onMutate(async () => next)` — an "action" that performs no request and
+   * cannot fail. Two things were wrong with that and only the first is new:
+   *
+   * 1. Since the saver announces success, a no-op routed through it would
+   *    publish a second confirmation on top of the one the child form's own
+   *    saver just published — the same save, reported twice.
+   * 2. It ran the parent's saver state machine anyway, so adopting a result
+   *    set the parent to `"saved"` and **cleared `problem`**. A reorder that
+   *    had failed a moment earlier had its error message wiped by an unrelated
+   *    form finishing. Read from the state machine in `hooks.ts`, not
+   *    observed in a browser, and named as such.
+   */
+  onAdopt: (next: Structure) => void;
   onReorder: (next: readonly AuthoringModule[]) => void;
   onEditQuiz: (contentId: string, title: string) => void;
 }) {
@@ -317,7 +350,11 @@ function ModuleBlock(props: {
                     : undefined
               }
               lockedLabel={de.structure.locked}
-              onConfirm={() => props.onMutate(() => client.adminDeleteModule(module.id))}
+              onConfirm={() =>
+                props.onMutate(de.confirm.moduleDeleted, () =>
+                  client.adminDeleteModule(module.id),
+                )
+              }
             />
           </>
         )
@@ -342,7 +379,7 @@ function ModuleBlock(props: {
             })
           }
           onDone={(next) => {
-            props.onMutate(async () => next);
+            props.onAdopt(next);
             setEditing(false);
           }}
           onCancel={() => setEditing(false)}
@@ -364,6 +401,7 @@ function ModuleBlock(props: {
                   modules={modules}
                   index={chapterIndex}
                   onMutate={props.onMutate}
+                  onAdopt={props.onAdopt}
                   onReorder={props.onReorder}
                   onEditQuiz={props.onEditQuiz}
                 />
@@ -378,7 +416,7 @@ function ModuleBlock(props: {
           onSubmit={(values) =>
             client.adminCreateChapter(module.id, { title: values.title ?? "" })
           }
-          onDone={(next) => props.onMutate(async () => next)}
+          onDone={(next) => props.onAdopt(next)}
         />
       </div>
     </Row>
@@ -396,7 +434,28 @@ function ChapterBlock(props: {
   module: AuthoringModule;
   modules: readonly AuthoringModule[];
   index: number;
-  onMutate: (action: () => Promise<Structure>) => void;
+  /**
+   * A real mutation of the tree: the API call, and what to tell the operator
+   * when it worked.
+   */
+  onMutate: (success: string, action: () => Promise<Structure>) => void;
+  /**
+   * Adopting a tree a **child form already saved** (P238-01).
+   *
+   * Separate from `onMutate`, which it used to travel through as
+   * `onMutate(async () => next)` — an "action" that performs no request and
+   * cannot fail. Two things were wrong with that and only the first is new:
+   *
+   * 1. Since the saver announces success, a no-op routed through it would
+   *    publish a second confirmation on top of the one the child form's own
+   *    saver just published — the same save, reported twice.
+   * 2. It ran the parent's saver state machine anyway, so adopting a result
+   *    set the parent to `"saved"` and **cleared `problem`**. A reorder that
+   *    had failed a moment earlier had its error message wiped by an unrelated
+   *    form finishing. Read from the state machine in `hooks.ts`, not
+   *    observed in a browser, and named as such.
+   */
+  onAdopt: (next: Structure) => void;
   onReorder: (next: readonly AuthoringModule[]) => void;
   onEditQuiz: (contentId: string, title: string) => void;
 }) {
@@ -499,7 +558,9 @@ function ChapterBlock(props: {
               }
               lockedLabel={de.structure.locked}
               onConfirm={() =>
-                props.onMutate(() => client.adminDeleteChapter(chapter.id))
+                props.onMutate(de.confirm.chapterDeleted, () =>
+                  client.adminDeleteChapter(chapter.id),
+                )
               }
             />
           </>
@@ -531,7 +592,7 @@ function ChapterBlock(props: {
             })
           }
           onDone={(next) => {
-            props.onMutate(async () => next);
+            props.onAdopt(next);
             setEditing(false);
           }}
           onCancel={() => setEditing(false)}
@@ -553,6 +614,7 @@ function ChapterBlock(props: {
                   modules={modules}
                   index={contentIndex}
                   onMutate={props.onMutate}
+                  onAdopt={props.onAdopt}
                   onReorder={props.onReorder}
                   onEditQuiz={props.onEditQuiz}
                 />
@@ -565,7 +627,7 @@ function ChapterBlock(props: {
           client={client}
           courseSlug={props.courseSlug}
           chapterId={chapter.id}
-          onDone={(next) => props.onMutate(async () => next)}
+          onDone={(next) => props.onAdopt(next)}
         />
       </div>
     </Row>
@@ -583,7 +645,28 @@ function ContentRow(props: {
   chapter: AuthoringChapter;
   modules: readonly AuthoringModule[];
   index: number;
-  onMutate: (action: () => Promise<Structure>) => void;
+  /**
+   * A real mutation of the tree: the API call, and what to tell the operator
+   * when it worked.
+   */
+  onMutate: (success: string, action: () => Promise<Structure>) => void;
+  /**
+   * Adopting a tree a **child form already saved** (P238-01).
+   *
+   * Separate from `onMutate`, which it used to travel through as
+   * `onMutate(async () => next)` — an "action" that performs no request and
+   * cannot fail. Two things were wrong with that and only the first is new:
+   *
+   * 1. Since the saver announces success, a no-op routed through it would
+   *    publish a second confirmation on top of the one the child form's own
+   *    saver just published — the same save, reported twice.
+   * 2. It ran the parent's saver state machine anyway, so adopting a result
+   *    set the parent to `"saved"` and **cleared `problem`**. A reorder that
+   *    had failed a moment earlier had its error message wiped by an unrelated
+   *    form finishing. Read from the state machine in `hooks.ts`, not
+   *    observed in a browser, and named as such.
+   */
+  onAdopt: (next: Structure) => void;
   onReorder: (next: readonly AuthoringModule[]) => void;
   onEditQuiz: (contentId: string, title: string) => void;
 }) {
@@ -670,7 +753,9 @@ function ContentRow(props: {
                 }
                 lockedLabel={de.structure.locked}
                 onConfirm={() =>
-                  props.onMutate(() => client.adminDeleteContent(content.id))
+                  props.onMutate(de.confirm.contentDeleted, () =>
+                    client.adminDeleteContent(content.id),
+                  )
                 }
               />
             </>
@@ -686,7 +771,7 @@ function ContentRow(props: {
           submitLabel={de.common.save}
           onSubmit={(write) => client.adminUpdateContent(content.id, write)}
           onDone={(next) => {
-            props.onMutate(async () => next);
+            props.onAdopt(next);
             setEditing(false);
           }}
           onCancel={() => setEditing(false)}
@@ -833,7 +918,7 @@ function ContentForm(props: {
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        void saver.run(async () =>
+        void saver.run(de.confirm.structureSaved, async () =>
           props.onDone(
             await props.onSubmit({
               kind,
@@ -1128,7 +1213,9 @@ function EditForm(props: {
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        void saver.run(async () => props.onDone(await props.onSubmit(values)));
+        void saver.run(de.confirm.structureSaved, async () =>
+          props.onDone(await props.onSubmit(values)),
+        );
       }}
     >
       <FormColumn>

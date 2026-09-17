@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { describeError, isRetryable } from "./api.js";
 import { de } from "./locale/de.js";
+import { useToasts } from "./toasts.js";
 
 export type SaveState = "idle" | "saving" | "saved";
 
@@ -35,8 +36,27 @@ export interface Saver {
    * Run a mutation. Resolves `true` when it succeeded, so a caller can decide
    * what to do next — close the form, clear a draft — without repeating the
    * error handling.
+   *
+   * @param success what the operator is told when it worked. **Required, and
+   * given here rather than to `useSaver`**, for two reasons that both come
+   * from P238-01.
+   *
+   * Required, because the state this hook already computes — `"saved"` — was
+   * rendered by four screens out of nine, and the other five simply did not.
+   * Nothing said so: `useSaver` set the flag, the screen ignored it, and an
+   * operator who had just deleted a module, created a course or corrected a
+   * learner's name saw no acknowledgement at all. That is §9.3 exactly — a
+   * rule written and not enforced — and an optional argument would have left
+   * it exactly as enforceable as it was.
+   *
+   * Here rather than on the hook, because one saver serves several actions:
+   * `CourseStructure`'s `mutate` is threaded down to delete a module, a
+   * chapter and a content, and reorder the tree. "Gespeichert." for a
+   * deletion is the kind of sentence that is technically true and tells the
+   * reader nothing (§9.4), so the sentence belongs to the action, not to the
+   * hook the action happens to travel through.
    */
-  readonly run: (action: () => Promise<unknown>) => Promise<boolean>;
+  readonly run: (success: string, action: () => Promise<unknown>) => Promise<boolean>;
   readonly reset: () => void;
 }
 
@@ -57,13 +77,39 @@ export function useSaver(fallback: string = de.error.generic): Saver {
   const [problem, setProblem] = useState<string | undefined>();
   const alive = useMounted();
 
+  /*
+   * The confirmation channel, and the first caller `useToasts` has ever had.
+   *
+   * It was exported by `toasts.tsx` from the day that file was written and
+   * called from nowhere — the toast host had exactly one publisher, the error
+   * net in `api.ts`, so the console could tell an operator that something
+   * failed and had no way at all to tell them something worked. §9.3 in the
+   * file that exists to prevent silence.
+   *
+   * Published from **here** rather than from fifteen call sites for the reason
+   * P205-01 gives for failures one paragraph over: a net under every mutation
+   * cannot be forgotten by a screen that has not been written yet. Screens keep
+   * their inline `Notice tone="success"` where they have one — that carries
+   * context beside the form, this is the floor.
+   */
+  const publish = useToasts();
+
   const run = useCallback(
-    async (action: () => Promise<unknown>): Promise<boolean> => {
+    async (success: string, action: () => Promise<unknown>): Promise<boolean> => {
       setProblem(undefined);
       setState("saving");
       try {
         await action();
-        if (alive.current) setState("saved");
+        /*
+         * Guarded by `alive` like the state below it. A confirmation for a
+         * screen the operator has already navigated away from is a message
+         * about something they can no longer see, and on a slow save that is
+         * the common case rather than the exotic one.
+         */
+        if (alive.current) {
+          setState("saved");
+          publish(success, "success");
+        }
         return true;
       } catch (error) {
         if (alive.current) {
@@ -76,7 +122,7 @@ export function useSaver(fallback: string = de.error.generic): Saver {
         return false;
       }
     },
-    [alive, fallback],
+    [alive, fallback, publish],
   );
 
   const reset = useCallback(() => {

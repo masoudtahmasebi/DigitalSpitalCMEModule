@@ -71,7 +71,7 @@ export function EivCheckPanel(props: {
   const saver = useSaver();
 
   const run = useCallback(() => {
-    void saver.run(async () => {
+    void saver.run(de.confirm.eivChecked, async () => {
       setReport(
         await client.adminCheckEivConnection(courseSlug, {
           environment,

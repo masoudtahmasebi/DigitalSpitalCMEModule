@@ -514,6 +514,74 @@ export const german = {
     closeMenu: "Menü schließen",
   },
 
+  /**
+   * What the console says when a mutation worked (P238-01).
+   *
+   * ## Why these are their own group and not `saved: "Gespeichert."` reused
+   *
+   * `useSaver` has computed a `"saved"` state since P9-02 and **four screens of
+   * nine rendered it**. The other five — the authoring tree, the EIV check, the
+   * learner corrections, the new-course form and the whole Organisation screen
+   * — set the flag and showed nothing, so an operator who deleted a module,
+   * erased a participant's record or created a project got no acknowledgement
+   * at all. That is §9.3: a rule written and not enforced.
+   *
+   * `run` now requires the sentence, so the compiler asks the question at every
+   * one of the fifteen call sites. A single shared "Gespeichert." would have
+   * satisfied the compiler and thrown away the point: it is true after erasing
+   * a subject's data and it is the wrong word for it (§9.4). Each sentence
+   * names the thing that happened, in the noun the screen uses for it.
+   *
+   * Written in the perfect and in full sentences, matching `security.saved` and
+   * `copy.saved` which were already here. A toast is read at a glance and a
+   * bare participle reads as a label rather than as news.
+   */
+  confirm: {
+    /** The authoring tree. Each is a different action on `onMutate`. */
+    structureReordered: "Die Reihenfolge wurde gespeichert.",
+    moduleDeleted: "Das Modul wurde gelöscht.",
+    chapterDeleted: "Das Kapitel wurde gelöscht.",
+    contentDeleted: "Der Inhalt wurde gelöscht.",
+    /** `AddForm` and `EditForm` — the label says which, the sentence cannot. */
+    structureSaved: "Die Gliederung wurde gespeichert.",
+
+    /**
+     * The EIV connection check.
+     *
+     * "Geprüft", not "erfolgreich": the request reached EIV-FOBI and came back,
+     * which is what this toast knows. Whether the *answer* was a working VNR is
+     * in the report the screen then draws, and a green toast over a red report
+     * is the console disagreeing with itself.
+     */
+    eivChecked: "Die Verbindung wurde geprüft.",
+
+    evaluationSaved: "Der Evaluationsbogen wurde gespeichert.",
+    expertsSaved: "Experten und Referenten wurden gespeichert.",
+    quizSaved: "Die Lernerfolgskontrolle wurde gespeichert.",
+
+    /**
+     * The name correction, which is an audited write against a physician's
+     * record (P179). "Korrigiert" is the word the audit log and the screen both
+     * use for it; "gespeichert" would make it sound like an edit to a draft.
+     */
+    learnerNameCorrected: "Der Name wurde korrigiert.",
+
+    /**
+     * Erasure under Art. 17 (ADR-0008), which is pseudonymisation and not a
+     * delete — so the sentence says what is gone rather than claiming the row
+     * is. The screen's own copy already draws that distinction and this must
+     * not undercut it.
+     */
+    subjectErased: "Die personenbezogenen Daten wurden gelöscht.",
+
+    courseCreated: "Die Fortbildung wurde angelegt.",
+    departmentCreated: "Die Abteilung wurde angelegt.",
+    departmentSaved: "Die Abteilung wurde gespeichert.",
+    projectCreated: "Das Projekt wurde angelegt.",
+    projectSaved: "Das Projekt wurde gespeichert.",
+    secondFactorSaved: "Die Zwei-Faktor-Regel wurde gespeichert.",
+  },
+
   common: {
     add: "Hinzufügen",
     save: "Speichern",
