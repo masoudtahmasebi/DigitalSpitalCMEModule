@@ -250,6 +250,8 @@ function renderPlayer(
     onReporting?: () => void;
     onBack?: () => void;
     client?: ApiClient;
+    /** The floating progress module, which the real player always draws. */
+    progress?: boolean;
   } = {},
 ) {
   const client =
@@ -270,7 +272,7 @@ function renderPlayer(
       onOpen={onOpen}
       onBack={onBack}
       onResume={undefined}
-      progress={false}
+      progress={overrides.progress ?? false}
       onClaimPoints={undefined}
     >
       <PlayerScreen
@@ -558,16 +560,145 @@ describe("the Lernerfolgskontrolle in the module outline", () => {
   });
 });
 
-describe("the controls", () => {
-  it("offers pause only while something is playing", () => {
-    renderPlayer();
-    const pause = screen.getByRole("button", { name: "Fortbildung pausieren" });
-    expect((pause as HTMLButtonElement).disabled).toBe(true);
+/**
+ * The playback control is a pair, and it is never grey (DEP-44).
+ *
+ * The client, in one line: *"when a video is not being played, the course is
+ * paused, that's so simple."* It was, and the console disagreed — the sole
+ * action on the player read **Fortbildung pausieren** with `disabled: true`
+ * whenever the video was stopped, which is every learner who has just opened a
+ * section and everyone who paused with the video's own control.
+ *
+ * What is under test is the whole loop and not the label: the element reports
+ * its state, the chrome renders the other half of the pair, and pressing it
+ * reaches the element. A test that only read the label would pass on a button
+ * wired to nothing (§9.7).
+ */
+describe("the playback control (DEP-44)", () => {
+  /** The `<video>` the fixture's source produces, with a spied media API. */
+  function video(): HTMLVideoElement {
+    const node = document.querySelector("video");
+    if (node === null) throw new Error("the fixture rendered no video element");
+    const element = node as HTMLVideoElement;
+    element.play = vi.fn(async () => undefined);
+    element.pause = vi.fn();
+    return element;
+  }
+
+  /** Make the element report that it is running, the way a real one does. */
+  function reportPlaying(element: HTMLVideoElement): void {
+    Object.defineProperty(element, "paused", { value: false, configurable: true });
+    fireEvent.play(element);
+    fireEvent.timeUpdate(element);
+  }
+
+  it("reaches the floating panel a phone actually has", () => {
+    /*
+     * The §9.7 case, and it exists because its absence was caught by sabotage:
+     * deleting `playback={…}` from `CourseShell` — the one line connecting the
+     * player's status to this panel — left the whole widget suite green.
+     * `StickyProgress`'s own tests prove it renders what it is handed, and
+     * nothing proved anything handed it.
+     *
+     * Driven through the real `CourseShell` with `progress` on, which is what
+     * `App.tsx` passes for the player and only for the player.
+     */
+    renderPlayer({ progress: true });
+
+    /*
+     * The teardrop, by its own accessible name — the module sentence. Not
+     * `{ expanded: false }`: the sidebar's module rows are collapsed
+     * accordions and carry the same attribute, so that matches several.
+     */
+    fireEvent.click(screen.getByRole("button", { name: /Modulen abgeschlossen/u }));
+
+    const panel = screen.getByRole("region", { name: de.overview.title });
+    // The playback half, not "go to where you left off" — the learner is there.
+    expect(within(panel).getByRole("button", { name: de.overview.resume })).toBeTruthy();
+
+    reportPlaying(video());
+    expect(within(panel).getByRole("button", { name: de.player.pause })).toBeTruthy();
   });
 
+  it("offers a way to start, not a pause nobody can press, while stopped", () => {
+    renderPlayer();
+
+    const control = screen.getByRole("button", { name: de.overview.resume });
+    expect((control as HTMLButtonElement).disabled).toBe(false);
+    // And the old half is genuinely gone rather than merely relabelled beside it.
+    expect(screen.queryByRole("button", { name: de.player.pause })).toBeNull();
+  });
+
+  it("says starten, not fortsetzen, on a course nobody has begun", () => {
+    /*
+     * Which of the two resume words is right is the *course's* question, and it
+     * is answered by the server's status — the same input `CourseHeader` and
+     * `StickyProgress` read. A second rule here would be a second answer.
+     */
+    renderPlayer({
+      state: {
+        ...state(),
+        progress: { ...state().progress, status: "not_started" },
+      },
+    });
+
+    expect(screen.getByRole("button", { name: de.overview.start })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: de.overview.resume })).toBeNull();
+  });
+
+  it("turns into pause once the element reports it is running", () => {
+    renderPlayer();
+    reportPlaying(video());
+
+    expect(screen.getByRole("button", { name: de.player.pause })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: de.overview.resume })).toBeNull();
+  });
+
+  it("reaches the element — pressing it plays, pressing pause pauses", () => {
+    renderPlayer();
+    const element = video();
+
+    fireEvent.click(screen.getByRole("button", { name: de.overview.resume }));
+    expect(element.play).toHaveBeenCalled();
+
+    reportPlaying(element);
+    fireEvent.click(screen.getByRole("button", { name: de.player.pause }));
+    expect(element.pause).toHaveBeenCalled();
+  });
+
+  it("obeys a second press after the learner paused with the video's own control", () => {
+    /*
+     * The case the command's `seq` exists for, and the one a boolean could not
+     * express. The learner presses resume, then pauses using the element's own
+     * control — which the chrome never hears as a *request*, only as a report.
+     * Pressing resume again asks for `"playing"` a second time, and an effect
+     * keyed on the value alone would see no change and do nothing.
+     *
+     * Written because the dependency array said so, not because it was seen in
+     * a browser; it goes red on the obvious implementation, which is what makes
+     * it worth having.
+     */
+    renderPlayer();
+    const element = video();
+
+    fireEvent.click(screen.getByRole("button", { name: de.overview.resume }));
+    expect(element.play).toHaveBeenCalledTimes(1);
+
+    // Paused by the element itself: a report, never a request.
+    Object.defineProperty(element, "paused", { value: true, configurable: true });
+    fireEvent.pause(element);
+
+    fireEvent.click(screen.getByRole("button", { name: de.overview.resume }));
+    expect(element.play).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("the controls", () => {
   it("has no pause control on a lesson with no timeline", () => {
     renderPlayer({ lesson: lesson({ kind: "text", sources: [] }) });
-    expect(screen.queryByRole("button", { name: "Fortbildung pausieren" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Fortbildung (pausieren|fortsetzen)/u }),
+    ).toBeNull();
   });
 
   it("leaves the player through Zurück zur Übersicht", () => {
@@ -592,8 +723,10 @@ describe("the controls", () => {
     renderPlayer();
 
     const outline = screen.getByRole("navigation", { name: de.player.outline });
-    const pause = screen.getByRole("button", { name: "Fortbildung pausieren" });
-    expect(outline.contains(pause)).toBe(true);
+    // The stopped half of the pair since DEP-44 — this case is about *where*
+    // the action is drawn, not which of its two faces is showing.
+    const playback = screen.getByRole("button", { name: de.overview.resume });
+    expect(outline.contains(playback)).toBe(true);
   });
 
   it("draws the exam as the accent action, and only once", () => {
@@ -653,13 +786,17 @@ describe("the controls", () => {
 
     const outline = screen.getByRole("navigation", { name: de.player.outline });
     const begin = screen.getByRole("button", { name: "Prüfung starten" });
-    const pause = screen.getByRole("button", { name: "Fortbildung pausieren" });
+    // Stopped, so the playback half reads `resume` — see DEP-44 below. What
+    // this case is about is that both are drawn and in which order.
+    const playback = screen.getByRole("button", { name: de.overview.resume });
 
     expect(outline.contains(begin)).toBe(true);
-    expect(outline.contains(pause)).toBe(true);
+    expect(outline.contains(playback)).toBe(true);
     // The order the layout stacks them in, which is also the order of
     // importance: the exam first.
-    expect(begin.compareDocumentPosition(pause)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(begin.compareDocumentPosition(playback)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
 
     fireEvent.click(begin);
     expect(onOpen).toHaveBeenCalledWith("quiz3");

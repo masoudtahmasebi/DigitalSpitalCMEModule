@@ -53,10 +53,32 @@
  * keys, Bluetooth headphones, Picture-in-Picture, the OS volume mixer — and it
  * drifts within seconds of any of them being used.
  *
- * `paused` is the one exception, and it is deliberate: the layout puts a
- * **Fortbildung pausieren** control outside the player (§4.3), so pause is a
+ * `command` is the one exception, and it is deliberate: the layout puts the
+ * playback control outside the player (§4.3), so the *request* comes in as a
  * prop, and `onPlayback` reports the element's real state back so the two can
- * never contradict each other.
+ * never contradict each other. The element still owns the fact; the chrome only
+ * asks.
+ *
+ * ## Why a command and not a `paused` boolean (DEP-44)
+ *
+ * It was `paused: boolean`, and it could only ever pause — `false` meant
+ * "nothing to say" rather than "play", because a widget that started a video by
+ * itself would be doing something the learner did not ask for on somebody
+ * else's page. That guarantee was real and is kept, but it was carried by a
+ * value whose `false` had two meanings, and it made the only control on the
+ * screen one that greys out instead of offering the other half of the pair.
+ *
+ * So the request is a command, and it is `undefined` until the learner presses
+ * something. On mount there is no command, so there is nothing to obey — the
+ * "never start by itself" guarantee is now structural rather than a consequence
+ * of `false` happening to mean nothing.
+ *
+ * It carries a `seq` because a second identical press is still a press. Without
+ * it, a learner who pressed **Fortbildung fortsetzen**, paused with the video's
+ * own control, and pressed it again would send `{want:"playing"}` twice — the
+ * same value, so the effect would not re-run, and the button would do nothing
+ * the second time. Found by reasoning about the effect's dependency, and
+ * covered by a test named for it.
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -82,6 +104,18 @@ import type { MediaSource } from "@ds/sdk";
 import { de } from "../locale/de.js";
 
 /** What the surrounding chrome is told, on every change worth showing. */
+/**
+ * What the chrome outside the player has asked the video to do (DEP-44).
+ *
+ * `seq` is not decoration — see this file's header. Two identical requests are
+ * two requests, and an effect keyed on the value alone would obey only the
+ * first.
+ */
+export interface PlaybackCommand {
+  readonly want: "playing" | "paused";
+  readonly seq: number;
+}
+
 export interface PlaybackState {
   readonly positionSec: number;
   readonly durationSec: number;
@@ -128,8 +162,13 @@ export interface VideoPlayerProps {
   readonly contentId: string;
   /** The server's merged union — what the coverage bar draws. */
   readonly watchedSegments: readonly WatchedSegment[];
-  /** Set by the chrome's **Fortbildung pausieren**. */
-  readonly paused: boolean;
+  /**
+   * What the chrome last asked for, or `undefined` if it has not asked.
+   *
+   * See the header: `undefined` on mount is what keeps the widget from starting
+   * a video nobody asked it to start.
+   */
+  readonly command: PlaybackCommand | undefined;
   readonly onPlayback: (state: PlaybackState) => void;
   /** Fired on `timeupdate` while playing, for the watch tracker. */
   /**
@@ -306,12 +345,24 @@ export function VideoPlayer(props: VideoPlayerProps) {
     publish(video);
   };
 
-  // The chrome's pause button. Only ever pauses — a widget that started a video
-  // by itself would be doing something the learner did not ask for on somebody
-  // else's page, and browsers refuse an unprompted `play()` anyway.
+  /*
+   * Obey the chrome's last request (DEP-44).
+   *
+   * `play()` here is not unprompted: every command originates in a learner
+   * pressing a control, which is the user gesture a browser requires. The
+   * rejection is swallowed the same way the player's own toggle swallows it —
+   * an autoplay refusal is not a reason to tear the screen down, and the
+   * element's own `onPlayback` will report that it is still paused, so the
+   * chrome's label stays truthful either way.
+   */
+  const command = props.command;
   useEffect(() => {
-    if (props.paused) videoRef.current?.pause();
-  }, [props.paused]);
+    if (command === undefined) return;
+    const video = videoRef.current;
+    if (video === null) return;
+    if (command.want === "paused") video.pause();
+    else void video.play().catch(() => undefined);
+  }, [command]);
 
   // Captions follow the toggle. The `<track>`'s own mode is the authority a
   // browser reads, and `default` only sets the initial value — so a toggle that

@@ -169,6 +169,57 @@ describe("StickyProgress", () => {
     expect(onResume).toHaveBeenCalledTimes(1);
   });
 
+  it("offers the playback control over a video, not a way to resume (DEP-44)", () => {
+    /*
+     * This panel is the **only** progress card a phone has — `ProgressCard` is
+     * `max-sm:hidden` — and over the player it used to draw "Fortbildung
+     * fortsetzen", which navigates to the content the learner is already
+     * watching. It had no playback input at all, so it could not have said
+     * anything else.
+     *
+     * The action is passed in rather than derived here: the player reports one
+     * status, and the sidebar's row, the card beside the title and this panel
+     * are all drawn from it, so none of the three can disagree about whether a
+     * video is running.
+     */
+    const run = vi.fn();
+    const onResume = vi.fn();
+    render(
+      <StickyProgress
+        state={state()}
+        onResume={onResume}
+        playback={{
+          label: "Fortbildung pausieren",
+          variant: "secondary",
+          disabled: false,
+          icon: "pause",
+          kind: "playback",
+          run,
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    fireEvent.click(screen.getByRole("button", { name: "Fortbildung pausieren" }));
+
+    expect(run).toHaveBeenCalledOnce();
+    // And the resume it replaces is not drawn beside it — one panel, one action.
+    expect(screen.queryByRole("button", { name: "Fortbildung fortsetzen" })).toBeNull();
+    expect(onResume).not.toHaveBeenCalled();
+  });
+
+  it("keeps the resume action where there is no video", () => {
+    // The course detail page, which is the other half of the same condition —
+    // no `playback`, so the panel is exactly what it was.
+    const onResume = vi.fn();
+    render(<StickyProgress state={state()} onResume={onResume} />);
+
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    fireEvent.click(screen.getByRole("button", { name: "Fortbildung fortsetzen" }));
+
+    expect(onResume).toHaveBeenCalledOnce();
+  });
+
   it("survives a course with no modules", () => {
     // `completed / total` is a division, and a course whose content has not
     // been authored yet has a total of zero. The ring must not be NaN, which

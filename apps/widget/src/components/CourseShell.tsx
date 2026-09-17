@@ -324,7 +324,21 @@ export function CourseShell(props: {
         absent from the one screen it was built for.
       */}
       {props.progress ? (
-        <StickyProgress state={props.state} onResume={props.onResume} />
+        <StickyProgress
+          state={props.state}
+          onResume={props.onResume}
+          /*
+            The play/pause control, when the screen inside has one (DEP-44).
+
+            `status` is the player's own report — the same object the progress
+            card beside the title and the sidebar's action row are drawn from —
+            so the three cannot disagree about whether a video is running.
+            `find` rather than `actions[0]`: the exam sits above the playback
+            control once both exist (P95-02), and taking the first would put
+            "Lernerfolgskontrolle beginnen" on a panel floating over a video.
+          */
+          playback={status?.actions.find((action) => action.kind === "playback")}
+        />
       ) : null}
     </div>
   );
