@@ -426,7 +426,9 @@ export async function startStack(options: {
   } catch (error) {
     // The API's own output is the only thing that explains a failure to boot —
     // a bad connection string, a missing migration, a refused KMS key.
-    throw new Error(`${String(error)}\n\n--- API output ---\n${apiLog.join("")}`);
+    throw new Error(`${String(error)}\n\n--- API output ---\n${apiLog.join("")}`, {
+      cause: error,
+    });
   }
 
   await configureBucketCors(options.repo, storage);

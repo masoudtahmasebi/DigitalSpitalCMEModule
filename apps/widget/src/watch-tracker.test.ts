@@ -212,7 +212,7 @@ describe("continuity across a close", () => {
       at = play(tracker, at, mark);
       all.push(...tracker.drain());
     }
-    at = play(tracker, at, 24.96);
+    play(tracker, at, 24.96);
     tracker.observe(25, true); // the `pause`/`ended` observation
     tracker.closeOpen();
     all.push(...tracker.drain());

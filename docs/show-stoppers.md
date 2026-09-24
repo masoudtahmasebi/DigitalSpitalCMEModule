@@ -2346,7 +2346,7 @@ Both answers are cheap to implement. Neither is ours to make.
 
 ---
 
-## S36 · `pnpm audit --prod` is red, and it is a step in `pnpm verify`
+## S36 · `pnpm audit --prod` is red, and it is a step in `pnpm verify` — **CLOSED 24.09.2026**
 
 Owner: us — this needs no client answer, only a decision about when.
 Blocks: nothing yet. It fails `pnpm verify` and the CI audit job today.
@@ -2407,3 +2407,24 @@ One ticket, two commits, human-reviewed:
 Then `pnpm verify` end to end, including the integration suite's mail
 assertions and the e2e upload path, both of which exist and would go red if
 either package changed behaviour.
+
+### Closed, 24.09.2026 (P242-01)
+
+Both packages were fixed upstream before P242 started, and the multer fix is
+word for word the override recommended above:
+
+```
+$ ls node_modules/.pnpm | grep -E '^multer@|^nodemailer@'
+multer@2.3.0
+nodemailer@9.1.1
+$ grep -A1 'multer' package.json
+      "multer@<2.3.0": "^2.3.0"
+$ pnpm audit --prod --audit-level=moderate
+No known vulnerabilities found
+```
+
+P242 then took `nodemailer` to 10.0.10 and the rest of the workspace to the
+latest version that verifies. Two are held and have their own reasons recorded
+in `docs/backlog/P242.md`: **TypeScript 7** (the SDK generator reads
+`ts.factory`, which TS 7 does not expose) and **Tailwind 4** (a migration across
+three apps, including the `preflight: false` the Shadow-DOM widget depends on).

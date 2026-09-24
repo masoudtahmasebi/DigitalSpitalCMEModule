@@ -470,6 +470,7 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
             "",
             String(failure),
           ].join("\n"),
+          { cause: failure },
         );
       }
 

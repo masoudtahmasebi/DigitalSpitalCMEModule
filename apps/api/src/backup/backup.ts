@@ -351,6 +351,9 @@ async function decryptToFile(
         `is not the key it was written with (${
           error instanceof Error ? error.message : "unknown error"
         })`,
+      // The original is kept as `cause` so an operator who turns on stack
+      // traces still reaches the crypto error underneath this sentence.
+      { cause: error },
     );
   } finally {
     await handle.close();

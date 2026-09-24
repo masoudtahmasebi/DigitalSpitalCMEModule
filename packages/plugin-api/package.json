@@ -20,9 +20,8 @@
     "test": "vitest run --passWithNoTests",
     "lint": "echo \"linted by the root pass\""
   },
-  "dependencies": {},
   "devDependencies": {
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.1"
   }
 }
