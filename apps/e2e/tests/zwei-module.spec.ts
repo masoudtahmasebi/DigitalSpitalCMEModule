@@ -386,13 +386,23 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
        * server had locked, found nothing, and drew no control — reported as
        * *"it does not go to next one"*.
        *
-       * There is no „CME-Punkte geltend machen" here either, and that is the
-       * other half of it: the course is not complete, so the claim is not
-       * offered (P82-01).
+       * Nothing offers the Punktemeldung here either, and that is the other
+       * half of it: the course is not complete, so the claim is not offered
+       * (P82-01).
+       *
+       * Two names since P241-01, and both are asserted. „Fortbildung
+       * abschließen" is the passed screen's button; „CME-Punkte geltend
+       * machen" is the step in the sidebar, which is drawn at every moment of
+       * the course and must stay a padlocked *line* rather than a control
+       * until the server opens it (§9.2).
        */
       await expect(
-        learner.getByRole("button", { name: "CME-Punkte geltend machen" }),
+        learner.getByRole("button", { name: "Fortbildung abschließen" }),
         "the Punktemeldung was offered with a module still outstanding",
+      ).toHaveCount(0);
+      await expect(
+        learner.getByRole("button", { name: "CME-Punkte geltend machen" }),
+        "the sidebar's Punktemeldung step was a control before the exam was passed",
       ).toHaveCount(0);
 
       const onward = learner.getByRole("button", {
@@ -453,13 +463,11 @@ test.describe("zwei Module, je eine Lernerfolgskontrolle", () => {
        * that ever reached this line against production. It is raised in P195 as
        * an accessibility question for the client rather than fixed here: two
        * controls with one accessible name are heard twice by a screen reader
-       * with nothing to tell them apart, and which of the two should go is a
-       * decision about their layout.
+       * with nothing to tell them apart — answered in P241-01 from page 10 of
+       * the layout, which gives the button and the sidebar step different
+       * names. The `.first()` that stood here is gone with the ambiguity.
        */
-      await learner
-        .getByRole("button", { name: "CME-Punkte geltend machen" })
-        .first()
-        .click();
+      await learner.getByRole("button", { name: "Fortbildung abschließen" }).click();
 
       await expect(learner.getByText("Wie bewerten Sie diese Fortbildung?")).toBeVisible({
         timeout: 30_000,

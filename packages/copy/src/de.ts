@@ -639,7 +639,26 @@ export const de = {
     examInModule: (title: string, moduleOrdinal: number): string =>
       `${title} – Modul ${moduleOrdinal}`,
     reportingLocked: "Wird nach bestandener Lernerfolgskontrolle freigeschaltet.",
-    reportingOpen: "Zur CME Punktemeldung",
+    /**
+     * The Punktemeldung row of the sidebar, once the server opens it (P241-01).
+     *
+     * It read "Zur CME Punktemeldung" and was drawn by nothing — `check:copy`
+     * had it baselined as known-dead. Page 10 of the 01.09.2026 layout settles
+     * the wording and gives it a caller: the **step in the progress list** is
+     * `CME-Punkte geltend machen`, and the button on the passed screen beside
+     * it is `Fortbildung abschließen`. Two labels, drawn on one page, for two
+     * different things.
+     *
+     * P190-02 drew the row with `de.quiz.claim`, which then said the same
+     * words — so one screen carried that accessible name twice. It failed
+     * deploy 120's journey, and `journey.spec.ts` has carried a `.first()`
+     * since, with a comment saying the choice was the client's to make. The
+     * drawing had already made it.
+     *
+     * Its own key rather than a shared one, for the reason `overview.claim`
+     * gives: this is the progress list's vocabulary and that is the exam's.
+     */
+    reportingOpen: "CME-Punkte geltend machen",
   },
 
   gate: {
@@ -1031,7 +1050,20 @@ export const de = {
     retry: "Prüfung wiederholen",
     pause: "Fortbildung pausieren",
     pauseHint: "Prüfung zu einem späteren Zeitpunkt fortsetzen",
-    claim: "CME-Punkte geltend machen",
+    /**
+     * The way on from a passed exam (P82-01, reworded in P241-01).
+     *
+     * `Fortbildung abschließen`, which is what page 10 of the 01.09.2026
+     * layout draws on this button — with `CME-Punkte geltend machen` beside it
+     * in the sidebar, naming the *step* rather than the act.
+     *
+     * The act, the guard and the destination are unchanged: offered only while
+     * `courseComplete && completedAt === null`, and leading to the
+     * Evaluationsbogen when it is outstanding, the Punktemeldung when it is
+     * not. What the physician is being offered is the end of the Fortbildung;
+     * the points are what the step in the list is called.
+     */
+    claim: "Fortbildung abschließen",
     /**
      * Passed, but the course is not finished (P82-01).
      *
@@ -1041,8 +1073,11 @@ export const de = {
      */
     morePending:
       "Diese Lernerfolgskontrolle ist bestanden. Für die CME-Punkte fehlen noch Abschnitte der Fortbildung.",
-    /** No points to claim, so the passed screen offers the way onwards instead. */
-    claimWithoutPoints: "Fortbildung abschließen",
+    /*
+     * `claimWithoutPoints` is gone (P241-01). It was "Fortbildung abschließen"
+     * for the no-points case, was drawn by nothing — baselined as known-dead —
+     * and is now word for word what `claim` above says in every case.
+     */
     /**
      * Passed, and the whole Fortbildung is already finished (P195-03).
      *

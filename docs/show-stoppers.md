@@ -2343,3 +2343,67 @@ either now would be a second guess on top of the first:
    choice, become optional per course, or be dropped?
 
 Both answers are cheap to implement. Neither is ours to make.
+
+---
+
+## S36 · `pnpm audit --prod` is red, and it is a step in `pnpm verify`
+
+Owner: us — this needs no client answer, only a decision about when.
+Blocks: nothing yet. It fails `pnpm verify` and the CI audit job today.
+Raised: P241-01, while running the suites for the first time in an
+environment that could run them.
+
+### What is failing
+
+`pnpm audit --prod --audit-level=moderate` reports **7 advisories across two
+production packages**. Both fixes are _within the current major_ — no NestJS
+and no nodemailer major is involved, which is what makes this a decision about
+timing rather than a migration.
+
+| Severity | Package      | Installed | Needs   | Reached through                                 |
+| -------- | ------------ | --------- | ------- | ----------------------------------------------- |
+| high     | `nodemailer` | 9.0.3     | ≥ 9.1.1 | `packages/mail`, a direct `^9.0.3`              |
+| moderate | `nodemailer` | 9.0.3     | ≥ 9.1.1 | three further advisories, same package          |
+| high × 3 | `multer`     | 2.2.0     | ≥ 2.3.0 | `apps/api` → `@nestjs/platform-express@11.1.28` |
+
+`nodemailer` is **in range already**: `^9.0.3` admits 9.1.1, so this is a
+lockfile refresh, not a version bump. The four advisories are address-parsing
+and recipient-domain-validation bypasses — this platform sends the
+Teilnahmebescheinigung, so _who a mail is delivered to_ is squarely the thing
+they are about.
+
+`multer` is transitive and pinned by `@nestjs/platform-express@11.1.28`. The
+three highs are denial-of-service via crafted multipart bodies, on the path
+that accepts course video uploads. Latest `platform-express` is 12.x — a
+NestJS major, which `dependabot.yml` deliberately keeps out of the automatic
+queue — so the proportionate fix is a `pnpm.overrides` entry, exactly as the
+repository already does for `qs`, `js-yaml` and `brace-expansion`.
+
+### Why it is not fixed in P241
+
+That commit is a label and two test locators. A dependency bump on **mail and
+uploads** is a different change with a different blast radius, and §2 puts
+certificates and their delivery behind the human review gate. Bundling them
+would mean one PR where the risky half hides behind the trivial half.
+
+### What this is not
+
+**Not a regression from P190 or P241.** Neither touched `package.json` or the
+lockfile — `git show --stat` on both confirms it. The lockfile was last changed
+on 03.09.2026 by DEP-P160; these advisories were published against versions
+that were already pinned. Dependabot's weekly `security` group is what should
+have opened this, and `.github/dependabot.yml` is configured for exactly that —
+worth checking whether those pull requests are being opened and left, which is
+a different failure from not having the automation.
+
+### Recommendation
+
+One ticket, two commits, human-reviewed:
+
+1. `pnpm update nodemailer -r` — in range, refreshes the lockfile only.
+2. A `pnpm.overrides` entry `"multer@<2.3.0": "^2.4.0"`, beside the three that
+   are already there.
+
+Then `pnpm verify` end to end, including the integration suite's mail
+assertions and the e2e upload path, both of which exist and would go red if
+either package changed behaviour.

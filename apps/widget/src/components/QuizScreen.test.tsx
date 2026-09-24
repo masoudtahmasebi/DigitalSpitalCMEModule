@@ -222,7 +222,7 @@ describe("returning to a passed exam", () => {
     const claim = vi.fn();
     renderQuiz(attempt({}), { passedScorePercent: 81, onClaimPoints: claim });
 
-    fireEvent.click(screen.getByRole("button", { name: /CME-Punkte geltend machen/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Fortbildung abschließen" }));
 
     expect(claim).toHaveBeenCalledTimes(1);
   });
@@ -266,9 +266,7 @@ describe("returning to a passed exam", () => {
     renderQuiz(attempt({}), { onClaimPoints: () => undefined });
 
     expect(screen.getByRole("button", { name: de.quiz.start })).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: /CME-Punkte geltend machen/u }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fortbildung abschließen" })).toBeNull();
   });
 });
 
@@ -368,7 +366,7 @@ describe("the result", () => {
     expect(screen.getByText("91 %")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /wiederholen/ })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /CME-Punkte geltend machen/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Fortbildung abschließen" }));
     expect(onClaimPoints).toHaveBeenCalledTimes(1);
   });
 
@@ -429,9 +427,7 @@ describe("the result", () => {
     await answerEverything();
 
     expect(screen.getByText(`${EXAM_TITLE} bestanden!`)).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: /CME-Punkte geltend machen/ }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fortbildung abschließen" })).toBeNull();
 
     // And it says so, rather than leaving a passed exam with no explanation of
     // why the points are not on offer (§9.4).
@@ -449,9 +445,7 @@ describe("the result", () => {
 
     await answerEverything();
 
-    expect(
-      screen.queryByRole("button", { name: /CME-Punkte geltend machen/ }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fortbildung abschließen" })).toBeNull();
     expect(screen.getByText(/fehlen noch Abschnitte/u)).toBeTruthy();
     expect(screen.getByRole("button", { name: /Zurück zur Übersicht/ })).toBeTruthy();
   });
@@ -465,9 +459,7 @@ describe("the result", () => {
     expect(
       screen.getByText("8 von 11 richtige Antworten zum Bestehen erforderlich"),
     ).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: /CME-Punkte geltend machen/ }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fortbildung abschließen" })).toBeNull();
 
     // Retrying returns to the intro with a clean slate — a second attempt that
     // began with the first one's selections would be scored against answers the

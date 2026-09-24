@@ -1423,16 +1423,18 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
        * a physician meets first, in DOM order and on the page.
        *
        * That duplication is what failed deploy 120's journey, the first run
-       * that ever reached this line against production. It is raised in P195 as
-       * an accessibility question for the client rather than fixed here: two
-       * controls with one accessible name are heard twice by a screen reader
-       * with nothing to tell them apart, and which of the two should go is a
-       * decision about their layout.
+       * that ever reached this line against production, and it was carried here
+       * as a `.first()` while the accessibility question went to the client:
+       * two controls with one accessible name are heard twice by a screen
+       * reader with nothing to tell them apart.
+       *
+       * P241-01 answers it from the drawing rather than by choosing. Page 10
+       * of the 01.09.2026 layout gives the two controls **different** names —
+       * `Fortbildung abschließen` on this button, `CME-Punkte geltend machen`
+       * on the step in the sidebar — so there is nothing left to disambiguate
+       * and this names the one it always meant.
        */
-      await learner
-        .getByRole("button", { name: "CME-Punkte geltend machen" })
-        .first()
-        .click();
+      await learner.getByRole("button", { name: "Fortbildung abschließen" }).click();
 
       // The Evaluationsbogen the Bescheid requires. One question, written in
       // act 6 — its scale is a radio group.

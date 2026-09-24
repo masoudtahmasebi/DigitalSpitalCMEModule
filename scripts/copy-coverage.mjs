@@ -144,12 +144,6 @@ const BASELINE = new Map([
     "player.examInModule",
     "layout — the sidebar nests exams under their module already (P95-01)",
   ],
-  [
-    "player.reportingOpen",
-    "layout — the Punktemeldung row is named 'CME-Punkte geltend machen' on " +
-      "every page of the 2026-09-01 drawing, so `quiz.claim` is what it says " +
-      "in both states and this second name has no screen (P190-01)",
-  ],
   ["gate.lockedHint", "raise — a locked section says Gesperrt and not what opens it"],
   ["gate.available", "obsolete — an available section is drawn without a word"],
   ["media.quality", "obsolete — there is no quality selector"],
@@ -159,10 +153,6 @@ const BASELINE = new Map([
     "raise — a browser that cannot play the video says nothing",
   ],
   ["quiz.scoreOf", "obsolete — the score is drawn as its own figure"],
-  [
-    "quiz.claimWithoutPoints",
-    "raise — a nought-point course still offers to claim points",
-  ],
 ]);
 
 const known = unused.filter((path) => BASELINE.has(path));

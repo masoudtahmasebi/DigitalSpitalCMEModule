@@ -397,7 +397,14 @@ function ClaimRow(props: {
   };
 }) {
   const { done, open, download, downloading } = props.claim;
-  const label = de.quiz.claim;
+  /*
+    `player.reportingOpen`, not `quiz.claim` (P241-01). They were the same
+    string when this row was written, so it read the exam's key — and put two
+    buttons of one accessible name on the passed screen, which failed deploy
+    120's journey. The drawing gives the step and the button different names;
+    so do the keys now.
+  */
+  const label = de.player.reportingOpen;
 
   if (done) {
     /*
