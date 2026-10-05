@@ -2250,3 +2250,73 @@ describe("erasure keeps the participation and removes the person", () => {
     expect(Number(rows[0]!.enrolments_pseudonymised)).toBe(0);
   });
 });
+
+describe("the delivery address is one learner's own (TEST-2, P250-01)", () => {
+  /*
+   * `findEnrolmentForDelivery` is keyed on `(slug, userId)`, and only the
+   * second half separates two learners on the same course: RLS on
+   * `enrolments` is a tenant policy, and both of these people are in the
+   * tenant. Without the `userId` predicate the read answers whichever
+   * enrolment on the course comes first, and the write that follows it
+   * changes *that* person's address — a Teilnahmebescheinigung, carrying a
+   * physician's name and EFN-backed points, mailed to a colleague.
+   *
+   * B enrols before A on purpose, so A's row is never the first one an
+   * unkeyed read reaches (the suite's main learner, enrolled above, may be).
+   * With the order the other way round the broken query could happen to pick
+   * A, and this would pass on the defect it exists for.
+   */
+  const SUB_A = `delivery-a-${RUN}`;
+  const SUB_B = `delivery-b-${RUN}`;
+  const ADDRESS_A = `zustellung-a-${RUN}@example.org`;
+
+  beforeAll(async () => {
+    const { rows } = await seedPool.query<{ customer_id: string }>(
+      "SELECT customer_id FROM courses WHERE slug = $1",
+      [courseSlug],
+    );
+    const customerId = rows[0]?.customer_id ?? "";
+    for (const subject of [SUB_B, SUB_A]) {
+      const { id } = await seedLearner(seedPool, { realm: issuer, subject });
+      await seedPool.query(
+        "INSERT INTO user_roles (user_id, role, customer_id) VALUES ($1,'learner',$2)",
+        [id, customerId],
+      );
+      const enrolled = await callAs(subject, "PUT", `/courses/${courseSlug}/enrolment`);
+      expect(enrolled.status, JSON.stringify(enrolled.body)).toBe(200);
+    }
+  });
+
+  async function storedAddress(subject: string): Promise<string | null | undefined> {
+    const { rows } = await seedPool.query<{ delivery_email: string | null }>(
+      `SELECT e.delivery_email
+         FROM enrolments e
+         JOIN courses c ON c.id = e.course_id
+         JOIN user_identities i ON i.user_id = e.user_id
+        WHERE c.slug = $1 AND i.realm = $2 AND i.subject = $3`,
+      [courseSlug, issuer, subject],
+    );
+    return rows[0]?.delivery_email;
+  }
+
+  it("writes A's address to A's enrolment and leaves B's alone", async () => {
+    const written = await callAs(SUB_A, "PUT", `/courses/${courseSlug}/delivery-email`, {
+      email: ADDRESS_A,
+    });
+    expect(written.status, JSON.stringify(written.body)).toBe(200);
+
+    expect(await storedAddress(SUB_A)).toBe(ADDRESS_A);
+    expect(await storedAddress(SUB_B)).toBeNull();
+  });
+
+  it("reads A's own address back to A, and B's nothing to B", async () => {
+    const forA = await callAs(SUB_A, "GET", `/courses/${courseSlug}/delivery-email`);
+    expect(forA.status).toBe(200);
+    expect(forA.body.email).toBe(ADDRESS_A);
+
+    const forB = await callAs(SUB_B, "GET", `/courses/${courseSlug}/delivery-email`);
+    expect(forB.status).toBe(200);
+    expect(forB.body.email).toBeNull();
+    expect(JSON.stringify(forB.body)).not.toContain(ADDRESS_A);
+  });
+});

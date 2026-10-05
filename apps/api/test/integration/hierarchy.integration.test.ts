@@ -784,6 +784,41 @@ describe("operator accounts", () => {
     expect(status).toBe(403);
   });
 
+  it("refuses a customer administrator narrowing a super administrator into their own customer", async () => {
+    /*
+     * TEST-1 (P250-01). `setScope` checks twice: that the actor may grant the
+     * *new* scope, and that they could have granted the *old* one. The new
+     * scope here — `customer_admin` of the actor's own customer — is one a
+     * customer administrator may legitimately grant, so only the second check
+     * stands between them and taking over a super administrator: narrow them
+     * in, then manage them like any other operator of the customer.
+     *
+     * A fresh super administrator, created for this case alone: a target that
+     * other cases sign in as would be destroyed by the broken code this exists
+     * to detect, and the failure would surface somewhere else.
+     */
+    const email = await seedStaff("super_admin", null);
+    const { rows } = await seedPool.query<{ id: string }>(
+      "SELECT id FROM admin_users WHERE email = $1",
+      [email],
+    );
+    const targetId = rows[0]?.id ?? "";
+
+    const { status } = await asStaff(
+      tenantSession,
+      "POST",
+      `/admin/staff/${targetId}/scope`,
+      { role: "customer_admin", customerId: existingCustomerId, departmentId: null },
+    );
+    expect(status).toBe(403);
+
+    const grants = await seedPool.query<{ role: string; customer_id: string | null }>(
+      "SELECT role, customer_id FROM admin_user_roles WHERE admin_user_id = $1",
+      [targetId],
+    );
+    expect(grants.rows).toEqual([{ role: "super_admin", customer_id: null }]);
+  });
+
   it("does not show a customer administrator the accounts above them", async () => {
     const { status, body } = await asStaff(tenantSession, "GET", "/admin/staff");
 
