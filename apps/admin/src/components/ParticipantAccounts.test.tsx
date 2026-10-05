@@ -52,9 +52,8 @@ function clientWith(
       userId: "new-id",
       temporaryPassword: "geheim-und-nur-einmal",
     })),
-    adminResetParticipantPassword: vi.fn(async () => ({
-      temporaryPassword: "neu-und-nur-einmal",
-    })),
+    // What the API answers since P247-01: 202 and nothing else.
+    adminResetParticipantPassword: vi.fn(async () => undefined),
     adminSetParticipantDisabled: vi.fn(async () => undefined),
     ...overrides,
   } as unknown as ApiClient;
@@ -202,12 +201,30 @@ describe("creating one", () => {
 });
 
 describe("resetting and blocking", () => {
-  it("shows the new password after a reset", async () => {
+  it("says a link was mailed, and shows no password, after a reset", async () => {
+    /*
+     * P247-01. The reset used to put a new password on this screen, and a
+     * physician who learns with two customers holds one credential — so the
+     * password shown to this customer's administrator signed in at the other.
+     */
     const client = clientWith([account()]);
     render(<ParticipantAccounts client={client} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Passwort zurücksetzen" }));
-    expect(await screen.findByText("neu-und-nur-einmal")).toBeTruthy();
+
+    expect(await screen.findByText(/an die hinterlegte E-Mail-Adresse/)).toBeTruthy();
+    expect(screen.getByText(/arzt@praxis\.de gesendet/)).toBeTruthy();
+    // What to do when nothing arrives, because the answer cannot say (§9.4).
+    expect(screen.getByText(/Kommt keine E-Mail an/)).toBeTruthy();
+    // No password anywhere: neither the panel nor its label.
+    expect(screen.queryByText("Passwort – nur jetzt sichtbar")).toBeNull();
+    expect(screen.queryByText("Passwort")).toBeNull();
+    expect(client.adminResetParticipantPassword).toHaveBeenCalledWith(account().userId);
+  });
+
+  it("says that a block applies to this customer only", async () => {
+    render(<ParticipantAccounts client={clientWith([account()])} />);
+    expect(await screen.findByText(/gilt nur für diesen Kunden/)).toBeTruthy();
   });
 
   it("toggles rather than only ever blocking", async () => {

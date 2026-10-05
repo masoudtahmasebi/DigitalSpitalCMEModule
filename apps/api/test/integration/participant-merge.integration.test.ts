@@ -362,11 +362,14 @@ describe("a merge that goes through", () => {
 
     expect(response.status).toBe(204);
 
+    // Both sides held a local password; the merge keeps exactly one (P247-01).
+    // Before P247-01 this asserted 2 — the state that let either password sign
+    // in at every customer of the merged person.
     expect(
       await count("SELECT count(*) AS n FROM user_identities WHERE user_id = $1", [
         target.userId,
       ]),
-    ).toBe(2);
+    ).toBe(1);
     expect(
       await count("SELECT count(*) AS n FROM enrolments WHERE user_id = $1", [
         target.userId,

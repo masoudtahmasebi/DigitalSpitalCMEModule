@@ -342,12 +342,13 @@ describe("the tenant boundary", () => {
     expect(response.status).toBe(404);
 
     // …and it really did nothing, rather than answering 404 after the write.
+    // The block lives on the membership since P247-01, so that is where to
+    // look: beta's row for this person must be untouched.
     const { rows } = await pool.query<{ disabled_at: Date | null }>(
-      `SELECT c.disabled_at FROM learner_credentials c
-         JOIN user_identities i ON i.id = c.user_identity_id
-        WHERE i.user_id = $1`,
-      [theirs.userId],
+      `SELECT disabled_at FROM user_customers WHERE user_id = $1 AND customer_id = $2`,
+      [theirs.userId, beta.customerId],
     );
+    expect(rows).toHaveLength(1);
     expect(rows[0]?.disabled_at).toBeNull();
   });
 
@@ -427,9 +428,17 @@ describe("disabling an account", () => {
 });
 
 describe("resetting a password", () => {
-  it("replaces the old one and ends every session", async () => {
+  /*
+   * Rewritten by P247-01. This case used to assert that a reset *replaced* the
+   * password, returned the new one and ended every session — the behaviour the
+   * client withdrew ("emails, no password shown"), because the password it
+   * handed one customer's administrator signed in at every other customer the
+   * physician learns with. Whether a link is minted and sent is
+   * `participant-cross-customer.integration.test.ts`'s question.
+   */
+  it("answers 202 with no body, and changes neither the password nor the sessions", async () => {
     const created = await createParticipant(alpha);
-    const oldCookie = await signInFor(
+    const cookie = await signInFor(
       alpha.projectSlug,
       created.email,
       created.temporaryPassword,
@@ -439,25 +448,21 @@ describe("resetting a password", () => {
       `${baseUrl}/admin/participants/${created.userId}/reset-password`,
       asAdmin(alpha, { method: "POST" }),
     );
-    const { temporaryPassword } = (await reset.json()) as { temporaryPassword: string };
-    expect(temporaryPassword).not.toBe(created.temporaryPassword);
+    expect(reset.status).toBe(202);
+    expect(await reset.text()).toBe("");
 
-    // The old session is gone…
-    const stale = await fetch(`${baseUrl}/courses`, {
+    // Nothing is replaced until the physician spends the link…
+    await expect(
+      signInFor(alpha.projectSlug, created.email, created.temporaryPassword),
+    ).resolves.toBeTruthy();
+    // …and the session they are in keeps working.
+    const still = await fetch(`${baseUrl}/courses`, {
       headers: {
-        cookie: `${PARTICIPANT_COOKIE}=${oldCookie}`,
+        cookie: `${PARTICIPANT_COOKIE}=${cookie}`,
         "x-ds-project": alpha.projectSlug,
       },
     });
-    expect(stale.status).toBe(401);
-
-    // …the old password no longer works, and the new one does.
-    await expect(
-      signInFor(alpha.projectSlug, created.email, created.temporaryPassword),
-    ).rejects.toThrow();
-    await expect(
-      signInFor(alpha.projectSlug, created.email, temporaryPassword),
-    ).resolves.toBeTruthy();
+    expect(still.status).toBe(200);
   });
 });
 
@@ -547,10 +552,14 @@ describe("a participant changing their own password", () => {
     expect(await me.json()).toMatchObject({ mustChangePassword: false });
   });
 
-  it("raises the requirement again after an administrator resets", async () => {
-    // A reset is the same situation as a fresh account: the password is one an
-    // administrator read off a screen. If the flag stayed clear, a reset would
-    // leave the administrator's password in place indefinitely.
+  it("leaves a self-chosen password in place when an administrator resets", async () => {
+    /*
+     * Rewritten by P247-01. It asserted that a reset raised `mustChange` again,
+     * because the reset used to plant a password an administrator had read off
+     * a screen. It plants nothing now — it mails a link — so the password the
+     * participant chose stays theirs, and asking them to change it again would
+     * be a requirement with no reason behind it.
+     */
     const created = await createParticipant(alpha);
     const chosen = `Selbst-Gewaehlt-${randomUUID().slice(0, 8)}`;
     const first = await signInFor(
@@ -575,16 +584,16 @@ describe("a participant changing their own password", () => {
       `${baseUrl}/admin/participants/${created.userId}/reset-password`,
       asAdmin(alpha, { method: "POST" }),
     );
-    const { temporaryPassword } = (await reset.json()) as { temporaryPassword: string };
+    expect(reset.status).toBe(202);
 
-    const after = await signInFor(alpha.projectSlug, created.email, temporaryPassword);
+    const after = await signInFor(alpha.projectSlug, created.email, chosen);
     const me = await fetch(`${baseUrl}/auth/participant/me`, {
       headers: {
         cookie: `${PARTICIPANT_COOKIE}=${after}`,
         "x-ds-project": alpha.projectSlug,
       },
     });
-    expect(await me.json()).toMatchObject({ mustChangePassword: true });
+    expect(await me.json()).toMatchObject({ mustChangePassword: false });
   });
 
   it("refuses a new password containing the participant's own address", async () => {

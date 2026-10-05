@@ -127,6 +127,22 @@ that does not verify e-mail could otherwise assert its way into an existing
 physician's CME history and EFN, and the platform cannot tell which providers
 verify. A credential the platform has not seen creates a new person, always.
 
+Two consequences of one person learning with several customers (P247-01):
+
+- **A block is per customer.** An administrator's "Sperren" is written on that
+  customer's membership (`user_customers.disabled_at`, `disabled_by`), not on
+  the credential. It stops the person signing in through that customer's
+  projects and nowhere else, and one customer's administrator learns nothing
+  about another customer's block.
+- **A merge keeps one local password.** When both merged credentials are local
+  passwords, the most recently used one (`learner_credentials.last_used_at`,
+  set only by a successful sign-in) stays and the other is **deleted**, with
+  any open reset link for it. The merge's `admin_audit_log` row names the
+  deleted identity by id only — never an address.
+- **No administrator holds a participant's password after creation.** A reset
+  mails the person the P40 link to the address on file; the console is shown
+  no password.
+
 **What is deliberately not collected:** postal address (on the ÄKWL Muster but
 not in the Bescheid's minimum list — see `docs/show-stoppers.md` S12), date of
 birth, telephone number, IP-based analytics, and any behavioural profile beyond
@@ -203,6 +219,8 @@ first.
 | Certificate delivery address                                | Until erasure. Nulled on erasure, with the attested name                                                                                              | A second place a subject's address lives, so a second place erasure has to reach     |
 | EFN                                                         | Until erasure. Deleted immediately on erasure                                                                                                         |                                                                                      |
 | Free-text evaluation answers                                | Until erasure. Redacted on erasure                                                                                                                    |                                                                                      |
+| A customer's block on a membership                          | Until that customer lifts it, or the membership is removed with the person                                                                            | A deliberate act by that customer; P247-01                                           |
+| A local password dropped by a merge                         | Deleted by the merge, in its transaction                                                                                                              | One person, one local password (P247-01)                                             |
 | `audit_log`                                                 | Indefinitely. Append-only — a database rule refuses UPDATE and DELETE                                                                                 | An audit trail that can be edited is not one                                         |
 | `storage_audit_log`                                         | 24 months, then pruned by the maintenance job                                                                                                         | See below — it holds no personal data, and object storage has no RLS to fall back on |
 | Application logs                                            | Whatever the host's retention is. **No personal data is written to them** — enforced by `observability/redact.ts`, see §7 and `docs/observability.md` |                                                                                      |

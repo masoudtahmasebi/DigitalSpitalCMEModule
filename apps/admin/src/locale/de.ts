@@ -2126,6 +2126,21 @@ export const german = {
     nameWhy:
       "Vor- und Nachname sind erforderlich: die Teilnahmebescheinigung trägt den Namen und kann ohne ihn nicht ausgestellt werden.",
     reset: "Passwort zurücksetzen",
+    /*
+     * After a reset (P247-01). No password is shown: a link goes to the
+     * address on file, and the console cannot know whether it arrived — the
+     * API answers the same either way — so the second sentence names what to
+     * check, in the order an administrator can check it.
+     */
+    resetSentTitle: "Link zum Zurücksetzen angefordert",
+    resetSent: (email: string) =>
+      email === ""
+        ? "Ein Link zum Zurücksetzen des Passworts wird an die hinterlegte E-Mail-Adresse gesendet."
+        : `Ein Link zum Zurücksetzen des Passworts wird an die hinterlegte E-Mail-Adresse ${email} gesendet.`,
+    resetSentHint:
+      "Kommt keine E-Mail an, prüfen Sie die Adresse und den Spam-Ordner der Person, ob der Zugang hier gesperrt ist und ob für ein Projekt dieses Kunden mit Portal-Anmeldung ein E-Mail-Versand eingerichtet ist. Der Link ist eine Stunde gültig; Sie können jederzeit einen neuen anfordern.",
+    disableScope:
+      "„Sperren“ gilt nur für diesen Kunden. Lernt die Person auch bei einem anderen Kunden, kann sie sich dort weiter anmelden.",
     disable: "Sperren",
     enable: "Entsperren",
     active: "Aktiv",

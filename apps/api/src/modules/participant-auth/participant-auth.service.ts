@@ -177,8 +177,9 @@ export class ParticipantAuthService {
    */
   async credentialState(
     userId: string,
+    customerId: string,
   ): Promise<{ mustChange: boolean; disabled: boolean } | undefined> {
-    const credential = await this.repository.credentialForUser(userId);
+    const credential = await this.repository.credentialForUser(userId, customerId);
     return credential === undefined
       ? undefined
       : { mustChange: credential.mustChange, disabled: credential.disabledAt !== null };
@@ -206,12 +207,17 @@ export class ParticipantAuthService {
    */
   async changePassword(input: {
     userId: string;
+    /** The customer the session belongs to; a block is per customer (P247-01). */
+    customerId: string;
     currentPassword: string;
     newPassword: string;
   }): Promise<{ ok: boolean }> {
-    const credential = await this.repository.credentialForUser(input.userId);
+    const credential = await this.repository.credentialForUser(
+      input.userId,
+      input.customerId,
+    );
 
-    // A federated participant, or a disabled one. Both refused, and identically
+    // A federated participant, or one blocked at this customer. Both refused, and identically
     // — the caller is already authenticated, so there is no enumeration to
     // worry about, but there is also nothing useful to tell them apart with.
     if (credential === undefined || credential.disabledAt !== null) {
@@ -248,9 +254,16 @@ export class ParticipantAuthService {
    *
    * The tenant is not the caller's to choose. It comes from
    * `resolve_project_binding` for the slug in `X-DS-Project`, exactly as
-   * sign-in does, so a request naming one customer cannot reach an account
-   * belonging to another — a person with the same address at two customers has
-   * two credentials, and only the one for the named project is touched.
+   * sign-in does, so the request is answered as the named customer: a person
+   * blocked there gets no link, and the mail goes out through that customer's
+   * project.
+   *
+   * What it does **not** do is confine the new password to that customer.
+   * A person who learns with several customers holds one local credential
+   * (a merge keeps exactly one since P247-01), so the password set through
+   * this link signs in wherever they are a member and not blocked. The
+   * sentence that stood here until P247-01 said the opposite — "only the one
+   * for the named project is touched" — and it was never true of sign-in.
    */
   async beginPasswordReset(input: {
     projectSlug: string;
@@ -268,10 +281,84 @@ export class ParticipantAuthService {
     );
     if (participant === undefined || participant.disabledAt !== null) return;
 
-    const sender = await this.repository.projectSender(
-      project.customerId,
-      project.projectId,
+    await this.sendResetLink({
+      customerId: project.customerId,
+      projectId: project.projectId,
+      identityId: participant.identityId,
+      to: input.email,
+      resetUrl: input.resetUrl,
+    });
+  }
+
+  /**
+   * An administrator's "Passwort zurücksetzen" (P247-01): the same link as
+   * above, sent to the address on file of one named person.
+   *
+   * It replaced a call that set a temporary password and returned it, which
+   * handed the administrator of one customer a password that signed in at
+   * every other customer the physician learns with. Nobody but the physician
+   * learns the new password now.
+   *
+   * Resolves nothing back, like `beginPasswordReset`, and for the same reason:
+   * the controller answers 202 whether or not anything could be sent.
+   *
+   * ## Which project's sender
+   *
+   * The console scopes a request to a customer, not a project, so the project
+   * is chosen here: the oldest `local` project of the caller's customer whose
+   * sender `canSend`. A Keycloak project is never used even if it has a sender —
+   * its portal offers no password to set — and a customer with no such project
+   * gets no token at all, because a link nobody can deliver is a live
+   * credential nobody can spend.
+   */
+  async beginPasswordResetFor(input: {
+    customerId: string;
+    userId: string;
+    resetUrl: (projectSlug: string, token: string) => string;
+  }): Promise<void> {
+    const projects = await this.repository.localProjectSenders(input.customerId);
+    const project = projects.find((candidate) =>
+      canSend({ host: candidate.host, fromAddress: candidate.fromAddress }),
     );
+    if (project === undefined) return;
+
+    // By id: an administrator acts on a row, and two people may share an
+    // address. Blocked at this customer means no link from this customer.
+    const participant = await this.repository.participantById(
+      input.userId,
+      input.customerId,
+    );
+    if (
+      participant === undefined ||
+      participant.disabledAt !== null ||
+      participant.email === null ||
+      participant.email.trim() === ""
+    ) {
+      return;
+    }
+
+    await this.sendResetLink({
+      customerId: input.customerId,
+      projectId: project.projectId,
+      identityId: participant.identityId,
+      to: participant.email,
+      resetUrl: (token) => input.resetUrl(project.slug, token),
+    });
+  }
+
+  /**
+   * Mint a link and send it through one project's sender — the half both
+   * entry points share, so there is one place that decides "no sender, no
+   * token".
+   */
+  private async sendResetLink(input: {
+    customerId: string;
+    projectId: string;
+    identityId: string;
+    to: string;
+    resetUrl: (token: string) => string;
+  }): Promise<void> {
+    const sender = await this.repository.projectSender(input.customerId, input.projectId);
     // No sender on the project means no way to deliver, so no token is minted:
     // a live credential in the database that nobody can ever spend is worse
     // than nothing.
@@ -279,8 +366,8 @@ export class ParticipantAuthService {
 
     const token = generateToken();
     await this.repository.issueResetToken({
-      userIdentityId: participant.identityId,
-      projectId: project.projectId,
+      userIdentityId: input.identityId,
+      projectId: input.projectId,
       tokenHash: hashToken(token),
     });
 
@@ -298,7 +385,7 @@ export class ParticipantAuthService {
         fromAddress: sender.fromAddress ?? "",
         fromName: sender.fromName,
       },
-      { ...participantResetEmail(input.resetUrl(token)), to: input.email },
+      { ...participantResetEmail(input.resetUrl(token)), to: input.to },
     );
   }
 

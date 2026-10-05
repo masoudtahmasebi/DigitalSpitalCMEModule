@@ -21,6 +21,19 @@
  * That is a deliberate trade against mailing an invitation link, which would be
  * friendlier and is a credential-delivery channel nobody has yet decided the
  * SMTP arrangements for (S8).
+ *
+ * ## A reset shows no password at all (P247-01)
+ *
+ * "Passwort zurücksetzen" mails the person the portal's own reset link and the
+ * API answers 202 with nothing in it. It used to show a new password here, and
+ * a physician who learns with two customers holds one credential — so that
+ * password signed in at the other customer too. The screen now says where the
+ * link went and what to check when it does not arrive, because the answer
+ * cannot say whether it was sent (§9.4, §9.5).
+ *
+ * "Sperren" says it applies to this customer only, for the same reason: the
+ * block is on this customer's membership, and the same person keeps signing in
+ * wherever else they learn.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -61,6 +74,8 @@ export function ParticipantAccounts(props: { client: ApiClient }) {
 
   /** The one and only copy of a password we just caused to exist. */
   const [issued, setIssued] = useState<Issued | undefined>();
+  /** Whose reset link was just requested — an address, never a password. */
+  const [resetSentTo, setResetSentTo] = useState<string | undefined>();
 
   const load = useCallback(
     async (term: string) => {
@@ -148,7 +163,21 @@ export function ParticipantAccounts(props: { client: ApiClient }) {
         <IssuedPassword issued={issued} onDismiss={() => setIssued(undefined)} />
       )}
 
+      {resetSentTo === undefined ? null : (
+        <Notice tone="success" title={de.participantAccounts.resetSentTitle}>
+          <p>{de.participantAccounts.resetSent(resetSentTo)}</p>
+          <p className="mt-1">{de.participantAccounts.resetSentHint}</p>
+        </Notice>
+      )}
+
       {problem === undefined ? null : <Notice tone="error">{problem}</Notice>}
+
+      {rows === undefined || rows.length === 0 ? null : (
+        // Said where somebody looks for the consequence of "Sperren", rather
+        // than discovered when a physician reports they can still sign in
+        // somewhere else (§9.4).
+        <p className="text-xs text-gray-600">{de.participantAccounts.disableScope}</p>
+      )}
 
       {rows === undefined ? (
         <Spinner label={de.loading} />
@@ -189,12 +218,9 @@ export function ParticipantAccounts(props: { client: ApiClient }) {
                     }
                     onClick={() =>
                       void act(row.userId, async () => {
-                        const { temporaryPassword } =
-                          await client.adminResetParticipantPassword(row.userId);
-                        setIssued({
-                          email: row.email ?? "",
-                          password: temporaryPassword,
-                        });
+                        setResetSentTo(undefined);
+                        await client.adminResetParticipantPassword(row.userId);
+                        setResetSentTo(row.email ?? "");
                       })
                     }
                   >

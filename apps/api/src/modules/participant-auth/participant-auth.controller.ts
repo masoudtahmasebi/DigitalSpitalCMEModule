@@ -306,7 +306,10 @@ export class ParticipantAuthController {
      * change, so the field is omitted rather than sent as `false`, which would
      * imply one exists and is fine.
      */
-    const credential = await this.service().credentialState(principal.userId);
+    const credential = await this.service().credentialState(
+      principal.userId,
+      principal.customerId,
+    );
 
     /*
      * `email` and `subject` are here because the person reading the screen has
@@ -384,6 +387,7 @@ export class ParticipantAuthController {
 
     const result = await this.service().changePassword({
       userId: principal.userId,
+      customerId: principal.customerId,
       currentPassword: parsed.data.currentPassword,
       newPassword: parsed.data.newPassword,
     });

@@ -272,6 +272,13 @@ export function createClient(options: ClientOptions) {
     // forbids. Parsing an empty body as JSON would turn that into an error.
     if (response.status === 204) return undefined as T;
 
+    // A 202 may carry no body either — the participant reset says nothing,
+    // by design (P247-01). An empty body is "nothing", not malformed JSON.
+    if (response.status === 202) {
+      const text = await response.text();
+      return (text === "" ? undefined : JSON.parse(text)) as T;
+    }
+
     return (await response.json()) as T;
   }
 
@@ -644,13 +651,19 @@ export function createClient(options: ClientOptions) {
     }): Promise<{ userId: string; temporaryPassword: string }> =>
       request(`/admin/participants`, json(input, "POST")),
 
-    /** A new temporary password, and every session this person holds ended. */
-    adminResetParticipantPassword: (
-      userId: string,
-    ): Promise<{ temporaryPassword: string }> =>
+    /**
+     * Email the person a link to choose a new password (P247-01).
+     *
+     * Resolves to nothing, whatever happened: no password is set or returned,
+     * and the answer does not say whether mail could be sent.
+     */
+    adminResetParticipantPassword: (userId: string): Promise<void> =>
       request(`/admin/participants/${seg(userId)}/reset-password`, json({}, "POST")),
 
-    /** Stop, or restore, an account. Disabling also ends its live sessions. */
+    /**
+     * Stop, or restore, an account **at this customer** (P247-01). Disabling
+     * also ends its live sessions at this customer's projects.
+     */
     adminSetParticipantDisabled: (userId: string, disabled: boolean): Promise<void> =>
       request(`/admin/participants/${seg(userId)}/disabled`, json({ disabled }, "POST")),
 

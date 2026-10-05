@@ -1394,6 +1394,15 @@ export const en: DeepPartial<typeof german> = {
     nameWhy:
       "First name and surname are required: the Teilnahmebescheinigung carries the name and cannot be issued without it.",
     reset: "Reset password",
+    resetSentTitle: "Reset link requested",
+    resetSent: (email: string) =>
+      email === ""
+        ? "A link to reset the password is being sent to the email address on file."
+        : `A link to reset the password is being sent to the email address on file, ${email}.`,
+    resetSentHint:
+      "If no email arrives, check the address and the person's spam folder, whether the account is locked here, and whether a project of this customer with portal sign-in has email sending set up. The link is valid for one hour; you can request a new one at any time.",
+    disableScope:
+      "“Lock” applies to this customer only. If the person also learns with another customer, they can still sign in there.",
     disable: "Lock",
     enable: "Unlock",
     active: "Active",
