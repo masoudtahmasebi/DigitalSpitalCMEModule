@@ -41,11 +41,11 @@ re-checked.
 | ~~RUN-1~~ fixed in P249-01  | medium | `problem-details.filter.ts:167`                                             | Oversize body answers 500, not 413; framework 404 text echoes the query string                                  |
 | RUN-3                       | medium | `db.module.ts:180`                                                          | Redis has no command timeout; 31 rate-limited routes 500 when Redis is down                                     |
 | ~~RUN-4~~ fixed in P249-04  | medium | `db.module.ts:242`; `main.ts:26`                                            | Pools close before the HTTP server on shutdown; in-flight scheduler ticks not awaited                           |
-| TEST-4                      | medium | `eiv-admin.integration.test.ts`                                             | EIV admin routes tested at service level only; guards and response bodies untested                              |
-| TEST-5                      | medium | `test/support/fake-s3.ts`                                                   | Multipart upload (every file ≥ 32 MiB) has no integration test                                                  |
+| ~~TEST-4~~ fixed in P250-02 | medium | `eiv-admin.integration.test.ts`                                             | EIV admin routes tested at service level only; guards and response bodies untested                              |
+| ~~TEST-5~~ fixed in P250-02 | medium | `test/support/fake-s3.ts`                                                   | Multipart upload (every file ≥ 32 MiB) has no integration test                                                  |
 | SEC-4                       | low    | `staff-auth.controller.ts:224`, `:328`                                      | Staff login and TOTP verify have no per-IP throttle                                                             |
 | OOP-1                       | low    | `learning.service.ts:1017`                                                  | Comment says `cmePoints` is the enrolment snapshot; it is the course's                                          |
-| TEST-6                      | low    | `uploads.integration.test.ts:801`                                           | Stall test sleeps 300 ms instead of waiting for the held count                                                  |
+| ~~TEST-6~~ fixed in P250-02 | low    | `uploads.integration.test.ts:801`                                           | Stall test sleeps 300 ms instead of waiting for the held count                                                  |
 
 ## Needs verification
 

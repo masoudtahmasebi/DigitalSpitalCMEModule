@@ -19,12 +19,23 @@
  * configuration or its code, which is what makes disagreement meaningful.
  *
  * It is deliberately strict and deliberately small: it implements exactly the
- * four operations the platform performs, refuses everything else, and keeps
- * objects in a Map. It is not a MinIO replacement — it is the part of a bucket
- * that can tell us we are wrong.
+ * operations the platform performs, refuses everything else, and keeps objects
+ * in a Map. It is not a MinIO replacement — it is the part of a bucket that can
+ * tell us we are wrong.
+ *
+ * ## Multipart (TEST-5, P250-02)
+ *
+ * Every file of 32 MiB or more goes up in parts, and until P250 this fake
+ * answered all five multipart calls 405 — so the path every real lecture video
+ * takes had no integration test at all. The five are implemented the way the
+ * single PUT is: **every request passes `verify` first**, so `uploadId` and
+ * `partNumber` are inside the signature like any other query parameter, and a
+ * part URL whose upload id was edited is refused at the bucket. Complete
+ * assembles from the part list in its body and refuses a part it does not
+ * hold or whose ETag differs, as S3 does (`InvalidPart`).
  */
 
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   createServer,
   type IncomingMessage,
@@ -61,7 +72,22 @@ export interface FakeS3 {
    * the API's side.
    */
   stall(): () => void;
+  /** How many requests `stall` is holding right now (TEST-6). */
+  heldCount(): number;
+  /**
+   * Resolve once `count` requests are being held, or throw naming how many
+   * arrived — the replacement for "sleep and hope they got there" (TEST-6).
+   */
+  waitForHeld(count: number, withinMs: number): Promise<void>;
+  /** Multipart uploads begun and neither completed nor aborted, by upload id. */
+  readonly multipart: ReadonlyMap<string, FakeS3MultipartUpload>;
   close(): Promise<void>;
+}
+
+export interface FakeS3MultipartUpload {
+  readonly key: string;
+  readonly contentType: string;
+  readonly parts: ReadonlyMap<number, { readonly body: Buffer; readonly etag: string }>;
 }
 
 export interface FakeS3Request {
@@ -99,6 +125,14 @@ const CREDENTIALS = {
 export async function startFakeS3(): Promise<FakeS3> {
   const objects = new Map<string, FakeS3Object>();
   const requests: FakeS3Request[] = [];
+  const uploads = new Map<
+    string,
+    {
+      key: string;
+      contentType: string;
+      parts: Map<number, { body: Buffer; etag: string }>;
+    }
+  >();
 
   /** Non-null while stalling; every held response is resumed on release. */
   let held: Array<() => void> | undefined;
@@ -174,6 +208,8 @@ export async function startFakeS3(): Promise<FakeS3> {
       return;
     }
 
+    if (multipart(request, response, key, query, record)) return;
+
     switch (request.method) {
       case "PUT": {
         const copySource = request.headers["x-amz-copy-source"];
@@ -244,6 +280,157 @@ export async function startFakeS3(): Promise<FakeS3> {
     }
   }
 
+  /**
+   * The five multipart operations, after `verify` has accepted the request.
+   * Returns false for anything that is not one of them, so the single-object
+   * paths below are reached exactly as before.
+   */
+  function multipart(
+    request: IncomingMessage,
+    response: ServerResponse,
+    key: string,
+    query: URLSearchParams,
+    record: (status: number, key: string, refusal?: string) => void,
+  ): boolean {
+    const uploadId = query.get("uploadId");
+
+    // CreateMultipartUpload: `POST /{key}?uploads`.
+    if (request.method === "POST" && query.has("uploads")) {
+      const id = randomBytes(12).toString("hex");
+      uploads.set(id, {
+        key,
+        // As for a single PUT: the signed request's type becomes the object's.
+        contentType: String(request.headers["content-type"] ?? ""),
+        parts: new Map(),
+      });
+      response.setHeader("content-type", "application/xml");
+      record(200, key);
+      response.end(
+        `<?xml version="1.0" encoding="UTF-8"?><InitiateMultipartUploadResult>` +
+          `<Bucket>${CREDENTIALS.bucket}</Bucket><Key>${escapeXml(key)}</Key>` +
+          `<UploadId>${id}</UploadId></InitiateMultipartUploadResult>`,
+      );
+      return true;
+    }
+
+    if (uploadId === null) return false;
+
+    const upload = uploads.get(uploadId);
+    if (upload === undefined || upload.key !== key) {
+      // An id the bucket never issued, or one issued for another key.
+      response.setHeader("content-type", "application/xml");
+      record(404, key, "no such upload");
+      response.end(
+        `<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchUpload</Code></Error>`,
+      );
+      return true;
+    }
+
+    switch (request.method) {
+      // UploadPart: `PUT /{key}?partNumber=N&uploadId=…`.
+      case "PUT": {
+        const partNumber = Number(query.get("partNumber"));
+        if (!Number.isSafeInteger(partNumber) || partNumber < 1 || partNumber > 10_000) {
+          record(400, key, "invalid part number");
+          response.end();
+          return true;
+        }
+        const chunks: Buffer[] = [];
+        request.on("data", (chunk: Buffer) => chunks.push(chunk));
+        request.on("end", () => {
+          const body = Buffer.concat(chunks);
+          const etag = `"${createHash("md5").update(body).digest("hex")}"`;
+          upload.parts.set(partNumber, { body, etag });
+          response.setHeader("etag", etag);
+          record(200, key);
+          response.end();
+        });
+        return true;
+      }
+
+      // ListParts: `GET /{key}?uploadId=…`.
+      case "GET": {
+        const listed = [...upload.parts.entries()].sort(([a], [b]) => a - b);
+        response.setHeader("content-type", "application/xml");
+        record(200, key);
+        response.end(
+          `<?xml version="1.0" encoding="UTF-8"?><ListPartsResult>` +
+            listed
+              .map(
+                ([number, part]) =>
+                  `<Part><PartNumber>${String(number)}</PartNumber>` +
+                  `<ETag>${escapeXml(part.etag)}</ETag>` +
+                  `<Size>${String(part.body.byteLength)}</Size></Part>`,
+              )
+              .join("") +
+            `</ListPartsResult>`,
+        );
+        return true;
+      }
+
+      // CompleteMultipartUpload: `POST /{key}?uploadId=…`, the parts in the body.
+      case "POST": {
+        const chunks: Buffer[] = [];
+        request.on("data", (chunk: Buffer) => chunks.push(chunk));
+        request.on("end", () => {
+          const named = [
+            ...Buffer.concat(chunks)
+              .toString("utf8")
+              .matchAll(
+                /<Part>\s*<PartNumber>(\d+)<\/PartNumber>\s*<ETag>([^<]*)<\/ETag>\s*<\/Part>/gu,
+              ),
+          ].map((match) => ({
+            number: Number(match[1]),
+            etag: unescapeXml(match[2] ?? ""),
+          }));
+
+          const ascending = named.every(
+            (part, index) => index === 0 || part.number > (named[index - 1]?.number ?? 0),
+          );
+          const held = named.map((part) => upload.parts.get(part.number));
+          const valid =
+            named.length > 0 &&
+            ascending &&
+            held.every(
+              (part, index) => part !== undefined && part.etag === named[index]?.etag,
+            );
+
+          response.setHeader("content-type", "application/xml");
+          if (!valid) {
+            record(400, key, "invalid part list");
+            response.end(
+              `<?xml version="1.0" encoding="UTF-8"?><Error><Code>InvalidPart</Code></Error>`,
+            );
+            return;
+          }
+
+          objects.set(key, {
+            body: Buffer.concat(held.map((part) => part?.body ?? Buffer.alloc(0))),
+            contentType: upload.contentType,
+          });
+          uploads.delete(uploadId);
+          record(200, key);
+          response.end(
+            `<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult>` +
+              `<Key>${escapeXml(key)}</Key></CompleteMultipartUploadResult>`,
+          );
+        });
+        return true;
+      }
+
+      // AbortMultipartUpload: `DELETE /{key}?uploadId=…`.
+      case "DELETE": {
+        uploads.delete(uploadId);
+        record(204, key);
+        response.end();
+        return true;
+      }
+
+      default:
+        return false;
+    }
+  }
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
 
@@ -260,6 +447,20 @@ export async function startFakeS3(): Promise<FakeS3> {
         for (const resume of [...queued]) resume();
       };
     },
+    heldCount: () => held?.length ?? 0,
+    waitForHeld: async (count, withinMs) => {
+      const deadline = Date.now() + withinMs;
+      while ((held?.length ?? 0) < count) {
+        if (Date.now() > deadline) {
+          throw new Error(
+            `fake-s3 is holding ${String(held?.length ?? 0)} of ${String(count)} ` +
+              `requests after ${String(withinMs)} ms`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    },
+    multipart: uploads,
     // Idempotent, because a test that closes the bucket to prove the API
     // survives an outage still runs its `afterEach`. A second close reporting
     // "Server is not running" would fail the test that just passed.
@@ -349,6 +550,16 @@ function verify(request: IncomingMessage): string | undefined {
   }
 
   return undefined;
+}
+
+/** The inverse of `escapeXml`, for the part list a client sends to Complete. */
+function unescapeXml(value: string): string {
+  return value
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&");
 }
 
 /** The five entities S3 escapes in a key, on the way out of a listing. */
