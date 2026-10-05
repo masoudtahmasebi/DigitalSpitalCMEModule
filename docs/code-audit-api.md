@@ -36,21 +36,23 @@ re-checked.
 | TEST-3                     | high   | `0005_eiv_claim_function.sql:43`                                            | No concurrent test of the EIV claim (`FOR UPDATE SKIP LOCKED`)                                                  |
 | ARCH-2                     | medium | `moderation.repository.ts:141` ✔                                            | "Angesehen %" averages every progress row; disagrees with the shared rollup                                     |
 | ARCH-3                     | medium | `assessment.service.ts:166`, `:246`; `learning.service.ts:1253`             | Pass-threshold comparison copied outside `@ds/domain`                                                           |
-| SEC-2                      | medium | `authoring.dto.ts:327`; `media-check.service.ts:102`                        | Media check fetches any URL and returns its status: SSRF oracle                                                 |
-| SEC-3                      | medium | `jwks.provider.ts:58`, `:95`                                                | Every verified token triggers a JWKS fetch                                                                      |
+| ~~SEC-2~~ fixed in P247-02 | medium | `authoring.dto.ts:327`; `media-check.service.ts:102`                        | Media check fetches any URL and returns its status: SSRF oracle                                                 |
+| ~~SEC-3~~ fixed in P247-03 | medium | `jwks.provider.ts:58`, `:95`                                                | Every verified token triggers a JWKS fetch                                                                      |
 | RUN-1                      | medium | `problem-details.filter.ts:167`                                             | Oversize body answers 500, not 413; framework 404 text echoes the query string                                  |
 | RUN-3                      | medium | `db.module.ts:180`                                                          | Redis has no command timeout; 31 rate-limited routes 500 when Redis is down                                     |
 | RUN-4                      | medium | `db.module.ts:242`; `main.ts:26`                                            | Pools close before the HTTP server on shutdown; in-flight scheduler ticks not awaited                           |
 | TEST-4                     | medium | `eiv-admin.integration.test.ts`                                             | EIV admin routes tested at service level only; guards and response bodies untested                              |
 | TEST-5                     | medium | `test/support/fake-s3.ts`                                                   | Multipart upload (every file ≥ 32 MiB) has no integration test                                                  |
-| SEC-4                      | low    | `staff-auth.controller.ts:224`, `:328`                                      | Staff login and TOTP verify have no per-IP throttle                                                             |
+| ~~SEC-4~~ fixed in P247-03 | low    | `staff-auth.controller.ts:224`, `:328`                                      | Staff login and TOTP verify have no per-IP throttle                                                             |
 | OOP-1                      | low    | `learning.service.ts:1017`                                                  | Comment says `cmePoints` is the enrolment snapshot; it is the course's                                          |
 | TEST-6                     | low    | `uploads.integration.test.ts:801`                                           | Stall test sleeps 300 ms instead of waiting for the held count                                                  |
 
 ## Needs verification
 
 - Department scope on participant password reset (`isMember` is customer-wide).
-- A key removed from Keycloak may still verify for up to `JWKS_CACHE_TTL_SEC`.
+- ~~A key removed from Keycloak may still verify for up to `JWKS_CACHE_TTL_SEC`.~~
+  Settled in P247-03: refused once a fresh fetch lacks it; served from Redis
+  only while Keycloak is unreachable.
 - Duplicate EIV filing if a submission succeeds and its result row cannot be
   written during shutdown.
 - `listEnrolments` has no LIMIT and one `inArray` of every id.

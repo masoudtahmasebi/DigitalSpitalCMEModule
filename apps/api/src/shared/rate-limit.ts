@@ -159,6 +159,21 @@ export const RATE_LIMIT_RULES = {
    */
   staffPasswordReset: { limit: 3, windowSec: 60 },
   /**
+   * Staff sign-in: `POST /admin/auth/login` and `/admin/auth/totp/verify`
+   * share this bucket, **per client IP** (P247-03, closes SEC-4).
+   *
+   * The per-account lockout (`staff.service.ts`) bounds guesses against one
+   * address and does nothing against one client spraying a common password
+   * across every operator address it has, or a stream of codes against a
+   * challenge it holds. Keyed on the IP whatever session cookie the request
+   * also carries, so a caller cannot choose its own bucket.
+   *
+   * Twenty a minute: a sign-in is two requests (password, then code), so ten
+   * operators behind one office NAT can sign in within the same minute, and a
+   * spray gets twenty guesses a minute rather than thousands.
+   */
+  staffLogin: { limit: 20, windowSec: 60 },
+  /**
    * The platform sender's own test message (P77-01).
    *
    * A button that makes the server send mail is an outbound channel, and an
@@ -229,6 +244,15 @@ export const RATE_LIMIT_RULES = {
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMIT_RULES;
+
+/**
+ * Rules counted per client IP even when the request carries a principal
+ * (P247-03). For a sign-in the caller is by definition not yet anybody, and a
+ * cookie it chose to send must not pick the bucket it is counted in.
+ */
+export const IP_KEYED_RULES: ReadonlySet<RateLimitName> = new Set<RateLimitName>([
+  "staffLogin",
+]);
 
 export class RedisRateLimitStore implements RateLimitStore {
   constructor(
