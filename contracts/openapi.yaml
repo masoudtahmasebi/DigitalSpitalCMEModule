@@ -11,6 +11,11 @@
 # - Percentages are integers 0–100. Durations are integer seconds.
 # - Timestamps are ISO 8601 UTC. German local time is presentation only.
 # - 404 for "not visible in this tenant" — existence is never disclosed.
+# - Any operation may also answer, as a problem document and undocumented per
+#   operation: 413 for a body over the size limit, 415 for a body the parser
+#   refuses, 404 for an unknown route (detail "Cannot <METHOD> <path>", never
+#   the query) — P249-01; and 503 with Retry-After and Connection: close while
+#   the process is shutting down — P249-04.
 
 openapi: 3.1.0
 
