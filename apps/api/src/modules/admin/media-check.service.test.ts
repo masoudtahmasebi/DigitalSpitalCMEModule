@@ -10,20 +10,77 @@
 
 import { describe, expect, it } from "vitest";
 import { allSeekable, MediaCheckService } from "./media-check.service.js";
+import { resolvePublicAddress, type LookupAll } from "../../shared/outbound-address.js";
 
 const URL_A = "https://cdn.medice.de/modul-1.mp4";
 const URL_B = "https://cdn.medice.de/modul-2.mp4";
 
+/**
+ * Name resolution without a network: every name is a public address unless a
+ * case says otherwise. The guard itself is the real `resolvePublicAddress` —
+ * only the DNS answer is stood in for (P247-02).
+ */
+function lookupAs(addresses: Record<string, string> = {}): LookupAll {
+  return async (host) => [{ address: addresses[host] ?? "93.184.216.34", family: 4 }];
+}
+
 function build(
   responder: (url: string, init: RequestInit) => Response | Promise<Response>,
+  lookup: LookupAll = lookupAs(),
 ) {
   const calls: Array<{ url: string; init: RequestInit }> = [];
-  const service = new MediaCheckService((async (url: string, init: RequestInit) => {
-    calls.push({ url, init });
-    return responder(url, init);
-  }) as unknown as typeof fetch);
+  const service = new MediaCheckService(
+    (async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return responder(url, init);
+    }) as unknown as typeof fetch,
+    (host) => resolvePublicAddress(host, lookup),
+  );
   return { service, calls };
 }
+
+describe("an address inside the network (P247-02)", () => {
+  /*
+   * The finding (SEC-2): the check fetched any URL an author saved and
+   * reported the status, which made it a port scanner for the API's own
+   * network — `http://127.0.0.1:5432/` answering "failed" quickly and a closed
+   * port answering it slowly is already an answer.
+   */
+  it.each(["http://127.0.0.1:5432/", "https://169.254.169.254/latest/meta-data/"])(
+    "%s is refused with no request made",
+    async (url) => {
+      const { service, calls } = build(partial);
+      const [result] = await service.check([url]);
+
+      expect(calls).toHaveLength(0);
+      expect(result?.verdict).toBe("failed");
+      expect(result?.status).toBeUndefined();
+    },
+  );
+
+  it("refuses a name that resolves inside the network, with no request made", async () => {
+    const { service, calls } = build(partial, lookupAs({ "intern.example": "10.0.0.5" }));
+    const [result] = await service.check(["https://intern.example/video.mp4"]);
+
+    expect(calls).toHaveLength(0);
+    expect(result?.verdict).toBe("failed");
+  });
+
+  it("does not follow a redirect, so a public host cannot bounce it inward", async () => {
+    // A public URL answering 302 → http://10.0.0.1/ is the other way in. The
+    // probe asks fetch not to follow, and reports the 3xx as what it is.
+    const { service, calls } = build(
+      () =>
+        new Response(null, { status: 302, headers: { location: "http://10.0.0.1/" } }),
+    );
+    const [result] = await service.check([URL_A]);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.init.redirect).toBe("manual");
+    expect(result?.verdict).not.toBe("seekable");
+    expect(result?.status).toBe(302);
+  });
+});
 
 const partial = () =>
   new Response("x", { status: 206, headers: { "content-range": "bytes 0-0/1024" } });

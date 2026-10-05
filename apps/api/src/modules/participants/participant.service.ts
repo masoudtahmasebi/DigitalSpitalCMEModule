@@ -3,18 +3,18 @@
  *
  * ## The rule this file exists to hold
  *
- * **A generated password is shown exactly once, and is never stored in a form
- * anybody can read.** It is returned by the call that created it and then only
- * its Argon2id hash survives. There is no "show password" screen, no way to
- * fetch it again, and no column it could be read out of — which is why every
- * method here that mints one says so in its return type rather than leaving the
- * caller to notice.
+ * **No administrator holds a physician's password** (P247-01). The one
+ * exception is the account an administrator creates, whose generated password
+ * is returned once by the create call, stored only as an Argon2id hash, and
+ * flagged `must_change`.
  *
- * The alternative — mailing an invitation link — is a credential-delivery
- * channel, and building one wants decisions about SMTP per customer that S8 has
- * not answered. Handing the administrator a password to pass on is the honest
- * interim, and `must_change` is what stops it being the physician's password
- * for ever.
+ * A reset does **not** mint a password: it mails the person the P40 reset
+ * link. It used to return a temporary password, and a person who learns with
+ * two customers holds one credential — so the administrator of one customer
+ * received a password that signed in at the other.
+ *
+ * A block is per customer, on the membership (`user_customers.disabled_at`),
+ * for the same reason.
  */
 
 import { randomBytes } from "node:crypto";
@@ -96,8 +96,27 @@ export interface CreatedParticipant {
   readonly temporaryPassword: string;
 }
 
+/** The P40 link, sent for one named person (`ParticipantAuthService`). */
+export interface ParticipantResetLinks {
+  beginPasswordResetFor(input: {
+    customerId: string;
+    userId: string;
+    resetUrl: (projectSlug: string, token: string) => string;
+  }): Promise<void>;
+}
+
 export class ParticipantService {
-  constructor(private readonly repository: ParticipantRepository) {}
+  constructor(
+    private readonly repository: ParticipantRepository,
+    private readonly resets: ParticipantResetLinks,
+    /**
+     * Builds the link from configuration, never from the request (§9.5).
+     * `undefined` when the portal's address is not configured: then nothing is
+     * minted, because a link nobody can follow is a credential nobody can spend.
+     */
+    private readonly resetUrl:
+      ((projectSlug: string, token: string) => string) | undefined,
+  ) {}
 
   list(search: string | undefined): Promise<readonly ParticipantSummary[]> {
     return this.repository.list(search);
@@ -139,35 +158,36 @@ export class ParticipantService {
     return { userId, temporaryPassword };
   }
 
-  /** A new temporary password, and every existing session ended. */
-  async resetPassword(userId: string): Promise<{ temporaryPassword: string }> {
-    const credentialId = await this.requireLocalCredential(userId);
-    const temporaryPassword = generatePassword();
-
-    await this.repository.setPassword(
-      credentialId,
-      await hashPassword(temporaryPassword),
-      true,
-    );
-    // Order matters less than that both happen, but revoking after the write
-    // means a session cannot be re-established with the old password in the
-    // gap between the two.
-    await this.repository.revokeSessions(userId);
-
-    return { temporaryPassword };
+  /**
+   * Mail the person a link to choose a new password (P247-01).
+   *
+   * Nothing is returned, set or revoked here: the password is unchanged until
+   * the physician spends the link, so there is nothing to end sessions for —
+   * and an administrator who suspects a compromise blocks the account, which
+   * does end them.
+   */
+  async resetPassword(userId: string, customerId: string): Promise<void> {
+    await this.requireLocalCredential(userId);
+    if (this.resetUrl === undefined) return;
+    await this.resets.beginPasswordResetFor({
+      customerId,
+      userId,
+      resetUrl: this.resetUrl,
+    });
   }
 
+  /** Block, or unblock, this person **at this customer only** (P247-01). */
   async setDisabled(
     userId: string,
     disabled: boolean,
     byStaffId: string | null,
   ): Promise<void> {
-    const credentialId = await this.requireLocalCredential(userId);
-    await this.repository.setDisabled(credentialId, disabled, byStaffId);
+    await this.requireLocalCredential(userId);
+    await this.repository.setDisabled(userId, disabled, byStaffId);
     // Only on the way *in*. Re-enabling an account must not also hand back the
     // sessions it had when it was disabled — those are exactly the ones the
-    // disable was aimed at.
-    if (disabled) await this.repository.revokeSessions(userId);
+    // disable was aimed at. Only this customer's sessions: the block is ours.
+    if (disabled) await this.repository.revokeSessionsAtThisCustomer(userId);
   }
 
   /**
@@ -256,13 +276,12 @@ export class ParticipantService {
    * same as one that does not exist, so that an administrator cannot probe for
    * ids belonging to a tenant they cannot see.
    */
-  private async requireLocalCredential(userId: string): Promise<string> {
+  private async requireLocalCredential(userId: string): Promise<void> {
     if (!(await this.repository.isMember(userId))) {
       throw AppError.notFound(`no participant user=${userId} in this customer`);
     }
 
-    const credentialId = await this.repository.credentialIdFor(userId);
-    if (credentialId === undefined) {
+    if (!(await this.repository.hasLocalCredential(userId))) {
       // A federated participant. Their password lives at the customer's
       // Keycloak, and pretending we could reset it would be a button that
       // silently does nothing.
@@ -273,6 +292,5 @@ export class ParticipantService {
           "Das Passwort kann hier nicht geändert werden.",
       );
     }
-    return credentialId;
   }
 }

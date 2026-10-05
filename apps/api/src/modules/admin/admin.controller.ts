@@ -154,10 +154,13 @@ export class AdminController {
     const parsed = adminCourseUpdateSchema.safeParse(body);
     if (!parsed.success) {
       // Field paths, never values — one of the fields is the VNR password.
+      const fields = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
       throw new AppError(
         "validation",
-        `invalid course update: ${parsed.error.issues.map((i) => i.path.join(".")).join(", ")}`,
-        "Die Eingaben sind nicht gültig. Bitte prüfen Sie die markierten Felder.",
+        `invalid course update: ${fields}`,
+        // Names only, so the refusal says which field (P247-02) — never a
+        // value: one of the fields is the VNR password.
+        `Die Eingaben sind nicht gültig. Bitte prüfen Sie die markierten Felder: ${fields}.`,
       );
     }
 

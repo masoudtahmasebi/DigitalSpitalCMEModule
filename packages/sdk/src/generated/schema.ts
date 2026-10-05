@@ -783,10 +783,21 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Issue a new temporary password and end every session
-         * @description Both halves matter. Replacing the password while leaving a twelve-hour
-         *     session open means a compromised account stays usable for the rest of
-         *     the day, which is the window this call exists to close.
+         * Email the participant a link to choose a new password
+         * @description **No password is set, shown or returned** (P247-01). The person is
+         *     sent the same single-use link the portal's "Passwort vergessen" sends
+         *     (P40-03), to the address on file, through a `local` project of the
+         *     caller's customer that has a sender. The link points at
+         *     `PORTAL_BASE_URL`, never at anything the request names.
+         *
+         *     Before P247-01 this answered with a temporary password. A person who
+         *     learns with two customers holds one credential, so the administrator
+         *     of one customer received a password that also signed in at the other.
+         *
+         *     **202 with no body in every case** a member of this customer reaches —
+         *     a link sent, no project able to send, a block at this customer. No
+         *     token is minted when nothing can be sent: a live credential nobody can
+         *     spend is worse than none (§9.5).
          *
          *     A participant of another customer answers **404**, not 403 — a 403
          *     would confirm the id names somebody, turning this into an oracle for
@@ -813,9 +824,14 @@ export interface paths {
          * @description Distinct from the automatic lockout, which expires on its own. This is a
          *     deliberate administrative act and nothing but another one clears it.
          *
-         *     Disabling also revokes every live session. Re-enabling does **not**
-         *     restore them — those are precisely the sessions the disable was aimed
-         *     at.
+         *     **At this customer only** (P247-01). The block is on the person's
+         *     membership of the caller's customer, not on their credential: a
+         *     physician who also learns with another customer keeps signing in
+         *     there, and that customer's administrator decides about it.
+         *
+         *     Disabling also revokes every live session at this customer's
+         *     projects. Re-enabling does **not** restore them — those are precisely
+         *     the sessions the disable was aimed at.
          *
          *     The account is never deleted: enrolments, certificates and EIV
          *     submissions all hang off the person, and none of them may lose their
@@ -4690,8 +4706,9 @@ export interface components {
                 /** @description They have not yet chosen their own password. */
                 mustChange: boolean;
                 /**
-                 * @description Stopped by an administrator. Deliberate and permanent, unlike
-                 *     `lockedUntil`.
+                 * @description Stopped by an administrator **of this customer** (P247-01).
+                 *     Deliberate and permanent, unlike `lockedUntil`. A block at
+                 *     another customer is not shown here and does not apply here.
                  */
                 disabled: boolean;
                 /**
@@ -7466,16 +7483,12 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The new password, shown once. */
-            200: {
+            /** @description Accepted. No body. Says nothing about whether mail could be sent. */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": {
-                        temporaryPassword: string;
-                    };
-                };
+                content?: never;
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];

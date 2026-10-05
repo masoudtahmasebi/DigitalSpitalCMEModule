@@ -23,7 +23,7 @@ import {
 import { Reflector } from "@nestjs/core";
 import type { Request, Response } from "express";
 import { AppError } from "./problem-details.js";
-import { RateLimiter, type RateLimitName } from "./rate-limit.js";
+import { IP_KEYED_RULES, RateLimiter, type RateLimitName } from "./rate-limit.js";
 
 export const RATE_LIMIT_KEY = "ds:rate-limit";
 
@@ -56,8 +56,12 @@ export class RateLimitGuard implements CanActivate {
      * Both ids name the same account when both are present, so the order is
      * arbitrary; what matters is that neither is skipped.
      */
-    const subject =
-      request.principal?.userId ?? request.staffProfile?.id ?? request.ip ?? "unknown";
+    const subject = IP_KEYED_RULES.has(name)
+      ? `ip:${request.ip ?? "unknown"}`
+      : (request.principal?.userId ??
+        request.staffProfile?.id ??
+        request.ip ??
+        "unknown");
 
     const decision = await this.limiter.check(name, subject, new Date());
 

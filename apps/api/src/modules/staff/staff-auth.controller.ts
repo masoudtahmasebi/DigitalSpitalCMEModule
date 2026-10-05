@@ -221,6 +221,7 @@ export class StaffAuthController {
   ) {}
 
   @Public()
+  @RateLimit("staffLogin")
   @Post("login")
   async login(
     @Body() body: unknown,
@@ -325,6 +326,7 @@ export class StaffAuthController {
    * never was one (migration 0022).
    */
   @Public()
+  @RateLimit("staffLogin")
   @Post("totp/verify")
   async verifyTotp(
     @Body() body: unknown,
