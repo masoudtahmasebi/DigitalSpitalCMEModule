@@ -41,7 +41,7 @@ export interface ModeratorContext {
 
 /** Just the sweep, so the moderation service does not depend on a presigner. */
 export interface ObjectErasurePort {
-  drain(): Promise<ObjectErasureResult>;
+  drainWithin(budgetMs: number): Promise<ObjectErasureResult>;
 }
 
 /**
@@ -66,15 +66,6 @@ export class ModerationService {
     private readonly repository: ModerationRepositoryPort,
     private readonly erasure: SubjectErasureRepository,
     private readonly audit: AuditServicePort,
-    /**
-     * Discharges the object deletions `erase_subject` queued (P60-01).
-     *
-     * Optional so the service's own tests need no bucket, and so a deployment
-     * without object storage — where nothing was ever archived — carries no
-     * dead machinery. When it is absent the rows simply stay outstanding,
-     * which is the honest state and is queryable.
-     */
-    private readonly objectErasure?: ObjectErasurePort,
     /**
      * Renders the PDF a support operator downloads (P179-02). Optional so the
      * service's existing tests need no renderer; the download route refuses
@@ -249,39 +240,6 @@ export class ModerationService {
       detail: { enrolments: result.enrolments },
     });
 
-    /*
-     * The archived PDFs, which SQL cannot delete (P60-01).
-     *
-     * After the audit record rather than before: the erasure has happened and
-     * is recorded whatever the bucket does. A failure here leaves the rows
-     * outstanding in `object_erasures` and they are retried on the next
-     * erasure and on boot — an obligation that survives, rather than an
-     * exception that would tell the operator their completed erasure failed.
-     */
-    await this.objectErasure?.drain().catch((error: unknown) => {
-      /*
-       * Swallowed, and now **said** (P146-03).
-       *
-       * The swallow is right: the erasure has happened and is recorded, the
-       * outstanding rows survive in `object_erasures`, and the sweep in
-       * `delivery.scheduler.ts` retries them. Failing the request here would
-       * tell an operator their completed erasure failed.
-       *
-       * The silence was not right. From P142 until P146-03 this caught a
-       * `PoolReentryError` on **every** erasure — the service had been built on
-       * the request pool, so `guardReentry` refused its query — and the inline
-       * drain did nothing at all, invisibly, for four days. A `catch` with an
-       * empty body is a decision to never find out (§9.1).
-       *
-       * The name only. An object key names a customer, a course and a
-       * certificate, and this is the one log an erasure must not enrich.
-       */
-      new Logger("ObjectErasure").warn(
-        `object erasure drain failed after a subject erasure: ` +
-          `${error instanceof Error ? error.name : "unknown"}`,
-      );
-    });
-
     return result;
   }
 
@@ -439,4 +397,47 @@ function pendingSubmissionRefusal(count?: number): AppError {
     `refused: ${count ?? "one or more"} pending EIV submissions for this subject`,
     "Für diese Person ist noch eine Punktemeldung offen. Die Löschung ist möglich, sobald die Meldung abgeschlossen ist.",
   );
+}
+
+/**
+ * The archived PDFs, which SQL cannot delete (P60-01) — after an erasure, and
+ * **outside** its transaction (P249-02).
+ *
+ * Called by the erase route once `eraseSubject` has returned and its tenant
+ * segment has committed, so a slow bucket holds no pooled connection and no
+ * open transaction. Bounded by `budgetMs` overall; what it does not reach stays
+ * queued in `object_erasures` for the boot drain and the next erasure.
+ *
+ * After the audit record rather than before: the erasure has happened and is
+ * recorded whatever the bucket does. A failure here leaves the rows outstanding
+ * — an obligation that survives, rather than an exception that would tell the
+ * operator their completed erasure failed.
+ */
+export async function dischargeAfterErasure(
+  objectErasure: ObjectErasurePort | undefined,
+  budgetMs: number,
+): Promise<void> {
+  await objectErasure?.drainWithin(budgetMs).catch((error: unknown) => {
+    /*
+     * Swallowed, and now **said** (P146-03).
+     *
+     * The swallow is right: the erasure has happened and is recorded, the
+     * outstanding rows survive in `object_erasures`, and the boot drain in
+     * `delivery.scheduler.ts` retries them. Failing the request here would
+     * tell an operator their completed erasure failed.
+     *
+     * The silence was not right. From P142 until P146-03 this caught a
+     * `PoolReentryError` on **every** erasure — the service had been built on
+     * the request pool, so `guardReentry` refused its query — and the inline
+     * drain did nothing at all, invisibly, for four days. A `catch` with an
+     * empty body is a decision to never find out (§9.1).
+     *
+     * The name only. An object key names a customer, a course and a
+     * certificate, and this is the one log an erasure must not enrich.
+     */
+    new Logger("ObjectErasure").warn(
+      `object erasure drain failed after a subject erasure: ` +
+        `${error instanceof Error ? error.name : "unknown"}`,
+    );
+  });
 }

@@ -97,12 +97,26 @@ function pgPool(config: AppConfig, options: { max: number; name: string }) {
       /**
        * And how long a transaction may sit open doing nothing.
        *
-       * Two minutes, deliberately loose, because the RLS transaction wraps
-       * the **whole request** (`TenantTransactionInterceptor`) — so it is
-       * legitimately idle-in-transaction for as long as a handler is
-       * talking to object storage, and assembling a 2 GB multipart upload
-       * is not fast. Tighter than this kills a real upload; absent, an
+       * The RLS transaction wraps the **whole request**
+       * (`TenantTransactionInterceptor`), so it is idle-in-transaction
+       * whenever a handler awaits something other than Postgres. Absent, an
        * abandoned `BEGIN` holds its locks until the process dies.
+       *
+       * Two minutes is a backstop, not a budget, and this comment used to
+       * justify it with a falsehood (CLAUDE.md §11; corrected in P249-02):
+       * that the transaction stays open while "assembling a 2 GB multipart
+       * upload". The API never carries an upload's bytes — the browser PUTs
+       * each part to a presigned URL (`object-storage.ts`,
+       * `presignUploadPart`), `CompleteMultipartUpload` sends a few hundred
+       * bytes of part-list XML, and every upload route is
+       * `@NoAmbientTransaction()` (`upload.controller.ts`), so none of it
+       * runs inside this transaction at all.
+       *
+       * A handler that talks to a third party belongs on
+       * `@NoAmbientTransaction()` (`tenant-runner.ts`), not under a looser
+       * number here. The one that was not — the GDPR erasure's bucket
+       * deletes — is how this limit turned a completed erasure into a 500
+       * (RUN-2, P249-02).
        */
       idle_in_transaction_session_timeout: 120_000,
       /*

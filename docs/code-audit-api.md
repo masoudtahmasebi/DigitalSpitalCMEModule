@@ -30,7 +30,7 @@ re-checked.
 | -------------------------- | ------ | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | SEC-1                      | high   | `participant.repository.ts:124`, `:238`; `0033_participant_merge.sql:173` ✔ | After a cross-customer merge, customer A's admin can reset (and receives) the shared password, or disable, at B |
 | ARCH-1                     | high   | `admin.service.ts:558`; `completion.ts:188` ✔                               | Admin list omits `hasEvaluation`: console and learner disagree on "complete" for a course without questions     |
-| RUN-2                      | high   | `moderation.controller.ts:239`; `object-erasure.service.ts:79` ✔            | Erasure drains the bucket queue inside the ambient transaction; a backlog turns a done erasure into a 500       |
+| ~~RUN-2~~ fixed in P249-02 | high   | `moderation.controller.ts:239`; `object-erasure.service.ts:79` ✔            | Erasure drains the bucket queue inside the ambient transaction; a backlog turns a done erasure into a 500       |
 | TEST-1                     | high   | `staff.service.ts:835`                                                      | The existing-grant check in `setScope` has no test at any layer                                                 |
 | TEST-2                     | high   | `completion.repository.ts:49`, `:170` ✔                                     | Delivery-email route untested; the comment says RLS is the defence, the `userId` predicate is                   |
 | TEST-3                     | high   | `0005_eiv_claim_function.sql:43`                                            | No concurrent test of the EIV claim (`FOR UPDATE SKIP LOCKED`)                                                  |
@@ -54,5 +54,6 @@ re-checked.
 - Duplicate EIV filing if a submission succeeds and its result row cannot be
   written during shutdown.
 - `listEnrolments` has no LIMIT and one `inArray` of every id.
-- `db.module.ts:99` justifies the 120 s idle timeout with the false "2 GB
-  upload" claim recorded in CLAUDE.md §11.
+- ~~`db.module.ts:99` justifies the 120 s idle timeout with the false "2 GB
+  upload" claim recorded in CLAUDE.md §11.~~ settled in P249-02: the claim was
+  false (the API never carries upload bytes) and the comment is corrected.
