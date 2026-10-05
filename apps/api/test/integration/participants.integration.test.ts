@@ -364,6 +364,56 @@ describe("the tenant boundary", () => {
   });
 });
 
+describe("a malformed request is the caller's mistake, not ours (P250-03)", () => {
+  /*
+   * Both of these reached the database as they were and came back as 500 —
+   * an Express query string turns `?q=a&q=b` into an array the repository
+   * cannot bind as text, and `invalid input syntax for type uuid` surfaces
+   * from four layers down. A 500 tells the console the platform is broken and
+   * counts towards the error rate the alerting watches; the request is simply
+   * wrong. A 400 problem document names what was expected and never echoes
+   * the value (§9.5); the pipes are in `shared/request-params.ts`.
+   */
+  async function problem(response: Response): Promise<Record<string, unknown>> {
+    expect(response.headers.get("content-type")).toContain("application/problem+json");
+    return (await response.json()) as Record<string, unknown>;
+  }
+
+  it("answers ?q given twice with a 400 problem document, not a 500", async () => {
+    const response = await fetch(
+      `${baseUrl}/admin/participants?q=anna&q=berta`,
+      asAdmin(alpha),
+    );
+    expect(response.status).toBe(400);
+    const body = await problem(response);
+    expect(body["status"]).toBe(400);
+    expect(JSON.stringify(body)).not.toContain("berta");
+  });
+
+  it("answers a reset for a userId that is not a uuid with a 400 problem document", async () => {
+    const response = await fetch(
+      `${baseUrl}/admin/participants/not-a-uuid/reset-password`,
+      asAdmin(alpha, { method: "POST" }),
+    );
+    expect(response.status).toBe(400);
+    expect((await problem(response))["status"]).toBe(400);
+  });
+
+  it("answers a disable for a userId that is not a uuid with a 400 problem document", async () => {
+    const response = await fetch(
+      `${baseUrl}/admin/participants/not-a-uuid/disabled`,
+      asAdmin(alpha, { method: "POST", body: JSON.stringify({ disabled: true }) }),
+    );
+    expect(response.status).toBe(400);
+    expect((await problem(response))["status"]).toBe(400);
+  });
+
+  it("still lists with a single ?q, so the check refuses only the malformed case", async () => {
+    const response = await fetch(`${baseUrl}/admin/participants?q=anna`, asAdmin(alpha));
+    expect(response.status).toBe(200);
+  });
+});
+
 describe("disabling an account", () => {
   it("stops the participant signing in", async () => {
     // The check lives in `ParticipantAuthService` and the column in a migration

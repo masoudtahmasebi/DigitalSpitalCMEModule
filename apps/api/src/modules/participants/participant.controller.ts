@@ -43,6 +43,7 @@ import type { Db } from "../../db/tenant-db.js";
 import { PG_SIDE_POOL } from "../../db/tokens.js";
 import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { AppError } from "../../shared/problem-details.js";
+import { SingleQueryValue, UuidParam } from "../../shared/request-params.js";
 import { ParticipantRepository } from "./participant.repository.js";
 import { ParticipantService } from "./participant.service.js";
 
@@ -103,7 +104,7 @@ export class ParticipantController {
 
   @Get()
   @Roles(...PARTICIPANT_ROLES)
-  list(@Query("q") search: string | undefined, @TenantDb() db: Db) {
+  list(@Query("q", SingleQueryValue) search: string | undefined, @TenantDb() db: Db) {
     return this.service(db).list(search === "" ? undefined : search);
   }
 
@@ -131,7 +132,7 @@ export class ParticipantController {
   @Post(":userId/reset-password")
   @Roles(...PARTICIPANT_ROLES)
   @RateLimit("participantCreate")
-  async resetPassword(@Param("userId") userId: string, @TenantDb() db: Db) {
+  async resetPassword(@Param("userId", UuidParam) userId: string, @TenantDb() db: Db) {
     return this.service(db).resetPassword(userId);
   }
 
@@ -139,7 +140,7 @@ export class ParticipantController {
   @Roles(...PARTICIPANT_ROLES)
   @HttpCode(204)
   async setDisabled(
-    @Param("userId") userId: string,
+    @Param("userId", UuidParam) userId: string,
     @Body() body: unknown,
     @Req() request: Request,
     @TenantDb() db: Db,

@@ -2473,3 +2473,28 @@ latest version that verifies. Two are held and have their own reasons recorded
 in `docs/backlog/P242.md`: **TypeScript 7** (the SDK generator reads
 `ts.factory`, which TS 7 does not expose) and **Tailwind 4** (a migration across
 three apps, including the `preflight: false` the Shadow-DOM widget depends on).
+
+## S37 · What does a `department_admin` administer about participants? — **open, owner: MEDICE**
+
+Raised by P250-03, 05.10.2026 (`docs/code-audit-api.md`, "Needs verification").
+
+The role table says a `department_admin` is scoped to **one department** and
+manages learners (`docs/content-model.md` §7), and P1-04's acceptance criterion
+says they "cannot read another department within the same customer". The
+product does something different, and has since participants existed: a
+participant belongs to a **customer** (`user_customers` has no department),
+so a `department_admin` can list, reset the password of, and disable every
+participant of their customer. `participant.controller.ts` says this is
+deliberate.
+
+The two cannot both be right, and choosing is the client's:
+
+1. **Customer-wide is intended.** The role table gets a footnote; nothing
+   changes in code.
+2. **One department is intended.** A participant needs a department (or the
+   rule is derived from where they are enrolled), every participant route and
+   RLS policy gains a department predicate, and existing participants need one
+   assigned. That is its own ticket, with migration and human review (auth).
+
+Until answered, the behaviour stays as it is: changing who may reset whose
+password without a decision is the kind of auth change §2 reserves for review.
