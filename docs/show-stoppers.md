@@ -61,7 +61,7 @@ wants action today.
 | ------- | ----------------------------------------------------------------------------------------- | ---------------- | --------- | --------------------------------- |
 | ~~S12~~ | ~~"Originalstempel" may invalidate an emailed certificate~~                               | **CLOSED 11.08** | —         | —                                 |
 | ~~S15~~ | ~~Live API key hardcoded in the MEDICE plugin~~ — **rotated by MEDICE 11.08**             | **CLOSED 11.08** | —         | —                                 |
-| S18     | **Offline refresh token exposed — revoke, and stop requesting `offline_access`**          | —                | **today** | MEDICE                            |
+| ~~S18~~ | ~~Offline refresh token exposed~~ — **rotated, confirmed by the client 05.10.2026**       | **CLOSED 05.10** | —         | —                                 |
 | S17     | **Token `aud` is `account`; add an audience mapper or no learner can log in**             | M1 · 09.08       | **31.07** | MEDICE dev                        |
 | S2      | **The WP plugin stores no token.** Decide how it will — lifespan now known (600 s)        | M1 · 09.08       | **31.07** | MEDICE dev                        |
 | S4      | Scope decision on 4 layout features not in the 140 h — **PM is deciding**                 | M2 · 23.08       | **06.08** | PM                                |
@@ -71,14 +71,14 @@ wants action today.
 | S8      | ADHS SMTP configuration — **PM is setting it in the console**                             | M3 · 30.08       | 21.08     | PM                                |
 | ~~S14~~ | ~~Expiry 12.10.2026 and change notification~~ — **MEDICE owns both, 27.08**               | **CLOSED 27.08** | —         | MEDICE                            |
 | ~~S9~~  | ~~Hetzner account ownership and DNS~~ — **DigitalSpital's own, confirmed 20.08**          | **CLOSED 20.08** | —         | —                                 |
-| S10     | VNR password shared over chat — **rotation requested from MEDICE in a call 20.08**        | —                | now       | MEDICE                            |
+| ~~S10~~ | ~~VNR password shared over chat~~ — **rotated, confirmed by the client 05.10.2026**       | **CLOSED 05.10** | —         | —                                 |
 | S23     | **VNR format, and whether any VNR-less completion already exists**                        | —                | 14.08     | MEDICE / ÄKWL                     |
 | ~~S25~~ | ~~Which point flags for the **test** VNR~~ — **basis 3, Lernerfolg 0, Kat. D, 04.09**     | **CLOSED 04.09** | —         | — (live VNR still open, see S25b) |
 | S25b    | **The same question for MEDICE's live VNR** — read it the same way once reachable         | M3 · 30.08       | **14.08** | MEDICE / ÄKWL                     |
 | ~~S26~~ | ~~Production EIV API base URL~~ — **`https://backend.eiv-fobi.de`, 20.08**                | **CLOSED 20.08** | —         | —                                 |
 | S28     | **Learner tokens carry no name or email — the certificate cannot be filled**              | M3 · 30.08       | **24.08** | MEDICE / DS                       |
 | ~~S27~~ | ~~Test-system credentials from EIV support~~ — **arrived 31.08; password not in repo**    | **CLOSED 31.08** | —         | —                                 |
-| S29     | **The Veranstalter interface we integrate against has an announced shutdown**             | **launch**       | **now**   | EIV / BÄK                         |
+| ~~S29~~ | ~~Announced shutdown of our interface~~ — **we already use the replacement, 05.10**       | **CLOSED 05.10** | —         | —                                 |
 | ~~S31~~ | ~~Is `fortbildungsnummer` the VNR?~~ — **it is; implemented 27.08 (P125-01)**             | **CLOSED 27.08** | —         | —                                 |
 | ~~S24~~ | ~~Export the EIV Veranstalter Swagger~~                                                   | **CLOSED 09.08** | —         | —                                 |
 | ~~S3~~  | ~~WordPress repository access~~                                                           | **CLOSED 28.07** | —         | —                                 |
@@ -735,7 +735,12 @@ account setup.
 
 ---
 
-## S10 · The VNR password was shared over chat
+## S10 · The VNR password was shared over chat — **CLOSED 05.10.2026: rotated**
+
+> **05.10.2026 —** the client confirmed the VNR password has been rotated. The
+> new value has to be entered in the course's VNR password field in the console
+> (encrypted at rest, write-only); until it is, every Punktemeldung for this
+> VNR fails authentication and raises an alert.
 
 `VNR 2760552025919300018` and its password were sent in the project chat. These
 authenticate DigitalSpital to a legally binding accreditation interface.
@@ -842,6 +847,12 @@ So the failure mode is a correct refusal with no audience told in advance (§9.4
 five weeks after launch, discovered by a physician finding the Fortbildung gone.
 That is the same shape as §9.10 — the refusal is right and the answer belongs
 somewhere else, in front of the operator who can act on it.
+
+> **05.10.2026 — built in P243-01.** The client asked for it. The course list
+> and the course screen warn from 90 days out, naming the last day, what happens
+> after it, and where the renewed date goes. Building it found the stored end
+> was itself wrong — 01:59 on **13.10.** in Berlin from the seed, 02:00 on the
+> 12th from the console — and migration 0056 corrects both shapes.
 
 **Not built, because it is new scope and the client has just narrowed it.**
 Raised here as a costed question instead: a pure `accreditationExpiry(window,
@@ -1008,7 +1019,12 @@ it is **not** being written on spec.
 
 ---
 
-## S18 · The supplied refresh token is an **offline** token and never expires — **revoke it today**
+## S18 · The supplied refresh token is an **offline** token and never expires — **CLOSED 05.10.2026: rotated**
+
+> **05.10.2026 —** the client confirmed the exposed credential has been
+> rotated. Recorded on that statement; not verifiable from here, since the
+> token lives in MEDICE's Keycloak. Whether `offline_access` is still requested
+> by the WordPress plugin is a separate question this does not settle.
 
 Owner: MEDICE. Needed: **now**.
 
@@ -1803,7 +1819,36 @@ built — flagged.
 
 ---
 
-## S29 · We may be integrated against an interface that is being switched off
+## S29 · We may be integrated against an interface that is being switched off — **CLOSED 05.10.2026: we are on the replacement**
+
+> **05.10.2026 — the premise below was wrong, and the evidence was in this file
+> before it was raised.** The interface being switched off is the **old XML
+> upload and the Java client**. The replacement is the REST API documented at
+> `veranstalter-swagger-ui.eiv-fobi.de` — and that is what `packages/eiv-client`
+> speaks:
+>
+> - **S24 (09.08):** the client was rewritten against `EIV FOBI - Veranstalter`,
+>   OAS 3, version `1.0 20260714-01` — a JSON/JWT REST specification dated
+>   July 2026, not an XML interface.
+> - **S27 (31.08), after this item was raised:** EIV support itself sent
+>   `veranstalter-swagger-ui.eiv-fobi.de` as the Swagger and
+>   `backend-test.eiv-fobi.de` as the API base — the same new platform this
+>   section said we had to migrate to (`docs/eiv-test-system.md`).
+> - **04.09:** every read against `backend-test.eiv-fobi.de` succeeded with this
+>   client (S11's update).
+> - EIV's own Veranstalter page, as summarised by a search on 05.10.2026: Java
+>   client support ended 31.12.2024; organisers still uploading **XML files** may
+>   do so until a shutdown; the Punktemeldung app offers a **REST API** for
+>   direct integration, documented at `veranstalter-swagger-ui.eiv-fobi.de`.
+>   (`www.eiv-fobi.de` is not reachable from the build environment, so the page
+>   was not read directly.)
+>
+> The item was written on 24.08 from the shutdown notice alone and never
+> re-read when S27 answered it — CLAUDE.md §11 rule 14, a stale note repeated.
+> **No migration is needed.** What remains is not S29: a real `push_teilnahme`
+> against the test server has still never been made (`docs/eiv-test-system.md`).
+>
+> The original text is kept below, unedited, as the record of what was believed.
 
 - **Owner:** EIV / Bundesärztekammer (via MEDICE) · **Blocks:** the launch ·
   **Raised:** 24.08.2026, by the client, from the official sources

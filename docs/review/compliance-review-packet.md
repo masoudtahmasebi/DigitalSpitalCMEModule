@@ -1,5 +1,13 @@
 # Compliance review packet — nine held items
 
+> **05.10.2026 — reviewed.** The client confirmed that the human reviews these
+> items were held for are done, and the `[ ] Human review` lines in P53–P64 are
+> ticked with that date. Recorded on the client's statement; the reviewer's
+> name and the decisions taken are not in this repository, and should be added
+> here if the record is to stand on its own. P235's line stays open: it
+> describes work that is specified and not yet built, so there is nothing to
+> have reviewed.
+
 **Branch** `claude/education-platform-roadmap-3vgrqh` · **head** `5aabd3b` ·
 assembled 12.08.2026 (P62-01).
 
