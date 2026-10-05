@@ -1,8 +1,7 @@
 ---
 name: writing-plans
-description: Add a step-by-step implementation plan to an approved backlog ticket — exact files, signatures, the failing test first, the command that proves each step. Explicit invocation only — type /writing-plans.
+description: Use right after the person approves a backlog ticket written by brainstorming, or when asked to plan an approved ticket in docs/backlog/ — adds a step-by-step plan (files, signatures, failing test first, break-it-on-purpose, P-number commits) to that ticket. Not for tickets that are not yet approved.
 license: MIT
-disable-model-invocation: true
 ---
 
 # Writing the plan into the ticket

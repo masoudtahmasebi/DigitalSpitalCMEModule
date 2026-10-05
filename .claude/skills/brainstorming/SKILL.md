@@ -1,8 +1,7 @@
 ---
 name: brainstorming
-description: Turn a request into an agreed design before any code — classify it (spike, bounded, architectural), ask one question at a time, check it against CLAUDE.md, and end in an approved backlog ticket. Explicit invocation only — type /brainstorming.
+description: Use when the person asks to build, add, change or remove behaviour in this repository — a feature, a screen, an endpoint, a rule, a migration — and no approved ticket in docs/backlog/ already specifies it. Classifies the request (spike, bounded, architectural), asks one question at a time, runs the CLAUDE.md checks that can stop a design, and ends in an approved ticket before any code. Not for questions, reviews, audits, explanations, or work an approved ticket already covers.
 license: MIT
-disable-model-invocation: true
 ---
 
 # Brainstorming a request into an agreed design
