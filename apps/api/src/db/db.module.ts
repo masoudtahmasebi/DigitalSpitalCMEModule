@@ -15,7 +15,7 @@ import {
   Inject,
   Logger,
   Module,
-  type OnModuleDestroy,
+  type OnApplicationShutdown,
   type OnModuleInit,
 } from "@nestjs/common";
 import type { Pool } from "pg";
@@ -27,6 +27,7 @@ import { RateLimiter, RedisRateLimitStore } from "../shared/rate-limit.js";
 import { guardReentry } from "./pool-reentry.js";
 import { Metrics } from "../observability/metrics.js";
 import { ObservabilityModule } from "../observability/observability.module.js";
+import { ShutdownGate } from "../shared/shutdown-gate.js";
 
 /**
  * One set of pool settings, shared by both pools (P142-01).
@@ -97,12 +98,26 @@ function pgPool(config: AppConfig, options: { max: number; name: string }) {
       /**
        * And how long a transaction may sit open doing nothing.
        *
-       * Two minutes, deliberately loose, because the RLS transaction wraps
-       * the **whole request** (`TenantTransactionInterceptor`) — so it is
-       * legitimately idle-in-transaction for as long as a handler is
-       * talking to object storage, and assembling a 2 GB multipart upload
-       * is not fast. Tighter than this kills a real upload; absent, an
+       * The RLS transaction wraps the **whole request**
+       * (`TenantTransactionInterceptor`), so it is idle-in-transaction
+       * whenever a handler awaits something other than Postgres. Absent, an
        * abandoned `BEGIN` holds its locks until the process dies.
+       *
+       * Two minutes is a backstop, not a budget, and this comment used to
+       * justify it with a falsehood (CLAUDE.md §11; corrected in P249-02):
+       * that the transaction stays open while "assembling a 2 GB multipart
+       * upload". The API never carries an upload's bytes — the browser PUTs
+       * each part to a presigned URL (`object-storage.ts`,
+       * `presignUploadPart`), `CompleteMultipartUpload` sends a few hundred
+       * bytes of part-list XML, and every upload route is
+       * `@NoAmbientTransaction()` (`upload.controller.ts`), so none of it
+       * runs inside this transaction at all.
+       *
+       * A handler that talks to a third party belongs on
+       * `@NoAmbientTransaction()` (`tenant-runner.ts`), not under a looser
+       * number here. The one that was not — the GDPR erasure's bucket
+       * deletes — is how this limit turned a completed erasure into a 500
+       * (RUN-2, P249-02).
        */
       idle_in_transaction_session_timeout: 120_000,
       /*
@@ -187,10 +202,12 @@ function pgPool(config: AppConfig, options: { max: number; name: string }) {
       useFactory: (redis: Redis) => new RateLimiter(new RedisRateLimitStore(redis)),
       inject: [REDIS_CLIENT],
     },
+    // Here because it is the other half of the pools' shutdown order (P249-04).
+    ShutdownGate,
   ],
-  exports: [APP_CONFIG, PG_POOL, PG_SIDE_POOL, REDIS_CLIENT, RateLimiter],
+  exports: [APP_CONFIG, PG_POOL, PG_SIDE_POOL, REDIS_CLIENT, RateLimiter, ShutdownGate],
 })
-export class DbModule implements OnModuleInit, OnModuleDestroy {
+export class DbModule implements OnModuleInit, OnApplicationShutdown {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
     @Inject(PG_SIDE_POOL) private readonly sidePool: Pool,
@@ -237,8 +254,16 @@ export class DbModule implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Closes cleanly on shutdown so a redeploy does not orphan connections. */
-  async onModuleDestroy(): Promise<void> {
+  /**
+   * Closes cleanly on shutdown so a redeploy does not orphan connections.
+   *
+   * In `onApplicationShutdown` — Nest's **last** phase, after the HTTP server
+   * has closed and every scheduler's `onModuleDestroy` has awaited its sweep —
+   * not `onModuleDestroy`, its first (P249-04, RUN-4). Ended in the first
+   * phase, the pools were gone while the server still accepted requests, and
+   * each one answered 500. `ShutdownGate` answers 503 for that window instead.
+   */
+  async onApplicationShutdown(): Promise<void> {
     await Promise.allSettled([this.pool.end(), this.sidePool.end(), this.redis.quit()]);
   }
 }

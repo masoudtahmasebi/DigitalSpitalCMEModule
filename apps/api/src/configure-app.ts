@@ -24,6 +24,7 @@ import type { INestApplication } from "@nestjs/common";
 import type { Pool } from "pg";
 import type { AppConfig } from "./config/config.js";
 import { PG_POOL } from "./db/tokens.js";
+import { refuseWhileClosing, ShutdownGate } from "./shared/shutdown-gate.js";
 import { EmbedOriginRegistry, ProjectOriginSource } from "./shared/embed-origins.js";
 
 /**
@@ -73,6 +74,10 @@ export async function configureApp(
     set?: (key: string, value: unknown) => void;
   };
   http.set?.("trust proxy", 1);
+
+  // First, so a request that arrives while the process is shutting down is
+  // answered 503 before anything that could reach an ended pool (P249-04).
+  app.use(refuseWhileClosing(app.get(ShutdownGate)));
 
   app.use(helmet());
 

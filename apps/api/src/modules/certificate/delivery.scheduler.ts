@@ -46,6 +46,15 @@ export class CertificateDeliveryScheduler implements OnModuleInit, OnModuleDestr
   private readonly logger = new Logger(CertificateDeliveryScheduler.name);
   private timer: NodeJS.Timeout | undefined;
   private running = false;
+  /**
+   * Work in progress that shutdown must wait for (P249-04): the sweep, and the
+   * boot drain of the object-erasure queue. Without the wait a sweep mid-send
+   * outlived the pools it records on, and a certificate e-mailed but not
+   * marked sent was sent again after the lease.
+   */
+  private inFlight: Promise<void> | undefined;
+  private bootDrain: Promise<void> | undefined;
+  private stopping = false;
   private readonly service: CertificateDeliveryService | undefined;
 
   constructor(
@@ -118,22 +127,34 @@ export class CertificateDeliveryScheduler implements OnModuleInit, OnModuleDestr
      * restart is a frequent enough retry for an obligation that is already
      * recorded and cannot be lost.
      */
-    void objectErasureFor(this.pool, this.config, this.logger)
+    this.bootDrain = objectErasureFor(this.pool, this.config, this.logger)
       ?.drain()
+      .then(() => undefined)
       .catch(() => undefined);
   }
 
-  onModuleDestroy(): void {
+  /** Stop the timer, then wait for the work already running (P249-04). */
+  async onModuleDestroy(): Promise<void> {
+    this.stopping = true;
     if (this.timer !== undefined) clearInterval(this.timer);
+    await Promise.all([this.inFlight, this.bootDrain]);
   }
 
   /** Exposed so a test or an admin trigger can run one sweep synchronously. */
   async tick(now = new Date()): Promise<void> {
-    if (this.running || this.service === undefined) return;
+    if (this.running || this.stopping || this.service === undefined) return;
     this.running = true;
 
+    this.inFlight = this.sweepOnce(this.service, now).finally(() => {
+      this.running = false;
+      this.inFlight = undefined;
+    });
+    await this.inFlight;
+  }
+
+  private async sweepOnce(service: CertificateDeliveryService, now: Date): Promise<void> {
     try {
-      const result = await this.service.sweep(now);
+      const result = await service.sweep(now);
       if (result.considered > 0) {
         // Counts only. Nothing identifying a physician reaches a log line —
         // not a name, not an address, not a certificate's download token.
@@ -152,8 +173,6 @@ export class CertificateDeliveryScheduler implements OnModuleInit, OnModuleDestr
           error instanceof Error ? error.message : "unknown error"
         }`,
       );
-    } finally {
-      this.running = false;
     }
   }
 }

@@ -3,12 +3,19 @@
  * response (`CLAUDE.md` §5: every error crossing the API boundary uses the
  * problem-details shape; no stack trace or internal identifier leaks).
  *
- * Three cases:
+ * Four cases:
  * - `AppError` → its own kind/status, `clientDetail` if the error chose to set
  *   one, otherwise nothing beyond the generic title.
  * - Nest's built-in `HttpException` (thrown by pipes, e.g. a malformed route
  *   param) → mapped by status, message kept since Nest's own messages are
- *   already client-safe by construction.
+ *   already client-safe by construction — **except a 404**, whose message is
+ *   the router's `Cannot GET <originalUrl>` and carries the query string. Its
+ *   detail is rebuilt from the method and the query-free path (P249-01).
+ * - A framework refusal raised before any handler — body-parser's 413 and 415
+ *   are plain `http-errors` objects, not `HttpException`s — → its own 4xx with
+ *   a fixed title and **no** message: body-parser's text quotes what the
+ *   caller sent (P249-01, RUN-1). Until P249-01 these fell through to the
+ *   next case and an oversize body was reported as our failure.
  * - Anything else → bare 500. An unexpected error's message is, by
  *   definition, not something we have decided is safe to disclose.
  *
@@ -44,6 +51,7 @@ import {
 } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
+import { STATUS_CODES } from "node:http";
 import { currentCorrelationId, runWithContext } from "../observability/correlation.js";
 import { JsonLogger } from "../observability/logger.js";
 import {
@@ -145,13 +153,41 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       const status = exception.getStatus();
       const body = exception.getResponse();
       const message =
-        typeof body === "string" ? body : ((body as { message?: string }).message ?? "");
+        status === 404
+          ? // The router's own text is `Cannot GET <originalUrl>`, query and
+            // all — the one place this filter would otherwise echo a token it
+            // took care to keep out of `instance` and the log (P249-01).
+            `Cannot ${request.method} ${path}`
+          : typeof body === "string"
+            ? body
+            : ((body as { message?: string }).message ?? "");
 
       response.status(status).json({
         type: "https://docs.ds-education.de/errors/http",
         title: HttpStatus[status] ?? "Error",
         status,
         ...(message === "" ? {} : { detail: message }),
+        instance: path,
+        correlationId,
+      });
+      return;
+    }
+
+    const refused = exposedClientStatus(exception);
+    if (refused !== undefined) {
+      // `warn`, like an `AppError` refusal: the system working, not failing.
+      // body-parser's `type` is a fixed code ("entity.too.large"), never input.
+      this.logger.write_("warn", "refused", {
+        kind: "framework",
+        status: refused,
+        method: request.method,
+        route: path,
+        type: frameworkType(exception),
+      });
+      response.status(refused).json({
+        type: "https://docs.ds-education.de/errors/http",
+        title: STATUS_CODES[refused] ?? "Error",
+        status: refused,
         instance: path,
         correlationId,
       });
@@ -218,6 +254,34 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       reason: error.reason,
     });
   }
+}
+
+/**
+ * The 4xx status of an error the framework raised and marked safe to expose,
+ * or `undefined` (P249-01).
+ *
+ * The `http-errors` shape — `status`/`statusCode` plus `expose: true` — is what
+ * body-parser throws for an oversize body (413), an unsupported charset or
+ * encoding (415) and malformed JSON (400). `expose` is the library's own
+ * statement that the status is the caller's doing; anything without it, or
+ * outside 4xx, stays a 500. The message is never used.
+ */
+function exposedClientStatus(exception: unknown): number | undefined {
+  if (typeof exception !== "object" || exception === null) return undefined;
+  const candidate = exception as {
+    status?: unknown;
+    statusCode?: unknown;
+    expose?: unknown;
+  };
+  if (candidate.expose !== true) return undefined;
+  const status = candidate.status ?? candidate.statusCode;
+  return typeof status === "number" && status >= 400 && status < 500 ? status : undefined;
+}
+
+/** body-parser's fixed error code, bounded; never the message. */
+function frameworkType(exception: unknown): string | undefined {
+  const type = (exception as { type?: unknown }).type;
+  return typeof type === "string" ? type.slice(0, 64) : undefined;
 }
 
 /**

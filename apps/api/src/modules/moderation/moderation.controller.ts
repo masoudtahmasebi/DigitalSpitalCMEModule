@@ -49,6 +49,11 @@ import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
+import {
+  NoAmbientTransaction,
+  TenantRun,
+  type TenantRunner,
+} from "../../db/tenant-runner.js";
 import { APP_CONFIG, PG_POOL, PG_SIDE_POOL } from "../../db/tokens.js";
 import type { Pool } from "pg";
 import { AuditService } from "../../audit/audit.service.js";
@@ -57,6 +62,7 @@ import { JsonLogger } from "../../observability/logger.js";
 import {
   objectErasureFor,
   ObjectErasureService,
+  REQUEST_DRAIN_DEADLINE_MS,
 } from "../certificate/object-erasure.service.js";
 import {
   certificateArchiveFor,
@@ -67,7 +73,11 @@ import {
   ModerationRepository,
   SubjectErasureRepository,
 } from "./moderation.repository.js";
-import { ModerationService, type ModeratorContext } from "./moderation.service.js";
+import {
+  dischargeAfterErasure,
+  ModerationService,
+  type ModeratorContext,
+} from "./moderation.service.js";
 
 const MODERATOR_ROLES = ["customer_admin", "super_admin"] as const;
 
@@ -152,7 +162,7 @@ export class ModerationController {
      * a bare connection, because `claim_object_erasures` is `SECURITY DEFINER`
      * and an erasure spans customers. Built on `PG_POOL` that is a second
      * checkout while the request holds the first, so `guardReentry` (P142)
-     * refuses it — straight into `eraseSubject`'s `.catch(() => undefined)`,
+     * refuses it — straight into the drain's `.catch(() => undefined)`,
      * which is there so a bucket failure cannot fail a completed erasure.
      *
      * So from P142 until this line changed, **the inline drain did nothing**,
@@ -239,14 +249,26 @@ export class ModerationController {
   @Delete("learners/:enrolmentId")
   @Roles(...MODERATOR_ROLES)
   @RateLimit("subjectErasure")
+  @NoAmbientTransaction()
   async erase(
     @Param("enrolmentId") enrolmentId: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
-    @TenantDb() db: Db,
+    @TenantRun() run: TenantRunner,
   ) {
     const input = Erasure.parse(body);
-    return this.service(db).eraseSubject(enrolmentId, input.reason, context(principal));
+    const result = await run((db) =>
+      this.service(db).eraseSubject(enrolmentId, input.reason, context(principal)),
+    );
+
+    /*
+     * The bucket, after the tenant segment has committed and with nothing held
+     * (P249-02, RUN-2). Inside the ambient transaction this was up to fifty
+     * 15-second deletes against Postgres' 120-second idle limit: the session
+     * was killed and the operator shown a 500 for an erasure already done.
+     */
+    await dischargeAfterErasure(this.objectErasure, REQUEST_DRAIN_DEADLINE_MS);
+    return result;
   }
 
   @Post("certificates/:id/regenerate")
@@ -356,7 +378,6 @@ export class ModerationController {
       new ModerationRepository(db),
       new SubjectErasureRepository(this.sidePool),
       new AuditService(this.sidePool),
-      this.objectErasure,
       // The same `Db` the rest of this service uses, so the render happens
       // inside the request's tenant transaction and a certificate belonging to
       // another customer is simply not there to find.

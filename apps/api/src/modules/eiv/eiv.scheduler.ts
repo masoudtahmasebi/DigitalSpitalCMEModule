@@ -14,8 +14,14 @@
  * - **Never fatal.** A sweep that throws logs and returns. An unhandled
  *   rejection in a background timer takes the API process down with it, which
  *   would turn a transient EIV outage into an outage of the whole platform.
- * - **Stops cleanly.** `onModuleDestroy` clears the timer so a redeploy does
- *   not leave a sweep half-run against a closing pool.
+ * - **Stops cleanly.** `onModuleDestroy` clears the timer **and awaits the
+ *   sweep in flight** (P249-04). Clearing the timer alone did not stop a sweep
+ *   already running: it carried on while `DbModule` ended the pools in the same
+ *   phase, so a Punktemeldung EIV had accepted could fail to record its
+ *   success and be re-pushed after the lease. EIV treats a repeat for the same
+ *   `(EFN, VNR)` as an update, not a second booking (`@ds/eiv-client`
+ *   `client.ts`, "Idempotency is per (EFN, VNR)"), so that was a wasted call
+ *   rather than a double filing — but the wait makes it not happen at all.
  */
 
 import {
@@ -43,6 +49,10 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EivScheduler.name);
   private timer: NodeJS.Timeout | undefined;
   private running = false;
+  /** The sweep in progress, so shutdown can wait for it (P249-04). */
+  private inFlight: Promise<void> | undefined;
+  /** Set once shutdown begins; no tick starts after it. */
+  private stopping = false;
   private readonly service: EivService;
   private readonly alerts: EivAlertService;
   private readonly settings: PlatformSettingsRepository;
@@ -158,8 +168,11 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  onModuleDestroy(): void {
+  /** Stop the timer, then wait for a sweep already running (P249-04). */
+  async onModuleDestroy(): Promise<void> {
+    this.stopping = true;
     if (this.timer !== undefined) clearInterval(this.timer);
+    await this.inFlight;
   }
 
   /**
@@ -184,9 +197,17 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
 
   /** Exposed so a test or an admin trigger can run one sweep synchronously. */
   async tick(now = new Date()): Promise<void> {
-    if (this.running) return;
+    if (this.running || this.stopping) return;
     this.running = true;
 
+    this.inFlight = this.sweepOnce(now).finally(() => {
+      this.running = false;
+      this.inFlight = undefined;
+    });
+    await this.inFlight;
+  }
+
+  private async sweepOnce(now: Date): Promise<void> {
     try {
       // Before the sweep, not after: if submitting throws, the deadline alarm
       // has already run. The one thing that must not depend on the EIV
@@ -211,8 +232,6 @@ export class EivScheduler implements OnModuleInit, OnModuleDestroy {
       this.logger.error(
         `EIV sweep failed: ${error instanceof Error ? error.message : "unknown error"}`,
       );
-    } finally {
-      this.running = false;
     }
   }
 }
