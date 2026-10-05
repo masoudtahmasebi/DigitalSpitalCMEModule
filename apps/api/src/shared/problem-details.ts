@@ -36,6 +36,13 @@ export type AppErrorKind =
    * watches our own error rate for somebody else's outage.
    */
   | "upstream_unavailable"
+  /**
+   * A dependency of **ours** is down and this route refuses rather than run
+   * without it (P249-03) — today, only the rate limiter's Redis on a route
+   * whose limit is a security control. 503 with `Retry-After`: the caller did
+   * nothing wrong and should try again shortly.
+   */
+  | "unavailable"
   | "internal";
 
 const STATUS: Record<AppErrorKind, number> = {
@@ -47,6 +54,7 @@ const STATUS: Record<AppErrorKind, number> = {
   gate_locked: 403,
   rate_limited: 429,
   upstream_unavailable: 502,
+  unavailable: 503,
   internal: 500,
 };
 
@@ -59,6 +67,7 @@ const TITLE: Record<AppErrorKind, string> = {
   gate_locked: "Content locked",
   rate_limited: "Too many requests",
   upstream_unavailable: "Upstream unavailable",
+  unavailable: "Service unavailable",
   internal: "Internal server error",
 };
 
