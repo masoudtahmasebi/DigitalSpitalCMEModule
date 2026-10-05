@@ -58,6 +58,7 @@ import { listEivSubmissionsQuerySchema } from "./eiv-admin.dto.js";
 import { EivAdminService, type EivOperatorContext } from "./eiv-admin.service.js";
 import { PlatformSettingsRepository } from "../platform/platform-settings.repository.js";
 import { PlatformSettingsService } from "../platform/platform-settings.service.js";
+import { UuidParam } from "../../shared/request-params.js";
 
 const MODERATOR_ROLES = ["customer_admin", "super_admin"] as const;
 
@@ -264,7 +265,7 @@ export class EivAdminController {
   @Roles(...MODERATOR_ROLES)
   @HttpCode(204)
   async requeue(
-    @Param("enrolmentId") enrolmentId: string,
+    @Param("enrolmentId", UuidParam) enrolmentId: string,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ): Promise<void> {
@@ -283,7 +284,7 @@ export class EivAdminController {
   @Roles(...MODERATOR_ROLES)
   @HttpCode(204)
   async correctEfn(
-    @Param("enrolmentId") enrolmentId: string,
+    @Param("enrolmentId", UuidParam) enrolmentId: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
@@ -301,7 +302,7 @@ export class EivAdminController {
   @Roles(...MODERATOR_ROLES)
   @HttpCode(204)
   async withdraw(
-    @Param("enrolmentId") enrolmentId: string,
+    @Param("enrolmentId", UuidParam) enrolmentId: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,

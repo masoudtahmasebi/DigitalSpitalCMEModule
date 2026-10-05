@@ -819,6 +819,31 @@ describe("operator accounts", () => {
     expect(grants.rows).toEqual([{ role: "super_admin", customer_id: null }]);
   });
 
+  it("answers an account id that is not a uuid with 400 on every account route (P250-03)", async () => {
+    // Two of these answered 500 from the driver before `UuidParam`; the other
+    // three happened to answer 404 because they search a list in memory.
+    const routes: ReadonlyArray<readonly [string, unknown?]> = [
+      ["password", { password: `${STAFF_PASSWORD}-vier` }],
+      [
+        "scope",
+        { role: "customer_admin", customerId: existingCustomerId, departmentId: null },
+      ],
+      ["disabled", { disabled: true }],
+      ["second-factor/reset"],
+      ["sign-out-everywhere"],
+    ];
+    for (const [suffix, body] of routes) {
+      const { status, body: answer } = await asStaff(
+        superSession,
+        "POST",
+        `/admin/staff/not-a-uuid/${suffix}`,
+        body,
+      );
+      expect(status, `${suffix}: ${JSON.stringify(answer)}`).toBe(400);
+      expect(answer.detail).toBe("Validation failed (uuid is expected)");
+    }
+  });
+
   it("does not show a customer administrator the accounts above them", async () => {
     const { status, body } = await asStaff(tenantSession, "GET", "/admin/staff");
 

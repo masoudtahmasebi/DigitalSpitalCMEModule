@@ -2320,3 +2320,75 @@ describe("the delivery address is one learner's own (TEST-2, P250-01)", () => {
     expect(JSON.stringify(forB.body)).not.toContain(ADDRESS_A);
   });
 });
+
+describe("the participant list at a size one statement cannot bind (P250-03)", () => {
+  /*
+   * `listParticipants` reads five things per enrolment — progress,
+   * evaluations, EFNs, Punktemeldungen, certificates — and each read bound one
+   * parameter per id. PostgreSQL carries at most 65,535 bound parameters, so
+   * measured at 65,600 enrolments the screen answered 500 with `bind message
+   * has 64 parameter formats but 0 parameters`. 65,600 is a large course; it
+   * is not an impossible one for a pharmaceutical company's flagship ADHS
+   * programme, and the failure was total rather than slow.
+   *
+   * Its own course, under this suite's customer and found by slug (§9.6), so
+   * the other blocks' assertions about `courseSlug` are untouched.
+   */
+  const SCALE = 65_600;
+  const scaleSlug = `cf-scale-${RUN}`;
+  let lastEnrolmentId = "";
+
+  beforeAll(async () => {
+    const { rows } = await seedPool.query<{ customer_id: string; project_id: string }>(
+      "SELECT customer_id, project_id FROM courses WHERE slug = $1",
+      [courseSlug],
+    );
+    const { customer_id: customerId, project_id: projectId } = rows[0]!;
+    const scaleCourseId = await insert(
+      `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
+                            pass_threshold_percent, status)
+       VALUES ($1,$2,$3,$4,100,70,'published') RETURNING id`,
+      [customerId, projectId, scaleSlug, "Sehr große Fortbildung"],
+    );
+    await seedPool.query(
+      `WITH people AS (
+         INSERT INTO users (email)
+         SELECT 'scale-' || g || '-' || $3 || '@example.org' FROM generate_series(1, $4::int) g
+         RETURNING id
+       )
+       INSERT INTO enrolments (customer_id, course_id, user_id, required_watch_percent,
+                               pass_threshold_percent)
+       SELECT $1, $2, people.id, 100, 70 FROM people`,
+      [customerId, scaleCourseId, RUN, SCALE],
+    );
+
+    // An EFN on the **last** enrolment — well past parameter 65,535 — so the
+    // assertion below proves the reads returned data, not merely that they did
+    // not throw. A query that matched nothing would also have been a 200.
+    const last = await seedPool.query<{ id: string; user_id: string }>(
+      `SELECT e.id, e.user_id FROM enrolments e
+        WHERE e.course_id = $1 ORDER BY e.created_at DESC, e.id DESC LIMIT 1`,
+      [scaleCourseId],
+    );
+    lastEnrolmentId = last.rows[0]!.id;
+    await seedPool.query("INSERT INTO efn_profiles (user_id, efn) VALUES ($1, $2)", [
+      last.rows[0]!.user_id,
+      EFN,
+    ]);
+  }, 60_000);
+
+  it("lists all of them, and reads the figures for the last one", async () => {
+    const { status, body } = await callAs(
+      ADMIN_SUB,
+      "GET",
+      `/admin/courses/${scaleSlug}/participants`,
+    );
+
+    expect(status, JSON.stringify(body).slice(0, 300)).toBe(200);
+    expect(body.rows).toHaveLength(SCALE);
+    const last = body.rows.find(
+      (row: { enrolmentId: string }) => row.enrolmentId === lastEnrolmentId,
+    );
+    expect(last?.efnPresent).toBe(true);
+  }, 60_000);
+});

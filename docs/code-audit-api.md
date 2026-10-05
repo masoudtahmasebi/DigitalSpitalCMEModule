@@ -50,13 +50,41 @@ re-checked.
 ## Needs verification
 
 - Department scope on participant password reset (`isMember` is customer-wide).
+  **Checked in P250-03 and left open — it needs a decision, not a test.**
+  The code lets a `department_admin` reset the password of, or disable, any
+  participant of their customer: `PARTICIPANT_ROLES` includes the role
+  deliberately (`participant.controller.ts:53`), `isMember` counts
+  `user_customers` under RLS (`participant.repository.ts:124`), that table
+  has no department column (`0025_person_credentials_memberships.sql:207`),
+  and no RLS policy anywhere reads a department (`grep -rln app.department
+db/migrations` → nothing). The documents say the role's scope is one
+  department: `docs/content-model.md:242` ("`department_admin` | one
+  department | … learners …"), P1-04 (`docs/backlog/P1.md:127`, unticked),
+  P2-01 (`P2.md:39`) and P9-06 (`P9.md:235`, unticked). A participant
+  belongs to a customer, not a department, so the documented rule has
+  nothing in the data model to apply to. Making it apply is an auth
+  behaviour change (and a schema one); recorded as S37 in
+  `docs/show-stoppers.md` for the client.
 - A key removed from Keycloak may still verify for up to `JWKS_CACHE_TTL_SEC`.
 - ~~Duplicate EIV filing if a submission succeeds and its result row cannot be
   written during shutdown.~~ settled in P249-04: no duplicate filing — EIV is
   idempotent per `(EFN, VNR)` and a repeat answers 200, recorded as success
   (`eiv-client/src/client.ts:27`, `:261`; `eiv.service.ts:227`); the sweep is
   now awaited on shutdown, so the window no longer opens on an orderly stop.
-- `listEnrolments` has no LIMIT and one `inArray` of every id.
+- ~~`listEnrolments` has no LIMIT and one `inArray` of every id.~~ settled in
+  P250-03: it was a defect, not a risk — at 65,600 enrolments the participant
+  list answered 500 (`bind message has 64 parameter formats but 0
+parameters`). The five follow-up reads now bind one `uuid[]`
+  (`admin.repository.ts`, `anyId`); `completion-flow.integration.test.ts`
+  lists 65,600 and reads the last one's EFN. `listEnrolments` itself stays
+  unpaged: the screen shows a course's whole roster and paging it is a
+  product decision, not this fix.
+- ~~`?q` as an array, and a non-uuid id in a path, answer 500.~~ fixed in
+  P250-03 for the whole class: 26 admin routes answered 500 to a non-uuid id
+  and 3 list routes to a repeated query parameter; all now answer a 400
+  problem document via `shared/request-params.ts`, and
+  `request-params.test.ts` fails on a new controller parameter without the
+  pipe.
 - ~~`db.module.ts:99` justifies the 120 s idle timeout with the false "2 GB
   upload" claim recorded in CLAUDE.md §11.~~ settled in P249-02: the claim was
   false (the API never carries upload bytes) and the comment is corrected.

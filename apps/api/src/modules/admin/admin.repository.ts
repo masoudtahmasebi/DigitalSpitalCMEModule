@@ -15,7 +15,17 @@
  * the rollup input is identical — only the fetch is batched.
  */
 
-import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  sql,
+  type AnyColumn,
+  type SQL,
+} from "drizzle-orm";
 import type { Db } from "../../db/tenant-db.js";
 import {
   auditLog,
@@ -33,6 +43,26 @@ import {
   users,
 } from "../../db/schema.js";
 import type { ProgressRow } from "../learning/learning.repository.js";
+
+/**
+ * `column = ANY($1::uuid[])` — **one** bound parameter, however many ids
+ * (P250-03).
+ *
+ * The participant list reads progress, evaluations, EFNs, Punktemeldungen and
+ * certificates for every enrolment on a course, and `inArray` binds one
+ * parameter per id. PostgreSQL's wire protocol carries at most 65,535, so a
+ * course with 65,536 enrolments could not be listed at all: measured at 65,600,
+ * the screen answered 500 with `bind message has 64 parameter formats but 0
+ * parameters` (the count wraps). An array is one parameter at any size, and
+ * the plan is the same index lookup.
+ *
+ * Only where the list scales with **people**. The other `inArray` calls in
+ * this codebase are bounded by a course's own structure or a customer's
+ * courses.
+ */
+function anyId(column: AnyColumn, ids: readonly string[]): SQL {
+  return sql`${column} = ANY(${sql.param([...ids])}::uuid[])`;
+}
 
 export interface AdminCourseRow {
   id: string;
@@ -499,7 +529,7 @@ export class AdminRepository implements AdminRepositoryPort {
         updatedAt: contentProgress.updatedAt,
       })
       .from(contentProgress)
-      .where(inArray(contentProgress.enrolmentId, [...enrolmentIds]));
+      .where(anyId(contentProgress.enrolmentId, enrolmentIds));
 
     const grouped = new Map<string, ProgressRow[]>();
     for (const { enrolmentId, ...progress } of rows) {
@@ -516,7 +546,7 @@ export class AdminRepository implements AdminRepositoryPort {
     const rows = await this.db
       .selectDistinct({ enrolmentId: evaluationResponses.enrolmentId })
       .from(evaluationResponses)
-      .where(inArray(evaluationResponses.enrolmentId, [...enrolmentIds]));
+      .where(anyId(evaluationResponses.enrolmentId, enrolmentIds));
 
     return new Set(rows.map((row) => row.enrolmentId));
   }
@@ -535,7 +565,7 @@ export class AdminRepository implements AdminRepositoryPort {
     const rows = await this.db
       .select({ userId: efnProfiles.userId, efn: efnProfiles.efn })
       .from(efnProfiles)
-      .where(inArray(efnProfiles.userId, [...userIds]));
+      .where(anyId(efnProfiles.userId, userIds));
 
     return new Map(rows.map((row) => [row.userId, row.efn]));
   }
@@ -554,7 +584,7 @@ export class AdminRepository implements AdminRepositoryPort {
         reportDueAt: eivSubmissions.reportDueAt,
       })
       .from(eivSubmissions)
-      .where(inArray(eivSubmissions.enrolmentId, [...enrolmentIds]));
+      .where(anyId(eivSubmissions.enrolmentId, enrolmentIds));
 
     return new Map(rows.map((row) => [row.enrolmentId, row]));
   }
@@ -576,7 +606,7 @@ export class AdminRepository implements AdminRepositoryPort {
         nextAttemptAt: certificates.deliveryNextAttemptAt,
       })
       .from(certificates)
-      .where(inArray(certificates.enrolmentId, [...enrolmentIds]));
+      .where(anyId(certificates.enrolmentId, enrolmentIds));
 
     return new Map(rows.map((row) => [row.enrolmentId, row]));
   }

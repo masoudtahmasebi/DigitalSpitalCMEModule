@@ -43,6 +43,7 @@ import type { AppConfig } from "../../config/config.js";
 import { AppError } from "../../shared/problem-details.js";
 import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { StaffService } from "./staff.service.js";
+import { UuidParam } from "../../shared/request-params.js";
 
 const ROLE = z.enum([
   "course_editor",
@@ -169,7 +170,7 @@ export class StaffAccountsController {
   @HttpCode(204)
   @RateLimit("staffPasswordSet")
   async setPassword(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @Body() body: unknown,
     @Req() request: Request,
   ): Promise<void> {
@@ -185,7 +186,7 @@ export class StaffAccountsController {
   @Post(":id/scope")
   @HttpCode(204)
   async setScope(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @Body() body: unknown,
     @Req() request: Request,
   ): Promise<void> {
@@ -197,7 +198,7 @@ export class StaffAccountsController {
   @Post(":id/disabled")
   @HttpCode(204)
   async setDisabled(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @Body() body: unknown,
     @Req() request: Request,
   ): Promise<void> {
@@ -228,7 +229,7 @@ export class StaffAccountsController {
   @Post(":id/second-factor/reset")
   @HttpCode(204)
   async resetSecondFactor(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @Req() request: Request,
   ): Promise<void> {
     const profile = request.staffProfile;
@@ -247,7 +248,7 @@ export class StaffAccountsController {
   @Post(":id/sign-out-everywhere")
   @HttpCode(204)
   async signOutEverywhere(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @Req() request: Request,
   ): Promise<void> {
     await this.service.signOutEverywhere(id, actorScope(request));
