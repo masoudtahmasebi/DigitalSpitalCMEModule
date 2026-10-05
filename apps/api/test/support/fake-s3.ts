@@ -305,9 +305,12 @@ export async function startFakeS3(): Promise<FakeS3> {
       });
       response.setHeader("content-type", "application/xml");
       record(200, key);
+      // No `<Key>`: real S3 echoes it, but our client reads only `UploadId`
+      // here (`object-storage.ts`), and echoing a caller-supplied value back
+      // is the reflected-XSS shape CodeQL flags even when escaped (P250-02).
       response.end(
         `<?xml version="1.0" encoding="UTF-8"?><InitiateMultipartUploadResult>` +
-          `<Bucket>${CREDENTIALS.bucket}</Bucket><Key>${escapeXml(key)}</Key>` +
+          `<Bucket>${CREDENTIALS.bucket}</Bucket>` +
           `<UploadId>${id}</UploadId></InitiateMultipartUploadResult>`,
       );
       return true;
@@ -410,9 +413,10 @@ export async function startFakeS3(): Promise<FakeS3> {
           });
           uploads.delete(uploadId);
           record(200, key);
+          // No `<Key>`, for the reason given at CreateMultipartUpload.
           response.end(
-            `<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult>` +
-              `<Key>${escapeXml(key)}</Key></CompleteMultipartUploadResult>`,
+            `<?xml version="1.0" encoding="UTF-8"?>` +
+              `<CompleteMultipartUploadResult></CompleteMultipartUploadResult>`,
           );
         });
         return true;
