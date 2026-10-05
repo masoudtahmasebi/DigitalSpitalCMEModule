@@ -40,7 +40,7 @@ re-checked.
 | SEC-3                      | medium | `jwks.provider.ts:58`, `:95`                                                | Every verified token triggers a JWKS fetch                                                                      |
 | ~~RUN-1~~ fixed in P249-01 | medium | `problem-details.filter.ts:167`                                             | Oversize body answers 500, not 413; framework 404 text echoes the query string                                  |
 | RUN-3                      | medium | `db.module.ts:180`                                                          | Redis has no command timeout; 31 rate-limited routes 500 when Redis is down                                     |
-| RUN-4                      | medium | `db.module.ts:242`; `main.ts:26`                                            | Pools close before the HTTP server on shutdown; in-flight scheduler ticks not awaited                           |
+| ~~RUN-4~~ fixed in P249-04 | medium | `db.module.ts:242`; `main.ts:26`                                            | Pools close before the HTTP server on shutdown; in-flight scheduler ticks not awaited                           |
 | TEST-4                     | medium | `eiv-admin.integration.test.ts`                                             | EIV admin routes tested at service level only; guards and response bodies untested                              |
 | TEST-5                     | medium | `test/support/fake-s3.ts`                                                   | Multipart upload (every file ≥ 32 MiB) has no integration test                                                  |
 | SEC-4                      | low    | `staff-auth.controller.ts:224`, `:328`                                      | Staff login and TOTP verify have no per-IP throttle                                                             |
@@ -51,8 +51,11 @@ re-checked.
 
 - Department scope on participant password reset (`isMember` is customer-wide).
 - A key removed from Keycloak may still verify for up to `JWKS_CACHE_TTL_SEC`.
-- Duplicate EIV filing if a submission succeeds and its result row cannot be
-  written during shutdown.
+- ~~Duplicate EIV filing if a submission succeeds and its result row cannot be
+  written during shutdown.~~ settled in P249-04: no duplicate filing — EIV is
+  idempotent per `(EFN, VNR)` and a repeat answers 200, recorded as success
+  (`eiv-client/src/client.ts:27`, `:261`; `eiv.service.ts:227`); the sweep is
+  now awaited on shutdown, so the window no longer opens on an orderly stop.
 - `listEnrolments` has no LIMIT and one `inArray` of every id.
 - ~~`db.module.ts:99` justifies the 120 s idle timeout with the false "2 GB
   upload" claim recorded in CLAUDE.md §11.~~ settled in P249-02: the claim was

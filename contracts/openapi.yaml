@@ -14,7 +14,8 @@
 # - Any operation may also answer, as a problem document and undocumented per
 #   operation: 413 for a body over the size limit, 415 for a body the parser
 #   refuses, 404 for an unknown route (detail "Cannot <METHOD> <path>", never
-#   the query) — P249-01.
+#   the query) — P249-01; and 503 with Retry-After and Connection: close while
+#   the process is shutting down — P249-04.
 
 openapi: 3.1.0
 

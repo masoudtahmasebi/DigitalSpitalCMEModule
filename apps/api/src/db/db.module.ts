@@ -15,7 +15,7 @@ import {
   Inject,
   Logger,
   Module,
-  type OnModuleDestroy,
+  type OnApplicationShutdown,
   type OnModuleInit,
 } from "@nestjs/common";
 import type { Pool } from "pg";
@@ -27,6 +27,7 @@ import { RateLimiter, RedisRateLimitStore } from "../shared/rate-limit.js";
 import { guardReentry } from "./pool-reentry.js";
 import { Metrics } from "../observability/metrics.js";
 import { ObservabilityModule } from "../observability/observability.module.js";
+import { ShutdownGate } from "../shared/shutdown-gate.js";
 
 /**
  * One set of pool settings, shared by both pools (P142-01).
@@ -201,10 +202,12 @@ function pgPool(config: AppConfig, options: { max: number; name: string }) {
       useFactory: (redis: Redis) => new RateLimiter(new RedisRateLimitStore(redis)),
       inject: [REDIS_CLIENT],
     },
+    // Here because it is the other half of the pools' shutdown order (P249-04).
+    ShutdownGate,
   ],
-  exports: [APP_CONFIG, PG_POOL, PG_SIDE_POOL, REDIS_CLIENT, RateLimiter],
+  exports: [APP_CONFIG, PG_POOL, PG_SIDE_POOL, REDIS_CLIENT, RateLimiter, ShutdownGate],
 })
-export class DbModule implements OnModuleInit, OnModuleDestroy {
+export class DbModule implements OnModuleInit, OnApplicationShutdown {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
     @Inject(PG_SIDE_POOL) private readonly sidePool: Pool,
@@ -251,8 +254,16 @@ export class DbModule implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Closes cleanly on shutdown so a redeploy does not orphan connections. */
-  async onModuleDestroy(): Promise<void> {
+  /**
+   * Closes cleanly on shutdown so a redeploy does not orphan connections.
+   *
+   * In `onApplicationShutdown` — Nest's **last** phase, after the HTTP server
+   * has closed and every scheduler's `onModuleDestroy` has awaited its sweep —
+   * not `onModuleDestroy`, its first (P249-04, RUN-4). Ended in the first
+   * phase, the pools were gone while the server still accepted requests, and
+   * each one answered 500. `ShutdownGate` answers 503 for that window instead.
+   */
+  async onApplicationShutdown(): Promise<void> {
     await Promise.allSettled([this.pool.end(), this.sidePool.end(), this.redis.quit()]);
   }
 }
