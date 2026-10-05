@@ -5457,6 +5457,26 @@ export interface components {
             };
         };
         /**
+         * @description The rate limiter's store (Redis) could not be asked, and this route
+         *     refuses rather than serve unthrottled (P249-03). Carries `Retry-After`.
+         *
+         *     Only routes whose limit is a security control answer this — sign-in,
+         *     password reset and change, invitations, credential minting, outbound
+         *     mail, erasure — because an unthrottled sign-in during a Redis outage
+         *     is an open door for guessing. Learning routes (progress, quiz,
+         *     completion) fail open instead: a physician losing watch time to our
+         *     outage is the worse failure there.
+         */
+        RateLimitUnavailable: {
+            headers: {
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
+        /**
          * @description An interface this platform does not own refused or could not be reached
          *     — today, only EIV-FOBI.
          *
@@ -7424,6 +7444,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["RateLimitUnavailable"];
         };
     };
     adminResetParticipantPassword: {
@@ -7481,6 +7502,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            503: components["responses"]["RateLimitUnavailable"];
         };
     };
     adminSetParticipantDisabled: {
@@ -7654,6 +7676,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["RateLimitUnavailable"];
         };
     };
     participantSignIn: {
@@ -7733,6 +7756,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            503: components["responses"]["RateLimitUnavailable"];
         };
     };
     participantSignOut: {
@@ -7876,6 +7900,7 @@ export interface operations {
                 content?: never;
             };
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["RateLimitUnavailable"];
         };
     };
     confirmParticipantPasswordReset: {
@@ -7932,6 +7957,7 @@ export interface operations {
             };
             400: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["RateLimitUnavailable"];
         };
     };
     changeParticipantPassword: {
@@ -7988,6 +8014,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["RateLimitUnavailable"];
         };
     };
     adminCheckEivConnection: {
@@ -8664,6 +8691,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            503: components["responses"]["RateLimitUnavailable"];
         };
     };
     adminListCertificates: {
@@ -9112,6 +9140,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["RateLimitUnavailable"];
         };
     };
     adminSetStaffPassword: {
@@ -9143,6 +9172,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["RateLimitUnavailable"];
         };
     };
     adminSetStaffScope: {
