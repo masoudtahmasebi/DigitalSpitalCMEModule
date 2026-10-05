@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mayRevealCorrectAnswers,
+  meetsPassThreshold,
   minimumCorrectAnswers,
   scoreQuiz,
   UnknownQuestionError,
@@ -151,6 +152,59 @@ describe("determinism", () => {
     expect(scoreQuiz(mediceQuiz, answers, 70)).toEqual(
       scoreQuiz(mediceQuiz, answers, 70),
     );
+  });
+});
+
+describe("meetsPassThreshold (P248-01)", () => {
+  it("passes a score equal to the threshold", () => {
+    expect(meetsPassThreshold(70, 70)).toBe(true);
+  });
+
+  it("fails a score one below the threshold", () => {
+    expect(meetsPassThreshold(69, 70)).toBe(false);
+  });
+
+  it("passes a score one above the threshold", () => {
+    expect(meetsPassThreshold(71, 70)).toBe(true);
+  });
+
+  it("passes 0 against a threshold of 0", () => {
+    expect(meetsPassThreshold(0, 0)).toBe(true);
+  });
+
+  it("fails 0 against a threshold of 1", () => {
+    expect(meetsPassThreshold(0, 1)).toBe(false);
+  });
+
+  it("passes 100 against a threshold of 100, and fails 99", () => {
+    expect(meetsPassThreshold(100, 100)).toBe(true);
+    expect(meetsPassThreshold(99, 100)).toBe(false);
+  });
+
+  it("is the rule scoreQuiz applies, at every score and threshold", () => {
+    // Two questions give 0, 50 and 100; three give 0, 33, 66 and 100. Every
+    // threshold 0–100 against each: `passed` must be exactly this function,
+    // with the empty-quiz exception and nothing else.
+    for (const total of [1, 2, 3, 11]) {
+      const questions = Array.from({ length: total }, (_, i) => single(`q${i}`, "a"));
+      for (let correct = 0; correct <= total; correct += 1) {
+        const answers = questions.map((q, i) => ({
+          questionId: q.id,
+          selectedOptionIds: [i < correct ? "a" : "b"],
+        }));
+        for (let threshold = 0; threshold <= 100; threshold += 1) {
+          const result = scoreQuiz(questions, answers, threshold);
+          expect(result.passed).toBe(meetsPassThreshold(result.scorePercent, threshold));
+        }
+      }
+    }
+  });
+
+  it("does not pass an empty quiz even where the score would meet the threshold", () => {
+    // `scoreQuiz`'s own rule, kept outside this function: 0 meets a threshold
+    // of 0, and a quiz with no questions still passes nobody.
+    expect(meetsPassThreshold(0, 0)).toBe(true);
+    expect(scoreQuiz([], [], 0).passed).toBe(false);
   });
 });
 

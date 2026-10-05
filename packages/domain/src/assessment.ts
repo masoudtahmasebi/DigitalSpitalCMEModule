@@ -42,6 +42,31 @@ export class UnknownQuestionError extends Error {
 }
 
 /**
+ * Whether a score reaches the pass threshold (P248-01).
+ *
+ * One comparison, and it was written out in five places: `scoreQuiz` and
+ * `minimumCorrectAnswers` here, the re-attempt guard and the progress upsert in
+ * `assessment.service.ts`, and `hasPassedQuiz` in `learning.service.ts`. They
+ * agreed, and nothing made them — one of them turning `>=` into `>` would have
+ * failed every physician who scored exactly 70 % on a 70 % exam on one screen
+ * and passed them on another (CLAUDE.md §4 invariant 6).
+ *
+ * Inclusive: a score **equal to** the threshold passes. That is the rule the
+ * MEDICE configuration above is stated in ("pass at 70 %"), and what every
+ * copy already did.
+ *
+ * Deliberately not the whole of `passed`: a quiz with no questions passes
+ * nobody, whatever the threshold (`scoreQuiz`), and that is a fact about the
+ * quiz, not about the comparison.
+ */
+export function meetsPassThreshold(
+  scorePercent: number,
+  passThresholdPercent: number,
+): boolean {
+  return scorePercent >= passThresholdPercent;
+}
+
+/**
  * Score an attempt.
  *
  * Multi-choice is an **exact set match** — no partial credit. A selection that
@@ -97,7 +122,7 @@ export function scoreQuiz(
     correctCount,
     totalCount,
     scorePercent,
-    passed: totalCount > 0 && scorePercent >= passThresholdPercent,
+    passed: totalCount > 0 && meetsPassThreshold(scorePercent, passThresholdPercent),
     perQuestion,
   };
 }
@@ -167,7 +192,11 @@ export function minimumCorrectAnswers(
   if (totalCount <= 0) return null;
 
   for (let correct = 0; correct <= totalCount; correct += 1) {
-    if (Math.floor((correct / totalCount) * 100) >= passThresholdPercent) return correct;
+    if (
+      meetsPassThreshold(Math.floor((correct / totalCount) * 100), passThresholdPercent)
+    ) {
+      return correct;
+    }
   }
   return null;
 }

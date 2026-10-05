@@ -6514,7 +6514,16 @@ components:
           description: |
             Last four digits only, the rest replaced with bullets. The whole
             value is never returned to any staff role (ADR-0004).
-        watchedPercent: { type: integer, minimum: 0, maximum: 100 }
+        watchedPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: |
+            The share of the course's video the learner has watched — the same
+            figure as `ParticipantRow.watchedPercent` and the learner's own
+            `achievedWatchPercent`, computed by the one rollup (P248-01). It
+            was an average over every progress row, quiz rows included, until
+            then.
         quizBestPercent: { type: [integer, "null"], minimum: 0, maximum: 100 }
         completedAt: { type: [string, "null"], format: date-time }
         submissionStage:

@@ -15,6 +15,7 @@
  * one layer out, even though this file is allowed to import SDK types.
  */
 
+import { meetsPassThreshold } from "@ds/domain";
 import type {
   ContentKind,
   CourseDetail,
@@ -391,7 +392,9 @@ export function passedQuizScore(
   // of 0 the difference is a learner told they passed and a learner told
   // nothing at all.
   if (score === undefined) return undefined;
-  return score >= state.passThresholdPercent ? score : undefined;
+  // The domain's comparison, not a copy of it (P248-01): the API's re-attempt
+  // guard and this verdict are the same function over the same live value.
+  return meetsPassThreshold(score, state.passThresholdPercent) ? score : undefined;
 }
 
 export function playbackDuration(authoredSec: number | null, elementSec: number): number {

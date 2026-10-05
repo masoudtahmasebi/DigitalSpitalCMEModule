@@ -521,9 +521,18 @@ export class AdminService {
   async listParticipants(slug: string, now: Date): Promise<ParticipantList> {
     const course = await this.requireCourse(slug);
 
-    const [tree, enrolments] = await Promise.all([
+    const [tree, enrolments, hasEvaluation] = await Promise.all([
       this.learning.findCourseTree(course.id),
       this.repository.listEnrolments(course.id),
+      /*
+       * Whether the course asks anything (P206-01), read once for the whole
+       * list (P248-01). Without it the rollup fell back to "yes", and for a
+       * course with no questions every finished physician was "nicht
+       * zertifiziert" here — and in the CSV built from these rows — while their
+       * own screen said they were done. The learner's `buildState` reads the
+       * same method.
+       */
+      this.learning.hasEvaluationQuestions(course.id),
     ]);
 
     const enrolmentIds = enrolments.map((row) => row.enrolmentId);
@@ -566,6 +575,7 @@ export class AdminService {
         passThresholdPercent: enrolment.passThresholdPercent,
         efnPresent,
         evaluationSubmitted,
+        hasEvaluation,
         cmePoints: enrolment.cmePoints,
       });
 
