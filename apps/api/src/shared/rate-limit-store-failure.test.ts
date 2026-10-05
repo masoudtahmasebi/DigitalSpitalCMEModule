@@ -13,7 +13,7 @@
  * unthrottled guessing door for the length of the next Redis outage.
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExecutionContext } from "@nestjs/common";
@@ -118,10 +118,12 @@ function rateLimitNamesInSource(): string[] {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const names: string[] = [];
   const walk = (dir: string) => {
-    for (const entry of readdirSync(dir)) {
-      const path = join(dir, entry);
-      if (statSync(path).isDirectory()) walk(path);
-      else if (path.endsWith(".ts") && !path.endsWith(".test.ts")) {
+    // The entry's type comes from the same directory read, so no separate
+    // `stat` decides what `readFileSync` then opens (CodeQL js/file-system-race).
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.isFile() && path.endsWith(".ts") && !path.endsWith(".test.ts")) {
         for (const match of readFileSync(path, "utf8").matchAll(
           /@RateLimit\("(\w+)"\)/gu,
         )) {
