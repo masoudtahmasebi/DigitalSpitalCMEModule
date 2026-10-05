@@ -205,6 +205,7 @@ export type { CourseRollup, ModuleCompletion, ProgressSummary } from "./progress
 
 export {
   mayRevealCorrectAnswers,
+  meetsPassThreshold,
   minimumCorrectAnswers,
   scoreQuiz,
   UnknownQuestionError,

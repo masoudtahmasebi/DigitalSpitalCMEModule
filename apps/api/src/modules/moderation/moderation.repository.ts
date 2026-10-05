@@ -45,6 +45,27 @@ export interface LearnerSummary {
   readonly certificateStatus: string | null;
 }
 
+/**
+ * One Lernende row as the database holds it, before the watched figure is
+ * computed (P248-01).
+ *
+ * Everything `LearnerSummary` carries except `watchedPercent`, plus what the
+ * one rollup path needs to compute it: the course, its live thresholds and
+ * points (§9.10b — the course is the home of what the event is), and the two
+ * completion timestamps. The figure itself is not SQL any more — see
+ * `ModerationService.listLearners`.
+ */
+export interface LearnerRow extends Omit<LearnerSummary, "watchedPercent"> {
+  readonly courseId: string;
+  readonly requiredWatchPercent: number;
+  readonly passThresholdPercent: number;
+  readonly cmePoints: number | null;
+  /** Presence only. The value never leaves this repository. */
+  readonly efnPresent: boolean;
+  /** Either timestamp is a recorded completion (P167-01, P174-01). */
+  readonly alreadyCompleted: boolean;
+}
+
 export interface CertificateRow {
   readonly id: string;
   readonly enrolmentId: string;
@@ -70,7 +91,7 @@ export interface CertificateRow {
 }
 
 export interface ModerationRepositoryPort {
-  listLearners(courseSlug: string | undefined): Promise<readonly LearnerSummary[]>;
+  listLearners(courseSlug: string | undefined): Promise<readonly LearnerRow[]>;
   pendingSubmissionsFor(userId: string): Promise<number>;
   findEnrolment(
     enrolmentId: string,
@@ -117,37 +138,51 @@ END`;
 export class ModerationRepository implements ModerationRepositoryPort {
   constructor(private readonly db: Db) {}
 
-  async listLearners(courseSlug: string | undefined): Promise<readonly LearnerSummary[]> {
+  /**
+   * The Lernende list, without its watched figure (P248-01).
+   *
+   * `watched_percent` used to be computed here as `avg(content_progress.
+   * watched_percent)` — every progress row of the enrolment, quiz and text rows
+   * included at their column default of 0. One fully watched video and one
+   * passed quiz read **50** here and **100** on the Teilnehmende screen and the
+   * learner's own. The figure now comes from `summariseEnrolment`, the one
+   * rollup path (CLAUDE.md §4 invariant 6), in the service.
+   */
+  async listLearners(courseSlug: string | undefined): Promise<readonly LearnerRow[]> {
     const result = await this.db.execute<{
       user_id: string;
       enrolment_id: string;
+      course_id: string;
       course_slug: string;
       course_title: string;
+      required_watch_percent: number;
+      pass_threshold_percent: number;
+      cme_points: number | null;
       attested_name: string | null;
       efn: string | null;
-      watched_percent: number;
       quiz_best_percent: number | null;
       completed_at: Date | string | null;
+      course_completed_at: Date | string | null;
       stage: SubmissionStage;
       certificate_status: string | null;
     }>(sql`
       SELECT e.user_id,
              e.id                              AS enrolment_id,
+             k.id                              AS course_id,
              k.slug                            AS course_slug,
              k.title                           AS course_title,
+             k.required_watch_percent,
+             k.pass_threshold_percent,
+             k.cme_points,
              e.attested_name,
              p.efn,
-             COALESCE((
-               SELECT round(avg(cp.watched_percent))::int
-                 FROM content_progress cp
-                WHERE cp.enrolment_id = e.id
-             ), 0)                             AS watched_percent,
              (
                SELECT max(qa.score_percent)::int
                  FROM quiz_attempts qa
                 WHERE qa.enrolment_id = e.id
              )                                 AS quiz_best_percent,
              e.completed_at,
+             e.course_completed_at,
              ${STAGE_SQL}                      AS stage,
              c.status::text                    AS certificate_status
         FROM enrolments e
@@ -163,13 +198,18 @@ export class ModerationRepository implements ModerationRepositoryPort {
     return result.rows.map((row) => ({
       userId: row.user_id,
       enrolmentId: row.enrolment_id,
+      courseId: row.course_id,
       courseSlug: row.course_slug,
       courseTitle: row.course_title,
+      requiredWatchPercent: row.required_watch_percent,
+      passThresholdPercent: row.pass_threshold_percent,
+      cmePoints: row.cme_points,
       attestedName: row.attested_name,
       // Masked here, at the boundary, so no caller can accidentally hold the
       // real value — it never leaves this method.
       maskedEfn: maskEfn(row.efn),
-      watchedPercent: row.watched_percent,
+      efnPresent: row.efn !== null,
+      alreadyCompleted: row.completed_at !== null || row.course_completed_at !== null,
       quizBestPercent: row.quiz_best_percent,
       completedAt: isoOrNull(row.completed_at),
       submissionStage: row.stage,

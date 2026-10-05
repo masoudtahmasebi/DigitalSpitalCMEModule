@@ -4463,6 +4463,13 @@ export interface components {
              *     value is never returned to any staff role (ADR-0004).
              */
             maskedEfn: string | null;
+            /**
+             * @description The share of the course's video the learner has watched — the same
+             *     figure as `ParticipantRow.watchedPercent` and the learner's own
+             *     `achievedWatchPercent`, computed by the one rollup (P248-01). It
+             *     was an average over every progress row, quiz rows included, until
+             *     then.
+             */
             watchedPercent: number;
             quizBestPercent: number | null;
             /** Format: date-time */

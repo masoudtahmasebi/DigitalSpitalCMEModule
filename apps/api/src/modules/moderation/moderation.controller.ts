@@ -63,6 +63,8 @@ import {
   type CertificateArchivePort,
 } from "../certificate/certificate.archive.js";
 import { CertificateService } from "../certificate/certificate.service.js";
+import { AdminRepository } from "../admin/admin.repository.js";
+import { LearningRepository } from "../learning/learning.repository.js";
 import {
   ModerationRepository,
   SubjectErasureRepository,
@@ -352,10 +354,22 @@ export class ModerationController {
    * tenants and `erase_subject` cannot run inside one.
    */
   private service(db: Db): ModerationService {
+    const learning = new LearningRepository(db);
+    const admin = new AdminRepository(db);
     return new ModerationService(
       new ModerationRepository(db),
       new SubjectErasureRepository(this.sidePool),
       new AuditService(this.sidePool),
+      // The Lernende list's watched figure, through the one rollup path
+      // (P248-01): the learner's own tree and question reads, the Teilnehmende
+      // list's batched progress reads — both inside this request's tenant
+      // transaction, so RLS bounds them as it bounds everything else here.
+      {
+        findCourseTree: (courseId) => learning.findCourseTree(courseId),
+        hasEvaluationQuestions: (courseId) => learning.hasEvaluationQuestions(courseId),
+        findProgressByEnrolment: (ids) => admin.findProgressByEnrolment(ids),
+        findEvaluationSubmitted: (ids) => admin.findEvaluationSubmitted(ids),
+      },
       this.objectErasure,
       // The same `Db` the rest of this service uses, so the render happens
       // inside the request's tenant transaction and a certificate belonging to

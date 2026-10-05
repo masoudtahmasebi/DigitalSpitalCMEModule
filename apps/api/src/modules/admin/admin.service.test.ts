@@ -199,6 +199,10 @@ function build(
 
   const learning = {
     findCourseTree: async () => tree,
+    // The list now reads it (P248-01). `true` is what these cases always ran
+    // under — the rollup's `?? true` when nothing was passed — so no assertion
+    // below changes meaning.
+    hasEvaluationQuestions: async () => true,
   } as unknown as LearningRepositoryPort;
 
   const service = new AdminService(

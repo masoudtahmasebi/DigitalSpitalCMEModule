@@ -26,6 +26,9 @@ import {
 import type { AuditServicePort } from "../../audit/audit.service.js";
 import { AppError } from "../../shared/problem-details.js";
 import type { ObjectErasureResult } from "../certificate/object-erasure.service.js";
+import type { AdminRepositoryPort } from "../admin/admin.repository.js";
+import type { LearningRepositoryPort } from "../learning/learning.repository.js";
+import { summariseEnrolment } from "../learning/learning.service.js";
 import {
   SubmissionStillOpenError,
   type CertificateRow,
@@ -38,6 +41,22 @@ export interface ModeratorContext {
   readonly customerId: string;
   readonly staffUserId: string;
 }
+
+/**
+ * What the Lernende list needs to compute its watched figure through the one
+ * rollup path (P248-01).
+ *
+ * Two existing repositories' methods, not new queries: the course tree and the
+ * question check are the learner's own (`buildState`), the batched progress and
+ * evaluation reads are the Teilnehmende list's (`listParticipants`). A third
+ * reading of `content_progress` written for this screen is exactly what ARCH-2
+ * was (CLAUDE.md §4 invariant 6).
+ */
+export type LearnerFiguresPort = Pick<
+  LearningRepositoryPort,
+  "findCourseTree" | "hasEvaluationQuestions"
+> &
+  Pick<AdminRepositoryPort, "findProgressByEnrolment" | "findEvaluationSubmitted">;
 
 /** Just the sweep, so the moderation service does not depend on a presigner. */
 export interface ObjectErasurePort {
@@ -66,6 +85,8 @@ export class ModerationService {
     private readonly repository: ModerationRepositoryPort,
     private readonly erasure: SubjectErasureRepository,
     private readonly audit: AuditServicePort,
+    /** The rollup's inputs for the Lernende list (P248-01). */
+    private readonly figures: LearnerFiguresPort,
     /**
      * Discharges the object deletions `erase_subject` queued (P60-01).
      *
@@ -84,8 +105,75 @@ export class ModerationService {
     private readonly certificates?: StaffCertificateRenderPort,
   ) {}
 
-  listLearners(courseSlug: string | undefined): Promise<readonly LearnerSummary[]> {
-    return this.repository.listLearners(courseSlug);
+  /**
+   * The Lernende list (P12-05), its "Angesehen" figure from `summariseEnrolment`
+   * (P248-01).
+   *
+   * It was an SQL average of every progress row, which disagreed with the
+   * Teilnehmende screen and the learner's own on any course that has a quiz:
+   * one fully watched video and one passed quiz read 50 here and 100 there.
+   * Now it is the same function over the same inputs — the course tree, the
+   * stored rows, and the course's own thresholds — so the two screens cannot
+   * tell an operator two different numbers about one physician.
+   *
+   * The list can span every course in the tenant, so the per-course reads
+   * (tree, whether it asks an evaluation) happen once per distinct course and
+   * the per-enrolment reads are each one batched query.
+   */
+  async listLearners(courseSlug: string | undefined): Promise<readonly LearnerSummary[]> {
+    const rows = await this.repository.listLearners(courseSlug);
+    if (rows.length === 0) return [];
+
+    const enrolmentIds = rows.map((row) => row.enrolmentId);
+    const courseIds = [...new Set(rows.map((row) => row.courseId))];
+
+    const [progress, evaluated, courses] = await Promise.all([
+      this.figures.findProgressByEnrolment(enrolmentIds),
+      this.figures.findEvaluationSubmitted(enrolmentIds),
+      Promise.all(
+        courseIds.map(async (courseId) => {
+          const [tree, hasEvaluation] = await Promise.all([
+            this.figures.findCourseTree(courseId),
+            this.figures.hasEvaluationQuestions(courseId),
+          ]);
+          return [courseId, { tree, hasEvaluation }] as const;
+        }),
+      ),
+    ]);
+    const byCourse = new Map(courses);
+
+    return rows.map((row) => {
+      const course = byCourse.get(row.courseId);
+      if (course === undefined) {
+        // Unreachable: every course id above came from these rows.
+        throw new Error(`listLearners: no course tree read for course=${row.courseId}`);
+      }
+      const figures = summariseEnrolment({
+        tree: course.tree,
+        stored: progress.get(row.enrolmentId) ?? [],
+        alreadyCompleted: row.alreadyCompleted,
+        requiredWatchPercent: row.requiredWatchPercent,
+        passThresholdPercent: row.passThresholdPercent,
+        efnPresent: row.efnPresent,
+        evaluationSubmitted: evaluated.has(row.enrolmentId),
+        hasEvaluation: course.hasEvaluation,
+        cmePoints: row.cmePoints,
+      });
+
+      return {
+        userId: row.userId,
+        enrolmentId: row.enrolmentId,
+        courseSlug: row.courseSlug,
+        courseTitle: row.courseTitle,
+        attestedName: row.attestedName,
+        maskedEfn: row.maskedEfn,
+        watchedPercent: figures.achievedWatchPercent,
+        quizBestPercent: row.quizBestPercent,
+        completedAt: row.completedAt,
+        submissionStage: row.submissionStage,
+        certificateStatus: row.certificateStatus,
+      };
+    });
   }
 
   listCertificates(courseSlug: string | undefined): Promise<readonly CertificateRow[]> {
