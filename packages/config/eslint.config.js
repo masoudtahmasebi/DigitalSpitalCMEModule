@@ -28,6 +28,9 @@ export default [
       // Ad-hoc local smoke/debug scripts, never committed (see .gitignore).
       "**/*.local.mjs",
       "**/*.local.ts",
+      // Vendored third-party Claude Code skills (P244-01), kept byte-identical
+      // to their pinned upstream commit; see .claude/skills/THIRD-PARTY.md.
+      ".claude/skills/nestjs-*/**",
       // The widget bundle, copied into each host adapter by
       // `scripts/bundle-widget.mjs`. It is a build artefact of apps/widget —
       // linting it lints React, twice.

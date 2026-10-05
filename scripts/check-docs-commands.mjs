@@ -67,6 +67,14 @@ const MINIMUM_COMMANDS = 50;
 const HISTORY = [/^docs\/backlog\//u, /^docs\/adr\//u, /CHANGELOG/u];
 
 /**
+ * Third-party skills kept byte-identical to upstream (P244-01). Their commands
+ * are relative to the skill's own directory, which the agent resolves, not to
+ * the repository root this check reads from. Our note beside them,
+ * `.claude/skills/THIRD-PARTY.md`, is not vendored and is still checked.
+ */
+const VENDORED = [/^\.claude\/skills\/nestjs-[^/]+\//u];
+
+/**
  * pnpm's own verbs. `pnpm install` is not a script and never will be, so
  * looking for it in `package.json` would report every README as broken.
  */
@@ -215,7 +223,9 @@ function checkPnpm(file, line) {
 
 function checkNodeScript(file, line) {
   for (const match of line.matchAll(
-    /\b((?:[a-zA-Z0-9._-]+\/)*[a-zA-Z0-9._-]+\.mjs)\b/gu,
+    // Not `\b`: it sits between the dot and the name, so `.claude/x.mjs`
+    // was looked up as `claude/x.mjs` (P244-01).
+    /(?<![\w./-])((?:[a-zA-Z0-9._-]+\/)*[a-zA-Z0-9._-]+\.mjs)\b/gu,
   )) {
     const named = match[1];
     const candidates = named.includes("/") ? [named] : [join("scripts", named)];
@@ -268,7 +278,7 @@ function checkShell(file, line) {
 }
 
 const documents = tracked("*.md").filter(
-  (file) => !HISTORY.some((pattern) => pattern.test(file)),
+  (file) => ![...HISTORY, ...VENDORED].some((pattern) => pattern.test(file)),
 );
 
 for (const file of documents) {

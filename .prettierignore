@@ -12,3 +12,8 @@ infra/keycloak/realm-export.json
 # just built.
 wordpress/*/assets/ds-lms.js
 apps/portal/public/ds-lms.js
+
+# Vendored third-party skills (P244-01), kept byte-identical to the pinned
+# upstream commit so a later review can diff them against it. Our own note in
+# that directory, THIRD-PARTY.md, is still checked.
+.claude/skills/nestjs-*/
