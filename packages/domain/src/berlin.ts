@@ -63,6 +63,47 @@ export function endOfBerlinDay(date: BerlinDate): Date {
   return instant;
 }
 
+/**
+ * The first instant of a Berlin calendar day, as UTC (P243-01).
+ *
+ * One millisecond after the previous day's end, so the two can never leave a
+ * gap or overlap between them — a day boundary has exactly one answer.
+ */
+export function startOfBerlinDay(date: BerlinDate): Date {
+  return new Date(endOfBerlinDay(addCalendarDays(date, -1)).getTime() + 1);
+}
+
+/**
+ * A form's `YYYY-MM-DD`, or `undefined` for anything that is not a real date.
+ *
+ * Strict on purpose: `2026-02-30` is refused rather than normalised to
+ * 2 March, because a validity date silently moved by two days is exactly the
+ * kind of value that decides whether a physician may still finish a course.
+ */
+export function parseIsoDate(value: string): BerlinDate | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (match === null) return undefined;
+  const date = { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+  const check = addCalendarDays(date, 0);
+  return check.year === date.year && check.month === date.month && check.day === date.day
+    ? date
+    : undefined;
+}
+
+/**
+ * Whole Berlin calendar days from `from` to `to` — negative when `to` is
+ * earlier. "Seven days left" is a sentence about calendar days on a German
+ * wall, not about 168 hours.
+ */
+export function berlinDaysBetween(from: Date, to: Date): number {
+  const a = berlinDateOf(from);
+  const b = berlinDateOf(to);
+  return Math.round(
+    (Date.UTC(b.year, b.month - 1, b.day) - Date.UTC(a.year, a.month - 1, a.day)) /
+      86_400_000,
+  );
+}
+
 /** Berlin's UTC offset in milliseconds at a given instant. */
 function offsetMsAt(instant: Date): number {
   const parts = readParts(instant);

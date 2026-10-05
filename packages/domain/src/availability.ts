@@ -37,6 +37,14 @@
  * waiting for one.
  */
 
+import {
+  berlinDaysBetween,
+  endOfBerlinDay,
+  formatBerlinIsoDate,
+  parseIsoDate,
+  startOfBerlinDay,
+} from "./berlin.js";
+
 export type CourseAvailability =
   /** Being offered: in the catalogue, and open to new enrolments. */
   | "available"
@@ -123,4 +131,91 @@ export function invalidAvailabilityWindow(
   return window.validTo.getTime() < window.validFrom.getTime()
     ? "validTo_before_validFrom"
     : undefined;
+}
+
+/**
+ * How long before a course's last day the console starts saying so (P243-01).
+ *
+ * S14: a course stops being offered the moment its accreditation ends, and
+ * nothing said so in advance — the refusal was correct and nobody was told
+ * (§9.10). Ninety days because renewing an Anerkennung is a written application
+ * to the Ärztekammer and its answer, which is a matter of weeks; a warning that
+ * arrives with days to spare is a warning about something already decided.
+ *
+ * This is a presentation threshold, not an accreditation rule — it decides
+ * when an operator is told, never whether a physician may do anything.
+ */
+export const ENDING_SOON_DAYS = 90;
+
+export interface EndingSoon {
+  /** Berlin calendar days left after today; `0` on the last day itself. */
+  readonly daysLeft: number;
+  /** The stored end of the window, for the date on screen. */
+  readonly lastDay: Date;
+}
+
+/**
+ * Is this course still offered, but not for much longer?
+ *
+ * Only an `available` course is "ending": a draft or an unopened course is not
+ * reaching anybody yet, and an ended one already has its own badge. Asked of
+ * the same window `courseAvailability` reads, so the warning and the refusal it
+ * warns about cannot disagree about which day is the last (§4 invariant 6).
+ */
+export function courseEndingSoon(
+  window: AvailabilityWindow,
+  now: Date,
+): EndingSoon | undefined {
+  if (window.validTo === null) return undefined;
+  if (courseAvailability(window, now) !== "available") return undefined;
+
+  const daysLeft = berlinDaysBetween(now, window.validTo);
+  return daysLeft <= ENDING_SOON_DAYS ? { daysLeft, lastDay: window.validTo } : undefined;
+}
+
+/**
+ * The stored window for the dates typed into the console (P243-01).
+ *
+ * "Anerkennung gültig ab / bis" are German calendar days off a Bescheid. The
+ * console used to send `${date}T00:00:00.000Z`, which made "bis 12.10." end at
+ * 02:00 Berlin time on the 12th — the course stopped being offered, and stopped
+ * letting enrolled physicians advance, for almost all of the last day it was
+ * accredited for. The boundaries this file's header states are the ones this
+ * function produces: the first instant of the first day, the last of the last.
+ *
+ * An empty field is no limit. Anything that is not a date throws: the form's
+ * date input cannot produce one, so reaching it is a bug, not an input.
+ */
+export function windowFromDates(
+  validFrom: string,
+  validTo: string,
+): { validFrom: Date | null; validTo: Date | null } {
+  return {
+    validFrom: boundary(validFrom, startOfBerlinDay),
+    validTo: boundary(validTo, endOfBerlinDay),
+  };
+}
+
+/** The dates a form shows for a stored window — the Berlin day of each end. */
+export function datesOfWindow(window: { validFrom: Date | null; validTo: Date | null }): {
+  validFrom: string;
+  validTo: string;
+} {
+  return {
+    validFrom: window.validFrom === null ? "" : formatBerlinIsoDate(window.validFrom),
+    validTo: window.validTo === null ? "" : formatBerlinIsoDate(window.validTo),
+  };
+}
+
+function boundary(
+  value: string,
+  edge: (date: NonNullable<ReturnType<typeof parseIsoDate>>) => Date,
+): Date | null {
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  const date = parseIsoDate(trimmed);
+  if (date === undefined) {
+    throw new RangeError(`not a YYYY-MM-DD date: ${JSON.stringify(trimmed)}`);
+  }
+  return edge(date);
 }

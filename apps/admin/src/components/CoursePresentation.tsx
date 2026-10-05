@@ -30,6 +30,7 @@
 
 import { useEffect, useState } from "react";
 import type { AdminCourseDetail, ApiClient } from "@ds/sdk";
+import { datesOfWindow, windowFromDates } from "@ds/domain";
 import { useUnsavedChanges } from "../hooks.js";
 import { de } from "../locale/de.js";
 import { describeError } from "../api.js";
@@ -112,11 +113,12 @@ export function CoursePresentation(props: {
         heroImageUrl: emptyToNull(form.heroImageUrl),
         cmePoints: form.cmePoints.trim() === "" ? null : Number(form.cmePoints),
         cmeCategory: emptyToNull(form.cmeCategory),
-        // A date input gives `YYYY-MM-DD`; the API wants an instant. Midnight
-        // UTC rather than local, so the stored value does not shift by a day
-        // depending on which side of the German summer-time change it is read.
-        validFrom: toInstant(form.validFrom),
-        validTo: toInstant(form.validTo),
+        // A date input gives `YYYY-MM-DD`, a German calendar day off the
+        // Bescheid; the API wants instants. `windowFromDates` turns "bis
+        // 12.10." into the last instant of the 12th in Berlin — this used to
+        // send 00:00 UTC, which ended the course at 02:00 on its last
+        // accredited day (P243-01).
+        ...windowInstants(form.validFrom, form.validTo),
       });
       setSaved(true);
       // The server has it: there is nothing left to lose.
@@ -347,8 +349,13 @@ function initialForm(course: AdminCourseDetail) {
     heroImageUrl: course.heroImageUrl ?? "",
     cmePoints: course.cmePoints === null ? "" : String(course.cmePoints),
     cmeCategory: course.cmeCategory ?? "",
-    validFrom: dateInput(course.validFrom),
-    validTo: dateInput(course.validTo),
+    // The Berlin day of each end. Slicing the ISO string read the UTC day, so
+    // an end of 21:59:59.999Z showed right by accident and a start of 22:00Z —
+    // the first instant of the next Berlin day — showed a day early (P243-01).
+    ...datesOfWindow({
+      validFrom: course.validFrom === null ? null : new Date(course.validFrom),
+      validTo: course.validTo === null ? null : new Date(course.validTo),
+    }),
   };
 }
 
@@ -366,10 +373,13 @@ function emptyToNull(value: string): string | null {
 }
 
 /** `YYYY-MM-DD` for a date input, from the ISO instant the API returns. */
-function dateInput(iso: string | null): string {
-  return iso === null ? "" : (iso.slice(0, 10) ?? "");
-}
-
-function toInstant(value: string): string | null {
-  return value.trim() === "" ? null : `${value}T00:00:00.000Z`;
+function windowInstants(
+  validFrom: string,
+  validTo: string,
+): { validFrom: string | null; validTo: string | null } {
+  const window = windowFromDates(validFrom, validTo);
+  return {
+    validFrom: window.validFrom?.toISOString() ?? null,
+    validTo: window.validTo?.toISOString() ?? null,
+  };
 }

@@ -8,6 +8,9 @@ import {
   formatBerlinIsoDate,
   formatBerlinTime,
   BerlinFormatError,
+  berlinDaysBetween,
+  parseIsoDate,
+  startOfBerlinDay,
 } from "./berlin.js";
 
 describe("German presentation", () => {
@@ -237,5 +240,63 @@ describe("formatBerlinIsoDate — EIV's teilnahmedatum (P31-01)", () => {
       const expected = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       expect(formatBerlinIsoDate(instant)).toBe(expected);
     }
+  });
+});
+
+describe("Berlin day boundaries for a date typed into a form (P243-01)", () => {
+  it("parses a form's YYYY-MM-DD and refuses anything else", () => {
+    expect(parseIsoDate("2026-10-12")).toEqual({ year: 2026, month: 10, day: 12 });
+    expect(parseIsoDate("")).toBeUndefined();
+    expect(parseIsoDate("12.10.2026")).toBeUndefined();
+    expect(parseIsoDate("2026-02-30")).toBeUndefined();
+    expect(parseIsoDate("2026-13-01")).toBeUndefined();
+  });
+
+  it("starts a summer day at 22:00 UTC the evening before", () => {
+    expect(startOfBerlinDay({ year: 2026, month: 10, day: 12 }).toISOString()).toBe(
+      "2026-10-11T22:00:00.000Z",
+    );
+  });
+
+  it("starts a winter day at 23:00 UTC the evening before", () => {
+    expect(startOfBerlinDay({ year: 2026, month: 12, day: 1 }).toISOString()).toBe(
+      "2026-11-30T23:00:00.000Z",
+    );
+  });
+
+  it("starts the day the clocks go back at its own Berlin midnight", () => {
+    // 25.10.2026: midnight is still CEST, so 22:00 UTC on the 24th.
+    expect(startOfBerlinDay({ year: 2026, month: 10, day: 25 }).toISOString()).toBe(
+      "2026-10-24T22:00:00.000Z",
+    );
+  });
+
+  it("leaves no instant between one day's end and the next day's start", () => {
+    const end = endOfBerlinDay({ year: 2026, month: 3, day: 28 });
+    const next = startOfBerlinDay({ year: 2026, month: 3, day: 29 });
+    expect(next.getTime() - end.getTime()).toBe(1);
+  });
+
+  it("counts calendar days in Berlin, not 24-hour periods", () => {
+    // 01:30 Berlin on the 28th to 23:59 Berlin on the 29th is one day, though
+    // it is nearly 47 hours; and the far side of a DST change is not off by one.
+    expect(
+      berlinDaysBetween(
+        new Date("2026-07-27T23:30:00Z"),
+        new Date("2026-07-29T21:59:59.999Z"),
+      ),
+    ).toBe(1);
+    expect(
+      berlinDaysBetween(
+        new Date("2026-10-20T10:00:00Z"),
+        new Date("2026-10-27T10:00:00Z"),
+      ),
+    ).toBe(7);
+    expect(
+      berlinDaysBetween(
+        new Date("2026-10-12T10:00:00Z"),
+        new Date("2026-10-05T10:00:00Z"),
+      ),
+    ).toBe(-7);
   });
 });

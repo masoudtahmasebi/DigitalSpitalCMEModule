@@ -25,7 +25,12 @@
  * down along with every learner. Learners stay federated; operators do not.
  */
 
-import { courseAvailability, formatBerlinDate } from "@ds/domain";
+import {
+  courseAvailability,
+  courseEndingSoon,
+  formatBerlinDate,
+  type AvailabilityWindow,
+} from "@ds/domain";
 import { ToastProvider } from "./toasts.js";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type {
@@ -280,6 +285,46 @@ function withToasts(children: ReactNode): ReactNode {
  * Präsenz into two tabs. That is not a defect and not something
  * `courseAvailability` knows about, so it is said separately.
  */
+/** The domain's window, from the wire shape both the list and the course screen hold. */
+function availabilityWindowOf(course: {
+  status: string;
+  validFrom: string | null;
+  validTo: string | null;
+}): AvailabilityWindow {
+  // `?? null`: the contract always sends both, but a missing end read as
+  // `new Date(undefined)` would be an Invalid Date the Berlin formatter throws on.
+  const validFrom = course.validFrom ?? null;
+  const validTo = course.validTo ?? null;
+  return {
+    status: course.status === "published" ? "published" : "draft",
+    validFrom: validFrom === null ? null : new Date(validFrom),
+    validTo: validTo === null ? null : new Date(validTo),
+  };
+}
+
+/**
+ * The accreditation is about to end (P243-01, S14).
+ *
+ * On the course screen, above every tab, because the person who can act on it
+ * — whoever enters the renewed date — may never open the list. Rendered from
+ * the loaded course, so it disappears the moment a later date is saved.
+ */
+function EndingSoonNotice(props: { course: AdminCourseDetail; now: Date }) {
+  const endingSoon = courseEndingSoon(availabilityWindowOf(props.course), props.now);
+  if (endingSoon === undefined) return null;
+  return (
+    <Notice
+      tone="warning"
+      title={de.course.endingSoonTitle(
+        formatBerlinDate(endingSoon.lastDay),
+        endingSoon.daysLeft,
+      )}
+    >
+      {de.course.endingSoonBody(de.course.presentation, de.course.validTo)}
+    </Notice>
+  );
+}
+
 function VisibilityCell(props: {
   course: {
     status: string;
@@ -290,14 +335,8 @@ function VisibilityCell(props: {
   now: Date;
 }) {
   const { course } = props;
-  const state = courseAvailability(
-    {
-      status: course.status === "published" ? "published" : "draft",
-      validFrom: course.validFrom === null ? null : new Date(course.validFrom),
-      validTo: course.validTo === null ? null : new Date(course.validTo),
-    },
-    props.now,
-  );
+  const window = availabilityWindowOf(course);
+  const state = courseAvailability(window, props.now);
 
   if (state === "draft") {
     return (
@@ -328,9 +367,25 @@ function VisibilityCell(props: {
     );
   }
 
+  /*
+   * Still offered, but not for long (P243-01, S14). Asked of the same window
+   * as the state above, so the warning cannot name a different last day from
+   * the refusal it warns about.
+   */
+  const endingSoon = courseEndingSoon(window, props.now);
+
   return (
     <>
-      <Badge tone="ok">{de.courses.visibleNow}</Badge>
+      {endingSoon === undefined ? (
+        <Badge tone="ok">{de.courses.visibleNow}</Badge>
+      ) : (
+        <>
+          <Badge tone="warn">{de.courses.visibleEndingSoon(endingSoon.daysLeft)}</Badge>
+          <p className="mt-1 text-xs text-gray-500">
+            {de.courses.visibleEndingSoonWhy(formatBerlinDate(endingSoon.lastDay))}
+          </p>
+        </>
+      )}
       {course.deliveryType === "on_demand" ? null : (
         <p className="mt-1 text-xs text-gray-500">{de.courses.visibleOtherTab}</p>
       )}
@@ -1460,6 +1515,10 @@ function CourseScreen(props: {
         <Notice tone="error" title={de.error.title}>
           {problem}
         </Notice>
+      )}
+
+      {course === undefined ? null : (
+        <EndingSoonNotice course={course} now={new Date()} />
       )}
 
       <CourseTabContent

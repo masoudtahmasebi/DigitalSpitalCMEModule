@@ -1880,6 +1880,23 @@ export const german = {
     visibleEnded: (to: string): string => `Beendet am ${to}`,
     visibleNow: "Sichtbar",
     /**
+     * A course that is still offered, but not for long (P243-01, S14).
+     *
+     * On the day after its last accredited day a course disappears from the
+     * Fortbildungsbereich and every enrolled physician is refused — correctly,
+     * and until now with nobody told first. The row says so from
+     * `ENDING_SOON_DAYS` out, in the column an operator already reads for
+     * "who can see this".
+     */
+    visibleEndingSoon: (daysLeft: number): string =>
+      daysLeft === 0
+        ? "Sichtbar — heute letzter Tag"
+        : daysLeft === 1
+          ? "Sichtbar — endet morgen"
+          : `Sichtbar — endet in ${daysLeft} Tagen`,
+    visibleEndingSoonWhy: (lastDay: string): string =>
+      `Anerkennung gültig bis ${lastDay}.`,
+    /**
      * The fifth reason, which is not a date and not a status: the catalogue
      * splits On Demand from everything else into two tabs, so a Live- or
      * Präsenz-Fortbildung is published, in window, and on the tab nobody was
@@ -1947,6 +1964,23 @@ export const german = {
     validFrom: "Anerkennung gültig ab",
     validTo: "Anerkennung gültig bis",
     validityHint: "Aus dem Anerkennungsbescheid der Ärztekammer.",
+    /**
+     * The same warning on the course itself (P243-01). Says what happens, who
+     * acts, and where the new date goes once they have — §9.4: an operator
+     * told only that something ends has nothing to do next.
+     */
+    endingSoonTitle: (lastDay: string, daysLeft: number): string =>
+      daysLeft === 0
+        ? `Die Anerkennung endet heute, am ${lastDay}`
+        : daysLeft === 1
+          ? `Die Anerkennung endet morgen, am ${lastDay}`
+          : `Die Anerkennung endet am ${lastDay} — in ${daysLeft} Tagen`,
+    endingSoonBody: (tab: string, field: string): string =>
+      "Danach wird diese Fortbildung nicht mehr angeboten: Sie verschwindet aus dem " +
+      "Fortbildungsbereich, niemand kann sie neu beginnen, und wer sie begonnen hat, " +
+      "kann sie nicht mehr abschließen. Die Verlängerung beantragt der Veranstalter bei " +
+      `der Ärztekammer. Ist sie bewilligt, tragen Sie das neue Datum unter \u201e${tab}\u201c ` +
+      `bei \u201e${field}\u201c ein.`,
 
     settings: "Einstellungen",
     /**

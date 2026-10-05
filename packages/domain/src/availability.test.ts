@@ -11,8 +11,12 @@
 import { describe, expect, it } from "vitest";
 import {
   courseAvailability,
+  courseEndingSoon,
+  datesOfWindow,
+  ENDING_SOON_DAYS,
   invalidAvailabilityWindow,
   isCourseOffered,
+  windowFromDates,
 } from "./availability.js";
 
 const FROM = new Date("2025-10-13T00:00:00.000Z");
@@ -150,5 +154,126 @@ describe("invalidAvailabilityWindow", () => {
     expect(invalidAvailabilityWindow({ validFrom: TO, validTo: FROM })).toBe(
       "validTo_before_validFrom",
     );
+  });
+});
+
+/*
+ * The warning before a course stops being offered (P243-01, S14).
+ *
+ * The last day here is 12.10.2026 in Berlin, stored the way the console now
+ * stores it: the last millisecond of that day, 21:59:59.999 UTC in summer.
+ */
+describe("courseEndingSoon", () => {
+  const LAST = new Date("2026-10-12T21:59:59.999Z");
+  const WINDOW = { validFrom: FROM, validTo: LAST };
+
+  it("says nothing while the end is further away than the warning period", () => {
+    // 91 Berlin days before 12.10 is 13.07.
+    expect(courseEndingSoon(WINDOW, new Date("2026-07-13T10:00:00Z"))).toBeUndefined();
+  });
+
+  it("starts warning exactly ENDING_SOON_DAYS before the last day", () => {
+    expect(ENDING_SOON_DAYS).toBe(90);
+    expect(courseEndingSoon(WINDOW, new Date("2026-07-14T10:00:00Z"))).toEqual({
+      daysLeft: 90,
+      lastDay: LAST,
+    });
+  });
+
+  it("counts Berlin days, so late evening UTC is already tomorrow", () => {
+    // 22:30 UTC on 4 October is 00:30 on the 5th in Berlin: seven days left.
+    expect(courseEndingSoon(WINDOW, new Date("2026-10-04T22:30:00Z"))?.daysLeft).toBe(7);
+  });
+
+  it("says 0 on the last day itself, which is still a day it is offered", () => {
+    expect(courseEndingSoon(WINDOW, new Date("2026-10-12T21:59:59.999Z"))?.daysLeft).toBe(
+      0,
+    );
+  });
+
+  it("stops warning once the course has ended — that is a different state", () => {
+    expect(courseEndingSoon(WINDOW, new Date("2026-10-12T22:00:00Z"))).toBeUndefined();
+    expect(courseAvailability(WINDOW, new Date("2026-10-12T22:00:00Z"))).toBe("ended");
+  });
+
+  it("never warns about a course with no end", () => {
+    expect(
+      courseEndingSoon(
+        { validFrom: FROM, validTo: null },
+        new Date("2026-10-12T10:00:00Z"),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("never warns about a draft or a course that has not opened", () => {
+    expect(
+      courseEndingSoon({ ...WINDOW, status: "draft" }, new Date("2026-10-05T10:00:00Z")),
+    ).toBeUndefined();
+    expect(
+      courseEndingSoon(
+        { validFrom: new Date("2026-10-10T00:00:00Z"), validTo: LAST },
+        new Date("2026-10-05T10:00:00Z"),
+      ),
+    ).toBeUndefined();
+  });
+});
+
+/*
+ * What a date typed into the console means (P243-01).
+ *
+ * "Anerkennung gültig bis 12.10.2026" is a sentence about a German day. The
+ * console used to store it as 00:00 UTC on the 12th — 02:00 in Berlin — so the
+ * course stopped being offered, and stopped letting enrolled physicians
+ * advance, for almost all of the last day its Bescheid covers.
+ */
+describe("windowFromDates", () => {
+  it("opens at the first instant of the first Berlin day", () => {
+    expect(windowFromDates("2025-10-13", "").validFrom?.toISOString()).toBe(
+      "2025-10-12T22:00:00.000Z",
+    );
+  });
+
+  it("closes at the last instant of the last Berlin day", () => {
+    const { validTo } = windowFromDates("", "2026-10-12");
+    expect(validTo?.toISOString()).toBe("2026-10-12T21:59:59.999Z");
+    expect(
+      courseAvailability(
+        { validFrom: null, validTo: validTo! },
+        new Date("2026-10-12T21:00:00Z"),
+      ),
+    ).toBe("available");
+  });
+
+  it("treats an empty field as no limit", () => {
+    expect(windowFromDates("", " ")).toEqual({ validFrom: null, validTo: null });
+  });
+
+  it("refuses a value that is not a date rather than guessing", () => {
+    expect(() => windowFromDates("12.10.2026", "")).toThrow(/YYYY-MM-DD/);
+  });
+
+  it("round-trips through datesOfWindow, so the form shows what was typed", () => {
+    const stored = windowFromDates("2025-10-13", "2026-10-12");
+    expect(datesOfWindow(stored)).toEqual({
+      validFrom: "2025-10-13",
+      validTo: "2026-10-12",
+    });
+  });
+
+  it("shows an open end as an empty field", () => {
+    expect(
+      datesOfWindow({ validFrom: new Date("2025-10-12T22:00:00Z"), validTo: null }),
+    ).toEqual({
+      validFrom: "2025-10-13",
+      validTo: "",
+    });
+  });
+
+  it("shows a stored instant as its Berlin day, not its UTC one", () => {
+    // What the MEDICE seed wrote before P243-01: 01:59 on the 13th in Berlin.
+    expect(
+      datesOfWindow({ validFrom: null, validTo: new Date("2026-10-12T23:59:59Z") })
+        .validTo,
+    ).toBe("2026-10-13");
   });
 });

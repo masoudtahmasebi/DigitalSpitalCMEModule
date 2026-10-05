@@ -58,6 +58,10 @@ import {
 import { seedKeycloakBinding } from "./keycloak-binding.js";
 import { describeDemoStaff, seedDemoStaff } from "./staff.js";
 import type { TenantSeedOptions } from "./medice-adhs.js";
+import { windowFromDates } from "@ds/domain";
+
+/** The demo accreditation, as German days — stored as the console stores them. */
+const DEMO_WINDOW = windowFromDates("2026-01-01", "2026-12-31");
 
 /**
  * Fixed, for the same reason as MEDICE's: `customers`' own RLS policy checks
@@ -531,8 +535,9 @@ async function seedCourse(pool: pg.Pool, course: CourseSeed): Promise<string> {
       // A validity window only where there is an accreditation to be valid
       // within. On the point-free course both are null, which is the case the
       // EIV deadline arithmetic must never be handed.
-      accredited ? new Date("2026-01-01T00:00:00Z") : null,
-      accredited ? new Date("2026-12-31T23:59:59Z") : null,
+      // German days, stored as the console stores them (P243-01).
+      accredited ? DEMO_WINDOW.validFrom : null,
+      accredited ? DEMO_WINDOW.validTo : null,
       [
         "Den Aufbau der Plattform kennenlernen",
         "Den Player und die Fortschrittsmessung ausprobieren",

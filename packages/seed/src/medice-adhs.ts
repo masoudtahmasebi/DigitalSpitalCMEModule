@@ -38,7 +38,10 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { PLACEHOLDER_VNR as DOMAIN_PLACEHOLDER_VNR } from "@ds/domain";
+import { PLACEHOLDER_VNR as DOMAIN_PLACEHOLDER_VNR, windowFromDates } from "@ds/domain";
+
+/** The Anerkennungsbescheid's validity, as the console would store it. */
+const MEDICE_WINDOW = windowFromDates("2025-10-13", "2026-10-12");
 import { createSecretCipher } from "@ds/secrets";
 import type pg from "pg";
 import {
@@ -909,8 +912,12 @@ export async function seedMediceAdhs(
         seededVnr(),
         "Ärztekammer Westfalen-Lippe",
         "Medice Arzneimittel Pütter GmbH & Co. KG, Iserlohn",
-        new Date("2025-10-13T00:00:00Z"),
-        new Date("2026-10-12T23:59:59Z"),
+        // The Bescheid's "13.10.2025 – 12.10.2026" as German days (P243-01).
+        // This used to be 23:59:59 **UTC**, which is 01:59 on the 13th in
+        // Berlin: the Zertifizierung tab read "bis 13.10.2026", and the course
+        // stayed open two hours past its accreditation.
+        MEDICE_WINDOW.validFrom,
+        MEDICE_WINDOW.validTo,
         [
           "Sichere Diagnosestellung von ADHS im Erwachsenenalter",
           "Differenzialdiagnostische Abgrenzung zu anderen psychiatrischen Störungen",

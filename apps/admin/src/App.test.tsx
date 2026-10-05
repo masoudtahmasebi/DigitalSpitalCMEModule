@@ -39,6 +39,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Console } from "./App.js";
 import { ApiError } from "@ds/sdk";
+import { formatBerlinDate } from "@ds/domain";
 import type { StaffProfile } from "./staff-auth.js";
 import { de } from "./locale/de.js";
 import { forgetUnsavedChanges, useUnsavedChanges } from "./hooks.js";
@@ -573,6 +574,70 @@ describe("the screen is in the address bar (P42-01)", () => {
    * screen* writes the address, and that the button at the bottom of the editor
    * takes the reader back to the tab.
    */
+  it("warns above every tab while the accreditation is about to end (P243-01)", async () => {
+    /*
+     * The person who enters a renewed date may never open the list, so the
+     * course screen says it too — what happens, who acts, and where the new
+     * date goes. Asserted on a tab that has nothing to do with dates, because
+     * that is where somebody will be when it matters.
+     */
+    const lastDay = new Date(Date.now() + 10 * 86_400_000);
+    const admin = fakeClient({
+      adminGetCourse: vi.fn().mockResolvedValue({
+        ...COURSE_BASE,
+        slug: "adhs",
+        title: "ADHS Akademie adult",
+        status: "published",
+        validTo: lastDay.toISOString(),
+      }),
+      adminGetStructure: vi.fn().mockResolvedValue({ modules: [] }),
+      adminCheckMedia: vi.fn().mockResolvedValue({ results: [] }),
+    });
+    window.history.replaceState(null, "", "#/fortbildungen/adhs/structure");
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    renderConsole({ admin, platform });
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    await chooseCustomer(MEDICE.id);
+
+    const title = await screen.findByText(
+      new RegExp(
+        `^Die Anerkennung endet am ${formatBerlinDate(lastDay).replace(/\./gu, "\\.")} — in (9|10) Tagen$`,
+        "u",
+      ),
+    );
+    expect(title).toBeTruthy();
+    expect(
+      screen.getByText(
+        /tragen Sie das neue Datum unter „Inhalte & Darstellung“ bei „Anerkennung gültig bis“ ein/u,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("says nothing on a course with no end date", async () => {
+    const admin = fakeClient({
+      adminGetCourse: vi.fn().mockResolvedValue({
+        ...COURSE_BASE,
+        slug: "adhs",
+        title: "ADHS Akademie adult",
+        status: "published",
+      }),
+      adminGetStructure: vi.fn().mockResolvedValue({ modules: [] }),
+      adminCheckMedia: vi.fn().mockResolvedValue({ results: [] }),
+    });
+    window.history.replaceState(null, "", "#/fortbildungen/adhs/structure");
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    renderConsole({ admin, platform });
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    await chooseCustomer(MEDICE.id);
+
+    await screen.findByRole("heading", { name: "ADHS Akademie adult" });
+    expect(screen.queryByText(/Die Anerkennung endet/u)).toBeNull();
+  });
+
   it("puts an open quiz in the address bar, and takes it back out", async () => {
     const admin = fakeClient({
       adminGetCourse: vi.fn().mockResolvedValue({
@@ -956,6 +1021,45 @@ describe("why a course is not reaching learners (P201)", () => {
     expect(screen.getByText("Entwurf")).toBeTruthy();
     expect(screen.getByText(/Sichtbar ab/u)).toBeTruthy();
     expect(screen.getByText(/Beendet am/u)).toBeTruthy();
+    expect(screen.getByText("Sichtbar")).toBeTruthy();
+  });
+
+  it("warns on the row while the accreditation is about to end (P243-01)", async () => {
+    /*
+     * S14: the course disappears the day after its last accredited day, and
+     * until now the row said "Sichtbar" right up to that moment. Ten days out
+     * it says how many are left, and which day is the last.
+     */
+    const lastDay = new Date(Date.now() + 10 * 86_400_000);
+    const platform = fakeClient({
+      adminListCustomers: vi.fn().mockResolvedValue([MEDICE]),
+    });
+    const admin = fakeClient({
+      adminListCourses: vi.fn().mockResolvedValue([
+        course({
+          slug: "e",
+          title: "Endet-bald-Kurs",
+          status: "published",
+          validTo: lastDay.toISOString(),
+        }),
+        course({
+          slug: "f",
+          title: "Endet-spaet-Kurs",
+          status: "published",
+          validTo: new Date(Date.now() + 400 * 86_400_000).toISOString(),
+        }),
+      ]),
+    });
+    renderConsole({ admin, platform });
+    await openCourses(admin);
+
+    await waitFor(() => expect(screen.getByText("Endet-bald-Kurs")).toBeTruthy());
+    expect(screen.getByText(/Sichtbar — endet in (9|10) Tagen/u)).toBeTruthy();
+    expect(
+      screen.getByText(`Anerkennung gültig bis ${formatBerlinDate(lastDay)}.`),
+    ).toBeTruthy();
+    // A year out is not news: the second row stays plain, and only one row warns.
+    expect(screen.getAllByText(/^Sichtbar — endet/u)).toHaveLength(1);
     expect(screen.getByText("Sichtbar")).toBeTruthy();
   });
 

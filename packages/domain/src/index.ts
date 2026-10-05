@@ -8,13 +8,18 @@
 
 export {
   courseAvailability,
+  courseEndingSoon,
+  datesOfWindow,
+  ENDING_SOON_DAYS,
   invalidAvailabilityWindow,
   isCourseOffered,
+  windowFromDates,
 } from "./availability.js";
 export type {
   AvailabilityWindow,
   CourseAvailability,
   CourseStatus,
+  EndingSoon,
 } from "./availability.js";
 
 export {

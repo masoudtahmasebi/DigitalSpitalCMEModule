@@ -1236,6 +1236,14 @@ export const en: DeepPartial<typeof german> = {
     visibleNotYet: (from: string): string => `Visible from ${from}`,
     visibleEnded: (to: string): string => `Ended on ${to}`,
     visibleNow: "Visible",
+    visibleEndingSoon: (daysLeft: number): string =>
+      daysLeft === 0
+        ? "Visible — last day today"
+        : daysLeft === 1
+          ? "Visible — ends tomorrow"
+          : `Visible — ends in ${daysLeft} days`,
+    visibleEndingSoonWhy: (lastDay: string): string =>
+      `Accreditation valid until ${lastDay}.`,
     visibleOtherTab: "under \u201eWeitere\u201c",
     columnCertificate: "Certificate",
     certificateReady: "ready",
@@ -1281,6 +1289,17 @@ export const en: DeepPartial<typeof german> = {
     validFrom: "Accreditation valid from",
     validTo: "Accreditation valid until",
     validityHint: "From the Ärztekammer's Anerkennungsbescheid.",
+    endingSoonTitle: (lastDay: string, daysLeft: number): string =>
+      daysLeft === 0
+        ? `The accreditation ends today, ${lastDay}`
+        : daysLeft === 1
+          ? `The accreditation ends tomorrow, ${lastDay}`
+          : `The accreditation ends on ${lastDay} — in ${daysLeft} days`,
+    endingSoonBody: (tab: string, field: string): string =>
+      "After that this course is no longer offered: it disappears from the " +
+      "Fortbildungsbereich, nobody can start it, and anyone who has started it can no " +
+      "longer finish it. The organiser applies to the Ärztekammer for an extension. Once " +
+      `it is granted, enter the new date under \u201e${tab}\u201c in \u201e${field}\u201c.`,
 
     settings: "Settings",
     visibility: "Visibility",
