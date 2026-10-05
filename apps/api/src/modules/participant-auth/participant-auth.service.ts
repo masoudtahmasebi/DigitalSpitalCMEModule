@@ -384,6 +384,8 @@ export class ParticipantAuthService {
         secure: sender.port === 465,
         fromAddress: sender.fromAddress ?? "",
         fromName: sender.fromName,
+        // A project's sender is typed in by a `customer_admin` (P247-02).
+        publicOnly: true,
       },
       { ...participantResetEmail(input.resetUrl(token)), to: input.to },
     );

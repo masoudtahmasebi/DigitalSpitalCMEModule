@@ -290,6 +290,11 @@ export class CertificateDeliveryService {
           }),
       transport: {
         host: sender.kind === "none" ? "" : (sender.transport.host ?? ""),
+        // A project's host is typed in by a `customer_admin`; the channel then
+        // connects only to an address outside the API's network (P247-02).
+        // The platform's sender is an operator's, and an internal relay is a
+        // legitimate thing for an operator to choose.
+        ...(sender.kind === "project" ? { publicOnly: "true" } : {}),
         port: sender.kind === "none" ? "" : String(sender.transport.port ?? ""),
         ...(sender.kind === "none" || sender.transport.username === null
           ? {}

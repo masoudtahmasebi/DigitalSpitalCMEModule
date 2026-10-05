@@ -32,6 +32,7 @@
 
 import { isStorageReference } from "@ds/domain";
 import { withDeadline } from "../../shared/deadline-fetch.js";
+import { resolvePublicAddress } from "../../shared/outbound-address.js";
 
 /** One byte. The question is whether the server understands the header. */
 const PROBE_RANGE = "bytes=0-0";
@@ -67,7 +68,15 @@ export class MediaCheckService {
   // Already passes its own `AbortSignal.timeout` per call; the default is
   // wrapped anyway so that no constructor in this application names a bare
   // `fetch` and `check:deadlines` has one rule rather than an exception.
-  constructor(private readonly fetchImpl: typeof fetch = withDeadline()) {}
+  constructor(
+    private readonly fetchImpl: typeof fetch = withDeadline(),
+    /**
+     * Refuses a host inside the API's own network (P247-02). Injectable so a
+     * test can stand in for DNS; the rule itself is `resolvePublicAddress`.
+     */
+    private readonly vetHost: (host: string) => Promise<string> = (host) =>
+      resolvePublicAddress(host),
+  ) {}
 
   /**
    * Probe every distinct URL, in order, and say what each one did.
@@ -97,11 +106,28 @@ export class MediaCheckService {
       return { url, verdict: "signed_by_us" };
     }
 
+    /*
+     * Asked before any request, and refused with the same verdict as a host
+     * that could not be reached (P247-02). An author could save
+     * `http://127.0.0.1:5432/` or the metadata service's address and read the
+     * answer off this report — a port scanner for the API's own network. A
+     * distinct verdict would itself say "that address is internal".
+     */
+    try {
+      await this.vetHost(new URL(url).hostname);
+    } catch {
+      return { url, verdict: "failed", detail: "address not allowed" };
+    }
+
     let response: Response;
     try {
       response = await this.fetchImpl(url, {
         method: "GET",
         headers: { range: PROBE_RANGE },
+        // Never followed (P247-02): a public host answering 302 to an
+        // internal address is the other way in. A 3xx is reported as what it
+        // is — the browser would follow it, so the author should know.
+        redirect: "manual",
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch (error) {
