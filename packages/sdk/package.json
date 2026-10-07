@@ -20,9 +20,9 @@
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "js-yaml": "^5.4.2",
+    "js-yaml": "^5.4.3",
     "openapi-typescript": "^7.13.0",
     "typescript": "^5.9.3",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.3"
   }
 }
