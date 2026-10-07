@@ -15,7 +15,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { ArgumentsHost } from "@nestjs/common";
-import { HttpException, HttpStatus } from "@nestjs/common";
+import { HttpException, HttpStatus, NotFoundException } from "@nestjs/common";
 import { ProblemDetailsFilter } from "./problem-details.filter.js";
 import { JsonLogger } from "../observability/logger.js";
 import { AppError } from "./problem-details.js";
@@ -174,6 +174,78 @@ describe("the internal reason stays internal", () => {
  * The filter owns the type of a refusal, because it is the one place that
  * knows the response is no longer what the route promised.
  */
+/**
+ * A 404 the router raised and a 404 a handler chose are different answers
+ * (P251-05).
+ *
+ * P249-01 rebuilt a 404's detail as `Cannot <method> <path>` to strip the query
+ * string out of the router's own `Cannot GET <originalUrl>`. That was right
+ * about the leak and wrong about the population: a controller's own
+ * `throw new NotFoundException()` is an `HttpException` with status 404 too, so
+ * five deliberate 404s on two public routes started answering that the route
+ * does not exist.
+ *
+ * It is a false statement about the system on the only routes a learner's
+ * browser requests without a token, and `routes.spec.ts` decides "documented
+ * but not implemented" from exactly that wording — so it reported
+ * `GET /branding/font`, which is implemented at
+ * `branding.controller.ts:144`, as implemented nowhere.
+ *
+ * `routes.spec.ts` carries a negative control for this, and it did not fire:
+ * it asserts that an unrouted path is still *detected*, which is the other
+ * direction. Nothing asserted that a routed path is not *mis*detected.
+ */
+describe("a handler's own 404 does not claim the route is missing", () => {
+  // Scoped here rather than shared with the block above, for the reason given
+  // there: deliberately low-entropy, so a secret scanner has nothing to find.
+  const TOKEN = "not-a-real-token-not-a-real-token";
+
+  it("passes a bare NotFoundException through without the router's wording", () => {
+    const { host, sent } = hostFor("/branding/font?project=medice");
+
+    captureLogs(() => filter.catch(new NotFoundException(), host));
+
+    expect(sent.status).toBe(404);
+    expect(JSON.stringify(sent.body)).not.toMatch(/cannot\s+get/iu);
+    expect(sent.body["instance"]).toBe("/branding/font");
+  });
+
+  it("keeps a handler's own 404 message", () => {
+    const { host, sent } = hostFor("/media/not-a-uuid");
+
+    captureLogs(() => filter.catch(new NotFoundException("no such object"), host));
+
+    expect(sent.body["detail"]).toBe("no such object");
+  });
+
+  it("still strips the query from the router's 404, which is why P249-01 did this", () => {
+    // What the router actually throws: its message carries `originalUrl`, query
+    // and all. The rewrite has to keep happening for this one.
+    const { host, sent } = hostFor("/branding/font?project=p&secret=" + TOKEN);
+
+    const logged = captureLogs(() =>
+      filter.catch(
+        new NotFoundException(`Cannot GET /branding/font?project=p&secret=${TOKEN}`),
+        host,
+      ),
+    );
+
+    expect(sent.body["detail"]).toBe("Cannot GET /branding/font");
+    expect(JSON.stringify(sent.body)).not.toContain(TOKEN);
+    expect(logged).not.toContain(TOKEN);
+  });
+
+  it("rewrites the router's wording for any method, not only GET", () => {
+    const { host, sent } = hostFor("/admin/courses?draft=1", "POST");
+
+    captureLogs(() =>
+      filter.catch(new NotFoundException("Cannot POST /admin/courses?draft=1"), host),
+    );
+
+    expect(sent.body["detail"]).toBe("Cannot POST /admin/courses");
+  });
+});
+
 describe("the content type of a refusal", () => {
   it("is problem+json for an AppError, whatever the route had declared", () => {
     const { host, sent } = hostFor("/courses/adhs/certificate/pdf");

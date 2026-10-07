@@ -111,6 +111,36 @@ test("an unimplemented route is actually detectable", async ({ request }) => {
   expect(looksUnrouted(response.status(), await response.text())).toBe(true);
 });
 
+/**
+ * The positive control, which was missing and is the half that actually broke
+ * (P251-05).
+ *
+ * The comment above anticipated one direction — the filter making an unrouted
+ * 404 look like a handler's. P249-01 did the **opposite**: it rebuilt every
+ * 404's detail as `Cannot <method> <path>`, so a handler's own
+ * `NotFoundException` became indistinguishable from the router's. The negative
+ * control stayed green, because an unrouted path was still detected. Nothing
+ * asserted that a *routed* path is not misdetected, and the check below
+ * reported `GET /branding/font` — implemented at `branding.controller.ts:144`,
+ * with integration coverage — as implemented nowhere.
+ *
+ * `GET /branding/font` with no project is the cleanest instance there is: it is
+ * certainly routed, and it certainly 404s, by the deliberate
+ * `throw new NotFoundException()` that keeps it from being a project-slug
+ * oracle. A predicate that cannot tell that from an absent route cannot tell
+ * anything.
+ */
+test("a routed path that 404s on purpose is not mistaken for an absent one", async ({
+  request,
+}) => {
+  const response = await request.get(`${API_BASE}/branding/font`, {
+    failOnStatusCode: false,
+  });
+
+  expect(response.status(), "the route answers, and answers 404 by design").toBe(404);
+  expect(looksUnrouted(response.status(), await response.text())).toBe(false);
+});
+
 /** Nest names the method and path it could not match; a handler's 404 does not. */
 function looksUnrouted(status: number, body: string): boolean {
   return status === 404 && /cannot\s+(get|post|put|patch|delete)/iu.test(body);
