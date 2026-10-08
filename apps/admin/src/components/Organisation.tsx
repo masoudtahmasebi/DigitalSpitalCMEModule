@@ -26,7 +26,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ApiClient, DepartmentSummary, ProjectSummary } from "@ds/sdk";
 import { de } from "../locale/de.js";
-import { invalidEmbedOriginPatterns, signInMethodsProblem } from "@ds/domain";
+import {
+  CATALOG_FILTERS,
+  invalidEmbedOriginPatterns,
+  signInMethodsProblem,
+  type CatalogFilters,
+} from "@ds/domain";
 import { slugify } from "../drafts.js";
 import { readPlatformSender } from "../staff-auth.js";
 import { useLoaded, useSaver, useUnsavedChanges } from "../hooks.js";
@@ -992,6 +997,32 @@ function ProjectSettings(props: {
             onChange={(v) => setBranding((b) => ({ ...b, contentMaxWidth: v }))}
           />
         </Field>
+        {/*
+          Which filters the catalogue offers (P253-01, DEP-48).
+
+          A Select rather than two checkboxes: an operator picks the row they
+          want and the stored value says what a physician sees, instead of two
+          flags somebody has to combine in their head. The four options are the
+          four useful answers.
+
+          `|| "both"` and not `?? "both"`: an unset branding field arrives from
+          `brandingForm` as `""`, not as undefined, and an empty string is this
+          form's way of saying "nothing stored" for every other field too.
+        */}
+        <Field
+          label={de.organisation.catalogFilters}
+          hint={de.organisation.catalogFiltersHint}
+          htmlFor={id("catalog-filters")}
+        >
+          <Select
+            id={id("catalog-filters")}
+            value={(branding.catalogFilters || "both") as CatalogFilters}
+            options={CATALOG_FILTERS.map(
+              (value) => [value, de.organisation.catalogFilterOptions[value]] as const,
+            )}
+            onChange={(v) => setBranding((b) => ({ ...b, catalogFilters: v }))}
+          />
+        </Field>
         <Field
           label={de.organisation.catalogTitle}
           hint={de.organisation.catalogTitleHint}
@@ -1115,6 +1146,7 @@ function brandingForm(project: ProjectSummary) {
     contentMaxWidth: str("contentMaxWidth"),
     primaryColor: str("primaryColor"),
     primaryContrastColor: str("primaryContrastColor"),
+    catalogFilters: str("catalogFilters"),
     catalogTitle: str("catalogTitle"),
     catalogIntro: str("catalogIntro"),
     catalogHeroImageUrl: str("catalogHeroImageUrl"),

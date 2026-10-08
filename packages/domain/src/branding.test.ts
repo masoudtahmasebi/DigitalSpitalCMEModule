@@ -433,6 +433,42 @@ describe("the catalogue hero", () => {
     }
   });
 
+  /**
+   * Which catalogue filters a project offers (DEP-48).
+   *
+   * The failure mode worth pinning is the degradation: an unrecognised value
+   * must land on "both", the behaviour every project has today, rather than on
+   * a catalogue with its filters silently gone. A setting written by an older
+   * console, or by hand, is exactly that case.
+   */
+  it("accepts the four catalogue-filter answers and nothing else", () => {
+    for (const value of ["both", "thema", "altersgruppe", "none"] as const) {
+      expect(parseBranding({ catalogFilters: value })).toEqual({
+        catalogFilters: value,
+      });
+    }
+
+    // Dropped, and dropping it means "both" — never "none".
+    for (const wrong of ["", "   ", "BOTH", "alle", 1, true, null, ["thema"]]) {
+      expect(parseBranding({ catalogFilters: wrong })).toEqual({});
+    }
+  });
+
+  it("tells a form that a filter setting was rejected, rather than dropping it quietly", () => {
+    // §9.3: `invalidBrandingFields` exists for exactly this and was called by
+    // nothing until P41-01, where a save dropped a field and said
+    // "Gespeichert."
+    expect(invalidBrandingFields({ catalogFilters: "alle" })).toEqual(["catalogFilters"]);
+    expect(invalidBrandingFields({ catalogFilters: 7 })).toEqual(["catalogFilters"]);
+
+    for (const value of ["both", "thema", "altersgruppe", "none"]) {
+      expect(invalidBrandingFields({ catalogFilters: value })).toEqual([]);
+    }
+    // Absent and null are "leave it alone", not a rejected value.
+    expect(invalidBrandingFields({})).toEqual([]);
+    expect(invalidBrandingFields({ catalogFilters: null })).toEqual([]);
+  });
+
   it("refuses a heading that is empty, whitespace or a paragraph", () => {
     expect(parseBranding({ catalogTitle: "" })).toEqual({});
     expect(parseBranding({ catalogTitle: "   " })).toEqual({});

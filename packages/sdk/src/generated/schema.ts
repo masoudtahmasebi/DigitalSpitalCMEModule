@@ -3707,6 +3707,25 @@ export interface components {
             /** @description Alternative text for the seal. Required whenever one is set. */
             catalogSealAlt?: string;
             /**
+             * @description Which of the catalogue's two filters a project offers (DEP-48).
+             *
+             *     Absent means `both`, which is what every project rendered before
+             *     this existed — so an unrecognised or missing value degrades to
+             *     today's behaviour rather than to a catalogue with no filters.
+             *
+             *     Separate from whether a filter has anything in it: a facet with no
+             *     values is never drawn, with or without this setting, because a
+             *     dropdown whose only entry is its own placeholder is a control that
+             *     cannot do anything. This setting is for a project that *has* Themen
+             *     and does not want to offer the filter anyway.
+             *
+             *     The categories are fixed — `thema` and `altersgruppe` are columns
+             *     on `courses`, so a third filter is a migration, not a setting. The
+             *     items within each are free text per course.
+             * @enum {string}
+             */
+            catalogFilters?: "both" | "thema" | "altersgruppe" | "none";
+            /**
              * @description Where the completion screen's **Datenschutzerklärung** link points.
              *
              *     Accepted only together with `privacyPolicyVersion`: a link with no

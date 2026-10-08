@@ -717,6 +717,24 @@ export const german = {
     branding: "Auftritt und Datenschutz",
     brandingIntro:
       "Texte und Bilder, die die Teilnehmenden dieses Projekts sehen. Leere Felder verwenden die Standardtexte der Plattform.",
+    catalogFilters: "Filter in der Übersicht",
+    /*
+     * Says what the control does and what each answer means (CLAUDE.md §9.4).
+     *
+     * The second sentence is the one that stops a support call: an operator who
+     * chooses "Thema und Altersgruppe" and still sees one dropdown has not hit
+     * a bug — a filter with nothing in it is never offered, because a dropdown
+     * whose only entry is "auswählen" is a control that cannot do anything
+     * (§9.2).
+     */
+    catalogFiltersHint:
+      "Welche Filter über der Fortbildungsübersicht angeboten werden. Ein Filter, für den keine Fortbildung einen Wert hat, wird unabhängig davon nicht angezeigt.",
+    catalogFilterOptions: {
+      both: "Thema und Altersgruppe",
+      thema: "Nur Thema",
+      altersgruppe: "Nur Altersgruppe",
+      none: "Keine Filter anzeigen",
+    },
     catalogTitle: "Überschrift der Übersicht",
     catalogTitleHint:
       "Zum Beispiel „Fortbildungsbereich für ADHS“. Ohne Angabe verwendet die Plattform eine allgemeine Überschrift.",

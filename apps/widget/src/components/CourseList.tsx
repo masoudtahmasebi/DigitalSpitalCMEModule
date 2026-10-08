@@ -38,7 +38,7 @@
  */
 
 import { useState, type ReactElement } from "react";
-import type { Branding } from "@ds/domain";
+import type { Branding, CatalogFilters } from "@ds/domain";
 import type { ApiClient, CourseSummary, DeliveryType } from "@ds/sdk";
 import type { OpenIntent } from "../intent.js";
 import { de } from "../locale/de.js";
@@ -85,6 +85,11 @@ export interface CatalogPanelProps {
   readonly description?: string | undefined;
   /** Where the host signs somebody in, for an ended session (P214-01). */
   readonly signInUrl?: string | undefined;
+  /**
+   * Which filters this project offers (DEP-48). Absent means both, which is
+   * what every project rendered before the setting existed.
+   */
+  readonly catalogFilters?: CatalogFilters | undefined;
 }
 
 /**
@@ -165,6 +170,7 @@ export function CourseList(props: {
             onOpen={props.onOpen}
             description={section.description}
             signInUrl={props.signInUrl}
+            catalogFilters={props.branding.catalogFilters}
           />
         </TabbedPanel>
       </div>
@@ -266,6 +272,38 @@ function CoursePanel(
   const lastPage = Math.max(1, Math.ceil(total / perPage));
   const hasChips = filters.thema !== undefined || filters.altersgruppe !== undefined;
 
+  /*
+   * Which of the two filters this catalogue draws (DEP-48).
+   *
+   * Two independent reasons a filter is not drawn, and they are different
+   * questions:
+   *
+   *  * **It has nothing in it.** A project where no course carries an
+   *    Altersgruppe got a dropdown containing only "Altersgruppe auswählen" —
+   *    a control that can only produce the state it is already in, which is
+   *    CLAUDE.md §9.2. That was true from the first day of the catalogue and
+   *    is fixed here regardless of any setting: `facets` is computed under the
+   *    rest of the selection by the API, so an empty one means there is
+   *    genuinely nothing to choose.
+   *
+   *  * **The project turned it off.** For a customer who *has* Themen and does
+   *    not want to offer the filter — the client's own case: "Since I'm not
+   *    sure, if we need the filter at the moment, it should be good if we can
+   *    disable them in the CMS."
+   *
+   * An active chip survives either. A filter that is applied has to stay
+   * removable, or a learner who narrowed the list before an operator changed
+   * the setting is stuck looking at a subset with no way back — the §9.2 trap
+   * one turn further on, where *removing* the control is what leaves somebody
+   * with no next move.
+   */
+  const offered = props.catalogFilters ?? "both";
+  const showThema =
+    (offered === "both" || offered === "thema") && facets.thema.length > 0;
+  const showAltersgruppe =
+    (offered === "both" || offered === "altersgruppe") && facets.altersgruppe.length > 0;
+  const showFilters = showThema || showAltersgruppe;
+
   return (
     <div className={panel}>
       <div className="border-b border-gray-200 p-5 sm:p-10">
@@ -286,24 +324,30 @@ function CoursePanel(
         {props.description === undefined ? null : (
           <h2 className="mb-6 text-lg font-bold text-brand-600">{props.description}</h2>
         )}
-        <div className="grid gap-5 sm:grid-cols-2 sm:gap-8">
-          <FacetSelect
-            id={`ds-thema-${props.deliveryTypes.join("-")}`}
-            label={de.catalog.thema}
-            placeholder={de.catalog.selectThema}
-            value={filters.thema}
-            options={facets.thema}
-            onChange={(thema) => set({ thema })}
-          />
-          <FacetSelect
-            id={`ds-altersgruppe-${props.deliveryTypes.join("-")}`}
-            label={de.catalog.altersgruppe}
-            placeholder={de.catalog.selectAltersgruppe}
-            value={filters.altersgruppe}
-            options={facets.altersgruppe}
-            onChange={(altersgruppe) => set({ altersgruppe })}
-          />
-        </div>
+        {!showFilters ? null : (
+          <div className="grid gap-5 sm:grid-cols-2 sm:gap-8">
+            {!showThema ? null : (
+              <FacetSelect
+                id={`ds-thema-${props.deliveryTypes.join("-")}`}
+                label={de.catalog.thema}
+                placeholder={de.catalog.selectThema}
+                value={filters.thema}
+                options={facets.thema}
+                onChange={(thema) => set({ thema })}
+              />
+            )}
+            {!showAltersgruppe ? null : (
+              <FacetSelect
+                id={`ds-altersgruppe-${props.deliveryTypes.join("-")}`}
+                label={de.catalog.altersgruppe}
+                placeholder={de.catalog.selectAltersgruppe}
+                value={filters.altersgruppe}
+                options={facets.altersgruppe}
+                onChange={(altersgruppe) => set({ altersgruppe })}
+              />
+            )}
+          </div>
+        )}
 
         {!hasChips ? null : (
           <ul className="mt-4 flex flex-wrap gap-2" aria-label={de.catalog.activeFilters}>

@@ -130,8 +130,9 @@ export {
   fontFaceRule,
   invalidBrandingFields,
   parseBranding,
+  CATALOG_FILTERS,
 } from "./branding.js";
-export type { Branding } from "./branding.js";
+export type { Branding, CatalogFilters } from "./branding.js";
 
 export {
   canDelete,

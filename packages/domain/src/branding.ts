@@ -42,6 +42,23 @@
  * the stack is what a browser falls back to while it downloads or if it fails.
  */
 
+/**
+ * Which catalogue filters a project offers (DEP-48).
+ *
+ * `"both"` and an absent value are the same answer. Both are legal because a
+ * form that has to clear a setting in order to mean "default" cannot tell a
+ * deliberate choice of both apart from a project nobody has configured, and an
+ * operator who picks the first option should see it stored.
+ */
+export type CatalogFilters = "both" | "thema" | "altersgruppe" | "none";
+
+export const CATALOG_FILTERS: readonly CatalogFilters[] = [
+  "both",
+  "thema",
+  "altersgruppe",
+  "none",
+];
+
 export interface Branding {
   /** Shown in the widget header. Absent means the course title stands alone. */
   readonly logoUrl?: string;
@@ -121,6 +138,30 @@ export interface Branding {
   readonly catalogSealImageUrl?: string;
   /** Alternative text for the seal. Required whenever a seal is set. */
   readonly catalogSealAlt?: string;
+  /**
+   * Which of the catalogue's two filters to offer (DEP-48).
+   *
+   * The client, having looked at a catalogue with one therapeutic area in it:
+   * *"Since I'm not sure, if we need the filter at the moment, it should be
+   * good if we can disable them in the CMS."*
+   *
+   * Absent means **both**, which is what every project renders today. The
+   * four values are the four useful answers, as one setting rather than two
+   * booleans: an operator picks what the row contains, and the stored value
+   * says what a physician sees without anybody having to combine two flags in
+   * their head.
+   *
+   * This is not the same question as whether a filter has anything in it. A
+   * facet with no values draws no control at all, with or without this setting
+   * — see `CourseList`. This is for a project that *has* Themen and does not
+   * want to offer the filter anyway.
+   *
+   * The categories themselves are fixed: `courses.thema` and
+   * `courses.altersgruppe` are two columns, so a third filter is a migration
+   * rather than a setting. The *items* within each are free text per course
+   * and always have been.
+   */
+  readonly catalogFilters?: CatalogFilters;
 
   /*
    * The privacy notice behind the Punktemeldung consent (layout page 13).
@@ -364,6 +405,7 @@ export function parseBranding(value: unknown): Branding {
     catalogHeroImageUrl?: string;
     catalogSealImageUrl?: string;
     catalogSealAlt?: string;
+    catalogFilters?: CatalogFilters;
     privacyPolicyUrl?: string;
     privacyPolicyVersion?: string;
   } = {};
@@ -421,6 +463,18 @@ export function parseBranding(value: unknown): Branding {
   if (sealUrl !== undefined && sealAlt !== undefined) {
     branding.catalogSealImageUrl = sealUrl;
     branding.catalogSealAlt = sealAlt;
+  }
+
+  // One of four, or absent. An unrecognised value is dropped rather than
+  // guessed at, and absent already means "both" — so a setting written by an
+  // older console, or by hand, degrades to the behaviour every project has
+  // today rather than to a catalogue with no filters.
+  const filters = raw["catalogFilters"];
+  if (
+    typeof filters === "string" &&
+    (CATALOG_FILTERS as readonly string[]).includes(filters)
+  ) {
+    branding.catalogFilters = filters as CatalogFilters;
   }
 
   // Both or neither — see the note on the fields.
@@ -502,6 +556,24 @@ export function invalidBrandingFields(value: unknown): readonly string[] {
 
   checkText("logoAlt", MAX_ALT_LENGTH);
   checkText("catalogSealAlt", MAX_ALT_LENGTH);
+
+  /*
+   * Reported by the same list `parseBranding` accepts (DEP-48).
+   *
+   * §9.3's instance, written down: `invalidBrandingFields` exists so a form can
+   * say a value was rejected, and it was called by nothing until P41-01 — the
+   * save dropped the field and answered "Gespeichert." A new field that this
+   * function does not know about rejoins exactly that failure, silently.
+   */
+  const filters = raw["catalogFilters"];
+  if (
+    filters !== undefined &&
+    filters !== null &&
+    (typeof filters !== "string" ||
+      !(CATALOG_FILTERS as readonly string[]).includes(filters))
+  ) {
+    invalid.push("catalogFilters");
+  }
   checkText("catalogTitle", MAX_CATALOG_TITLE_LENGTH);
   checkText("catalogIntro", MAX_CATALOG_INTRO_LENGTH);
 

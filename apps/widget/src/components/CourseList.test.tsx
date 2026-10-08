@@ -204,6 +204,109 @@ describe("filters and their chips are one piece of state", () => {
   });
 });
 
+/**
+ * Which filters a catalogue offers (P253-01, DEP-48).
+ *
+ * Two independent reasons not to draw one, and they are different questions —
+ * see `CourseList`. Both are asserted here because both were reported as one:
+ * the client asked whether the filters could be disabled, looking at a
+ * catalogue whose second filter had one value in it.
+ */
+describe("the filters a catalogue offers", () => {
+  /** A stub whose facets are whatever the case needs. */
+  function withFacets(facets: {
+    thema: readonly { value: string; count: number }[];
+    altersgruppe: readonly { value: string; count: number }[];
+  }) {
+    const listCourses = vi.fn(
+      async () =>
+        ({
+          items: [course("k1")],
+          total: 1,
+          page: 1,
+          perPage: 10,
+          facets,
+        }) as unknown as CourseListResponse,
+    );
+    return { listCourses } as unknown as ApiClient;
+  }
+
+  const BOTH = {
+    thema: [{ value: "ADHS", count: 3 }],
+    altersgruppe: [{ value: "Erwachsene", count: 4 }],
+  };
+
+  it("draws both when the project has said nothing", async () => {
+    // Absent means both — what every project rendered before the setting
+    // existed, and what MEDICE must keep rendering after this ships.
+    const { client } = stubClient(1);
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
+    await screen.findByText("Kurs k1");
+
+    expect(screen.getByLabelText("Thema")).toBeTruthy();
+    expect(screen.getByLabelText("Altersgruppe")).toBeTruthy();
+  });
+
+  it("draws neither when the project has turned them off", async () => {
+    const { client } = stubClient(1);
+    render(
+      <CourseList
+        client={client}
+        branding={{ catalogFilters: "none" }}
+        onOpen={() => {}}
+      />,
+    );
+    await screen.findByText("Kurs k1");
+
+    expect(screen.queryByLabelText("Thema")).toBeNull();
+    expect(screen.queryByLabelText("Altersgruppe")).toBeNull();
+    // The courses are still there — this hides a control, not a catalogue.
+    expect(screen.getByText("Kurs k1")).toBeTruthy();
+  });
+
+  it("draws only the one the project kept", async () => {
+    const { client } = stubClient(1);
+    render(
+      <CourseList
+        client={client}
+        branding={{ catalogFilters: "thema" }}
+        onOpen={() => {}}
+      />,
+    );
+    await screen.findByText("Kurs k1");
+
+    expect(screen.getByLabelText("Thema")).toBeTruthy();
+    expect(screen.queryByLabelText("Altersgruppe")).toBeNull();
+  });
+
+  it("does not offer a filter with nothing in it, whatever the setting says", async () => {
+    /*
+     * CLAUDE.md §9.2, and true from the catalogue's first day: a project where
+     * no course carries an Altersgruppe got a dropdown containing only
+     * "Altersgruppe auswählen" — a control that can only produce the state it
+     * is already in.
+     *
+     * `branding={{}}` on purpose: this is not the setting working, it is the
+     * empty facet. A project that never touches the CMS gets this.
+     */
+    const client = withFacets({ thema: BOTH.thema, altersgruppe: [] });
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
+    await screen.findByText("Kurs k1");
+
+    expect(screen.getByLabelText("Thema")).toBeTruthy();
+    expect(screen.queryByLabelText("Altersgruppe")).toBeNull();
+  });
+
+  it("draws no filter row at all when neither facet has anything", async () => {
+    const client = withFacets({ thema: [], altersgruppe: [] });
+    render(<CourseList client={client} branding={{}} onOpen={() => {}} />);
+    await screen.findByText("Kurs k1");
+
+    expect(screen.queryByLabelText("Thema")).toBeNull();
+    expect(screen.queryByLabelText("Altersgruppe")).toBeNull();
+  });
+});
+
 describe("the card carries the metadata line from the layout", () => {
   it("renders points, modules and duration", async () => {
     const { client } = stubClient(1);
