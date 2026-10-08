@@ -39,6 +39,8 @@ export const adminCourseSummarySchema = z.object({
   targetAudience: z.string().nullable(),
   /** The "Vorkenntnisse" paragraph (layout page 02). */
   prerequisites: z.string().nullable(),
+  /** The detail page's own description; null means "use `description`". */
+  descriptionDetail: z.string().nullable(),
   heroImageUrl: z.string().nullable(),
   /** ISO 8601. The accreditation window from the Anerkennungsbescheid. */
   validFrom: z.string().nullable(),
@@ -129,6 +131,11 @@ export const adminCourseUpdateSchema = z.object({
   contentLocked: z.boolean().optional(),
   title: z.string().trim().min(1).max(300).optional(),
   description: z.string().max(5000).nullable().optional(),
+  /**
+   * The detail page's description (DEP-47). Empty means "use `description`",
+   * which is what the form's hint tells the author.
+   */
+  descriptionDetail: z.string().max(5000).nullable().optional(),
   /** Which catalogue tab the course appears under. */
   deliveryType: z.enum(["on_demand", "live", "praesenz"]).optional(),
   /**

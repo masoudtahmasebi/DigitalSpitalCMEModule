@@ -1263,9 +1263,12 @@ export const en: DeepPartial<typeof german> = {
     presentationIntro:
       "These details appear in the course overview and on the course page.",
     title: "Course title",
-    description: "Description",
+    description: "Description (overview page)",
     descriptionHint:
-      "Appears on the course page under “Beschreibung der Fortbildung” and, shortened, on the overview card.",
+      "Appears on the overview page listing every course, as the intro text.",
+    descriptionDetail: "Description (detail page)",
+    descriptionDetailHint:
+      "Appears on the course page under “Beschreibung der Fortbildung”. While this is empty, the overview page’s description is shown there instead.",
     heroImageUrl: "Cover image",
     heroImageHint:
       "Shown beside the title and on the overview card. Landscape, at least 1200 px wide — the image is cropped to fit.",

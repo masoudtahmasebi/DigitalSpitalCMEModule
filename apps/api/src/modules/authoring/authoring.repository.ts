@@ -587,7 +587,8 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
   }): Promise<void> {
     const { rows: courseRows } = await this.db.execute<{ id: string }>(sql`
       INSERT INTO courses (
-        customer_id, project_id, slug, title, description, delivery_type,
+        customer_id, project_id, slug, title, description, description_detail,
+        delivery_type,
         thema, altersgruppe, accreditation_body, cme_points, cme_category,
         event_location, organizer, required_watch_percent, pass_threshold_percent,
         max_quiz_attempts, reveal_correct_answers, hero_image_url,
@@ -598,6 +599,7 @@ export class AuthoringRepository implements AuthoringRepositoryPort {
         status, content_locked
       )
       SELECT customer_id, project_id, ${input.slug}, ${input.title}, description,
+             description_detail,
              delivery_type, thema, altersgruppe, accreditation_body, cme_points,
              cme_category, event_location, organizer, required_watch_percent,
              pass_threshold_percent, max_quiz_attempts, reveal_correct_answers,

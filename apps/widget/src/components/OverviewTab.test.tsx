@@ -46,6 +46,47 @@ const chapter = (title: string) => ({
   contents: [],
 });
 
+/**
+ * Which of the two descriptions a physician reads (P252-01, DEP-47).
+ *
+ * The client's report was that the catalogue card and the detail page showed
+ * the same text, which they did: `CourseDetail` extends `CourseSummary`, so
+ * both read the one `description`. `descriptionDetail` is the detail page's
+ * own, and these pin both directions of the fallback — the new text when there
+ * is one, and **yesterday's behaviour when there is not**, which is the half
+ * that protects MEDICE's live course from the migration.
+ */
+describe("Beschreibung der Fortbildung", () => {
+  function described(
+    description: string | null,
+    descriptionDetail: string | null,
+  ): CourseDetail {
+    return { ...courseWith([]), description, descriptionDetail };
+  }
+
+  it("renders the detail text when the course has one", () => {
+    render(<OverviewTab course={described("Die Karte.", "Die ganze Seite.")} />);
+
+    expect(screen.getByText("Die ganze Seite.")).toBeTruthy();
+    // And not the catalogue's — the whole point is that they differ.
+    expect(screen.queryByText("Die Karte.")).toBeNull();
+  });
+
+  it("falls back to the catalogue text when the detail text is unset", () => {
+    // Every course authored before migration 0057 is this case, and each one
+    // must render exactly what it rendered the day before.
+    render(<OverviewTab course={described("Die Karte.", null)} />);
+
+    expect(screen.getByText("Die Karte.")).toBeTruthy();
+  });
+
+  it("draws no section at all when neither is set", () => {
+    render(<OverviewTab course={described(null, null)} />);
+
+    expect(screen.queryByText("Beschreibung der Fortbildung")).toBeNull();
+  });
+});
+
 describe("the topic line under a module", () => {
   it("renders the authored subtitle", () => {
     render(

@@ -104,6 +104,7 @@ export function CoursePresentation(props: {
       const updated = await props.client.adminUpdateCourse(course.slug, {
         title: form.title.trim(),
         description: emptyToNull(form.description),
+        descriptionDetail: emptyToNull(form.descriptionDetail),
         deliveryType: form.deliveryType as DeliveryType,
         thema: lines(form.thema),
         altersgruppe: lines(form.altersgruppe),
@@ -237,6 +238,32 @@ export function CoursePresentation(props: {
         />
       </Field>
 
+      {/*
+        The detail page's own description (P252-01, DEP-47).
+
+        Directly above Lernziele because that is where the ticket asks for it,
+        and it is also where it belongs: the two texts a physician reads on the
+        course page, in the order the page draws them.
+
+        Not beside the overview description, which would put the two
+        "Beschreibung" fields adjacent and invite an author to paste the same
+        paragraph into both — the thing DEP-47 exists to stop.
+      */}
+      <Field
+        label={de.course.descriptionDetail}
+        htmlFor="course-description-detail"
+        hint={de.course.descriptionDetailHint}
+        wide
+      >
+        <TextArea
+          id="course-description-detail"
+          value={form.descriptionDetail}
+          rows={6}
+          maxLength={5000}
+          onChange={(value) => set("descriptionDetail", value)}
+        />
+      </Field>
+
       <Field
         label={de.course.learningObjectives}
         htmlFor="course-objectives"
@@ -340,6 +367,7 @@ function initialForm(course: AdminCourseDetail) {
   return {
     title: course.title,
     description: course.description ?? "",
+    descriptionDetail: course.descriptionDetail ?? "",
     deliveryType: course.deliveryType,
     thema: course.thema.join("\n"),
     altersgruppe: course.altersgruppe.join("\n"),

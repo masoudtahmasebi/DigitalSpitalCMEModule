@@ -175,6 +175,15 @@ export const courses = pgTable("courses", {
   slug: text("slug").notNull(),
   title: text("title").notNull(),
   description: text("description"),
+  /**
+   * The detail page's own description (P252-01, DEP-47).
+   *
+   * `description` is the catalogue card's intro; this is the paragraph under
+   * "Beschreibung der Fortbildung". Null means "use `description`" — see the
+   * column comment in migration 0057 for why the fallback is the widget's and
+   * not a COALESCE here.
+   */
+  descriptionDetail: text("description_detail"),
   heroImageUrl: text("hero_image_url"),
   learningObjectives: text("learning_objectives").array().notNull().default([]),
   targetAudience: text("target_audience"),

@@ -2935,6 +2935,21 @@ export interface components {
             } | null;
         };
         CourseDetail: components["schemas"]["CourseSummary"] & {
+            /**
+             * @description The paragraph under "Beschreibung der Fortbildung" on the
+             *     course's own page (DEP-47).
+             *
+             *     On the detail schema only: the catalogue card renders
+             *     `description` and never this one, so carrying it in
+             *     `CourseSummary` would be bytes on every card of every page for
+             *     a string nothing there draws.
+             *
+             *     `null` means "use `description`" and the client falls back.
+             *     The two stay distinguishable on the wire because the admin form
+             *     has to show this field empty when it is unset — otherwise an
+             *     author edits a copy of the other text without being told.
+             */
+            descriptionDetail: string | null;
             /** @description The "Lernziele" checklist, one entry per bullet. */
             learningObjectives: string[];
             /** @description The "Zielgruppe" text; newlines are the only formatting. */
@@ -3770,6 +3785,12 @@ export interface components {
             title: string;
             description: string | null;
             /**
+             * @description The detail page's own description (DEP-47). `null` means "use
+             *     `description`", which is what every course created before migration
+             *     0057 says, and what the widget falls back to.
+             */
+            descriptionDetail: string | null;
+            /**
              * @description Which catalogue tab the course appears under.
              * @enum {string}
              */
@@ -4130,6 +4151,11 @@ export interface components {
             status?: "draft" | "published";
             title?: string;
             description?: string | null;
+            /**
+             * @description The detail page's description (DEP-47). `null` or an empty value
+             *     clears it, and the widget then falls back to `description`.
+             */
+            descriptionDetail?: string | null;
             /** @enum {string} */
             deliveryType?: "on_demand" | "live" | "praesenz";
             thema?: string[];

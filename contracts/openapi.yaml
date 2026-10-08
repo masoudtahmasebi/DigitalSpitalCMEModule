@@ -4409,6 +4409,7 @@ components:
         - $ref: "#/components/schemas/CourseSummary"
         - type: object
           required:
+            - descriptionDetail
             - learningObjectives
             - targetAudience
             - prerequisites
@@ -4423,6 +4424,21 @@ components:
             - modules
             - experts
           properties:
+            descriptionDetail:
+              type: [string, "null"]
+              description: |
+                The paragraph under "Beschreibung der Fortbildung" on the
+                course's own page (DEP-47).
+
+                On the detail schema only: the catalogue card renders
+                `description` and never this one, so carrying it in
+                `CourseSummary` would be bytes on every card of every page for
+                a string nothing there draws.
+
+                `null` means "use `description`" and the client falls back.
+                The two stay distinguishable on the wire because the admin form
+                has to show this field empty when it is unset — otherwise an
+                author edits a copy of the other text without being told.
             learningObjectives:
               type: array
               items: { type: string }
@@ -5572,6 +5588,7 @@ components:
           status,
           title,
           description,
+          descriptionDetail,
           deliveryType,
           thema,
           altersgruppe,
@@ -5614,6 +5631,12 @@ components:
             course runs rather than whether it is finished being written.
         title: { type: string }
         description: { type: [string, "null"] }
+        descriptionDetail:
+          type: [string, "null"]
+          description: |
+            The detail page's own description (DEP-47). `null` means "use
+            `description`", which is what every course created before migration
+            0057 says, and what the widget falls back to.
         deliveryType:
           type: string
           enum: [on_demand, live, praesenz]
@@ -6071,6 +6094,12 @@ components:
             enrolments keep their record and can no longer advance.
         title: { type: string, minLength: 1, maxLength: 300 }
         description: { type: [string, "null"], maxLength: 5000 }
+        descriptionDetail:
+          type: [string, "null"]
+          maxLength: 5000
+          description: |
+            The detail page's description (DEP-47). `null` or an empty value
+            clears it, and the widget then falls back to `description`.
         deliveryType: { type: string, enum: [on_demand, live, praesenz] }
         thema:
           type: array

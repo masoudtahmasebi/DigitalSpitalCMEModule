@@ -1938,9 +1938,26 @@ export const german = {
     presentationIntro:
       "Diese Angaben erscheinen in der Fortbildungsübersicht und auf der Kursseite.",
     title: "Titel der Fortbildung",
-    description: "Beschreibung",
+    description: "Beschreibung (Übersichtsseite)",
+    /*
+     * The sentence DEP-47 dictates, verbatim.
+     *
+     * The ticket attaches it to "this change" immediately after describing the
+     * *new* field, but the sentence itself says Übersichtsseite … Introtext,
+     * which is this one. Applied on the sentence's own words; raised on the
+     * ticket rather than decided quietly.
+     */
     descriptionHint:
-      "Erscheint auf der Kursseite unter „Beschreibung der Fortbildung“ und gekürzt auf der Übersichtskarte.",
+      "Erscheint auf der Übersichtsseite für alle Fortbildungen als Introtext.",
+    descriptionDetail: "Beschreibung (Detailseite)",
+    /*
+     * Names the fallback, because an author who leaves this empty has to be
+     * able to find out from the screen what a physician will then read
+     * (CLAUDE.md §9.4). An empty field with no sentence reads as an
+     * unfinished feature.
+     */
+    descriptionDetailHint:
+      "Erscheint auf der Kursseite unter „Beschreibung der Fortbildung“. Solange das Feld leer ist, wird dort die Beschreibung der Übersichtsseite angezeigt.",
     heroImageUrl: "Titelbild",
     heroImageHint:
       "Wird neben dem Titel und auf der Übersichtskarte angezeigt. Querformat, mindestens 1200 px breit — das Bild wird auf die Fläche zugeschnitten.",

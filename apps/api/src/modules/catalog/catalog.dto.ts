@@ -125,6 +125,18 @@ export const courseExpertSchema = z.object({
  * contradiction impossible to ship (P5-06).
  */
 export const courseDetailSchema = courseSummarySchema.extend({
+  /**
+   * The paragraph under "Beschreibung der Fortbildung" (P252-01, DEP-47).
+   *
+   * On the **detail** schema only. The catalogue card renders `description`
+   * and never this, so putting it on the summary would be bytes on every card
+   * of every page for a string nothing there draws.
+   *
+   * Null means "use `description`", and the fallback is the widget's — the API
+   * must keep the two distinguishable or the admin form would show an author a
+   * copy of the other text and call it this one (§9.4).
+   */
+  descriptionDetail: z.string().nullable(),
   /** The "Lernziele" checklist, one entry per bullet. */
   learningObjectives: z.array(z.string()),
   /** The "Zielgruppe" section; plain text, newlines are the only formatting. */

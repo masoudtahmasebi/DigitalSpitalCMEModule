@@ -272,6 +272,7 @@ function toDetail(
       enrolment,
       resolve,
     ),
+    descriptionDetail: course.descriptionDetail,
     learningObjectives: course.learningObjectives,
     targetAudience: course.targetAudience,
     prerequisites: course.prerequisites,
