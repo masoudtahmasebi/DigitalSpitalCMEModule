@@ -717,6 +717,24 @@ export const german = {
     branding: "Auftritt und Datenschutz",
     brandingIntro:
       "Texte und Bilder, die die Teilnehmenden dieses Projekts sehen. Leere Felder verwenden die Standardtexte der Plattform.",
+    catalogFilters: "Filter in der Übersicht",
+    /*
+     * Says what the control does and what each answer means (CLAUDE.md §9.4).
+     *
+     * The second sentence is the one that stops a support call: an operator who
+     * chooses "Thema und Altersgruppe" and still sees one dropdown has not hit
+     * a bug — a filter with nothing in it is never offered, because a dropdown
+     * whose only entry is "auswählen" is a control that cannot do anything
+     * (§9.2).
+     */
+    catalogFiltersHint:
+      "Welche Filter über der Fortbildungsübersicht angeboten werden. Ein Filter, für den keine Fortbildung einen Wert hat, wird unabhängig davon nicht angezeigt.",
+    catalogFilterOptions: {
+      both: "Thema und Altersgruppe",
+      thema: "Nur Thema",
+      altersgruppe: "Nur Altersgruppe",
+      none: "Keine Filter anzeigen",
+    },
     catalogTitle: "Überschrift der Übersicht",
     catalogTitleHint:
       "Zum Beispiel „Fortbildungsbereich für ADHS“. Ohne Angabe verwendet die Plattform eine allgemeine Überschrift.",
@@ -1938,9 +1956,26 @@ export const german = {
     presentationIntro:
       "Diese Angaben erscheinen in der Fortbildungsübersicht und auf der Kursseite.",
     title: "Titel der Fortbildung",
-    description: "Beschreibung",
+    description: "Beschreibung (Übersichtsseite)",
+    /*
+     * The sentence DEP-47 dictates, verbatim.
+     *
+     * The ticket attaches it to "this change" immediately after describing the
+     * *new* field, but the sentence itself says Übersichtsseite … Introtext,
+     * which is this one. Applied on the sentence's own words; raised on the
+     * ticket rather than decided quietly.
+     */
     descriptionHint:
-      "Erscheint auf der Kursseite unter „Beschreibung der Fortbildung“ und gekürzt auf der Übersichtskarte.",
+      "Erscheint auf der Übersichtsseite für alle Fortbildungen als Introtext.",
+    descriptionDetail: "Beschreibung (Detailseite)",
+    /*
+     * Names the fallback, because an author who leaves this empty has to be
+     * able to find out from the screen what a physician will then read
+     * (CLAUDE.md §9.4). An empty field with no sentence reads as an
+     * unfinished feature.
+     */
+    descriptionDetailHint:
+      "Erscheint auf der Kursseite unter „Beschreibung der Fortbildung“. Solange das Feld leer ist, wird dort die Beschreibung der Übersichtsseite angezeigt.",
     heroImageUrl: "Titelbild",
     heroImageHint:
       "Wird neben dem Titel und auf der Übersichtskarte angezeigt. Querformat, mindestens 1200 px breit — das Bild wird auf die Fläche zugeschnitten.",

@@ -44,6 +44,8 @@ export interface AdminCourseRow {
   title: string;
   // Presentation — what the learner-facing layout draws (P13-01).
   description: string | null;
+  /** The detail page's own description; null means "use `description`". */
+  descriptionDetail: string | null;
   deliveryType: "on_demand" | "live" | "praesenz";
   thema: string[];
   altersgruppe: string[];
@@ -238,6 +240,7 @@ export interface CoursePatch {
   status?: "draft" | "published";
   title?: string;
   description?: string | null;
+  descriptionDetail?: string | null;
   deliveryType?: "on_demand" | "live" | "praesenz";
   thema?: string[];
   altersgruppe?: string[];
@@ -279,6 +282,7 @@ const COURSE_COLUMNS = {
   status: courses.status,
   title: courses.title,
   description: courses.description,
+  descriptionDetail: courses.descriptionDetail,
   deliveryType: courses.deliveryType,
   thema: courses.thema,
   altersgruppe: courses.altersgruppe,

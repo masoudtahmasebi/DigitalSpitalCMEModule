@@ -14,6 +14,9 @@ const adhs: CourseRow = {
   status: "published",
   title: "ADHS Akademie adult",
   description: "Fortbildung zu ADHS bei Erwachsenen",
+  // Null, like every row created before migration 0057 — which is the case
+  // the fallback below has to keep rendering unchanged.
+  descriptionDetail: null,
   heroImageUrl: "https://cdn.example.org/adhs-akademie-adult-hero.png",
   learningObjectives: [
     "Sichere Diagnosestellung von ADHS im Erwachsenenalter",
@@ -306,6 +309,60 @@ describe("getCourseBySlug", () => {
     expect(detail.learningObjectives).toHaveLength(2);
     expect(detail.targetAudience).toContain("Psychiatrie");
     expect(detail.heroImageUrl).toContain("hero");
+  });
+
+  /**
+   * Two descriptions, and which response carries which (P252-01, DEP-47).
+   *
+   * The reported defect was that one column served two screens. The risk in
+   * fixing it is the opposite one: adding the field to `CourseSummary`, where
+   * nothing draws it, would put a 5 000-character paragraph on every card of
+   * every catalogue page. So the detail response carries it and the list
+   * response must not.
+   */
+  it("carries the detail page's own description when the course has one", async () => {
+    const withDetail = fakeRepository({
+      findCourseTree: async () => ({
+        course: { ...adhs, descriptionDetail: "Die ausführliche Fassung." },
+        modules: [],
+        chapters: [],
+        contents: [],
+        experts: [],
+      }),
+    });
+
+    const detail = await new CatalogService(withDetail).getCourseBySlug(
+      "adhs-akademie-adult",
+      LEARNER,
+    );
+
+    expect(detail.descriptionDetail).toBe("Die ausführliche Fassung.");
+    // And the catalogue's own text is untouched — they are two values.
+    expect(detail.description).toBe("Fortbildung zu ADHS bei Erwachsenen");
+  });
+
+  it("reports it as null for a course authored before the column existed", async () => {
+    const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
+      "adhs-akademie-adult",
+      LEARNER,
+    );
+
+    // Null rather than a copy of `description`: the API keeps the two
+    // distinguishable so the admin form can show this field empty, and the
+    // widget decides what a physician reads. A COALESCE here would make an
+    // unset field indistinguishable from a deliberate duplicate (§9.6).
+    expect(detail.descriptionDetail).toBeNull();
+  });
+
+  it("keeps it off the catalogue list, which never draws it", async () => {
+    const result = await new CatalogService(fakeRepository()).listCourses(
+      { page: 1, perPage: 10 },
+      LEARNER,
+    );
+
+    const [card] = result.items;
+    expect(card).toBeDefined();
+    expect(card).not.toHaveProperty("descriptionDetail");
   });
 
   it("surfaces the accreditation data the certificate will need", async () => {

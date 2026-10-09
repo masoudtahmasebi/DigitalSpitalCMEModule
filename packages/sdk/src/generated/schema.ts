@@ -2935,6 +2935,21 @@ export interface components {
             } | null;
         };
         CourseDetail: components["schemas"]["CourseSummary"] & {
+            /**
+             * @description The paragraph under "Beschreibung der Fortbildung" on the
+             *     course's own page (DEP-47).
+             *
+             *     On the detail schema only: the catalogue card renders
+             *     `description` and never this one, so carrying it in
+             *     `CourseSummary` would be bytes on every card of every page for
+             *     a string nothing there draws.
+             *
+             *     `null` means "use `description`" and the client falls back.
+             *     The two stay distinguishable on the wire because the admin form
+             *     has to show this field empty when it is unset — otherwise an
+             *     author edits a copy of the other text without being told.
+             */
+            descriptionDetail: string | null;
             /** @description The "Lernziele" checklist, one entry per bullet. */
             learningObjectives: string[];
             /** @description The "Zielgruppe" text; newlines are the only formatting. */
@@ -3692,6 +3707,25 @@ export interface components {
             /** @description Alternative text for the seal. Required whenever one is set. */
             catalogSealAlt?: string;
             /**
+             * @description Which of the catalogue's two filters a project offers (DEP-48).
+             *
+             *     Absent means `both`, which is what every project rendered before
+             *     this existed — so an unrecognised or missing value degrades to
+             *     today's behaviour rather than to a catalogue with no filters.
+             *
+             *     Separate from whether a filter has anything in it: a facet with no
+             *     values is never drawn, with or without this setting, because a
+             *     dropdown whose only entry is its own placeholder is a control that
+             *     cannot do anything. This setting is for a project that *has* Themen
+             *     and does not want to offer the filter anyway.
+             *
+             *     The categories are fixed — `thema` and `altersgruppe` are columns
+             *     on `courses`, so a third filter is a migration, not a setting. The
+             *     items within each are free text per course.
+             * @enum {string}
+             */
+            catalogFilters?: "both" | "thema" | "altersgruppe" | "none";
+            /**
              * @description Where the completion screen's **Datenschutzerklärung** link points.
              *
              *     Accepted only together with `privacyPolicyVersion`: a link with no
@@ -3769,6 +3803,12 @@ export interface components {
             status: "draft" | "published";
             title: string;
             description: string | null;
+            /**
+             * @description The detail page's own description (DEP-47). `null` means "use
+             *     `description`", which is what every course created before migration
+             *     0057 says, and what the widget falls back to.
+             */
+            descriptionDetail: string | null;
             /**
              * @description Which catalogue tab the course appears under.
              * @enum {string}
@@ -4130,6 +4170,11 @@ export interface components {
             status?: "draft" | "published";
             title?: string;
             description?: string | null;
+            /**
+             * @description The detail page's description (DEP-47). `null` or an empty value
+             *     clears it, and the widget then falls back to `description`.
+             */
+            descriptionDetail?: string | null;
             /** @enum {string} */
             deliveryType?: "on_demand" | "live" | "praesenz";
             thema?: string[];

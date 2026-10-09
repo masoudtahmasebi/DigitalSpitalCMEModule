@@ -2028,6 +2028,10 @@ describe("a content-locked course refuses structural edits (P178-01)", () => {
           "customer_id",
           "project_id",
           "description",
+          // The detail page's own description (P252-01, DEP-47). Copied, like
+          // every other thing a clone's author would otherwise retype: it is
+          // presentation, not accreditation identity.
+          "description_detail",
           "delivery_type",
           "thema",
           "altersgruppe",

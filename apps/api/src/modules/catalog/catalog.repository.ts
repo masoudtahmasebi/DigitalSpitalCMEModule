@@ -50,6 +50,7 @@ export interface CourseRow {
   slug: string;
   title: string;
   description: string | null;
+  descriptionDetail: string | null;
   heroImageUrl: string | null;
   learningObjectives: string[];
   targetAudience: string | null;

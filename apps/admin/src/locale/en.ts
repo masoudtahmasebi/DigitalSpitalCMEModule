@@ -495,6 +495,15 @@ export const en: DeepPartial<typeof german> = {
     branding: "Appearance and data protection",
     brandingIntro:
       "Text and images this project's participants see. Empty fields use the platform's default text.",
+    catalogFilters: "Filters on the overview",
+    catalogFiltersHint:
+      "Which filters are offered above the course overview. A filter no course has a value for is not shown regardless.",
+    catalogFilterOptions: {
+      both: "Topic and age group",
+      thema: "Topic only",
+      altersgruppe: "Age group only",
+      none: "Show no filters",
+    },
     catalogTitle: "Overview heading",
     catalogTitleHint:
       "For example “ADHD continuing education”. Without one the platform uses a generic heading.",
@@ -1263,9 +1272,12 @@ export const en: DeepPartial<typeof german> = {
     presentationIntro:
       "These details appear in the course overview and on the course page.",
     title: "Course title",
-    description: "Description",
+    description: "Description (overview page)",
     descriptionHint:
-      "Appears on the course page under “Beschreibung der Fortbildung” and, shortened, on the overview card.",
+      "Appears on the overview page listing every course, as the intro text.",
+    descriptionDetail: "Description (detail page)",
+    descriptionDetailHint:
+      "Appears on the course page under “Beschreibung der Fortbildung”. While this is empty, the overview page’s description is shown there instead.",
     heroImageUrl: "Cover image",
     heroImageHint:
       "Shown beside the title and on the overview card. Landscape, at least 1200 px wide — the image is cropped to fit.",

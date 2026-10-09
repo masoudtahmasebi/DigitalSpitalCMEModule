@@ -192,6 +192,7 @@ export class AdminService {
     // Presentation — everything the learner-facing layout draws (P13-01).
     assign(patch, "title", update.title);
     assign(patch, "description", update.description);
+    assign(patch, "descriptionDetail", update.descriptionDetail);
     assign(patch, "deliveryType", update.deliveryType);
     assign(patch, "thema", update.thema);
     assign(patch, "altersgruppe", update.altersgruppe);
@@ -902,6 +903,7 @@ function decodeImage(
  */
 function presentationOf(row: {
   description: string | null;
+  descriptionDetail: string | null;
   deliveryType: "on_demand" | "live" | "praesenz";
   thema: string[];
   altersgruppe: string[];
@@ -914,6 +916,7 @@ function presentationOf(row: {
 }) {
   return {
     description: row.description,
+    descriptionDetail: row.descriptionDetail,
     deliveryType: row.deliveryType,
     thema: row.thema,
     altersgruppe: row.altersgruppe,

@@ -8,9 +8,18 @@
  *   one, otherwise nothing beyond the generic title.
  * - Nest's built-in `HttpException` (thrown by pipes, e.g. a malformed route
  *   param) → mapped by status, message kept since Nest's own messages are
- *   already client-safe by construction — **except a 404**, whose message is
- *   the router's `Cannot GET <originalUrl>` and carries the query string. Its
- *   detail is rebuilt from the method and the query-free path (P249-01).
+ *   already client-safe by construction — **except the router's own 404**,
+ *   whose message is `Cannot GET <originalUrl>` and carries the query string.
+ *   That one's detail is rebuilt from the method and the query-free path
+ *   (P249-01), recognised by its wording and nothing else (`ROUTER_404`).
+ *
+ *   Recognised by wording because P249-01 did it by **status**, and a 404 is
+ *   not only the router's: `branding.controller.ts` and
+ *   `public-media.controller.ts` throw five deliberate ones, and from f5b37ef
+ *   (05.10.2026) each answered that the route did not exist. On the two routes
+ *   a learner's browser fetches without a token, which is where a false
+ *   statement about the system is least affordable, and `routes.spec.ts`
+ *   believed it (P251-05).
  * - A framework refusal raised before any handler — body-parser's 413 and 415
  *   are plain `http-errors` objects, not `HttpException`s — → its own 4xx with
  *   a fixed title and **no** message: body-parser's text quotes what the
@@ -152,15 +161,16 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const body = exception.getResponse();
-      const message =
-        status === 404
-          ? // The router's own text is `Cannot GET <originalUrl>`, query and
-            // all — the one place this filter would otherwise echo a token it
-            // took care to keep out of `instance` and the log (P249-01).
-            `Cannot ${request.method} ${path}`
-          : typeof body === "string"
-            ? body
-            : ((body as { message?: string }).message ?? "");
+      const own =
+        typeof body === "string" ? body : ((body as { message?: string }).message ?? "");
+      const message = ROUTER_404.test(own)
+        ? // The router's own text is `Cannot GET <originalUrl>`, query and
+          // all — the one place this filter would otherwise echo a token it
+          // took care to keep out of `instance` and the log (P249-01). Rebuilt
+          // from the method and the query-free path rather than trimmed, so
+          // there is no second parser for the same URL.
+          `Cannot ${request.method} ${path}`
+        : own;
 
       response.status(status).json({
         type: "https://docs.ds-education.de/errors/http",
@@ -298,6 +308,24 @@ function safePath(request: Request): string {
 }
 
 const MAX_LOGGED_PATH = 200;
+
+/**
+ * Nest's router 404, told apart from a 404 a handler chose (P251-05).
+ *
+ * The router throws `new NotFoundException("Cannot GET <originalUrl>")` when no
+ * handler matched, and that message is the only thing distinguishing it here —
+ * it arrives as the same `HttpException` subclass with the same status as
+ * `branding.controller.ts:156`'s deliberate one. There is no flag, no marker
+ * and no separate filter to hook, so the wording is what there is.
+ *
+ * Matching text to recognise a framework's own message is weak and is admitted
+ * as such. What makes it acceptable is which way it fails: a handler that
+ * happens to phrase its own 404 as "Cannot GET …" gets that message rebuilt
+ * query-free, which is the same sentence it asked for. The expensive direction
+ * — the router's URL reaching a log with a token in it — is the one the pattern
+ * is wide enough to catch, for every method rather than only GET.
+ */
+const ROUTER_404 = /^Cannot\s+[A-Z]+\s+\//u;
 
 /**
  * The `cause` chain, as messages, outermost first.

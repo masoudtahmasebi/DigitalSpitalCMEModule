@@ -96,7 +96,9 @@ export async function signInToConsole(
   await page.getByRole("button", { name: "Anmelden" }).click();
 
   /*
-   * Three ways this can go, and the helper has to be able to take all three.
+   * Three ways this can go — straight in, an ordinary code prompt, or enrolment
+   * — and the helper has to be able to take all three. Two of them look alike
+   * on screen, which is the subject of the comment below the locators.
    *
    * `super_admin` grants are governed by the **platform** policy, which
    * ADR-0012 fixes at `required` — so that account always meets enrolment on
@@ -111,12 +113,36 @@ export async function signInToConsole(
    * the product being right and the harness being narrow — the same shape as
    * the TOTP replay finding.
    *
-   * `Promise.race` over three locators rather than a sequence of waits: asking
-   * "did enrolment appear?" first costs its full timeout on every sign-in that
-   * skips it, and would make the honest answer the slow one.
+   * `Promise.race` over locators rather than a sequence of waits: asking "did a
+   * second factor appear?" first costs its full timeout on every sign-in that
+   * skips it, and would make the honest answer the slow one. What a race may
+   * not do is put two witnesses to the *same* state on different arms — see
+   * P251-06 below.
    */
-  const enrolling = page.getByText("Zwei-Faktor-Authentifizierung einrichten");
+  /*
+   * One witness for "a second factor is being asked for", and the enrolment
+   * heading read afterwards rather than raced against it (P251-06).
+   *
+   * The first version raced the heading and the code field as two outcomes, and
+   * they are **on the same screen**: `SignIn.tsx:243` draws the
+   * "Sechsstelliger Code" field under both branches of one form — the enrolment
+   * panel adds the QR and the key above it. So the race was between two
+   * witnesses to the same state, the winner was whichever locator Playwright
+   * resolved first, and when the field won on an enrolment screen this helper
+   * skipped reading the key and threw
+   *
+   *     e2e-operator@… was asked for a code this harness has no secret for
+   *
+   * on the screen that was offering the secret three lines up. Nondeterministic
+   * by construction, which is why it passed most runs — §11.10, a race proves
+   * nothing when the test only ever observes one of its orders.
+   *
+   * The field is the right single witness because it is on both screens. Which
+   * of the two this is, is then a question with an answer, asked once the form
+   * is on screen.
+   */
   const codePrompt = page.getByLabel("Sechsstelliger Code");
+  const enrolling = page.getByText("Zwei-Faktor-Authentifizierung einrichten");
   const console_ = menu(page).getByRole("button", { name: "Fortbildungen" });
   /*
    * The same arrival, seen at a width where the sidebar is not drawn (P224-07).
@@ -134,45 +160,55 @@ export async function signInToConsole(
   const narrowConsole = page.getByRole("button", { name: "Menü", exact: true });
 
   const outcome = await Promise.race([
-    whichever(enrolling.waitFor({ state: "visible", timeout: 25_000 }), "enrol"),
     whichever(codePrompt.waitFor({ state: "visible", timeout: 25_000 }), "code"),
     whichever(console_.waitFor({ state: "visible", timeout: 25_000 }), "in"),
     whichever(narrowConsole.waitFor({ state: "visible", timeout: 25_000 }), "in"),
-    // The losers never settle, so if none of the three appears the race would
-    // hang until Playwright's own timeout and report nothing about why. This
-    // arm is what turns that into a sentence.
+    // The losers never settle, so if neither appears the race would hang until
+    // Playwright's own timeout and report nothing about why. This arm is what
+    // turns that into a sentence.
     new Promise<Outcome>((resolve) => setTimeout(() => resolve("none"), 26_000)),
   ]);
 
   if (outcome === "none") {
     throw new Error(
-      `signing in as ${credentials.email} reached neither enrolment, nor a code ` +
-        `prompt, nor the console. The page says: ${(
-          await page.locator("body").innerText()
-        )
+      `signing in as ${credentials.email} reached neither a second factor nor ` +
+        `the console. The page says: ${(await page.locator("body").innerText())
           .replace(/\s+/gu, " ")
           .slice(0, 300)}`,
     );
   }
 
-  if (outcome === "enrol") {
-    // The key offered "falls Sie nicht scannen können" — base32, exactly what
-    // an authenticator app is given, read off the page the same way a person
-    // would copy it.
-    const shown = /\b[A-Z2-7]{32}\b/u.exec(await page.locator("main").innerText());
-    if (shown === null) {
-      throw new Error("the enrolment screen showed no base32 key to read");
+  if (outcome === "code") {
+    /*
+     * Which of the two second-factor screens this is — asked of the screen that
+     * is already up, not raced for.
+     *
+     * `isVisible` rather than a `waitFor`: the form is on screen, so the heading
+     * either is beside the field or is not, and there is nothing to wait for.
+     * A `waitFor` here would spend its timeout on every ordinary code prompt
+     * and reintroduce the cost the race was written to avoid.
+     */
+    if (await enrolling.isVisible()) {
+      // The key offered "falls Sie nicht scannen können" — base32, exactly what
+      // an authenticator app is given, read off the page the same way a person
+      // would copy it.
+      const shown = /\b[A-Z2-7]{32}\b/u.exec(await page.locator("main").innerText());
+      if (shown === null) {
+        throw new Error("the enrolment screen showed no base32 key to read");
+      }
+      secrets.set(credentials.email, decodeBase32(shown[0]));
     }
-    secrets.set(credentials.email, decodeBase32(shown[0]));
-  }
 
-  if (outcome !== "in") {
     const secret = secrets.get(credentials.email);
     if (secret === undefined) {
       throw new Error(
-        `${credentials.email} was asked for a code this harness has no secret for`,
+        `${credentials.email} was asked for a code this harness has no secret ` +
+          `for, and the screen offered no key to enrol one. Either the account ` +
+          `already has a factor this process did not create, or the enrolment ` +
+          `panel did not render.`,
       );
     }
+
     await codePrompt.fill(await freshTotpCode(secret));
     await page.getByRole("button", { name: "Bestätigen" }).click();
   }
@@ -193,12 +229,20 @@ export async function signInToConsole(
   await expect(console_.or(narrowConsole).first()).toBeVisible({ timeout: 20_000 });
 }
 
-type Outcome = "enrol" | "code" | "in" | "none";
+/**
+ * The states a sign-in can land in, as the race can tell them apart.
+ *
+ * `enrol` was once one of these and is deliberately not any more (P251-06): the
+ * enrolment panel and an ordinary code prompt share one form and one field, so
+ * "a second factor is being asked for" is the only distinction a race can draw.
+ * Which of the two it is, is read off the screen afterwards.
+ */
+type Outcome = "code" | "in" | "none";
 
 /**
  * Label a wait, and make a losing one silent.
  *
- * Three `waitFor`s race, so two of them will time out afterwards. Left alone
+ * Several `waitFor`s race, so the rest will time out afterwards. Left alone
  * those are unhandled rejections — noise at best, and at worst a failure
  * attributed to whichever test happened to be running when they landed. A
  * loser resolves to a promise that never settles, which is exactly what a

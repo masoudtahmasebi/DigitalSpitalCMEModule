@@ -46,11 +46,32 @@ const DIVIDED = "border-t border-gray-200 pt-8 first:border-t-0 first:pt-0";
 export function OverviewTab(props: { course: CourseDetail }) {
   const { course } = props;
 
+  /*
+   * The detail page's own text, falling back to the catalogue's (P252-01,
+   * DEP-47).
+   *
+   * Until now both screens read `description`, so a course had one paragraph
+   * doing two jobs — the client's report, and true: `CourseDetail` extends
+   * `CourseSummary`, which is where `description` lives.
+   *
+   * The fallback is what makes the column safe to add. Every course that
+   * existed before migration 0057 has `descriptionDetail: null`, and each one
+   * must render exactly what it rendered yesterday — MEDICE's live course has
+   * a paragraph here, and shipping a change that blanked it would be a content
+   * loss nobody asked for.
+   *
+   * `??` and not `||`: an author who deliberately clears the field is served
+   * by the admin form, which stores an empty value as null. An empty string
+   * reaching here would mean the API stopped normalising, and silently
+   * swapping the other text in would hide that.
+   */
+  const description = course.descriptionDetail ?? course.description;
+
   return (
     <div className="space-y-8">
-      {course.description === null ? null : (
+      {description === null ? null : (
         <Section title={de.overviewTab.description} className={DIVIDED}>
-          <ReadMore text={course.description} limit={DESCRIPTION_LIMIT} />
+          <ReadMore text={description} limit={DESCRIPTION_LIMIT} />
         </Section>
       )}
 

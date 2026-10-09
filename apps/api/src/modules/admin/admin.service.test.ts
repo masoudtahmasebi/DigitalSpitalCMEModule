@@ -51,6 +51,7 @@ const course: AdminCourseRow = {
   contentLocked: false,
   title: "ADHS Akademie adult",
   description: null,
+  descriptionDetail: null,
   deliveryType: "on_demand",
   thema: [],
   altersgruppe: [],

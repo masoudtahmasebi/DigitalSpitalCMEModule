@@ -80,32 +80,33 @@
     "check:content-lock": "node scripts/check-content-lock.mjs",
     "check:seed-overwrites": "node scripts/check-seed-overwrites.mjs",
     "check:focus-ring": "node scripts/check-focus-ring.mjs",
-    "check:static": "pnpm check:roles && pnpm check:tenant-reads && pnpm check:deadlines && pnpm check:i18n && pnpm check:copy && pnpm check:sdk && pnpm check:runtime-config && pnpm check:egress && pnpm check:env && pnpm check:local-ports && pnpm check:focus-ring && pnpm check:backlog && pnpm check:csp && pnpm check:seed-overwrites && pnpm check:content-lock && pnpm check:eiv-settings && pnpm check:docs-commands && pnpm check:workflow-shell && pnpm check:compose-env && pnpm check:turbo-env && pnpm check:aria-props && pnpm check:screen-intros && pnpm check:design-tokens && pnpm check:savers && pnpm check:unsaved-guard && pnpm check:ci-parity",
+    "check:static": "pnpm check:roles && pnpm check:tenant-reads && pnpm check:deadlines && pnpm check:i18n && pnpm check:copy && pnpm check:sdk && pnpm check:runtime-config && pnpm check:egress && pnpm check:env && pnpm check:local-ports && pnpm check:focus-ring && pnpm check:backlog && pnpm check:csp && pnpm check:seed-overwrites && pnpm check:content-lock && pnpm check:eiv-settings && pnpm check:docs-commands && pnpm check:workflow-shell && pnpm check:compose-env && pnpm check:turbo-env && pnpm check:aria-props && pnpm check:screen-intros && pnpm check:design-tokens && pnpm check:savers && pnpm check:unsaved-guard && pnpm check:node-version && pnpm check:ci-parity",
     "check:ci-parity": "node scripts/check-ci-parity.mjs",
     "check:design-tokens": "node scripts/check-design-tokens.mjs",
     "check:savers": "node scripts/check-savers.mjs",
-    "check:unsaved-guard": "node scripts/check-unsaved-guard.mjs"
+    "check:unsaved-guard": "node scripts/check-unsaved-guard.mjs",
+    "check:node-version": "node scripts/check-node-version.mjs"
   },
   "devDependencies": {
     "@ds/config": "workspace:*",
     "@ds/migrator": "workspace:*",
     "@ds/seed": "workspace:*",
     "@eslint/js": "^10.0.1",
-    "@types/node": "^22.20.4",
+    "@types/node": "^22.20.5",
     "@types/pg": "^8.23.1",
-    "@typescript-eslint/eslint-plugin": "^8.70.1",
-    "@typescript-eslint/parser": "^8.70.1",
-    "eslint": "^10.11.0",
+    "@typescript-eslint/eslint-plugin": "^8.71.1",
+    "@typescript-eslint/parser": "^8.71.1",
+    "eslint": "^10.12.0",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-security": "^4.0.1",
-    "pg": "^8.23.0",
+    "eslint-plugin-security": "^4.2.0",
+    "pg": "^8.23.1",
     "prettier": "^3.9.9",
     "tsx": "^4.23.15",
-    "turbo": "^2.11.4",
+    "turbo": "^2.11.7",
     "typescript": "^5.9.3",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.3"
   },
   "dependencies": {
     "helmet": "^8.3.0"
