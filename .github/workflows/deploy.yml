@@ -208,9 +208,9 @@ jobs:
           # The branch production is deployed from, as a literal (P175-01).
           #
           # It was `github.event.repository.default_branch`, and on this
-          # repository that is **not** `main` — the default branch is currently
-          # `claude/education-platform-roadmap-3vgrqh`, which the first run of
-          # this guard printed and refused on:
+          # repository that was **not** `main` until 15.10.2026 (P254-01) — it
+          # was `claude/education-platform-roadmap-3vgrqh`, which the first run
+          # of this guard printed and refused on:
           #
           #     TRIGGERING_BRANCH: main
           #     DEFAULT_BRANCH:    claude/education-platform-roadmap-3vgrqh
@@ -223,7 +223,9 @@ jobs:
           # literal three dozen lines up. This is that same literal, so the two
           # halves of "only main reaches production" cannot disagree — and it no
           # longer depends on a repository setting that can be changed in the
-          # UI, by somebody who is not thinking about deployment at all.
+          # UI, by somebody who is not thinking about deployment at all. The
+          # setting is `main` now; the literal stays, because it was never the
+          # setting's value that made the guard wrong but depending on it.
           DEPLOY_BRANCH: main
           # The branch CI actually ran on (P173-01).
           #
@@ -875,9 +877,13 @@ jobs:
       #
       # `actions/checkout` with no `ref` takes `github.ref`, and on a
       # `workflow_run` event that is the repository's *default branch* — which
-      # on this repository is `claude/education-platform-roadmap-3vgrqh` and not
-      # `main`. So this job drove each new deployment with the spec from a
-      # branch that had not moved in days.
+      # on this repository was `claude/education-platform-roadmap-3vgrqh`, not
+      # `main`, until 15.10.2026 (P254-01). So this job drove each new
+      # deployment with the spec from a branch that had not moved in days.
+      #
+      # The default is `main` now, and the pin stays: the tip of `main` when
+      # this job starts is not necessarily the commit that was deployed, and
+      # the default branch is a dropdown away from being something else again.
       #
       # It surfaced on deploy 142: `zwei-module.spec.ts` failed at a locator the
       # merged commit had migrated one line at a time, with the failure quoting

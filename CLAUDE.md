@@ -415,8 +415,10 @@ the code expects before reading the code.
 ### 9.9b A label on a run is not the trigger of it
 
 Two days were lost to a report I made and then had to withdraw twice, and the
-root of it is one setting: **this repository's default branch is
-`claude/education-platform-roadmap-3vgrqh`, not `main`** (P175-01).
+root of it is one setting: **this repository's default branch was
+`claude/education-platform-roadmap-3vgrqh`, not `main`** (P175-01). It is `main`
+since 15.10.2026 (P254-01); everything below still holds, because none of the
+fixes depend on the setting.
 
 `github.ref` on a `workflow_run` event is the _default_ branch, whatever the
 triggering run was on. So every Deploy run is labelled in the API and the UI
@@ -443,6 +445,11 @@ written to stop — and refused `main`. The deploy branch is now the literal
 - Timing correlation is not causation: three deploys firing seconds after CI on
   `main` completed were consistent with both of my wrong stories and with the
   right one.
+- **A scheduled or `workflow_run` job runs the default branch's copy of the
+  workflow, on the default branch's code** (P254-01). For a month the weekly CI
+  audited a lockfile from 17.09 and went red on seven advisories `main` had
+  already fixed. A red scheduled run is a report about the default branch — read
+  its `head_sha` before reading its errors.
 
 ### 9.10 Correct is not the same as usable
 

@@ -16,6 +16,18 @@ on:
   # arrive.
   schedule:
     - cron: "0 5 * * 1"
+  # By hand, so the weekly run's question can be asked without waiting for
+  # Monday (P254-02).
+  #
+  # A scheduled run uses the default branch's copy of this file and checks out
+  # the default branch. Until 15.10.2026 that was a branch nobody had pushed to
+  # since 17.09, so run 38252472184 audited September's lockfile — 2.0.7 of
+  # `proxy-addr`, 9.1.1 of `nodemailer` — and went red on seven advisories that
+  # `main` had fixed weeks earlier. Re-running it re-ran the same commit; with
+  # no other trigger, nothing could show the audit passing on `main` short of a
+  # push. A manual run on `main` passes the deploy's `branches: [main]` filter
+  # exactly as a push does, which is correct: it is the same commit.
+  workflow_dispatch:
 
 concurrency:
   # Not keyed on the run: a scheduled run and a push to the same ref would
