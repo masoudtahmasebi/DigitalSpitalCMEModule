@@ -455,8 +455,16 @@ function CatalogHero(props: { branding: Branding }) {
         be announced, and it has to crop rather than letterbox as the hero
         changes width.
       */}
+      {/*
+        `h-[27.5rem]` only when there is a photograph to show (P255-01). The
+        band is that tall because the mobile export draws a photograph that
+        tall; without one it carries nothing but the seal, and the client's
+        phone opened on 224 px of empty teal above it. `h-64` is the seal's
+        176 px with its own 40 px `bottom-10` repeated above it — the band is
+        exactly as tall as what it holds. `sm:h-auto` covers both from `sm`.
+      */}
       <div
-        className="relative h-[27.5rem] bg-brand-600 bg-cover bg-center sm:absolute sm:inset-0 sm:h-auto sm:bg-right"
+        className={`relative ${photograph === undefined ? "h-64" : "h-[27.5rem]"} bg-brand-600 bg-cover bg-center sm:absolute sm:inset-0 sm:h-auto sm:bg-right`}
         {...(photograph === undefined
           ? {}
           : { style: { backgroundImage: `url("${encodeURI(photograph)}")` } })}

@@ -152,7 +152,16 @@ export function TabbedPanel<T extends string>(props: {
   const active = props.tabs.find((tab) => tab.id === props.active);
 
   return (
-    <div className="flex flex-col">
+    /*
+      `max-sm:pb-10` (P255-01). Below `sm` the tab buttons are the last thing
+      the widget draws, and nothing came after them: on MEDICE's page
+      "Weitere" stood on the theme's footer. The space belongs here rather than
+      to each caller because every caller — catalogue, course detail, preview —
+      ends on this row, and inside the widget's own box because the widget
+      cannot see what the host page puts after it. Measured in
+      `katalog-abstaende.spec.ts`; jsdom lays out nothing.
+    */
+    <div className="flex flex-col max-sm:pb-10">
       {active === undefined ? null : (
         <h2
           className={
