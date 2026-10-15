@@ -376,7 +376,17 @@ export function VideoPlayer(props: VideoPlayerProps) {
   }, [captionsOn, props.captionsUrl, reloads]);
 
   useEffect(() => {
-    const onChange = () => setFullscreen(document.fullscreenElement !== null);
+    /*
+     * "Is *this player* fullscreen", not "is anything" (P256-01). Inside the
+     * widget's shadow root `document.fullscreenElement` is retargeted to the
+     * `<ds-lms>` host, so it cannot tell this player from any other element;
+     * the root the player lives in can.
+     */
+    const onChange = () => {
+      const player = playerRef.current;
+      const root = player?.getRootNode() as Document | ShadowRoot | undefined;
+      setFullscreen(player !== null && root?.fullscreenElement === player);
+    };
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
@@ -551,13 +561,40 @@ export function VideoPlayer(props: VideoPlayerProps) {
   };
 
   const containerRef = useRef<HTMLDivElement>(null);
+  /**
+   * The element that goes fullscreen: the frame **and** the control row
+   * (P256-01).
+   *
+   * It was `containerRef`, which holds the <video> and not the controls — so
+   * fullscreen showed a picture with no control bar and no way out but Esc,
+   * and the video kept its inline `max-h-[70vh]`, held against the top edge of
+   * a black screen. The client reported it on desktop and on a phone.
+   */
+  const playerRef = useRef<HTMLDivElement>(null);
 
   const toggleFullscreen = useCallback(async () => {
-    const container = containerRef.current;
-    if (container === null) return;
+    const player = playerRef.current;
+    if (player === null) return;
     try {
-      if (document.fullscreenElement === null) await container.requestFullscreen();
-      else await document.exitFullscreen();
+      // `?? null`: a browser without the Fullscreen API on `document` answers
+      // `undefined`, which `!== null` read as "already fullscreen" and sent
+      // every press to an `exitFullscreen` that does not exist either.
+      if ((document.fullscreenElement ?? null) !== null) {
+        await document.exitFullscreen();
+      } else if (typeof player.requestFullscreen === "function") {
+        await player.requestFullscreen();
+      } else {
+        /*
+         * iPhone Safari has no element fullscreen at all — only the video's
+         * own native player. That player brings its own scrub bar, which is
+         * why `enforceSeekLimit` sits on the element's `seeking` event: the
+         * watch gate holds there exactly as it does in Picture-in-Picture.
+         */
+        (
+          videoRef.current as
+            (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null
+        )?.webkitEnterFullscreen?.();
+      }
     } catch {
       // Refused by the browser or unavailable in this embedding. Nothing the
       // learner can act on, and the video keeps playing either way.
@@ -585,7 +622,20 @@ export function VideoPlayer(props: VideoPlayerProps) {
         record of what the CME gate has credited (see `SeekBar`). Putting that
         over moving video is where its contrast argument stops holding.
       */}
-      <div className="overflow-hidden rounded-[var(--ds-radius)] bg-gray-100">
+      {/*
+        Fullscreen is a column: the frame takes every row the control bar does
+        not, and the video inside it letterboxes rather than crops
+        (`object-contain`), because a CME video cut at the edges can lose the
+        slide text a physician is being examined on.
+      */}
+      <div
+        ref={playerRef}
+        className={
+          fullscreen
+            ? "flex h-full w-full flex-col bg-black"
+            : "overflow-hidden rounded-[var(--ds-radius)] bg-gray-100"
+        }
+      >
         {/*
         `tabIndex` and the key handler go on the container, not the <video>:
         the video's own element is `controls={false}` and never focused, and
@@ -598,7 +648,7 @@ export function VideoPlayer(props: VideoPlayerProps) {
           tabIndex={0}
           onKeyDown={handleKeyDown}
           aria-label={props.title}
-          className="group relative overflow-hidden bg-black focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-600"
+          className={`group relative overflow-hidden bg-black ${fullscreen ? "min-h-0 flex-1 " : ""}focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-600`}
         >
           {/*
           `jsx-a11y/media-has-caption` only recognises a static <track> child
@@ -609,7 +659,11 @@ export function VideoPlayer(props: VideoPlayerProps) {
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video
             ref={videoRef}
-            className="block max-h-[70vh] w-full bg-black"
+            className={
+              fullscreen
+                ? "block h-full w-full bg-black object-contain"
+                : "block max-h-[70vh] w-full bg-black"
+            }
             // The browser picks: it takes the first <source> whose `type` it can
             // play and skips the rest. `orderSources` on the server already put
             // adaptive streams first, which is the whole of the negotiation.

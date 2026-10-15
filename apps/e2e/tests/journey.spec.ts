@@ -983,6 +983,67 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
       });
 
       /*
+       * Vollbild fills the screen, and keeps its controls (P256-01).
+       *
+       * The client: "when making video full screen, it does not get full
+       * screen" — a black screen with the picture held at 70 % height against
+       * its top edge and no control bar. Two causes, both invisible to jsdom:
+       * the element taken fullscreen held the <video> but not the controls, and
+       * the video kept its inline `max-h-[70vh]`. Asserted as the property —
+       * the picture's box spans the screen's width and all of its height but
+       * the control row, and "Vollbild beenden" is reachable — so a restyle
+       * that keeps it true stays green.
+       */
+      await learner
+        .getByRole("button", { name: "Vollbild", exact: true })
+        .first()
+        .click();
+      await expect(
+        learner.getByRole("button", { name: "Vollbild beenden" }).first(),
+        "fullscreen has no way out on screen — the control bar is not inside the fullscreen element",
+      ).toBeVisible();
+      const filled = await learner.evaluate(() => {
+        const root = document.querySelector("ds-lms")?.shadowRoot;
+        const video = root?.querySelector("video");
+        if (video === null || video === undefined) return null;
+        const box = video.getBoundingClientRect();
+        // `toBeVisible` cannot answer this: a button outside the fullscreen
+        // element is still "visible" by CSS while the top layer hides it.
+        const fullscreen = root?.fullscreenElement ?? null;
+        const exit = Array.from(root?.querySelectorAll("button") ?? []).find(
+          (button) => button.getAttribute("aria-label") === "Vollbild beenden",
+        );
+        return {
+          controlsInside:
+            fullscreen !== null && exit !== undefined && fullscreen.contains(exit),
+          width: box.width,
+          height: box.height,
+          screenWidth: window.innerWidth,
+          screenHeight: window.innerHeight,
+        };
+      });
+      expect(filled, "no <video> in the widget").not.toBeNull();
+      if (filled !== null) {
+        expect(
+          filled.controlsInside,
+          "the control bar is not inside the fullscreen element, so fullscreen has no way out on screen",
+        ).toBe(true);
+        expect(
+          filled.width,
+          `the video is ${String(filled.width)} px wide on a ${String(filled.screenWidth)} px screen`,
+        ).toBeGreaterThanOrEqual(filled.screenWidth - 1);
+        // The control row is the only thing allowed to share the screen.
+        expect(
+          filled.height,
+          `the video is ${String(filled.height)} px tall on a ${String(filled.screenHeight)} px screen`,
+        ).toBeGreaterThanOrEqual(filled.screenHeight - 120);
+      }
+      await learner.getByRole("button", { name: "Vollbild beenden" }).first().click();
+      await expect(
+        learner.getByRole("button", { name: "Vollbild", exact: true }).first(),
+      ).toBeVisible();
+
+      /*
        * The progress card's footer is one row (DEP-24).
        *
        * The client reported the autosave note sitting *under* the percentage

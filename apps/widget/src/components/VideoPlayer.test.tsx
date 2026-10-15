@@ -856,3 +856,46 @@ describe("the scrub bar's hover preview (P199)", () => {
     expect(screen.getByText("6:26").getAttribute("aria-hidden")).toBe("true");
   });
 });
+
+describe("fullscreen (P256-01)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete (HTMLElement.prototype as { requestFullscreen?: unknown }).requestFullscreen;
+    delete (HTMLVideoElement.prototype as { webkitEnterFullscreen?: unknown })
+      .webkitEnterFullscreen;
+  });
+
+  it("takes the control bar fullscreen with the picture, so there is a way out", async () => {
+    // The element was the frame alone: fullscreen showed a picture with no
+    // controls. Whatever goes fullscreen must contain the button that ends it.
+    const requested: Element[] = [];
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value(this: Element) {
+        requested.push(this);
+        return Promise.resolve();
+      },
+    });
+    renderPlayer();
+    const button = screen.getByRole("button", { name: "Vollbild" });
+    fireEvent.click(button);
+    await Promise.resolve();
+    expect(requested).toHaveLength(1);
+    expect(requested[0]?.contains(button)).toBe(true);
+    expect(requested[0]?.querySelector("video")).not.toBeNull();
+  });
+
+  it("falls back to the video's own player where elements cannot go fullscreen", async () => {
+    // iPhone Safari: no `requestFullscreen` on a <div>, only the video's native
+    // player. Without the fallback the button did nothing at all.
+    const enter = vi.fn();
+    Object.defineProperty(HTMLVideoElement.prototype, "webkitEnterFullscreen", {
+      configurable: true,
+      value: enter,
+    });
+    renderPlayer();
+    fireEvent.click(screen.getByRole("button", { name: "Vollbild" }));
+    await Promise.resolve();
+    expect(enter).toHaveBeenCalledTimes(1);
+  });
+});
