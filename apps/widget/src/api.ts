@@ -37,7 +37,6 @@ export function createWidgetClient(
     baseUrl: config.apiBase,
     projectSlug: config.projectSlug,
     ...(config.profileHint === undefined ? {} : { profileHint: config.profileHint }),
-    ...(config.profileHint === undefined ? {} : { profileHint: config.profileHint }),
     getToken: () => getToken({ refresh: false }),
     // Exactly one refresh per 401, enforced by the SDK — see its `isRetry`.
     onUnauthorized: () => getToken({ refresh: true }),

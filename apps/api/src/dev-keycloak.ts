@@ -237,12 +237,19 @@ async function handle(
     const expiresIn =
       form.get("expires_in") ?? url.searchParams.get("expires_in") ?? "1h";
 
+    // `profile_claims=omit` mints a token shaped like MEDICE's: no `email`,
+    // `given_name` or `family_name` at all (P257-01). Their realm sends none,
+    // which is the whole reason the WordPress plugin forwards a profile hint —
+    // and a stub that always sent `email` meant no test ever reached that path.
+    const omitProfile =
+      (form.get("profile_claims") ?? url.searchParams.get("profile_claims")) === "omit";
+
     const issuer = issuerFor(tokenRealm);
-    const accessToken = await new SignJWT({
-      email: username,
-      preferred_username: username,
-      email_verified: true,
-    })
+    const accessToken = await new SignJWT(
+      omitProfile
+        ? { preferred_username: username }
+        : { email: username, preferred_username: username, email_verified: true },
+    )
       .setProtectedHeader({ alg: "RS256", kid: KID })
       .setIssuedAt()
       .setIssuer(issuer)

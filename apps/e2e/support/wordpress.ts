@@ -86,7 +86,13 @@ export interface WordPressSite {
  * `sub` is the username, which is what makes "a physician nobody provisioned"
  * expressible: a fresh address is a fresh subject and therefore a fresh person.
  */
-export async function mintKeycloakToken(username: string): Promise<string> {
+export async function mintKeycloakToken(
+  username: string,
+  options: {
+    /** A token with no profile claims, as MEDICE's realm issues (P257-01). */
+    readonly withoutProfileClaims?: boolean;
+  } = {},
+): Promise<string> {
   const response = await fetch(
     `http://127.0.0.1:${KEYCLOAK_PORT}/realms/${REALM}/protocol/openid-connect/token`,
     {
@@ -96,6 +102,7 @@ export async function mintKeycloakToken(username: string): Promise<string> {
         grant_type: "password",
         username,
         client_id: "ds-education-api",
+        ...(options.withoutProfileClaims === true ? { profile_claims: "omit" } : {}),
       }),
     },
   );
@@ -145,6 +152,12 @@ export function startWordPress(options: {
   apiBase: string;
   token: string | undefined;
   course?: string | undefined;
+  /**
+   * The physician's profile from the host's session, written onto the element
+   * as `learner-profile` exactly as `class-ds-lms-renderer.php` writes it:
+   * base64url JSON, unpadded (P257-01).
+   */
+  learnerProfile?: { email?: string; firstName?: string; lastName?: string } | undefined;
 }): Promise<WordPressSite> {
   let widget: WidgetHost | undefined;
 
@@ -175,7 +188,7 @@ export function startWordPress(options: {
     }
 
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    response.end(page(options.apiBase, options.course));
+    response.end(page(options.apiBase, options.course, options.learnerProfile));
   });
 
   return startWidgetHost(options.repo).then((host) => {
@@ -210,8 +223,16 @@ export function startWordPress(options: {
  * render a signed-out widget for a signed-in visitor and this suite would say
  * so (P96-03).
  */
-function page(apiBase: string, course: string | undefined): string {
+function page(
+  apiBase: string,
+  course: string | undefined,
+  profile: Record<string, string> | undefined,
+): string {
   const courseAttribute = course === undefined ? "" : ` course="${course}"`;
+  const profileAttribute =
+    profile === undefined
+      ? ""
+      : ` learner-profile="${Buffer.from(JSON.stringify(profile)).toString("base64url")}"`;
   return `<!doctype html>
 <html lang="de">
   <head>
@@ -222,7 +243,7 @@ function page(apiBase: string, course: string | undefined): string {
   <body>
     <header><h1>ADHS bei Erwachsenen</h1></header>
     <main>
-      <ds-lms api-base="${apiBase}" project="${WP_PROJECT_SLUG}"${courseAttribute} token-endpoint="/wp-json/ds-lms/v1/token" token-header="X-WP-Nonce: ${NONCE}" data-ds-plugin="1.0.0"></ds-lms>
+      <ds-lms api-base="${apiBase}" project="${WP_PROJECT_SLUG}"${courseAttribute}${profileAttribute} token-endpoint="/wp-json/ds-lms/v1/token" token-header="X-WP-Nonce: ${NONCE}" data-ds-plugin="1.0.0"></ds-lms>
     </main>
     <script type="module" defer src="${WIDGET_BUNDLE_URL}"></script>
   </body>

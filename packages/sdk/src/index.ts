@@ -225,26 +225,57 @@ export interface ClientOptions {
    * client built once per tab would otherwise hold the first one forever.
    */
   readonly getCsrfToken?: () => string | undefined;
+  /**
+   * The host page's `learner-profile` attribute, sent as `X-DS-Profile`
+   * (P105-01, wired in P257-01).
+   *
+   * MEDICE's realm puts no `email`, `given_name` or `family_name` in its
+   * tokens; the WordPress plugin forwards the profile its theme stored at
+   * sign-in, and the API fills only what the token left empty
+   * (`profile-hint.ts`). From 03.09 to 15.10.2026 this option did not exist:
+   * the widget passed it in a conditional spread, which TypeScript does not
+   * check for unknown keys, so it was dropped here and no MEDICE physician
+   * ever had an address stored.
+   *
+   * Opaque on purpose — the API parses and validates it, and decides nothing
+   * about *who* the caller is from it.
+   */
+  readonly profileHint?: string | undefined;
 }
 
 /** Methods the API requires a CSRF token on — the same set the guard checks. */
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 export function createClient(options: ClientOptions) {
-  async function request<T>(
-    path: string,
-    init: RequestInit = {},
-    isRetry = false,
-  ): Promise<T> {
+  /**
+   * Who is calling and on whose behalf — the headers every request carries,
+   * JSON or bytes alike (P257-01).
+   *
+   * One function because there were two copies, in `request` and
+   * `requestBlob`, and a header added to one and not the other is a request
+   * that authenticates differently depending on what it asks for.
+   */
+  async function callerHeaders(headers: Headers): Promise<Headers> {
     const token = await options.getToken?.();
-    const headers = new Headers(init.headers);
-    headers.set("accept", "application/json");
     if (options.customerId !== undefined && options.customerId !== "") {
       headers.set("x-ds-customer", options.customerId);
     } else if (options.projectSlug !== undefined && options.projectSlug !== "") {
       headers.set("x-ds-project", options.projectSlug);
     }
     if (token !== undefined) headers.set("authorization", `Bearer ${token}`);
+    if (options.profileHint !== undefined && options.profileHint !== "") {
+      headers.set("x-ds-profile", options.profileHint);
+    }
+    return headers;
+  }
+
+  async function request<T>(
+    path: string,
+    init: RequestInit = {},
+    isRetry = false,
+  ): Promise<T> {
+    const headers = await callerHeaders(new Headers(init.headers));
+    headers.set("accept", "application/json");
 
     const csrf = options.getCsrfToken?.();
     if (csrf !== undefined && UNSAFE_METHODS.has((init.method ?? "GET").toUpperCase())) {
@@ -284,14 +315,7 @@ export function createClient(options: ClientOptions) {
    * `content-disposition`.
    */
   async function requestBlob(path: string, isRetry = false): Promise<Response> {
-    const token = await options.getToken?.();
-    const headers = new Headers();
-    if (options.customerId !== undefined && options.customerId !== "") {
-      headers.set("x-ds-customer", options.customerId);
-    } else if (options.projectSlug !== undefined && options.projectSlug !== "") {
-      headers.set("x-ds-project", options.projectSlug);
-    }
-    if (token !== undefined) headers.set("authorization", `Bearer ${token}`);
+    const headers = await callerHeaders(new Headers());
 
     const response = await fetch(new URL(path, options.baseUrl), {
       headers,

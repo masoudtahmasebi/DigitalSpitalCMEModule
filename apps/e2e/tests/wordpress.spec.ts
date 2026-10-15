@@ -11,9 +11,12 @@
  */
 
 import { expect, test, type Page } from "@playwright/test";
+import type { ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { Pool } from "pg";
 import { openWidgetShadowRoots } from "../support/shadow.js";
 import { API_BASE } from "../support/stack.js";
+import { DB_NAME } from "../support/world.js";
 import {
   mintKeycloakToken,
   startKeycloak,
@@ -35,6 +38,23 @@ async function widgetText(page: Page): Promise<string> {
 }
 
 test.describe("die WordPress-Einbindung", () => {
+  /*
+   * One stub for the whole group (P257-01).
+   *
+   * `dev-keycloak` generates a fresh signing key on every start under a fixed
+   * `kid`, and the API caches the JWKS it fetched first. So a second start in
+   * the same run signs with a key the API has never seen and every token is
+   * 401 — which is why exactly one test here could ever hold a token, and why
+   * the next one to try failed as "Ihre Sitzung ist abgelaufen".
+   */
+  let keycloak: ChildProcess | undefined;
+  test.beforeAll(async () => {
+    keycloak = await startKeycloak(REPO);
+  });
+  test.afterAll(() => {
+    keycloak?.kill();
+  });
+
   test.setTimeout(180_000);
 
   test("mountet, holt sich einen Token und zeigt den Katalog", async ({ browser }) => {
@@ -43,7 +63,6 @@ test.describe("die WordPress-Einbindung", () => {
      * own session, the element upgrades, and a physician the platform has never
      * seen reaches a catalogue — provisioned on the way through (P94-03).
      */
-    const keycloak = await startKeycloak(REPO);
     let site: WordPressSite | undefined;
 
     try {
@@ -165,7 +184,64 @@ test.describe("die WordPress-Einbindung", () => {
       await context.close();
     } finally {
       await site?.stop();
-      keycloak.kill();
+    }
+  });
+
+  test("übernimmt die E-Mail aus dem MEDICE-Profil, wenn der Token keine hat", async ({
+    browser,
+  }) => {
+    /*
+     * The physician's address reaches the platform (P257-01).
+     *
+     * MEDICE's realm issues tokens with no `email`, `given_name` or
+     * `family_name`. The plugin forwards the profile the theme stored at
+     * sign-in as `learner-profile`, the widget is meant to send it as
+     * `X-DS-Profile`, and the API fills what the token left empty. On
+     * 15.10.2026 every MEDICE participant in the console had no address and
+     * every certificate was "unzustellbar": the SDK had no such option, so the
+     * header was never sent — and the only test was of the parser, which
+     * nothing called (§9.7).
+     *
+     * The token here is minted **without** profile claims, as MEDICE's is. The
+     * rig's default token carries `email`, which is why this path was never
+     * exercised by a browser at all (§9.13: a rig shaped like a deployment that
+     * does not need the fix cannot find it missing).
+     */
+    const username = "wp-ohne-claims@medice.example";
+    const hinted = "praxis.lorem@medice.example";
+    let site: WordPressSite | undefined;
+
+    try {
+      const token = await mintKeycloakToken(username, { withoutProfileClaims: true });
+      site = await startWordPress({
+        repo: REPO,
+        apiBase: API_BASE,
+        token,
+        learnerProfile: { email: hinted, firstName: "Muster", lastName: "Lorem" },
+      });
+
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await openWidgetShadowRoots(page);
+      await page.goto(site.url());
+      await expect.poll(() => widgetText(page), { timeout: 20_000 }).toContain("DS Demo");
+
+      // The credential's subject is the username (dev-keycloak), so this is the
+      // person that token provisioned — not a lookup by the address asserted.
+      const stored = await storedProfile(username);
+      expect(
+        stored,
+        "no person was provisioned for the MEDICE-shaped token",
+      ).not.toBeNull();
+      expect(
+        stored?.email,
+        "the profile hint did not reach the API — is X-DS-Profile being sent?",
+      ).toBe(hinted);
+      expect(stored?.lastName).toBe("Lorem");
+
+      await context.close();
+    } finally {
+      await site?.stop();
     }
   });
 
@@ -176,7 +252,6 @@ test.describe("die WordPress-Einbindung", () => {
      * to say so rather than render an empty frame — §9.4 — and this is the
      * state a physician lands in when their WordPress session expires.
      */
-    const keycloak = await startKeycloak(REPO);
     let site: WordPressSite | undefined;
 
     try {
@@ -260,7 +335,6 @@ test.describe("die WordPress-Einbindung", () => {
       await context.close();
     } finally {
       await site?.stop();
-      keycloak.kill();
     }
   });
 });
@@ -277,3 +351,31 @@ test.describe("die WordPress-Einbindung, Projekt", () => {
     expect(WP_PROJECT_SLUG).toBe("ds-demo");
   });
 });
+
+/** The stored profile of the person behind a dev-keycloak subject. */
+async function storedProfile(
+  subject: string,
+): Promise<{ email: string | null; lastName: string | null } | null> {
+  const superuser = new URL(
+    process.env["POSTGRES_SUPERUSER_URL"] ??
+      "postgres://postgres:postgres@127.0.0.1:5432/postgres",
+  );
+  superuser.pathname = `/${DB_NAME}`;
+  // eslint-disable-next-line no-restricted-syntax -- apps/e2e cannot import @ds/postgres; see world.ts
+  const pool = new Pool({ connectionString: superuser.toString() });
+  pool.on("error", () => {
+    // An idle connection lost while the suite tears down is not a finding.
+  });
+  try {
+    const { rows } = await pool.query<{ email: string | null; last_name: string | null }>(
+      `SELECT u.email, u.last_name
+         FROM users u JOIN user_identities i ON i.user_id = u.id
+        WHERE i.provider = 'keycloak' AND i.subject = $1`,
+      [subject],
+    );
+    const row = rows[0];
+    return row === undefined ? null : { email: row.email, lastName: row.last_name };
+  } finally {
+    await pool.end();
+  }
+}
