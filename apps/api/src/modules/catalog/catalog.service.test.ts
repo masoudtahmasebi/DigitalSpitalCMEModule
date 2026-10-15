@@ -42,6 +42,17 @@ const adhs: CourseRow = {
 };
 
 /**
+ * The clock every service in this file reads, inside the fixture's validity
+ * window (P255-02).
+ *
+ * The service defaults to the wall clock and this fixture's `validTo` is a real
+ * date, so on 13.10.2026 every detail test began failing with "not offered:
+ * ended" — on every commit, and blocking every deploy, with nothing changed.
+ * A test that depends on the day it is run is a test with an expiry date.
+ */
+const AT = (): Date => new Date("2026-06-01T12:00:00Z");
+
+/**
  * A fake repository. The service is the application layer, so it is tested with
  * no database at all — that is the property ADR-0006's layering buys, and the
  * reason this suite runs in milliseconds.
@@ -134,7 +145,7 @@ function fakeRepository(overrides: Partial<CatalogRepositoryPort> = {}) {
 
 describe("listCourses", () => {
   it("returns a contract-valid response", async () => {
-    const result = await new CatalogService(fakeRepository()).listCourses(
+    const result = await new CatalogService(fakeRepository(), AT).listCourses(
       {
         page: 1,
         perPage: 10,
@@ -148,7 +159,7 @@ describe("listCourses", () => {
 
   it("carries the card metadata the design needs: points, modules, duration", async () => {
     // "5 CME Punkte | 5 Module | 2 Stunden 30 Minuten"
-    const result = await new CatalogService(fakeRepository()).listCourses(
+    const result = await new CatalogService(fakeRepository(), AT).listCourses(
       {
         page: 1,
         perPage: 10,
@@ -171,7 +182,7 @@ describe("listCourses", () => {
       },
     });
 
-    await new CatalogService(repo).listCourses({ page: 3, perPage: 10 }, LEARNER);
+    await new CatalogService(repo, AT).listCourses({ page: 3, perPage: 10 }, LEARNER);
 
     expect(seen).toEqual({ limit: 10, offset: 20 });
   });
@@ -185,7 +196,7 @@ describe("listCourses", () => {
       },
     });
 
-    await new CatalogService(repo).listCourses(
+    await new CatalogService(repo, AT).listCourses(
       {
         page: 1,
         perPage: 10,
@@ -222,7 +233,7 @@ describe("listCourses", () => {
       },
     });
 
-    await new CatalogService(repo).listCourses(
+    await new CatalogService(repo, AT).listCourses(
       {
         page: 2,
         perPage: 10,
@@ -254,7 +265,7 @@ describe("listCourses", () => {
       listCourses: async () => ({ rows: [adhs], total: 1, durations: new Map() }),
     });
 
-    const result = await new CatalogService(repo).listCourses(
+    const result = await new CatalogService(repo, AT).listCourses(
       { page: 1, perPage: 10 },
       LEARNER,
     );
@@ -266,7 +277,7 @@ describe("listCourses", () => {
 
 describe("getCourseBySlug", () => {
   it("returns the whole tree in one call, so the detail view does not waterfall", async () => {
-    const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
+    const detail = await new CatalogService(fakeRepository(), AT).getCourseBySlug(
       "adhs-akademie-adult",
       LEARNER,
     );
@@ -278,7 +289,7 @@ describe("getCourseBySlug", () => {
   });
 
   it("nests chapters and contents under the right parents", async () => {
-    const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
+    const detail = await new CatalogService(fakeRepository(), AT).getCourseBySlug(
       "adhs-akademie-adult",
       LEARNER,
     );
@@ -291,7 +302,7 @@ describe("getCourseBySlug", () => {
   it("exposes the course's real configured percentages, never a hardcoded value", async () => {
     // This is what makes the 80 %% vs 100 %% copy contradiction impossible to
     // ship: the Zertifizierung tab renders whatever the course actually says.
-    const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
+    const detail = await new CatalogService(fakeRepository(), AT).getCourseBySlug(
       "adhs-akademie-adult",
       LEARNER,
     );
@@ -301,7 +312,7 @@ describe("getCourseBySlug", () => {
   });
 
   it("carries the Übersicht tab's content: Lernziele, Zielgruppe, hero image", async () => {
-    const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
+    const detail = await new CatalogService(fakeRepository(), AT).getCourseBySlug(
       "adhs-akademie-adult",
       LEARNER,
     );
@@ -331,7 +342,7 @@ describe("getCourseBySlug", () => {
       }),
     });
 
-    const detail = await new CatalogService(withDetail).getCourseBySlug(
+    const detail = await new CatalogService(withDetail, AT).getCourseBySlug(
       "adhs-akademie-adult",
       LEARNER,
     );
@@ -342,7 +353,7 @@ describe("getCourseBySlug", () => {
   });
 
   it("reports it as null for a course authored before the column existed", async () => {
-    const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
+    const detail = await new CatalogService(fakeRepository(), AT).getCourseBySlug(
       "adhs-akademie-adult",
       LEARNER,
     );
@@ -355,7 +366,7 @@ describe("getCourseBySlug", () => {
   });
 
   it("keeps it off the catalogue list, which never draws it", async () => {
-    const result = await new CatalogService(fakeRepository()).listCourses(
+    const result = await new CatalogService(fakeRepository(), AT).listCourses(
       { page: 1, perPage: 10 },
       LEARNER,
     );
@@ -366,7 +377,7 @@ describe("getCourseBySlug", () => {
   });
 
   it("surfaces the accreditation data the certificate will need", async () => {
-    const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
+    const detail = await new CatalogService(fakeRepository(), AT).getCourseBySlug(
       "adhs-akademie-adult",
       LEARNER,
     );
@@ -380,7 +391,7 @@ describe("getCourseBySlug", () => {
   it("returns 404, not 403, for a course the tenant cannot see", async () => {
     // Existence is not disclosed: an invisible course and a non-existent one
     // are indistinguishable to the caller (P2-05).
-    const service = new CatalogService(fakeRepository());
+    const service = new CatalogService(fakeRepository(), AT);
 
     const error = await service
       .getCourseBySlug("other-tenant-course", LEARNER)
@@ -391,7 +402,7 @@ describe("getCourseBySlug", () => {
   });
 
   it("keeps the internal reason out of the client-facing detail", async () => {
-    const service = new CatalogService(fakeRepository());
+    const service = new CatalogService(fakeRepository(), AT);
     const error = (await service
       .getCourseBySlug("other-tenant-course", LEARNER)
       .catch((e) => e)) as AppError;
@@ -404,7 +415,7 @@ describe("getCourseBySlug", () => {
 
 describe("the answer key has nowhere to go", () => {
   it("no quiz content field can carry a correctness marker", async () => {
-    const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
+    const detail = await new CatalogService(fakeRepository(), AT).getCourseBySlug(
       "adhs-akademie-adult",
       LEARNER,
     );
@@ -430,7 +441,7 @@ describe("nor does an ungated URL", () => {
     // Asserted against the parsed value rather than the projection, because
     // parsing strips anything the schema does not declare: this proves the
     // contract, not just today's mapping code.
-    const detail = await new CatalogService(fakeRepository()).getCourseBySlug(
+    const detail = await new CatalogService(fakeRepository(), AT).getCourseBySlug(
       "adhs-akademie-adult",
       LEARNER,
     );
@@ -451,7 +462,7 @@ describe("nor does an ungated URL", () => {
 
 describe("the card's call to action reflects the caller's own enrolment", () => {
   it("reports no enrolment for a course the learner has not started", async () => {
-    const result = await new CatalogService(fakeRepository()).listCourses(
+    const result = await new CatalogService(fakeRepository(), AT).listCourses(
       { page: 1, perPage: 10 },
       LEARNER,
     );
@@ -465,7 +476,7 @@ describe("the card's call to action reflects the caller's own enrolment", () => 
         new Map([[adhs.id, { courseComplete: false, complete: false }]]),
     });
 
-    const result = await new CatalogService(repo).listCourses(
+    const result = await new CatalogService(repo, AT).listCourses(
       { page: 1, perPage: 10 },
       LEARNER,
     );
@@ -492,7 +503,7 @@ describe("the card's call to action reflects the caller's own enrolment", () => 
       },
     });
 
-    await new CatalogService(repo).listCourses({ page: 1, perPage: 10 }, LEARNER);
+    await new CatalogService(repo, AT).listCourses({ page: 1, perPage: 10 }, LEARNER);
 
     expect(seen).toHaveLength(1);
     expect(seen[0]?.ids).toEqual([adhs.id]);
@@ -505,7 +516,7 @@ describe("the card's call to action reflects the caller's own enrolment", () => 
         new Map([[adhs.id, { courseComplete: true, complete: true }]]),
     });
 
-    const detail = await new CatalogService(repo).getCourseBySlug(adhs.slug, LEARNER);
+    const detail = await new CatalogService(repo, AT).getCourseBySlug(adhs.slug, LEARNER);
 
     expect(detail.enrolment).toEqual({ courseComplete: true, complete: true });
   });
@@ -555,7 +566,7 @@ describe("images stored in the Mediathek (P211-01)", () => {
       }),
     });
 
-    const list = await new CatalogService(repo, () => new Date(), signing).listCourses(
+    const list = await new CatalogService(repo, AT, signing).listCourses(
       { page: 1, perPage: 10 },
       LEARNER,
     );
@@ -578,11 +589,10 @@ describe("images stored in the Mediathek (P211-01)", () => {
       },
     });
 
-    const detail = await new CatalogService(
-      repo,
-      () => new Date(),
-      signing,
-    ).getCourseBySlug(adhs.slug, LEARNER);
+    const detail = await new CatalogService(repo, AT, signing).getCourseBySlug(
+      adhs.slug,
+      LEARNER,
+    );
 
     expect(detail.experts[0]?.photoUrl).toBe(`s3://${CUSTOMER_ID}/referent.jpg?signed`);
   });
@@ -596,7 +606,7 @@ describe("images stored in the Mediathek (P211-01)", () => {
       }),
     });
 
-    const list = await new CatalogService(repo, () => new Date(), signing).listCourses(
+    const list = await new CatalogService(repo, AT, signing).listCourses(
       { page: 1, perPage: 10 },
       LEARNER,
     );
@@ -607,11 +617,10 @@ describe("images stored in the Mediathek (P211-01)", () => {
   });
 
   it("still passes an ordinary URL through, which is what the client is using", async () => {
-    const list = await new CatalogService(
-      fakeRepository(),
-      () => new Date(),
-      signing,
-    ).listCourses({ page: 1, perPage: 10 }, LEARNER);
+    const list = await new CatalogService(fakeRepository(), AT, signing).listCourses(
+      { page: 1, perPage: 10 },
+      LEARNER,
+    );
 
     expect(list.items[0]?.heroImageUrl).toBe(adhs.heroImageUrl);
   });
