@@ -80,6 +80,9 @@ export class HealthService {
         .query("SELECT 1")
         .then(() => true)
         .catch(() => false),
+      // Bounded by the client's `commandTimeout` (P249-03, `db.module.ts`):
+      // a Redis that accepts and never answers fails this in a second rather
+      // than holding the probe for ioredis' whole reconnect budget.
       this.redis
         .ping()
         .then(() => true)

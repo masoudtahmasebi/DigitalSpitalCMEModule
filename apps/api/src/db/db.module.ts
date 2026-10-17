@@ -30,6 +30,15 @@ import { ObservabilityModule } from "../observability/observability.module.js";
 import { ShutdownGate } from "../shared/shutdown-gate.js";
 
 /**
+ * How long one Redis command may take before it fails (P249-03).
+ *
+ * A rate-limit increment and a ping are sub-millisecond on a healthy Redis; a
+ * second is a dead one. It is also what a closed rule adds to a request before
+ * answering 503, and what an open rule adds before serving unthrottled.
+ */
+export const REDIS_COMMAND_TIMEOUT_MS = 1_000;
+
+/**
  * One set of pool settings, shared by both pools (P142-01).
  *
  * Only `max` and the log name differ. A second pool that quietly lacked the
@@ -192,7 +201,19 @@ function pgPool(config: AppConfig, options: { max: number; name: string }) {
     {
       provide: REDIS_CLIENT,
       useFactory: (config: AppConfig) =>
-        new Redis(config.REDIS_URL, { maxRetriesPerRequest: 3 }),
+        new Redis(config.REDIS_URL, {
+          maxRetriesPerRequest: 3,
+          /*
+           * Every command fails after this, including one waiting in the
+           * offline queue for a connection that never becomes ready (P249-03,
+           * RUN-3). ioredis arms it before queueing (`Redis.js`
+           * `sendCommand`), so it bounds `/health/ready`'s ping and the rate
+           * limiter alike. Without it a Redis that accepted TCP and never
+           * answered held each request for ioredis' whole reconnect budget;
+           * `redis-outage.integration.test.ts` hangs past five seconds.
+           */
+          commandTimeout: REDIS_COMMAND_TIMEOUT_MS,
+        }),
       inject: [APP_CONFIG],
     },
     {

@@ -27,9 +27,28 @@ export interface RateLimitStore {
   increment(key: string, windowSec: number): Promise<number>;
 }
 
+/**
+ * What a rule does when its store cannot be asked (P249-03).
+ *
+ * - `closed`: refuse with 503. For a rule whose limit is a **security
+ *   control** — guessing, enumeration, minting a credential, sending mail, an
+ *   irreversible act. Unthrottled for the length of a Redis outage, those are
+ *   open doors.
+ * - `open`: serve unthrottled. For a rule whose limit protects **capacity**
+ *   against a caller already authorised — above all the learning routes, where
+ *   refusing a physician's progress for our outage loses watch time that gates
+ *   their CME points.
+ *
+ * Declared on every rule, with no default, so a new rule cannot be added
+ * without somebody deciding — `rate-limit-store-failure.test.ts` pins the
+ * closed set.
+ */
+export type StoreFailurePolicy = "open" | "closed";
+
 export interface RateLimitRule {
   readonly limit: number;
   readonly windowSec: number;
+  readonly onStoreFailure: StoreFailurePolicy;
 }
 
 export interface RateLimitDecision {
@@ -45,11 +64,11 @@ export interface RateLimitDecision {
  */
 export const RATE_LIMIT_RULES = {
   /** Scoring plus answer-key guessing. The tightest limit in the system. */
-  quizSubmit: { limit: 10, windowSec: 60 },
+  quizSubmit: { limit: 10, windowSec: 60, onStoreFailure: "open" },
   /** Each one can queue a Punktemeldung. */
-  completion: { limit: 5, windowSec: 60 },
+  completion: { limit: 5, windowSec: 60, onStoreFailure: "open" },
   /** Cheap to serve, but a write of personal data. */
-  efnWrite: { limit: 10, windowSec: 60 },
+  efnWrite: { limit: 10, windowSec: 60, onStoreFailure: "open" },
   /**
    * The read is separate and far more generous (P57-01).
    *
@@ -61,9 +80,9 @@ export const RATE_LIMIT_RULES = {
    * trade: the read is idempotent, returns one field, and can only ever return
    * the caller's own.
    */
-  efnRead: { limit: 60, windowSec: 60 },
+  efnRead: { limit: 60, windowSec: 60, onStoreFailure: "open" },
   /** Generous on purpose — see the note above. */
-  progress: { limit: 600, windowSec: 60 },
+  progress: { limit: 600, windowSec: 60, onStoreFailure: "open" },
   /**
    * Rendering a PDF is the most expensive thing a learner token can ask for:
    * pdf-lib composes the document, embeds two images and draws two barcodes,
@@ -71,14 +90,14 @@ export const RATE_LIMIT_RULES = {
    * once, occasionally twice. A loop over this endpoint is a CPU denial of
    * service that requires nothing but a valid token.
    */
-  certificatePdf: { limit: 10, windowSec: 60 },
+  certificatePdf: { limit: 10, windowSec: 60, onStoreFailure: "open" },
   /**
    * Admin uploads: a font is up to 2 MB and the certificate images 512 KB
    * each, all written to bytea. The role check already limits who can do this,
    * so the limit is about a stuck client or a compromised admin session
    * filling a disk, not about an anonymous attacker.
    */
-  adminUpload: { limit: 20, windowSec: 60 },
+  adminUpload: { limit: 20, windowSec: 60, onStoreFailure: "open" },
   /**
    * Course media uploads (P23-01). Separate from `adminUpload`, and higher.
    *
@@ -98,7 +117,7 @@ export const RATE_LIMIT_RULES = {
    * 60 a minute is 30 files, sustained, which no person does and which leaves
    * a batch comfortable.
    */
-  mediaUpload: { limit: 60, windowSec: 60 },
+  mediaUpload: { limit: 60, windowSec: 60, onStoreFailure: "open" },
   /**
    * `GET /media/:id`, the public image redirect (P212-01).
    *
@@ -112,7 +131,7 @@ export const RATE_LIMIT_RULES = {
    * looper something. 600 a minute is far past any reader and far below a
    * scrape.
    */
-  mediaPublic: { limit: 600, windowSec: 60 },
+  mediaPublic: { limit: 600, windowSec: 60, onStoreFailure: "open" },
   /**
    * The unauthenticated catalogue preview (P213-01).
    *
@@ -123,7 +142,7 @@ export const RATE_LIMIT_RULES = {
    * anything that writes: a person browsing loads a list and a handful of
    * detail pages.
    */
-  cataloguePreview: { limit: 120, windowSec: 60 },
+  cataloguePreview: { limit: 120, windowSec: 60, onStoreFailure: "open" },
   /**
    * Participant sign-in (P25-02). The tightest limit in the platform.
    *
@@ -133,7 +152,7 @@ export const RATE_LIMIT_RULES = {
    * wants; `learner_credentials.locked_until` is the second line behind it, in
    * the database rather than in Redis so a container restart does not clear it.
    */
-  participantSignIn: { limit: 5, windowSec: 60 },
+  participantSignIn: { limit: 5, windowSec: 60, onStoreFailure: "closed" },
   /**
    * Creating a participant, or resetting one's password (P21-04).
    *
@@ -143,7 +162,7 @@ export const RATE_LIMIT_RULES = {
    * a department comfortable, and stops a loop in a console script creating
    * five hundred accounts that then have to be found and disabled one by one.
    */
-  participantCreate: { limit: 30, windowSec: 60 },
+  participantCreate: { limit: 30, windowSec: 60, onStoreFailure: "closed" },
   /**
    * Asking for a password-reset link, on either plane (P40-02).
    *
@@ -157,7 +176,7 @@ export const RATE_LIMIT_RULES = {
    * on the address: keying it on the address would answer "this address is
    * being asked about a lot", and that is the question the flow refuses.
    */
-  staffPasswordReset: { limit: 3, windowSec: 60 },
+  staffPasswordReset: { limit: 3, windowSec: 60, onStoreFailure: "closed" },
   /**
    * The platform sender's own test message (P77-01).
    *
@@ -171,7 +190,7 @@ export const RATE_LIMIT_RULES = {
    * times while they fix a host name, and nobody legitimately presses it fifty
    * times a minute.
    */
-  platformMailTest: { limit: 5, windowSec: 60 },
+  platformMailTest: { limit: 5, windowSec: 60, onStoreFailure: "closed" },
   /**
    * A participant changing their own password.
    *
@@ -180,19 +199,19 @@ export const RATE_LIMIT_RULES = {
    * with no credential at all. Ten a minute is far more than somebody mistyping
    * needs.
    */
-  participantPasswordChange: { limit: 10, windowSec: 60 },
+  participantPasswordChange: { limit: 10, windowSec: 60, onStoreFailure: "closed" },
   /**
    * A participant export is where personal data leaves the system's access
    * controls entirely. Every one of them is audited (P9-07); a limit is what
    * keeps that audit trail a record of deliberate acts rather than of a script.
    */
-  adminExport: { limit: 10, windowSec: 60 },
+  adminExport: { limit: 10, windowSec: 60, onStoreFailure: "open" },
   /**
    * Creating a customer mints a tenant boundary. Nobody legitimately does it in
    * bulk, and an accidental loop in a console script should stop rather than
    * seed fifty empty tenants that then have to be found and deleted one by one.
    */
-  customerCreate: { limit: 10, windowSec: 60 },
+  customerCreate: { limit: 10, windowSec: 60, onStoreFailure: "open" },
   /**
    * Creating an operator account (P64-01).
    *
@@ -203,7 +222,7 @@ export const RATE_LIMIT_RULES = {
    * ten meant a legitimate onboarding ran out, and refused the eleventh person
    * for a reason about customers.
    */
-  staffCreate: { limit: 30, windowSec: 60 },
+  staffCreate: { limit: 30, windowSec: 60, onStoreFailure: "closed" },
   /**
    * Setting an operator's password (P64-01).
    *
@@ -219,13 +238,13 @@ export const RATE_LIMIT_RULES = {
    * whom `canGrant` has already permitted, and the limit only stops a script
    * from running away.
    */
-  staffPasswordSet: { limit: 30, windowSec: 60 },
+  staffPasswordSet: { limit: 30, windowSec: 60, onStoreFailure: "closed" },
   /**
    * Erasing a subject is irreversible, cross-tenant, and something an operator
    * does a handful of times a year. There is no version of "erase fifty
    * subjects quickly" that is not either a mistake or an attack.
    */
-  subjectErasure: { limit: 5, windowSec: 300 },
+  subjectErasure: { limit: 5, windowSec: 300, onStoreFailure: "closed" },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMIT_RULES;

@@ -66,6 +66,8 @@ export class Metrics {
   private readonly requests = new Map<string, number>();
   private readonly durations = new Map<string, Histogram>();
   private readonly counters = new Map<string, number>();
+  /** Counters with their own label names, keyed by the rendered series. */
+  private readonly labelled = new Map<string, { name: string; value: number }>();
   private readonly gauges: GaugeSource[] = [];
   private overflowed = false;
 
@@ -133,6 +135,20 @@ export class Metrics {
    * time series per course slug is a leak; one series called `other` is a
    * signal that somebody should add a route.
    */
+  /**
+   * A counter whose labels are not `outcome` (P249-03). The caller owns the
+   * cardinality: label values must come from a closed set (a rule name, a
+   * policy), never from a request.
+   */
+  increment(name: string, labelValues: Readonly<Record<string, string>>): void {
+    const rendered = Object.entries(labelValues)
+      .map(([key, value]) => `${key}="${escapeLabel(value)}"`)
+      .join(",");
+    const series = `ds_${name}_total{${rendered}}`;
+    const current = this.labelled.get(series);
+    this.labelled.set(series, { name, value: (current?.value ?? 0) + 1 });
+  }
+
   private boundRoute(route: string): string {
     if (this.requests.size >= MAX_SERIES) {
       this.overflowed = true;
@@ -179,6 +195,15 @@ export class Metrics {
 
     // Not decoration: a dashboard showing `route="other"` climbing is how
     // anybody finds out the label set has degraded.
+    const typed = new Set<string>();
+    for (const [series, { name, value }] of [...this.labelled].sort()) {
+      if (!typed.has(name)) {
+        lines.push(`# TYPE ds_${name}_total counter`);
+        typed.add(name);
+      }
+      lines.push(`${series} ${value}`);
+    }
+
     lines.push("# HELP ds_metrics_series_overflow Label cardinality hit its bound.");
     lines.push("# TYPE ds_metrics_series_overflow gauge");
     lines.push(`ds_metrics_series_overflow ${this.overflowed ? 1 : 0}`);
