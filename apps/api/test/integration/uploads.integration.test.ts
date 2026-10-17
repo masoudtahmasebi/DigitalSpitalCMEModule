@@ -759,6 +759,145 @@ describe("the log itself", () => {
   });
 });
 
+describe("multipart, end to end (TEST-5, P250-02)", () => {
+  /*
+   * Every file of 32 MiB or more takes this path (`MULTIPART_THRESHOLD_BYTES`),
+   * which is every real lecture video — and until P250 the fake bucket answered
+   * all of it 405, so none of it had run against anything that checks a
+   * signature. The smallest upload that is multipart at all is the threshold
+   * plus one byte: two parts, the second a single byte.
+   *
+   * Its own administrator, so the `mediaUpload` budget this block spends is not
+   * the one the rest of the file is spending (the limiter keys on the user).
+   */
+  const MULTIPART_SUB = `uploads-multipart-${RUN}`;
+  const PART_BYTES = 32 * 1024 * 1024;
+  const SIZE = PART_BYTES + 1;
+
+  const asAuthor = (method: string, path: string, body?: unknown) =>
+    callAs(MULTIPART_SUB, projectSlug, method, path, body);
+
+  beforeAll(async () => {
+    await grantAdmin(MULTIPART_SUB, customerId);
+  });
+
+  async function begin(): Promise<{ key: string; uploadId: string }> {
+    const answer = await asAuthor(
+      "POST",
+      `/admin/courses/${courseSlug}/uploads/multipart`,
+      {
+        purpose: "video",
+        mimeType: "video/mp4",
+        sizeBytes: SIZE,
+      },
+    );
+    expect(answer.status, JSON.stringify(answer.body)).toBe(201);
+    expect(answer.body.partCount).toBe(2);
+    expect(answer.body.partBytes).toBe(PART_BYTES);
+    return { key: answer.body.key, uploadId: answer.body.uploadId };
+  }
+
+  async function sign(
+    upload: { key: string; uploadId: string },
+    partNumbers: number[],
+  ): Promise<Array<{ partNumber: number; url: string }>> {
+    const answer = await asAuthor(
+      "POST",
+      `/admin/courses/${courseSlug}/uploads/multipart/sign`,
+      { ...upload, partNumbers },
+    );
+    expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+    return answer.body.parts;
+  }
+
+  const first = Buffer.alloc(PART_BYTES, 0x61);
+  const last = Buffer.from("z");
+
+  it("begins, signs, takes the parts, assembles, and hands back a reference", async () => {
+    const upload = await begin();
+    const parts = await sign(upload, [1, 2]);
+
+    // The browser's half: one PUT per signed URL, no headers of its own.
+    for (const part of parts) {
+      const response = await fetch(part.url, {
+        method: "PUT",
+        body: part.partNumber === 1 ? first : last,
+      });
+      expect(response.status, `part ${String(part.partNumber)}`).toBe(200);
+    }
+
+    const answer = await asAuthor(
+      "POST",
+      `/admin/courses/${courseSlug}/uploads/multipart/complete`,
+      upload,
+    );
+    expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+    expect(answer.body.reference).toBe(`s3://${upload.key}`);
+    expect(answer.body.sizeBytes).toBe(SIZE);
+
+    const stored = bucket.objects.get(upload.key);
+    expect(stored?.contentType).toBe("video/mp4");
+    expect(stored?.body.equals(Buffer.concat([first, last]))).toBe(true);
+    expect(bucket.multipart.has(upload.uploadId)).toBe(false);
+
+    const rows = await auditRows(upload.key);
+    expect(rows.map((row) => row.action)).toEqual(["mint", "store"]);
+  }, 30_000);
+
+  it("refuses a part URL whose upload id was edited, at the bucket", async () => {
+    const upload = await begin();
+    const [part] = await sign(upload, [1]);
+
+    const tampered = new URL(part!.url);
+    tampered.searchParams.set("uploadId", `${upload.uploadId}x`);
+    const response = await fetch(tampered, { method: "PUT", body: last });
+
+    expect(response.status).toBe(403);
+    expect(bucket.requests.at(-1)?.refusal).toBe("signature does not match");
+  });
+
+  it("refuses another customer signing parts for this customer's upload", async () => {
+    const upload = await begin();
+
+    const answer = await asOtherAdmin(
+      "POST",
+      `/admin/courses/${otherCourseSlug}/uploads/multipart/sign`,
+      { ...upload, partNumbers: [1] },
+    );
+
+    // 404, as for a single upload: "somebody else's" and "never issued" are
+    // the same answer, so the key's existence is not confirmed.
+    expect(answer.status).toBe(404);
+    expect(answer.body.parts).toBeUndefined();
+  });
+
+  it("refuses another customer completing it, records who tried, and assembles nothing", async () => {
+    const upload = await begin();
+    for (const part of await sign(upload, [1, 2])) {
+      await fetch(part.url, {
+        method: "PUT",
+        body: part.partNumber === 1 ? first : last,
+      });
+    }
+
+    const answer = await asOtherAdmin(
+      "POST",
+      `/admin/courses/${otherCourseSlug}/uploads/multipart/complete`,
+      upload,
+    );
+
+    expect(answer.status).toBe(404);
+    expect(bucket.objects.has(upload.key)).toBe(false);
+    expect(bucket.multipart.has(upload.uploadId)).toBe(true);
+
+    // The prefix check's own trace: refused before the database or the bucket
+    // was asked anything, and logged against the customer who attempted it.
+    const refusal = (await auditRows(upload.key)).find((row) => row.action === "refuse");
+    expect(refusal?.customer_id).toBe(otherCustomerId);
+    expect(refusal?.detail).toBe("key is outside this customer's prefix");
+  }, 30_000);
+});
+
 describe("a bucket that does not answer (P145-01)", () => {
   /*
    * The property the client asked for in one sentence: *"can we please make
@@ -797,8 +936,18 @@ describe("a bucket that does not answer (P145-01)", () => {
     );
 
     try {
-      // Give them time to reach the bucket and be held there.
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      /*
+       * Wait until all twelve are **at the bucket** (TEST-6, P250-02), rather
+       * than sleeping 300 ms and hoping they got there.
+       *
+       * The count is itself the first half of the assertion. Under the ambient
+       * transaction only ten of the twelve ever reach the bucket — each holds
+       * one of ten pooled connections while it waits, and the last two are
+       * still queued for a checkout — so this throws "holding 10 of 12"
+       * instead of passing on a timing guess. A sleep could only ever say
+       * "some time went by".
+       */
+      await bucket.waitForHeld(12, 3_000);
 
       /*
        * The assertion. An unrelated read, on a different route, with twelve
@@ -836,7 +985,9 @@ describe("a bucket that does not answer (P145-01)", () => {
       key: ticket.key,
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // At the bucket and held, not "200 ms later" (TEST-6): releasing before
+    // the request arrived would test an unstalled bucket.
+    await bucket.waitForHeld(1, 3_000);
     release();
 
     const confirmed = await pending;

@@ -2250,3 +2250,145 @@ describe("erasure keeps the participation and removes the person", () => {
     expect(Number(rows[0]!.enrolments_pseudonymised)).toBe(0);
   });
 });
+
+describe("the delivery address is one learner's own (TEST-2, P250-01)", () => {
+  /*
+   * `findEnrolmentForDelivery` is keyed on `(slug, userId)`, and only the
+   * second half separates two learners on the same course: RLS on
+   * `enrolments` is a tenant policy, and both of these people are in the
+   * tenant. Without the `userId` predicate the read answers whichever
+   * enrolment on the course comes first, and the write that follows it
+   * changes *that* person's address — a Teilnahmebescheinigung, carrying a
+   * physician's name and EFN-backed points, mailed to a colleague.
+   *
+   * B enrols before A on purpose, so A's row is never the first one an
+   * unkeyed read reaches (the suite's main learner, enrolled above, may be).
+   * With the order the other way round the broken query could happen to pick
+   * A, and this would pass on the defect it exists for.
+   */
+  const SUB_A = `delivery-a-${RUN}`;
+  const SUB_B = `delivery-b-${RUN}`;
+  const ADDRESS_A = `zustellung-a-${RUN}@example.org`;
+
+  beforeAll(async () => {
+    const { rows } = await seedPool.query<{ customer_id: string }>(
+      "SELECT customer_id FROM courses WHERE slug = $1",
+      [courseSlug],
+    );
+    const customerId = rows[0]?.customer_id ?? "";
+    for (const subject of [SUB_B, SUB_A]) {
+      const { id } = await seedLearner(seedPool, { realm: issuer, subject });
+      await seedPool.query(
+        "INSERT INTO user_roles (user_id, role, customer_id) VALUES ($1,'learner',$2)",
+        [id, customerId],
+      );
+      const enrolled = await callAs(subject, "PUT", `/courses/${courseSlug}/enrolment`);
+      expect(enrolled.status, JSON.stringify(enrolled.body)).toBe(200);
+    }
+  });
+
+  async function storedAddress(subject: string): Promise<string | null | undefined> {
+    const { rows } = await seedPool.query<{ delivery_email: string | null }>(
+      `SELECT e.delivery_email
+         FROM enrolments e
+         JOIN courses c ON c.id = e.course_id
+         JOIN user_identities i ON i.user_id = e.user_id
+        WHERE c.slug = $1 AND i.realm = $2 AND i.subject = $3`,
+      [courseSlug, issuer, subject],
+    );
+    return rows[0]?.delivery_email;
+  }
+
+  it("writes A's address to A's enrolment and leaves B's alone", async () => {
+    const written = await callAs(SUB_A, "PUT", `/courses/${courseSlug}/delivery-email`, {
+      email: ADDRESS_A,
+    });
+    expect(written.status, JSON.stringify(written.body)).toBe(200);
+
+    expect(await storedAddress(SUB_A)).toBe(ADDRESS_A);
+    expect(await storedAddress(SUB_B)).toBeNull();
+  });
+
+  it("reads A's own address back to A, and B's nothing to B", async () => {
+    const forA = await callAs(SUB_A, "GET", `/courses/${courseSlug}/delivery-email`);
+    expect(forA.status).toBe(200);
+    expect(forA.body.email).toBe(ADDRESS_A);
+
+    const forB = await callAs(SUB_B, "GET", `/courses/${courseSlug}/delivery-email`);
+    expect(forB.status).toBe(200);
+    expect(forB.body.email).toBeNull();
+    expect(JSON.stringify(forB.body)).not.toContain(ADDRESS_A);
+  });
+});
+
+describe("the participant list at a size one statement cannot bind (P250-03)", () => {
+  /*
+   * `listParticipants` reads five things per enrolment — progress,
+   * evaluations, EFNs, Punktemeldungen, certificates — and each read bound one
+   * parameter per id. PostgreSQL carries at most 65,535 bound parameters, so
+   * measured at 65,600 enrolments the screen answered 500 with `bind message
+   * has 64 parameter formats but 0 parameters`. 65,600 is a large course; it
+   * is not an impossible one for a pharmaceutical company's flagship ADHS
+   * programme, and the failure was total rather than slow.
+   *
+   * Its own course, under this suite's customer and found by slug (§9.6), so
+   * the other blocks' assertions about `courseSlug` are untouched.
+   */
+  const SCALE = 65_600;
+  const scaleSlug = `cf-scale-${RUN}`;
+  let lastEnrolmentId = "";
+
+  beforeAll(async () => {
+    const { rows } = await seedPool.query<{ customer_id: string; project_id: string }>(
+      "SELECT customer_id, project_id FROM courses WHERE slug = $1",
+      [courseSlug],
+    );
+    const { customer_id: customerId, project_id: projectId } = rows[0]!;
+    const scaleCourseId = await insert(
+      `INSERT INTO courses (customer_id, project_id, slug, title, required_watch_percent,
+                            pass_threshold_percent, status)
+       VALUES ($1,$2,$3,$4,100,70,'published') RETURNING id`,
+      [customerId, projectId, scaleSlug, "Sehr große Fortbildung"],
+    );
+    await seedPool.query(
+      `WITH people AS (
+         INSERT INTO users (email)
+         SELECT 'scale-' || g || '-' || $3 || '@example.org' FROM generate_series(1, $4::int) g
+         RETURNING id
+       )
+       INSERT INTO enrolments (customer_id, course_id, user_id, required_watch_percent,
+                               pass_threshold_percent)
+       SELECT $1, $2, people.id, 100, 70 FROM people`,
+      [customerId, scaleCourseId, RUN, SCALE],
+    );
+
+    // An EFN on the **last** enrolment — well past parameter 65,535 — so the
+    // assertion below proves the reads returned data, not merely that they did
+    // not throw. A query that matched nothing would also have been a 200.
+    const last = await seedPool.query<{ id: string; user_id: string }>(
+      `SELECT e.id, e.user_id FROM enrolments e
+        WHERE e.course_id = $1 ORDER BY e.created_at DESC, e.id DESC LIMIT 1`,
+      [scaleCourseId],
+    );
+    lastEnrolmentId = last.rows[0]!.id;
+    await seedPool.query("INSERT INTO efn_profiles (user_id, efn) VALUES ($1, $2)", [
+      last.rows[0]!.user_id,
+      EFN,
+    ]);
+  }, 60_000);
+
+  it("lists all of them, and reads the figures for the last one", async () => {
+    const { status, body } = await callAs(
+      ADMIN_SUB,
+      "GET",
+      `/admin/courses/${scaleSlug}/participants`,
+    );
+
+    expect(status, JSON.stringify(body).slice(0, 300)).toBe(200);
+    expect(body.rows).toHaveLength(SCALE);
+    const last = body.rows.find(
+      (row: { enrolmentId: string }) => row.enrolmentId === lastEnrolmentId,
+    );
+    expect(last?.efnPresent).toBe(true);
+  }, 60_000);
+});

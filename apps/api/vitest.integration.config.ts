@@ -30,7 +30,10 @@ export default defineConfig({
      * it broke on the third run — `considered: 2` where the file had queued
      * exactly one. See `support/reset-each-file.ts`.
      */
-    setupFiles: ["./test/integration/support/reset-each-file.ts"],
+    setupFiles: [
+      "./test/integration/support/no-real-eiv.ts",
+      "./test/integration/support/reset-each-file.ts",
+    ],
     testTimeout: 20_000,
     hookTimeout: 20_000,
 

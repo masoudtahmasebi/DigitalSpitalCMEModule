@@ -1552,11 +1552,14 @@ describe("media-check against a host that does not answer (P146-02)", () => {
    */
   let silent: Server;
   let silentUrl: string;
+  /** Probes that have reached the silent host and are being held (TEST-6). */
+  let probesHeld = 0;
 
   beforeAll(async () => {
     silent = createServer(() => {
       // Accepts the connection, answers nothing. A host that returns 500 would
       // release the connection immediately and prove nothing (§9.13).
+      probesHeld += 1;
     });
     await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
     const address = silent.address();
@@ -1582,6 +1585,7 @@ describe("media-check against a host that does not answer (P146-02)", () => {
 
     // More than the pool's `max` of ten, so that on the old code every
     // connection is held and an eleventh caller has nothing to wait for.
+    const probesBefore = probesHeld;
     const probing = Array.from({ length: 12 }, () =>
       asAdmin("GET", `/admin/courses/${courseSlug}/media-check`).catch(
         (error: unknown) => ({ status: 0, body: { error: String(error) } }),
@@ -1589,7 +1593,28 @@ describe("media-check against a host that does not answer (P146-02)", () => {
     );
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      /*
+       * Wait until all twelve probes are **at the silent host** (TEST-6,
+       * P250-02), rather than sleeping 400 ms.
+       *
+       * The sleep let this pass with `@NoAmbientTransaction()` removed: the
+       * route's `@TenantRun()` then refuses at once with a 500 (it will not
+       * open a segment inside an ambient transaction), no probe is ever made,
+       * nothing is held, and the unrelated read below answers in milliseconds.
+       * Green on the broken route. Counting arrivals makes "twelve probes are
+       * outstanding" a checked precondition instead of an assumption — and on
+       * the pre-P146 shape (handler on the ambient `@TenantDb()`), ten arrive,
+       * the last two wait for a connection, and this throws.
+       */
+      const deadline = Date.now() + 3_000;
+      while (probesHeld - probesBefore < 12) {
+        if (Date.now() > deadline) {
+          throw new Error(
+            `the silent host is holding ${String(probesHeld - probesBefore)} of 12 probes after 3000 ms`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
 
       const started = Date.now();
       const answer = await asAdmin("GET", "/admin/courses");

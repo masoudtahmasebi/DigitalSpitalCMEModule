@@ -78,6 +78,7 @@ import {
   ModerationService,
   type ModeratorContext,
 } from "./moderation.service.js";
+import { SingleQueryValue, UuidParam } from "../../shared/request-params.js";
 
 const MODERATOR_ROLES = ["customer_admin", "super_admin"] as const;
 
@@ -181,13 +182,19 @@ export class ModerationController {
 
   @Get("learners")
   @Roles(...RECORD_READERS)
-  listLearners(@Query("course") course: string | undefined, @TenantDb() db: Db) {
+  listLearners(
+    @Query("course", SingleQueryValue) course: string | undefined,
+    @TenantDb() db: Db,
+  ) {
     return this.service(db).listLearners(emptyToUndefined(course));
   }
 
   @Get("certificates")
   @Roles(...RECORD_READERS)
-  listCertificates(@Query("course") course: string | undefined, @TenantDb() db: Db) {
+  listCertificates(
+    @Query("course", SingleQueryValue) course: string | undefined,
+    @TenantDb() db: Db,
+  ) {
     return this.service(db).listCertificates(emptyToUndefined(course));
   }
 
@@ -196,7 +203,7 @@ export class ModerationController {
   @Roles(...MODERATOR_ROLES)
   @HttpCode(204)
   async correctName(
-    @Param("enrolmentId") enrolmentId: string,
+    @Param("enrolmentId", UuidParam) enrolmentId: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
@@ -216,7 +223,7 @@ export class ModerationController {
   @Get("learners/:enrolmentId/delivery-email")
   @Roles(...MODERATOR_ROLES)
   async deliveryEmail(
-    @Param("enrolmentId") enrolmentId: string,
+    @Param("enrolmentId", UuidParam) enrolmentId: string,
     @TenantDb() db: Db,
   ): Promise<{ email: string | null; accountEmail: string | null }> {
     return this.service(db).readDeliveryEmail(enrolmentId);
@@ -226,7 +233,7 @@ export class ModerationController {
   @Patch("learners/:enrolmentId/delivery-email")
   @Roles(...MODERATOR_ROLES)
   async setDeliveryEmail(
-    @Param("enrolmentId") enrolmentId: string,
+    @Param("enrolmentId", UuidParam) enrolmentId: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
@@ -251,7 +258,7 @@ export class ModerationController {
   @RateLimit("subjectErasure")
   @NoAmbientTransaction()
   async erase(
-    @Param("enrolmentId") enrolmentId: string,
+    @Param("enrolmentId", UuidParam) enrolmentId: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
     @TenantRun() run: TenantRunner,
@@ -275,7 +282,7 @@ export class ModerationController {
   @Roles(...MODERATOR_ROLES)
   @HttpCode(204)
   async regenerate(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ): Promise<void> {
@@ -286,7 +293,7 @@ export class ModerationController {
   @Roles(...MODERATOR_ROLES)
   @HttpCode(204)
   async resend(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ): Promise<void> {
@@ -340,7 +347,7 @@ export class ModerationController {
   // a disclosure nobody agreed to.
   @Header("cache-control", "no-store, private")
   async downloadCertificate(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ): Promise<StreamableFile> {
@@ -360,7 +367,7 @@ export class ModerationController {
   @Roles(...MODERATOR_ROLES)
   @HttpCode(204)
   async revoke(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ): Promise<void> {

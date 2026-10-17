@@ -68,6 +68,7 @@ import {
   structureOrderSchema,
 } from "./authoring.dto.js";
 import type { ZodType } from "zod";
+import { UuidParam } from "../../shared/request-params.js";
 
 const AUTHOR_ROLES = ["customer_admin", "super_admin"] as const;
 
@@ -301,7 +302,7 @@ export class AuthoringController {
   @Patch("modules/:id")
   @Roles(...COURSE_AUTHOR_ROLES)
   async updateModule(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
@@ -316,7 +317,7 @@ export class AuthoringController {
   @Delete("modules/:id")
   @Roles(...COURSE_AUTHOR_ROLES)
   async deleteModule(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ) {
@@ -326,7 +327,7 @@ export class AuthoringController {
   @Post("modules/:id/chapters")
   @Roles(...COURSE_AUTHOR_ROLES)
   async createChapter(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
@@ -341,7 +342,7 @@ export class AuthoringController {
   @Patch("chapters/:id")
   @Roles(...COURSE_AUTHOR_ROLES)
   async updateChapter(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
@@ -356,7 +357,7 @@ export class AuthoringController {
   @Delete("chapters/:id")
   @Roles(...COURSE_AUTHOR_ROLES)
   async deleteChapter(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ) {
@@ -366,7 +367,7 @@ export class AuthoringController {
   @Post("chapters/:id/contents")
   @Roles(...COURSE_AUTHOR_ROLES)
   async createContent(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
@@ -381,7 +382,7 @@ export class AuthoringController {
   @Patch("contents/:id")
   @Roles(...COURSE_AUTHOR_ROLES)
   async updateContent(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
@@ -396,7 +397,7 @@ export class AuthoringController {
   @Delete("contents/:id")
   @Roles(...COURSE_AUTHOR_ROLES)
   async deleteContent(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ) {
@@ -455,7 +456,7 @@ export class AuthoringController {
    */
   @Get("contents/:id/quiz")
   @Roles(...COURSE_AUTHOR_ROLES)
-  async getQuiz(@Param("id") id: string, @TenantDb() db: Db) {
+  async getQuiz(@Param("id", UuidParam) id: string, @TenantDb() db: Db) {
     return this.service(db).getQuiz(id);
   }
 
@@ -463,7 +464,7 @@ export class AuthoringController {
   @RateLimit("adminUpload")
   @Roles(...COURSE_AUTHOR_ROLES)
   async setQuiz(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,

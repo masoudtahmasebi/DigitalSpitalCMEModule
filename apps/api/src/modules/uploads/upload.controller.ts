@@ -73,6 +73,7 @@ import {
 } from "./upload.repository.js";
 import { UploadService } from "./upload.service.js";
 import type { ZodType } from "zod";
+import { UuidParam } from "../../shared/request-params.js";
 
 const AUTHOR_ROLES = ["customer_admin", "super_admin"] as const;
 
@@ -115,7 +116,7 @@ export class UploadController {
   @RateLimit("mediaUpload")
   @Roles(...AUTHOR_ROLES)
   async describeMedia(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @Body() body: unknown,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
@@ -139,7 +140,7 @@ export class UploadController {
   @RateLimit("mediaUpload")
   @Roles(...AUTHOR_ROLES)
   async viewMedia(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ) {
@@ -158,7 +159,7 @@ export class UploadController {
   @RateLimit("mediaUpload")
   @Roles(...AUTHOR_ROLES)
   async forgetMedia(
-    @Param("id") id: string,
+    @Param("id", UuidParam) id: string,
     @CurrentPrincipal() principal: Principal,
     @TenantDb() db: Db,
   ) {

@@ -46,9 +46,14 @@ export interface CompletionRepositoryPort {
    * This learner's own enrolment on a course, with the delivery address it
    * currently carries and the account address it falls back to (P183-03).
    *
-   * Keyed on `(slug, userId)` and read inside the tenant transaction, so RLS
-   * bounds it — a learner cannot name somebody else's enrolment, and the
-   * `userId` predicate is defence in depth rather than the defence (§4.3).
+   * Keyed on `(slug, userId)`, and the **`userId` predicate is the defence**
+   * (P250-01, correcting the comment that stood here). RLS on `enrolments` is a
+   * tenant policy only: it keeps another *customer's* rows out, and every
+   * learner on this course is in this customer. Without the predicate the
+   * query answers whichever enrolment on the course comes first — somebody
+   * else's — and `saveDeliveryEmail` would then write that person's address.
+   * `completion-flow.integration.test.ts` ("the delivery address is one
+   * learner's own") goes red when it is removed.
    */
   findEnrolmentForDelivery(
     slug: string,
