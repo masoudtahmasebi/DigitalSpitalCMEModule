@@ -13,6 +13,7 @@
 
 import {
   mayRevealCorrectAnswers,
+  meetsPassThreshold,
   scoreQuiz,
   UnknownQuestionError,
   type Question,
@@ -163,7 +164,10 @@ export class AssessmentService {
      * construction rather than by coincidence.
      */
     const bestSoFar = await this.repository.bestScorePercent(enrolment.id, contentId);
-    if (bestSoFar !== null && bestSoFar >= enrolment.passThresholdPercent) {
+    if (
+      bestSoFar !== null &&
+      meetsPassThreshold(bestSoFar, enrolment.passThresholdPercent)
+    ) {
       throw new AppError(
         "conflict",
         `enrolment=${enrolment.id} already passed content=${contentId}`,
@@ -243,7 +247,7 @@ export class AssessmentService {
       enrolmentId: enrolment.id,
       contentId,
       scorePercent: bestScore,
-      passed: bestScore >= enrolment.passThresholdPercent,
+      passed: meetsPassThreshold(bestScore, enrolment.passThresholdPercent),
     });
 
     return {
