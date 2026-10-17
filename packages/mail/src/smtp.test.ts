@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { classify } from "./smtp.js";
+import { classify, SMTP_KEYS, SmtpDeliveryChannel } from "./smtp.js";
 
 function smtpError(responseCode: number, message = "rejected"): Error {
   return Object.assign(new Error(message), { responseCode });
@@ -62,5 +62,45 @@ describe("classify", () => {
       status: "transient",
       reason: "unknown transport error",
     });
+  });
+});
+
+describe("a customer-typed host (P247-02)", () => {
+  /*
+   * `publicOnly` is set for a project's own SMTP host, which a
+   * `customer_admin` types in. Refused here before nodemailer is asked to
+   * connect anywhere — each case would otherwise try a real socket.
+   */
+  const message = (host: string, publicOnly: boolean) => ({
+    to: "arzt@example.org",
+    from: "no-reply@example.org",
+    subject: "s",
+    body: "b",
+    transport: {
+      [SMTP_KEYS.host]: host,
+      [SMTP_KEYS.port]: "587",
+      ...(publicOnly ? { [SMTP_KEYS.publicOnly]: "true" } : {}),
+    },
+  });
+
+  it("is refused when the application's check refuses it", async () => {
+    const asked: string[] = [];
+    const channel = new SmtpDeliveryChannel({
+      vetHost: async (host) => {
+        asked.push(host);
+        throw new Error("internal");
+      },
+    });
+
+    const outcome = await channel.deliver(message("127.0.0.1", true));
+
+    expect(asked).toEqual(["127.0.0.1"]);
+    expect(outcome).toEqual({ status: "permanent", reason: "SMTP host not allowed" });
+  });
+
+  it("is refused when the channel was built without a check at all", async () => {
+    // Fail closed: a channel nobody gave a rule to does not get to guess.
+    const outcome = await new SmtpDeliveryChannel().deliver(message("10.0.0.1", true));
+    expect(outcome).toEqual({ status: "permanent", reason: "SMTP host not allowed" });
   });
 });

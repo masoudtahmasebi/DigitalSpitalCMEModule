@@ -3,7 +3,7 @@
  *
  * Two forms, and both are legitimate:
  *
- * - `https://…` — the customer serves the file from their own CDN. This is
+ * - `https://…` (never `http:`, P247-02) — the customer serves the file from their own CDN. This is
  *   what lets an existing customer migrate to the platform without moving
  *   their media first, and it is what the client is using today: *"I have
  *   pasted an URL of a plattform image. At least it is working."*
@@ -37,6 +37,22 @@ export const mediaReference = z
   .trim()
   .max(2000)
   .refine(
-    (value) => value.startsWith("s3://") || z.string().url().safeParse(value).success,
-    "must be an absolute URL or an s3:// reference",
+    (value) => value.startsWith("s3://") || isHttpsUrl(value),
+    "must be an https:// URL or an s3:// reference",
   );
+
+/**
+ * `https:` only, since P247-02.
+ *
+ * It was any absolute URL, and the media check fetches what is stored here —
+ * so `http://127.0.0.1:5432/` and `http://169.254.169.254/` were valid media
+ * and the check reported what answered (SEC-2). A customer's CDN serves
+ * `https://` anyway: a browser on the portal refuses mixed content, so an
+ * `http:` video never played for a learner either. Applies on write; rows
+ * stored earlier are read as they are and the media check still vets their
+ * host.
+ */
+function isHttpsUrl(value: string): boolean {
+  if (!URL.canParse(value)) return false;
+  return new URL(value).protocol === "https:";
+}

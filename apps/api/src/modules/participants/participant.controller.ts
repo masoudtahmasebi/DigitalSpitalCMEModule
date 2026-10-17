@@ -35,14 +35,20 @@ import {
 import type { Request } from "express";
 import type { Pool } from "pg";
 import { z } from "zod";
+import { stripTrailingSlashes } from "@ds/domain";
 import { Roles } from "../../auth/roles.decorator.js";
 import { CurrentPrincipal } from "../../auth/current-principal.decorator.js";
 import type { Principal } from "../../auth/principal.js";
 import { TenantDb } from "../../db/tenant-db.decorator.js";
 import type { Db } from "../../db/tenant-db.js";
-import { PG_SIDE_POOL } from "../../db/tokens.js";
 import { RateLimit } from "../../shared/rate-limit.guard.js";
 import { AppError } from "../../shared/problem-details.js";
+import { APP_CONFIG, PG_SIDE_POOL } from "../../db/tokens.js";
+import type { AppConfig } from "../../config/config.js";
+import { LearnerSessionRepository } from "../../auth/learner-session.repository.js";
+import { createSecretCipher } from "../../shared/secret-cipher.js";
+import { ParticipantAuthRepository } from "../participant-auth/participant-auth.repository.js";
+import { ParticipantAuthService } from "../participant-auth/participant-auth.service.js";
 import { ParticipantRepository } from "./participant.repository.js";
 import { ParticipantService } from "./participant.service.js";
 
@@ -99,7 +105,10 @@ export class ParticipantController {
    * Same semantics, different pool: a connection with no tenant context, from
    * somewhere the request path cannot starve.
    */
-  constructor(@Inject(PG_SIDE_POOL) private readonly pool: Pool) {}
+  constructor(
+    @Inject(PG_SIDE_POOL) private readonly pool: Pool,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+  ) {}
 
   @Get()
   @Roles(...PARTICIPANT_ROLES)
@@ -127,12 +136,24 @@ export class ParticipantController {
     return this.service(db).create({ ...input, customerId: principal.customerId });
   }
 
-  /** A fresh temporary password, shown once, with every session ended. */
+  /**
+   * Mail the person a reset link; answer 202 with no body (P247-01).
+   *
+   * It used to answer with a temporary password. A person who learns with two
+   * customers holds one credential, so that handed one customer's
+   * administrator a password that signed in at the other. The answer is the
+   * same whether or not a link could be sent (§9.5).
+   */
   @Post(":userId/reset-password")
   @Roles(...PARTICIPANT_ROLES)
+  @HttpCode(202)
   @RateLimit("participantCreate")
-  async resetPassword(@Param("userId") userId: string, @TenantDb() db: Db) {
-    return this.service(db).resetPassword(userId);
+  async resetPassword(
+    @Param("userId") userId: string,
+    @CurrentPrincipal() principal: Principal,
+    @TenantDb() db: Db,
+  ): Promise<void> {
+    await this.service(db).resetPassword(userId, principal.customerId);
   }
 
   @Post(":userId/disabled")
@@ -218,7 +239,34 @@ export class ParticipantController {
   }
 
   private service(db: Db): ParticipantService {
-    return new ParticipantService(new ParticipantRepository(db, this.pool));
+    return new ParticipantService(
+      new ParticipantRepository(db, this.pool),
+      // The same service, and so the same "no sender, no token" rule, as the
+      // portal's own "Passwort vergessen" (P40-03).
+      new ParticipantAuthService(
+        new ParticipantAuthRepository(this.pool),
+        new LearnerSessionRepository(this.pool),
+        this.config.SECRETS_KMS_KEY,
+        createSecretCipher(this.config.NODE_ENV, this.config.SECRETS_KMS_KEY),
+      ),
+      this.resetUrl(),
+    );
+  }
+
+  /**
+   * Where the link points: the portal's tenant path on `PORTAL_BASE_URL`.
+   *
+   * From configuration, never from the request. The caller here is the
+   * console, whose own origin is the wrong host for a portal link, and a
+   * request must never name the host a real token is mailed for (§9.5).
+   * Unconfigured, a link would be relative — useless in a mail — so there is
+   * no builder, and the service mints nothing.
+   */
+  private resetUrl(): ((projectSlug: string, token: string) => string) | undefined {
+    const base = stripTrailingSlashes(this.config.PORTAL_BASE_URL);
+    if (base === "") return undefined;
+    return (projectSlug, token) =>
+      `${base}/${encodeURIComponent(projectSlug)}#passwort-neu?token=${encodeURIComponent(token)}`;
   }
 }
 

@@ -30,6 +30,7 @@
 import { Logger } from "@nestjs/common";
 import { EivAccreditationReporter } from "@ds/eiv-client";
 import { SmtpDeliveryChannel } from "@ds/mail";
+import { resolvePublicAddress } from "./shared/outbound-address.js";
 import { createPluginRegistry, type PluginRegistry } from "@ds/plugin-api";
 
 let registry: PluginRegistry | undefined;
@@ -63,7 +64,13 @@ export function installPlugins(logger?: Logger): PluginRegistry {
   // database before the application exists. A project with no host gets a
   // `permanent` outcome naming exactly that, which is what the participant list
   // then shows.
-  built.register("deliveryChannel", new SmtpDeliveryChannel());
+  //
+  // `vetHost` is what a message marked `publicOnly` — a project's own,
+  // customer-typed host — is resolved and pinned through (P247-02).
+  built.register(
+    "deliveryChannel",
+    new SmtpDeliveryChannel({ vetHost: (host) => resolvePublicAddress(host) }),
+  );
 
   // Not registered, and that is the correct state rather than an omission:
   //

@@ -527,6 +527,8 @@ function parse<T>(schema: ZodType<T>, body: unknown, what: string): T {
   throw new AppError(
     "validation",
     `invalid ${what}: ${fields}`,
-    "Die Eingaben sind nicht gültig. Bitte prüfen Sie die markierten Felder.",
+    // The field names, so "die markierten Felder" names something (P247-02).
+    // Names only: a value can be an SMTP password or an internal address.
+    `Die Eingaben sind nicht gültig. Bitte prüfen Sie die markierten Felder: ${fields}.`,
   );
 }

@@ -215,6 +215,28 @@ describe("a successful delivery", () => {
     expect(JSON.stringify(written)).not.toContain(SMTP_PASSWORD);
   });
 
+  it("marks a project's own SMTP host as customer-typed (P247-02)", async () => {
+    // A `customer_admin` types this host; the channel then connects only to
+    // an address outside the API's network.
+    const { service, sent } = build([row()]);
+    await service.sweep(NOW);
+    expect(sent[0]?.transport["publicOnly"]).toBe("true");
+  });
+
+  it("does not mark the platform's own sender, which an operator sets", async () => {
+    const { service, sent } = build([
+      row({
+        smtpHost: null,
+        fromAddress: null,
+        platformSmtpHost: "relay.intern",
+        platformFromAddress: "no-reply@digitalspital.de",
+      }),
+    ]);
+    await service.sweep(NOW);
+    expect(sent[0]?.transport["host"]).toBe("relay.intern");
+    expect(sent[0]?.transport["publicOnly"]).toBeUndefined();
+  });
+
   it("links to the course page, never to an unauthenticated download", async () => {
     // A URL that hands over a Teilnahmebescheinigung to whoever presents it is
     // a bearer credential sitting in a mailbox. The link costs a sign-in that

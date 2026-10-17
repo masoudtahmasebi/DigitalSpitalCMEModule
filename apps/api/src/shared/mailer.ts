@@ -27,6 +27,7 @@
  */
 
 import { SmtpDeliveryChannel, SMTP_KEYS } from "@ds/mail";
+import { resolvePublicAddress } from "./outbound-address.js";
 import type { DeliveryOutcome } from "@ds/plugin-api";
 
 /**
@@ -43,6 +44,12 @@ export interface MailSender {
   readonly secure: boolean;
   readonly fromAddress: string;
   readonly fromName: string | null;
+  /**
+   * The host was typed in by a customer — a project's own sender — rather than
+   * set by an operator (P247-02). The connection then goes only to an address
+   * outside the API's network, pinned by `resolvePublicAddress`.
+   */
+  readonly publicOnly?: boolean;
 }
 
 export interface OutboundLetter {
@@ -52,7 +59,9 @@ export interface OutboundLetter {
   readonly body: string;
 }
 
-const channel = new SmtpDeliveryChannel();
+const channel = new SmtpDeliveryChannel({
+  vetHost: (host) => resolvePublicAddress(host),
+});
 
 /**
  * Whether these settings are complete enough to send anything.
@@ -94,6 +103,7 @@ export async function sendNow(
   if (sender.port !== null) transport[SMTP_KEYS.port] = String(sender.port);
   if (sender.username !== null) transport[SMTP_KEYS.username] = sender.username;
   if (sender.password !== null) transport[SMTP_KEYS.password] = sender.password;
+  if (sender.publicOnly === true) transport[SMTP_KEYS.publicOnly] = "true";
 
   const from =
     sender.fromName === null || sender.fromName.trim() === ""

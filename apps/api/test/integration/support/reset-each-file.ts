@@ -123,19 +123,29 @@ beforeAll(async () => {
  */
 let redis: Redis | undefined;
 
-beforeAll(() => {
+async function clearRateLimits(): Promise<void> {
+  if (redis === undefined) return;
+  const keys = await redis.keys("ratelimit:*");
+  if (keys.length > 0) await redis.del(...keys);
+}
+
+/*
+ * Also in `beforeAll` (P247-01). A file's own `beforeAll` signs people in —
+ * most of them several — and runs *before* the first `beforeEach`, so it
+ * inherited whatever the previous file had spent. `participant-cross-customer`
+ * ending on five sign-ins made `participants`' fixture answer 429 before any
+ * of its cases ran. This hook is registered first, so it runs first.
+ */
+beforeAll(async () => {
   const url = process.env["REDIS_URL"];
   const database =
     process.env["POSTGRES_SUPERUSER_URL"] ?? process.env["DATABASE_URL"] ?? "";
   if (url === undefined || url === "" || !requested(database)) return;
   redis = new Redis(url, { maxRetriesPerRequest: 3 });
+  await clearRateLimits();
 });
 
-beforeEach(async () => {
-  if (redis === undefined) return;
-  const keys = await redis.keys("ratelimit:*");
-  if (keys.length > 0) await redis.del(...keys);
-});
+beforeEach(clearRateLimits);
 
 afterAll(() => {
   redis?.disconnect();

@@ -77,7 +77,7 @@ export class ParticipantRepository {
       created_at: Date;
     }>(sql`
       SELECT u.id AS user_id, u.email, u.first_name, u.last_name,
-             c.must_change, c.disabled_at, c.locked_until,
+             c.must_change, m.disabled_at, c.locked_until,
              (SELECT count(*) FROM enrolments e WHERE e.user_id = u.id)::int
                AS enrolment_count,
              (SELECT count(*) FROM enrolments e
@@ -86,9 +86,17 @@ export class ParticipantRepository {
              u.created_at
         FROM user_customers m
         JOIN users u ON u.id = m.user_id
-        LEFT JOIN user_identities i
-               ON i.user_id = u.id AND i.provider = 'local'
-        LEFT JOIN learner_credentials c ON c.user_identity_id = i.id
+        -- One credential per person, in the order every other reader uses.
+        -- A plain join listed a person merged before migration 0057 once per
+        -- local credential (P247-01).
+        LEFT JOIN LATERAL (
+          SELECT c.must_change, c.locked_until
+            FROM user_identities i
+            JOIN learner_credentials c ON c.user_identity_id = i.id
+           WHERE i.user_id = u.id AND i.provider = 'local'
+           ORDER BY c.last_used_at DESC NULLS LAST, i.created_at DESC, i.id
+           LIMIT 1
+        ) c ON true
        WHERE true ${filter}
        ORDER BY u.last_name NULLS LAST, u.first_name NULLS LAST, u.created_at
        LIMIT 500`);
@@ -128,17 +136,22 @@ export class ParticipantRepository {
     return (result.rows[0]?.n ?? 0) > 0;
   }
 
-  /** The local credential id for a person, if they have one. */
-  async credentialIdFor(userId: string): Promise<string | undefined> {
-    const { rows } = await this.pool.query<{ id: string }>(
-      `SELECT c.user_identity_id AS id
+  /**
+   * Does this person sign in with a local password at all?
+   *
+   * A yes/no and not an id since P247-01: nothing administrative writes to the
+   * credential any more. The reset sends a link and the block is on the
+   * membership.
+   */
+  async hasLocalCredential(userId: string): Promise<boolean> {
+    const { rows } = await this.pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n
          FROM user_identities i
          JOIN learner_credentials c ON c.user_identity_id = i.id
-        WHERE i.user_id = $1 AND i.provider = 'local'
-        LIMIT 1`,
+        WHERE i.user_id = $1 AND i.provider = 'local'`,
       [userId],
     );
-    return rows[0]?.id;
+    return (rows[0]?.n ?? 0) > 0;
   }
 
   /** Does any person already hold a local credential for this address? */
@@ -230,51 +243,43 @@ export class ParticipantRepository {
             AND customer_id = ${customerId} AND department_id IS NULL)`);
   }
 
-  async setPassword(
-    credentialId: string,
-    passwordHash: string,
-    mustChange: boolean,
-  ): Promise<void> {
-    await this.pool.query(
-      `UPDATE learner_credentials
-          SET password_hash = $2, must_change = $3,
-              failed_attempts = 0, locked_until = NULL, updated_at = now()
-        WHERE user_identity_id = $1`,
-      [credentialId, passwordHash, mustChange],
-    );
-  }
-
+  /**
+   * Block, or unblock, this person **at the request's customer** (P247-01).
+   *
+   * On the tenant connection, so RLS confines the write to the caller's own
+   * membership row: a block at A cannot reach the person's membership of B
+   * however the id was obtained. It used to be `learner_credentials.disabled_at`
+   * — one column for every customer — so A could lock a physician out of B.
+   *
+   * Returns whether a membership was written; `false` means the person is not
+   * a member here, which the service has already ruled out.
+   */
   async setDisabled(
-    credentialId: string,
+    userId: string,
     disabled: boolean,
     byStaffId: string | null,
-  ): Promise<void> {
-    await this.pool.query(
-      `UPDATE learner_credentials
-          SET disabled_at = CASE WHEN $2 THEN now() ELSE NULL END,
-              disabled_by = CASE WHEN $2 THEN $3::uuid ELSE NULL END,
-              updated_at = now()
-        WHERE user_identity_id = $1`,
-      [credentialId, disabled, byStaffId],
-    );
+  ): Promise<boolean> {
+    const result = await this.db.execute(sql`
+      UPDATE user_customers
+         SET disabled_at = CASE WHEN ${disabled} THEN now() ELSE NULL END,
+             disabled_by = CASE WHEN ${disabled} THEN ${byStaffId}::uuid ELSE NULL END
+       WHERE user_id = ${userId}`);
+    return (result.rowCount ?? 0) > 0;
   }
 
   /**
-   * End every session this person holds, now.
+   * End this person's sessions **at this customer's projects** (P247-01).
    *
-   * Called on disable and on a password reset, and it is the half that actually
-   * stops somebody. Clearing a password while leaving a twelve-hour session
-   * open means a compromised account stays usable for the rest of the day —
-   * which is precisely the window an administrator hitting "sperren" is trying
-   * to close.
+   * A session is minted for one project (`learner_sessions.project_id`), and
+   * `projects` is RLS-scoped, so the sub-select sees only the caller's
+   * customer's projects. Ending every session the person holds anywhere would
+   * sign them out at a customer that blocked nothing.
    */
-  async revokeSessions(userId: string): Promise<number> {
-    const { rowCount } = await this.pool.query(
-      `UPDATE learner_sessions SET revoked_at = now()
-        WHERE user_id = $1 AND revoked_at IS NULL`,
-      [userId],
-    );
-    return rowCount ?? 0;
+  async revokeSessionsAtThisCustomer(userId: string): Promise<void> {
+    await this.db.execute(sql`
+      UPDATE learner_sessions SET revoked_at = now()
+       WHERE user_id = ${userId} AND revoked_at IS NULL
+         AND project_id IN (SELECT id FROM projects)`);
   }
 
   // -------------------------------------------------------------------------

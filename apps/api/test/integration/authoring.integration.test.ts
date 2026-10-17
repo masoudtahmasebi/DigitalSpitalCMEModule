@@ -30,6 +30,8 @@ import { AppModule } from "../../src/app.module.js";
 import { configureApp } from "../../src/configure-app.js";
 import { loadConfig } from "../../src/config/config.js";
 import { seedLearner } from "./support/seed-learner.js";
+import { AdminController } from "../../src/modules/admin/admin.controller.js";
+import { MediaCheckService } from "../../src/modules/admin/media-check.service.js";
 import { requireEnv } from "./support/env.js";
 import { backdateLearnerClock } from "./support/backdate.js";
 
@@ -1564,7 +1566,32 @@ describe("media-check against a host that does not answer (P146-02)", () => {
     silentUrl = `http://127.0.0.1:${String(address.port)}/wedged.mp4`;
   });
 
+  /*
+   * Since P247-02 the API refuses this URL twice over: `http:` on write, and a
+   * loopback host in the media check. Neither refusal is what this case is
+   * about — it is about the probes holding no pooled connection — and a probe
+   * refused instantly would make it pass on the broken code too (§9.1).
+   *
+   * So the row is planted as a *legacy* one (stored before P247-02, as rows on
+   * a real installation may be), and for this block only the controller's
+   * media check is given a resolver that lets the test's own silent host
+   * through. The product's guard is untouched; `media-check.service.test.ts`
+   * and `outbound-address.test.ts` are where it is tested.
+   */
+  let originalMediaCheck: unknown;
+
+  beforeAll(() => {
+    const controller = app.get(AdminController);
+    originalMediaCheck = Reflect.get(controller, "mediaCheck");
+    Reflect.set(
+      controller,
+      "mediaCheck",
+      new MediaCheckService(undefined, async (host) => host),
+    );
+  });
+
   afterAll(async () => {
+    Reflect.set(app.get(AdminController), "mediaCheck", originalMediaCheck);
     // The in-flight probes are deliberately never answered, and `close()` waits
     // for open connections — so without this the file hangs in teardown.
     silent.closeAllConnections();
@@ -1575,10 +1602,24 @@ describe("media-check against a host that does not answer (P146-02)", () => {
     const created = await asAdmin("POST", `/admin/chapters/${chapterIds[0]}/contents`, {
       kind: "video",
       title: "Video auf einem toten Host",
-      sources: [{ url: silentUrl, mimeType: "video/mp4" }],
+      sources: [{ url: "https://wedged.example.test/wedged.mp4", mimeType: "video/mp4" }],
       durationSec: 600,
     });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
+    // Pinned by the id just created, never `LIMIT 1` over a shared table (§9.6).
+    const contentId = (
+      created.body as {
+        modules: { chapters: { contents: { id: string; title: string }[] }[] }[];
+      }
+    ).modules
+      .flatMap((m) => m.chapters)
+      .flatMap((c) => c.contents)
+      .find((c) => c.title === "Video auf einem toten Host")?.id;
+    expect(contentId).toBeDefined();
+    await seedPool.query(`UPDATE contents SET media_sources = $2::jsonb WHERE id = $1`, [
+      contentId,
+      JSON.stringify([{ url: silentUrl, mimeType: "video/mp4", label: null }]),
+    ]);
 
     // More than the pool's `max` of ten, so that on the old code every
     // connection is held and an eleventh caller has nothing to wait for.
@@ -1602,6 +1643,54 @@ describe("media-check against a host that does not answer (P146-02)", () => {
       await Promise.all(probing);
     }
   }, 40_000);
+});
+
+describe("a media URL inside the network is refused on write (P247-02)", () => {
+  /*
+   * SEC-2: the media check fetched whatever an author saved. The write is the
+   * first place to refuse: `https://` or an `s3://` reference, nothing else.
+   *
+   * 422, not the ticket's 400: `validation` is 422 throughout this API (see
+   * the P21-05 suite's note) — the status a malformed field answers with
+   * everywhere else, which is what the console already handles.
+   */
+  it("answers 422 naming the field, never echoing the value", async () => {
+    const value = "http://127.0.0.1:5432/geheim.mp4";
+    const created = await asAdmin("POST", `/admin/chapters/${chapterIds[0]}/contents`, {
+      kind: "video",
+      title: "Video über http",
+      sources: [{ url: value, mimeType: "video/mp4" }],
+      durationSec: 600,
+    });
+
+    expect(created.status, JSON.stringify(created.body)).toBe(422);
+    const text = JSON.stringify(created.body);
+    expect(text).toContain("url");
+    expect(text).not.toContain("127.0.0.1");
+  });
+
+  it("refuses an http: poster the same way", async () => {
+    const created = await asAdmin("POST", `/admin/chapters/${chapterIds[0]}/contents`, {
+      kind: "video",
+      title: "Poster über http",
+      sources: [{ url: "https://cdn.example.org/a.mp4", mimeType: "video/mp4" }],
+      posterUrl: "http://cdn.example.org/a.jpg",
+      durationSec: 600,
+    });
+
+    expect(created.status, JSON.stringify(created.body)).toBe(422);
+    expect(JSON.stringify(created.body)).toContain("posterUrl");
+  });
+
+  it("still accepts https:// and an s3:// reference", async () => {
+    const created = await asAdmin("POST", `/admin/chapters/${chapterIds[0]}/contents`, {
+      kind: "video",
+      title: "Video über https",
+      sources: [{ url: "https://cdn.example.org/a.mp4", mimeType: "video/mp4" }],
+      durationSec: 600,
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+  });
 });
 
 describe("a content-locked course refuses structural edits (P178-01)", () => {

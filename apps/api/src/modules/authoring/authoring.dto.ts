@@ -314,9 +314,10 @@ export const courseCloneSchema = z.object({
 /**
  * A rendition as an author supplies it.
  *
- * `url` is a plain bounded string rather than `url` (which requires an
- * absolute URL): media may be stored as an `s3://<key>` reference, and the
- * media resolver — not this schema — decides what a stored reference may be.
+ * `url` is `mediaReference` rather than `url` (which requires an absolute
+ * URL): media may be stored as an `s3://<key>` reference, and the media
+ * resolver decides whose reference it may be. Since P247-02 a URL must be
+ * `https:`.
  * The same reason `fileUrl` would have if it were not already a CDN URL by the
  * time it reaches here.
  *
@@ -324,7 +325,12 @@ export const courseCloneSchema = z.object({
  * here, so there is one place that knows what a browser can be offered.
  */
 export const mediaSourceWriteSchema = z.object({
-  url: z.string().trim().min(1).max(2000),
+  /**
+   * `https://` or `s3://` — `mediaReference`, since P247-02. It was any
+   * string, and this is the field the media check fetches: an author could
+   * store `http://127.0.0.1:5432/` and read the answer off the report.
+   */
+  url: mediaReference.pipe(z.string().min(1)),
   mimeType: z.string().trim().min(1).max(100),
   label: z.string().trim().max(60).nullable().optional(),
 });

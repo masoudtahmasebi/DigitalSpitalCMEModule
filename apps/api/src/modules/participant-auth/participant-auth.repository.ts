@@ -39,10 +39,33 @@ export interface LocalParticipant {
   readonly failedAttempts: number;
   readonly lockedUntil: Date | null;
   /**
-   * Set by an administrator (P21-04). Deliberate and permanent, unlike
+   * Set by an administrator **of the customer this was read for** (P21-04,
+   * per membership since P247-01). Deliberate and permanent, unlike
    * `lockedUntil`, which is the automatic lockout and expires on its own.
+   *
+   * Read from `user_customers`, never from `learner_credentials.disabled_at`:
+   * a person who learns with two customers holds one credential, and a block
+   * written on it by one customer locked them out of the other.
    */
   readonly disabledAt: Date | null;
+}
+
+/**
+ * Which of a person's local credentials every reader picks, when there is more
+ * than one (P247-01).
+ *
+ * A merge now keeps exactly one, but a person merged before migration 0057 may
+ * still hold two, and an unordered `LIMIT 1` let the reset and the sign-in pick
+ * different ones. One ordering, the merge's own, so they always agree.
+ */
+const ONE_CREDENTIAL_ORDER = "c.last_used_at DESC NULLS LAST, i.created_at DESC, i.id";
+
+/** A `local` project of one customer, with what it needs to send a link. */
+export interface LocalProjectSender {
+  readonly projectId: string;
+  readonly slug: string;
+  readonly host: string | null;
+  readonly fromAddress: string | null;
 }
 
 export interface SignInProject {
@@ -127,12 +150,13 @@ export class ParticipantAuthRepository {
           }>(sql`
             SELECT u.id AS user_id, i.id AS identity_id,
                    c.password_hash, c.must_change, c.failed_attempts, c.locked_until,
-                   c.disabled_at
+                   m.disabled_at
               FROM users u
               JOIN user_identities i     ON i.user_id = u.id AND i.provider = 'local'
               JOIN learner_credentials c ON c.user_identity_id = i.id
               JOIN user_customers m      ON m.user_id = u.id AND m.customer_id = ${customerId}
              WHERE lower(u.email) = ${email}
+             ORDER BY ${sql.raw(ONE_CREDENTIAL_ORDER)}
              LIMIT 1`)
         ).rows,
     );
@@ -154,9 +178,9 @@ export class ParticipantAuthRepository {
   /**
    * Replace a participant's own password (P21-04).
    *
-   * Separate from `ParticipantRepository.setPassword`, which an administrator
-   * drives, because the two differ in the one field that matters:
-   * `must_change` goes to **false** here. A participant who has just chosen
+   * `must_change` goes to **false** here — and since P247-01 this is the only
+   * writer of a participant's password besides the create: an administrator's
+   * reset sends a link rather than setting one. A participant who has just chosen
    * their own password must not be asked to choose another one on the next
    * sign-in — that loop is how a forced-change flow becomes a wall.
    */
@@ -299,31 +323,150 @@ export class ParticipantAuthRepository {
     );
   }
 
-  /** The local credential behind a signed-in participant, if there is one. */
-  async credentialForUser(userId: string): Promise<LocalParticipant | undefined> {
+  /**
+   * The local credential behind a signed-in participant, if there is one, with
+   * the block of the customer their session belongs to.
+   */
+  async credentialForUser(
+    userId: string,
+    customerId: string,
+  ): Promise<LocalParticipant | undefined> {
     const { rows } = await this.pool.query<{
       identity_id: string;
       password_hash: string;
       must_change: boolean;
       failed_attempts: number;
       locked_until: Date | null;
-      disabled_at: Date | null;
     }>(
       `SELECT i.id AS identity_id, c.password_hash, c.must_change,
-              c.failed_attempts, c.locked_until, c.disabled_at
+              c.failed_attempts, c.locked_until
          FROM user_identities i
          JOIN learner_credentials c ON c.user_identity_id = i.id
         WHERE i.user_id = $1 AND i.provider = 'local'
+        ORDER BY ${ONE_CREDENTIAL_ORDER}
         LIMIT 1`,
       [userId],
     );
 
+    const row = rows[0];
+    if (row === undefined) return undefined;
+    return {
+      userId,
+      identityId: row.identity_id,
+      passwordHash: row.password_hash,
+      mustChange: row.must_change,
+      failedAttempts: row.failed_attempts,
+      lockedUntil: row.locked_until,
+      disabledAt: await this.membershipDisabledAt(userId, customerId),
+    };
+  }
+
+  /**
+   * The block on one membership. Inside the tenant, because `user_customers`
+   * is under FORCE ROW LEVEL SECURITY — on the bare pool this reads nothing
+   * and every block would look lifted (§9.6).
+   *
+   * No membership at all reads as blocked: a session for a customer the person
+   * no longer belongs to is not one to keep honouring.
+   */
+  private async membershipDisabledAt(
+    userId: string,
+    customerId: string,
+  ): Promise<Date | null> {
+    const rows = await runInTenant(
+      this.pool,
+      { customerId, role: "system" },
+      async (db) =>
+        (
+          await db.execute<{ disabled_at: Date | null }>(
+            sql`SELECT disabled_at FROM user_customers
+                 WHERE user_id = ${userId} AND customer_id = ${customerId}`,
+          )
+        ).rows,
+    );
+    const row = rows[0];
+    return row === undefined ? new Date(0) : row.disabled_at;
+  }
+
+  /**
+   * Every `local` project of one customer, oldest first, with the two sender
+   * fields `canSend` decides on (P247-01).
+   *
+   * Inside the tenant: `projects` is under FORCE ROW LEVEL SECURITY, and on
+   * the bare pool this would answer "no project" for every customer (§9.6).
+   */
+  async localProjectSenders(customerId: string): Promise<readonly LocalProjectSender[]> {
+    const rows = await runInTenant(
+      this.pool,
+      { customerId, role: "system" },
+      async (db) =>
+        (
+          await db.execute<{
+            id: string;
+            slug: string;
+            smtp_host: string | null;
+            smtp_from_address: string | null;
+          }>(
+            sql`SELECT id, slug, smtp_host, smtp_from_address
+                  FROM projects
+                 WHERE customer_id = ${customerId} AND identity_provider = 'local'
+                 ORDER BY created_at, id`,
+          )
+        ).rows,
+    );
+    return rows.map((row) => ({
+      projectId: row.id,
+      slug: row.slug,
+      host: row.smtp_host,
+      fromAddress: row.smtp_from_address,
+    }));
+  }
+
+  /**
+   * One named person's local credential and their membership of one customer,
+   * by id rather than by address (P247-01).
+   *
+   * By id because an administrator acts on a row, and two people may share an
+   * address (a practice mailbox — migration 0031): resolving by address could
+   * mint a link for the other one.
+   */
+  async participantById(
+    userId: string,
+    customerId: string,
+  ): Promise<(LocalParticipant & { readonly email: string | null }) | undefined> {
+    const rows = await runInTenant(
+      this.pool,
+      { customerId, role: "system" },
+      async (db) =>
+        (
+          await db.execute<{
+            identity_id: string;
+            email: string | null;
+            password_hash: string;
+            must_change: boolean;
+            failed_attempts: number;
+            locked_until: Date | null;
+            disabled_at: Date | null;
+          }>(sql`
+            SELECT i.id AS identity_id, u.email,
+                   c.password_hash, c.must_change, c.failed_attempts, c.locked_until,
+                   m.disabled_at
+              FROM users u
+              JOIN user_identities i     ON i.user_id = u.id AND i.provider = 'local'
+              JOIN learner_credentials c ON c.user_identity_id = i.id
+              JOIN user_customers m      ON m.user_id = u.id AND m.customer_id = ${customerId}
+             WHERE u.id = ${userId}
+             ORDER BY ${sql.raw(ONE_CREDENTIAL_ORDER)}
+             LIMIT 1`)
+        ).rows,
+    );
     const row = rows[0];
     return row === undefined
       ? undefined
       : {
           userId,
           identityId: row.identity_id,
+          email: row.email,
           passwordHash: row.password_hash,
           mustChange: row.must_change,
           failedAttempts: row.failed_attempts,
@@ -356,10 +499,17 @@ export class ParticipantAuthRepository {
     );
   }
 
+  /**
+   * A successful sign-in: clear the counter and record the use.
+   *
+   * `last_used_at` is what a merge keeps the credential by (P247-01) — set here
+   * and nowhere else, so a *failed* attempt cannot choose which one survives.
+   */
   async recordSuccess(identityId: string): Promise<void> {
     await this.pool.query(
       `UPDATE learner_credentials
-          SET failed_attempts = 0, locked_until = NULL, updated_at = now()
+          SET failed_attempts = 0, locked_until = NULL,
+              last_used_at = now(), updated_at = now()
         WHERE user_identity_id = $1`,
       [identityId],
     );

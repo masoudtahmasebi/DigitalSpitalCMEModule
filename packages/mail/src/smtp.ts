@@ -36,7 +36,27 @@ export const SMTP_KEYS = {
   password: "password",
   /** `"true"` for implicit TLS on connect (port 465). Anything else is STARTTLS. */
   secure: "secure",
+  /**
+   * `"true"` when the host was typed in by a customer rather than set by an
+   * operator (P247-02). The channel then connects only to an address its
+   * `vetHost` approved, and refuses outright if it was built without one.
+   */
+  publicOnly: "publicOnly",
 } as const;
+
+export interface SmtpChannelOptions {
+  /**
+   * Resolve a host to the one address the connection may use, or throw.
+   *
+   * Supplied by the application (`resolvePublicAddress` in `apps/api`), which
+   * knows which addresses are its own network; this package does not. The
+   * connection then goes to that address with the name as TLS `servername`,
+   * so the certificate is still checked against the name and nothing resolves
+   * the name a second time — a DNS answer that changes between the check and
+   * the connect cannot move it inside.
+   */
+  readonly vetHost?: (host: string) => Promise<string>;
+}
 
 const DEFAULT_PORT = 587;
 
@@ -61,6 +81,8 @@ const TRANSIENT_5XX = new Set([552, 554]);
 export class SmtpDeliveryChannel implements DeliveryChannel {
   readonly id = "smtp";
 
+  constructor(private readonly options: SmtpChannelOptions = {}) {}
+
   async deliver(message: OutboundMessage): Promise<DeliveryOutcome> {
     const host = message.transport[SMTP_KEYS.host];
     if (host === undefined || host === "") {
@@ -69,12 +91,30 @@ export class SmtpDeliveryChannel implements DeliveryChannel {
       return { status: "permanent", reason: "no SMTP host configured" };
     }
 
+    // A customer-typed host goes only where the application allows (P247-02).
+    // Permanent: retrying will not move the host out of the internal network,
+    // and the reason names neither the host nor its address.
+    let connectTo = host;
+    if (message.transport[SMTP_KEYS.publicOnly] === "true") {
+      if (this.options.vetHost === undefined) {
+        return { status: "permanent", reason: "SMTP host not allowed" };
+      }
+      try {
+        connectTo = await this.options.vetHost(host);
+      } catch {
+        return { status: "permanent", reason: "SMTP host not allowed" };
+      }
+    }
+
     const port = Number(message.transport[SMTP_KEYS.port] ?? DEFAULT_PORT);
     const username = message.transport[SMTP_KEYS.username];
     const password = message.transport[SMTP_KEYS.password];
 
     const transport = createTransport({
-      host,
+      host: connectTo,
+      // The name, for SNI and the certificate check, when the connection goes
+      // to a vetted address rather than the name itself.
+      ...(connectTo === host ? {} : { servername: host }),
       port: Number.isFinite(port) && port > 0 ? port : DEFAULT_PORT,
       // Implicit TLS on 465; STARTTLS everywhere else. `requireTLS` makes the
       // upgrade mandatory rather than best-effort — a server that does not
