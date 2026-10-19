@@ -14,8 +14,8 @@
     "@ds/copy": "workspace:*",
     "@ds/domain": "workspace:*",
     "@ds/sdk": "workspace:*",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@ds/config": "workspace:*",
