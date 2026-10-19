@@ -77,7 +77,7 @@
 # ---------------------------------------------------------------------------
 # deps — the workspace, installed once
 # ---------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS deps
+FROM node:26-bookworm-slim AS deps
 
 # corepack ships with Node and pins pnpm from `packageManager` in package.json,
 # so an image cannot drift to a different pnpm than CI used.
@@ -196,7 +196,7 @@ RUN pnpm --filter @ds/admin... --filter @ds/portal... --filter @ds/widget... bui
 # ---------------------------------------------------------------------------
 # api — the runtime
 # ---------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS api
+FROM node:26-bookworm-slim AS api
 
 ENV NODE_ENV=production
 # Node's own default is unbounded, which in a container means the OOM killer
