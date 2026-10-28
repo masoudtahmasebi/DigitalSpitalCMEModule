@@ -25,8 +25,12 @@ on:
   # `proxy-addr`, 9.1.1 of `nodemailer` — and went red on seven advisories that
   # `main` had fixed weeks earlier. Re-running it re-ran the same commit; with
   # no other trigger, nothing could show the audit passing on `main` short of a
-  # push. A manual run on `main` passes the deploy's `branches: [main]` filter
-  # exactly as a push does, which is correct: it is the same commit.
+  # push.
+  #
+  # Neither a manual run nor the scheduled one deploys (P258-08): `deploy.yml`
+  # releases only CI that a push started. Before that, the weekly run on `main`
+  # redeployed an unchanged commit every Monday, and a manual run could finish
+  # after a newer push and put the older commit back.
   workflow_dispatch:
 
 concurrency:

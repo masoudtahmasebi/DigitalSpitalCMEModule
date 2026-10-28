@@ -81,6 +81,10 @@
 # here first.
 ds_release_ref_allowed() {
   local event="$1" ref="$2" default_branch="${3:-main}" triggering_branch="${4:-}"
+  # The event that started the triggering CI run (P258-08): `push` is the only
+  # one allowed to deploy. See the rows P258-08 earns in release-guards.test.sh
+  # for the three that were deploying and should not have been.
+  local triggering_event="${5:-}"
 
   case "$event" in
     workflow_dispatch)
@@ -90,6 +94,7 @@ ds_release_ref_allowed() {
       return 1
       ;;
     workflow_run)
+      [ "$triggering_event" = "push" ] || return 1
       # The branch CI actually ran on, never this run's own ref.
       [ "$triggering_branch" = "$default_branch" ] && return 0
       [ "$triggering_branch" = "refs/heads/${default_branch}" ] && return 0

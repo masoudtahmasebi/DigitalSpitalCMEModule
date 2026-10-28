@@ -36,7 +36,7 @@ check() {
 # ---------------------------------------------------------------------------
 
 check yes "CI on main deploys" \
-  ds_release_ref_allowed workflow_run refs/heads/main main main
+  ds_release_ref_allowed workflow_run refs/heads/main main main push
 
 # ---------------------------------------------------------------------------
 # The rows P173-01 earns: a `workflow_run` deploy is judged by the branch CI
@@ -59,13 +59,41 @@ check no "nor does a triggering run whose branch is unknown" \
   ds_release_ref_allowed workflow_run refs/heads/main main ""
 
 check yes "and the triggering branch may carry the refs/heads/ prefix" \
-  ds_release_ref_allowed workflow_run refs/heads/main main refs/heads/main
+  ds_release_ref_allowed workflow_run refs/heads/main main refs/heads/main push
 
 check no "CI on main does not deploy to a repository whose default is trunk" \
   ds_release_ref_allowed workflow_run refs/heads/trunk trunk main
 
 check no "an event nobody has thought about is refused, not waved through" \
   ds_release_ref_allowed push refs/heads/main main main
+
+# ---------------------------------------------------------------------------
+# The rows P258-08 earns: only CI that a **push** started may deploy.
+#
+# Once the default branch became `main` (P254-01), the weekly scheduled CI ran
+# on `main` and its green run deployed: 19.10.2026, CI 10:39 → Deploy 10:42:58,
+# an unchanged commit, with the post-deploy journey creating another accredited
+# course and learner in production. A hand-started CI run did the same, and,
+# not sharing a concurrency group with pushes, could finish after a newer push
+# and deploy the older commit on top of it. A `pull_request` run from a fork
+# branch named `main` also carries `head_branch: main`.
+#
+# Pushes to `main` share one CI concurrency group with `cancel-in-progress`, so
+# "push only" is also what makes deploys arrive in commit order. A manual
+# deploy or rollback is still Deploy's own `workflow_dispatch`, above.
+# ---------------------------------------------------------------------------
+
+check no "the weekly scheduled CI on main does not deploy" \
+  ds_release_ref_allowed workflow_run refs/heads/main main main schedule
+
+check no "nor does a hand-started CI run" \
+  ds_release_ref_allowed workflow_run refs/heads/main main main workflow_dispatch
+
+check no "nor does pull-request CI from a branch called main" \
+  ds_release_ref_allowed workflow_run refs/heads/main main main pull_request
+
+check no "nor CI whose triggering event is unknown" \
+  ds_release_ref_allowed workflow_run refs/heads/main main main ""
 
 # ---------------------------------------------------------------------------
 # The row P175-01 earns, and it cost a refused deploy to find.
@@ -88,7 +116,7 @@ check no "an event nobody has thought about is refused, not waved through" \
 
 check yes "CI on main deploys whatever the repository default happens to be" \
   ds_release_ref_allowed workflow_run \
-  refs/heads/claude/education-platform-roadmap-3vgrqh main main
+  refs/heads/claude/education-platform-roadmap-3vgrqh main main push
 
 check no "and the feature branch does not, even when it is the repository default" \
   ds_release_ref_allowed workflow_run \

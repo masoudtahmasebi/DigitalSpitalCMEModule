@@ -143,9 +143,15 @@ jobs:
   # opens an SSH session to production either way.
   deploy:
     name: Deploy to production
+    # `workflow_run.event == 'push'` (P258-08): a green *scheduled* or
+    # hand-started CI run, or pull-request CI from a branch named `main`, is
+    # not a release. Skipped here so the weekly audit run does not show up as a
+    # failed deploy every Monday; refused again by `ds_release_ref_allowed`
+    # below, which is the rule that is tested.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     # The *first* build on a host has no layer cache at all — four images from
     # a cold `deps` stage — and without buildx compose falls back to the legacy
@@ -235,19 +241,24 @@ jobs:
           # that distinguishes them, and it is empty on a `workflow_dispatch`,
           # where `REF` is the right question instead.
           TRIGGERING_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          # What started that CI run — only `push` releases (P258-08). Empty on
+          # a `workflow_dispatch` of this workflow, which the guard judges by
+          # `REF` instead.
+          TRIGGERING_EVENT: ${{ github.event.workflow_run.event }}
         run: |
           set -Eeuo pipefail
           # shellcheck source=../../infra/deploy/release-guards.sh
           source infra/deploy/release-guards.sh
 
           if ds_release_ref_allowed \
-            "$EVENT_NAME" "$REF" "${DEPLOY_BRANCH:-main}" "${TRIGGERING_BRANCH:-}"; then
-            echo "event=$EVENT_NAME ref=$REF ci-branch=${TRIGGERING_BRANCH:-n/a} — allowed"
+            "$EVENT_NAME" "$REF" "${DEPLOY_BRANCH:-main}" "${TRIGGERING_BRANCH:-}" \
+            "${TRIGGERING_EVENT:-}"; then
+            echo "event=$EVENT_NAME ref=$REF ci-branch=${TRIGGERING_BRANCH:-n/a} ci-event=${TRIGGERING_EVENT:-n/a} — allowed"
             exit 0
           fi
 
           echo "::error::Refusing to deploy to production." \
-               "event=${EVENT_NAME} ref=${REF} ci-branch=${TRIGGERING_BRANCH:-n/a}." \
+               "event=${EVENT_NAME} ref=${REF} ci-branch=${TRIGGERING_BRANCH:-n/a} ci-event=${TRIGGERING_EVENT:-n/a}." \
                "Only ${DEPLOY_BRANCH:-main} reaches production:" \
                "CI passing on it is what deploys, and a manual run may name it and" \
                "nothing else. Merge the change first."
