@@ -244,6 +244,37 @@ test.describe("die WordPress-Einbindung", () => {
     }
   });
 
+  test("nimmt nach einem Neustart des Keycloak-Stubs weiter Tokens an", async ({
+    browser,
+  }) => {
+    /*
+     * A restarted stub signs with the key the API already holds (P258-09).
+     *
+     * CI retries a failed test in a new worker, which runs `beforeAll` again
+     * and starts a second stub. It used to generate a new key under the same
+     * `kid`, the API kept the JWKS it had cached, and every later token in the
+     * group was 401 — one real failure became a whole group reading "Ihre
+     * Sitzung ist abgelaufen". This is that restart, on purpose.
+     */
+    keycloak?.kill();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    keycloak = await startKeycloak(REPO);
+
+    let site: WordPressSite | undefined;
+    try {
+      const token = await mintKeycloakToken("wp-nach-neustart@medice.example");
+      site = await startWordPress({ repo: REPO, apiBase: API_BASE, token });
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await openWidgetShadowRoots(page);
+      await page.goto(site.url());
+      await expect.poll(() => widgetText(page), { timeout: 20_000 }).toContain("DS Demo");
+      await context.close();
+    } finally {
+      await site?.stop();
+    }
+  });
+
   test("sagt es, wenn WordPress keinen Token hat", async ({ browser }) => {
     /*
      * A visitor who is not logged in to WordPress: the plugin installs no

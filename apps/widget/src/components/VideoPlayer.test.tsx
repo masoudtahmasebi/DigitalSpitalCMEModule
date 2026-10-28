@@ -858,12 +858,33 @@ describe("the scrub bar's hover preview (P199)", () => {
 });
 
 describe("fullscreen (P256-01)", () => {
+  /*
+   * Put back exactly what was there (P258-09). jsdom has neither method today,
+   * so a bare `delete` only removed what these tests defined — and the day
+   * jsdom adds `requestFullscreen` it would delete the real one for every
+   * later case in the file.
+   */
+  const originals = {
+    request: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "requestFullscreen"),
+    webkit: Object.getOwnPropertyDescriptor(
+      HTMLVideoElement.prototype,
+      "webkitEnterFullscreen",
+    ),
+  };
   afterEach(() => {
     vi.restoreAllMocks();
-    delete (HTMLElement.prototype as { requestFullscreen?: unknown }).requestFullscreen;
-    delete (HTMLVideoElement.prototype as { webkitEnterFullscreen?: unknown })
-      .webkitEnterFullscreen;
+    restore(HTMLElement.prototype, "requestFullscreen", originals.request);
+    restore(HTMLVideoElement.prototype, "webkitEnterFullscreen", originals.webkit);
   });
+
+  function restore(
+    target: object,
+    key: string,
+    original: PropertyDescriptor | undefined,
+  ) {
+    if (original === undefined) Reflect.deleteProperty(target, key);
+    else Object.defineProperty(target, key, original);
+  }
 
   it("takes the control bar fullscreen with the picture, so there is a way out", async () => {
     // The element was the frame alone: fullscreen showed a picture with no

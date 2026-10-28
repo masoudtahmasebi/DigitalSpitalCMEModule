@@ -97,8 +97,19 @@ test.describe("die Abstände des Katalogs auf dem Telefon", () => {
     expect(measured.problem).toBeUndefined();
     // The precondition, stated: this case is the band without a photograph.
     expect(measured.photograph).toBe("none");
-    // The seal's own `bottom-10` is 40 px; the same above it, and no more.
-    expect(measured.emptyAboveSeal).toBeLessThanOrEqual(48);
-    expect(measured.belowLastButton).toBeGreaterThanOrEqual(32);
+    /*
+     * Both numbers are derived, not chosen (P258-09):
+     * - above the seal: `h-64` (256) − the seal's `h-[11rem]` (176) − its
+     *   `bottom-10` (40) = 40;
+     * - below the last button: `TabbedPanel`'s `max-sm:pb-10` = 40.
+     * One pixel either way for sub-pixel layout, and no more — an 8 px
+     * allowance would pass a change nobody made on purpose.
+     */
+    const SEAL_GAP = 256 - 176 - 40;
+    const PANEL_PADDING = 40;
+    expect(
+      Math.abs((measured.emptyAboveSeal ?? Infinity) - SEAL_GAP),
+    ).toBeLessThanOrEqual(1);
+    expect(measured.belowLastButton).toBeGreaterThanOrEqual(PANEL_PADDING - 1);
   });
 });

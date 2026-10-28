@@ -67,7 +67,8 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { exportJWK, generateKeyPair, SignJWT, type CryptoKey } from "jose";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { exportJWK, generateKeyPair, importJWK, SignJWT, type CryptoKey } from "jose";
 
 /** Keycloak's own path layout, which `jwks-registry.ts` assumes. */
 export const CERTS_SUFFIX = "/protocol/openid-connect/certs";
@@ -116,12 +117,55 @@ export function realmOf(pathname: string, suffix: string): string | undefined {
   return match?.[1];
 }
 
+/**
+ * One signing key per `DEV_KEYCLOAK_KEY_FILE`, however many times the stub
+ * starts (P258-09).
+ *
+ * The key used to be generated on every start under the fixed `kid`, and the
+ * API caches the JWKS it fetched first — so a second start in the same run
+ * signed with a key the API had never seen, and every token was 401. A CI
+ * retry restarts the stub, which turned one real failure into a whole group
+ * failing as "Ihre Sitzung ist abgelaufen". A fresh `kid` would not fix it:
+ * `jose` refetches an unknown `kid` at most once per 30 s cooldown.
+ *
+ * Without the variable nothing changes — a fresh key per process.
+ */
+async function signingKeys(
+  file: string | undefined,
+): Promise<{ publicKey: CryptoKey; privateKey: CryptoKey }> {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a path from this process's own environment, set by the e2e harness, not from a request
+  if (file !== undefined && file !== "" && existsSync(file)) {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- as above
+    const stored = JSON.parse(readFileSync(file, "utf8")) as {
+      publicKey: Record<string, unknown>;
+      privateKey: Record<string, unknown>;
+    };
+    return {
+      publicKey: (await importJWK(stored.publicKey, "RS256")) as CryptoKey,
+      privateKey: (await importJWK(stored.privateKey, "RS256")) as CryptoKey,
+    };
+  }
+  const pair = await generateKeyPair("RS256", { extractable: true });
+  if (file !== undefined && file !== "") {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- as above
+    writeFileSync(
+      file,
+      JSON.stringify({
+        publicKey: await exportJWK(pair.publicKey),
+        privateKey: await exportJWK(pair.privateKey),
+      }),
+      { mode: 0o600 },
+    );
+  }
+  return pair;
+}
+
 async function main(): Promise<void> {
   exitIfProduction();
 
-  const { publicKey, privateKey } = await generateKeyPair("RS256", {
-    extractable: true,
-  });
+  const { publicKey, privateKey } = await signingKeys(
+    process.env["DEV_KEYCLOAK_KEY_FILE"],
+  );
   const jwk = { ...(await exportJWK(publicKey)), kid: KID, alg: "RS256", use: "sig" };
 
   const server = createServer((request, response) => {

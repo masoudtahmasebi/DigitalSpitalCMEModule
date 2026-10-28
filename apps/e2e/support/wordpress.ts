@@ -46,6 +46,8 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createServer, type Server } from "node:http";
 import { WORDPRESS_ORIGIN } from "./stack.js";
 import { WIDGET_BUNDLE_URL, startWidgetHost, type WidgetHost } from "./widget-host.js";
@@ -117,7 +119,18 @@ export async function startKeycloak(repo: string): Promise<ChildProcess> {
   const child = spawn("node", ["apps/api/dist/dev-keycloak.js"], {
     cwd: repo,
     stdio: "ignore",
-    env: { ...process.env, NODE_ENV: "development" },
+    env: {
+      ...process.env,
+      NODE_ENV: "development",
+      // One key for the whole run, so a restarted stub — a CI retry starts a
+      // new worker and runs `beforeAll` again — signs with the key the API
+      // already cached (P258-09). Keyed on the runner's pid, which every
+      // worker of one run shares as its parent.
+      DEV_KEYCLOAK_KEY_FILE: join(
+        tmpdir(),
+        `ds-e2e-keycloak-${String(process.ppid)}.json`,
+      ),
+    },
   });
 
   const certs = `http://127.0.0.1:${KEYCLOAK_PORT}/realms/${REALM}/protocol/openid-connect/certs`;
