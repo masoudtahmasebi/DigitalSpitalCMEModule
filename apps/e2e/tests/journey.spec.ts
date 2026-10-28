@@ -1013,9 +1013,59 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         const exit = Array.from(root?.querySelectorAll("button") ?? []).find(
           (button) => button.getAttribute("aria-label") === "Vollbild beenden",
         );
+        /*
+         * The control row: the fullscreen element's child that holds the exit
+         * button. Measured rather than assumed, so "the video takes every row
+         * the controls do not" is an equation instead of a 120 px allowance.
+         */
+        let bar: Element | null = exit ?? null;
+        while (bar !== null && bar.parentElement !== fullscreen) bar = bar.parentElement;
+
+        /*
+         * Contrast of the way out against what is actually painted behind it
+         * (P258-02). In fullscreen the player is `bg-black`, and a control bar
+         * with no surface of its own drew `text-gray-700` icons on it — about
+         * 2:1, under the 3:1 WCAG 1.4.11 sets for a control. `toBeVisible`
+         * cannot see that.
+         */
+        const rgb = (value: string): [number, number, number] | null => {
+          // `rgb(r, g, b)` or `rgba(r, g, b, a)`, as computed style always reports.
+          const parts = value
+            .slice(value.indexOf("(") + 1, value.indexOf(")"))
+            .split(",");
+          const [r, g, b, a] = parts.map((part) => Number(part.trim()));
+          if (r === undefined || g === undefined || b === undefined || a === 0)
+            return null;
+          return [r, g, b];
+        };
+        const luminance = ([r, g, b]: [number, number, number]) => {
+          const lin = (c: number) => {
+            const v = c / 255;
+            return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+          };
+          return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+        };
+        let painted: [number, number, number] | null = null;
+        for (
+          let node: Element | null = exit ?? null;
+          node !== null;
+          node = node.parentElement
+        ) {
+          painted = rgb(getComputedStyle(node).backgroundColor);
+          if (painted !== null) break;
+        }
+        const ink = exit === undefined ? null : rgb(getComputedStyle(exit).color);
+        const contrast =
+          ink === null || painted === null
+            ? 0
+            : (Math.max(luminance(ink), luminance(painted)) + 0.05) /
+              (Math.min(luminance(ink), luminance(painted)) + 0.05);
+
         return {
           controlsInside:
             fullscreen !== null && exit !== undefined && fullscreen.contains(exit),
+          barHeight: bar?.getBoundingClientRect().height ?? 0,
+          contrast,
           width: box.width,
           height: box.height,
           screenWidth: window.innerWidth,
@@ -1034,9 +1084,13 @@ test.describe("die ganze Fortbildung, von leer bis Bescheinigung", () => {
         ).toBeGreaterThanOrEqual(filled.screenWidth - 1);
         // The control row is the only thing allowed to share the screen.
         expect(
-          filled.height,
-          `the video is ${String(filled.height)} px tall on a ${String(filled.screenHeight)} px screen`,
-        ).toBeGreaterThanOrEqual(filled.screenHeight - 120);
+          filled.height + filled.barHeight,
+          `the video (${String(filled.height)} px) and its controls (${String(filled.barHeight)} px) leave part of a ${String(filled.screenHeight)} px screen empty`,
+        ).toBeGreaterThanOrEqual(filled.screenHeight - 1);
+        expect(
+          filled.contrast,
+          `"Vollbild beenden" has ${filled.contrast.toFixed(2)}:1 contrast against what is behind it in fullscreen; a control needs 3:1`,
+        ).toBeGreaterThanOrEqual(3);
       }
       await learner.getByRole("button", { name: "Vollbild beenden" }).first().click();
       await expect(

@@ -885,6 +885,34 @@ describe("fullscreen (P256-01)", () => {
     expect(requested[0]?.querySelector("video")).not.toBeNull();
   });
 
+  it("answers its shortcuts with focus on the control bar, not only on the frame", async () => {
+    // P258-04: in fullscreen Tab moves into the bar; with the handler on the
+    // frame, "f" stopped doing anything the moment focus left it.
+    const requested: Element[] = [];
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value(this: Element) {
+        requested.push(this);
+        return Promise.resolve();
+      },
+    });
+    renderPlayer();
+    fireEvent.keyDown(screen.getByRole("button", { name: "Ton aus" }), { key: "f" });
+    await Promise.resolve();
+    expect(requested).toHaveLength(1);
+  });
+
+  it("lets Space on a button be that button, not also play/pause", () => {
+    // The handler now sees keys from every button in the bar; Space on
+    // "Ton aus" must mute and nothing else.
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, "play")
+      .mockResolvedValue(undefined);
+    renderPlayer();
+    fireEvent.keyDown(screen.getByRole("button", { name: "Ton aus" }), { key: " " });
+    expect(play).not.toHaveBeenCalled();
+  });
+
   it("falls back to the video's own player where elements cannot go fullscreen", async () => {
     // iPhone Safari: no `requestFullscreen` on a <div>, only the video's native
     // player. Without the fallback the button did nothing at all.

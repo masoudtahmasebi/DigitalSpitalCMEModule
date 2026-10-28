@@ -439,8 +439,9 @@ function CatalogHero(props: { branding: Branding }) {
      * not draw the narrow state, and is wrong now that it does.
      *
      * `overflow-hidden` only from `sm`: the mobile seal is inside the
-     * photograph, but the band is `h-[27.5rem]` and clipping it there would
-     * cut the seal if a narrower viewport shrank the band under it.
+     * photograph, but the band has a fixed height (`h-[27.5rem]` with a
+     * photograph, `h-64` without — P255-01) and clipping it there would cut
+     * the seal if a narrower viewport shrank the band under it.
      */
     <div className="relative sm:overflow-hidden sm:rounded-br-[7rem] sm:bg-brand-600">
       {/*

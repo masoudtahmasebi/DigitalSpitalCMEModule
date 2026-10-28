@@ -382,11 +382,7 @@ export function VideoPlayer(props: VideoPlayerProps) {
      * `<ds-lms>` host, so it cannot tell this player from any other element;
      * the root the player lives in can.
      */
-    const onChange = () => {
-      const player = playerRef.current;
-      const root = player?.getRootNode() as Document | ShadowRoot | undefined;
-      setFullscreen(player !== null && root?.fullscreenElement === player);
-    };
+    const onChange = () => setFullscreen(isFullscreen(playerRef.current));
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
@@ -498,6 +494,11 @@ export function VideoPlayer(props: VideoPlayerProps) {
     // A key pressed on the volume slider or a menu belongs to that control.
     const target = event.target as HTMLElement;
     if (target.tagName === "INPUT" || target.getAttribute("role") === "slider") return;
+    // Space and Enter on a button *are* that button (P258-04). The handler sits
+    // on the whole player now, so without this a Space on "Ton aus" would mute
+    // and also toggle playback.
+    if (target.tagName === "BUTTON" && (event.key === " " || event.key === "Enter"))
+      return;
 
     const video = videoRef.current;
     if (video === null) return;
@@ -576,10 +577,10 @@ export function VideoPlayer(props: VideoPlayerProps) {
     const player = playerRef.current;
     if (player === null) return;
     try {
-      // `?? null`: a browser without the Fullscreen API on `document` answers
-      // `undefined`, which `!== null` read as "already fullscreen" and sent
-      // every press to an `exitFullscreen` that does not exist either.
-      if ((document.fullscreenElement ?? null) !== null) {
+      // The same question the `fullscreenchange` listener asks (P258-03): this
+      // player, not "anything". Asked of `document`, a page with some other
+      // element fullscreen turned the first press into an exit.
+      if (isFullscreen(player)) {
         await document.exitFullscreen();
       } else if (typeof player.requestFullscreen === "function") {
         await player.requestFullscreen();
@@ -628,8 +629,16 @@ export function VideoPlayer(props: VideoPlayerProps) {
         (`object-contain`), because a CME video cut at the edges can lose the
         slide text a physician is being examined on.
       */}
+      {/*
+        The key handler is here, on the whole player, rather than on the frame
+        (P258-04): in fullscreen Tab moves into the control bar, and with the
+        handler on the frame every shortcut — f, k, the arrows — stopped working
+        the moment focus left it. Keys still bubble from the focusable frame, so
+        nothing that worked before changes.
+      */}
       <div
         ref={playerRef}
+        onKeyDown={handleKeyDown}
         className={
           fullscreen
             ? "flex h-full w-full flex-col bg-black"
@@ -646,7 +655,6 @@ export function VideoPlayer(props: VideoPlayerProps) {
         <div
           ref={containerRef}
           tabIndex={0}
-          onKeyDown={handleKeyDown}
           aria-label={props.title}
           className={`group relative overflow-hidden bg-black ${fullscreen ? "min-h-0 flex-1 " : ""}focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-600`}
         >
@@ -922,7 +930,14 @@ function Controls(props: {
   const total = clockTime(duration);
 
   return (
-    <div className="space-y-2 px-4 pb-3 pt-2.5">
+    /*
+     * `bg-gray-100`: the bar's own surface (P258-02). Inline it inherited the
+     * player's gray-100; in fullscreen the player is black, and every control
+     * drawn on it in `text-gray-700` measured 2.04:1 — the exit button too.
+     * Owning the surface keeps every colour below at the contrast it was
+     * chosen for, in both arrangements.
+     */
+    <div className="space-y-2 bg-gray-100 px-4 pb-3 pt-2.5">
       <SeekBar
         positionSec={state.positionSec}
         durationSec={duration}
@@ -1296,6 +1311,21 @@ function SeekBar(props: {
       ) : null}
     </>
   );
+}
+
+/**
+ * Is this element the fullscreen element of the root it lives in?
+ *
+ * Asked of the element's own root because inside the widget's shadow root
+ * `document.fullscreenElement` is retargeted to the `<ds-lms>` host, and cannot
+ * tell this player from anything else on the page. `?? null` because a browser
+ * without the Fullscreen API answers `undefined` (P256-01, P258-03).
+ */
+function isFullscreen(element: Element | null): boolean {
+  if (element === null) return false;
+  const root = element.getRootNode();
+  if (!(root instanceof Document || root instanceof ShadowRoot)) return false;
+  return (root.fullscreenElement ?? null) === element;
 }
 
 function IconButton(props: {

@@ -28,7 +28,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CourseDetail, EnrolmentState } from "@ds/sdk";
 import { createWidgetClient, isConfigured, type WidgetConfig } from "./api.js";
-import { useBranding } from "./branding.js";
+import { useBranding, useBrandingStatus } from "./branding.js";
 import { useScrollToTopOnChange } from "./scroll-to-top.js";
 import { de } from "./locale/de.js";
 import { describeError, useAsync, useEnrolment } from "./hooks.js";
@@ -529,7 +529,10 @@ function Catalogue(props: {
   signInUrl: string | undefined;
   onOpen: (slug: string, intent: OpenIntent) => void;
 }) {
-  const branding = useBranding(props.apiBase, props.projectSlug);
+  // The hero's height depends on whether a catalogue photograph exists, so the
+  // catalogue waits — briefly, see `BRANDING_WAIT_MS` — rather than draw at a
+  // guessed height and move under the reader's thumb (P258-05).
+  const { branding, loaded } = useBrandingStatus(props.apiBase, props.projectSlug);
 
   return (
     <div className="space-y-6">
@@ -546,12 +549,16 @@ function Catalogue(props: {
           <BrandLogo apiBase={props.apiBase} projectSlug={props.projectSlug} />
         </div>
       )}
-      <CourseList
-        client={props.client}
-        branding={branding}
-        signInUrl={props.signInUrl}
-        onOpen={props.onOpen}
-      />
+      {loaded ? (
+        <CourseList
+          client={props.client}
+          branding={branding}
+          signInUrl={props.signInUrl}
+          onOpen={props.onOpen}
+        />
+      ) : (
+        <Spinner label={de.loading} />
+      )}
     </div>
   );
 }

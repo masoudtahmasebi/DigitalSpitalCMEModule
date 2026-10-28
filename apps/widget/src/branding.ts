@@ -92,20 +92,57 @@ function load(apiBase: string, projectSlug: string): Promise<Branding> {
 }
 
 export function useBranding(apiBase: string, projectSlug: string): Branding {
-  const [branding, setBranding] = useState<Branding>({});
+  return useBrandingStatus(apiBase, projectSlug).branding;
+}
+
+/**
+ * How long a screen may hold its layout for branding before drawing anyway.
+ *
+ * The branding fetch has no deadline of its own, and a screen that waited on a
+ * request that never answers would be a blank widget. 1.5 s is long enough for
+ * an answer from the same API the rest of the screen is waiting on, and short
+ * enough that a hung request costs the photograph, not the page.
+ */
+export const BRANDING_WAIT_MS = 1500;
+
+/**
+ * Branding plus whether it is known yet (P258-05).
+ *
+ * `useBranding` answers `{}` both before its fetch has returned and for a
+ * project that has set nothing, and the two are indistinguishable. That is
+ * harmless for a colour — it changes paint, not layout — and was not for the
+ * catalogue hero, whose height depends on whether a photograph exists: a
+ * project with one painted the band at 256 px and moved everything below it
+ * 184 px down when branding arrived.
+ *
+ * `loaded` turns true on the answer, on a failed fetch (which `load` resolves
+ * as `{}`), or after `BRANDING_WAIT_MS`, whichever comes first.
+ */
+export function useBrandingStatus(
+  apiBase: string,
+  projectSlug: string,
+): { readonly branding: Branding; readonly loaded: boolean } {
+  const [state, setState] = useState<{ branding: Branding; loaded: boolean }>({
+    branding: {},
+    loaded: apiBase === "" || projectSlug === "",
+  });
 
   useEffect(() => {
     if (apiBase === "" || projectSlug === "") return;
 
     let cancelled = false;
+    const timer = setTimeout(() => {
+      if (!cancelled) setState((current) => ({ ...current, loaded: true }));
+    }, BRANDING_WAIT_MS);
     void load(apiBase, projectSlug).then((value) => {
-      if (!cancelled) setBranding(value);
+      if (!cancelled) setState({ branding: value, loaded: true });
     });
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [apiBase, projectSlug]);
 
-  return branding;
+  return state;
 }
