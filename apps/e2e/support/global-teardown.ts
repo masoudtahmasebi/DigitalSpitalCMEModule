@@ -30,6 +30,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { rmSync } from "node:fs";
 import { DB_NAME } from "./world.js";
 
 function psql(url: string, sql: string): void {
@@ -46,6 +47,16 @@ export default async function globalTeardown(): Promise<void> {
     // Reported, not thrown: the database below matters more than a tidy exit,
     // and a stack that failed to stop is usually a process that already died.
     console.error(`e2e: the stack did not stop cleanly: ${String(error)}`);
+  }
+
+  // The stub Keycloak's private key, whatever else happens (P259-02).
+  const keyDir = process.env["E2E_KEYCLOAK_KEY_DIR"];
+  if (keyDir !== undefined && keyDir !== "") {
+    try {
+      rmSync(keyDir, { recursive: true, force: true });
+    } catch (error) {
+      console.error(`e2e: could not remove ${keyDir}: ${String(error)}`);
+    }
   }
 
   if (process.env["E2E_KEEP_DATABASE"] === "1") {

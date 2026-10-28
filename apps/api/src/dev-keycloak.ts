@@ -67,7 +67,7 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { exportJWK, generateKeyPair, importJWK, SignJWT, type CryptoKey } from "jose";
 
 /** Keycloak's own path layout, which `jwks-registry.ts` assumes. */
@@ -130,23 +130,42 @@ export function realmOf(pathname: string, suffix: string): string | undefined {
  *
  * Without the variable nothing changes — a fresh key per process.
  */
-async function signingKeys(
+export async function signingKeys(
   file: string | undefined,
 ): Promise<{ publicKey: CryptoKey; privateKey: CryptoKey }> {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a path from this process's own environment, set by the e2e harness, not from a request
-  if (file !== undefined && file !== "" && existsSync(file)) {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- as above
-    const stored = JSON.parse(readFileSync(file, "utf8")) as {
-      publicKey: Record<string, unknown>;
-      privateKey: Record<string, unknown>;
-    };
-    return {
-      publicKey: (await importJWK(stored.publicKey, "RS256")) as CryptoKey,
-      privateKey: (await importJWK(stored.privateKey, "RS256")) as CryptoKey,
-    };
+  if (file === undefined || file === "") {
+    return generateKeyPair("RS256", { extractable: true });
   }
+
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a path from this process's own environment, set by the e2e harness, not from a request
+  if (existsSync(file)) {
+    try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- as above
+      const stored = JSON.parse(readFileSync(file, "utf8")) as {
+        publicKey: Record<string, unknown>;
+        privateKey: Record<string, unknown>;
+      };
+      return {
+        publicKey: (await importJWK(stored.publicKey, "RS256")) as CryptoKey,
+        privateKey: (await importJWK(stored.privateKey, "RS256")) as CryptoKey,
+      };
+    } catch (error) {
+      // A half-written or corrupt file used to reject `main()` with stdio
+      // ignored, so the harness only ever saw "dev-keycloak did not start"
+      // (P259-02). Said, replaced, and the stub starts.
+      console.error(
+        `dev-keycloak: ${file} is not a usable key (${String(error)}); replacing it`,
+      );
+
+      rmSync(file, { force: true });
+    }
+  }
+
   const pair = await generateKeyPair("RS256", { extractable: true });
-  if (file !== undefined && file !== "") {
+  try {
+    // `wx`: created here or not at all. `mode` is ignored for a file that
+    // already exists, and a plain write follows a symlink planted at the path;
+    // an exclusive create does neither (P259-02).
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- as above
     writeFileSync(
       file,
@@ -154,8 +173,12 @@ async function signingKeys(
         publicKey: await exportJWK(pair.publicKey),
         privateKey: await exportJWK(pair.privateKey),
       }),
-      { mode: 0o600 },
+      { flag: "wx", mode: 0o600 },
     );
+  } catch (error) {
+    // Another stub won the race to create it, or the path is not ours to
+    // write: sign with this key and say so, rather than refuse to start.
+    console.error(`dev-keycloak: could not keep the key at ${file} (${String(error)})`);
   }
   return pair;
 }

@@ -46,7 +46,6 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer, type Server } from "node:http";
 import { WORDPRESS_ORIGIN } from "./stack.js";
@@ -118,18 +117,21 @@ export async function mintKeycloakToken(
 export async function startKeycloak(repo: string): Promise<ChildProcess> {
   const child = spawn("node", ["apps/api/dist/dev-keycloak.js"], {
     cwd: repo,
-    stdio: "ignore",
+    // stderr through (P259-02): a stub that cannot use its key file says why,
+    // instead of the harness reporting only "dev-keycloak did not start".
+    stdio: ["ignore", "ignore", "inherit"],
     env: {
       ...process.env,
       NODE_ENV: "development",
       // One key for the whole run, so a restarted stub — a CI retry starts a
       // new worker and runs `beforeAll` again — signs with the key the API
-      // already cached (P258-09). Keyed on the runner's pid, which every
-      // worker of one run shares as its parent.
-      DEV_KEYCLOAK_KEY_FILE: join(
-        tmpdir(),
-        `ds-e2e-keycloak-${String(process.ppid)}.json`,
-      ),
+      // already cached (P258-09). In the run's private directory from global
+      // setup, removed in teardown (P259-02). Unset outside the suite: a fresh
+      // key per start.
+      DEV_KEYCLOAK_KEY_FILE:
+        process.env["E2E_KEYCLOAK_KEY_DIR"] === undefined
+          ? ""
+          : join(process.env["E2E_KEYCLOAK_KEY_DIR"], "signing-key.json"),
     },
   });
 

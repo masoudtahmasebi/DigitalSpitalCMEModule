@@ -252,11 +252,21 @@ describe("metrics", () => {
     const was = process.env["DS_COMMIT"];
     process.env["DS_COMMIT"] = "a1b2c3d";
     try {
-      expect(new Metrics().render()).toContain('ds_build_info{commit="a1b2c3d"} 1');
+      expect(new Metrics().render()).toContain(
+        `ds_build_info{commit="a1b2c3d",node="${process.version}"} 1`,
+      );
     } finally {
       if (was === undefined) delete process.env["DS_COMMIT"];
       else process.env["DS_COMMIT"] = was;
     }
+  });
+
+  it("names the Node runtime it is running on (P259-01)", () => {
+    // The base image is a pinned tag, but "the Dockerfile says 22.23.4" is a
+    // claim about the repository, not about the process answering on the
+    // host (CLAUDE.md §9.9). After a Node security release this is the line
+    // that says whether production actually has it.
+    expect(new Metrics().render()).toMatch(/ds_build_info\{[^}]*node="v\d+\.\d+\.\d+"/u);
   });
 
   it("says 'unknown' rather than omitting the series when unset", () => {
@@ -266,7 +276,9 @@ describe("metrics", () => {
     const was = process.env["DS_COMMIT"];
     delete process.env["DS_COMMIT"];
     try {
-      expect(new Metrics().render()).toContain('ds_build_info{commit="unknown"} 1');
+      expect(new Metrics().render()).toContain(
+        `ds_build_info{commit="unknown",node="${process.version}"} 1`,
+      );
     } finally {
       if (was !== undefined) process.env["DS_COMMIT"] = was;
     }

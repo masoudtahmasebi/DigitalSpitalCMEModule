@@ -7,6 +7,9 @@
  * the same process, and there is no other channel between them.
  */
 
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { startStack, type Stack } from "./stack.js";
@@ -75,4 +78,14 @@ export default async function globalSetup(): Promise<void> {
   process.env["E2E_SMTP_PORT"] = String(stack.mail.port);
   process.env["E2E_SMTP_USERNAME"] = stack.mail.username;
   process.env["E2E_SMTP_PASSWORD"] = stack.mail.password;
+
+  /*
+   * Where the stub Keycloak keeps its signing key for this run (P258-09,
+   * P259-02). A private `mkdtemp` directory (0700), not a predictable name in
+   * the shared temp dir — another local user could otherwise plant a key file
+   * there for the stub to sign with — and removed in teardown, so no private
+   * key outlives the run. Workers inherit it through the environment, like the
+   * values above.
+   */
+  process.env["E2E_KEYCLOAK_KEY_DIR"] = mkdtempSync(join(tmpdir(), "ds-e2e-keycloak-"));
 }

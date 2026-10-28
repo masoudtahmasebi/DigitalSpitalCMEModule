@@ -231,10 +231,15 @@ export class Metrics {
       lines.push(`${gauge.name}${label} ${String(gauge.read())}`);
     }
 
-    lines.push("# HELP ds_build_info The commit this process was built from.");
-    lines.push("# TYPE ds_build_info gauge");
     lines.push(
-      `ds_build_info{commit="${escapeLabel(process.env["DS_COMMIT"] ?? "unknown")}"} 1`,
+      "# HELP ds_build_info The commit this process was built from, and the Node runtime it runs on.",
+    );
+    lines.push("# TYPE ds_build_info gauge");
+    // `node` (P259-01): after a Node security release the question is whether
+    // *this process* has it — the pinned tag in the Dockerfile only says what
+    // the repository asked for.
+    lines.push(
+      `ds_build_info{commit="${escapeLabel(process.env["DS_COMMIT"] ?? "unknown")}",node="${escapeLabel(process.version)}"} 1`,
     );
 
     return `${lines.join("\n")}\n`;

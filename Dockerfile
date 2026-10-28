@@ -77,7 +77,17 @@
 # ---------------------------------------------------------------------------
 # deps — the workspace, installed once
 # ---------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS deps
+# The exact Node patch, not the floating `22-bookworm-slim` (P259-01).
+#
+# Node 22.23.4 (20.10.2026) is a security release. With a floating tag the
+# runtime a deploy gets is whatever the tag held that day — production built
+# on 19.10 had the release before it, and nothing in the repository said so.
+# A pinned tag is a claim that can be read here, checked on the host
+# (`ds_build_info{node=…}` on /metrics), and moved by Dependabot's weekly
+# `docker` update, which only proposes a bump for a tag it can compare.
+# Both `FROM node:` lines move together; `pnpm check:node-version` holds them
+# to `.nvmrc`'s major.
+FROM node:22.23.4-bookworm-slim AS deps
 
 # corepack ships with Node and pins pnpm from `packageManager` in package.json,
 # so an image cannot drift to a different pnpm than CI used.
@@ -196,7 +206,7 @@ RUN pnpm --filter @ds/admin... --filter @ds/portal... --filter @ds/widget... bui
 # ---------------------------------------------------------------------------
 # api — the runtime
 # ---------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS api
+FROM node:22.23.4-bookworm-slim AS api
 
 ENV NODE_ENV=production
 # Node's own default is unbounded, which in a container means the OOM killer
