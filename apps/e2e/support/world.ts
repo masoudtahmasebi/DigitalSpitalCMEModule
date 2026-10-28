@@ -198,27 +198,7 @@ export function prepareDatabase(repo: string, superuser: string): Prepared {
  * suite's act 7.
  */
 export async function accreditSeededCourse(superuserUrl: string): Promise<void> {
-  /*
-   * The one hand-rolled idle-error handler, and why it is hand-rolled.
-   *
-   * Everywhere else this is `createPool` from `@ds/postgres` (P76-04). This
-   * package may not import a workspace package at all: `pnpm test:smoke` runs
-   * it against a real deployment with nothing but a browser, so a workspace
-   * import resolves to a `dist/` that was never built — the `no-restricted-
-   * imports` rule covering `apps/e2e` says exactly that, and it is right.
-   *
-   * The hazard is unchanged: an `'error'` event with no listener is re-thrown
-   * as an uncaught exception, and this pool is opened beside a suite that drops
-   * and rebuilds databases underneath it.
-   */
-  // eslint-disable-next-line no-restricted-syntax -- apps/e2e cannot import @ds/postgres; see above
-  const pool = new Pool({ connectionString: superuserUrl });
-  pool.on("error", () => {
-    // Deliberately reported nowhere: a harness losing an idle connection while
-    // its own suite tears the database down is expected. The only thing that
-    // matters is that it does not end the process.
-  });
-  try {
+  await withSuperuserPool(superuserUrl, async (pool) => {
     await pool.query(
       `UPDATE courses
           SET scientific_lead_name = 'Dr. E2E',
@@ -228,9 +208,76 @@ export async function accreditSeededCourse(superuserUrl: string): Promise<void> 
         WHERE slug = $1`,
       [COURSE_WITH_POINTS, Buffer.from(PLACEHOLDER_PNG, "base64")],
     );
+  });
+}
+
+/**
+ * The e2e database as its superuser — for the harness, from setup or from a
+ * test, never for the product under test (P258-07).
+ *
+ * The same default `run-e2e.mjs` and global setup use, pointed at `DB_NAME`.
+ */
+export function e2eSuperuserUrl(): string {
+  const url = new URL(
+    process.env["POSTGRES_SUPERUSER_URL"] ??
+      "postgres://postgres:postgres@127.0.0.1:5432/postgres",
+  );
+  url.pathname = `/${DB_NAME}`;
+  return url.toString();
+}
+
+/**
+ * One short-lived superuser pool, closed whatever happens.
+ *
+ * The one hand-rolled idle-error handler, and why it is hand-rolled.
+ *
+ * Everywhere else this is `createPool` from `@ds/postgres` (P76-04). This
+ * package may not import a workspace package at all: `pnpm test:smoke` runs
+ * it against a real deployment with nothing but a browser, so a workspace
+ * import resolves to a `dist/` that was never built — the `no-restricted-
+ * imports` rule covering `apps/e2e` says exactly that, and it is right.
+ *
+ * The hazard is unchanged: an `'error'` event with no listener is re-thrown
+ * as an uncaught exception, and this pool is opened beside a suite that drops
+ * and rebuilds databases underneath it.
+ */
+export async function withSuperuserPool<T>(
+  superuserUrl: string,
+  work: (pool: Pool) => Promise<T>,
+): Promise<T> {
+  // eslint-disable-next-line no-restricted-syntax -- apps/e2e cannot import @ds/postgres; see above
+  const pool = new Pool({ connectionString: superuserUrl });
+  pool.on("error", () => {
+    // Deliberately reported nowhere: a harness losing an idle connection while
+    // its own suite tears the database down is expected. The only thing that
+    // matters is that it does not end the process.
+  });
+  try {
+    return await work(pool);
   } finally {
     await pool.end();
   }
+}
+
+/**
+ * The stored profile of the person behind a dev-keycloak subject (P257-01).
+ *
+ * Keyed on the credential, not on the address being asserted — `sub` is the
+ * username in `dev-keycloak` — so a lookup cannot find the right row by luck.
+ */
+export async function storedProfile(
+  subject: string,
+): Promise<{ email: string | null; lastName: string | null } | null> {
+  return withSuperuserPool(e2eSuperuserUrl(), async (pool) => {
+    const { rows } = await pool.query<{ email: string | null; last_name: string | null }>(
+      `SELECT u.email, u.last_name
+         FROM users u JOIN user_identities i ON i.user_id = u.id
+        WHERE i.provider = 'keycloak' AND i.subject = $1`,
+      [subject],
+    );
+    const row = rows[0];
+    return row === undefined ? null : { email: row.email, lastName: row.last_name };
+  });
 }
 
 /** 1×1 PNG — real enough for the magic-byte check the upload path applies. */

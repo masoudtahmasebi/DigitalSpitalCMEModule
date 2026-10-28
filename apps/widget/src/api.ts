@@ -36,7 +36,10 @@ export function createWidgetClient(
   return createClient({
     baseUrl: config.apiBase,
     projectSlug: config.projectSlug,
-    ...(config.profileHint === undefined ? {} : { profileHint: config.profileHint }),
+    // A direct key, not a conditional spread (P258-07). TypeScript never checks
+    // a spread member against the target type, which is how this option was
+    // passed to an SDK that had no such field for six weeks without an error.
+    profileHint: config.profileHint,
     getToken: () => getToken({ refresh: false }),
     // Exactly one refresh per 401, enforced by the SDK — see its `isRetry`.
     onUnauthorized: () => getToken({ refresh: true }),

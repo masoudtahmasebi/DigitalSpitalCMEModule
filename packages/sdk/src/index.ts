@@ -234,13 +234,35 @@ export interface ClientOptions {
    * sign-in, and the API fills only what the token left empty
    * (`profile-hint.ts`). From 03.09 to 15.10.2026 this option did not exist:
    * the widget passed it in a conditional spread, which TypeScript does not
-   * check for unknown keys, so it was dropped here and no MEDICE physician
-   * ever had an address stored.
+   * check for unknown keys, so it was dropped here and no MEDICE physician's
+   * address arrived through it.
    *
    * Opaque on purpose — the API parses and validates it, and decides nothing
    * about *who* the caller is from it.
    */
   readonly profileHint?: string | undefined;
+}
+
+/**
+ * The most a profile hint can sensibly be: three fields of at most 200
+ * characters each (`MAX_FIELD` in the API's `profile-hint.ts`), as JSON and then
+ * base64url, comes to well under 1 KiB. Four is the margin, not the estimate.
+ */
+const PROFILE_HINT_MAX = 4096;
+const BASE64URL = /^[A-Za-z0-9_-]+={0,2}$/u;
+
+/**
+ * Only a well-formed base64url string is sent as `X-DS-Profile` (P258-07).
+ *
+ * `Headers#set` throws on anything that is not a ByteString or holds a newline,
+ * and it throws before `fetch` — so a host page that wrote raw JSON with a
+ * "Ł" into `learner-profile` broke every request the widget made, the
+ * catalogue included. The API already treats a malformed hint as no hint; a
+ * client that fails harder than the server is the wrong way round. The plugin
+ * always encodes, so MEDICE was never affected; any other host could be.
+ */
+function isSendableProfileHint(hint: string | undefined): hint is string {
+  return hint !== undefined && hint.length <= PROFILE_HINT_MAX && BASE64URL.test(hint);
 }
 
 /** Methods the API requires a CSRF token on — the same set the guard checks. */
@@ -263,7 +285,7 @@ export function createClient(options: ClientOptions) {
       headers.set("x-ds-project", options.projectSlug);
     }
     if (token !== undefined) headers.set("authorization", `Bearer ${token}`);
-    if (options.profileHint !== undefined && options.profileHint !== "") {
+    if (isSendableProfileHint(options.profileHint)) {
       headers.set("x-ds-profile", options.profileHint);
     }
     return headers;

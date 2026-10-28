@@ -13,10 +13,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { Pool } from "pg";
 import { openWidgetShadowRoots } from "../support/shadow.js";
 import { API_BASE } from "../support/stack.js";
-import { DB_NAME } from "../support/world.js";
+import { storedProfile } from "../support/world.js";
 import {
   mintKeycloakToken,
   startKeycloak,
@@ -199,8 +198,8 @@ test.describe("die WordPress-Einbindung", () => {
      * `X-DS-Profile`, and the API fills what the token left empty. On
      * 15.10.2026 every MEDICE participant in the console had no address and
      * every certificate was "unzustellbar": the SDK had no such option, so the
-     * header was never sent — and the only test was of the parser, which
-     * nothing called (§9.7).
+     * header was never sent. The guard's parser was tested; nothing tested that
+     * any client sent what it parses (§9.7).
      *
      * The token here is minted **without** profile claims, as MEDICE's is. The
      * rig's default token carries `email`, which is why this path was never
@@ -351,31 +350,3 @@ test.describe("die WordPress-Einbindung, Projekt", () => {
     expect(WP_PROJECT_SLUG).toBe("ds-demo");
   });
 });
-
-/** The stored profile of the person behind a dev-keycloak subject. */
-async function storedProfile(
-  subject: string,
-): Promise<{ email: string | null; lastName: string | null } | null> {
-  const superuser = new URL(
-    process.env["POSTGRES_SUPERUSER_URL"] ??
-      "postgres://postgres:postgres@127.0.0.1:5432/postgres",
-  );
-  superuser.pathname = `/${DB_NAME}`;
-  // eslint-disable-next-line no-restricted-syntax -- apps/e2e cannot import @ds/postgres; see world.ts
-  const pool = new Pool({ connectionString: superuser.toString() });
-  pool.on("error", () => {
-    // An idle connection lost while the suite tears down is not a finding.
-  });
-  try {
-    const { rows } = await pool.query<{ email: string | null; last_name: string | null }>(
-      `SELECT u.email, u.last_name
-         FROM users u JOIN user_identities i ON i.user_id = u.id
-        WHERE i.provider = 'keycloak' AND i.subject = $1`,
-      [subject],
-    );
-    const row = rows[0];
-    return row === undefined ? null : { email: row.email, lastName: row.last_name };
-  } finally {
-    await pool.end();
-  }
-}

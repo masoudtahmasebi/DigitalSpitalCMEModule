@@ -47,7 +47,10 @@ export function createPreviewClient(config: WidgetConfig): ApiClient {
   const client = createClient({
     baseUrl: config.apiBase,
     projectSlug: config.projectSlug,
-    ...(config.profileHint === undefined ? {} : { profileHint: config.profileHint }),
+    // No `profileHint` (P258-07). The preview's routes are `@Public()` and the
+    // guard reads the hint only after it has verified a learner credential, so
+    // a DocCheck visitor's name and address would travel on every request and
+    // be read by nothing.
     /*
      * No `getToken`, and no `credentials: "include"`.
      *

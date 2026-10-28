@@ -32,6 +32,14 @@ info:
       (ADR-0007). The project binding decides the Keycloak realm and pins the
       tenant; a token from another realm is rejected regardless of validity.
 
+    A learner request may also carry **X-DS-Profile** (P105-01, sent since
+    P257-01): base64url-encoded JSON `{ email?, firstName?, lastName? }` from
+    the host page's own session, for an identity provider whose tokens carry
+    no profile claims (MEDICE). It fills only what the verified token left
+    empty and never decides *who* the caller is — that is the token's `sub`.
+    A malformed value is ignored, not refused. Public and staff routes ignore
+    it.
+
     All compliance decisions are server-side. The client renders; it is never
     the source of truth for anything affecting a CME point.
 
