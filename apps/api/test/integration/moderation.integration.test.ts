@@ -646,7 +646,12 @@ describe("course presentation is authorable (P13-01)", () => {
       cmeCategory: "D",
       fortbildungsnummer: "FB-2026-01",
       validFrom: "2026-01-01T00:00:00.000Z",
-      validTo: "2026-12-31T00:00:00.000Z",
+      // Far in the future on purpose (P258-06). The last case below reads the
+      // learner endpoint, which refuses a course outside its window **on the
+      // wall clock** — at "2026-12-31" this file would have gone red on New
+      // Year's Eve on every commit, as `catalog.service.test.ts` did on
+      // 13.10.2026 (P255-02).
+      validTo: "2099-12-31T00:00:00.000Z",
     });
 
     expect(status).toBe(200);
