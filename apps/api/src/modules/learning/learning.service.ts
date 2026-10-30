@@ -21,6 +21,7 @@ import {
   fillSamplingGaps,
   mergeWatchedSegments,
   isCourseOffered,
+  meetsPassThreshold,
   resumePosition,
   seekCeiling,
   orderSources,
@@ -1001,13 +1002,18 @@ export function summariseEnrolment(input: {
   efnPresent: boolean;
   evaluationSubmitted: boolean;
   /**
-   * Whether the course asks anything in its Evaluationsbogen (P206-01).
+   * Whether the course asks anything in its Evaluationsbogen (P206-01), read
+   * from the course by `hasEvaluationQuestions`.
    *
-   * Optional so the admin re-scoring path and the tests that predate it keep
-   * the stricter behaviour, which is what `isCourseComplete` does with
-   * `undefined`.
+   * Required here, although `isCourseComplete` accepts `undefined` and treats
+   * it as "yes" (P248-01). That default is right for the domain — a caller
+   * that does not know keeps the stricter behaviour — and it was wrong for this
+   * function: the admin participant list called it without the field, so for a
+   * course with no questions the console asked for an evaluation that could
+   * never exist while the learner's own screen said "abgeschlossen". Required,
+   * every caller that reads this rollup has to have read the course.
    */
-  hasEvaluation?: boolean | undefined;
+  hasEvaluation: boolean;
   /**
    * This enrolment already has a completion recorded (P167-01).
    *
@@ -1017,10 +1023,13 @@ export function summariseEnrolment(input: {
    */
   alreadyCompleted: boolean;
   /**
-   * The enrolment's snapshot of the course's points, not the live course
-   * record — a course re-accredited after somebody enrolled must not change
-   * what was asked of them mid-way, which is the same reason
-   * `requiredWatchPercent` is snapshotted.
+   * The **course's** points, as it stands now (P171-01) — not the enrolment's
+   * snapshot. Every caller reads `courses.cme_points` (`findEnrolment`, the
+   * admin `listEnrolments`, the Lernende list). It decides whether an EFN is
+   * required; on the snapshot, a course accredited after somebody enrolled
+   * would never ask them for one and no Punktemeldung would be filed.
+   *
+   * This comment said the opposite until P248-01 (OOP-1, §11 rule 9).
    */
   cmePoints: number | null;
 }): {
@@ -1250,7 +1259,7 @@ function hasPassedQuiz(
 
   return quizIds.every((id) => {
     const score = byContent.get(id)?.scorePercent;
-    return score !== undefined && score >= passThresholdPercent;
+    return score !== undefined && meetsPassThreshold(score, passThresholdPercent);
   });
 }
 
