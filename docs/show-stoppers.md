@@ -65,7 +65,7 @@ wants action today.
 | S17     | **Token `aud` is `account`; add an audience mapper or no learner can log in**             | M1 · 09.08       | **31.07** | MEDICE dev                        |
 | S2      | **The WP plugin stores no token.** Decide how it will — lifespan now known (600 s)        | M1 · 09.08       | **31.07** | MEDICE dev                        |
 | S4      | Scope decision on 4 layout features not in the 140 h — **PM is deciding**                 | M2 · 23.08       | **06.08** | PM                                |
-| S11     | **The test VNR's period closed 19.01.2024 — correct it, or file nothing** (04.09)         | **launch**       | 07.08     | ÄKWL / MEDICE                     |
+| S11     | **Only the Kammer can correct the period; the real date must be reported** (06.11)        | **launch**       | 07.08     | ÄKWL / MEDICE                     |
 | ~~S5~~  | ~~Certificate-after-EIV vs the launch fallback~~ — **decided 24.08: issue on completion** | **CLOSED 24.08** | —         | —                                 |
 | ~~S7~~  | ~~80 % or 100 %~~ — **already per course; a field, not a constant. 20.08**                | **CLOSED 20.08** | —         | —                                 |
 | S8      | ADHS SMTP configuration — **PM is setting it in the console**                             | M3 · 30.08       | 21.08     | PM                                |
@@ -74,7 +74,7 @@ wants action today.
 | ~~S10~~ | ~~VNR password shared over chat~~ — **rotated, confirmed by the client 05.10.2026**       | **CLOSED 05.10** | —         | —                                 |
 | S23     | **VNR format, and whether any VNR-less completion already exists**                        | —                | 14.08     | MEDICE / ÄKWL                     |
 | ~~S25~~ | ~~Which point flags for the **test** VNR~~ — **basis 3, Lernerfolg 0, Kat. D, 04.09**     | **CLOSED 04.09** | —         | — (live VNR still open, see S25b) |
-| S25b    | **The same question for MEDICE's live VNR** — read it the same way once reachable         | M3 · 30.08       | **14.08** | MEDICE / ÄKWL                     |
+| S25b    | **4 Punkte Kat. D confirmed 06.11; the basis/Lernerfolg split is still unread**           | M3 · 30.08       | **14.08** | MEDICE / ÄKWL                     |
 | ~~S26~~ | ~~Production EIV API base URL~~ — **`https://backend.eiv-fobi.de`, 20.08**                | **CLOSED 20.08** | —         | —                                 |
 | S28     | **Learner tokens carry no name or email — the certificate cannot be filled**              | M3 · 30.08       | **24.08** | MEDICE / DS                       |
 | ~~S27~~ | ~~Test-system credentials from EIV support~~ — **arrived 31.08; password not in repo**    | **CLOSED 31.08** | —         | —                                 |
@@ -91,6 +91,91 @@ already what the code does. It stays open because confirming a reading is not
 the same as having one.
 
 ---
+
+## Update 06.11 — EIV answered S11 and S25b, and the answer is "go to the Kammer"
+
+The reply from EIV support, in full, with what each half settles.
+
+### 1 · Veranstaltungszeitraum und Teilnahmedatum
+
+> Die im EIV hinterlegten Veranstaltungsdaten werden von der jeweils
+> anerkennenden Landesärztekammer übermittelt. Eine Änderung des
+> Veranstaltungszeitraums kann daher nicht unmittelbar durch uns vorgenommen
+> werden.
+>
+> Für die Meldung ist grundsätzlich das tatsächliche Datum der erfolgreichen
+> Teilnahme maßgeblich.
+
+**This closes the question and does not clear the blocker.** S11 offered two
+remedies; the second is now refused on the record:
+
+| Remedy                                                          | Status after this reply                                               |
+| --------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 1 · have the accredited period corrected at the Kammer          | **the only route**, and EIV cannot do it — the Landesärztekammer must |
+| 2 · report some other `teilnahmedatum` inside the stored period | **refused**: the real completion date is what counts                  |
+
+That is worth more than it looks. Remedy 2 was the expensive one — it would have
+meant inventing a date rule, which CLAUDE.md §7 forbids guessing at, and the
+platform would have carried a fabricated participation date on a statutory
+report for every physician. The answer removes it as an option, so there is now
+one route and it costs no code.
+
+**What is unchanged:** until the ÄKWL corrects the period for MEDICE's live VNR,
+`push_teilnahme` still refuses every completion with a 406. The remedy is a
+data-entry correction by the Kammer, exactly as the 25.08 draft asked for, and it
+is still owned by **MEDICE / ÄKWL**.
+
+**No code change.** The platform already sends the real completion instant:
+`eiv.service.ts:206` passes `completedAt: row.eventEndAt`, which
+`completion.service` writes as `now` at the moment the Fortbildung is finished.
+That is the field EIV calls authoritative, and it is already what leaves here.
+
+### 2 · Fortbildungspunkte und Punktekategorie
+
+> Die Anzahl der Fortbildungspunkte sowie die Punktekategorie werden im Rahmen
+> der Anerkennung durch die zuständige Landesärztekammer festgelegt.
+>
+> Die Punktemeldung sollte entsprechend den Angaben des Anerkennungsbescheids
+> erfolgen. In Ihrem Fall sind dies vier Fortbildungspunkte der Kategorie D,
+> sofern die vorgeschriebene Lernerfolgskontrolle erfolgreich absolviert wurde.
+
+Confirms the Bescheid of 18.06.2026: **4 Punkte, Kategorie D, conditional on the
+Lernerfolgskontrolle**. It also confirms the platform's shape — points and
+category are the Kammer's, per VNR, which is why they are course columns rather
+than constants (§9.10b, P164-01 / P171-01).
+
+**It does not answer the question that was asked.** Point 2 of the 25.08 draft
+asked how those four points divide across `punkte_basis` and `punkte_lernerfolg`,
+because those are the two flags a Meldung sets. The reply gives the total and the
+condition, not the split. "sofern die … Lernerfolgskontrolle erfolgreich
+absolviert wurde" implies a Lernerfolg component exists, and that is as far as it
+goes.
+
+So **S25b stays open**, and it is answered by reading rather than by asking:
+`GET /fobi/veranstalter/veranstaltung` returns `punkte_basis` and
+`punkte_lernerfolg` for the live VNR, and the EIV connection check on the course's
+settings screen already shows them. The reply names that endpoint itself.
+
+One thing to carry into that reading, so it is not mistaken for a contradiction:
+the **test** register returned `punkte_basis: 3, punkte_lernerfolg: 0` on 04.09.
+That is three points and no Lernerfolg component — neither the total nor the
+condition this reply describes. It is a different, test event, and it says
+nothing about the live dataset. The live VNR's values have not been read: the
+24.08 check returned its `beginn`/`ende` and those are the only live figures on
+record here.
+
+### What this changes in the product
+
+Nothing, and that is the finding. Every behaviour the reply describes is already
+built, and each has somewhere a person can see it:
+
+| What the reply says                                   | Where the platform already does it                                   |
+| ----------------------------------------------------- | -------------------------------------------------------------------- |
+| the real participation date is authoritative          | `eiv.service.ts:206`, the completion instant                         |
+| points and category come from the Bescheid, per event | `courses.cme_points`, `courses.cme_category`, `courses.eiv_punkte_*` |
+| a Meldung outside the period is refused               | counted before sending — `EivCheck.tsx:311` (P184-01)                |
+| the Lernerfolg point depends on the exam              | the pairing is warned about — `EivCheck.tsx:321`                     |
+| event data is readable over the interface             | `./dsc eiv` and the connection check both call it                    |
 
 ## Update 04.09 — the test register answered, and S11 is now a number
 
@@ -2237,6 +2322,7 @@ does not match the verdict, rather than a verdict nobody can check.
 **MEDICE's own course is unaffected either way** — it has no text content today,
 so both readings give the same answer for it. The client met this on a course
 they built for testing.
+
 ---
 
 ## S34 · The 2026-09-01 layout draws an **18-digit** EFN; the platform takes 15
